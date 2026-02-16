@@ -1,0 +1,10 @@
+.newsletter-block.bg-green-400 .text-gray-50,
+.newsletter-block.bg-transparent .text-gray-50 {
+    color: var(--black);
+}
+
+.newsletter-block.bg-green-400 .button-main,
+.newsletter-block.bg-transparent .button-main {
+    background-color: var(--black);
+    color: var(--white);
+}

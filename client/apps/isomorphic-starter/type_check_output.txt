@@ -1,0 +1,181 @@
+
+> starter@0.1.0 type:check /Users/mac/Documents/drinksharbour/client/apps/isomorphic-starter
+> tsc --noEmit
+
+src/app/blog/default/page.tsx(6,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/blog/detail1/page.tsx(7,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/blog/detail1/page.tsx(9,25): error TS2307: Cannot find module '@/components/Home3/NewsInsight' or its corresponding type declarations.
+src/app/blog/detail2/page.tsx(8,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/blog/detail2/page.tsx(10,25): error TS2307: Cannot find module '@/components/Home3/NewsInsight' or its corresponding type declarations.
+src/app/blog/grid/page.tsx(5,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/blog/list/page.tsx(6,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/cart/page.tsx(7,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/cart/page.tsx(132,74): error TS18048: 'product.thumbImage' is possibly 'undefined'.
+src/app/checkout/page.tsx(6,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/checkout/page.tsx(9,10): error TS2305: Module '"@/type/ProductType"' has no exported member 'ProductType'.
+src/app/checkout/page.tsx(236,66): error TS18048: 'product.thumbImage' is possibly 'undefined'.
+src/app/checkout/page.tsx(247,99): error TS2322: Type 'string | { size: string; displayName?: string | undefined; volumeMl?: number | undefined; priceRange?: { min: number; max: number; } | undefined; price?: number | undefined; inStock?: boolean | undefined; }' is not assignable to type 'ReactNode'.
+  Type '{ size: string; displayName?: string | undefined; volumeMl?: number | undefined; priceRange?: { min: number; max: number; } | undefined; price?: number | undefined; inStock?: boolean | undefined; }' is not assignable to type 'ReactNode'.
+src/app/checkout/page.tsx(247,124): error TS18048: 'product.sizes' is possibly 'undefined'.
+src/app/checkout/page.tsx(249,126): error TS18048: 'product.variation' is possibly 'undefined'.
+src/app/compare/page.tsx(6,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/compare/page.tsx(9,10): error TS2305: Module '"@/type/ProductType"' has no exported member 'ProductType'.
+src/app/compare/page.tsx(51,53): error TS2322: Type '{ url: string; alt?: string | undefined; publicId?: string | undefined; }' is not assignable to type 'string | StaticImport'.
+src/app/compare/page.tsx(51,58): error TS18048: 'item.images' is possibly 'undefined'.
+src/app/compare/page.tsx(54,53): error TS2322: Type '{ url: string; alt?: string | undefined; publicId?: string | undefined; }' is not assignable to type 'string'.
+src/app/compare/page.tsx(54,58): error TS18048: 'item.images' is possibly 'undefined'.
+src/app/compare/page.tsx(59,128): error TS2322: Type '{ _id?: string | undefined; name: string; slug?: string | undefined; logo?: string | undefined; } | undefined' is not assignable to type 'ReactNode'.
+  Type '{ _id?: string | undefined; name: string; slug?: string | undefined; logo?: string | undefined; }' is not assignable to type 'ReactNode'.
+src/app/compare/page.tsx(108,53): error TS2322: Type '{ _id?: string | undefined; name: string; slug?: string | undefined; logo?: string | undefined; } | undefined' is not assignable to type 'ReactNode'.
+  Type '{ _id?: string | undefined; name: string; slug?: string | undefined; logo?: string | undefined; }' is not assignable to type 'ReactNode'.
+src/app/compare/page.tsx(117,54): error TS18048: 'item.sizes' is possibly 'undefined'.
+src/app/compare/page.tsx(118,68): error TS2322: Type '{ size: string; displayName?: string | undefined; volumeMl?: number | undefined; priceRange?: { min: number; max: number; } | undefined; price?: number | undefined; inStock?: boolean | undefined; }' is not assignable to type 'ReactNode'.
+src/app/compare/page.tsx(130,54): error TS18048: 'item.variation' is possibly 'undefined'.
+src/app/forgot-password/page.tsx(5,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/login/page.tsx(5,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/my-account/page.tsx(6,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/order-tracking/page.tsx(5,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/pages/about/page.tsx(5,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/pages/about/page.tsx(8,24): error TS2307: Cannot find module '@/components/Home4/Newsletter' or its corresponding type declarations.
+src/app/pages/about/page.tsx(9,23): error TS2307: Cannot find module '@/components/Home6/Instagram' or its corresponding type declarations.
+src/app/pages/contact/page.tsx(6,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/pages/customer-feedbacks/page.tsx(4,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/pages/customer-feedbacks/page.tsx(7,29): error TS2307: Cannot find module '@/components/Testimonial/TestimonialItem' or its corresponding type declarations.
+src/app/pages/faqs/page.tsx(4,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/pages/page-not-found/page.tsx(6,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/pages/store-list/page.tsx(6,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/register/page.tsx(5,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/search-result/page.tsx(6,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/search-result/page.tsx(9,10): error TS2305: Module '"@/type/ProductType"' has no exported member 'ProductType'.
+src/app/wishlist/page.tsx(4,21): error TS2307: Cannot find module '@/components/Header/Menu/MenuOne' or its corresponding type declarations.
+src/app/wishlist/page.tsx(7,10): error TS2305: Module '"@/type/ProductType"' has no exported member 'ProductType'.
+src/app/wishlist/page.tsx(51,13): error TS2322: Type 'string' is not assignable to type '{ _id?: string | undefined; name: string; type: string; slug?: string | undefined; }'.
+src/app/wishlist/page.tsx(60,13): error TS2322: Type 'string' is not assignable to type '{ _id?: string | undefined; name: string; slug?: string | undefined; logo?: string | undefined; }'.
+src/app/wishlist/page.tsx(78,50): error TS18048: 'b.sold' is possibly 'undefined'.
+src/app/wishlist/page.tsx(78,59): error TS18048: 'a.sold' is possibly 'undefined'.
+src/app/wishlist/page.tsx(84,47): error TS18048: 'b.originPrice' is possibly 'undefined'.
+src/app/wishlist/page.tsx(84,103): error TS18048: 'a.originPrice' is possibly 'undefined'.
+src/components/Home1/Deal.tsx(6,10): error TS2305: Module '"@/type/ProductType"' has no exported member 'ProductType'.
+src/components/Home1/Deal.tsx(51,73): error TS2322: Type '{ key: number; data: ProductType; type: "grid"; style: string; }' is not assignable to type 'IntrinsicAttributes & ProductProps'.
+  Property 'style' does not exist on type 'IntrinsicAttributes & ProductProps'.
+src/components/Home1/TabFeatures.tsx(8,10): error TS2305: Module '"@/type/ProductType"' has no exported member 'ProductType'.
+src/components/Home1/TabFeatures.tsx(58,76): error TS2322: Type '{ layoutId: string; className: string; }' is not assignable to type 'IntrinsicAttributes & HTMLAttributesWithoutMotionProps<unknown, unknown> & MotionProps & RefAttributes<unknown>'.
+  Property 'className' does not exist on type 'IntrinsicAttributes & HTMLAttributesWithoutMotionProps<unknown, unknown> & MotionProps & RefAttributes<unknown>'.
+src/components/Home1/Testimonial.tsx(7,29): error TS2307: Cannot find module '../Testimonial/TestimonialItem' or its corresponding type declarations.
+src/components/Home1/TrendingProduct.tsx(3,10): error TS2305: Module '"@/type/ProductType"' has no exported member 'ProductType'.
+src/components/Home1/TrendingProduct.tsx(22,73): error TS2322: Type '{ key: number; data: ProductType; type: "grid"; style: string; }' is not assignable to type 'IntrinsicAttributes & ProductProps'.
+  Property 'style' does not exist on type 'IntrinsicAttributes & ProductProps'.
+src/components/Home1/WhatNewOne.tsx(5,10): error TS2305: Module '"@/type/ProductType"' has no exported member 'ProductType'.
+src/components/Home1/WhatNewOne.tsx(37,76): error TS2322: Type '{ layoutId: string; className: string; }' is not assignable to type 'IntrinsicAttributes & HTMLAttributesWithoutMotionProps<unknown, unknown> & MotionProps & RefAttributes<unknown>'.
+  Property 'className' does not exist on type 'IntrinsicAttributes & HTMLAttributesWithoutMotionProps<unknown, unknown> & MotionProps & RefAttributes<unknown>'.
+src/components/Home1/WhatNewOne.tsx(49,73): error TS2322: Type '{ data: ProductType; type: "grid"; key: number; style: string; }' is not assignable to type 'IntrinsicAttributes & ProductProps'.
+  Property 'style' does not exist on type 'IntrinsicAttributes & ProductProps'.
+src/components/Marketplace/BestSeller.tsx(4,10): error TS2305: Module '"@/type/ProductType"' has no exported member 'ProductType'.
+src/components/Marketplace/BestSeller.tsx(38,72): error TS2322: Type '{ layoutId: string; className: string; }' is not assignable to type 'IntrinsicAttributes & HTMLAttributesWithoutMotionProps<unknown, unknown> & MotionProps & RefAttributes<unknown>'.
+  Property 'className' does not exist on type 'IntrinsicAttributes & HTMLAttributesWithoutMotionProps<unknown, unknown> & MotionProps & RefAttributes<unknown>'.
+src/components/Marketplace/BestSeller.tsx(50,45): error TS2322: Type '"marketplace"' is not assignable to type '"grid" | "list"'.
+src/components/Marketplace/Deal.tsx(54,34): error TS2322: Type '{ id: string; category: string; type: string; name: string; gender: string; new: boolean; sale: boolean; rate: number; price: number; originPrice: number; brand: string; sold: number; quantity: number; ... 7 more ...; slug: string; }' is not assignable to type 'ProductData'.
+  Type '{ id: string; category: string; type: string; name: string; gender: string; new: boolean; sale: boolean; rate: number; price: number; originPrice: number; brand: string; sold: number; quantity: number; ... 7 more ...; slug: string; }' is not assignable to type 'ProductType'.
+    Types of property 'category' are incompatible.
+      Type 'string' is not assignable to type '{ _id?: string | undefined; name: string; type: string; slug?: string | undefined; }'.
+src/components/Marketplace/Deal.tsx(54,46): error TS2322: Type '"marketplace"' is not assignable to type '"grid" | "list"'.
+src/components/Marketplace/Recommend.tsx(17,34): error TS2322: Type '{ id: string; category: string; type: string; name: string; gender: string; new: boolean; sale: boolean; rate: number; price: number; originPrice: number; brand: string; sold: number; quantity: number; ... 7 more ...; slug: string; }' is not assignable to type 'ProductData'.
+  Type '{ id: string; category: string; type: string; name: string; gender: string; new: boolean; sale: boolean; rate: number; price: number; originPrice: number; brand: string; sold: number; quantity: number; ... 7 more ...; slug: string; }' is not assignable to type 'ProductType'.
+    Types of property 'category' are incompatible.
+      Type 'string' is not assignable to type '{ _id?: string | undefined; name: string; type: string; slug?: string | undefined; }'.
+src/components/Marketplace/Recommend.tsx(17,46): error TS2322: Type '"marketplace"' is not assignable to type '"grid" | "list"'.
+src/components/Modal/ModalCart.tsx(64,135): error TS2339: Property 'url' does not exist on type 'never'.
+src/components/Modal/ModalCart.tsx(65,63): error TS2339: Property 'primaryImage' does not exist on type '{ id: string; category: string; type: string; name: string; gender: string; new: boolean; sale: boolean; rate: number; price: number; originPrice: number; brand: string; sold: number; quantity: number; ... 7 more ...; slug: string; }'.
+src/components/Modal/ModalCart.tsx(93,61): error TS2345: Argument of type '{ id: string; category: string; type: string; name: string; gender: string; new: boolean; sale: boolean; rate: number; price: number; originPrice: number; brand: string; sold: number; quantity: number; ... 7 more ...; slug: string; }' is not assignable to parameter of type 'ProductType'.
+  Types of property 'category' are incompatible.
+    Type 'string' is not assignable to type '{ _id?: string | undefined; name: string; type: string; slug?: string | undefined; }'.
+src/components/Modal/ModalCompare.tsx(36,53): error TS2322: Type '{ url: string; alt?: string | undefined; publicId?: string | undefined; }' is not assignable to type 'string | StaticImport'.
+src/components/Modal/ModalCompare.tsx(36,58): error TS18048: 'product.images' is possibly 'undefined'.
+src/components/Modal/ModalNewsletter.tsx(80,78): error TS2345: Argument of type '{ id: string; category: string; type: string; name: string; gender: string; new: boolean; sale: boolean; rate: number; price: number; originPrice: number; brand: string; sold: number; quantity: number; ... 7 more ...; slug: string; }' is not assignable to parameter of type 'ProductType'.
+  Types of property 'category' are incompatible.
+    Type 'string' is not assignable to type '{ _id?: string | undefined; name: string; type: string; slug?: string | undefined; }'.
+src/components/Modal/ModalQuickview.tsx(38,31): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'SetStateAction<string>'.
+  Type 'undefined' is not assignable to type 'SetStateAction<string>'.
+src/components/Modal/ModalQuickview.tsx(280,34): error TS18048: 'selectedProduct.rate' is possibly 'undefined'.
+src/components/Modal/ModalQuickview.tsx(285,74): error TS18048: 'selectedProduct.rate' is possibly 'undefined'.
+src/components/Modal/ModalQuickview.tsx(289,35): error TS18048: 'selectedProduct.sold' is possibly 'undefined'.
+src/components/Modal/ModalSearch.tsx(78,63): error TS2322: Type '{ id: string; category: string; type: string; name: string; gender: string; new: boolean; sale: boolean; rate: number; price: number; originPrice: number; brand: string; sold: number; quantity: number; ... 7 more ...; slug: string; }' is not assignable to type 'ProductData'.
+  Type '{ id: string; category: string; type: string; name: string; gender: string; new: boolean; sale: boolean; rate: number; price: number; originPrice: number; brand: string; sold: number; quantity: number; ... 7 more ...; slug: string; }' is not assignable to type 'ProductType'.
+    Types of property 'category' are incompatible.
+      Type 'string' is not assignable to type '{ _id?: string | undefined; name: string; type: string; slug?: string | undefined; }'.
+src/components/Modal/ModalWishlist.tsx(36,45): error TS2322: Type '{ url: string; alt?: string | undefined; publicId?: string | undefined; }' is not assignable to type 'string | StaticImport'.
+src/components/Modal/ModalWishlist.tsx(36,50): error TS18048: 'product.images' is possibly 'undefined'.
+src/components/Product/Card/index.tsx(385,17): error TS2345: Argument of type '{ id: string; slug: string; name: string; thumbImage: string[]; variation: { id: string; color: string; colorCode: string; colorImage: string; size: string[]; quantity: number; image: string; }[]; sizes: { size: string; displayName: string; }[]; ... 32 more ...; tastingNotes: any; } | { ...; }' is not assignable to parameter of type 'ProductType'.
+  Type '{ id: string; slug: string; name: string; thumbImage: string[]; variation: { id: string; color: string; colorCode: string; colorImage: string; size: string[]; quantity: number; image: string; }[]; sizes: { ...; }[]; ... 32 more ...; tastingNotes: any; }' is not assignable to type 'ProductType'.
+    Types of property 'badge' are incompatible.
+      Type '{ type: string; name: string; color: string; } | undefined' is not assignable to type '{ type: string; text: string; color: string; } | undefined'.
+        Property 'text' is missing in type '{ type: string; name: string; color: string; }' but required in type '{ type: string; text: string; color: string; }'.
+src/components/Product/Card/index.tsx(399,21): error TS2345: Argument of type '{ id: string; slug: string; name: string; thumbImage: string[]; variation: { id: string; color: string; colorCode: string; colorImage: string; size: string[]; quantity: number; image: string; }[]; sizes: { size: string; displayName: string; }[]; ... 32 more ...; tastingNotes: any; } | { ...; }' is not assignable to parameter of type 'ProductType'.
+  Type '{ id: string; slug: string; name: string; thumbImage: string[]; variation: { id: string; color: string; colorCode: string; colorImage: string; size: string[]; quantity: number; image: string; }[]; sizes: { ...; }[]; ... 32 more ...; tastingNotes: any; }' is not assignable to type 'ProductType'.
+    Types of property 'badge' are incompatible.
+      Type '{ type: string; name: string; color: string; } | undefined' is not assignable to type '{ type: string; text: string; color: string; } | undefined'.
+        Property 'text' is missing in type '{ type: string; name: string; color: string; }' but required in type '{ type: string; text: string; color: string; }'.
+src/components/Product/Card/index.tsx(410,22): error TS2345: Argument of type '{ id: string; slug: string; name: string; thumbImage: string[]; variation: { id: string; color: string; colorCode: string; colorImage: string; size: string[]; quantity: number; image: string; }[]; sizes: { size: string; displayName: string; }[]; ... 32 more ...; tastingNotes: any; } | { ...; }' is not assignable to parameter of type 'ProductType'.
+  Type '{ id: string; slug: string; name: string; thumbImage: string[]; variation: { id: string; color: string; colorCode: string; colorImage: string; size: string[]; quantity: number; image: string; }[]; sizes: { ...; }[]; ... 32 more ...; tastingNotes: any; }' is not assignable to type 'ProductType'.
+    Types of property 'badge' are incompatible.
+      Type '{ type: string; name: string; color: string; } | undefined' is not assignable to type '{ type: string; text: string; color: string; } | undefined'.
+        Property 'text' is missing in type '{ type: string; name: string; color: string; }' but required in type '{ type: string; text: string; color: string; }'.
+src/components/Product/Card/index.tsx(420,19): error TS2345: Argument of type '{ id: string; slug: string; name: string; thumbImage: string[]; variation: { id: string; color: string; colorCode: string; colorImage: string; size: string[]; quantity: number; image: string; }[]; sizes: { size: string; displayName: string; }[]; ... 32 more ...; tastingNotes: any; } | { ...; }' is not assignable to parameter of type 'ProductType'.
+  Type '{ id: string; slug: string; name: string; thumbImage: string[]; variation: { id: string; color: string; colorCode: string; colorImage: string; size: string[]; quantity: number; image: string; }[]; sizes: { ...; }[]; ... 32 more ...; tastingNotes: any; }' is not assignable to type 'ProductType'.
+    Types of property 'badge' are incompatible.
+      Type '{ type: string; name: string; color: string; } | undefined' is not assignable to type '{ type: string; text: string; color: string; } | undefined'.
+        Property 'text' is missing in type '{ type: string; name: string; color: string; }' but required in type '{ type: string; text: string; color: string; }'.
+src/components/Product/Card/ProductGrid.tsx(9,28): error TS2307: Cannot find module './BeverageProductCard' or its corresponding type declarations.
+src/components/Product/Card/ProductGrid.tsx(11,30): error TS2307: Cannot find module './ProductSaleBadge' or its corresponding type declarations.
+src/components/Product/Card/ProductGrid.tsx(14,36): error TS2307: Cannot find module '@/hooks/useProductHandlers' or its corresponding type declarations.
+src/components/Product/Card/ProductGrid.tsx(29,55): error TS18048: 'data.originPrice' is possibly 'undefined'.
+src/components/Product/Card/ProductGrid.tsx(30,35): error TS18048: 'data.sold' is possibly 'undefined'.
+src/components/Product/Card/ProductGrid.tsx(30,47): error TS18048: 'data.quantity' is possibly 'undefined'.
+src/components/Product/Card/ProductGrid.tsx(40,16): error TS18048: 'data.variation' is possibly 'undefined'.
+src/components/Product/Card/ProductGrid.tsx(48,9): error TS18048: 'data.thumbImage' is possibly 'undefined'.
+src/components/Product/Card/ProductGrid.tsx(145,11): error TS2322: Type '{ data: ProductType; style: string; activeColor: string; percentSale: number; percentSold: number; onColorSelect: Dispatch<SetStateAction<string>>; onAddToCart: any; onToggleQuickShop: Dispatch<...>; openQuickShop: boolean; }' is not assignable to type 'IntrinsicAttributes & ProductInfoProps'.
+  Property 'onToggleQuickShop' does not exist on type 'IntrinsicAttributes & ProductInfoProps'.
+src/components/Product/Card/ProductInfo.tsx(52,9): error TS18048: 'data.quantity' is possibly 'undefined'.
+src/components/Product/Card/ProductInfo.tsx(54,38): error TS18048: 'data.sold' is possibly 'undefined'.
+src/components/Product/Card/ProductInfo.tsx(54,50): error TS18048: 'data.quantity' is possibly 'undefined'.
+src/components/Product/Card/ProductInfo.tsx(55,23): error TS18048: 'data.quantity' is possibly 'undefined'.
+src/components/Product/Card/ProductInfo.tsx(55,39): error TS18048: 'data.sold' is possibly 'undefined'.
+src/components/Product/Detail/index.tsx(53,28): error TS2554: Expected 1 arguments, but got 0.
+src/components/Product/Detail/index.tsx(176,23): error TS2345: Argument of type '{ id: string; productId: any; name: any; price: any; displayPrice: any; currencySymbol: any; size: string; vendor: any; vendorId: any; image: any; quantityPurchase: number; stock: any; }' is not assignable to parameter of type 'ProductType'.
+  Type '{ id: string; productId: any; name: any; price: any; displayPrice: any; currencySymbol: any; size: string; vendor: any; vendorId: any; image: any; quantityPurchase: number; stock: any; }' is missing the following properties from type 'ProductType': slug, type
+src/components/Shop/ProductGrid.tsx(42,13): error TS2322: Type '{ data: any; type: "grid"; style: string; }' is not assignable to type 'IntrinsicAttributes & ProductProps'.
+  Property 'style' does not exist on type 'IntrinsicAttributes & ProductProps'.
+src/hooks/useProductActions.ts(3,10): error TS2305: Module '"@/type/ProductType"' has no exported member 'ProductType'.
+src/store/useWishlist.tsx(3,10): error TS2305: Module '"@/type/ProductType"' has no exported member 'ProductType'.
+src/utils/product.utils.ts(1,10): error TS2305: Module '"@/type/ProductType"' has no exported member 'ProductType'.
+src/utils/product.utils.ts(18,43): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/utils/validators/common-rules.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/create-banner.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/create-category.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/create-event.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/create-folder.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/create-invoice.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/create-order.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/create-product-group-schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/create-product.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/create-role.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/create-shipping.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/create-snippet.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/create-subcategory.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/create-template.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/create-user.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/credit-card.schema.ts(1,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/customer-profile.schema.ts(6,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/email-template.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/find-flight.shema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/multistep-form.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/password-settings.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/personal-info.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/product-details.schema.ts(2,21): error TS7016: Could not find a declaration file for module 'lodash/isEmpty'. '/Users/mac/Documents/drinksharbour/node_modules/lodash/isEmpty.js' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/lodash` if it exists or add a new declaration (.d.ts) file containing `declare module 'lodash/isEmpty';`
+src/utils/validators/product-details.schema.ts(3,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/profile-settings.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/reset-password.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/signup.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+src/utils/validators/team-member.schema.ts(2,26): error TS2307: Cannot find module '@/config/messages' or its corresponding type declarations.
+ ELIFECYCLE  Command failed with exit code 1.

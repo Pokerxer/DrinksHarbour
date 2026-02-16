@@ -1,0 +1,923 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import {
+  PiHouseLine,
+  PiPackage,
+  PiMapPin,
+  PiUser,
+  PiLockKey,
+  PiSignOut,
+  PiClock,
+  PiTruck,
+  PiCheckCircle,
+  PiShoppingCart,
+  PiArrowRight,
+  PiImage,
+  PiPlus,
+  PiEnvelope,
+  PiSpinner,
+  PiCheckCircle as PiCheckCircleIcon,
+  PiArrowLeft,
+} from 'react-icons/pi';
+import AddressesSection from './components/AddressesSection';
+
+interface User {
+  _id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+  avatar?: { url: string };
+  isEmailVerified: boolean;
+  isAgeVerified: boolean;
+}
+
+interface Order {
+  _id: string;
+  orderNumber: string;
+  status: string;
+  paymentStatus: string;
+  totalAmount: number;
+  subtotal: number;
+  shippingFee: number;
+  placedAt: string;
+  items: any[];
+}
+
+interface Address {
+  _id: string;
+  label: string;
+  fullName: string;
+  phone: string;
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  state: string;
+  postalCode?: string;
+  country: string;
+  landmark?: string;
+  isDefaultShipping: boolean;
+  isDefaultBilling: boolean;
+}
+
+type TabType = 'dashboard' | 'orders' | 'addresses' | 'settings' | 'password';
+
+const MyAccount = () => {
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
+  const [user, setUser] = useState<User | null>(null);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [addresses, setAddresses] = useState<Address[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
+  const [showAddressModal, setShowAddressModal] = useState(false);
+  const [editingAddress, setEditingAddress] = useState<Address | null>(null);
+  const [addressForm, setAddressForm] = useState({
+    label: 'Home',
+    fullName: '',
+    phone: '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    postalCode: '',
+    country: 'Nigeria',
+    landmark: '',
+    isDefaultShipping: false,
+    isDefaultBilling: false,
+  });
+  const [addressLoading, setAddressLoading] = useState(false);
+  const [addressError, setAddressError] = useState('');
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsError, setSettingsError] = useState('');
+  const [settingsSuccess, setSettingsSuccess] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [profileForm, setProfileForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phoneNumber: '',
+  });
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [resendVerificationLoading, setResendVerificationLoading] = useState(false);
+  const [resendVerificationMessage, setResendVerificationMessage] = useState('');
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
+    fetchUserData(token);
+    fetchOrders(token);
+    fetchAddresses(token);
+  }, [mounted, router]);
+
+  const fetchUserData = async (token: string) => {
+    try {
+      const response = await fetch('http://localhost:5001/api/users/me', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (data.success && data.data?.user) {
+        setUser(data.data.user);
+      }
+    } catch (error) {
+      console.error('Error fetching user:', error);
+    }
+  };
+
+  const fetchOrders = async (token: string) => {
+    try {
+      const response = await fetch('http://localhost:5001/api/orders/my-orders', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (data.success) {
+        setOrders(data.data.orders || []);
+      }
+    } catch (error) {
+      console.error('Error fetching orders:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchAddresses = async (token: string) => {
+    try {
+      const response = await fetch('http://localhost:5001/api/addresses', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (data.success) {
+        setAddresses(data.data.addresses || []);
+      }
+    } catch (error) {
+      console.error('Error fetching addresses:', error);
+    }
+  };
+
+  const handleAddressSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token) return;
+
+    setAddressLoading(true);
+    setAddressError('');
+
+    try {
+      const url = editingAddress
+        ? `http://localhost:5001/api/addresses/${editingAddress._id}`
+        : 'http://localhost:5001/api/addresses';
+      const method = editingAddress ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...addressForm,
+          user: user?._id,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to save address');
+      }
+
+      await fetchAddresses(token);
+      setShowAddressModal(false);
+      resetAddressForm();
+    } catch (error: any) {
+      setAddressError(error.message);
+    } finally {
+      setAddressLoading(false);
+    }
+  };
+
+  const handleDeleteAddress = async (addressId: string) => {
+    if (!confirm('Are you sure you want to delete this address?')) return;
+
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token) return;
+
+    try {
+      const response = await fetch(`http://localhost:5001/api/addresses/${addressId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to delete address');
+      }
+
+      await fetchAddresses(token);
+    } catch (error: any) {
+      alert(error.message);
+    }
+  };
+
+  const handleSetDefault = async (addressId: string, type: 'shipping' | 'billing') => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token) return;
+
+    try {
+      const response = await fetch(`http://localhost:5001/api/addresses/${addressId}/default`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ type }),
+      });
+
+      if (response.ok) {
+        await fetchAddresses(token);
+      }
+    } catch (error) {
+      console.error('Error setting default address:', error);
+    }
+  };
+
+  const resetAddressForm = () => {
+    setAddressForm({
+      label: 'Home',
+      fullName: user?.firstName + ' ' + user?.lastName || '',
+      phone: user?.phone || '',
+      addressLine1: '',
+      addressLine2: '',
+      city: '',
+      state: '',
+      postalCode: '',
+      country: 'Nigeria',
+      landmark: '',
+      isDefaultShipping: addresses.length === 0,
+      isDefaultBilling: false,
+    });
+    setEditingAddress(null);
+  };
+
+  const openEditModal = (address: Address) => {
+    setEditingAddress(address);
+    setAddressForm({
+      label: address.label,
+      fullName: address.fullName,
+      phone: address.phone,
+      addressLine1: address.addressLine1,
+      addressLine2: address.addressLine2 || '',
+      city: address.city,
+      state: address.state,
+      postalCode: address.postalCode || '',
+      country: address.country,
+      landmark: address.landmark || '',
+      isDefaultShipping: address.isDefaultShipping,
+      isDefaultBilling: address.isDefaultBilling,
+    });
+    setShowAddressModal(true);
+  };
+
+  const handleSettingsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token) return;
+
+    setSettingsLoading(true);
+    setSettingsError('');
+    setSettingsSuccess('');
+
+    try {
+      const response = await fetch('http://localhost:5001/api/users/me', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(profileForm),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to update profile');
+      }
+
+      if (data.success && data.data?.user) {
+        setUser(data.data.user);
+      }
+      setSettingsSuccess('Profile updated successfully!');
+    } catch (error: any) {
+      setSettingsError(error.message);
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token) return;
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordError('Passwords do not match');
+      return;
+    }
+
+    setPasswordLoading(true);
+    setPasswordError('');
+    setPasswordSuccess('');
+
+    try {
+      const response = await fetch('http://localhost:5001/api/users/change-password', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          currentPassword: passwordForm.currentPassword,
+          newPassword: passwordForm.newPassword,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to change password');
+      }
+
+      setPasswordSuccess('Password changed successfully!');
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (error: any) {
+      setPasswordError(error.message);
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!user?.email) return;
+
+    setResendVerificationLoading(true);
+    setResendVerificationMessage('');
+
+    try {
+      const response = await fetch('http://localhost:5001/api/users/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: user.email }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setResendVerificationMessage('Verification email sent! Please check your inbox.');
+      } else {
+        setResendVerificationMessage(data.message || 'Failed to send verification email');
+      }
+    } catch (error) {
+      setResendVerificationMessage('An error occurred. Please try again.');
+    } finally {
+      setResendVerificationLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      setProfileForm({
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        email: user.email || '',
+        phoneNumber: user.phoneNumber || '',
+      });
+    }
+  }, [user]);
+
+  const getStatusColor = (status: string) => {
+    const colors: Record<string, string> = {
+      pending: 'bg-yellow-100 text-yellow-700',
+      processing: 'bg-blue-100 text-blue-700',
+      shipped: 'bg-purple-100 text-purple-700',
+      delivered: 'bg-green-100 text-green-700',
+      cancelled: 'bg-red-100 text-red-700',
+    };
+    return colors[status] || 'bg-gray-100 text-gray-700';
+  };
+
+  const formatStatus = (status: string) => {
+    return status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ');
+  };
+
+  const getAvatarUrl = () => {
+    if (user?.avatar?.url) return user.avatar.url;
+    return null;
+  };
+
+  const menuItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: PiHouseLine },
+    { id: 'orders', label: 'My Orders', icon: PiPackage },
+    { id: 'addresses', label: 'My Addresses', icon: PiMapPin },
+    { id: 'settings', label: 'Account Settings', icon: PiUser },
+    { id: 'password', label: 'Change Password', icon: PiLockKey },
+  ];
+
+  if (!mounted) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="animate-spin w-12 h-12 border-4 border-gray-200 border-t-gray-900 rounded-full"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <div className="flex items-center gap-2 text-sm text-gray-500 mb-8">
+        <Link href="/" className="hover:text-gray-900">Home</Link>
+        <PiArrowRight size={14} />
+        <span className="text-gray-900">My Account</span>
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-8">
+        <div className="lg:w-1/4">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden sticky top-4">
+            <div className="p-6 bg-gradient-to-r from-gray-900 to-gray-800 text-white">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center overflow-hidden">
+                  {getAvatarUrl() ? (
+                    <Image src={getAvatarUrl()!} alt="Avatar" width={64} height={64} className="rounded-full object-cover" />
+                  ) : (
+                    <PiUser size={32} className="text-white" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="font-semibold text-lg">{user?.firstName} {user?.lastName}</h3>
+                  <p className="text-white/70 text-sm truncate max-w-[200px]">{user?.email}</p>
+                </div>
+              </div>
+            </div>
+
+            <nav className="p-4">
+              <ul className="space-y-1">
+                {menuItems.map((item) => {
+                  const isActive = activeTab === item.id;
+                  const iconColors: Record<string, string> = {
+                    dashboard: 'text-blue-600',
+                    orders: 'text-purple-600',
+                    addresses: 'text-orange-600',
+                    settings: 'text-emerald-600',
+                    password: 'text-red-600',
+                  };
+                  return (
+                    <li key={item.id}>
+                      <Link
+                        href={`/my-account/${item.id === 'dashboard' ? '' : item.id}`}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+                          isActive
+                            ? 'bg-gray-900 text-white shadow-lg'
+                            : 'text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                          isActive ? 'bg-white/20' : 'bg-gray-100'
+                        }`}>
+                          <item.icon size={20} className={isActive ? 'text-white' : iconColors[item.id] || 'text-gray-500'} />
+                        </div>
+                        <span className="font-medium">{item.label}</span>
+                        {item.id === 'addresses' && addresses.length > 0 && (
+                          <span className="ml-auto bg-orange-100 text-orange-700 text-xs px-2 py-0.5 rounded-full">
+                            {addresses.length}
+                          </span>
+                        )}
+                        {item.id === 'orders' && orders.length > 0 && (
+                          <span className="ml-auto bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full">
+                            {orders.length}
+                          </span>
+                        )}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <div className="mt-6 pt-6 border-t border-gray-100">
+                <button
+                  onClick={() => {
+                    localStorage.removeItem('token');
+                    sessionStorage.removeItem('token');
+                    router.push('/login');
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  <PiSignOut size={20} />
+                  <span className="font-medium">Logout</span>
+                </button>
+              </div>
+            </nav>
+          </div>
+        </div>
+
+        <div className="lg:w-3/4">
+          {activeTab === 'dashboard' && (
+            <div className="space-y-6">
+              <h1 className="text-2xl font-bold text-gray-900">Welcome back, {user?.firstName || 'User'}!</h1>
+              
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-gray-500 text-sm">Total Orders</p>
+                      <p className="text-3xl font-bold text-gray-900 mt-1">{orders.length}</p>
+                    </div>
+                    <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center">
+                      <PiPackage size={24} className="text-blue-600" />
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-gray-500 text-sm">Pending</p>
+                      <p className="text-3xl font-bold text-yellow-600 mt-1">
+                        {orders.filter(o => o.status === 'pending').length}
+                      </p>
+                    </div>
+                    <div className="w-12 h-12 rounded-full bg-yellow-50 flex items-center justify-center">
+                      <PiClock size={24} className="text-yellow-600" />
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-gray-500 text-sm">Processing</p>
+                      <p className="text-3xl font-bold text-blue-600 mt-1">
+                        {orders.filter(o => o.status === 'processing').length}
+                      </p>
+                    </div>
+                    <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center">
+                      <PiTruck size={24} className="text-blue-600" />
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-gray-500 text-sm">Completed</p>
+                      <p className="text-3xl font-bold text-green-600 mt-1">
+                        {orders.filter(o => o.status === 'delivered').length}
+                      </p>
+                    </div>
+                    <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center">
+                      <PiCheckCircle size={24} className="text-green-600" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100">
+                <div className="flex items-center justify-between p-6 border-b border-gray-100">
+                  <h2 className="text-lg font-semibold text-gray-900">Recent Orders</h2>
+                  <Link
+                    href="/my-account/orders"
+                    className="text-gray-600 hover:text-gray-900 text-sm font-medium flex items-center gap-1"
+                  >
+                    View All <PiArrowRight size={16} />
+                  </Link>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {orders.slice(0, 3).map((order) => (
+                    <div key={order._id} className="p-6 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                      <div className="flex items-center gap-4">
+                        <div className="w-16 h-16 rounded-xl bg-gray-100 overflow-hidden">
+                          {order.items[0]?.product?.images?.[0]?.url ? (
+                            <Image
+                              src={order.items[0].product.images[0].url}
+                              alt={order.items[0].product.name}
+                              width={64}
+                              height={64}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <PiImage size={24} className="text-gray-400" />
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-900">{order.orderNumber}</p>
+                          <p className="text-sm text-gray-500">{order.items.length} item(s)</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-6">
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(order.status)}`}>
+                          {formatStatus(order.status)}
+                        </span>
+                        <p className="font-bold text-gray-900">₦{order.totalAmount.toLocaleString()}</p>
+                      </div>
+                    </div>
+                  ))}
+                  {orders.length === 0 && (
+                    <div className="p-12 text-center">
+                      <PiShoppingCart size={48} className="mx-auto text-gray-300 mb-4" />
+                      <p className="text-gray-500">No orders yet</p>
+                      <Link href="/shop" className="inline-block mt-4 px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800">
+                        Start Shopping
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'orders' && (
+            <div className="space-y-6">
+              <h1 className="text-2xl font-bold text-gray-900">My Orders</h1>
+              
+              {loading ? (
+                <div className="flex justify-center py-12">
+                  <div className="animate-spin w-12 h-12 border-4 border-gray-200 border-t-gray-900 rounded-full"></div>
+                </div>
+              ) : orders.length === 0 ? (
+                <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
+                  <PiShoppingCart size={64} className="mx-auto text-gray-300 mb-4" />
+                  <h2 className="text-xl font-semibold text-gray-900 mb-2">No Orders Yet</h2>
+                  <p className="text-gray-500 mb-6">You haven't placed any orders yet.</p>
+                  <Link href="/shop" className="inline-block px-8 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors">
+                    Start Shopping
+                  </Link>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {orders.map((order) => (
+                    <div key={order._id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                      <div className="p-6 flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 bg-gray-50">
+                        <div className="flex flex-wrap items-center gap-6">
+                          <div>
+                            <p className="text-sm text-gray-500">Order Number</p>
+                            <p className="font-semibold text-gray-900">{order.orderNumber}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-500">Date</p>
+                            <p className="font-medium text-gray-900">{new Date(order.placedAt).toLocaleDateString()}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-500">Total</p>
+                            <p className="font-semibold text-gray-900">₦{order.totalAmount.toLocaleString()}</p>
+                          </div>
+                        </div>
+                        <span className={`px-4 py-2 rounded-full text-sm font-semibold ${getStatusColor(order.status)}`}>
+                          {formatStatus(order.status)}
+                        </span>
+                      </div>
+                      <div className="p-6">
+                        <div className="flex flex-wrap gap-4">
+                          {order.items.slice(0, 4).map((item, idx) => (
+                            <div key={idx} className="w-20 h-20 rounded-xl bg-gray-100 overflow-hidden">
+                              {item.product?.images?.[0] ? (
+                                <Image
+                                  src={item.product.images[0].url || item.product.images[0]}
+                                  alt={item.product.name}
+                                  width={80}
+                                  height={80}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <PiImage size={20} className="text-gray-400" />
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                          {order.items.length > 4 && (
+                            <div className="w-20 h-20 rounded-xl bg-gray-100 flex items-center justify-center">
+                              <span className="text-sm text-gray-500">+{order.items.length - 4}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between">
+                          <Link
+                            href={`/order-tracking?orderId=${order._id}`}
+                            className="text-gray-600 hover:text-gray-900 text-sm font-medium flex items-center gap-1"
+                          >
+                            <PiTruck size={16} /> Track Order
+                          </Link>
+                          <Link
+                            href={`/order-confirmation?orderId=${order._id}`}
+                            className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
+                          >
+                            View Details
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'addresses' && (
+            <AddressesSection
+              addresses={addresses}
+              onAddAddress={() => {
+                resetAddressForm();
+                setShowAddressModal(true);
+              }}
+              onEditAddress={openEditModal}
+              onDeleteAddress={handleDeleteAddress}
+              onSetDefault={handleSetDefault}
+            />
+          )}
+
+          {activeTab === 'settings' && (
+            <div className="space-y-6">
+              <h1 className="text-2xl font-bold text-gray-900">Account Settings</h1>
+
+              {user && !user.isEmailVerified && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center flex-shrink-0">
+                      <PiEnvelope className="text-yellow-600" size={20} />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-yellow-800">Email Not Verified</h3>
+                      <p className="text-sm text-yellow-700 mt-1">
+                        Please verify your email to receive order confirmations and updates.
+                      </p>
+                      {resendVerificationMessage && (
+                        <p className={`text-sm mt-2 ${resendVerificationMessage.includes('sent') ? 'text-green-600' : 'text-red-600'}`}>
+                          {resendVerificationMessage}
+                        </p>
+                      )}
+                      <button
+                        onClick={handleResendVerification}
+                        disabled={resendVerificationLoading}
+                        className="mt-3 px-4 py-2 bg-yellow-600 text-white text-sm rounded-lg hover:bg-yellow-700 transition-colors disabled:opacity-50"
+                      >
+                        {resendVerificationLoading ? 'Sending...' : 'Resend Verification Email'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {user && user.isEmailVerified && (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                      <PiCheckCircleIcon className="text-green-600" size={20} />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-green-800">Email Verified</h3>
+                      <p className="text-sm text-green-700">{user.email}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-6">Profile Information</h2>
+                {settingsError && (
+                  <div className="mb-4 p-4 bg-red-50 text-red-600 rounded-lg text-sm">
+                    {settingsError}
+                  </div>
+                )}
+                {settingsSuccess && (
+                  <div className="mb-4 p-4 bg-green-50 text-green-600 rounded-lg text-sm">
+                    {settingsSuccess}
+                  </div>
+                )}
+                <form onSubmit={handleSettingsSubmit} className="space-y-4">
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">First Name</label>
+                      <input
+                        type="text"
+                        value={profileForm.firstName}
+                        onChange={(e) => setProfileForm({ ...profileForm, firstName: e.target.value })}
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Last Name</label>
+                      <input
+                        type="text"
+                        value={profileForm.lastName}
+                        onChange={(e) => setProfileForm({ ...profileForm, lastName: e.target.value })}
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                    <input
+                      type="email"
+                      value={profileForm.email}
+                      onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                    <input
+                      type="tel"
+                      value={profileForm.phoneNumber}
+                      onChange={(e) => setProfileForm({ ...profileForm, phoneNumber: e.target.value })}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900"
+                    />
+                  </div>
+                  <button type="submit" disabled={settingsLoading} className="px-6 py-3 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-50">
+                    {settingsLoading ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'password' && (
+            <div className="space-y-6">
+              <h1 className="text-2xl font-bold text-gray-900">Change Password</h1>
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                {passwordError && (
+                  <div className="mb-4 p-4 bg-red-50 text-red-600 rounded-lg text-sm">
+                    {passwordError}
+                  </div>
+                )}
+                {passwordSuccess && (
+                  <div className="mb-4 p-4 bg-green-50 text-green-600 rounded-lg text-sm">
+                    {passwordSuccess}
+                  </div>
+                )}
+                <form onSubmit={handlePasswordSubmit} className="space-y-4 max-w-md">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Current Password</label>
+                    <input
+                      type="password"
+                      value={passwordForm.currentPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">New Password</label>
+                    <input
+                      type="password"
+                      value={passwordForm.newPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900"
+                      required
+                      minLength={8}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Minimum 8 characters with uppercase, lowercase, number and special character</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Confirm New Password</label>
+                    <input
+                      type="password"
+                      value={passwordForm.confirmPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900"
+                      required
+                    />
+                  </div>
+                  <button type="submit" disabled={passwordLoading} className="px-6 py-3 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-50">
+                    {passwordLoading ? 'Updating...' : 'Update Password'}
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default MyAccount;
