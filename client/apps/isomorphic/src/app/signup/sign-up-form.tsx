@@ -800,7 +800,7 @@ function VerificationStep({
         transition={{ delay: 0.9 }}
       >
         <div className="text-gray-600 mb-2">
-          Didn't receive the code?
+          Did not receive the code?
         </div>
         
         <AnimatePresence mode="wait">

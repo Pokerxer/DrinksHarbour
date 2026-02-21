@@ -443,7 +443,7 @@ export default function CreateEditProduct({
 
   return (
     <>
-      <style jsx>{`
+      <style>{`
         .scrollbar-hide::-webkit-scrollbar {
           display: none;
         }

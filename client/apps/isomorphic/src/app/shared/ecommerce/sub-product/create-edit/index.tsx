@@ -429,7 +429,7 @@ export default function CreateEditSubProduct({
 
   return (
     <>
-      <style jsx>{`
+      <style>{`
         .scrollbar-hide::-webkit-scrollbar {
           display: none;
         }

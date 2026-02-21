@@ -2,6 +2,7 @@
 'use client';
 
 import { useState } from 'react';
+import { FormProvider } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import { Element } from 'react-scroll';
 import { zodResolver } from '@hookform/resolvers/zod';
