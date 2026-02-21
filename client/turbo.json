@@ -4,7 +4,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**"],
+      "outputs": ["apps/isomorphic/.next/**", "!.next/cache/**"],
       "env": [
         "NEXTAUTH_SECRET",
         "NEXTAUTH_URL",
