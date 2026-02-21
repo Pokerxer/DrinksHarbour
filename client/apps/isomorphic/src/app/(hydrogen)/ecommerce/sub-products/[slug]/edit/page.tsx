@@ -1,5 +1,4 @@
 // @ts-nocheck
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import SubProductCreateEdit from '@/app/shared/ecommerce/sub-product/create-edit';
 
 export default async function EditSubProductPage({ params }: { params: Promise<{ slug: string }> }) {

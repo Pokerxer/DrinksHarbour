@@ -1,5 +1,4 @@
 // @ts-nocheck
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import CreateEditProduct from '@/app/shared/ecommerce/product/create-edit';
 
 export default async function EditProductPage({ params }: { params: Promise<{ slug: string }> }) {
