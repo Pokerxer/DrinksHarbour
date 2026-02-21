@@ -534,7 +534,7 @@ export default function SignInForm() {
           >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </motion.svg>
-          <span><strong>Demo:</strong> admin@admin.com / admin</span>
+          <span><strong>Demo:</strong> admin@drinksharbour.com / Admin@123!SecurePassword</span>
         </p>
       </motion.div>
     </motion.div>

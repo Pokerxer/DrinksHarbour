@@ -597,6 +597,8 @@ function SizeVariantRow({
                 type="number"
                 min="0"
                 placeholder="0"
+                value={field.value ?? ''}
+                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             )}
@@ -617,6 +619,8 @@ function SizeVariantRow({
                 type="number"
                 min="0"
                 placeholder="0"
+                value={field.value ?? ''}
+                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             )}
@@ -637,6 +641,8 @@ function SizeVariantRow({
                 type="number"
                 min="1"
                 placeholder="1"
+                value={field.value ?? ''}
+                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)}
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             )}
@@ -748,6 +754,8 @@ function SizeVariantRow({
                 step="0.01"
                 min="0"
                 placeholder="0.00"
+                value={field.value ?? ''}
+                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             )}
@@ -809,6 +817,8 @@ function SizeVariantRow({
                 step="0.01"
                 min="0"
                 placeholder="0.00"
+                value={field.value ?? ''}
+                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             )}
@@ -829,6 +839,8 @@ function SizeVariantRow({
                 type="number"
                 min="0"
                 placeholder="0"
+                value={field.value ?? 0}
+                onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 0)}
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             )}
@@ -918,6 +930,8 @@ function SizeVariantRow({
                     type="number"
                     min="1"
                     placeholder="1"
+                    value={field.value ?? 1}
+                    onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 1)}
                     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 )}
@@ -938,6 +952,8 @@ function SizeVariantRow({
                     type="number"
                     min="0"
                     placeholder="10"
+                    value={field.value ?? 10}
+                    onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 0)}
                     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 )}
@@ -958,6 +974,8 @@ function SizeVariantRow({
                     type="number"
                     min="0"
                     placeholder="5"
+                    value={field.value ?? 5}
+                    onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 0)}
                     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 )}
@@ -978,6 +996,8 @@ function SizeVariantRow({
                     type="number"
                     min="1"
                     placeholder="50"
+                    value={field.value ?? 50}
+                    onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 1)}
                     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 )}
@@ -998,6 +1018,8 @@ function SizeVariantRow({
                     type="number"
                     min="1"
                     placeholder={String(index + 1)}
+                    value={field.value ?? ''}
+                    onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)}
                     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 )}
@@ -1065,6 +1087,8 @@ function SizeVariantRow({
                     type="number"
                     min="1"
                     placeholder="1"
+                    value={field.value ?? ''}
+                    onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)}
                     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 )}
@@ -1085,6 +1109,8 @@ function SizeVariantRow({
                     type="number"
                     min="1"
                     placeholder="No limit"
+                    value={field.value ?? ''}
+                    onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)}
                     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 )}

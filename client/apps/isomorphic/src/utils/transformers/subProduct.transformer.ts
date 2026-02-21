@@ -89,10 +89,21 @@ export interface SubProductFormData {
   supplierPrice?: number | null;
   leadTimeDays?: number | null;
   minimumOrderQuantity?: number | null;
+  estimatedShippingCost?: number | null;
+  supplierRating?: number | null;
+  vendorNotes?: string;
+  vendorContactName?: string;
+  vendorPhone?: string;
+  vendorEmail?: string;
+  vendorWebsite?: string;
+  vendorAddress?: string;
   status?: string;
   isFeaturedByTenant?: boolean;
   isNewArrival?: boolean;
   isBestSeller?: boolean;
+  isPublished?: boolean;
+  visibleInPOS?: boolean;
+  visibleInOnlineStore?: boolean;
   activatedAt?: string | null;
   deactivatedAt?: string | null;
   discontinuedAt?: string | null;
@@ -122,6 +133,15 @@ export interface SubProductFormData {
     requiresAgeVerification?: boolean;
     hazmat?: boolean;
     shippingClass?: string;
+    carrier?: string;
+    deliveryArea?: string;
+    minDeliveryDays?: number | null;
+    maxDeliveryDays?: number | null;
+    fixedShippingCost?: number | null;
+    isFreeShipping?: boolean;
+    freeShippingMinOrder?: number | null;
+    freeShippingLabel?: string;
+    availableForPickup?: boolean;
   };
   warehouse?: {
     location?: string;
@@ -130,143 +150,13 @@ export interface SubProductFormData {
     shelf?: string;
     bin?: string;
   };
+  // Product creation flags for "create new product" workflow
+  createNewProduct?: boolean;
+  newProductData?: Record<string, any> | null;
 }
 
-export interface ProductFormData {
-  name: string;
-  slug?: string;
-  sku?: string;
-  barcode?: string;
-  gtin?: string;
-  upc?: string;
-  type: string;
-  subType?: string;
-  isAlcoholic?: boolean;
-  abv?: number | null;
-  proof?: number | null;
-  volumeMl?: number | null;
-  standardSizes?: string[];
-  servingSize?: string;
-  servingsPerContainer?: number | null;
-  originCountry?: string;
-  region?: string;
-  appellation?: string;
-  producer?: string;
-  brand?: string;
-  vintage?: number | null;
-  age?: number | null;
-  ageStatement?: string;
-  distilleryName?: string;
-  breweryName?: string;
-  wineryName?: string;
-  productionMethod?: string;
-  caskType?: string;
-  finish?: string;
-  category?: string;
-  subCategory?: string;
-  tags?: string[];
-  flavors?: string[];
-  style?: string;
-  shortDescription?: string;
-  description?: string;
-  tastingNotes?: {
-    nose?: string[];
-    aroma?: string[];
-    palate?: string[];
-    taste?: string[];
-    finish?: string[];
-    mouthfeel?: string[];
-    appearance?: string;
-    color?: string;
-  };
-  flavorProfile?: string[];
-  foodPairings?: string[];
-  servingSuggestions?: {
-    temperature?: string;
-    glassware?: string;
-    garnish?: string[];
-    mixers?: string[];
-  };
-  isDietary?: {
-    vegan?: boolean;
-    vegetarian?: boolean;
-    glutenFree?: boolean;
-    dairyFree?: boolean;
-    organic?: boolean;
-    kosher?: boolean;
-    halal?: boolean;
-    sugarFree?: boolean;
-    lowCalorie?: boolean;
-    lowCarb?: boolean;
-  };
-  allergens?: string[];
-  ingredients?: string[];
-  nutritionalInfo?: {
-    calories?: number | null;
-    carbohydrates?: number | null;
-    sugar?: number | null;
-    protein?: number | null;
-    fat?: number | null;
-    sodium?: number | null;
-    caffeine?: number | null;
-  };
-  certifications?: Array<{
-    name?: string;
-    issuedBy?: string;
-    year?: number | null;
-  }>;
-  awards?: Array<{
-    title?: string;
-    organization?: string;
-    year?: number | null;
-    medal?: string;
-    score?: number | null;
-  }>;
-  ratings?: {
-    wineSpectator?: number | null;
-    robertParker?: number | null;
-    jamesSuckling?: number | null;
-    decanter?: number | null;
-    whiskyAdvocate?: number | null;
-    jimMurray?: number | null;
-    untappd?: number | null;
-  };
-  averageRating?: number;
-  reviewCount?: number;
-  images?: Array<{
-    url: string;
-    alt?: string;
-    isPrimary?: boolean;
-    order?: number;
-  }>;
-  uploadedImages?: Array<{
-    url?: string;
-    publicId?: string;
-    thumbnail?: string;
-    isPrimary?: boolean;
-  }>;
-  videos?: Array<{
-    url?: string;
-    type?: string;
-    thumbnail?: string;
-    title?: string;
-  }>;
-  relatedProducts?: string[];
-  externalLinks?: Array<{
-    name?: string;
-    url?: string;
-    type?: string;
-  }>;
-  metaTitle?: string;
-  metaDescription?: string;
-  metaKeywords?: string[];
-  canonicalUrl?: string;
-  isFeatured?: boolean;
-  allowReviews?: boolean;
-  requiresAgeVerification?: boolean;
-  isPublished?: boolean;
-  publishedAt?: string | null;
-  discontinuedAt?: string | null;
+// Form data structure matching the schema: { subProductData: { ... } }
+export interface SubProductFormInput {
   subProductData: SubProductFormData;
 }
 
@@ -317,177 +207,145 @@ const transformSize = (size: SizeFormData): SizeFormData => ({
   reservedStock: toNumber(size.reservedStock) ?? 0,
 });
 
-export const transformFormData = (data: ProductFormData) => {
-  const slug = data.slug || data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  const proof = data.isAlcoholic && data.abv ? data.abv * 2 : undefined;
-  const subProductStatus = data.isPublished ? 'active' : 'draft';
-  const activatedAt = data.isPublished ? new Date().toISOString() : null;
-
-  const sp = data.subProductData;
+export const transformFormData = (data: SubProductFormInput) => {
+  // Direct access to subProductData - form structure is { subProductData: { ... } }
+  const sp = data.subProductData || {};
+  
+  // Get product name from newProductData if creating new product
+  const name = sp.newProductData?.name || '';
+  const slug = name ? name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') : '';
+  const subProductStatus = sp.isPublished ? 'active' : 'draft';
+  const activatedAt = sp.isPublished ? new Date().toISOString() : null;
 
   const subProductData: SubProductFormData = {
-    product: sp?.product || '',
-    createNewProduct: sp?.createNewProduct || false,
-    newProductData: sp?.newProductData || null,
-    tenant: sp?.tenant || '',
-    sku: sp?.sku || '',
-    baseSellingPrice: toNumber(sp?.baseSellingPrice),
-    costPrice: toNumber(sp?.costPrice),
-    currency: sp?.currency || 'NGN',
-    taxRate: toNumber(sp?.taxRate) ?? 0,
-    marginPercentage: toNumber(sp?.marginPercentage),
-    markupPercentage: sp?.markupPercentage ?? 25,
-    roundUp: sp?.roundUp || 'none',
-    saleDiscountPercentage: toNumber(sp?.saleDiscountPercentage) ?? 0,
-    salePrice: toNumber(sp?.salePrice),
-    saleStartDate: cleanDate(sp?.saleStartDate),
-    saleEndDate: cleanDate(sp?.saleEndDate),
-    saleType: sp?.saleType,
-    saleDiscountValue: toNumber(sp?.saleDiscountValue),
-    saleBanner: sp?.saleBanner || { url: '', alt: '' },
-    isOnSale: extractValue(sp?.isOnSale) ?? false,
-    shortDescriptionOverride: sp?.shortDescriptionOverride || '',
-    descriptionOverride: sp?.descriptionOverride || '',
-    imagesOverride: sp?.imagesOverride || [],
-    customKeywords: sp?.customKeywords || [],
-    embeddingOverride: sp?.embeddingOverride || [],
-    tenantNotes: sp?.tenantNotes || '',
-    sizes: (sp?.sizes || []).map(transformSize),
-    sellWithoutSizeVariants: sp?.sellWithoutSizeVariants ?? false,
-    defaultSize: sp?.defaultSize,
-    stockStatus: sp?.stockStatus || 'in_stock',
-    totalStock: toNumber(sp?.totalStock) ?? 0,
-    reservedStock: toNumber(sp?.reservedStock) ?? 0,
-    availableStock: toNumber(sp?.availableStock) ?? 0,
-    lowStockThreshold: toNumber(sp?.lowStockThreshold) ?? 10,
-    reorderPoint: toNumber(sp?.reorderPoint) ?? 5,
-    reorderQuantity: toNumber(sp?.reorderQuantity) ?? 50,
-    lastRestockDate: cleanDate(sp?.lastRestockDate),
-    nextRestockDate: cleanDate(sp?.nextRestockDate),
-    vendor: sp?.vendor || '',
-    supplierSKU: sp?.supplierSKU || '',
-    supplierPrice: toNumber(sp?.supplierPrice),
-    leadTimeDays: toNumber(sp?.leadTimeDays),
-    minimumOrderQuantity: toNumber(sp?.minimumOrderQuantity),
+    product: sp.product || '',
+    createNewProduct: sp.createNewProduct ?? false,
+    newProductData: sp.newProductData || null,
+    tenant: sp.tenant || '',
+    sku: sp.sku || '',
+    baseSellingPrice: toNumber(sp.baseSellingPrice),
+    costPrice: toNumber(sp.costPrice),
+    currency: sp.currency || 'NGN',
+    taxRate: toNumber(sp.taxRate) ?? 0,
+    marginPercentage: toNumber(sp.marginPercentage),
+    markupPercentage: sp.markupPercentage ?? 25,
+    roundUp: sp.roundUp || 'none',
+    saleDiscountPercentage: toNumber(sp.saleDiscountPercentage) ?? 0,
+    salePrice: toNumber(sp.salePrice),
+    saleStartDate: cleanDate(sp.saleStartDate),
+    saleEndDate: cleanDate(sp.saleEndDate),
+    saleType: sp.saleType,
+    saleDiscountValue: toNumber(sp.saleDiscountValue),
+    saleBanner: sp.saleBanner || { url: '', alt: '' },
+    isOnSale: extractValue(sp.isOnSale) ?? false,
+    shortDescriptionOverride: sp.shortDescriptionOverride || '',
+    descriptionOverride: sp.descriptionOverride || '',
+    imagesOverride: sp.imagesOverride || [],
+    customKeywords: sp.customKeywords || [],
+    embeddingOverride: sp.embeddingOverride || [],
+    tenantNotes: sp.tenantNotes || '',
+    sizes: (sp.sizes || []).map(transformSize),
+    sellWithoutSizeVariants: sp.sellWithoutSizeVariants ?? false,
+    defaultSize: sp.defaultSize,
+    stockStatus: sp.stockStatus || 'in_stock',
+    totalStock: toNumber(sp.totalStock) ?? 0,
+    reservedStock: toNumber(sp.reservedStock) ?? 0,
+    availableStock: toNumber(sp.availableStock) ?? 0,
+    lowStockThreshold: toNumber(sp.lowStockThreshold) ?? 10,
+    reorderPoint: toNumber(sp.reorderPoint) ?? 5,
+    reorderQuantity: toNumber(sp.reorderQuantity) ?? 50,
+    lastRestockDate: cleanDate(sp.lastRestockDate),
+    nextRestockDate: cleanDate(sp.nextRestockDate),
+    vendor: sp.vendor || '',
+    supplierSKU: sp.supplierSKU || '',
+    supplierPrice: toNumber(sp.supplierPrice),
+    leadTimeDays: toNumber(sp.leadTimeDays),
+    minimumOrderQuantity: toNumber(sp.minimumOrderQuantity),
+    estimatedShippingCost: toNumber(sp.estimatedShippingCost),
+    supplierRating: toNumber(sp.supplierRating),
+    vendorNotes: sp.vendorNotes || '',
+    vendorContactName: sp.vendorContactName || '',
+    vendorPhone: sp.vendorPhone || '',
+    vendorEmail: sp.vendorEmail || '',
+    vendorWebsite: sp.vendorWebsite || '',
+    vendorAddress: sp.vendorAddress || '',
     status: subProductStatus,
-    isFeaturedByTenant: sp?.isFeaturedByTenant ?? false,
-    isNewArrival: sp?.isNewArrival ?? false,
-    isBestSeller: sp?.isBestSeller ?? false,
-    activatedAt: sp?.activatedAt ? cleanDate(sp.activatedAt) : activatedAt,
-    deactivatedAt: cleanDate(sp?.deactivatedAt),
-    discontinuedAt: cleanDate(sp?.discontinuedAt),
-    discount: toNumber(sp?.discount) ?? 0,
-    discountType: sp?.discountType,
-    discountStart: cleanDate(sp?.discountStart),
-    discountEnd: cleanDate(sp?.discountEnd),
-    flashSale: sp?.flashSale || {
+    isFeaturedByTenant: sp.isFeaturedByTenant ?? false,
+    isNewArrival: sp.isNewArrival ?? false,
+    isBestSeller: sp.isBestSeller ?? false,
+    isPublished: sp.isPublished ?? false,
+    visibleInPOS: sp.visibleInPOS ?? true,
+    visibleInOnlineStore: sp.visibleInOnlineStore ?? true,
+    activatedAt: sp.activatedAt ? cleanDate(sp.activatedAt) : activatedAt,
+    deactivatedAt: cleanDate(sp.deactivatedAt),
+    discontinuedAt: cleanDate(sp.discontinuedAt),
+    discount: toNumber(sp.discount) ?? 0,
+    discountType: sp.discountType,
+    discountStart: cleanDate(sp.discountStart),
+    discountEnd: cleanDate(sp.discountEnd),
+    flashSale: sp.flashSale || {
       isActive: false,
       startDate: null,
       endDate: null,
       discountPercentage: null,
       remainingQuantity: null,
     },
-    bundleDeals: sp?.bundleDeals || [],
+    bundleDeals: sp.bundleDeals || [],
     shipping: {
-      weight: toNumber(sp?.shipping?.weight),
-      length: toNumber(sp?.shipping?.length),
-      width: toNumber(sp?.shipping?.width),
-      height: toNumber(sp?.shipping?.height),
-      fragile: sp?.shipping?.fragile ?? true,
-      requiresAgeVerification: sp?.shipping?.requiresAgeVerification ?? true,
-      hazmat: sp?.shipping?.hazmat ?? false,
-      shippingClass: sp?.shipping?.shippingClass || '',
+      weight: toNumber(sp.shipping?.weight),
+      length: toNumber(sp.shipping?.length),
+      width: toNumber(sp.shipping?.width),
+      height: toNumber(sp.shipping?.height),
+      fragile: sp.shipping?.fragile ?? true,
+      requiresAgeVerification: sp.shipping?.requiresAgeVerification ?? true,
+      hazmat: sp.shipping?.hazmat ?? false,
+      shippingClass: sp.shipping?.shippingClass || '',
+      carrier: sp.shipping?.carrier || '',
+      deliveryArea: sp.shipping?.deliveryArea || '',
+      minDeliveryDays: toNumber(sp.shipping?.minDeliveryDays),
+      maxDeliveryDays: toNumber(sp.shipping?.maxDeliveryDays),
+      fixedShippingCost: toNumber(sp.shipping?.fixedShippingCost),
+      isFreeShipping: sp.shipping?.isFreeShipping ?? false,
+      freeShippingMinOrder: toNumber(sp.shipping?.freeShippingMinOrder),
+      freeShippingLabel: sp.shipping?.freeShippingLabel || '',
+      availableForPickup: sp.shipping?.availableForPickup ?? false,
     },
     warehouse: {
-      location: sp?.warehouse?.location || '',
-      zone: sp?.warehouse?.zone || '',
-      aisle: sp?.warehouse?.aisle || '',
-      shelf: sp?.warehouse?.shelf || '',
-      bin: sp?.warehouse?.bin || '',
+      location: sp.warehouse?.location || '',
+      zone: sp.warehouse?.zone || '',
+      aisle: sp.warehouse?.aisle || '',
+      shelf: sp.warehouse?.shelf || '',
+      bin: sp.warehouse?.bin || '',
     },
   };
 
-  return {
-    name: data.name,
-    slug,
-    sku: data.sku,
-    barcode: data.barcode,
-    gtin: data.gtin,
-    upc: data.upc,
-    type: data.type,
-    subType: data.subType,
-    isAlcoholic: data.isAlcoholic,
-    abv: data.abv,
-    proof,
-    volumeMl: data.volumeMl,
-    standardSizes: data.standardSizes,
-    servingSize: data.servingSize,
-    servingsPerContainer: data.servingsPerContainer,
-    originCountry: data.originCountry,
-    region: data.region,
-    appellation: data.appellation,
-    producer: data.producer,
-    brand: data.brand,
-    vintage: data.vintage,
-    age: data.age,
-    ageStatement: data.ageStatement,
-    distilleryName: data.distilleryName,
-    breweryName: data.breweryName,
-    wineryName: data.wineryName,
-    productionMethod: data.productionMethod,
-    caskType: data.caskType,
-    finish: data.finish,
-    category: data.category,
-    subCategory: data.subCategory,
-    tags: data.tags,
-    flavors: data.flavors,
-    style: data.style,
-    shortDescription: data.shortDescription,
-    description: data.description,
-    tastingNotes: data.tastingNotes,
-    flavorProfile: data.flavorProfile?.map((fp: string) => fp.toLowerCase().replace(/\s+/g, '_')),
-    foodPairings: data.foodPairings,
-    servingSuggestions: data.servingSuggestions,
-    isDietary: data.isDietary,
-    allergens: data.allergens,
-    ingredients: data.ingredients,
-    nutritionalInfo: data.nutritionalInfo,
-    images: data.uploadedImages?.map((img, index) => ({
-      url: img.url,
-      alt: `\${data.name} - Image \${index + 1}`,
-      isPrimary: img.isPrimary || index === 0,
-      order: index,
-    })) || data.images || [],
-    videos: data.videos,
-    metaTitle: data.metaTitle || data.name,
-    metaDescription: data.metaDescription || data.shortDescription,
-    metaKeywords: data.metaKeywords,
-    canonicalUrl: data.canonicalUrl,
-    isFeatured: data.isFeatured,
-    allowReviews: data.allowReviews,
-    requiresAgeVerification: data.isAlcoholic === true ? true : data.requiresAgeVerification,
-    subProductData,
-  };
+  // Return the subProductData ready for the server
+  // If creating a new product, include the newProductData
+  return subProductData;
 };
 
-export const validateRequiredFields = (data: ProductFormData): string[] => {
+export const validateRequiredFields = (data: SubProductFormInput): string[] => {
   const missing: string[] = [];
-  const sp = data.subProductData;
+  const sp = data.subProductData || {};
 
   // Check product - either existing product OR new product being created
-  const hasProduct = sp?.product || 
-    (sp?.createNewProduct === true && sp?.newProductData?.name && sp?.newProductData?.type);
+  const productId = sp.product;
+  const createNew = sp.createNewProduct;
+  const newProductData = sp.newProductData;
+  const hasProduct = productId || 
+    (createNew === true && newProductData?.name && newProductData?.type);
   
   if (!hasProduct) missing.push('Product');
   
-  // Cost price is always required
-  if (!sp?.costPrice || sp.costPrice <= 0) missing.push('Cost Price');
+  // Cost price is optional when creating new product
+  const costPrice = toNumber(sp.costPrice);
+  if (!createNew && (!costPrice || costPrice <= 0)) missing.push('Cost Price');
 
   return missing;
 };
 
 // Transform backend response to form data format for editing
-export const transformBackendToForm = (backendData: any): ProductFormData => {
+export const transformBackendToForm = (backendData: any): SubProductFormInput => {
   const sp = backendData;
   const product = sp.product || {};
 
@@ -526,26 +384,8 @@ export const transformBackendToForm = (backendData: any): ProductFormData => {
     rank: size.rank ?? 1,
   }));
 
+  // Return structure matching the form schema: { subProductData: { ... } }
   return {
-    name: product.name || '',
-    slug: product.slug || '',
-    type: product.type || '',
-    subType: product.subType || '',
-    isAlcoholic: product.isAlcoholic ?? true,
-    abv: product.abv ?? null,
-    proof: product.proof ?? null,
-    volumeMl: product.volumeMl ?? null,
-    originCountry: product.originCountry || '',
-    region: product.region || '',
-    producer: product.producer || '',
-    brand: product.brand?.name || product.brand || '',
-    category: product.category?.name || product.category || '',
-    subCategory: product.subCategory?.name || product.subCategory || '',
-    style: product.style || '',
-    vintage: product.vintage ?? null,
-    shortDescription: product.shortDescription || '',
-    description: product.description || '',
-    isPublished: sp.status === 'active',
     subProductData: {
       product: productId,
       createNewProduct: false,
@@ -558,7 +398,7 @@ export const transformBackendToForm = (backendData: any): ProductFormData => {
       marginPercentage: sp.marginPercentage ?? null,
       markupPercentage: sp.markupPercentage ?? 25,
       roundUp: sp.roundUp || 'none',
-      saleDiscountPercentage: sp.saleDiscountPercentage ?? 0,
+      saleDiscountPercentage: sp.inputSaleDiscountPercentage ?? sp.saleDiscountPercentage ?? 0,
       salePrice: sp.salePrice ?? null,
       saleStartDate: sp.saleStartDate ? new Date(sp.saleStartDate).toISOString().slice(0, 16) : null,
       saleEndDate: sp.saleEndDate ? new Date(sp.saleEndDate).toISOString().slice(0, 16) : null,
@@ -589,10 +429,21 @@ export const transformBackendToForm = (backendData: any): ProductFormData => {
       supplierPrice: sp.supplierPrice ?? null,
       leadTimeDays: sp.leadTimeDays ?? null,
       minimumOrderQuantity: sp.minimumOrderQuantity ?? null,
+      estimatedShippingCost: sp.estimatedShippingCost ?? null,
+      supplierRating: sp.supplierRating ?? null,
+      vendorNotes: sp.vendorNotes || '',
+      vendorContactName: sp.vendorContactName || '',
+      vendorPhone: sp.vendorPhone || '',
+      vendorEmail: sp.vendorEmail || '',
+      vendorWebsite: sp.vendorWebsite || '',
+      vendorAddress: sp.vendorAddress || '',
       status: sp.status || 'draft',
       isFeaturedByTenant: sp.isFeaturedByTenant ?? false,
       isNewArrival: sp.isNewArrival ?? false,
       isBestSeller: sp.isBestSeller ?? false,
+      isPublished: sp.isPublished ?? false,
+      visibleInPOS: sp.visibleInPOS ?? true,
+      visibleInOnlineStore: sp.visibleInOnlineStore ?? true,
       activatedAt: sp.activatedAt ? new Date(sp.activatedAt).toISOString().slice(0, 16) : null,
       deactivatedAt: sp.deactivatedAt ? new Date(sp.deactivatedAt).toISOString().slice(0, 16) : null,
       discontinuedAt: sp.discontinuedAt ? new Date(sp.discontinuedAt).toISOString().slice(0, 16) : null,
@@ -608,7 +459,25 @@ export const transformBackendToForm = (backendData: any): ProductFormData => {
         remainingQuantity: null,
       },
       bundleDeals: sp.bundleDeals || [],
-      shipping: sp.shipping || {
+      shipping: sp.shipping ? {
+        weight: sp.shipping.weight ?? null,
+        length: sp.shipping.length ?? null,
+        width: sp.shipping.width ?? null,
+        height: sp.shipping.height ?? null,
+        fragile: sp.shipping.fragile ?? true,
+        requiresAgeVerification: sp.shipping.requiresAgeVerification ?? true,
+        hazmat: sp.shipping.hazmat ?? false,
+        shippingClass: sp.shipping.shippingClass || '',
+        carrier: sp.shipping.carrier || '',
+        deliveryArea: sp.shipping.deliveryArea || '',
+        minDeliveryDays: sp.shipping.minDeliveryDays ?? null,
+        maxDeliveryDays: sp.shipping.maxDeliveryDays ?? null,
+        fixedShippingCost: sp.shipping.fixedShippingCost ?? null,
+        isFreeShipping: sp.shipping.isFreeShipping ?? false,
+        freeShippingMinOrder: sp.shipping.freeShippingMinOrder ?? null,
+        freeShippingLabel: sp.shipping.freeShippingLabel || '',
+        availableForPickup: sp.shipping.availableForPickup ?? false,
+      } : {
         weight: null,
         length: null,
         width: null,
@@ -617,6 +486,15 @@ export const transformBackendToForm = (backendData: any): ProductFormData => {
         requiresAgeVerification: true,
         hazmat: false,
         shippingClass: '',
+        carrier: '',
+        deliveryArea: '',
+        minDeliveryDays: null,
+        maxDeliveryDays: null,
+        fixedShippingCost: null,
+        isFreeShipping: false,
+        freeShippingMinOrder: null,
+        freeShippingLabel: '',
+        availableForPickup: false,
       },
       warehouse: sp.warehouse || {
         location: '',

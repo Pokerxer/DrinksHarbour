@@ -169,8 +169,6 @@ export function CreateNewProductForm({
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
   const [isLoadingSubCategories, setIsLoadingSubCategories] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [resolvedCategoryId, setResolvedCategoryId] = useState<string>('');
-  const [resolvedSubCategoryId, setResolvedSubCategoryId] = useState<string>('');
 
   const handleChange = (field: keyof NewProductFormData, fieldValue: string | boolean) => {
     onChange({
@@ -199,31 +197,10 @@ export function CreateNewProductForm({
     fetchCategories();
   }, [session]);
 
-  // Resolve category ID from name when categories are loaded (for edit mode)
-  useEffect(() => {
-    if (categories.length > 0 && formData.category) {
-      const matchedCategory = categories.find(c => c.name === formData.category);
-      if (matchedCategory) {
-        setResolvedCategoryId(matchedCategory._id);
-      }
-    }
-  }, [categories, formData.category]);
-
-  // Resolve subcategory ID from name when subcategories are loaded (for edit mode)
-  useEffect(() => {
-    if (subCategories.length > 0 && formData.subCategory) {
-      const matchedSubCategory = subCategories.find(s => s.name === formData.subCategory);
-      if (matchedSubCategory) {
-        setResolvedSubCategoryId(matchedSubCategory._id);
-      }
-    }
-  }, [subCategories, formData.subCategory]);
-
   // Fetch subcategories when category changes
   useEffect(() => {
     const fetchSubCategories = async () => {
-      const categoryIdToUse = resolvedCategoryId || formData.category;
-      if (!session?.user?.token || !categoryIdToUse) {
+      if (!session?.user?.token || !formData.category) {
         setSubCategories([]);
         return;
       }
@@ -232,7 +209,7 @@ export function CreateNewProductForm({
       try {
         const subCats = await categoryService.getSubCategories(
           session.user.token,
-          categoryIdToUse
+          formData.category
         );
         setSubCategories(Array.isArray(subCats) ? subCats : []);
       } catch (error) {
@@ -244,14 +221,66 @@ export function CreateNewProductForm({
     };
 
     fetchSubCategories();
-  }, [formData.category, resolvedCategoryId, session]);
+  }, [formData.category, session]);
 
   // Reset subcategory when category changes
   useEffect(() => {
     if (formData.category) {
       handleChange('subCategory', '');
     }
-  }, [formData.category, resolvedCategoryId]);
+  }, [formData.category]);
+
+  // Helper function to find category ID by name (case-insensitive, fuzzy match)
+  const findCategoryByName = useCallback((categoryName: string, categoriesList: Category[]): string | null => {
+    if (!categoryName || categoriesList.length === 0) return null;
+    
+    const normalizedName = categoryName.toLowerCase().trim();
+    
+    // Exact match first
+    const exactMatch = categoriesList.find(
+      cat => cat.name.toLowerCase().trim() === normalizedName
+    );
+    if (exactMatch) return exactMatch._id;
+    
+    // Partial match (contains)
+    const partialMatch = categoriesList.find(
+      cat => cat.name.toLowerCase().includes(normalizedName) || 
+             normalizedName.includes(cat.name.toLowerCase())
+    );
+    if (partialMatch) return partialMatch._id;
+    
+    // Fuzzy match by words
+    const words = normalizedName.split(/\s+/);
+    const fuzzyMatch = categoriesList.find(cat => {
+      const catWords = cat.name.toLowerCase().split(/\s+/);
+      return words.some(word => catWords.some(catWord => 
+        catWord.includes(word) || word.includes(catWord)
+      ));
+    });
+    
+    return fuzzyMatch?._id || null;
+  }, []);
+
+  // Helper function to find subcategory ID by name
+  const findSubCategoryByName = useCallback((subCategoryName: string, subCategoriesList: SubCategory[]): string | null => {
+    if (!subCategoryName || subCategoriesList.length === 0) return null;
+    
+    const normalizedName = subCategoryName.toLowerCase().trim();
+    
+    // Exact match first
+    const exactMatch = subCategoriesList.find(
+      sub => sub.name.toLowerCase().trim() === normalizedName
+    );
+    if (exactMatch) return exactMatch._id;
+    
+    // Partial match
+    const partialMatch = subCategoriesList.find(
+      sub => sub.name.toLowerCase().includes(normalizedName) || 
+             normalizedName.includes(sub.name.toLowerCase())
+    );
+    
+    return partialMatch?._id || null;
+  }, []);
 
   // AI Auto-fill handler
   const handleAutoFill = useCallback(async () => {
@@ -279,25 +308,48 @@ export function CreateNewProductForm({
 
       const data = response.data;
 
-      // Find matching category by name
+      // Find matching category by name with improved fuzzy matching
       let matchedCategoryId = formData.category;
       if (data.category) {
-        const matchedCategory = categories.find(
-          (cat) => cat.name.toLowerCase() === data.category.toLowerCase()
-        );
-        if (matchedCategory) {
-          matchedCategoryId = matchedCategory._id;
+        const foundCategoryId = findCategoryByName(data.category, categories);
+        if (foundCategoryId) {
+          matchedCategoryId = foundCategoryId;
+          console.log('Category matched:', data.category, '->', foundCategoryId);
+        } else {
+          console.log('Category not matched:', data.category, 'Available:', categories.map(c => c.name));
         }
       }
 
       // Find matching subcategory by name
+      // If category changed, we need to fetch subcategories for the new category first
       let matchedSubCategoryId = formData.subCategory;
       if (data.subCategory && matchedCategoryId) {
-        const matchedSub = subCategories.find(
-          (sub) => sub.name.toLowerCase() === data.subCategory.toLowerCase()
-        );
-        if (matchedSub) {
-          matchedSubCategoryId = matchedSub._id;
+        // If category changed from what we had, fetch new subcategories
+        if (matchedCategoryId !== formData.category) {
+          try {
+            const subCats = await categoryService.getSubCategories(session.user.token, matchedCategoryId);
+            const freshSubCategories = Array.isArray(subCats) ? subCats : [];
+            const foundSubCategoryId = findSubCategoryByName(data.subCategory, freshSubCategories);
+            if (foundSubCategoryId) {
+              matchedSubCategoryId = foundSubCategoryId;
+              console.log('SubCategory matched (fresh fetch):', data.subCategory, '->', foundSubCategoryId);
+            } else {
+              matchedSubCategoryId = ''; // Reset if not found
+              console.log('SubCategory not matched:', data.subCategory, 'Available:', freshSubCategories.map(s => s.name));
+            }
+          } catch (err) {
+            console.error('Failed to fetch subcategories for matching:', err);
+            matchedSubCategoryId = '';
+          }
+        } else {
+          // Category didn't change, use existing subcategories
+          const foundSubCategoryId = findSubCategoryByName(data.subCategory, subCategories);
+          if (foundSubCategoryId) {
+            matchedSubCategoryId = foundSubCategoryId;
+            console.log('SubCategory matched:', data.subCategory, '->', foundSubCategoryId);
+          } else {
+            console.log('SubCategory not matched:', data.subCategory, 'Available:', subCategories.map(s => s.name));
+          }
         }
       }
 
@@ -339,7 +391,7 @@ export function CreateNewProductForm({
     } finally {
       setIsGenerating(false);
     }
-  }, [formData, initialName, categories, subCategories, session, onChange]);
+  }, [formData, initialName, categories, subCategories, session, onChange, findCategoryByName, findSubCategoryByName]);
 
   const showAlcoholFields = formData.isAlcoholic;
   const canUseAI = (formData.name || initialName).length >= 3;
@@ -519,14 +571,12 @@ export function CreateNewProductForm({
               value: cat._id,
               label: cat.name,
             }))}
-            value={resolvedCategoryId || categories.find((c) => c._id === formData.category)?._id ? {
-              value: resolvedCategoryId || categories.find((c) => c._id === formData.category)?._id || '',
-              label: formData.category || categories.find((c) => c._id === formData.category)?.name || '',
+            value={categories.find((c) => c._id === formData.category) ? {
+              value: formData.category || '',
+              label: categories.find((c) => c._id === formData.category)?.name,
             } : ''}
             onChange={(option: SelectOption) => {
-              const selectedCategory = categories.find(c => c._id === option?.value);
-              handleChange('category', selectedCategory?.name || option?.value as string || '');
-              setResolvedCategoryId(option?.value as string || '');
+              handleChange('category', option?.value as string || '');
             }}
             disabled={isLoadingCategories}
             className="w-full"
@@ -543,7 +593,7 @@ export function CreateNewProductForm({
           </label>
           <Select
             placeholder={
-              !formData.category && !resolvedCategoryId
+              !formData.category
                 ? 'Select category first'
                 : isLoadingSubCategories
                 ? 'Loading...'
@@ -555,16 +605,14 @@ export function CreateNewProductForm({
               value: subCat._id,
               label: subCat.name,
             }))}
-            value={resolvedSubCategoryId || subCategories.find((s) => s.name === formData.subCategory)?._id ? {
-              value: resolvedSubCategoryId || subCategories.find((s) => s.name === formData.subCategory)?._id || '',
-              label: formData.subCategory || subCategories.find((s) => s.name === formData.subCategory)?.name || '',
+            value={subCategories.find((s) => s._id === formData.subCategory) ? {
+              value: formData.subCategory || '',
+              label: subCategories.find((s) => s._id === formData.subCategory)?.name,
             } : ''}
             onChange={(option: SelectOption) => {
-              const selectedSubCategory = subCategories.find(s => s._id === option?.value);
-              handleChange('subCategory', selectedSubCategory?.name || option?.value as string || '');
-              setResolvedSubCategoryId(option?.value as string || '');
+              handleChange('subCategory', option?.value as string || '');
             }}
-            disabled={(!formData.category && !resolvedCategoryId) || isLoadingSubCategories}
+            disabled={!formData.category || isLoadingSubCategories}
             className="w-full"
           />
         </div>

@@ -93,8 +93,6 @@ export default function ProductIdentification({
   const [isLoadingBrands, setIsLoadingBrands] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showBrandModal, setShowBrandModal] = useState(false);
-  const [resolvedCategoryId, setResolvedCategoryId] = useState<string>('');
-  const [resolvedSubCategoryId, setResolvedSubCategoryId] = useState<string>('');
 
   // Fetch categories on mount
   useEffect(() => {
@@ -126,26 +124,6 @@ export default function ProductIdentification({
     fetchCategories();
   }, [session]);
 
-  // Resolve category ID from name when categories are loaded (for edit mode)
-  useEffect(() => {
-    if (categories.length > 0 && selectedCategory) {
-      const matchedCategory = categories.find(c => c.name === selectedCategory);
-      if (matchedCategory) {
-        setResolvedCategoryId(matchedCategory._id);
-      }
-    }
-  }, [categories, selectedCategory]);
-
-  // Resolve subcategory ID from name when subcategories are loaded (for edit mode)
-  useEffect(() => {
-    if (subCategories.length > 0 && selectedSubCategory) {
-      const matchedSubCategory = subCategories.find(s => s.name === selectedSubCategory);
-      if (matchedSubCategory) {
-        setResolvedSubCategoryId(matchedSubCategory._id);
-      }
-    }
-  }, [subCategories, selectedSubCategory]);
-
   // Fetch brands function - extracted for reuse
   const fetchBrands = async () => {
     if (!session?.user?.token) {
@@ -175,8 +153,7 @@ export default function ProductIdentification({
   // Fetch subcategories when category changes
   useEffect(() => {
     const fetchSubCategories = async () => {
-      const categoryIdToUse = resolvedCategoryId || selectedCategory;
-      if (!session?.user?.token || !categoryIdToUse) {
+      if (!session?.user?.token || !selectedCategory) {
         setSubCategories([]);
         return;
       }
@@ -185,7 +162,7 @@ export default function ProductIdentification({
       try {
         const subCats = await categoryService.getSubCategories(
           session.user.token, 
-          categoryIdToUse
+          selectedCategory
         );
         // Ensure we always set an array
         setSubCategories(Array.isArray(subCats) ? subCats : []);
@@ -198,11 +175,11 @@ export default function ProductIdentification({
     };
 
     fetchSubCategories();
-  }, [selectedCategory, resolvedCategoryId, session]);
+  }, [selectedCategory, session]);
 
   // Reset subcategory when category changes
   useEffect(() => {
-    if (selectedCategory || resolvedCategoryId) {
+    if (selectedCategory) {
       setValue('subCategory', '');
     }
   }, [selectedCategory, setValue]);
@@ -409,14 +386,12 @@ export default function ProductIdentification({
               value: cat._id,
               label: cat.name,
             }))}
-            value={resolvedCategoryId || categories.find((c) => c._id === watch('category'))?._id || categories.find((c) => c.name === watch('category'))?._id ? {
-              value: resolvedCategoryId || categories.find((c) => c._id === watch('category'))?._id || categories.find((c) => c.name === watch('category'))?._id || '',
-              label: watch('category') || categories.find((c) => c._id === watch('category'))?.name || '',
+              value={categories.find((c) => c._id === watch('category')) ? {
+              value: watch('category') || '',
+              label: categories.find((c) => c._id === watch('category'))?.name,
             } : ''}
             onChange={(option: SelectOption) => {
-              const selectedCat = categories.find(c => c._id === option?.value);
-              setValue('category', selectedCat?.name || option?.value as string || '');
-              setResolvedCategoryId(option?.value as string || '');
+              setValue('category', option.value as string);
             }}
             disabled={isLoadingCategories}
             error={errors.category?.message as string}
@@ -424,8 +399,8 @@ export default function ProductIdentification({
           />
           <Text className="mt-2 text-xs text-gray-500">
             {categories.length > 0
-                ? `${categories.length} categories available`
-                : 'No categories loaded'}
+              ? `${categories.length} categories available`
+              : 'No categories loaded'}
           </Text>
         </div>
 
@@ -441,7 +416,7 @@ export default function ProductIdentification({
           </label>
           <Select
             placeholder={
-              !selectedCategory && !resolvedCategoryId
+              !selectedCategory
                 ? 'Select category first'
                 : isLoadingSubCategories
                 ? 'Loading...'
@@ -453,16 +428,14 @@ export default function ProductIdentification({
               value: subCat._id,
               label: subCat.name,
             }))}
-            value={resolvedSubCategoryId || subCategories.find((s) => s._id === watch('subCategory'))?._id || subCategories.find((s) => s.name === watch('subCategory'))?._id ? {
-              value: resolvedSubCategoryId || subCategories.find((s) => s._id === watch('subCategory'))?._id || subCategories.find((s) => s.name === watch('subCategory'))?._id || '',
-              label: watch('subCategory') || subCategories.find((s) => s._id === watch('subCategory'))?.name || '',
+            value={subCategories.find((s) => s._id === watch('subCategory')) ? {
+              value: watch('subCategory') || '',
+              label: subCategories.find((s) => s._id === watch('subCategory'))?.name,
             } : ''}
             onChange={(option: SelectOption) => {
-              const selectedSubCat = subCategories.find(s => s._id === option?.value);
-              setValue('subCategory', selectedSubCat?.name || option?.value as string || '');
-              setResolvedSubCategoryId(option?.value as string || '');
+              setValue('subCategory', option.value as string);
             }}
-            disabled={(!selectedCategory && !resolvedCategoryId) || isLoadingSubCategories}
+            disabled={!selectedCategory || isLoadingSubCategories}
             error={errors.subCategory?.message as string}
             className="w-full"
           />
@@ -492,7 +465,7 @@ export default function ProductIdentification({
               label: `${brand.name}${brand.isPremium ? ' ⭐' : ''}${brand.verified ? ' ✓' : ''}`,
             }))}
             value={brands.find((b) => b._id === watch('brand')) ? {
-              value: watch('brand'),
+              value: watch('brand') || '',
               label: `${brands.find((b) => b._id === watch('brand'))?.name}${brands.find((b) => b._id === watch('brand'))?.isPremium ? ' ⭐' : ''}${brands.find((b) => b._id === watch('brand'))?.verified ? ' ✓' : ''}`,
             } : ''}
             onChange={(option: SelectOption) => {
@@ -541,7 +514,7 @@ export default function ProductIdentification({
               label: `${type.label} (${type.category})`,
             }))}
             value={productTypes.find((t) => t.value === watch('type')) ? {
-              value: watch('type'),
+              value: watch('type') || '',
               label: `${productTypes.find((t) => t.value === watch('type'))?.label} (${productTypes.find((t) => t.value === watch('type'))?.category})`,
             } : ''}
             onChange={(option: SelectOption) => {

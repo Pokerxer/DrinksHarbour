@@ -32,9 +32,9 @@ import SubProductPromotions from './promotions';
 import SubProductShipping from './shipping';
 import SubProductTenantOverrides from './tenant-overrides';
 import {
-  CreateProductInput,
-  productFormSchema,
-} from '@/validators/create-product.schema';
+  SubProductInput,
+  subProductFormSchema,
+} from '@/validators/sub-product.schema';
 import { routes } from '@/config/routes';
 import { subproductService } from '@/services/subproduct.service';
 import { transformFormData, transformBackendToForm } from '@/utils/transformers/subProduct.transformer';
@@ -137,7 +137,7 @@ export default function CreateEditSubProduct({
 }: {
   slug?: string;
   id?: string;
-  product?: CreateProductInput;
+  product?: SubProductInput;
   className?: string;
 }) {
   const router = useRouter();
@@ -175,10 +175,10 @@ export default function CreateEditSubProduct({
 
   const isEditMode = Boolean(slug || id);
 
-  const methods = useForm({
+  const methods = useForm<SubProductInput>({
     defaultValues: defaultValues(),
-    resolver: zodResolver(productFormSchema),
-    mode: 'onChange',
+    resolver: zodResolver(subProductFormSchema),
+    mode: 'onBlur',
   });
 
   const watch = methods.watch;
@@ -187,9 +187,28 @@ export default function CreateEditSubProduct({
   const isValid = formState.isValid;
   const isDirty = formState.isDirty;
 
+  // Helper function to flatten nested error objects
+  const getFieldErrors = (errs: any): string[] => {
+    const flatten = (obj: any, prefix = ''): string[] => {
+      let fields: string[] = [];
+      for (const key in obj) {
+        const fieldName = prefix ? `${prefix}.${key}` : key;
+        if (obj[key]?.message) {
+          fields.push(fieldName);
+        } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+          fields = fields.concat(flatten(obj[key], fieldName));
+        }
+      }
+      return fields;
+    };
+    return flatten(errs);
+  };
+
+  const fieldErrors = getFieldErrors(errors);
+
   // Get product name for header display
   const productName = watch('name');
-  const newProductName = watch('subProductData.newProductData.name');
+  const newProductName = watch('newProductData.name');
   const displayTitle = isEditMode 
     ? (productName || 'Edit Sub Product')
     : (newProductName || 'Create Sub Product');
@@ -290,9 +309,31 @@ export default function CreateEditSubProduct({
     setCurrentStep(stepIndex);
   };
 
-  const onSubmit: SubmitHandler<CreateProductInput> = async (data) => {
+  const onSubmit: SubmitHandler<SubProductInput> = async (data) => {
+    console.log('=== FORM DATA SUBMITTED ===', JSON.stringify(data, null, 2));
+    
+    // Validate: either product must be selected OR createNewProduct must be true
+    // Check both flat (root) and nested (subProductData) paths
+    const productId = data.product || data.subProductData?.product;
+    const createNew = data.createNewProduct || data.subProductData?.createNewProduct;
+    
+    if (!productId && !createNew) {
+      toast.error('Please select a parent product or create a new product');
+      return;
+    }
+    
+    // Debug session state
+    console.log('=== SESSION DEBUG ===', {
+      hasSession: !!session,
+      hasUser: !!session?.user,
+      hasToken: !!session?.user?.token,
+      tokenLength: session?.user?.token?.length || 0,
+      userEmail: session?.user?.email || 'N/A',
+    });
+    
     if (!session?.user?.token) {
-      toast.error('Authentication required');
+      toast.error('Authentication required. Please sign in again.');
+      console.error('No auth token found. Session:', session);
       return;
     }
 
@@ -300,7 +341,10 @@ export default function CreateEditSubProduct({
     setSaveStatus('saving');
 
     try {
+      console.log('=== RAW FORM DATA ===', JSON.stringify(data, null, 2));
+      
       const transformedData = transformFormData(data);
+      console.log('=== TRANSFORMED DATA (SENDING TO SERVER) ===', JSON.stringify(transformedData, null, 2));
       
       if (isEditMode && id) {
         await subproductService.updateSubProduct(id, transformedData, session.user.token);
@@ -414,10 +458,10 @@ export default function CreateEditSubProduct({
 
         {/* Main Header Content */}
         <div className="px-4 py-3 sm:px-6 lg:px-8">
-          {/* Row 1: Back, Title, Actions */}
-          <div className="flex items-center justify-between gap-3">
-            {/* Left: Back + Title + Save + Settings */}
-            <div className="flex items-center gap-3 min-w-0 flex-1">
+          {/* Main Header: [Left: Title/Actions] [Middle: Smart Buttons] [Right: Navigation] */}
+          <div className="flex items-center justify-between gap-2 lg:gap-4">
+            {/* Left: Back + Title + Save + Settings + Mobile Toggle */}
+            <div className="flex items-center gap-2 min-w-0 flex-1 lg:flex-none">
               <Button 
                 variant="text" 
                 onClick={() => router.push(routes.eCommerce.subProducts)}
@@ -426,7 +470,7 @@ export default function CreateEditSubProduct({
                 <PiArrowLeft className="h-5 w-5" />
               </Button>
               
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 lg:flex-1">
                 <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">
                   {displayTitle}
                 </h1>
@@ -438,9 +482,8 @@ export default function CreateEditSubProduct({
                 )}
               </div>
 
-              {/* Save & Settings - Close to product name */}
-              <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
-                {/* Save Button */}
+              {/* Save & Settings */}
+              <div className="flex items-center gap-1.5 flex-shrink-0">
                 <button
                   type="button"
                   onClick={methods.handleSubmit(onSubmit)}
@@ -544,216 +587,216 @@ export default function CreateEditSubProduct({
                     </motion.div>
                   )}
                 </AnimatePresence>
-              </div>
+                </div>
 
-              {/* Mobile Toggle for Smart Buttons - Opens Dropdown */}
-              <div className="relative lg:hidden" ref={smartButtonsDropdownRef}>
-                <button
-                  type="button"
-                  onClick={() => setShowSmartButtons(!showSmartButtons)}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-all"
-                  title="More Actions"
-                >
-                  {showSmartButtons ? (
-                    <PiX className="h-4 w-4" />
-                  ) : (
-                    <PiDotsThree className="h-4 w-4" />
-                  )}
-                </button>
+                {/* Mobile Toggle for Smart Buttons - Opens Dropdown */}
+                <div className="relative lg:hidden" ref={smartButtonsDropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => setShowSmartButtons(!showSmartButtons)}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-all"
+                    title="More Actions"
+                  >
+                    {showSmartButtons ? (
+                      <PiX className="h-4 w-4" />
+                    ) : (
+                      <PiDotsThree className="h-4 w-4" />
+                    )}
+                  </button>
 
-                <AnimatePresence>
-                  {showSmartButtons && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      className="absolute right-0 top-full z-50 mt-2 w-64 rounded-lg border border-gray-200 bg-white py-3 shadow-xl max-h-[70vh] overflow-y-auto"
-                    >
-                      <div className="px-3 pb-2 border-b border-gray-100">
-                        <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Quick Stats</Text>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 p-3">
-                        <SmartButton
-                          icon={<PiGlobe className="h-3 w-3" />}
-                          value={isEditMode ? "View" : "—"}
-                          label="Website"
-                          iconColor="text-indigo-600"
-                          title="View on Website"
-                          onClick={() => {
-                            const productSlug = slug || id;
-                            if (productSlug) {
-                              window.open(`/products/${productSlug}`, '_blank');
-                            } else {
-                              toast.error('Product not saved yet');
-                            }
-                            setShowSmartButtons(false);
-                          }}
-                        />
-                        <SmartButton
-                          icon={<PiArrowLineLeft className="h-3 w-3" />}
-                          value={String(watch('quantity') || 0)}
-                          label="In & Out"
-                          iconColor="text-teal-600"
-                          title="View Stock Movements"
-                          onClick={() => {
-                            toast.info('Stock movements feature coming soon');
-                            setShowSmartButtons(false);
-                          }}
-                        />
-                        <SmartButton
-                          icon={<PiPackage className="h-3 w-3" />}
-                          value={String(watch('quantity') || 0)}
-                          label="On Hand"
-                          iconColor="text-blue-600"
-                          title="Current Stock"
-                          onClick={() => {
-                            toast.info('Stock details feature coming soon');
-                            setShowSmartButtons(false);
-                          }}
-                        />
-                        <SmartButton
-                          icon={<PiTrendUp className="h-3 w-3" />}
-                          value="—"
-                          label="Forecasted"
-                          iconColor="text-green-600"
-                          title="Forecasted Stock"
-                          onClick={() => {
-                            toast.info('Forecast feature coming soon');
-                            setShowSmartButtons(false);
-                          }}
-                        />
-                        <SmartButton
-                          icon={<PiFileText className="h-3 w-3" />}
-                          value="0"
-                          label="Documents"
-                          iconColor="text-orange-600"
-                          title="View Documents"
-                          onClick={() => {
-                            toast.info('Documents feature coming soon');
-                            setShowSmartButtons(false);
-                          }}
-                        />
-                        <SmartButton
-                          icon={<PiShoppingCart className="h-3 w-3" />}
-                          value="0"
-                          label="Purchased"
-                          iconColor="text-purple-600"
-                          title="Purchase History"
-                          onClick={() => {
-                            toast.info('Purchase history feature coming soon');
-                            setShowSmartButtons(false);
-                          }}
-                        />
-                        <SmartButton
-                          icon={<PiTrendDown className="h-3 w-3" />}
-                          value="0"
-                          label="Sold"
-                          iconColor="text-red-600"
-                          title="Sales History"
-                          onClick={() => {
-                            toast.info('Sales history feature coming soon');
-                            setShowSmartButtons(false);
-                          }}
-                        />
-                        <SmartButton
-                          icon={<PiWarningDiamond className="h-3 w-3" />}
-                          value="—"
-                          label="Reorder"
-                          iconColor="text-amber-600"
-                          title="Reordering Rules"
-                          onClick={() => {
-                            toast.info('Reordering rules feature coming soon');
-                            setShowSmartButtons(false);
-                          }}
-                        />
-                      </div>
-                      <div className="px-3 pt-2 border-t border-gray-100">
-                        <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide">More Actions</Text>
-                      </div>
-                      <div className="px-2 py-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            console.log('Rules clicked');
-                            setShowSmartButtons(false);
-                            toast.info('Rules feature coming soon');
-                          }}
-                          className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
-                        >
-                          <PiList className="h-4 w-4 text-gray-500" />
-                          Rules
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            console.log('Pricelists clicked');
-                            setShowSmartButtons(false);
-                            toast.info('Pricelists feature coming soon');
-                          }}
-                          className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
-                        >
-                          <PiCurrencyNgn className="h-4 w-4 text-gray-500" />
-                          Pricelists
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            console.log('History clicked');
-                            setShowSmartButtons(false);
-                            toast.info('History feature coming soon');
-                          }}
-                          className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
-                        >
-                          <PiClock className="h-4 w-4 text-gray-500" />
-                          History
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            console.log('Inventory Report clicked');
-                            setShowSmartButtons(false);
-                            toast.info('Inventory report feature coming soon');
-                          }}
-                          className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
-                        >
-                          <PiChartLine className="h-4 w-4 text-gray-500" />
-                          Inventory Report
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            console.log('Print Labels clicked');
-                            setShowSmartButtons(false);
-                            toast.info('Print labels feature coming soon');
-                          }}
-                          className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
-                        >
-                          <PiPackage className="h-4 w-4 text-gray-500" />
-                          Print Labels
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            console.log('Export clicked');
-                            setShowSmartButtons(false);
-                            toast.info('Export feature coming soon');
-                          }}
-                          className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
-                        >
-                          <PiArrowRight className="h-4 w-4 text-gray-500" />
-                          Export Data
-                        </button>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                  <AnimatePresence>
+                    {showSmartButtons && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className="absolute right-0 top-full z-50 mt-2 w-64 rounded-lg border border-gray-200 bg-white py-3 shadow-xl max-h-[70vh] overflow-y-auto"
+                      >
+                        <div className="px-3 pb-2 border-b border-gray-100">
+                          <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Quick Stats</Text>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 p-3">
+                          <SmartButton
+                            icon={<PiGlobe className="h-3 w-3" />}
+                            value={isEditMode ? "View" : "—"}
+                            label="Website"
+                            iconColor="text-indigo-600"
+                            title="View on Website"
+                            onClick={() => {
+                              const productSlug = slug || id;
+                              if (productSlug) {
+                                window.open(`/products/${productSlug}`, '_blank');
+                              } else {
+                                toast.error('Product not saved yet');
+                              }
+                              setShowSmartButtons(false);
+                            }}
+                          />
+                          <SmartButton
+                            icon={<PiArrowLineLeft className="h-3 w-3" />}
+                            value={String(watch('quantity') || 0)}
+                            label="In & Out"
+                            iconColor="text-teal-600"
+                            title="View Stock Movements"
+                            onClick={() => {
+                              toast.info('Stock movements feature coming soon');
+                              setShowSmartButtons(false);
+                            }}
+                          />
+                          <SmartButton
+                            icon={<PiPackage className="h-3 w-3" />}
+                            value={String(watch('quantity') || 0)}
+                            label="On Hand"
+                            iconColor="text-blue-600"
+                            title="Current Stock"
+                            onClick={() => {
+                              toast.info('Stock details feature coming soon');
+                              setShowSmartButtons(false);
+                            }}
+                          />
+                          <SmartButton
+                            icon={<PiTrendUp className="h-3 w-3" />}
+                            value="—"
+                            label="Forecasted"
+                            iconColor="text-green-600"
+                            title="Forecasted Stock"
+                            onClick={() => {
+                              toast.info('Forecast feature coming soon');
+                              setShowSmartButtons(false);
+                            }}
+                          />
+                          <SmartButton
+                            icon={<PiFileText className="h-3 w-3" />}
+                            value="0"
+                            label="Documents"
+                            iconColor="text-orange-600"
+                            title="View Documents"
+                            onClick={() => {
+                              toast.info('Documents feature coming soon');
+                              setShowSmartButtons(false);
+                            }}
+                          />
+                          <SmartButton
+                            icon={<PiShoppingCart className="h-3 w-3" />}
+                            value="0"
+                            label="Purchased"
+                            iconColor="text-purple-600"
+                            title="Purchase History"
+                            onClick={() => {
+                              toast.info('Purchase history feature coming soon');
+                              setShowSmartButtons(false);
+                            }}
+                          />
+                          <SmartButton
+                            icon={<PiTrendDown className="h-3 w-3" />}
+                            value="0"
+                            label="Sold"
+                            iconColor="text-red-600"
+                            title="Sales History"
+                            onClick={() => {
+                              toast.info('Sales history feature coming soon');
+                              setShowSmartButtons(false);
+                            }}
+                          />
+                          <SmartButton
+                            icon={<PiWarningDiamond className="h-3 w-3" />}
+                            value="—"
+                            label="Reorder"
+                            iconColor="text-amber-600"
+                            title="Reordering Rules"
+                            onClick={() => {
+                              toast.info('Reordering rules feature coming soon');
+                              setShowSmartButtons(false);
+                            }}
+                          />
+                        </div>
+                        <div className="px-3 pt-2 border-t border-gray-100">
+                          <Text className="text-xs font-semibold text-gray-500 uppercase tracking-wide">More Actions</Text>
+                        </div>
+                        <div className="px-2 py-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              console.log('Rules clicked');
+                              setShowSmartButtons(false);
+                              toast.info('Rules feature coming soon');
+                            }}
+                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
+                          >
+                            <PiList className="h-4 w-4 text-gray-500" />
+                            Rules
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              console.log('Pricelists clicked');
+                              setShowSmartButtons(false);
+                              toast.info('Pricelists feature coming soon');
+                            }}
+                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
+                          >
+                            <PiCurrencyNgn className="h-4 w-4 text-gray-500" />
+                            Pricelists
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              console.log('History clicked');
+                              setShowSmartButtons(false);
+                              toast.info('History feature coming soon');
+                            }}
+                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
+                          >
+                            <PiClock className="h-4 w-4 text-gray-500" />
+                            History
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              console.log('Inventory Report clicked');
+                              setShowSmartButtons(false);
+                              toast.info('Inventory report feature coming soon');
+                            }}
+                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
+                          >
+                            <PiChartLine className="h-4 w-4 text-gray-500" />
+                            Inventory Report
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              console.log('Print Labels clicked');
+                              setShowSmartButtons(false);
+                              toast.info('Print labels feature coming soon');
+                            }}
+                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
+                          >
+                            <PiPackage className="h-4 w-4 text-gray-500" />
+                            Print Labels
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              console.log('Export clicked');
+                              setShowSmartButtons(false);
+                              toast.info('Export feature coming soon');
+                            }}
+                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
+                          >
+                            <PiArrowRight className="h-4 w-4 text-gray-500" />
+                            Export Data
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Row 2: Smart Buttons Bar - Desktop Only */}
-          <div className="hidden lg:flex items-center gap-1.5 mt-3">
-            <SmartButton
+            {/* Middle: Smart Buttons Bar - Desktop Only */}
+            <div className="hidden lg:flex items-center gap-1.5 flex-1 justify-center">
+              <SmartButton
               icon={<PiGlobe className="h-2.5 w-2.5 xs:h-3 xs:w-3" />}
               value={isEditMode ? "View" : "—"}
               label="Website"
@@ -852,9 +895,10 @@ export default function CreateEditSubProduct({
                 toast.info('Reordering rules feature coming soon');
               }}
             />
+            </div>
 
             {/* Right: Navigation Arrows + Save Status */}
-            <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="flex items-center gap-2 lg:gap-3 flex-shrink-0">
               {/* Save Status Indicators */}
               <AnimatePresence mode="wait">
                 {saveStatus === 'saving' && (
@@ -918,7 +962,6 @@ export default function CreateEditSubProduct({
               </div>
             </div>
           </div>
-        </div>
         </div>
 
         {/* Step Navigation - Desktop */}
@@ -1100,16 +1143,26 @@ export default function CreateEditSubProduct({
             </Button>
 
             <div className="flex items-center gap-2 text-sm text-gray-500">
-              {!isValid && (
-                <>
-                  <PiWarning className="h-4 w-4 text-amber-500" />
-                  <span>Please fill required fields</span>
-                  {Object.keys(errors).length > 0 && (
-                    <span className="text-xs text-red-500">
-                      ({Object.keys(errors).length} errors)
-                    </span>
-                  )}
-                </>
+              {fieldErrors.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <PiWarning className="h-4 w-4 text-amber-500" />
+                    <span className="text-amber-600 font-medium">Please fix these fields:</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {fieldErrors.slice(0, 8).map((errorKey) => (
+                      <span 
+                        key={errorKey}
+                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800"
+                      >
+                        {errorKey.replace('subProductData.', '').replace(/([A-Z])/g, ' $1').trim()}
+                      </span>
+                    ))}
+                    {fieldErrors.length > 8 && (
+                      <span className="text-xs text-amber-600">+{fieldErrors.length - 8} more</span>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
 

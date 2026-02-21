@@ -106,7 +106,7 @@ export const productFormSchema = z.object({
   // ═══════════════════════════════════════════════════════════════════
   // IDENTIFICATION
   // ═══════════════════════════════════════════════════════════════════
-  name: z.string().min(1, 'Product name is required').max(200),
+  name: z.string().min(1, 'Product name is required').max(200).optional().or(z.literal('')),
   slug: z.string().optional(),
   sku: z.string().optional(),
   barcode: z.string().optional(),
@@ -120,7 +120,7 @@ export const productFormSchema = z.object({
     'beer', 'wine', 'sparkling_wine', 'fortified_wine', 'spirit', 'liqueur', 
     'cocktail_ready_to_drink', 'non_alcoholic', 'juice', 'tea', 'coffee', 
     'energy_drink', 'water', 'mixer', 'snack', 'accessory', 'gift', 'other'
-  ], { message: 'Product type is required' }),
+  ], { message: 'Product type is required' }).optional().or(z.literal('')),
   subType: z.string().optional(),
   isAlcoholic: z.boolean().default(false),
   abv: z.number().min(0).max(100).nullable().optional(),
@@ -251,7 +251,6 @@ export const productFormSchema = z.object({
   metaTitle: z.string().optional(),
   metaDescription: z.string().optional(),
   metaKeywords: z.array(z.string()).default([]),
-  slug: z.string().optional(),
   canonicalUrl: z.string().optional(),
 
   // ═══════════════════════════════════════════════════════════════════
@@ -362,20 +361,20 @@ export const productFormSchema = z.object({
     isFeaturedByTenant: z.boolean().default(false),
     isNewArrival: z.boolean().default(false),
     isBestSeller: z.boolean().default(false),
-    addedAt: z.date().optional(),
-    activatedAt: z.date().nullable().optional(),
-    deactivatedAt: z.date().nullable().optional(),
-    discontinuedAt: z.date().nullable().optional(),
+    addedAt: z.date().optional().nullable().optional(),
+    activatedAt: z.date().optional().nullable().optional(),
+    deactivatedAt: z.date().optional().nullable().optional(),
+    discontinuedAt: z.date().optional().nullable().optional(),
     
     // Promotions & Discounts
     discount: z.number().min(0).default(0),
-    discountType: z.enum(['fixed', 'percentage']).nullable().optional(),
-    discountStart: z.date().nullable().optional(),
-    discountEnd: z.date().nullable().optional(),
+    discountType: z.enum(['fixed', 'percentage']).optional().nullable().optional(),
+    discountStart: z.date().optional().nullable().optional(),
+    discountEnd: z.date().optional().nullable().optional(),
     flashSale: z.object({
       isActive: z.boolean().default(false),
-      startDate: z.date().nullable().optional(),
-      endDate: z.date().nullable().optional(),
+      startDate: z.date().optional().nullable().optional(),
+      endDate: z.date().optional().nullable().optional(),
       discountPercentage: z.number().min(0).nullable().optional(),
       remainingQuantity: z.number().min(0).nullable().optional(),
     }).optional(),

@@ -244,25 +244,63 @@ const validateProductSlug = [
 
 /**
  * Validate SubProduct creation
+ * Supports both linking to existing product (product/productId) and creating new product (createNewProduct)
  */
 const validateSubProductCreation = [
-  body('productId')
-    .notEmpty()
-    .withMessage('Product ID is required')
-    .isMongoId()
-    .withMessage('Invalid product ID'),
+  // Product ID is required UNLESS createNewProduct is true
+  body('product')
+    .optional()
+    .custom((value, { req }) => {
+      const createNewProduct = req.body.createNewProduct || req.body.subProductData?.createNewProduct;
+      // If not creating a new product, product ID is required
+      if (!createNewProduct && !value) {
+        throw new Error('Product ID is required when not creating a new product');
+      }
+      // If value is provided and not empty, validate it's a valid MongoId
+      if (value && value.trim() !== '') {
+        const mongoose = require('mongoose');
+        if (!mongoose.Types.ObjectId.isValid(value)) {
+          throw new Error('Invalid product ID format');
+        }
+      }
+      return true;
+    }),
+
+  // Validate newProductData when createNewProduct is true
+  body('createNewProduct')
+    .optional()
+    .isBoolean()
+    .withMessage('createNewProduct must be a boolean'),
+
+  body('newProductData.name')
+    .optional()
+    .custom((value, { req }) => {
+      const createNewProduct = req.body.createNewProduct || req.body.subProductData?.createNewProduct;
+      if (createNewProduct && (!value || value.trim() === '')) {
+        throw new Error('Product name is required when creating a new product');
+      }
+      return true;
+    }),
+
+  body('newProductData.type')
+    .optional()
+    .custom((value, { req }) => {
+      const createNewProduct = req.body.createNewProduct || req.body.subProductData?.createNewProduct;
+      if (createNewProduct && (!value || value.trim() === '')) {
+        throw new Error('Product type is required when creating a new product');
+      }
+      return true;
+    }),
 
   body('baseSellingPrice')
-    .notEmpty()
-    .withMessage('Base selling price is required')
-    .isFloat({ min: 0.01 })
-    .withMessage('Base selling price must be greater than 0'),
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Base selling price must be 0 or greater'),
 
   body('costPrice')
-    .notEmpty()
-    .withMessage('Cost price is required')
-    .isFloat({ min: 0.01 })
-    .withMessage('Cost price must be greater than 0'),
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Cost price must be 0 or greater'),
 
   body('currency')
     .optional()
@@ -303,6 +341,16 @@ const validateSubProductCreation = [
     .optional()
     .isInt({ min: 1 })
     .withMessage('Maximum order quantity must be at least 1'),
+
+  // Validation result handler - must be last in the chain
+  (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      const messages = errors.array().map(err => err.msg).join(', ');
+      return next(new ValidationError(messages));
+    }
+    next();
+  },
 ];
 
 /**

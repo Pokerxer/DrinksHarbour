@@ -77,6 +77,27 @@ const subProductSchema = new Schema(
       type: Number,
       min: 0,
     },
+    
+    // Pricing calculation fields
+    markupPercentage: {
+      type: Number,
+      default: 25,
+      min: 0,
+    },
+    
+    roundUp: {
+      type: String,
+      enum: ['none', '100', '1000'],
+      default: 'none',
+    },
+    
+    // Input discount percentage used for price calculations (not the computed virtual)
+    inputSaleDiscountPercentage: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
 
     // SALE / DISCOUNT PRICING
     salePrice: {
@@ -211,6 +232,29 @@ const subProductSchema = new Schema(
     supplierPrice: Number,
     leadTimeDays: Number,
     minimumOrderQuantity: Number,
+    
+    // Extended vendor fields
+    estimatedShippingCost: {
+      type: Number,
+      min: 0,
+    },
+    
+    supplierRating: {
+      type: Number,
+      min: 1,
+      max: 5,
+    },
+    
+    vendorNotes: {
+      type: String,
+      maxlength: 2000,
+    },
+    
+    vendorContactName: String,
+    vendorPhone: String,
+    vendorEmail: String,
+    vendorWebsite: String,
+    vendorAddress: String,
 
     // ════════════════════════════════════════════════════════════
     // OPERATIONAL STATUS
@@ -220,6 +264,22 @@ const subProductSchema = new Schema(
       enum: ['draft', 'pending', 'active', 'low_stock', 'out_of_stock', 'discontinued', 'hidden', 'archived'],
       default: 'pending',
       index: true,
+    },
+    
+    // Visibility flags
+    isPublished: {
+      type: Boolean,
+      default: false,
+    },
+    
+    visibleInPOS: {
+      type: Boolean,
+      default: true,
+    },
+    
+    visibleInOnlineStore: {
+      type: Boolean,
+      default: true,
     },
     
     isFeaturedByTenant: {
@@ -375,6 +435,16 @@ const subProductSchema = new Schema(
       requiresAgeVerification: { type: Boolean, default: true },
       hazmat: { type: Boolean, default: false },
       shippingClass: String,
+      // Extended shipping fields
+      carrier: String,
+      deliveryArea: String,
+      minDeliveryDays: Number,
+      maxDeliveryDays: Number,
+      fixedShippingCost: Number,
+      isFreeShipping: { type: Boolean, default: false },
+      freeShippingMinOrder: Number,
+      freeShippingLabel: String,
+      availableForPickup: { type: Boolean, default: false },
     },
     
     warehouse: {

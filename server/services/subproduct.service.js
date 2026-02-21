@@ -36,11 +36,37 @@ const isTransactionSupported = () => {
  * Calculate selling price based on tenant revenue model
  * Automatically applies markup or handles commission model
  */
-const calculatePriceFromRevenueModel = async (costPrice, tenantId) => {
+const calculatePriceFromRevenueModel = async (costPrice, tenantId, fallbackMarkupPercentage = 25) => {
+  // If no tenantId, use default pricing calculation
+  if (!tenantId) {
+    console.log('⚠️ No tenantId provided, using default pricing calculation');
+    const baseSellingPrice = costPrice * (1 + fallbackMarkupPercentage / 100);
+    const marginPercentage = ((baseSellingPrice - costPrice) / baseSellingPrice * 100);
+    return {
+      baseSellingPrice: parseFloat(baseSellingPrice.toFixed(2)),
+      costPrice,
+      marginPercentage: parseFloat(marginPercentage.toFixed(2)),
+      revenueModel: 'markup',
+      markupPercentage: fallbackMarkupPercentage,
+      commissionPercentage: null,
+    };
+  }
+
   const tenant = await Tenant.findById(tenantId);
   
   if (!tenant) {
-    throw new NotFoundError('Tenant not found');
+    console.log('⚠️ Tenant not found, using default pricing calculation');
+    // Instead of throwing, use default values
+    const baseSellingPrice = costPrice * (1 + fallbackMarkupPercentage / 100);
+    const marginPercentage = ((baseSellingPrice - costPrice) / baseSellingPrice * 100);
+    return {
+      baseSellingPrice: parseFloat(baseSellingPrice.toFixed(2)),
+      costPrice,
+      marginPercentage: parseFloat(marginPercentage.toFixed(2)),
+      revenueModel: 'markup',
+      markupPercentage: fallbackMarkupPercentage,
+      commissionPercentage: null,
+    };
   }
   
   let baseSellingPrice;
@@ -48,7 +74,7 @@ const calculatePriceFromRevenueModel = async (costPrice, tenantId) => {
   
   if (tenant.revenueModel === 'markup') {
     // Calculate selling price from cost + markup percentage
-    const markupPercent = tenant.markupPercentage || 25;
+    const markupPercent = tenant.markupPercentage || fallbackMarkupPercentage;
     baseSellingPrice = costPrice * (1 + markupPercent / 100);
     
     // Calculate actual margin
@@ -69,8 +95,8 @@ const calculatePriceFromRevenueModel = async (costPrice, tenantId) => {
     baseSellingPrice: parseFloat(baseSellingPrice.toFixed(2)),
     costPrice,
     marginPercentage: parseFloat(marginPercentage),
-    revenueModel: tenant.revenueModel,
-    markupPercentage: tenant.markupPercentage,
+    revenueModel: tenant.revenueModel || 'markup',
+    markupPercentage: tenant.markupPercentage || fallbackMarkupPercentage,
     commissionPercentage: tenant.commissionPercentage,
   };
 };
@@ -178,6 +204,8 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
   // Handle both direct data and nested subProductData format from frontend
   const subProductData = data.subProductData || data;
 
+  console.log('📥 Backend received subProductData:', subProductData);
+
   // ========================================================================
   // DEBUG: Log received data
   // ========================================================================
@@ -193,22 +221,32 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
 
   // ========================================================================
   // AUTO-USE SYSTEM TENANT FOR SUPER ADMIN
-  // If user is super_admin, automatically use the system tenant
+  // If user is super_admin and no tenant provided, automatically use the system tenant
   // ========================================================================
-  if (user && user.role === 'super_admin') {
+  if (user && user.role === 'super_admin' && (!tenantId || tenantId.trim() === '')) {
     const systemTenant = await Tenant.findOne({ isSystemTenant: true }).select('_id').lean();
     if (systemTenant) {
       tenantId = systemTenant._id.toString();
       console.log('🔧 Super admin detected - using system tenant:', tenantId);
+    } else {
+      throw new ValidationError('No system tenant found. Please create a system tenant or provide a valid tenant ID.');
     }
+  }
+  
+  // Validate tenantId is provided and not empty
+  if (!tenantId || (typeof tenantId === 'string' && tenantId.trim() === '')) {
+    throw new ValidationError('Tenant ID is required. Please select a tenant for this product.');
   }
   // ========================================================================
 
   const {
     product: productInput,
     costPrice,
+    baseSellingPrice: inputBaseSellingPrice,
     currency = 'NGN',
     taxRate = 0,
+    markupPercentage: inputMarkupPercentage,
+    roundUp: inputRoundUp = 'none',
     sizes = [],
     sellWithoutSizeVariants = false,
     shortDescriptionOverride,
@@ -231,19 +269,44 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
     supplierPrice,
     leadTimeDays,
     minimumOrderQuantity,
+    // Vendor extended fields
+    estimatedShippingCost,
+    supplierRating,
+    vendorNotes,
+    vendorContactName,
+    vendorPhone,
+    vendorEmail,
+    vendorWebsite,
+    vendorAddress,
+    // Status & visibility
     status = 'draft',
     isFeaturedByTenant = false,
     isNewArrival = false,
     isBestSeller = false,
+    isPublished = false,
+    visibleInPOS = true,
+    visibleInOnlineStore = true,
     activatedAt,
     deactivatedAt,
     discontinuedAt,
+    // Sale/discount
+    isOnSale = false,
+    salePrice,
+    saleDiscountPercentage = 0, // from form input
+    inputSaleDiscountPercentage, // explicit field name
+    saleType,
+    saleDiscountValue,
+    saleBanner,
+    saleStartDate,
+    saleEndDate,
+    // Promotions
     discount = 0,
     discountType,
     discountStart,
     discountEnd,
     flashSale,
     bundleDeals = [],
+    // Shipping & logistics
     shipping = {},
     warehouse = {},
   } = subProductData;
@@ -260,7 +323,8 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
     throw new ValidationError('Product ID is required');
   }
 
-  if (!costPrice || costPrice <= 0) {
+  // Cost price is only required when linking to existing product, not when creating new
+  if (!createNewProduct && (!costPrice || costPrice <= 0)) {
     throw new ValidationError('Valid cost price is required');
   }
 
@@ -410,6 +474,12 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
       ? (typeof newProductData.vintage === 'number' ? newProductData.vintage : parseInt(newProductData.vintage, 10))
       : null;
     
+    // IMPORTANT: Convert empty strings to null/undefined for sparse unique indexes
+    // MongoDB sparse indexes don't work with empty strings - they need null/undefined
+    const barcodeValue = newProductData.barcode && newProductData.barcode.trim() !== '' 
+      ? newProductData.barcode.trim() 
+      : undefined;
+    
     const productPayload = {
       name: newProductData.name,
       slug: `${slug}-${Date.now()}`,
@@ -419,7 +489,7 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
       volumeMl: volumeMlValue,
       abv: abvValue,
       proof: proofValue,
-      barcode: newProductData.barcode || '',
+      barcode: barcodeValue, // Use undefined instead of empty string to avoid duplicate key errors
       category: categoryId,
       subCategory: subCategoryId,
       originCountry: newProductData.originCountry || '',
@@ -509,44 +579,86 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
   // Always generate SKU server-side (ignore client-provided value for consistency)
   const generatedSKU = await generateSKU(productObjectId, tenantObjectId);
 
-  // Calculate pricing based on tenant revenue model
-  const pricing = await calculatePriceFromRevenueModel(costPrice, tenantId);
+  // ========================================================================
+  // PRICING CALCULATION
+  // ========================================================================
+  // Use frontend-provided values if available, otherwise calculate from tenant model
+  let finalBaseSellingPrice = inputBaseSellingPrice;
+  let finalCostPrice = costPrice;
+  let finalMarginPercentage = null;
+  let finalMarkupPercentage = inputMarkupPercentage ?? 25;
+  let finalRoundUp = inputRoundUp || 'none';
+
+  // If costPrice is provided but no baseSellingPrice, calculate it
+  if (finalCostPrice && finalCostPrice > 0 && !finalBaseSellingPrice) {
+    const pricing = await calculatePriceFromRevenueModel(finalCostPrice, tenantId);
+    finalBaseSellingPrice = pricing.baseSellingPrice;
+    finalMarginPercentage = pricing.marginPercentage;
+    finalMarkupPercentage = pricing.markupPercentage || finalMarkupPercentage;
+  } else if (finalBaseSellingPrice && finalCostPrice && finalCostPrice > 0) {
+    // Calculate margin from provided prices
+    finalMarginPercentage = ((finalBaseSellingPrice - finalCostPrice) / finalBaseSellingPrice * 100).toFixed(2);
+  }
+
+  // For new product creation, costPrice might not be set yet - use provided baseSellingPrice
+  if (createNewProduct && !finalCostPrice && finalBaseSellingPrice) {
+    // Estimate costPrice from baseSellingPrice using markup
+    finalCostPrice = finalBaseSellingPrice / (1 + (finalMarkupPercentage / 100));
+    finalMarginPercentage = ((finalBaseSellingPrice - finalCostPrice) / finalBaseSellingPrice * 100).toFixed(2);
+  }
+
+  console.log('💰 Pricing calculated:', {
+    inputBaseSellingPrice,
+    inputCostPrice: costPrice,
+    finalBaseSellingPrice,
+    finalCostPrice,
+    finalMarkupPercentage,
+    finalMarginPercentage,
+  });
 
   // Prepare SubProduct data
   const subProductPayload = {
     product: productObjectId,
     tenant: tenantObjectId,
     sku: generatedSKU,
-    baseSellingPrice: pricing.baseSellingPrice,
-    costPrice: pricing.costPrice,
+    baseSellingPrice: finalBaseSellingPrice || 0,
+    costPrice: finalCostPrice || 0,
     currency,
     taxRate,
-    marginPercentage: pricing.marginPercentage,
-    markupPercentage: pricing.markupPercentage,
-    roundUp: 'none',
-    saleDiscountPercentage: 0,
-    salePrice: null,
-    saleStartDate: null,
-    saleEndDate: null,
-    saleType: null,
-    saleDiscountValue: null,
-    saleBanner: { url: '', alt: '' },
-    isOnSale: false,
+    marginPercentage: finalMarginPercentage ? parseFloat(finalMarginPercentage) : null,
+    markupPercentage: finalMarkupPercentage,
+    roundUp: finalRoundUp,
+    // Sale/discount fields
+    inputSaleDiscountPercentage: inputSaleDiscountPercentage ?? saleDiscountPercentage ?? 0,
+    salePrice: salePrice || null,
+    saleStartDate: saleStartDate ? new Date(saleStartDate) : null,
+    saleEndDate: saleEndDate ? new Date(saleEndDate) : null,
+    saleType: saleType || null,
+    saleDiscountValue: saleDiscountValue || null,
+    saleBanner: saleBanner || { url: '', alt: '' },
+    isOnSale: isOnSale || false,
+    // Override fields
     shortDescriptionOverride,
     descriptionOverride,
     imagesOverride,
     customKeywords,
     embeddingOverride,
     tenantNotes,
-    status,
+    // Status & visibility
+    status: isPublished ? 'active' : status,
     isFeaturedByTenant,
     isNewArrival,
     isBestSeller,
-    activatedAt: activatedAt ? new Date(activatedAt) : (status === 'active' ? new Date() : null),
+    isPublished,
+    visibleInPOS,
+    visibleInOnlineStore,
+    activatedAt: activatedAt ? new Date(activatedAt) : (isPublished || status === 'active' ? new Date() : null),
     deactivatedAt: deactivatedAt ? new Date(deactivatedAt) : null,
     discontinuedAt: discontinuedAt ? new Date(discontinuedAt) : null,
+    // Size variants
     sellWithoutSizeVariants,
     defaultSize: null,
+    // Inventory
     stockStatus,
     totalStock,
     reservedStock,
@@ -556,21 +668,41 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
     reorderQuantity,
     lastRestockDate: lastRestockDate ? new Date(lastRestockDate) : null,
     nextRestockDate: nextRestockDate ? new Date(nextRestockDate) : null,
+    // Vendor & sourcing
     vendor: vendor && vendor !== '' ? vendor : null,
-    supplierSKU,
-    supplierPrice,
-    leadTimeDays,
-    minimumOrderQuantity,
+    supplierSKU: supplierSKU || '',
+    supplierPrice: supplierPrice || null,
+    leadTimeDays: leadTimeDays || null,
+    minimumOrderQuantity: minimumOrderQuantity || null,
+    estimatedShippingCost: estimatedShippingCost || null,
+    supplierRating: supplierRating || null,
+    vendorNotes: vendorNotes || '',
+    vendorContactName: vendorContactName || '',
+    vendorPhone: vendorPhone || '',
+    vendorEmail: vendorEmail || '',
+    vendorWebsite: vendorWebsite || '',
+    vendorAddress: vendorAddress || '',
+    // Shipping
     shipping: {
-      weight: shipping?.weight,
-      length: shipping?.length,
-      width: shipping?.width,
-      height: shipping?.height,
+      weight: shipping?.weight || null,
+      length: shipping?.length || null,
+      width: shipping?.width || null,
+      height: shipping?.height || null,
       fragile: shipping?.fragile ?? true,
       requiresAgeVerification: shipping?.requiresAgeVerification ?? true,
       hazmat: shipping?.hazmat ?? false,
       shippingClass: shipping?.shippingClass || '',
+      carrier: shipping?.carrier || '',
+      deliveryArea: shipping?.deliveryArea || '',
+      minDeliveryDays: shipping?.minDeliveryDays || null,
+      maxDeliveryDays: shipping?.maxDeliveryDays || null,
+      fixedShippingCost: shipping?.fixedShippingCost || null,
+      isFreeShipping: shipping?.isFreeShipping ?? false,
+      freeShippingMinOrder: shipping?.freeShippingMinOrder || null,
+      freeShippingLabel: shipping?.freeShippingLabel || '',
+      availableForPickup: shipping?.availableForPickup ?? false,
     },
+    // Warehouse
     warehouse: {
       location: warehouse?.location || '',
       zone: warehouse?.zone || '',
@@ -578,6 +710,7 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
       shelf: warehouse?.shelf || '',
       bin: warehouse?.bin || '',
     },
+    // Promotions
     discount,
     discountType: discountType && ['fixed', 'percentage'].includes(discountType) ? discountType : null,
     discountStart: discountStart ? new Date(discountStart) : null,
@@ -708,6 +841,7 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
 const createSubProduct = async (data, tenantId, user) => {
   try {
     let createdSubProduct;
+    console.log('data', data);
 
     // Check if transactions are supported
     if (isTransactionSupported()) {
@@ -893,8 +1027,8 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
     subProduct.salePrice = data.salePrice;
   }
 
-  if (data.saleDiscountPercentage !== undefined) {
-    subProduct.saleDiscountPercentage = data.saleDiscountPercentage;
+  if (data.saleDiscountPercentage !== undefined || data.inputSaleDiscountPercentage !== undefined) {
+    subProduct.inputSaleDiscountPercentage = data.inputSaleDiscountPercentage ?? data.saleDiscountPercentage;
   }
 
   if (data.saleType !== undefined) {
@@ -983,6 +1117,23 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
     subProduct.isBestSeller = data.isBestSeller;
   }
 
+  if (data.isPublished !== undefined) {
+    subProduct.isPublished = data.isPublished;
+    // Auto-update status when publishing
+    if (data.isPublished && subProduct.status === 'draft') {
+      subProduct.status = 'active';
+      subProduct.activatedAt = new Date();
+    }
+  }
+
+  if (data.visibleInPOS !== undefined) {
+    subProduct.visibleInPOS = data.visibleInPOS;
+  }
+
+  if (data.visibleInOnlineStore !== undefined) {
+    subProduct.visibleInOnlineStore = data.visibleInOnlineStore;
+  }
+
   if (data.activatedAt !== undefined) {
     subProduct.activatedAt = data.activatedAt ? new Date(data.activatedAt) : null;
   }
@@ -1068,6 +1219,38 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
     subProduct.minimumOrderQuantity = data.minimumOrderQuantity;
   }
 
+  if (data.estimatedShippingCost !== undefined) {
+    subProduct.estimatedShippingCost = data.estimatedShippingCost;
+  }
+
+  if (data.supplierRating !== undefined) {
+    subProduct.supplierRating = data.supplierRating;
+  }
+
+  if (data.vendorNotes !== undefined) {
+    subProduct.vendorNotes = data.vendorNotes;
+  }
+
+  if (data.vendorContactName !== undefined) {
+    subProduct.vendorContactName = data.vendorContactName;
+  }
+
+  if (data.vendorPhone !== undefined) {
+    subProduct.vendorPhone = data.vendorPhone;
+  }
+
+  if (data.vendorEmail !== undefined) {
+    subProduct.vendorEmail = data.vendorEmail;
+  }
+
+  if (data.vendorWebsite !== undefined) {
+    subProduct.vendorWebsite = data.vendorWebsite;
+  }
+
+  if (data.vendorAddress !== undefined) {
+    subProduct.vendorAddress = data.vendorAddress;
+  }
+
   // ========================================================================
   // SHIPPING FIELDS
   // ========================================================================
@@ -1081,6 +1264,15 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
       requiresAgeVerification: data.shipping?.requiresAgeVerification ?? subProduct.shipping?.requiresAgeVerification ?? true,
       hazmat: data.shipping?.hazmat ?? subProduct.shipping?.hazmat ?? false,
       shippingClass: data.shipping?.shippingClass ?? subProduct.shipping?.shippingClass ?? '',
+      carrier: data.shipping?.carrier ?? subProduct.shipping?.carrier ?? '',
+      deliveryArea: data.shipping?.deliveryArea ?? subProduct.shipping?.deliveryArea ?? '',
+      minDeliveryDays: data.shipping?.minDeliveryDays ?? subProduct.shipping?.minDeliveryDays ?? null,
+      maxDeliveryDays: data.shipping?.maxDeliveryDays ?? subProduct.shipping?.maxDeliveryDays ?? null,
+      fixedShippingCost: data.shipping?.fixedShippingCost ?? subProduct.shipping?.fixedShippingCost ?? null,
+      isFreeShipping: data.shipping?.isFreeShipping ?? subProduct.shipping?.isFreeShipping ?? false,
+      freeShippingMinOrder: data.shipping?.freeShippingMinOrder ?? subProduct.shipping?.freeShippingMinOrder ?? null,
+      freeShippingLabel: data.shipping?.freeShippingLabel ?? subProduct.shipping?.freeShippingLabel ?? '',
+      availableForPickup: data.shipping?.availableForPickup ?? subProduct.shipping?.availableForPickup ?? false,
     };
   }
 

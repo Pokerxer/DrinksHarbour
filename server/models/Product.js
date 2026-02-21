@@ -455,6 +455,7 @@ const productSchema = new Schema(
         'dry', 'semi_dry', 'semi_sweet', 'sweet', 'off_dry',
         'light_bodied', 'medium_bodied', 'full_bodied',
         'crisp', 'creamy', 'oaked', 'unoaked',
+        'sparkling', 'still', 'frizzante', 'petillant',
         
         // Spirit Styles
         'smooth', 'bold', 'complex', 'mellow',

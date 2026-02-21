@@ -369,6 +369,15 @@ interface BrandCategoryResponse {
   };
 }
 
+interface CategorySuggestionResponse {
+  success: boolean;
+  data: {
+    category: string;
+    subCategory: string;
+    confidence: number;
+  };
+}
+
 // Helper function to handle fetch errors
 const handleFetchError = async (response: Response): Promise<never> => {
   let errorMessage = 'Failed to connect to server';
@@ -1420,6 +1429,62 @@ export const geminiService = {
       return response.json();
     } catch (error: any) {
       throw new Error(error.message || 'Failed to generate brand category');
+    }
+  },
+
+  /**
+   * Generate category suggestion based on product name and type
+   */
+  async generateCategorySuggestion(
+    name: string,
+    token: string,
+    type?: string,
+    availableCategories?: Array<{ _id: string; name: string }>
+  ): Promise<CategorySuggestionResponse> {
+    const url = `${API_URL}/api/gemini/category-suggestion`;
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ 
+          name, 
+          type,
+          availableCategories: availableCategories?.map(c => c.name) 
+        }),
+      });
+      if (!response.ok) await handleFetchError(response);
+      return response.json();
+    } catch (error: any) {
+      throw new Error(error.message || 'Failed to generate category suggestion');
+    }
+  },
+
+  /**
+   * Generate subcategory suggestion based on product name, type, and category
+   */
+  async generateSubCategorySuggestion(
+    name: string,
+    token: string,
+    type?: string,
+    category?: string,
+    availableSubCategories?: Array<{ _id: string; name: string }>
+  ): Promise<CategorySuggestionResponse> {
+    const url = `${API_URL}/api/gemini/subcategory-suggestion`;
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ 
+          name, 
+          type,
+          category,
+          availableSubCategories: availableSubCategories?.map(c => c.name) 
+        }),
+      });
+      if (!response.ok) await handleFetchError(response);
+      return response.json();
+    } catch (error: any) {
+      throw new Error(error.message || 'Failed to generate subcategory suggestion');
     }
   },
 };

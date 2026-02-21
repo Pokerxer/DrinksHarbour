@@ -75,7 +75,7 @@ export const authOptions: NextAuthOptions = {
 
           // Check if user has admin role
           const userRole = data.data.user.role;
-          if (!['admin', 'super_admin', 'tenant_admin'].includes(userRole)) {
+          if (!['admin', 'super_admin', 'tenant_admin', 'tenant_owner'].includes(userRole)) {
             throw new Error('Access denied. Admin privileges required.');
           }
 

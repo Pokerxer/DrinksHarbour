@@ -1,4 +1,4 @@
-import { CreateProductInput } from '@/validators/create-product.schema';
+import { SubProductInput } from '@/validators/sub-product.schema';
 import isEmpty from 'lodash/isEmpty';
 
 // Empty objects and arrays
@@ -119,12 +119,23 @@ export const emptySubProductData = {
   supplierPrice: undefined,
   leadTimeDays: undefined,
   minimumOrderQuantity: undefined,
+  estimatedShippingCost: undefined,
+  supplierRating: undefined,
+  vendorNotes: '',
+  vendorContactName: '',
+  vendorPhone: '',
+  vendorEmail: '',
+  vendorWebsite: '',
+  vendorAddress: '',
   
   // Status fields
   status: 'draft',
   isFeaturedByTenant: false,
   isNewArrival: false,
   isBestSeller: false,
+  isPublished: false,
+  visibleInPOS: true,
+  visibleInOnlineStore: true,
   addedAt: undefined,
   activatedAt: undefined,
   deactivatedAt: undefined,
@@ -163,6 +174,15 @@ export const emptySubProductData = {
     requiresAgeVerification: true,
     hazmat: false,
     shippingClass: '',
+    carrier: '',
+    deliveryArea: '',
+    minDeliveryDays: undefined,
+    maxDeliveryDays: undefined,
+    fixedShippingCost: undefined,
+    isFreeShipping: false,
+    freeShippingMinOrder: undefined,
+    freeShippingLabel: '',
+    availableForPickup: false,
   },
   warehouse: {
     location: '',
@@ -173,106 +193,10 @@ export const emptySubProductData = {
   },
 };
 
-export function defaultValues(product?: CreateProductInput): CreateProductInput {
+export function defaultValues(product?: Partial<SubProductInput>): Partial<SubProductInput> {
+  // The form schema expects { subProductData: { ... } } structure
+  // All components use paths like 'subProductData.product', 'subProductData.sizes', etc.
   return {
-    // Identification
-    name: product?.name ?? '',
-    slug: product?.slug ?? '',
-    sku: product?.sku ?? '',
-    barcode: product?.barcode ?? '',
-    gtin: product?.gtin ?? '',
-    upc: product?.upc ?? '',
-
-    // Beverage-specific
-    type: product?.type ?? '',
-    subType: product?.subType ?? '',
-    isAlcoholic: product?.isAlcoholic ?? false,
-    abv: product?.abv ?? undefined,
-    proof: product?.proof ?? undefined,
-    volumeMl: product?.volumeMl ?? undefined,
-    standardSizes: product?.standardSizes ?? [],
-    servingSize: product?.servingSize ?? '',
-    servingsPerContainer: product?.servingsPerContainer ?? undefined,
-
-    // Origin & Production
-    originCountry: product?.originCountry ?? '',
-    region: product?.region ?? '',
-    appellation: product?.appellation ?? '',
-    producer: product?.producer ?? '',
-    brand: product?.brand ?? '',
-    vintage: product?.vintage ?? undefined,
-    age: product?.age ?? undefined,
-    ageStatement: product?.ageStatement ?? '',
-    distilleryName: product?.distilleryName ?? '',
-    breweryName: product?.breweryName ?? '',
-    wineryName: product?.wineryName ?? '',
-    productionMethod: product?.productionMethod ?? '',
-    caskType: product?.caskType ?? '',
-    finish: product?.finish ?? '',
-
-    // Categorization
-    category: product?.category ?? '',
-    subCategory: product?.subCategory ?? '',
-    tags: product?.tags ?? [],
-    flavors: product?.flavors ?? [],
-    style: product?.style ?? '',
-
-    // Descriptive Content
-    shortDescription: product?.shortDescription ?? '',
-    description: product?.description ?? '',
-    tastingNotes: product?.tastingNotes ?? emptyTastingNotes,
-    flavorProfile: product?.flavorProfile ?? [],
-    foodPairings: product?.foodPairings ?? [],
-    servingSuggestions: product?.servingSuggestions ?? emptyServingSuggestions,
-
-    // Dietary & Allergen
-    isDietary: product?.isDietary ?? emptyIsDietary,
-    allergens: product?.allergens ?? [],
-    ingredients: product?.ingredients ?? [],
-    nutritionalInfo: product?.nutritionalInfo ?? emptyNutritionalInfo,
-
-    // Certifications & Awards
-    certifications: product?.certifications ?? emptyCertifications,
-    awards: product?.awards ?? emptyAwards,
-
-    // Ratings
-    ratings: product?.ratings ?? emptyRatings,
-    averageRating: product?.averageRating ?? 0,
-    reviewCount: product?.reviewCount ?? 0,
-
-    // Media
-    images: product?.images ?? [],
-    productImages: product?.productImages ?? undefined,
-    uploadedImages: product?.uploadedImages ?? [],
-    videos: product?.videos ?? [],
-
-    // Related Products & External Links
-    relatedProducts: product?.relatedProducts ?? [],
-    externalLinks: product?.externalLinks ?? emptyExternalLinks,
-
-    // SEO
-    metaTitle: product?.metaTitle ?? '',
-    metaDescription: product?.metaDescription ?? '',
-    metaKeywords: product?.metaKeywords ?? [],
-    canonicalUrl: product?.canonicalUrl ?? '',
-
-    // Settings
-    isFeatured: product?.isFeatured ?? false,
-    allowReviews: product?.allowReviews ?? true,
-    requiresAgeVerification: product?.requiresAgeVerification ?? undefined,
-    isPublished: product?.isPublished ?? false,
-    publishedAt: product?.publishedAt ?? undefined,
-    discontinuedAt: product?.discontinuedAt ?? undefined,
-
-    // Analytics (read-only)
-    averageSellingPrice: product?.averageSellingPrice ?? undefined,
-    totalStockAvailable: product?.totalStockAvailable ?? undefined,
-    totalSold: product?.totalSold ?? 0,
-    totalRevenue: product?.totalRevenue ?? 0,
-    viewCount: product?.viewCount ?? 0,
-    wishlistCount: product?.wishlistCount ?? 0,
-
-    // SubProduct Data
     subProductData: {
       ...emptySubProductData,
       ...product?.subProductData,
@@ -284,14 +208,20 @@ export function defaultValues(product?: CreateProductInput): CreateProductInput 
       isFeaturedByTenant: product?.subProductData?.isFeaturedByTenant ?? false,
       isNewArrival: product?.subProductData?.isNewArrival ?? false,
       isBestSeller: product?.subProductData?.isBestSeller ?? false,
+      isPublished: product?.subProductData?.isPublished ?? false,
+      visibleInPOS: product?.subProductData?.visibleInPOS ?? true,
+      visibleInOnlineStore: product?.subProductData?.visibleInOnlineStore ?? true,
       sellWithoutSizeVariants: product?.subProductData?.sellWithoutSizeVariants ?? false,
       stockStatus: product?.subProductData?.stockStatus ?? 'in_stock',
+      sizes: product?.subProductData?.sizes ?? [],
       shipping: {
         ...emptySubProductData.shipping,
         ...product?.subProductData?.shipping,
         fragile: product?.subProductData?.shipping?.fragile ?? true,
         requiresAgeVerification: product?.subProductData?.shipping?.requiresAgeVerification ?? true,
         hazmat: product?.subProductData?.shipping?.hazmat ?? false,
+        isFreeShipping: product?.subProductData?.shipping?.isFreeShipping ?? false,
+        availableForPickup: product?.subProductData?.shipping?.availableForPickup ?? false,
       },
       warehouse: product?.subProductData?.warehouse ?? emptySubProductData.warehouse,
       flashSale: product?.subProductData?.flashSale ?? emptySubProductData.flashSale,

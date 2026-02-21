@@ -59,10 +59,10 @@ export default function ProductPricing({
 
   const { fields, append, remove } = useFieldArray({
     control,
-    name: 'subProductData.sizes',
+    name: 'sizes',
   });
 
-  const currency = watch('subProductData.currency') || 'NGN';
+  const currency = watch('currency') || 'NGN';
   const currencySymbol = currencySymbols[currency] || '₦';
 
   const addSize = () => {
@@ -80,7 +80,7 @@ export default function ProductPricing({
 
   // Calculate profit margin for a size variant
   const calculateMargin = (index: number) => {
-    const sizes = watch('subProductData.sizes') || [];
+    const sizes = watch('sizes') || [];
     const size = sizes[index];
     if (!size || !size.basePrice || !size.costPrice) return null;
     

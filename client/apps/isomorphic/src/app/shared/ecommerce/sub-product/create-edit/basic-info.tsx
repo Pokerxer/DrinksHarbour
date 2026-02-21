@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
 import { Text } from 'rizzui';
 import { useSession } from 'next-auth/react';
-import { PiCheck, PiPackage, PiArrowLeft, PiTag, PiBarcode, PiHash, PiSpinner, PiUpload, PiX } from 'react-icons/pi';
+import { PiCheck, PiPackage, PiArrowLeft, PiTag, PiBarcode, PiHash, PiSpinner, PiUpload, PiX, PiPlusCircle } from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
 import { uploadService } from '@/services/upload.service';
@@ -63,6 +63,7 @@ export default function SubProductBasicInfo({
   const [isSelectingProduct, setIsSelectingProduct] = useState(false);
   const [fetchedProduct, setFetchedProduct] = useState<Product | null>(null);
   const [isLoadingProduct, setIsLoadingProduct] = useState(false);
+  const [isCreatingProduct, setIsCreatingProduct] = useState(false);
   
   const dropdownRef = useRef<HTMLDivElement>(null);
   const fieldOnChangeRef = useRef<((value: string) => void) | null>(null);
@@ -86,7 +87,7 @@ export default function SubProductBasicInfo({
       // Prevent search effect from triggering during init
       setIsSelectingProduct(true);
       
-      // Check if there's an existing product selection
+      // Check if there's an existing product selection - use subProductData namespace
       const existingProductId = watch('subProductData.product');
       const existingCreateNew = watch('subProductData.createNewProduct');
       const existingNewProductData = watch('subProductData.newProductData');
@@ -249,7 +250,7 @@ export default function SubProductBasicInfo({
     // Store selected product for display (persists even after products array is cleared)
     setFetchedProduct(product);
     
-    // Set form values in correct order
+    // Set form values using subProductData namespace consistently
     setValue('subProductData.product', productId, { shouldValidate: true });
     setValue('subProductData.createNewProduct', false);
     setValue('subProductData.newProductData', null);
@@ -284,7 +285,7 @@ export default function SubProductBasicInfo({
     setSelectedIndex(-1);
     setProducts([]);
     
-    // Set form values - order matters!
+    // Set form values using subProductData namespace - order matters!
     setValue('subProductData.createNewProduct', true);
     setValue('subProductData.product', '');
     setValue('subProductData.newProductData', { name: query } as NewProductFormData, { shouldValidate: true });
@@ -457,21 +458,44 @@ export default function SubProductBasicInfo({
                 <div className="space-y-4">
                   {/* Search Input Container - relative for dropdown positioning */}
                   <div className="relative">
-                    <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                      Search Product <span className="text-red-500">*</span>
-                    </label>
-                    <ProductSearchInput
-                      value={searchQuery}
-                      onChange={setSearchQuery}
-                      onClear={handleClearSelection}
-                      isLoading={isLoading || isLoadingProduct}
-                      placeholder={isLoadingProduct ? "Loading product..." : "Search by name, brand, or scan barcode..."}
-                    />
-                    {error && (
-                      <Text className="mt-1 text-xs text-red-500">
-                        {error.message}
-                      </Text>
-                    )}
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1">
+                        <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                          Search Product <span className="text-red-500">*</span>
+                        </label>
+                        <ProductSearchInput
+                          value={searchQuery}
+                          onChange={setSearchQuery}
+                          onClear={handleClearSelection}
+                          isLoading={isLoading || isLoadingProduct}
+                          placeholder={isLoadingProduct ? "Loading product..." : "Search by name, brand, or scan barcode..."}
+                        />
+                        {error && (
+                          <Text className="mt-1 text-xs text-red-500">
+                            {error.message}
+                          </Text>
+                        )}
+                      </div>
+                      
+                      {/* Create Product First Button */}
+                      {!selectedProductId && !isCreateMode && (
+                        <div className="pt-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleCreateNewProduct(searchQuery || '')}
+                            className="group relative inline-flex items-center gap-1.5 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 hover:border-blue-400 transition-all whitespace-nowrap"
+                            title="Create new product in central catalog (will require approval)"
+                          >
+                            <PiPlusCircle className="h-4 w-4" />
+                            <span className="hidden sm:inline">Create Product</span>
+                            <span className="sm:hidden">Create</span>
+                          </button>
+                          <p className="text-xs text-gray-500 mt-1 hidden lg:block">
+                            Creates central Product (pending approval)
+                          </p>
+                        </div>
+                      )}
+                    </div>
 
                     {/* Search Results Dropdown - positioned relative to input container */}
                     <AnimatePresence>

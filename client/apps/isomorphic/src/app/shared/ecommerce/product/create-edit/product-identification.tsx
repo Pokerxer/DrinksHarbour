@@ -199,6 +199,58 @@ export default function ProductIdentification({
   const selectedCategoryObj = categories.find((c) => c._id === selectedCategory);
   const selectedSubCategoryObj = subCategories.find((s) => s._id === watch('subCategory'));
 
+  // Helper function to find category ID by name (case-insensitive, fuzzy match)
+  const findCategoryByName = (categoryName: string, categoriesList: Category[]): string | null => {
+    if (!categoryName || categoriesList.length === 0) return null;
+    
+    const normalizedName = categoryName.toLowerCase().trim();
+    
+    // Exact match first
+    const exactMatch = categoriesList.find(
+      cat => cat.name.toLowerCase().trim() === normalizedName
+    );
+    if (exactMatch) return exactMatch._id;
+    
+    // Partial match (contains)
+    const partialMatch = categoriesList.find(
+      cat => cat.name.toLowerCase().includes(normalizedName) || 
+             normalizedName.includes(cat.name.toLowerCase())
+    );
+    if (partialMatch) return partialMatch._id;
+    
+    // Fuzzy match by words
+    const words = normalizedName.split(/\s+/);
+    const fuzzyMatch = categoriesList.find(cat => {
+      const catWords = cat.name.toLowerCase().split(/\s+/);
+      return words.some(word => catWords.some(catWord => 
+        catWord.includes(word) || word.includes(catWord)
+      ));
+    });
+    
+    return fuzzyMatch?._id || null;
+  };
+
+  // Helper function to find subcategory ID by name
+  const findSubCategoryByName = (subCategoryName: string, subCategoriesList: SubCategory[]): string | null => {
+    if (!subCategoryName || subCategoriesList.length === 0) return null;
+    
+    const normalizedName = subCategoryName.toLowerCase().trim();
+    
+    // Exact match first
+    const exactMatch = subCategoriesList.find(
+      sub => sub.name.toLowerCase().trim() === normalizedName
+    );
+    if (exactMatch) return exactMatch._id;
+    
+    // Partial match
+    const partialMatch = subCategoriesList.find(
+      sub => sub.name.toLowerCase().includes(normalizedName) || 
+             normalizedName.includes(sub.name.toLowerCase())
+    );
+    
+    return partialMatch?._id || null;
+  };
+
   // Auto-fill form with AI-generated data
   const handleAutoFill = async () => {
     if (!productName || productName.length < 3) {
@@ -227,14 +279,34 @@ export default function ProductIdentification({
       setValue('type', data.type || '');
       setValue('subType', data.subType || '');
       
-      // Handle category - ensure it's set properly
+      // Handle category - match AI-generated name to available category IDs
+      let matchedCategoryId: string | null = null;
       if (data.category) {
-        setValue('category', data.category);
+        matchedCategoryId = findCategoryByName(data.category, categories);
+        if (matchedCategoryId) {
+          setValue('category', matchedCategoryId);
+          console.log('Category matched:', data.category, '->', matchedCategoryId);
+        } else {
+          console.log('Category not matched:', data.category, 'Available:', categories.map(c => c.name));
+        }
       }
       
-      // Handle subcategory - only set if category is set
-      if (data.subCategory && data.category) {
-        setValue('subCategory', data.subCategory);
+      // Handle subcategory - need to wait for subcategories to load if category changed
+      if (data.subCategory && matchedCategoryId) {
+        // Fetch subcategories for the matched category first
+        try {
+          const subCats = await categoryService.getSubCategories(session.user.token, matchedCategoryId);
+          const subCategoriesList = Array.isArray(subCats) ? subCats : [];
+          const matchedSubCategoryId = findSubCategoryByName(data.subCategory, subCategoriesList);
+          if (matchedSubCategoryId) {
+            setValue('subCategory', matchedSubCategoryId);
+            console.log('SubCategory matched:', data.subCategory, '->', matchedSubCategoryId);
+          } else {
+            console.log('SubCategory not matched:', data.subCategory, 'Available:', subCategoriesList.map(s => s.name));
+          }
+        } catch (err) {
+          console.error('Failed to fetch subcategories for matching:', err);
+        }
       }
       
       setValue('isAlcoholic', data.isAlcoholic ?? false);
