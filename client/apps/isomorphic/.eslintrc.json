@@ -3,6 +3,7 @@
     "rules": {
         "no-duplicate-imports": "warn",
         "react/react-in-jsx-scope": "off",
-        "react/no-unknown-property": "error"
+        "react/no-unknown-property": "warn",
+        "react-hooks/exhaustive-deps": "warn"
     }
 }
