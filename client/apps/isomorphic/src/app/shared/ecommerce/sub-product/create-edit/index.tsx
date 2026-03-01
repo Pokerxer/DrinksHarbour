@@ -23,7 +23,6 @@ import {
 } from 'react-icons/pi';
 import SubProductBasicInfo from './basic-info';
 import SubProductPricing from './pricing';
-import SubProductSalesDiscounts from './sales-discounts';
 import SubProductInventory from './inventory';
 import SubProductSizes from './sizes';
 import SubProductVendor from './vendor';
@@ -43,7 +42,6 @@ import { defaultValues, formParts } from './form-utils';
 const STEPS = [
   { key: formParts.basicInfo, label: 'Basic Info', icon: PiTag, color: 'blue' as const, description: 'Product selection' },
   { key: formParts.pricing, label: 'Pricing', icon: PiCurrencyNgn, color: 'green' as const, description: 'Prices & margins' },
-  { key: formParts.salesDiscounts, label: 'Sales', icon: PiPercent, color: 'orange' as const, description: 'Sale pricing' },
   { key: formParts.inventory, label: 'Inventory', icon: PiArchiveBox, color: 'purple' as const, description: 'Stock levels' },
   { key: formParts.sizes, label: 'Sizes', icon: PiRuler, color: 'cyan' as const, description: 'Size variants' },
   { key: formParts.vendor, label: 'Vendor', icon: PiFactory, color: 'yellow' as const, description: 'Supplier info' },
@@ -56,7 +54,6 @@ const STEPS = [
 const COMPONENTS: Record<string, React.FC> = {
   [formParts.basicInfo]: SubProductBasicInfo,
   [formParts.pricing]: SubProductPricing,
-  [formParts.salesDiscounts]: SubProductSalesDiscounts,
   [formParts.inventory]: SubProductInventory,
   [formParts.sizes]: SubProductSizes,
   [formParts.vendor]: SubProductVendor,
@@ -148,6 +145,7 @@ export default function CreateEditSubProduct({
   const [currentStep, setCurrentStep] = useState(0);
   const [direction, setDirection] = useState(0);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [createdSubProductId, setCreatedSubProductId] = useState<string | null>(null);
   const [windowSize, setWindowSize] = useState({ width: 0, height: 0 });
   const [showStepDropdown, setShowStepDropdown] = useState(false);
   const [showSettingsDropdown, setShowSettingsDropdown] = useState(false);
@@ -229,14 +227,26 @@ export default function CreateEditSubProduct({
   }, []);
 
   useEffect(() => {
+    if (!isEditMode) {
+      setCreatedSubProductId(null);
+    }
+  }, [isEditMode]);
+
+  useEffect(() => {
     if (isEditMode && (slug || id)) {
       setIsFetching(true);
       subproductService.getSubProduct(slug || id || '', session?.user?.token || '')
-        .then((data) => {
-          const transformed = transformBackendToForm(data);
+        .then((response) => {
+          // API returns { success: true, data: { subProduct: {...} } }
+          const subProductData = response?.data?.subProduct || response?.subProduct || response;
+          console.log('📥 Edit mode - Raw API response:', response);
+          console.log('📥 Edit mode - Extracted subProduct data:', subProductData);
+          const transformed = transformBackendToForm(subProductData);
+          console.log('📥 Edit mode - Transformed form data:', transformed);
           methods.reset(transformed);
         })
         .catch((error) => {
+          console.error('Failed to load sub product:', error);
           toast.error('Failed to load sub product');
         })
         .finally(() => setIsFetching(false));
@@ -350,7 +360,11 @@ export default function CreateEditSubProduct({
         await subproductService.updateSubProduct(id, transformedData, session.user.token);
         toast.success('Sub Product updated successfully!');
       } else {
-        await subproductService.createSubProduct(transformedData, session.user.token);
+        const response = await subproductService.createSubProduct(transformedData, session.user.token);
+        const newSubProductId = response?.data?.subProduct?._id || response?.data?.subProduct?.id;
+        if (newSubProductId) {
+          setCreatedSubProductId(newSubProductId);
+        }
         toast.success('Sub Product created successfully!');
       }
       
@@ -361,10 +375,27 @@ export default function CreateEditSubProduct({
       setTimeout(() => setIsSuccess(false), 3000);
     } catch (error: any) {
       setSaveStatus('error');
-      if (error.message?.includes('version') || error.message?.includes('conflict')) {
+      console.error('=== SAVE ERROR ===', error);
+      
+      // Handle specific error types with better messages
+      const errorMessage = error.message || 'Failed to save sub product';
+      
+      if (errorMessage.includes('version') || errorMessage.includes('conflict')) {
         toast.error('This record was modified by another user. Please refresh and try again.');
+      } else if (errorMessage.includes('duplicate') || errorMessage.includes('already exists')) {
+        toast.error('This product already exists in your catalog. Try editing the existing entry instead.');
+      } else if (errorMessage.includes('Product ID is required') || errorMessage.includes('product')) {
+        toast.error('Please select a product or create a new one before saving.');
+      } else if (errorMessage.includes('cost price') || errorMessage.includes('costPrice')) {
+        toast.error('Please enter a valid cost price greater than 0.');
+      } else if (errorMessage.includes('Tenant') || errorMessage.includes('tenant')) {
+        toast.error('Session error. Please sign out and sign back in.');
+      } else if (errorMessage.includes('Unauthorized') || errorMessage.includes('401')) {
+        toast.error('Your session has expired. Please sign in again.');
+      } else if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+        toast.error('Network error. Please check your internet connection and try again.');
       } else {
-        toast.error(error.message || 'Failed to save sub product');
+        toast.error(errorMessage);
       }
     } finally {
       setLoading(false);
@@ -415,9 +446,31 @@ export default function CreateEditSubProduct({
         >
           {isEditMode ? 'Your changes have been saved.' : 'Your new sub product has been created.'}
         </motion.p>
-        <div className="mt-6 flex gap-3">
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          {!isEditMode && createdSubProductId && (
+            <Button 
+              variant="solid" 
+              onClick={() => router.push(`/ecommerce/sub-products/${createdSubProductId}/edit`)}
+            >
+              Edit Created Product
+            </Button>
+          )}
           <Button variant="solid" onClick={() => router.push(routes.eCommerce.subProducts)}>
             View Sub Products
+          </Button>
+          <Button variant="outline" onClick={() => {
+            if (createdSubProductId) {
+              router.push(`/ecommerce/sub-products/create`);
+              setTimeout(() => {
+                setIsSuccess(false);
+                setCreatedSubProductId(null);
+                methods.reset(defaultValues());
+              }, 100);
+            } else {
+              setIsSuccess(false);
+            }
+          }}>
+            Create Another
           </Button>
           <Button variant="outline" onClick={() => setIsSuccess(false)}>
             Continue Editing

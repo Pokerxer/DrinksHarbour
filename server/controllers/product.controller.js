@@ -1080,12 +1080,15 @@ const getProductBySlug = asyncHandler(async (req, res) => {
  */
 const getProductById = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const { includePending } = req.query;
 
   if (!id || !/^[0-9a-fA-F]{24}$/.test(id)) {
     throw new ValidationError('Valid product ID is required');
   }
 
-  const product = await productService.getProductById(id);
+  // Allow including pending products when editing SubProducts
+  const shouldIncludePending = includePending === 'true' || includePending === '1';
+  const product = await productService.getProductById(id, shouldIncludePending);
 
   res.status(200).json({
     success: true,

@@ -9,7 +9,6 @@ import { useState, useEffect } from 'react';
 export const formParts = {
   basicInfo: 'basic-info',
   pricing: 'pricing',
-  salesDiscounts: 'sales-discounts',
   inventory: 'inventory',
   sizes: 'sizes',
   vendor: 'vendor',
@@ -31,12 +30,6 @@ export const menuItems = [
     value: formParts.pricing,
     icon: '💰',
     description: 'Prices & margins',
-  },
-  {
-    label: 'Sales',
-    value: formParts.salesDiscounts,
-    icon: '🏷️',
-    description: 'Sale pricing',
   },
   {
     label: 'Inventory',

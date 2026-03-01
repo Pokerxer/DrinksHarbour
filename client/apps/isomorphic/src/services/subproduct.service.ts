@@ -291,8 +291,21 @@ export const subproductService = {
   },
 
   async getSubProducts(token: string, params?: Record<string, any>) {
-    const queryString = params ? new URLSearchParams(params).toString() : '';
+    // Convert all params to strings for URLSearchParams
+    const stringParams: Record<string, string> = {};
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined && value !== null) {
+          stringParams[key] = String(value);
+        }
+      }
+    }
+    const queryString = Object.keys(stringParams).length > 0 
+      ? new URLSearchParams(stringParams).toString() 
+      : '';
     const url = `${API_URL}/api/subproducts${queryString ? `?${queryString}` : ''}`;
+    
+    console.log('SubProduct service: fetching from', url);
     
     const response = await fetch(url, {
       headers: {
@@ -302,6 +315,7 @@ export const subproductService = {
 
     if (!response.ok) {
       const error = await response.json();
+      console.error('SubProduct service error:', error);
       throw new Error(error.message || 'Failed to fetch subproducts');
     }
 

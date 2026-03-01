@@ -3,13 +3,14 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
-import { Text } from 'rizzui';
+import { Text, Button, Badge } from 'rizzui';
 import { useSession } from 'next-auth/react';
-import { PiCheck, PiPackage, PiArrowLeft, PiTag, PiBarcode, PiHash, PiSpinner, PiUpload, PiX, PiPlusCircle } from 'react-icons/pi';
+import { PiCheck, PiPackage, PiArrowLeft, PiTag, PiBarcode, PiHash, PiSpinner, PiUpload, PiX, PiPlusCircle, PiFunnel, PiImages, PiStar, PiTrash, PiCaretRight, PiWarning } from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
 import { uploadService } from '@/services/upload.service';
 import toast from 'react-hot-toast';
+import cn from '@core/utils/class-names';
 
 import {
   ProductSearchInput,
@@ -47,6 +48,25 @@ const defaultNewProductData: NewProductFormData = {
   vintage: '',
 };
 
+const popularTypes = [
+  { label: 'Wine', icon: '🍷' },
+  { label: 'Beer', icon: '🍺' },
+  { label: 'Whiskey', icon: '🥃' },
+  { label: 'Vodka', icon: '🧊' },
+  { label: 'Rum', icon: '🏝️' },
+  { label: 'Gin', icon: '🌿' },
+];
+
+const currencies = [
+  { value: 'NGN', label: 'NGN - Nigerian Naira', flag: '🇳🇬' },
+  { value: 'USD', label: 'USD - US Dollar', flag: '🇺🇸' },
+  { value: 'EUR', label: 'EUR - Euro', flag: '🇪🇺' },
+  { value: 'GBP', label: 'GBP - British Pound', flag: '🇬🇧' },
+  { value: 'ZAR', label: 'ZAR - South African Rand', flag: '🇿🇦' },
+  { value: 'KES', label: 'KES - Kenyan Shilling', flag: '🇰🇪' },
+  { value: 'GHS', label: 'GHS - Ghanaian Cedi', flag: '🇬🇭' },
+];
+
 export default function SubProductBasicInfo({
   onProductSelect,
   onNewProductCreate,
@@ -64,8 +84,12 @@ export default function SubProductBasicInfo({
   const [fetchedProduct, setFetchedProduct] = useState<Product | null>(null);
   const [isLoadingProduct, setIsLoadingProduct] = useState(false);
   const [isCreatingProduct, setIsCreatingProduct] = useState(false);
+  const [selectedTypeFilter, setSelectedTypeFilter] = useState<string | null>(null);
+  const [showCurrencyDropdown, setShowCurrencyDropdown] = useState(false);
+  const [productNotFound, setProductNotFound] = useState(false);
   
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const currencyRef = useRef<HTMLDivElement>(null);
   const fieldOnChangeRef = useRef<((value: string) => void) | null>(null);
 
   const control = methods?.control;
@@ -77,9 +101,21 @@ export default function SubProductBasicInfo({
 
   const selectedProductId = watch?.('subProductData.product');
   const createNewProduct = watch?.('subProductData.createNewProduct');
+  const selectedCurrency = watch?.('subProductData.currency') || 'NGN';
 
   const hasSearched = searchQuery.length >= 2 && !selectedProductId;
   const hasNoResults = hasSearched && products.length === 0 && !isLoading;
+
+  // Close currency dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (currencyRef.current && !currencyRef.current.contains(event.target as Node)) {
+        setShowCurrencyDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Initialize state from form context on mount - fixes state loss when navigating away and back
   useEffect(() => {
@@ -95,22 +131,34 @@ export default function SubProductBasicInfo({
       if (existingProductId) {
         // Product was selected - fetch product details and set search query to show selected product card
         setIsCreateMode(false);
+        setProductNotFound(false);
         
         // Fetch product details if we have a session token
         if (session?.user?.token) {
           setIsLoadingProduct(true);
           try {
-            const response = await productService.getProductById(existingProductId, session.user.token);
+            // Pass includePending=true to fetch pending products (created via SubProduct workflow)
+            const response = await productService.getProductById(existingProductId, session.user.token, true);
             if (response.success && response.data?.product) {
               const product = response.data.product;
               setFetchedProduct(product);
               setSearchQuery(product.name || 'Selected Product');
+              setProductNotFound(false);
+            } else {
+              setSearchQuery('');
+              setProductNotFound(true);
+              console.warn(`Product with ID ${existingProductId} not found - may have been deleted`);
+            }
+          } catch (error: any) {
+            console.error('Error fetching product:', error);
+            // Check if it's a 404 error
+            if (error.message?.includes('not found') || error.message?.includes('404')) {
+              setProductNotFound(true);
+              setSearchQuery('');
+              toast.error('The linked product was not found. Please select a new product.');
             } else {
               setSearchQuery('Selected Product');
             }
-          } catch (error) {
-            console.error('Error fetching product:', error);
-            setSearchQuery('Selected Product');
           } finally {
             setIsLoadingProduct(false);
           }
@@ -209,15 +257,16 @@ export default function SubProductBasicInfo({
     setIsLoading(true);
     try {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
-      const response = await fetch(
-        `${API_URL}/api/products/search?q=${encodeURIComponent(query)}&limit=15`,
-        {
-          headers: {
-            'Authorization': `Bearer ${session.user.token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+      let url = `${API_URL}/api/products/search?q=${encodeURIComponent(query)}&limit=15`;
+      if (selectedTypeFilter) {
+        url += `&type=${encodeURIComponent(selectedTypeFilter)}`;
+      }
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${session.user.token}`,
+          'Content-Type': 'application/json',
+        },
+      });
 
       if (!response.ok) throw new Error('Failed to fetch products');
 
@@ -233,6 +282,13 @@ export default function SubProductBasicInfo({
     }
   };
 
+  const handleTypeFilterClick = (type: string) => {
+    setSelectedTypeFilter(selectedTypeFilter === type ? null : type);
+    if (searchQuery.length >= 2) {
+      searchProducts(searchQuery);
+    }
+  };
+
   const handleSelectProduct = useCallback((product: Product) => {
     const productId = product._id || product.id || '';
     
@@ -241,11 +297,12 @@ export default function SubProductBasicInfo({
     // Prevent search effect from triggering
     setIsSelectingProduct(true);
     
-    // Clear create mode first
+    // Clear create mode and product not found state
     setIsCreateMode(false);
     setNewProductData(null);
     setSelectedIndex(-1);
     setProducts([]);
+    setProductNotFound(false);
     
     // Store selected product for display (persists even after products array is cleared)
     setFetchedProduct(product);
@@ -333,6 +390,7 @@ export default function SubProductBasicInfo({
     setNewProductData(null);
     setIsCreateMode(false);
     setFetchedProduct(null);
+    setProductNotFound(false);
     setValue('subProductData.product', '', { shouldValidate: true });
     setValue('subProductData.createNewProduct', false);
     setValue('subProductData.newProductData', null);
@@ -413,14 +471,68 @@ export default function SubProductBasicInfo({
     setValue?.('subProductData.images', newImages);
   };
 
+  const getSelectedCurrency = () => currencies.find(c => c.value === selectedCurrency) || currencies[0];
+
   return (
     <div className="space-y-6">
       <div>
-        <Text className="mb-2 text-lg font-semibold">Basic Information</Text>
-        <Text className="text-sm text-gray-500">
-          Search for an existing product or create a new one
-        </Text>
+        <div className="flex items-center gap-3 mb-2">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg">
+            <PiTag className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <Text className="text-lg font-semibold text-gray-900">Basic Information</Text>
+            <Text className="text-sm text-gray-500">
+              Search for an existing product or create a new one
+            </Text>
+          </div>
+        </div>
       </div>
+
+      {/* Type Filter Chips */}
+      {!isCreateMode && !selectedProductId && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+              <PiFunnel className="h-4 w-4" />
+              Quick Filter by Type
+            </label>
+            {selectedTypeFilter && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedTypeFilter(null);
+                  if (searchQuery.length >= 2) searchProducts(searchQuery);
+                }}
+                className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+              >
+                <PiX className="h-3 w-3" />
+                Clear filter
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {popularTypes.map((type) => (
+              <motion.button
+                key={type.label}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                type="button"
+                onClick={() => handleTypeFilterClick(type.label)}
+                className={cn(
+                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200',
+                  selectedTypeFilter === type.label
+                    ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'
+                )}
+              >
+                <span>{type.icon}</span>
+                <span>{type.label}</span>
+              </motion.button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Create Mode - Back Button */}
       <AnimatePresence>
@@ -574,6 +686,38 @@ export default function SubProductBasicInfo({
                       </motion.div>
                     )}
                   </AnimatePresence>
+
+                  {/* Product Not Found Warning */}
+                  <AnimatePresence>
+                    {productNotFound && !selectedProduct && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-amber-100">
+                              <PiWarning className="h-5 w-5 text-amber-600" />
+                            </div>
+                            <div className="flex-1">
+                              <Text className="text-sm font-semibold text-amber-900">
+                                Product Not Found
+                              </Text>
+                              <Text className="text-xs text-amber-700 mt-1">
+                                The product linked to this SubProduct no longer exists or was deleted. 
+                                Please search and select a new product to continue editing.
+                              </Text>
+                              <Text className="text-xs text-amber-600 mt-2 font-mono">
+                                Missing Product ID: {selectedProductId}
+                              </Text>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               );
             }}
@@ -621,75 +765,184 @@ export default function SubProductBasicInfo({
         </div>
       </div>
 
-      {/* Currency */}
+      {/* Currency - Enhanced Dropdown */}
       <div>
         <label className="mb-1.5 block text-sm font-medium text-gray-700">
-          Currency
+          Currency <span className="text-red-500">*</span>
         </label>
-        <select
-          {...control.register('subProductData.currency')}
-          className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all"
-        >
-          <option value="NGN">NGN - Nigerian Naira</option>
-          <option value="USD">USD - US Dollar</option>
-          <option value="EUR">EUR - Euro</option>
-          <option value="GBP">GBP - British Pound</option>
-          <option value="ZAR">ZAR - South African Rand</option>
-          <option value="KES">KES - Kenyan Shilling</option>
-          <option value="GHS">GHS - Ghanaian Cedi</option>
-        </select>
+        <div className="relative" ref={currencyRef}>
+          <button
+            type="button"
+            onClick={() => setShowCurrencyDropdown(!showCurrencyDropdown)}
+            className={cn(
+              'flex w-full items-center justify-between rounded-xl border bg-white px-4 py-3 text-left transition-all',
+              'hover:border-blue-300 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100',
+              errors.subProductData?.currency ? 'border-red-300' : 'border-gray-200'
+            )}
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-lg">{getSelectedCurrency().flag}</span>
+              <span className="font-medium text-gray-900">{getSelectedCurrency().value}</span>
+              <span className="text-sm text-gray-500">- {getSelectedCurrency().label.split(' - ')[1]}</span>
+            </div>
+            <motion.div
+              animate={{ rotate: showCurrencyDropdown ? 180 : 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <PiCaretRight className="h-4 w-4 text-gray-400" />
+            </motion.div>
+          </button>
+          
+          <AnimatePresence>
+            {showCurrencyDropdown && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl"
+              >
+                {currencies.map((currency, index) => (
+                  <motion.button
+                    key={currency.value}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.03 }}
+                    type="button"
+                    onClick={() => {
+                      setValue('subProductData.currency', currency.value);
+                      setShowCurrencyDropdown(false);
+                    }}
+                    className={cn(
+                      'flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50',
+                      selectedCurrency === currency.value && 'bg-blue-50'
+                    )}
+                  >
+                    <span className="text-lg">{currency.flag}</span>
+                    <span className={cn(
+                      'font-medium',
+                      selectedCurrency === currency.value ? 'text-blue-700' : 'text-gray-900'
+                    )}>
+                      {currency.value}
+                    </span>
+                    <span className="text-sm text-gray-500">
+                      {currency.label.split(' - ')[1]}
+                    </span>
+                    {selectedCurrency === currency.value && (
+                      <PiCheck className="ml-auto h-4 w-4 text-blue-600" />
+                    )}
+                  </motion.button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+        {errors.subProductData?.currency && (
+          <Text className="mt-1 text-xs text-red-500">{errors.subProductData.currency.message}</Text>
+        )}
       </div>
 
-      {/* Product Images */}
+      {/* Product Images - Enhanced */}
       <div>
-        <label className="mb-1.5 block text-sm font-medium text-gray-700">
-          Product Images
-        </label>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+            <PiImages className="h-4 w-4" />
+            Product Images
+            {subProductImages.length > 0 && (
+              <Badge color="primary" size="sm" variant="flat">
+                {subProductImages.length}
+              </Badge>
+            )}
+          </label>
+          {subProductImages.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setValue?.('subProductData.images', []);
+                toast.success('All images cleared');
+              }}
+              className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1"
+            >
+              <PiTrash className="h-3 w-3" />
+              Clear all
+            </button>
+          )}
+        </div>
         <div className="space-y-3">
           {/* Image Upload Area */}
-          <div className="flex items-center gap-2">
-            <label className="relative cursor-pointer">
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handleImageUpload}
-                disabled={isUploading}
-                className="sr-only"
-              />
-              <div className={`
-                flex items-center gap-2 rounded-lg border-2 border-dashed 
-                ${isUploading ? 'border-gray-300 bg-gray-50' : 'border-blue-300 bg-blue-50 hover:bg-blue-100'}
-                px-4 py-2 transition-colors
-              `}>
-                {isUploading ? (
-                  <>
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
-                    <span className="text-sm text-gray-600">Uploading...</span>
-                  </>
-                ) : (
-                  <>
-                    <PiUpload className="h-4 w-4 text-blue-600" />
-                    <span className="text-sm text-blue-600">Upload Images</span>
-                  </>
-                )}
-              </div>
+          <motion.div
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.99 }}
+            className="relative"
+          >
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleImageUpload}
+              disabled={isUploading}
+              className="sr-only"
+              id="image-upload"
+            />
+            <label
+              htmlFor="image-upload"
+              className={cn(
+                'flex cursor-pointer items-center justify-center gap-3 rounded-xl border-2 border-dashed p-6 transition-all',
+                isUploading 
+                  ? 'border-gray-300 bg-gray-50' 
+                  : 'border-blue-300 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 hover:border-blue-400'
+              )}
+            >
+              {isUploading ? (
+                <>
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                  >
+                    <PiSpinner className="h-6 w-6 text-blue-600" />
+                  </motion.div>
+                  <div className="text-center">
+                    <Text className="text-sm font-medium text-gray-600">Uploading...</Text>
+                    <Text className="text-xs text-gray-500">Please wait</Text>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100">
+                    <PiUpload className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <div className="text-center">
+                    <Text className="text-sm font-medium text-gray-900">
+                      Drop images here or click to upload
+                    </Text>
+                    <Text className="text-xs text-gray-500">
+                      PNG, JPG up to 10MB each
+                    </Text>
+                  </div>
+                </>
+              )}
             </label>
-            <Text className="text-xs text-gray-500">
-              {subProductImages.length > 0 && `${subProductImages.length} image(s) uploaded`}
-            </Text>
-          </div>
+          </motion.div>
 
-          {/* Image Preview Grid */}
+          {/* Image Preview Grid - Enhanced */}
           {subProductImages.length > 0 && (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+            >
               {subProductImages.map((image: any, index: number) => (
-                <div
+                <motion.div
                   key={index}
-                  className={`
-                    group relative aspect-square overflow-hidden rounded-lg border-2
-                    ${image.isPrimary ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'}
-                  `}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: index * 0.05 }}
+                  whileHover={{ scale: 1.03 }}
+                  className={cn(
+                    'group relative aspect-square overflow-hidden rounded-xl border-2 transition-all',
+                    image.isPrimary 
+                      ? 'border-blue-500 ring-2 ring-blue-200 shadow-lg' 
+                      : 'border-gray-200 hover:border-gray-300'
+                  )}
                 >
                   <Image
                     src={image.url || image.thumbnail}
@@ -700,37 +953,70 @@ export default function SubProductBasicInfo({
                   
                   {/* Primary Badge */}
                   {image.isPrimary && (
-                    <div className="absolute left-1 top-1 rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      className="absolute left-2 top-2 rounded-full bg-blue-600 px-2 py-1 text-[10px] font-bold text-white shadow-lg flex items-center gap-1"
+                    >
+                      <PiStar className="h-3 w-3" />
                       Primary
-                    </div>
+                    </motion.div>
                   )}
                   
-                  {/* Hover Actions */}
-                  <div className="absolute inset-0 flex items-center justify-center gap-1 bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-                    {!image.isPrimary && (
-                      <button
-                        type="button"
-                        onClick={() => handleSetPrimary(index)}
-                        className="rounded bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                      >
-                        Set Primary
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveImage(index)}
-                      className="rounded bg-red-500 p-1.5 text-white hover:bg-red-600"
-                    >
-                      <PiX className="h-3.5 w-3.5" />
-                    </button>
+                  {/* Index Badge */}
+                  <div className="absolute left-2 bottom-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                    {index + 1}
                   </div>
-                </div>
+
+                  {/* Hover Actions */}
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    whileHover={{ opacity: 1 }}
+                    className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/60 backdrop-blur-sm"
+                  >
+                    {!image.isPrimary && (
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSetPrimary(index);
+                        }}
+                        className="flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-gray-900 hover:bg-gray-100"
+                      >
+                        <PiStar className="h-3 w-3" />
+                        Primary
+                      </motion.button>
+                    )}
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveImage(index);
+                      }}
+                      className="flex items-center gap-1 rounded-full bg-red-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600"
+                    >
+                      <PiTrash className="h-3 w-3" />
+                      Remove
+                    </motion.button>
+                  </motion.div>
+                </motion.div>
               ))}
-            </div>
+            </motion.div>
           )}
           
           {errors.subProductData?.images && (
-            <Text className="text-xs text-red-500">{errors.subProductData.images.message}</Text>
+            <motion.div
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center gap-1"
+            >
+              <PiWarning className="h-4 w-4 text-red-500" />
+              <Text className="text-xs text-red-500">{errors.subProductData.images.message}</Text>
+            </motion.div>
           )}
         </div>
       </div>

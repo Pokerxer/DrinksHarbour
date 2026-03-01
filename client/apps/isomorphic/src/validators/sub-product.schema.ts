@@ -3,27 +3,27 @@ import { z } from 'zod';
 // Helper to convert empty strings to null for optional number fields
 const optionalNumber = z.preprocess(
   (val) => {
-    if (val === '' || val === null || val === undefined) return null;
+    if (val === '' || val === null || val === undefined) return undefined;
     if (typeof val === 'string') {
       const parsed = parseFloat(val);
-      return isNaN(parsed) ? null : parsed;
+      return isNaN(parsed) ? undefined : parsed;
     }
     return val;
   },
-  z.number().nullable().optional()
+  z.number().optional()
 );
 
 // Helper for optional number with min(0)
 const optionalPositiveNumber = z.preprocess(
   (val) => {
-    if (val === '' || val === null || val === undefined) return null;
+    if (val === '' || val === null || val === undefined) return undefined;
     if (typeof val === 'string') {
       const parsed = parseFloat(val);
-      return isNaN(parsed) ? null : parsed;
+      return isNaN(parsed) ? undefined : parsed;
     }
     return val;
   },
-  z.number().min(0).nullable().optional()
+  z.number().optional()
 );
 
 // Size option schema for sub-product variants
@@ -48,7 +48,11 @@ export const sizeOptionSchema = z.object({
     (val) => (val === '' || val === null || val === undefined) ? 25 : Number(val),
     z.number().min(0).max(500).default(25)
   ),
-  roundUp: z.enum(['none', '100', '1000']).default('none'),
+  roundUp: z.enum(['none', '100', '500', '1000']).default('none'),
+  pricingStrategy: z.enum(['cost_plus', 'market_based', 'value_based', 'penetration']).default('cost_plus'),
+  minPrice: optionalNumber,
+  maxPrice: optionalNumber,
+  competitorPrice: z.string().max(500).default(''),
   saleDiscountPercentage: z.preprocess(
     (val) => (val === '' || val === null || val === undefined) ? 0 : Number(val),
     z.number().min(0).max(100).default(0)
@@ -131,6 +135,8 @@ const newProductDataSchema = z.object({
 // Core sub-product data schema (the actual sub-product fields)
 const subProductDataSchema = z.object({
   // Core Relationships
+  _id: z.string().optional(),
+  id: z.string().optional(),
   product: z.string().optional(),
   tenant: z.string().optional(),
   createNewProduct: z.boolean().default(false),
@@ -150,7 +156,11 @@ const subProductDataSchema = z.object({
     (val) => (val === '' || val === null || val === undefined) ? 25 : Number(val),
     z.number().min(0).max(500).default(25)
   ),
-  roundUp: z.enum(['none', '100', '1000']).default('none'),
+  roundUp: z.enum(['none', '100', '500', '1000']).default('none'),
+  pricingStrategy: z.enum(['cost_plus', 'market_based', 'value_based', 'penetration']).default('cost_plus'),
+  minPrice: optionalNumber,
+  maxPrice: optionalNumber,
+  competitorPrice: z.string().max(500).default(''),
   saleDiscountPercentage: z.preprocess(
     (val) => (val === '' || val === null || val === undefined) ? 0 : Number(val),
     z.number().min(0).max(100).default(0)

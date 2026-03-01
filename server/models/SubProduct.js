@@ -87,8 +87,31 @@ const subProductSchema = new Schema(
     
     roundUp: {
       type: String,
-      enum: ['none', '100', '1000'],
+      enum: ['none', '100', '500', '1000'],
       default: 'none',
+    },
+    
+    // Pricing Strategy
+    pricingStrategy: {
+      type: String,
+      enum: ['cost_plus', 'market_based', 'value_based', 'penetration'],
+      default: 'cost_plus',
+    },
+    
+    // Price Boundaries
+    minPrice: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    maxPrice: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    competitorPrice: {
+      type: String,
+      maxlength: 500,
     },
     
     // Input discount percentage used for price calculations (not the computed virtual)
@@ -241,7 +264,7 @@ const subProductSchema = new Schema(
     
     supplierRating: {
       type: Number,
-      min: 1,
+      min: 0,
       max: 5,
     },
     
@@ -424,35 +447,21 @@ const subProductSchema = new Schema(
     }],
 
     // ════════════════════════════════════════════════════════════
-    // SHIPPING & LOGISTICS
+    // SHIPPING & LOGISTICS (References to separate models)
     // ════════════════════════════════════════════════════════════
     shipping: {
-      weight: Number, // grams
-      length: Number, // cm
-      width: Number,  // cm
-      height: Number, // cm
-      fragile: { type: Boolean, default: true },
-      requiresAgeVerification: { type: Boolean, default: true },
-      hazmat: { type: Boolean, default: false },
-      shippingClass: String,
-      // Extended shipping fields
-      carrier: String,
-      deliveryArea: String,
-      minDeliveryDays: Number,
-      maxDeliveryDays: Number,
-      fixedShippingCost: Number,
-      isFreeShipping: { type: Boolean, default: false },
-      freeShippingMinOrder: Number,
-      freeShippingLabel: String,
-      availableForPickup: { type: Boolean, default: false },
+      type: ObjectId,
+      ref: 'Shipping',
+      sparse: true,
     },
     
+    // ════════════════════════════════════════════════════════════
+    // WAREHOUSE (Reference to separate model)
+    // ════════════════════════════════════════════════════════════
     warehouse: {
-      location: String,
-      zone: String,
-      aisle: String,
-      shelf: String,
-      bin: String,
+      type: ObjectId,
+      ref: 'Warehouse',
+      sparse: true,
     },
   },
   {

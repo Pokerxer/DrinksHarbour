@@ -295,9 +295,12 @@ const sizeSchema = new Schema(
     
     barcode: {
       type: String,
-      sparse: true,
-      unique: true,
       trim: true,
+      index: {
+        unique: true,
+        sparse: true,
+        partialFilterExpression: { barcode: { $type: 'string', $ne: '' } }
+      }
     },
     
     gtin: {
@@ -689,7 +692,7 @@ sizeSchema.pre('save', function() {
 
 sizeSchema.index({ subproduct: 1, size: 1 }, { unique: true });
 sizeSchema.index({ sku: 1 });
-sizeSchema.index({ barcode: 1 });
+// barcode index is defined inline with partialFilterExpression
 // Remove duplicate index: sizeSchema.index({ availability: 1 });
 sizeSchema.index({ stock: 1 });
 sizeSchema.index({ subproduct: 1, totalSold: -1 });

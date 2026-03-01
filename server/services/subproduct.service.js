@@ -5,6 +5,8 @@ const SubProduct = require('../models/subProduct');
 const Product = require('../models/product');
 const Size = require('../models/size');
 const Tenant = require('../models/tenant');
+const Shipping = require('../models/shipping');
+const Warehouse = require('../models/warehouse');
 const { 
   NotFoundError, 
   ValidationError, 
@@ -12,6 +14,36 @@ const {
   ConflictError 
 } = require('../utils/errors');
 const { generateSKU } = require('../utils/skuGenerator');
+
+/**
+ * Sanitize SubProduct reference fields (shipping, warehouse) to handle corrupt data
+ * This handles cases where numeric or invalid string values were accidentally stored
+ * @param {Object} subProduct - The SubProduct document (mutated in place)
+ * @param {string} identifier - Identifier for logging (ID or SKU)
+ */
+const sanitizeSubProductReferences = (subProduct, identifier) => {
+  if (!subProduct) return;
+
+  // Sanitize shipping field
+  if (subProduct.shipping) {
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(subProduct.shipping);
+    const isPopulatedObject = typeof subProduct.shipping === 'object' && subProduct.shipping._id;
+    if (!isValidObjectId && !isPopulatedObject) {
+      console.warn(`⚠️ SubProduct ${identifier} has invalid shipping value: ${subProduct.shipping}. Setting to null.`);
+      subProduct.shipping = null;
+    }
+  }
+
+  // Sanitize warehouse field
+  if (subProduct.warehouse) {
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(subProduct.warehouse);
+    const isPopulatedObject = typeof subProduct.warehouse === 'object' && subProduct.warehouse._id;
+    if (!isValidObjectId && !isPopulatedObject) {
+      console.warn(`⚠️ SubProduct ${identifier} has invalid warehouse value: ${subProduct.warehouse}. Setting to null.`);
+      subProduct.warehouse = null;
+    }
+  }
+};
 
 /**
  * Check if MongoDB supports transactions (replica set or sharded cluster)
@@ -104,6 +136,7 @@ const calculatePriceFromRevenueModel = async (costPrice, tenantId, fallbackMarku
 
 /**
  * Get tenant's SubProducts with filters
+ * For super_admin without tenantId, returns all subproducts across all tenants
  */
 const getMySubProducts = async (tenantId, options) => {
   const {
@@ -113,6 +146,7 @@ const getMySubProducts = async (tenantId, options) => {
     search,
     sort = 'createdAt',
     order = 'desc',
+    isSuperAdmin = false,
   } = options;
 
   // Validate pagination
@@ -120,8 +154,11 @@ const getMySubProducts = async (tenantId, options) => {
   const limitNum = Math.min(Math.max(1, limit), 100);
   const skip = (pageNum - 1) * limitNum;
 
-  // Build query
-  const query = { tenant: tenantId };
+  // Build query - only filter by tenant if tenantId is provided
+  const query = {};
+  if (tenantId) {
+    query.tenant = tenantId;
+  }
 
   if (status) {
     query.status = status;
@@ -145,22 +182,35 @@ const getMySubProducts = async (tenantId, options) => {
   };
   const sortOptions = sortMap[sort] || { createdAt: -1 };
 
+  // Build populate options - include tenant for super_admin
+  const populateOptions = [
+    {
+      path: 'product',
+      select: 'name slug type images isAlcoholic abv volumeMl brand category status',
+      populate: [
+        { path: 'brand', select: 'name slug logo' },
+        { path: 'category', select: 'name slug' },
+      ],
+    },
+    {
+      path: 'sizes',
+      select: 'size displayName sellingPrice stock availability lowStockThreshold',
+    },
+  ];
+
+  // For super_admin, also populate tenant info
+  if (isSuperAdmin && !tenantId) {
+    populateOptions.push({
+      path: 'tenant',
+      select: 'name slug',
+    });
+  }
+
   // Execute queries in parallel
   const [total, subProducts] = await Promise.all([
     SubProduct.countDocuments(query),
     SubProduct.find(query)
-      .populate({
-        path: 'product',
-        select: 'name slug type images isAlcoholic abv volumeMl brand category status',
-        populate: [
-          { path: 'brand', select: 'name slug logo' },
-          { path: 'category', select: 'name slug' },
-        ],
-      })
-      .populate({
-        path: 'sizes',
-        select: 'size displayName sellingPrice stock availability lowStockThreshold',
-      })
+      .populate(populateOptions)
       .select('-embeddingOverride') // Exclude large fields
       .sort(sortOptions)
       .skip(skip)
@@ -168,17 +218,20 @@ const getMySubProducts = async (tenantId, options) => {
       .lean(),
   ]);
 
+  // Build stats query base
+  const statsQueryBase = tenantId ? { tenant: tenantId } : {};
+
   // Calculate statistics
   const stats = {
     total,
-    active: await SubProduct.countDocuments({ tenant: tenantId, status: 'active' }),
+    active: await SubProduct.countDocuments({ ...statsQueryBase, status: 'active' }),
     lowStock: await SubProduct.countDocuments({
-      tenant: tenantId,
+      ...statsQueryBase,
       status: 'active',
       'sizes.stock': { $lte: 10 },
     }),
     outOfStock: await SubProduct.countDocuments({
-      tenant: tenantId,
+      ...statsQueryBase,
       status: 'out_of_stock',
     }),
   };
@@ -306,6 +359,11 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
     discountEnd,
     flashSale,
     bundleDeals = [],
+    // Pricing strategy
+    pricingStrategy = 'cost_plus',
+    minPrice,
+    maxPrice,
+    competitorPrice,
     // Shipping & logistics
     shipping = {},
     warehouse = {},
@@ -588,16 +646,24 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
   let finalMarginPercentage = null;
   let finalMarkupPercentage = inputMarkupPercentage ?? 25;
   let finalRoundUp = inputRoundUp || 'none';
+  let pricing = null;
 
   // If costPrice is provided but no baseSellingPrice, calculate it
   if (finalCostPrice && finalCostPrice > 0 && !finalBaseSellingPrice) {
-    const pricing = await calculatePriceFromRevenueModel(finalCostPrice, tenantId);
+    pricing = await calculatePriceFromRevenueModel(finalCostPrice, tenantId);
     finalBaseSellingPrice = pricing.baseSellingPrice;
     finalMarginPercentage = pricing.marginPercentage;
     finalMarkupPercentage = pricing.markupPercentage || finalMarkupPercentage;
   } else if (finalBaseSellingPrice && finalCostPrice && finalCostPrice > 0) {
     // Calculate margin from provided prices
     finalMarginPercentage = ((finalBaseSellingPrice - finalCostPrice) / finalBaseSellingPrice * 100).toFixed(2);
+  } else {
+    // Try to get default pricing from tenant even without costPrice
+    try {
+      pricing = await calculatePriceFromRevenueModel(finalCostPrice || 0, tenantId);
+    } catch (e) {
+      // Ignore pricing calculation errors
+    }
   }
 
   // For new product creation, costPrice might not be set yet - use provided baseSellingPrice
@@ -628,6 +694,10 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
     marginPercentage: finalMarginPercentage ? parseFloat(finalMarginPercentage) : null,
     markupPercentage: finalMarkupPercentage,
     roundUp: finalRoundUp,
+    pricingStrategy,
+    minPrice: minPrice ?? null,
+    maxPrice: maxPrice ?? null,
+    competitorPrice: competitorPrice || '',
     // Sale/discount fields
     inputSaleDiscountPercentage: inputSaleDiscountPercentage ?? saleDiscountPercentage ?? 0,
     salePrice: salePrice || null,
@@ -671,11 +741,11 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
     // Vendor & sourcing
     vendor: vendor && vendor !== '' ? vendor : null,
     supplierSKU: supplierSKU || '',
-    supplierPrice: supplierPrice || null,
-    leadTimeDays: leadTimeDays || null,
-    minimumOrderQuantity: minimumOrderQuantity || null,
-    estimatedShippingCost: estimatedShippingCost || null,
-    supplierRating: supplierRating || null,
+    supplierPrice: supplierPrice ?? null,
+    leadTimeDays: leadTimeDays ?? null,
+    minimumOrderQuantity: minimumOrderQuantity ?? null,
+    estimatedShippingCost: estimatedShippingCost ?? null,
+    supplierRating: supplierRating ?? null,
     vendorNotes: vendorNotes || '',
     vendorContactName: vendorContactName || '',
     vendorPhone: vendorPhone || '',
@@ -702,14 +772,7 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
       freeShippingLabel: shipping?.freeShippingLabel || '',
       availableForPickup: shipping?.availableForPickup ?? false,
     },
-    // Warehouse
-    warehouse: {
-      location: warehouse?.location || '',
-      zone: warehouse?.zone || '',
-      aisle: warehouse?.aisle || '',
-      shelf: warehouse?.shelf || '',
-      bin: warehouse?.bin || '',
-    },
+    // Warehouse - will be created separately after SubProduct is created
     // Promotions
     discount,
     discountType: discountType && ['fixed', 'percentage'].includes(discountType) ? discountType : null,
@@ -727,9 +790,9 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
     metadata: {
       createdBy: user?._id,
       lastModifiedBy: user?._id,
-      revenueModel: pricing.revenueModel,
-      markupPercentage: pricing.markupPercentage,
-      commissionPercentage: pricing.commissionPercentage,
+      revenueModel: pricing?.revenueModel || null,
+      markupPercentage: pricing?.markupPercentage || finalMarkupPercentage,
+      commissionPercentage: pricing?.commissionPercentage || null,
     },
   };
 
@@ -740,6 +803,123 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
     createdSubProduct = subProduct[0];
   } else {
     createdSubProduct = await SubProduct.create(subProductPayload);
+  }
+
+  // ========================================================================
+  // CREATE SHIPPING RECORD
+  // ========================================================================
+  let createdShipping = null;
+  const shippingData = shipping || {};
+  const hasShippingData = (
+    (shippingData.weight > 0) || 
+    (shippingData.length > 0) || 
+    (shippingData.width > 0) || 
+    (shippingData.height > 0) ||
+    shippingData.carrier || 
+    shippingData.shippingClass || 
+    shippingData.deliveryArea ||
+    (shippingData.fixedShippingCost > 0) || 
+    shippingData.isFreeShipping
+  );
+
+  if (hasShippingData) {
+    const shippingPayload = {
+      subProduct: createdSubProduct._id,
+      tenant: tenantObjectId,
+      product: productObjectId,
+      weight: shippingData?.weight || 0,
+      length: shippingData?.length || 0,
+      width: shippingData?.width || 0,
+      height: shippingData?.height || 0,
+      volume: (shippingData?.length || 0) * (shippingData?.width || 0) * (shippingData?.height || 0),
+      fragile: shippingData?.fragile ?? true,
+      requiresAgeVerification: shippingData?.requiresAgeVerification ?? true,
+      hazmat: shippingData?.hazmat ?? false,
+      shippingClass: shippingData?.shippingClass || 'standard',
+      carrier: shippingData?.carrier || '',
+      deliveryArea: shippingData?.deliveryArea || '',
+      minDeliveryDays: shippingData?.minDeliveryDays || 3,
+      maxDeliveryDays: shippingData?.maxDeliveryDays || 7,
+      fixedShippingCost: shippingData?.fixedShippingCost || 0,
+      isFreeShipping: shippingData?.isFreeShipping ?? false,
+      freeShippingMinOrder: shippingData?.freeShippingMinOrder || 0,
+      freeShippingLabel: shippingData?.freeShippingLabel || '',
+      availableForPickup: shippingData?.availableForPickup ?? false,
+      isActive: true,
+      status: 'active',
+    };
+
+    try {
+      if (session) {
+        const shippingDocs = await Shipping.create([shippingPayload], { session });
+        createdShipping = shippingDocs[0];
+      } else {
+        createdShipping = await Shipping.create(shippingPayload);
+      }
+
+      // Link shipping to SubProduct
+      createdSubProduct.shipping = createdShipping._id;
+      if (session) {
+        await createdSubProduct.save({ session });
+      } else {
+        await createdSubProduct.save();
+      }
+      console.log('✅ Shipping record created:', createdShipping._id);
+    } catch (shippingError) {
+      console.error('❌ Error creating shipping record:', shippingError.message);
+      // Continue without shipping - don't fail the whole operation
+    }
+  }
+
+  // ========================================================================
+  // CREATE WAREHOUSE RECORD
+  // ========================================================================
+  let createdWarehouse = null;
+  const warehouseData = warehouse || {};
+  const hasWarehouseData = (
+    warehouseData.location || 
+    warehouseData.zone || 
+    warehouseData.aisle || 
+    warehouseData.shelf || 
+    warehouseData.bin
+  );
+
+  if (hasWarehouseData) {
+    const warehousePayload = {
+      subProduct: createdSubProduct._id,
+      tenant: tenantObjectId,
+      product: productObjectId,
+      location: warehouseData?.location || '',
+      zone: warehouseData?.zone || '',
+      aisle: warehouseData?.aisle || '',
+      shelf: warehouseData?.shelf || '',
+      bin: warehouseData?.bin || '',
+      capacity: 0,
+      currentQuantity: 0,
+      isActive: true,
+      status: 'active',
+    };
+
+    try {
+      if (session) {
+        const warehouseDocs = await Warehouse.create([warehousePayload], { session });
+        createdWarehouse = warehouseDocs[0];
+      } else {
+        createdWarehouse = await Warehouse.create(warehousePayload);
+      }
+
+      // Link warehouse to SubProduct
+      createdSubProduct.warehouse = createdWarehouse._id;
+      if (session) {
+        await createdSubProduct.save({ session });
+      } else {
+        await createdSubProduct.save();
+      }
+      console.log('✅ Warehouse record created:', createdWarehouse._id);
+    } catch (warehouseError) {
+      console.error('❌ Error creating warehouse record:', warehouseError.message);
+      // Continue without warehouse - don't fail the whole operation
+    }
   }
 
   // Create sizes if provided and not selling without variants
@@ -802,9 +982,9 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
   };
   
   if (session) {
-    await Product.findByIdAndUpdate(productId, productUpdate, { session });
+    await Product.findByIdAndUpdate(productObjectId, productUpdate, { session });
   } else {
-    await Product.findByIdAndUpdate(productId, productUpdate);
+    await Product.findByIdAndUpdate(productObjectId, productUpdate);
   }
 
   // Update tenant stats
@@ -879,6 +1059,14 @@ const createSubProduct = async (data, tenantId, user) => {
         path: 'vendor',
         select: 'name contactPerson email phone',
       })
+      .populate({
+        path: 'shipping',
+        select: 'weight length width height volume fragile requiresAgeVerification hazmat shippingClass carrier deliveryArea minDeliveryDays maxDeliveryDays fixedShippingCost isFreeShipping freeShippingMinOrder freeShippingLabel availableForPickup',
+      })
+      .populate({
+        path: 'warehouse',
+        select: 'location zone aisle shelf bin fullLocation capacity currentQuantity',
+      })
       .lean();
 
     return {
@@ -904,11 +1092,35 @@ const getSubProduct = async (subProductId, tenantId) => {
     throw new ValidationError('Invalid SubProduct ID');
   }
 
-  const subProduct = await SubProduct.findOne({
+  // First, fetch without populating shipping/warehouse to check for corrupt data
+  const rawSubProduct = await SubProduct.findOne({
     _id: subProductId,
     tenant: tenantId,
-  })
-    .populate({
+  }).lean();
+
+  if (!rawSubProduct) {
+    throw new NotFoundError('Product not found in your catalog');
+  }
+
+  // Check if shipping/warehouse fields have corrupt data (non-ObjectId values)
+  const hasValidShipping = rawSubProduct.shipping && 
+    mongoose.Types.ObjectId.isValid(rawSubProduct.shipping);
+  const hasValidWarehouse = rawSubProduct.warehouse && 
+    mongoose.Types.ObjectId.isValid(rawSubProduct.warehouse);
+
+  // Log and fix corrupt data if found
+  if (rawSubProduct.shipping && !hasValidShipping) {
+    console.warn(`⚠️ SubProduct ${subProductId} has invalid shipping value: ${rawSubProduct.shipping}. Clearing field.`);
+    await SubProduct.updateOne({ _id: subProductId }, { $unset: { shipping: 1 } });
+  }
+  if (rawSubProduct.warehouse && !hasValidWarehouse) {
+    console.warn(`⚠️ SubProduct ${subProductId} has invalid warehouse value: ${rawSubProduct.warehouse}. Clearing field.`);
+    await SubProduct.updateOne({ _id: subProductId }, { $unset: { warehouse: 1 } });
+  }
+
+  // Build populate array dynamically, excluding corrupt fields
+  const populateFields = [
+    {
       path: 'product',
       select: 'name slug type images isAlcoholic abv volumeMl originCountry brand category subCategory tags flavors description tastingNotes',
       populate: [
@@ -918,19 +1130,47 @@ const getSubProduct = async (subProductId, tenantId) => {
         { path: 'tags', select: 'name slug type color' },
         { path: 'flavors', select: 'name value color' },
       ],
-    })
-    .populate({
+    },
+    {
       path: 'sizes',
       select: 'size displayName unitType sellingPrice costPrice compareAtPrice stock lowStockThreshold availability sku barcode weightGrams volumeMl discountValue discountType discountStart discountEnd totalSold',
-    })
-    .populate({
+    },
+    {
       path: 'vendor',
       select: 'name contactPerson email phone',
-    })
+    },
+  ];
+
+  // Only populate shipping if it's a valid ObjectId
+  if (hasValidShipping) {
+    populateFields.push({
+      path: 'shipping',
+      select: 'weight length width height volume fragile requiresAgeVerification hazmat shippingClass carrier deliveryArea minDeliveryDays maxDeliveryDays fixedShippingCost isFreeShipping freeShippingMinOrder freeShippingLabel availableForPickup',
+    });
+  }
+
+  // Only populate warehouse if it's a valid ObjectId
+  if (hasValidWarehouse) {
+    populateFields.push({
+      path: 'warehouse',
+      select: 'location zone aisle shelf bin fullLocation capacity currentQuantity availableCapacity condition',
+    });
+  }
+
+  // Re-fetch with safe populates
+  const subProduct = await SubProduct.findOne({
+    _id: subProductId,
+    tenant: tenantId,
+  })
+    .populate(populateFields)
     .lean();
 
-  if (!subProduct) {
-    throw new NotFoundError('Product not found in your catalog');
+  // Ensure shipping/warehouse are null if they were corrupt (just cleaned)
+  if (!hasValidShipping) {
+    subProduct.shipping = null;
+  }
+  if (!hasValidWarehouse) {
+    subProduct.warehouse = null;
   }
 
   return subProduct;
@@ -1014,6 +1254,29 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
 
   if (data.roundUp !== undefined) {
     subProduct.roundUp = data.roundUp;
+  }
+
+  // ========================================================================
+  // PRICING STRATEGY & PRICE BOUNDARIES
+  // ========================================================================
+  if (data.pricingStrategy !== undefined) {
+    const validStrategies = ['cost_plus', 'market_based', 'value_based', 'penetration'];
+    if (!validStrategies.includes(data.pricingStrategy)) {
+      throw new ValidationError('Invalid pricing strategy');
+    }
+    subProduct.pricingStrategy = data.pricingStrategy;
+  }
+
+  if (data.minPrice !== undefined) {
+    subProduct.minPrice = data.minPrice && data.minPrice > 0 ? data.minPrice : null;
+  }
+
+  if (data.maxPrice !== undefined) {
+    subProduct.maxPrice = data.maxPrice && data.maxPrice > 0 ? data.maxPrice : null;
+  }
+
+  if (data.competitorPrice !== undefined) {
+    subProduct.competitorPrice = data.competitorPrice || '';
   }
 
   // ========================================================================
@@ -1252,41 +1515,122 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
   }
 
   // ========================================================================
-  // SHIPPING FIELDS
+  // SHIPPING FIELDS (Using separate Shipping model)
   // ========================================================================
   if (data.shipping !== undefined) {
-    subProduct.shipping = {
-      weight: data.shipping?.weight ?? subProduct.shipping?.weight,
-      length: data.shipping?.length ?? subProduct.shipping?.length,
-      width: data.shipping?.width ?? subProduct.shipping?.width,
-      height: data.shipping?.height ?? subProduct.shipping?.height,
-      fragile: data.shipping?.fragile ?? subProduct.shipping?.fragile ?? true,
-      requiresAgeVerification: data.shipping?.requiresAgeVerification ?? subProduct.shipping?.requiresAgeVerification ?? true,
-      hazmat: data.shipping?.hazmat ?? subProduct.shipping?.hazmat ?? false,
-      shippingClass: data.shipping?.shippingClass ?? subProduct.shipping?.shippingClass ?? '',
-      carrier: data.shipping?.carrier ?? subProduct.shipping?.carrier ?? '',
-      deliveryArea: data.shipping?.deliveryArea ?? subProduct.shipping?.deliveryArea ?? '',
-      minDeliveryDays: data.shipping?.minDeliveryDays ?? subProduct.shipping?.minDeliveryDays ?? null,
-      maxDeliveryDays: data.shipping?.maxDeliveryDays ?? subProduct.shipping?.maxDeliveryDays ?? null,
-      fixedShippingCost: data.shipping?.fixedShippingCost ?? subProduct.shipping?.fixedShippingCost ?? null,
-      isFreeShipping: data.shipping?.isFreeShipping ?? subProduct.shipping?.isFreeShipping ?? false,
-      freeShippingMinOrder: data.shipping?.freeShippingMinOrder ?? subProduct.shipping?.freeShippingMinOrder ?? null,
-      freeShippingLabel: data.shipping?.freeShippingLabel ?? subProduct.shipping?.freeShippingLabel ?? '',
-      availableForPickup: data.shipping?.availableForPickup ?? subProduct.shipping?.availableForPickup ?? false,
-    };
+    // Get shipping ID - could be ObjectId (new) or object with _id (old populated)
+    const shippingId = subProduct.shipping?._id || subProduct.shipping;
+    const hasShippingData = data.shipping && (
+      data.shipping.weight > 0 || data.shipping.length > 0 || data.shipping.width > 0 || data.shipping.height > 0 ||
+      data.shipping.carrier || data.shipping.shippingClass || data.shipping.deliveryArea ||
+      data.shipping.fixedShippingCost > 0 || data.shipping.isFreeShipping
+    );
+
+    if (hasShippingData) {
+      if (shippingId) {
+        // Update existing shipping record
+        await Shipping.findByIdAndUpdate(shippingId, {
+          weight: data.shipping?.weight ?? 0,
+          length: data.shipping?.length ?? 0,
+          width: data.shipping?.width ?? 0,
+          height: data.shipping?.height ?? 0,
+          volume: (data.shipping?.length || 0) * (data.shipping?.width || 0) * (data.shipping?.height || 0),
+          fragile: data.shipping?.fragile ?? true,
+          requiresAgeVerification: data.shipping?.requiresAgeVerification ?? true,
+          hazmat: data.shipping?.hazmat ?? false,
+          shippingClass: data.shipping?.shippingClass || 'standard',
+          carrier: data.shipping?.carrier || '',
+          deliveryArea: data.shipping?.deliveryArea || '',
+          minDeliveryDays: data.shipping?.minDeliveryDays ?? 3,
+          maxDeliveryDays: data.shipping?.maxDeliveryDays ?? 7,
+          fixedShippingCost: data.shipping?.fixedShippingCost ?? 0,
+          isFreeShipping: data.shipping?.isFreeShipping ?? false,
+          freeShippingMinOrder: data.shipping?.freeShippingMinOrder ?? 0,
+          freeShippingLabel: data.shipping?.freeShippingLabel || '',
+          availableForPickup: data.shipping?.availableForPickup ?? false,
+        });
+      } else {
+        // Create new shipping record
+        const shippingPayload = {
+          subProduct: subProduct._id,
+          tenant: subProduct.tenant,
+          product: subProduct.product,
+          weight: data.shipping?.weight ?? 0,
+          length: data.shipping?.length ?? 0,
+          width: data.shipping?.width ?? 0,
+          height: data.shipping?.height ?? 0,
+          volume: (data.shipping?.length || 0) * (data.shipping?.width || 0) * (data.shipping?.height || 0),
+          fragile: data.shipping?.fragile ?? true,
+          requiresAgeVerification: data.shipping?.requiresAgeVerification ?? true,
+          hazmat: data.shipping?.hazmat ?? false,
+          shippingClass: data.shipping?.shippingClass || 'standard',
+          carrier: data.shipping?.carrier || '',
+          deliveryArea: data.shipping?.deliveryArea || '',
+          minDeliveryDays: data.shipping?.minDeliveryDays ?? 3,
+          maxDeliveryDays: data.shipping?.maxDeliveryDays ?? 7,
+          fixedShippingCost: data.shipping?.fixedShippingCost ?? 0,
+          isFreeShipping: data.shipping?.isFreeShipping ?? false,
+          freeShippingMinOrder: data.shipping?.freeShippingMinOrder ?? 0,
+          freeShippingLabel: data.shipping?.freeShippingLabel || '',
+          availableForPickup: data.shipping?.availableForPickup ?? false,
+          isActive: true,
+          status: 'active',
+        };
+        const newShipping = await Shipping.create(shippingPayload);
+        subProduct.shipping = newShipping._id;
+      }
+    } else if (shippingId) {
+      // Delete shipping record if all fields are empty
+      await Shipping.findByIdAndDelete(shippingId);
+      subProduct.shipping = null;
+    }
   }
 
   // ========================================================================
-  // WAREHOUSE FIELDS
+  // WAREHOUSE FIELDS (Using separate Warehouse model)
   // ========================================================================
   if (data.warehouse !== undefined) {
-    subProduct.warehouse = {
-      location: data.warehouse?.location ?? subProduct.warehouse?.location ?? '',
-      zone: data.warehouse?.zone ?? subProduct.warehouse?.zone ?? '',
-      aisle: data.warehouse?.aisle ?? subProduct.warehouse?.aisle ?? '',
-      shelf: data.warehouse?.shelf ?? subProduct.warehouse?.shelf ?? '',
-      bin: data.warehouse?.bin ?? subProduct.warehouse?.bin ?? '',
-    };
+    // Get warehouse ID - could be ObjectId (new) or object with _id (old populated)
+    const warehouseId = subProduct.warehouse?._id || subProduct.warehouse;
+    const hasWarehouseData = data.warehouse && (
+      data.warehouse.location || data.warehouse.zone || data.warehouse.aisle || 
+      data.warehouse.shelf || data.warehouse.bin
+    );
+
+    if (hasWarehouseData) {
+      if (warehouseId) {
+        // Update existing warehouse record
+        await Warehouse.findByIdAndUpdate(warehouseId, {
+          location: data.warehouse?.location || '',
+          zone: data.warehouse?.zone || '',
+          aisle: data.warehouse?.aisle || '',
+          shelf: data.warehouse?.shelf || '',
+          bin: data.warehouse?.bin || '',
+        });
+      } else {
+        // Create new warehouse record
+        const warehousePayload = {
+          subProduct: subProduct._id,
+          tenant: subProduct.tenant,
+          product: subProduct.product,
+          location: data.warehouse?.location || '',
+          zone: data.warehouse?.zone || '',
+          aisle: data.warehouse?.aisle || '',
+          shelf: data.warehouse?.shelf || '',
+          bin: data.warehouse?.bin || '',
+          capacity: 0,
+          currentQuantity: 0,
+          isActive: true,
+          status: 'active',
+        };
+        const newWarehouse = await Warehouse.create(warehousePayload);
+        subProduct.warehouse = newWarehouse._id;
+      }
+    } else if (warehouseId) {
+      // Delete warehouse record if all fields are empty
+      await Warehouse.findByIdAndDelete(warehouseId);
+      subProduct.warehouse = null;
+    }
   }
 
   // ========================================================================
@@ -3947,6 +4291,9 @@ const getSubProductById = async (id) => {
     throw new NotFoundError('SubProduct not found');
   }
 
+  // Sanitize corrupt reference fields (shipping, warehouse)
+  sanitizeSubProductReferences(subProduct, `ID ${id}`);
+
   return subProduct;
 };
 
@@ -3963,6 +4310,9 @@ const getSubProductBySKU = async (sku) => {
   if (!subProduct) {
     throw new NotFoundError('SubProduct not found');
   }
+
+  // Sanitize corrupt reference fields (shipping, warehouse)
+  sanitizeSubProductReferences(subProduct, `SKU ${sku}`);
 
   return subProduct;
 };

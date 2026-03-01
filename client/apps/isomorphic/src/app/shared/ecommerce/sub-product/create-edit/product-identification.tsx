@@ -9,7 +9,7 @@ import { CreateProductInput } from '@/validators/create-product.schema';
 import { productTypes } from './form-utils';
 import FormGroup from '@/app/shared/form-group';
 import { useEffect, useState, Fragment } from 'react';
-import { PiCheck, PiSparkle, PiSpinner, PiPlus } from 'react-icons/pi';
+import { PiCheck, PiSparkle, PiSpinner, PiPlus, PiFolder, PiCaretRight, PiX } from 'react-icons/pi';
 import { useSession } from 'next-auth/react';
 import { geminiService } from '@/services/gemini.service';
 import { categoryService } from '@/services/category.service';
@@ -386,7 +386,7 @@ export default function ProductIdentification({
               value: cat._id,
               label: cat.name,
             }))}
-              value={categories.find((c) => c._id === watch('category')) ? {
+            value={categories.find((c) => c._id === watch('category')) ? {
               value: watch('category') || '',
               label: categories.find((c) => c._id === watch('category'))?.name,
             } : ''}
@@ -404,41 +404,82 @@ export default function ProductIdentification({
           </Text>
         </div>
 
-        {/* SubCategory - Searchable */}
+        {/* SubCategory - Enhanced Searchable */}
         <div>
-          <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
-            Sub-Category
-            {selectedSubCategoryObj && (
-              <Badge size="sm" color="secondary" variant="flat">
-                {selectedSubCategoryObj.name}
-              </Badge>
+          <div className="flex items-center justify-between mb-2">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+              <PiFolder className="h-4 w-4 text-gray-500" />
+              Sub-Category
+              {selectedSubCategoryObj && (
+                <Badge size="sm" color="success" variant="flat">
+                  <PiCheck className="h-3 w-3 mr-1" />
+                  {selectedSubCategoryObj.name}
+                </Badge>
+              )}
+            </label>
+            {watch('subCategory') && (
+              <button
+                type="button"
+                onClick={() => setValue('subCategory', '')}
+                className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1"
+              >
+                <PiX className="h-3 w-3" />
+                Clear
+              </button>
             )}
-          </label>
-          <Select
-            placeholder={
-              !selectedCategory
-                ? 'Select category first'
-                : isLoadingSubCategories
-                ? 'Loading...'
-                : subCategories.length === 0
-                ? 'No sub-categories available'
-                : 'Search and select sub-category'
-            }
-            options={subCategories.map((subCat) => ({
-              value: subCat._id,
-              label: subCat.name,
-            }))}
-            value={subCategories.find((s) => s._id === watch('subCategory')) ? {
-              value: watch('subCategory') || '',
-              label: subCategories.find((s) => s._id === watch('subCategory'))?.name,
-            } : ''}
-            onChange={(option: SelectOption) => {
-              setValue('subCategory', option.value as string);
-            }}
-            disabled={!selectedCategory || isLoadingSubCategories}
-            error={errors.subCategory?.message as string}
-            className="w-full"
-          />
+          </div>
+          <div className="relative">
+            <Select
+              placeholder={
+                !selectedCategory
+                  ? 'Select category first'
+                  : isLoadingSubCategories
+                  ? 'Loading...'
+                  : subCategories.length === 0
+                  ? 'No sub-categories available'
+                  : 'Search and select sub-category'
+              }
+              options={subCategories.map((subCat) => ({
+                value: subCat._id,
+                label: subCat.name,
+              }))}
+              value={subCategories.find((s) => s._id === watch('subCategory')) ? {
+                value: watch('subCategory') || '',
+                label: subCategories.find((s) => s._id === watch('subCategory'))?.name,
+              } : ''}
+              onChange={(option: SelectOption) => {
+                setValue('subCategory', option.value as string);
+              }}
+              disabled={!selectedCategory || isLoadingSubCategories}
+              error={errors.subCategory?.message as string}
+              className="w-full"
+            />
+            {isLoadingSubCategories && (
+              <div className="absolute right-10 top-1/2 -translate-y-1/2">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                >
+                  <PiSpinner className="h-4 w-4 text-blue-600" />
+                </motion.div>
+              </div>
+            )}
+          </div>
+          <AnimatePresence>
+            {selectedCategory && subCategories.length > 0 && !watch('subCategory') && (
+              <motion.div
+                initial={{ opacity: 0, y: -5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                className="mt-2"
+              >
+                <Text className="text-xs text-gray-500 flex items-center gap-1">
+                  <PiCaretRight className="h-3 w-3" />
+                  {subCategories.length} sub-categories available
+                </Text>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Brand - Searchable */}

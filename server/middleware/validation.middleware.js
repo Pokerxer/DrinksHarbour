@@ -3,6 +3,26 @@
 const { body, param, query, validationResult } = require('express-validator');
 const { ValidationError } = require('../utils/errors');
 
+const isBooleanValidator = (fieldName) => {
+  return (value) => {
+    if (value === null || value === undefined || value === '' || typeof value === 'boolean') {
+      return true;
+    }
+    if (typeof value === 'string') {
+      const lower = value.toLowerCase();
+      if (lower === 'true' || lower === 'false' || lower === '1' || lower === '0' || lower === 'yes' || lower === 'no') {
+        return true;
+      }
+    }
+    if (typeof value === 'number') {
+      if (value === 0 || value === 1) {
+        return true;
+      }
+    }
+    throw new Error(`${fieldName} must be a boolean`);
+  };
+};
+
 /**
  * Generic validation middleware
  * Use with express-validator rules (body, query, param)
@@ -79,8 +99,8 @@ const validateProductCreation = [
 
   body('volumeMl')
     .optional()
-    .isInt({ min: 1 })
-    .withMessage('Volume must be a positive integer'),
+    .isInt({ min: 0 })
+    .withMessage('Volume must be a non-negative integer'),
 
   body('category')
     .optional()
@@ -178,8 +198,8 @@ const validateProductUpdate = [
 
   body('volumeMl')
     .optional()
-    .isInt({ min: 1 })
-    .withMessage('Volume must be a positive integer'),
+    .isInt({ min: 0 })
+    .withMessage('Volume must be a non-negative integer'),
 
   body('category')
     .optional()
@@ -313,19 +333,47 @@ const validateSubProductCreation = [
     .withMessage('Sizes must be an array'),
 
   body('sizes.*.volumeMl')
-    .optional()
-    .isInt({ min: 1 })
-    .withMessage('Volume must be a positive integer'),
+    .optional({ nullable: true })
+    .isInt({ min: 0 })
+    .withMessage('Volume must be a non-negative integer'),
 
   body('sizes.*.stock')
-    .optional()
+    .optional({ nullable: true })
     .isInt({ min: 0 })
     .withMessage('Stock must be a non-negative integer'),
 
   body('sizes.*.sellingPrice')
-    .optional()
+    .optional({ nullable: true })
     .isFloat({ min: 0.01 })
     .withMessage('Selling price must be greater than 0'),
+
+  body('sizes.*.isOnSale')
+    .optional({ nullable: true })
+    .custom(isBooleanValidator('Size isOnSale')),
+
+  body('sizes.*.isDefault')
+    .optional({ nullable: true })
+    .custom(isBooleanValidator('Size isDefault')),
+
+  body('sizes.*.isFeatured')
+    .optional({ nullable: true })
+    .custom(isBooleanValidator('Size isFeatured')),
+
+  body('sizes.*.isBestSeller')
+    .optional({ nullable: true })
+    .custom(isBooleanValidator('Size isBestSeller')),
+
+  body('sizes.*.isPopularSize')
+    .optional({ nullable: true })
+    .custom(isBooleanValidator('Size isPopularSize')),
+
+  body('sizes.*.isLimitedEdition')
+    .optional({ nullable: true })
+    .custom(isBooleanValidator('Size isLimitedEdition')),
+
+  body('sizes.*.requiresAgeVerification')
+    .optional({ nullable: true })
+    .custom(isBooleanValidator('Size requiresAgeVerification')),
 
   body('discountPercentage')
     .optional()
@@ -390,17 +438,16 @@ const validateSubProductUpdate = [
 
   // Sale/Discount fields
   body('isOnSale')
-    .optional()
-    .isBoolean()
-    .withMessage('isOnSale must be a boolean'),
+    .optional({ nullable: true })
+    .custom(isBooleanValidator('isOnSale')),
 
   body('salePrice')
-    .optional()
+    .optional({ nullable: true })
     .isFloat({ min: 0 })
     .withMessage('Sale price must be a positive number'),
 
   body('saleDiscountPercentage')
-    .optional()
+    .optional({ nullable: true })
     .isFloat({ min: 0, max: 100 })
     .withMessage('Sale discount percentage must be between 0 and 100'),
 
@@ -442,19 +489,28 @@ const validateSubProductUpdate = [
     .withMessage('Invalid status'),
 
   body('isFeaturedByTenant')
-    .optional()
-    .isBoolean()
-    .withMessage('isFeaturedByTenant must be a boolean'),
+    .optional({ nullable: true })
+    .custom(isBooleanValidator('isFeaturedByTenant')),
 
   body('isNewArrival')
-    .optional()
-    .isBoolean()
-    .withMessage('isNewArrival must be a boolean'),
+    .optional({ nullable: true })
+    .custom(isBooleanValidator('isNewArrival')),
 
   body('isBestSeller')
-    .optional()
-    .isBoolean()
-    .withMessage('isBestSeller must be a boolean'),
+    .optional({ nullable: true })
+    .custom(isBooleanValidator('isBestSeller')),
+
+  body('isPublished')
+    .optional({ nullable: true })
+    .custom(isBooleanValidator('isPublished')),
+
+  body('visibleInPOS')
+    .optional({ nullable: true })
+    .custom(isBooleanValidator('visibleInPOS')),
+
+  body('visibleInOnlineStore')
+    .optional({ nullable: true })
+    .custom(isBooleanValidator('visibleInOnlineStore')),
 
   // Inventory fields
   body('stockStatus')
@@ -515,55 +571,57 @@ const validateSubProductUpdate = [
     .withMessage('Supplier SKU must be a string'),
 
   body('supplierPrice')
-    .optional()
+    .optional({ nullable: true })
     .isFloat({ min: 0 })
     .withMessage('Supplier price must be a positive number'),
 
   body('leadTimeDays')
-    .optional()
+    .optional({ nullable: true })
     .isInt({ min: 0 })
     .withMessage('Lead time days must be a non-negative integer'),
 
   body('minimumOrderQuantity')
-    .optional()
+    .optional({ nullable: true })
     .isInt({ min: 1 })
     .withMessage('Minimum order quantity must be at least 1'),
 
+  body('estimatedShippingCost')
+    .optional({ nullable: true })
+    .isFloat({ min: 0 })
+    .withMessage('Estimated shipping cost must be a positive number'),
+
   // Shipping fields
   body('shipping.weight')
-    .optional()
+    .optional({ nullable: true })
     .isFloat({ min: 0 })
     .withMessage('Shipping weight must be a positive number'),
 
   body('shipping.length')
-    .optional()
+    .optional({ nullable: true })
     .isFloat({ min: 0 })
     .withMessage('Shipping length must be a positive number'),
 
   body('shipping.width')
-    .optional()
+    .optional({ nullable: true })
     .isFloat({ min: 0 })
     .withMessage('Shipping width must be a positive number'),
 
   body('shipping.height')
-    .optional()
+    .optional({ nullable: true })
     .isFloat({ min: 0 })
     .withMessage('Shipping height must be a positive number'),
 
   body('shipping.fragile')
-    .optional()
-    .isBoolean()
-    .withMessage('Shipping fragile must be a boolean'),
+    .optional({ nullable: true })
+    .custom(isBooleanValidator('Shipping fragile')),
 
   body('shipping.requiresAgeVerification')
-    .optional()
-    .isBoolean()
-    .withMessage('Shipping requiresAgeVerification must be a boolean'),
+    .optional({ nullable: true })
+    .custom(isBooleanValidator('Shipping requiresAgeVerification')),
 
   body('shipping.hazmat')
-    .optional()
-    .isBoolean()
-    .withMessage('Shipping hazmat must be a boolean'),
+    .optional({ nullable: true })
+    .custom(isBooleanValidator('Shipping hazmat')),
 
   body('shipping.shippingClass')
     .optional()
@@ -598,28 +656,27 @@ const validateSubProductUpdate = [
 
   // Discount fields
   body('discount')
-    .optional()
+    .optional({ nullable: true })
     .isFloat({ min: 0 })
     .withMessage('Discount must be a positive number'),
 
   body('discountType')
-    .optional()
+    .optional({ nullable: true })
     .isIn(['fixed', 'percentage', null])
     .withMessage('Invalid discount type'),
 
   // Flash sale fields
   body('flashSale.isActive')
-    .optional()
-    .isBoolean()
-    .withMessage('Flash sale isActive must be a boolean'),
+    .optional({ nullable: true })
+    .custom(isBooleanValidator('Flash sale isActive')),
 
   body('flashSale.discountPercentage')
-    .optional()
+    .optional({ nullable: true })
     .isFloat({ min: 0, max: 100 })
     .withMessage('Flash sale discount percentage must be between 0 and 100'),
 
   body('flashSale.remainingQuantity')
-    .optional()
+    .optional({ nullable: true })
     .isInt({ min: 0 })
     .withMessage('Flash sale remaining quantity must be a non-negative integer'),
 

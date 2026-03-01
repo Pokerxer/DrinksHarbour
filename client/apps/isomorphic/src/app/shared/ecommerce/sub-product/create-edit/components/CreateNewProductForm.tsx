@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Text, Textarea, Input, Button, Select, type SelectOption } from 'rizzui';
-import { PiWarning, PiSparkle, PiSpinner } from 'react-icons/pi';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Text, Textarea, Input, Button, Select, type SelectOption, Badge } from 'rizzui';
+import { PiWarning, PiSparkle, PiSpinner, PiCaretRight, PiX, PiFolder, PiCheck } from 'react-icons/pi';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useSession } from 'next-auth/react';
 import { geminiService } from '@/services/gemini.service';
 import { categoryService } from '@/services/category.service';
 import toast from 'react-hot-toast';
+import cn from '@core/utils/class-names';
 
 export interface NewProductFormData {
   name: string;
@@ -586,35 +588,87 @@ export function CreateNewProductForm({
           </Text>
         </div>
 
-        {/* SubCategory - Searchable Select */}
+        {/* SubCategory - Enhanced Searchable Select */}
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Sub-Category
-          </label>
-          <Select
-            placeholder={
-              !formData.category
-                ? 'Select category first'
-                : isLoadingSubCategories
-                ? 'Loading...'
-                : subCategories.length === 0
-                ? 'No sub-categories available'
-                : 'Search and select sub-category'
-            }
-            options={subCategories.map((subCat) => ({
-              value: subCat._id,
-              label: subCat.name,
-            }))}
-            value={subCategories.find((s) => s._id === formData.subCategory) ? {
-              value: formData.subCategory || '',
-              label: subCategories.find((s) => s._id === formData.subCategory)?.name,
-            } : ''}
-            onChange={(option: SelectOption) => {
-              handleChange('subCategory', option?.value as string || '');
-            }}
-            disabled={!formData.category || isLoadingSubCategories}
-            className="w-full"
-          />
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+              <PiFolder className="h-4 w-4 text-gray-500" />
+              Sub-Category
+            </label>
+            {formData.subCategory && (
+              <button
+                type="button"
+                onClick={() => handleChange('subCategory', '')}
+                className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1"
+              >
+                <PiX className="h-3 w-3" />
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="relative">
+            <Select
+              placeholder={
+                !formData.category
+                  ? 'Select category first'
+                  : isLoadingSubCategories
+                  ? 'Loading...'
+                  : subCategories.length === 0
+                  ? 'No sub-categories available'
+                  : 'Search and select sub-category'
+              }
+              options={subCategories.map((subCat) => ({
+                value: subCat._id,
+                label: subCat.name,
+              }))}
+              value={subCategories.find((s) => s._id === formData.subCategory) ? {
+                value: formData.subCategory || '',
+                label: subCategories.find((s) => s._id === formData.subCategory)?.name,
+              } : ''}
+              onChange={(option: SelectOption) => {
+                handleChange('subCategory', option?.value as string || '');
+              }}
+              disabled={!formData.category || isLoadingSubCategories}
+              className="w-full"
+            />
+            {isLoadingSubCategories && (
+              <div className="absolute right-10 top-1/2 -translate-y-1/2">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                >
+                  <PiSpinner className="h-4 w-4 text-blue-600" />
+                </motion.div>
+              </div>
+            )}
+          </div>
+          <AnimatePresence>
+            {formData.category && subCategories.length > 0 && !formData.subCategory && (
+              <motion.div
+                initial={{ opacity: 0, y: -5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                className="mt-2"
+              >
+                <Text className="text-xs text-gray-500 flex items-center gap-1">
+                  <PiCaretRight className="h-3 w-3" />
+                  {subCategories.length} sub-categories available for selected category
+                </Text>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          {formData.subCategory && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="mt-2"
+            >
+              <Badge color="success" size="sm" variant="flat">
+                <PiCheck className="h-3 w-3 mr-1" />
+                {subCategories.find((s) => s._id === formData.subCategory)?.name}
+              </Badge>
+            </motion.div>
+          )}
         </div>
       </div>
 

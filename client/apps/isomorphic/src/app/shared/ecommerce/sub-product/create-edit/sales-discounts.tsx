@@ -1,11 +1,15 @@
 // @ts-nocheck
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
-import { Input, Text, Switch } from 'rizzui';
+import { Input, Text, Switch, Badge, Button } from 'rizzui';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PiPercent, PiTag, PiCalendar, PiMegaphone, PiLightning, PiCurrencyNgn, PiArrowsDownUp } from 'react-icons/pi';
+import { 
+  PiPercent, PiTag, PiCalendar, PiMegaphone, PiLightning, PiCurrencyNgn, 
+  PiArrowsDownUp, PiWarningCircle, PiCheckCircle, PiClock, PiX, PiGift,
+  PiNumberSquareOne, PiNumberSquareTwo, PiStorefront
+} from 'react-icons/pi';
 import { fieldStaggerVariants, containerVariants, toggleVariants } from './animations';
 
 const currencySymbols: Record<string, string> = {
@@ -18,6 +22,52 @@ const currencySymbols: Record<string, string> = {
   GHS: '₵',
 };
 
+interface SaleTypeOption {
+  value: string;
+  label: string;
+  description: string;
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+}
+
+const saleTypeOptions: SaleTypeOption[] = [
+  { 
+    value: 'percentage', 
+    label: 'Percentage Discount', 
+    description: 'Reduce price by a percentage',
+    icon: PiPercent,
+    color: 'blue'
+  },
+  { 
+    value: 'fixed', 
+    label: 'Fixed Amount', 
+    description: 'Reduce price by a fixed value',
+    icon: PiCurrencyNgn,
+    color: 'green'
+  },
+  { 
+    value: 'flash_sale', 
+    label: 'Flash Sale', 
+    description: 'Limited time special offer',
+    icon: PiLightning,
+    color: 'amber'
+  },
+  { 
+    value: 'bundle', 
+    label: 'Bundle Deal', 
+    description: 'Buy more for less',
+    icon: PiGift,
+    color: 'purple'
+  },
+  { 
+    value: 'bogo', 
+    label: 'Buy One Get One', 
+    description: 'Free or discounted second item',
+    icon: PiNumberSquareTwo,
+    color: 'rose'
+  },
+];
+
 export default function SubProductSalesDiscounts() {
   const methods = useFormContext();
   const register = methods?.register;
@@ -26,95 +76,127 @@ export default function SubProductSalesDiscounts() {
   const control = methods?.control;
   const errors = methods?.formState?.errors || {};
 
-  const isOnSale = watch?.('subProductData.isOnSale');
-  const baseSellingPrice = watch?.('subProductData.baseSellingPrice');
-  const salePrice = watch?.('subProductData.salePrice');
-  const saleDiscountPercentage = watch?.('subProductData.saleDiscountPercentage');
-  const saleDiscountValue = watch?.('subProductData.saleDiscountValue');
-  const saleType = watch?.('subProductData.saleType');
+  const isOnSale = watch?.('subProductData.isOnSale') ?? false;
+  const baseSellingPrice = watch?.('subProductData.baseSellingPrice') ?? 0;
+  const salePrice = watch?.('subProductData.salePrice') ?? 0;
+  const saleDiscountPercentage = watch?.('subProductData.saleDiscountPercentage') ?? 0;
+  const saleDiscountValue = watch?.('subProductData.saleDiscountValue') ?? 0;
+  const saleType = watch?.('subProductData.saleType') ?? '';
+  const saleStartDate = watch?.('subProductData.saleStartDate');
+  const saleEndDate = watch?.('subProductData.saleEndDate');
   const currency = watch?.('subProductData.currency') || 'NGN';
   
   const currencySymbol = currencySymbols[currency] || '₦';
 
-  const [localDiscountPercentage, setLocalDiscountPercentage] = useState<number>(0);
-  const [localDiscountValue, setLocalDiscountValue] = useState<number>(0);
-  const [isAutoCalculatingPercentage, setIsAutoCalculatingPercentage] = useState(false);
-  const [isAutoCalculatingFixed, setIsAutoCalculatingFixed] = useState(false);
+  const [inputPercentage, setInputPercentage] = useState(saleDiscountPercentage || 0);
+  const [inputFixed, setInputFixed] = useState(saleDiscountValue || 0);
 
   useEffect(() => {
-    if (baseSellingPrice && salePrice && baseSellingPrice > 0) {
-      const calculated = ((baseSellingPrice - salePrice) / baseSellingPrice * 100);
-      setLocalDiscountPercentage(Number(calculated.toFixed(2)));
+    setInputPercentage(saleDiscountPercentage || 0);
+  }, [saleDiscountPercentage]);
+
+  useEffect(() => {
+    setInputFixed(saleDiscountValue || 0);
+  }, [saleDiscountValue]);
+
+  const calculatedSalePrice = useMemo(() => {
+    if (!baseSellingPrice || baseSellingPrice <= 0) return 0;
+    
+    if (saleType === 'percentage' && inputPercentage > 0) {
+      return baseSellingPrice - (baseSellingPrice * inputPercentage / 100);
     }
+    if (saleType === 'fixed' && inputFixed > 0) {
+      return Math.max(0, baseSellingPrice - inputFixed);
+    }
+    return 0;
+  }, [baseSellingPrice, saleType, inputPercentage, inputFixed]);
+
+  const discountPercentage = useMemo(() => {
+    if (!baseSellingPrice || !salePrice || baseSellingPrice <= 0) return 0;
+    return ((baseSellingPrice - salePrice) / baseSellingPrice * 100);
   }, [baseSellingPrice, salePrice]);
 
-  useEffect(() => {
-    if (isAutoCalculatingPercentage && baseSellingPrice && baseSellingPrice > 0 && saleType === 'percentage') {
-      const discountAmount = baseSellingPrice * (localDiscountPercentage / 100);
-      const calculatedSalePrice = baseSellingPrice - discountAmount;
-      setValue?.('subProductData.salePrice', Number(calculatedSalePrice.toFixed(2)), { shouldValidate: true });
-      setValue?.('subProductData.saleDiscountPercentage', localDiscountPercentage, { shouldValidate: true });
-    }
-  }, [localDiscountPercentage, baseSellingPrice, saleType, isAutoCalculatingPercentage, setValue]);
+  const savingsAmount = useMemo(() => {
+    if (!baseSellingPrice || !salePrice) return 0;
+    return baseSellingPrice - salePrice;
+  }, [baseSellingPrice, salePrice]);
 
-  useEffect(() => {
-    if (isAutoCalculatingFixed && baseSellingPrice && baseSellingPrice > 0 && saleType === 'fixed') {
-      const calculatedSalePrice = baseSellingPrice - localDiscountValue;
-      if (calculatedSalePrice > 0) {
-        setValue?.('subProductData.salePrice', Number(calculatedSalePrice.toFixed(2)), { shouldValidate: true });
-        setValue?.('subProductData.saleDiscountValue', localDiscountValue, { shouldValidate: true });
-      }
+  const saleStatus = useMemo(() => {
+    if (!isOnSale || !salePrice) return { isActive: false, message: 'Not on sale' };
+    
+    const now = new Date();
+    
+    if (saleStartDate && new Date(saleStartDate) > now) {
+      return { isActive: false, message: 'Scheduled', color: 'warning' };
     }
-  }, [localDiscountValue, baseSellingPrice, saleType, isAutoCalculatingFixed, setValue]);
+    if (saleEndDate && new Date(saleEndDate) < now) {
+      return { isActive: false, message: 'Expired', color: 'danger' };
+    }
+    
+    return { isActive: true, message: 'Active', color: 'success' };
+  }, [isOnSale, salePrice, saleStartDate, saleEndDate]);
 
   const handlePercentageChange = (value: number) => {
-    setLocalDiscountPercentage(value);
-    if (baseSellingPrice && baseSellingPrice > 0 && saleType === 'percentage') {
-      setIsAutoCalculatingPercentage(true);
-      setIsAutoCalculatingFixed(false);
+    const clampedValue = Math.min(100, Math.max(0, value));
+    setInputPercentage(clampedValue);
+    
+    if (baseSellingPrice > 0) {
+      const newSalePrice = baseSellingPrice - (baseSellingPrice * clampedValue / 100);
+      setValue('subProductData.saleDiscountPercentage', clampedValue);
+      setValue('subProductData.salePrice', Math.round(newSalePrice * 100) / 100);
     }
   };
 
-  const handleFixedAmountChange = (value: number) => {
-    setLocalDiscountValue(value);
-    if (baseSellingPrice && baseSellingPrice > 0 && saleType === 'fixed') {
-      setIsAutoCalculatingFixed(true);
-      setIsAutoCalculatingPercentage(false);
+  const handleFixedChange = (value: number) => {
+    const clampedValue = Math.min(baseSellingPrice, Math.max(0, value));
+    setInputFixed(clampedValue);
+    
+    if (baseSellingPrice > 0) {
+      const newSalePrice = Math.max(0, baseSellingPrice - clampedValue);
+      setValue('subProductData.saleDiscountValue', clampedValue);
+      setValue('subProductData.salePrice', Math.round(newSalePrice * 100) / 100);
     }
   };
 
-  const handleSalePriceChange = () => {
-    setIsAutoCalculatingPercentage(false);
-    setIsAutoCalculatingFixed(false);
+  const handleSalePriceChange = (value: number) => {
+    setValue('subProductData.salePrice', value);
+    
+    if (baseSellingPrice > 0 && value > 0) {
+      const newPercentage = ((baseSellingPrice - value) / baseSellingPrice * 100);
+      setInputPercentage(Math.round(newPercentage * 100) / 100);
+      setValue('subProductData.saleDiscountPercentage', Math.round(newPercentage * 100) / 100);
+    }
   };
 
   const handleSaleTypeChange = (type: string) => {
-    setValue?.('subProductData.saleType', type, { shouldValidate: true });
-    if (type === 'percentage') {
-      setIsAutoCalculatingPercentage(true);
-      setIsAutoCalculatingFixed(false);
-    } else if (type === 'fixed') {
-      setIsAutoCalculatingFixed(true);
-      setIsAutoCalculatingPercentage(false);
+    setValue('subProductData.saleType', type);
+    setValue('subProductData.salePrice', 0);
+    setInputPercentage(0);
+    setInputFixed(0);
+    setValue('subProductData.saleDiscountPercentage', 0);
+    setValue('subProductData.saleDiscountValue', 0);
+  };
+
+  const handleToggleSale = (checked: boolean) => {
+    setValue('subProductData.isOnSale', checked);
+    if (!checked) {
+      setValue('subProductData.salePrice', 0);
+      setInputPercentage(0);
+      setInputFixed(0);
     }
   };
 
-  const calculatedDiscountPercentage = baseSellingPrice && salePrice && baseSellingPrice > 0
-    ? ((baseSellingPrice - salePrice) / baseSellingPrice * 100).toFixed(2)
-    : '0.00';
-
-  const savingsAmount = baseSellingPrice && salePrice
-    ? (baseSellingPrice - salePrice).toFixed(2)
-    : '0.00';
-
-  const saleTypeOptions = [
-    { value: '', label: 'Select sale type...' },
-    { value: 'percentage', label: 'Percentage Discount' },
-    { value: 'fixed', label: 'Fixed Amount Discount' },
-    { value: 'flash_sale', label: 'Flash Sale' },
-    { value: 'bundle', label: 'Bundle Deal' },
-    { value: 'bogo', label: 'Buy One Get One' },
-  ];
+  const clearSale = () => {
+    setValue('subProductData.isOnSale', false);
+    setValue('subProductData.saleType', '');
+    setValue('subProductData.salePrice', 0);
+    setValue('subProductData.saleDiscountPercentage', 0);
+    setValue('subProductData.saleDiscountValue', 0);
+    setValue('subProductData.saleStartDate', '');
+    setValue('subProductData.saleEndDate', '');
+    setInputPercentage(0);
+    setInputFixed(0);
+  };
 
   return (
     <motion.div 
@@ -124,17 +206,32 @@ export default function SubProductSalesDiscounts() {
       className="space-y-6"
     >
       <motion.div variants={fieldStaggerVariants} custom={0}>
-        <Text className="mb-2 text-lg font-semibold">Sales & Discounts</Text>
-        <Text className="text-sm text-gray-500">
-          Configure sale pricing and promotional discounts
-        </Text>
+        <div className="flex items-center justify-between">
+          <div>
+            <Text className="mb-1 text-lg font-semibold">Sales & Discounts</Text>
+            <Text className="text-sm text-gray-500">
+              Configure sale pricing and promotional discounts
+            </Text>
+          </div>
+          {isOnSale && (
+            <Button
+              type="button"
+              variant="text"
+              size="sm"
+              onClick={clearSale}
+              className="text-red-600 hover:bg-red-50"
+            >
+              Clear Sale
+            </Button>
+          )}
+        </div>
       </motion.div>
 
       {/* Base Selling Price Display */}
-      {baseSellingPrice && (
+      {baseSellingPrice > 0 && (
         <motion.div 
           variants={fieldStaggerVariants}
-          className="flex items-center justify-between rounded-lg bg-blue-50 border border-blue-200 px-4 py-3"
+          className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-4 py-3"
         >
           <div className="flex items-center gap-2">
             <PiTag className="h-5 w-5 text-blue-600" />
@@ -143,6 +240,39 @@ export default function SubProductSalesDiscounts() {
           <Text className="text-lg font-bold text-blue-700">
             {currencySymbol}{baseSellingPrice.toLocaleString()}
           </Text>
+        </motion.div>
+      )}
+
+      {/* Sale Status Banner */}
+      {isOnSale && saleStatus.message && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`flex items-center justify-between rounded-lg border px-4 py-3 ${
+            saleStatus.color === 'success' ? 'border-green-200 bg-green-50' :
+            saleStatus.color === 'warning' ? 'border-amber-200 bg-amber-50' :
+            'border-red-200 bg-red-50'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {saleStatus.isActive ? (
+              <PiCheckCircle className="h-5 w-5 text-green-600" />
+            ) : (
+              <PiClock className="h-5 w-5 text-amber-600" />
+            )}
+            <Text className={`font-medium ${
+              saleStatus.color === 'success' ? 'text-green-800' :
+              saleStatus.color === 'warning' ? 'text-amber-800' :
+              'text-red-800'
+            }`}>
+              Sale: {saleStatus.message}
+            </Text>
+          </div>
+          {salePrice > 0 && (
+            <Text className="font-bold text-green-700">
+              Sale Price: {currencySymbol}{salePrice.toLocaleString()}
+            </Text>
+          )}
         </motion.div>
       )}
 
@@ -165,7 +295,7 @@ export default function SubProductSalesDiscounts() {
         </div>
         <Switch
           checked={isOnSale}
-          onChange={(checked) => setValue('subProductData.isOnSale', checked)}
+          onClick={() => handleToggleSale(!isOnSale)}
         />
       </motion.div>
 
@@ -178,70 +308,60 @@ export default function SubProductSalesDiscounts() {
             exit="exit"
             className="space-y-6 rounded-lg border border-gray-200 bg-gray-50/50 p-6"
           >
-            <div className="grid gap-6 md:grid-cols-2">
-              {/* Sale Type */}
-              <motion.div variants={fieldStaggerVariants} custom={2}>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                  Sale Type
-                </label>
-                <Controller
-                  name="subProductData.saleType"
-                  control={control}
-                  render={({ field }) => (
-                    <select
-                      {...field}
-                      value={field.value || ''}
-                      onChange={(e) => {
-                        field.onChange(e.target.value);
-                        handleSaleTypeChange(e.target.value);
-                      }}
-                      className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            {/* Sale Type Selection Cards */}
+            <motion.div variants={fieldStaggerVariants}>
+              <label className="mb-3 block text-sm font-medium text-gray-700">
+                Select Sale Type
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {saleTypeOptions.map((option) => {
+                  const Icon = option.icon;
+                  const isSelected = saleType === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => handleSaleTypeChange(option.value)}
+                      className={`relative flex flex-col items-start rounded-lg border-2 p-4 text-left transition-all ${
+                        isSelected 
+                          ? `border-${option.color}-500 bg-${option.color}-50` 
+                          : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                      }`}
                     >
-                      {saleTypeOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                />
-              </motion.div>
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${
+                        isSelected ? `bg-${option.color}-100` : 'bg-gray-100'
+                      }`}>
+                        <Icon className={`h-5 w-5 ${isSelected ? `text-${option.color}-600` : 'text-gray-500'}`} />
+                      </div>
+                      <Text className={`mt-2 font-medium ${isSelected ? 'text-gray-900' : 'text-gray-700'}`}>
+                        {option.label}
+                      </Text>
+                      <Text className="mt-1 text-xs text-gray-500">
+                        {option.description}
+                      </Text>
+                      {isSelected && (
+                        <div className={`absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-${option.color}-500`}>
+                          <PiCheckCircle className="h-4 w-4 text-white" />
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
 
-              {/* Sale Price */}
-              <motion.div variants={fieldStaggerVariants} custom={3} className="transition-transform duration-200 focus-within:scale-[1.01]">
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                  Sale Price
-                </label>
-                <div className="relative">
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    {...register('subProductData.salePrice', { 
-                      valueAsNumber: true,
-                      onChange: handleSalePriceChange 
-                    })}
-                    error={errors.subProductData?.salePrice?.message}
-                    className="w-full pl-9"
-                  />
-                  <PiCurrencyNgn className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                </div>
-                <Text className="mt-1 text-xs text-gray-500">
-                  Original: {currencySymbol}{(baseSellingPrice || 0).toLocaleString()}
-                </Text>
-              </motion.div>
-
-              {/* Discount Percentage (for percentage-based sales) */}
-              <AnimatePresence>
-                {saleType === 'percentage' && (
-                  <motion.div 
-                    variants={toggleVariants}
-                    initial="hidden"
-                    animate="visible"
-                    exit="exit"
-                    className="transition-transform duration-200 focus-within:scale-[1.01]"
-                  >
+            {/* Sale Type Specific Fields */}
+            <AnimatePresence mode="wait">
+              {saleType === 'percentage' && (
+                <motion.div
+                  key="percentage"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="grid gap-6 md:grid-cols-2"
+                >
+                  {/* Discount Percentage */}
+                  <motion.div className="transition-transform duration-200 focus-within:scale-[1.01]">
                     <label className="mb-1.5 block text-sm font-medium text-gray-700">
                       Discount Percentage (%)
                     </label>
@@ -252,29 +372,57 @@ export default function SubProductSalesDiscounts() {
                         min="0"
                         max="100"
                         placeholder="0"
-                        value={localDiscountPercentage}
+                        value={inputPercentage}
                         onChange={(e) => handlePercentageChange(parseFloat(e.target.value) || 0)}
                         className="w-full pl-9"
                       />
                       <PiPercent className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                     </div>
-                    <Text className="mt-1 text-xs text-gray-500">
-                      Auto-calculates sale price from discount %
-                    </Text>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {[5, 10, 15, 20, 25, 30, 50].map((pct) => (
+                        <button
+                          key={pct}
+                          type="button"
+                          onClick={() => handlePercentageChange(pct)}
+                          className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                            inputPercentage === pct 
+                              ? 'bg-blue-600 text-white' 
+                              : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                          }`}
+                        >
+                          {pct}%
+                        </button>
+                      ))}
+                    </div>
                   </motion.div>
-                )}
-              </AnimatePresence>
 
-              {/* Discount Amount (for fixed amount sales) */}
-              <AnimatePresence>
-                {saleType === 'fixed' && (
-                  <motion.div 
-                    variants={toggleVariants}
-                    initial="hidden"
-                    animate="visible"
-                    exit="exit"
-                    className="transition-transform duration-200 focus-within:scale-[1.01]"
-                  >
+                  {/* Sale Price (Calculated) */}
+                  <motion.div className="transition-transform duration-200 focus-within:scale-[1.01]">
+                    <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                      Sale Price (Auto-calculated)
+                    </label>
+                    <div className="relative rounded-lg bg-blue-50 px-4 py-3">
+                      <Text className="text-2xl font-bold text-blue-700">
+                        {currencySymbol}{(calculatedSalePrice || 0).toLocaleString()}
+                      </Text>
+                      <Text className="text-xs text-blue-600">
+                        Original: {currencySymbol}{baseSellingPrice.toLocaleString()} (-{inputPercentage}%)
+                      </Text>
+                    </div>
+                  </motion.div>
+                </motion.div>
+              )}
+
+              {saleType === 'fixed' && (
+                <motion.div
+                  key="fixed"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="grid gap-6 md:grid-cols-2"
+                >
+                  {/* Fixed Discount Amount */}
+                  <motion.div className="transition-transform duration-200 focus-within:scale-[1.01]">
                     <label className="mb-1.5 block text-sm font-medium text-gray-700">
                       Discount Amount ({currencySymbol})
                     </label>
@@ -283,42 +431,266 @@ export default function SubProductSalesDiscounts() {
                         type="number"
                         step="0.01"
                         min="0"
+                        max={baseSellingPrice || undefined}
                         placeholder="0.00"
-                        value={localDiscountValue}
-                        onChange={(e) => handleFixedAmountChange(parseFloat(e.target.value) || 0)}
+                        value={inputFixed}
+                        onChange={(e) => handleFixedChange(parseFloat(e.target.value) || 0)}
                         className="w-full pl-9"
                       />
                       <PiCurrencyNgn className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                     </div>
-                    <Text className="mt-1 text-xs text-gray-500">
-                      Subtracts this amount from base price
-                    </Text>
+                    {baseSellingPrice > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {[5, 10, 15, 20, 25].map((pct) => (
+                          <button
+                            key={pct}
+                            type="button"
+                            onClick={() => handleFixedChange(Math.round(baseSellingPrice * pct / 100 * 100) / 100)}
+                            className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                              inputFixed === baseSellingPrice * pct / 100
+                                ? 'bg-green-600 text-white' 
+                                : 'bg-green-100 text-green-700 hover:bg-green-200'
+                            }`}
+                          >
+                            {pct}% off ({currencySymbol}{(baseSellingPrice * pct / 100).toLocaleString()})
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </motion.div>
-                )}
-              </AnimatePresence>
 
-              {/* Savings Display */}
-              {salePrice && salePrice > 0 && baseSellingPrice && (
-                <motion.div 
-                  variants={fieldStaggerVariants}
-                  className="flex items-center justify-between rounded-lg bg-green-50 border border-green-200 px-4 py-3 md:col-span-2"
+                  {/* Sale Price (Calculated) */}
+                  <motion.div className="transition-transform duration-200 focus-within:scale-[1.01]">
+                    <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                      Sale Price (Auto-calculated)
+                    </label>
+                    <div className="relative rounded-lg bg-green-50 px-4 py-3">
+                      <Text className="text-2xl font-bold text-green-700">
+                        {currencySymbol}{(calculatedSalePrice || 0).toLocaleString()}
+                      </Text>
+                      <Text className="text-xs text-green-600">
+                        Save: {currencySymbol}{(inputFixed || 0).toLocaleString()}
+                      </Text>
+                    </div>
+                  </motion.div>
+                </motion.div>
+              )}
+
+              {saleType === 'flash_sale' && (
+                <motion.div
+                  key="flash_sale"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="space-y-4 rounded-lg border border-amber-200 bg-amber-50 p-4"
                 >
                   <div className="flex items-center gap-2">
-                    <PiArrowsDownUp className="h-5 w-5 text-green-600" />
-                    <Text className="text-sm font-medium text-green-800">Customer Savings:</Text>
+                    <PiLightning className="h-5 w-5 text-amber-600" />
+                    <Text className="font-medium text-amber-800">Flash Sale Settings</Text>
                   </div>
-                  <div className="text-right">
-                    <Text className="text-lg font-bold text-green-700">
-                      {currencySymbol}{savingsAmount} ({calculatedDiscountPercentage}%)
-                    </Text>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                        Flash Discount (%)
+                      </label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="100"
+                        placeholder="20"
+                        value={inputPercentage}
+                        onChange={(e) => handlePercentageChange(parseFloat(e.target.value) || 0)}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                        Limited Quantity (Optional)
+                      </label>
+                      <Input
+                        type="number"
+                        min="0"
+                        placeholder="100"
+                        {...register('subProductData.flashSale.remainingQuantity')}
+                      />
+                    </div>
+                  </div>
+                  <Text className="text-xs text-amber-700">
+                    Flash sales are automatically activated during the specified date range
+                  </Text>
+                </motion.div>
+              )}
+
+              {saleType === 'bundle' && (
+                <motion.div
+                  key="bundle"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="space-y-4 rounded-lg border border-purple-200 bg-purple-50 p-4"
+                >
+                  <div className="flex items-center gap-2">
+                    <PiGift className="h-5 w-5 text-purple-600" />
+                    <Text className="font-medium text-purple-800">Bundle Deal Settings</Text>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                        Min. Quantity
+                      </label>
+                      <Input
+                        type="number"
+                        min="2"
+                        placeholder="2"
+                        {...register('subProductData.bundleQuantity')}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                        Discount (%)
+                      </label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="100"
+                        placeholder="10"
+                        value={inputPercentage}
+                        onChange={(e) => handlePercentageChange(parseFloat(e.target.value) || 0)}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                        Free Items
+                      </label>
+                      <Input
+                        type="number"
+                        min="0"
+                        placeholder="1"
+                        {...register('subProductData.bundleFreeItems')}
+                      />
+                    </div>
                   </div>
                 </motion.div>
               )}
 
-              {/* Sale Start Date */}
-              <motion.div variants={fieldStaggerVariants} custom={5}>
+              {saleType === 'bogo' && (
+                <motion.div
+                  key="bogo"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="space-y-4 rounded-lg border border-rose-200 bg-rose-50 p-4"
+                >
+                  <div className="flex items-center gap-2">
+                    <PiNumberSquareTwo className="h-5 w-5 text-rose-600" />
+                    <Text className="font-medium text-rose-800">Buy One Get One Settings</Text>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                        Buy Quantity
+                      </label>
+                      <Input
+                        type="number"
+                        min="1"
+                        defaultValue={1}
+                        placeholder="1"
+                        {...register('subProductData.bogoBuyQty')}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                        Get Quantity (Free/Discounted)
+                      </label>
+                      <Input
+                        type="number"
+                        min="1"
+                        defaultValue={1}
+                        placeholder="1"
+                        {...register('subProductData.bogoGetQty')}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                        Second Item Discount (%)
+                      </label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="100"
+                        defaultValue={100}
+                        placeholder="100"
+                        {...register('subProductData.bogoDiscount')}
+                      />
+                      <Text className="mt-1 text-xs text-gray-500">100% = Free</Text>
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                        Max Uses Per Customer
+                      </label>
+                      <Input
+                        type="number"
+                        min="1"
+                        placeholder="No limit"
+                        {...register('subProductData.bogoMaxUses')}
+                      />
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Sale Price Manual Input (for all types) */}
+            {(saleType === 'percentage' || saleType === 'fixed' || saleType === 'flash_sale') && (
+              <motion.div>
                 <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                  Sale Start Date
+                  Override Sale Price (Optional)
+                </label>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max={baseSellingPrice || undefined}
+                    placeholder={`Auto: ${currencySymbol}${(calculatedSalePrice || 0).toLocaleString()}`}
+                    value={salePrice || ''}
+                    onChange={(e) => handleSalePriceChange(parseFloat(e.target.value) || 0)}
+                    className="w-full pl-9"
+                  />
+                  <PiCurrencyNgn className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                </div>
+                <Text className="mt-1 text-xs text-gray-500">
+                  Leave empty to use auto-calculated price
+                </Text>
+              </motion.div>
+            )}
+
+            {/* Savings Display */}
+            {salePrice > 0 && salePrice < baseSellingPrice && baseSellingPrice > 0 && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-4 py-3"
+              >
+                <div className="flex items-center gap-2">
+                  <PiArrowsDownUp className="h-5 w-5 text-green-600" />
+                  <Text className="text-sm font-medium text-green-800">Customer Savings:</Text>
+                </div>
+                <div className="text-right">
+                  <Text className="text-lg font-bold text-green-700">
+                    {currencySymbol}{savingsAmount.toLocaleString()} ({discountPercentage.toFixed(1)}%)
+                  </Text>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Sale Dates */}
+            <div className="grid gap-6 md:grid-cols-2">
+              <motion.div variants={fieldStaggerVariants}>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Sale Start Date (Optional)
                 </label>
                 <div className="relative">
                   <Input
@@ -330,10 +702,9 @@ export default function SubProductSalesDiscounts() {
                 </div>
               </motion.div>
 
-              {/* Sale End Date */}
-              <motion.div variants={fieldStaggerVariants} custom={6}>
+              <motion.div variants={fieldStaggerVariants}>
                 <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                  Sale End Date
+                  Sale End Date (Optional)
                 </label>
                 <div className="relative">
                   <Input
@@ -347,10 +718,7 @@ export default function SubProductSalesDiscounts() {
             </div>
 
             {/* Sale Banner */}
-            <motion.div 
-              variants={fieldStaggerVariants} 
-              custom={7}
-            >
+            <motion.div variants={fieldStaggerVariants}>
               <label className="mb-1.5 block text-sm font-medium text-gray-700">
                 Sale Banner (Optional)
               </label>

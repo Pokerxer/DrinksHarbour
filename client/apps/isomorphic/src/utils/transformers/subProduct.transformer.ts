@@ -43,6 +43,8 @@ export interface SizeFormData {
 }
 
 export interface SubProductFormData {
+  _id?: string;
+  id?: string;
   product: string;
   tenant?: string;
   sku: string;
@@ -53,6 +55,10 @@ export interface SubProductFormData {
   marginPercentage?: number | null;
   markupPercentage?: number;
   roundUp?: string;
+  pricingStrategy?: string;
+  minPrice?: number | null;
+  maxPrice?: number | null;
+  competitorPrice?: string;
   saleDiscountPercentage?: number;
   salePrice?: number | null;
   saleStartDate?: string | null;
@@ -160,10 +166,10 @@ export interface SubProductFormInput {
   subProductData: SubProductFormData;
 }
 
-const toNumber = (val: any): number | null => {
-  if (val === null || val === undefined || val === '') return null;
+const toNumber = (val: any): number | undefined => {
+  if (val === null || val === undefined || val === '') return undefined;
   const num = Number(val);
-  return isNaN(num) ? null : num;
+  return isNaN(num) ? undefined : num;
 };
 
 const cleanDate = (val: any): string | null => {
@@ -183,29 +189,63 @@ const extractValue = (val: any): any => {
   return val;
 };
 
-const transformSize = (size: SizeFormData): SizeFormData => ({
-  ...size,
-  unitsPerPack: toNumber(size.unitsPerPack) ?? 1,
-  basePrice: toNumber(size.basePrice),
-  costPrice: toNumber(size.costPrice),
-  stock: toNumber(size.stock) ?? 0,
-  volumeMl: toNumber(size.volumeMl),
-  weightGrams: toNumber(size.weightGrams),
-  servingsPerUnit: toNumber(size.servingsPerUnit),
-  compareAtPrice: toNumber(size.compareAtPrice),
-  wholesalePrice: toNumber(size.wholesalePrice),
-  salePrice: toNumber(size.salePrice),
-  saleDiscountPercentage: toNumber(size.saleDiscountPercentage) ?? 0,
-  lowStockThreshold: toNumber(size.lowStockThreshold) ?? 10,
-  reorderPoint: toNumber(size.reorderPoint) ?? 5,
-  reorderQuantity: toNumber(size.reorderQuantity) ?? 50,
-  minOrderQuantity: toNumber(size.minOrderQuantity) ?? 1,
-  maxOrderQuantity: toNumber(size.maxOrderQuantity),
-  orderIncrement: toNumber(size.orderIncrement) ?? 1,
-  rank: toNumber(size.rank) ?? 1,
-  availableStock: toNumber(size.availableStock) ?? (size.stock || 0),
-  reservedStock: toNumber(size.reservedStock) ?? 0,
-});
+const toBoolean = (val: any): boolean | undefined => {
+  if (val === null || val === undefined || val === '') return undefined;
+  if (typeof val === 'boolean') return val;
+  if (typeof val === 'string') {
+    const lower = val.toLowerCase();
+    if (lower === 'true' || lower === '1' || lower === 'yes') return true;
+    if (lower === 'false' || lower === '0' || lower === 'no') return false;
+  }
+  return undefined;
+};
+
+const transformSize = (size: SizeFormData): SizeFormData => {
+  const volumeMl = toNumber(size.volumeMl);
+  return {
+    ...size,
+    unitsPerPack: toNumber(size.unitsPerPack) ?? 1,
+    basePrice: toNumber(size.basePrice) ?? 0,
+    costPrice: toNumber(size.costPrice) ?? 0,
+    stock: toNumber(size.stock) ?? 0,
+    volumeMl: volumeMl !== undefined && volumeMl > 0 ? volumeMl : 0,
+    weightGrams: toNumber(size.weightGrams) ?? 0,
+    servingsPerUnit: toNumber(size.servingsPerUnit) ?? 0,
+    compareAtPrice: toNumber(size.compareAtPrice) ?? 0,
+    wholesalePrice: toNumber(size.wholesalePrice) ?? 0,
+    salePrice: toNumber(size.salePrice) ?? 0,
+    saleDiscountPercentage: toNumber(size.saleDiscountPercentage) ?? 0,
+    lowStockThreshold: toNumber(size.lowStockThreshold) ?? 10,
+    reorderPoint: toNumber(size.reorderPoint) ?? 5,
+    reorderQuantity: toNumber(size.reorderQuantity) ?? 50,
+    minOrderQuantity: toNumber(size.minOrderQuantity) ?? 1,
+    maxOrderQuantity: toNumber(size.maxOrderQuantity) ?? 0,
+    orderIncrement: toNumber(size.orderIncrement) ?? 1,
+    rank: toNumber(size.rank) ?? 1,
+    availableStock: toNumber(size.availableStock) ?? 0,
+    reservedStock: toNumber(size.reservedStock) ?? 0,
+    isOnSale: toBoolean(size.isOnSale) ?? false,
+    isDefault: toBoolean(size.isDefault) ?? false,
+    isFeatured: toBoolean(size.isFeatured) ?? false,
+    isBestSeller: toBoolean(size.isBestSeller) ?? false,
+    isPopularSize: toBoolean(size.isPopularSize) ?? false,
+    isLimitedEdition: toBoolean(size.isLimitedEdition) ?? false,
+    requiresAgeVerification: toBoolean(size.requiresAgeVerification) ?? false,
+  };
+};
+
+const transformNewProductData = (data: Record<string, unknown> | null | undefined): Record<string, unknown> | null => {
+  if (!data) return null;
+  
+  const volumeMl = toNumber(data.volumeMl as string | number | null | undefined);
+  const abv = toNumber(data.abv as string | number | null | undefined);
+  
+  return {
+    ...data,
+    volumeMl: volumeMl !== undefined && volumeMl > 0 ? volumeMl : undefined,
+    abv: abv !== undefined && abv >= 0 ? abv : undefined,
+  };
+};
 
 export const transformFormData = (data: SubProductFormInput) => {
   // Direct access to subProductData - form structure is { subProductData: { ... } }
@@ -220,24 +260,28 @@ export const transformFormData = (data: SubProductFormInput) => {
   const subProductData: SubProductFormData = {
     product: sp.product || '',
     createNewProduct: sp.createNewProduct ?? false,
-    newProductData: sp.newProductData || null,
+    newProductData: transformNewProductData(sp.newProductData as Record<string, unknown> | null | undefined),
     tenant: sp.tenant || '',
     sku: sp.sku || '',
-    baseSellingPrice: toNumber(sp.baseSellingPrice),
-    costPrice: toNumber(sp.costPrice),
+    baseSellingPrice: toNumber(sp.baseSellingPrice) ?? 0,
+    costPrice: toNumber(sp.costPrice) ?? 0,
     currency: sp.currency || 'NGN',
     taxRate: toNumber(sp.taxRate) ?? 0,
-    marginPercentage: toNumber(sp.marginPercentage),
+    marginPercentage: toNumber(sp.marginPercentage) ?? 0,
     markupPercentage: sp.markupPercentage ?? 25,
     roundUp: sp.roundUp || 'none',
+    pricingStrategy: sp.pricingStrategy || 'cost_plus',
+    minPrice: toNumber(sp.minPrice) ?? null,
+    maxPrice: toNumber(sp.maxPrice) ?? null,
+    competitorPrice: sp.competitorPrice || '',
     saleDiscountPercentage: toNumber(sp.saleDiscountPercentage) ?? 0,
-    salePrice: toNumber(sp.salePrice),
+    salePrice: toNumber(sp.salePrice) ?? 0,
     saleStartDate: cleanDate(sp.saleStartDate),
     saleEndDate: cleanDate(sp.saleEndDate),
-    saleType: sp.saleType,
-    saleDiscountValue: toNumber(sp.saleDiscountValue),
+    saleType: sp.saleType || '',
+    saleDiscountValue: toNumber(sp.saleDiscountValue) ?? 0,
     saleBanner: sp.saleBanner || { url: '', alt: '' },
-    isOnSale: extractValue(sp.isOnSale) ?? false,
+    isOnSale: toBoolean(sp.isOnSale) ?? false,
     shortDescriptionOverride: sp.shortDescriptionOverride || '',
     descriptionOverride: sp.descriptionOverride || '',
     imagesOverride: sp.imagesOverride || [],
@@ -246,7 +290,7 @@ export const transformFormData = (data: SubProductFormInput) => {
     tenantNotes: sp.tenantNotes || '',
     sizes: (sp.sizes || []).map(transformSize),
     sellWithoutSizeVariants: sp.sellWithoutSizeVariants ?? false,
-    defaultSize: sp.defaultSize,
+    defaultSize: sp.defaultSize || '',
     stockStatus: sp.stockStatus || 'in_stock',
     totalStock: toNumber(sp.totalStock) ?? 0,
     reservedStock: toNumber(sp.reservedStock) ?? 0,
@@ -258,11 +302,11 @@ export const transformFormData = (data: SubProductFormInput) => {
     nextRestockDate: cleanDate(sp.nextRestockDate),
     vendor: sp.vendor || '',
     supplierSKU: sp.supplierSKU || '',
-    supplierPrice: toNumber(sp.supplierPrice),
-    leadTimeDays: toNumber(sp.leadTimeDays),
-    minimumOrderQuantity: toNumber(sp.minimumOrderQuantity),
-    estimatedShippingCost: toNumber(sp.estimatedShippingCost),
-    supplierRating: toNumber(sp.supplierRating),
+    supplierPrice: toNumber(sp.supplierPrice) ?? 0,
+    leadTimeDays: toNumber(sp.leadTimeDays) ?? 0,
+    minimumOrderQuantity: toNumber(sp.minimumOrderQuantity) ?? 0,
+    estimatedShippingCost: toNumber(sp.estimatedShippingCost) ?? 0,
+    supplierRating: toNumber(sp.supplierRating) ?? 0,
     vendorNotes: sp.vendorNotes || '',
     vendorContactName: sp.vendorContactName || '',
     vendorPhone: sp.vendorPhone || '',
@@ -270,45 +314,45 @@ export const transformFormData = (data: SubProductFormInput) => {
     vendorWebsite: sp.vendorWebsite || '',
     vendorAddress: sp.vendorAddress || '',
     status: subProductStatus,
-    isFeaturedByTenant: sp.isFeaturedByTenant ?? false,
-    isNewArrival: sp.isNewArrival ?? false,
-    isBestSeller: sp.isBestSeller ?? false,
-    isPublished: sp.isPublished ?? false,
-    visibleInPOS: sp.visibleInPOS ?? true,
-    visibleInOnlineStore: sp.visibleInOnlineStore ?? true,
+    isFeaturedByTenant: toBoolean(sp.isFeaturedByTenant) ?? false,
+    isNewArrival: toBoolean(sp.isNewArrival) ?? false,
+    isBestSeller: toBoolean(sp.isBestSeller) ?? false,
+    isPublished: toBoolean(sp.isPublished) ?? false,
+    visibleInPOS: toBoolean(sp.visibleInPOS) ?? true,
+    visibleInOnlineStore: toBoolean(sp.visibleInOnlineStore) ?? true,
     activatedAt: sp.activatedAt ? cleanDate(sp.activatedAt) : activatedAt,
     deactivatedAt: cleanDate(sp.deactivatedAt),
     discontinuedAt: cleanDate(sp.discontinuedAt),
     discount: toNumber(sp.discount) ?? 0,
-    discountType: sp.discountType,
+    discountType: sp.discountType || '',
     discountStart: cleanDate(sp.discountStart),
     discountEnd: cleanDate(sp.discountEnd),
     flashSale: sp.flashSale || {
       isActive: false,
       startDate: null,
       endDate: null,
-      discountPercentage: null,
-      remainingQuantity: null,
+      discountPercentage: 0,
+      remainingQuantity: 0,
     },
     bundleDeals: sp.bundleDeals || [],
     shipping: {
-      weight: toNumber(sp.shipping?.weight),
-      length: toNumber(sp.shipping?.length),
-      width: toNumber(sp.shipping?.width),
-      height: toNumber(sp.shipping?.height),
-      fragile: sp.shipping?.fragile ?? true,
-      requiresAgeVerification: sp.shipping?.requiresAgeVerification ?? true,
-      hazmat: sp.shipping?.hazmat ?? false,
+      weight: toNumber(sp.shipping?.weight) ?? 0,
+      length: toNumber(sp.shipping?.length) ?? 0,
+      width: toNumber(sp.shipping?.width) ?? 0,
+      height: toNumber(sp.shipping?.height) ?? 0,
+      fragile: toBoolean(sp.shipping?.fragile) ?? true,
+      requiresAgeVerification: toBoolean(sp.shipping?.requiresAgeVerification) ?? true,
+      hazmat: toBoolean(sp.shipping?.hazmat) ?? false,
       shippingClass: sp.shipping?.shippingClass || '',
       carrier: sp.shipping?.carrier || '',
       deliveryArea: sp.shipping?.deliveryArea || '',
-      minDeliveryDays: toNumber(sp.shipping?.minDeliveryDays),
-      maxDeliveryDays: toNumber(sp.shipping?.maxDeliveryDays),
-      fixedShippingCost: toNumber(sp.shipping?.fixedShippingCost),
-      isFreeShipping: sp.shipping?.isFreeShipping ?? false,
-      freeShippingMinOrder: toNumber(sp.shipping?.freeShippingMinOrder),
+      minDeliveryDays: toNumber(sp.shipping?.minDeliveryDays) ?? 0,
+      maxDeliveryDays: toNumber(sp.shipping?.maxDeliveryDays) ?? 0,
+      fixedShippingCost: toNumber(sp.shipping?.fixedShippingCost) ?? 0,
+      isFreeShipping: toBoolean(sp.shipping?.isFreeShipping) ?? false,
+      freeShippingMinOrder: toNumber(sp.shipping?.freeShippingMinOrder) ?? 0,
       freeShippingLabel: sp.shipping?.freeShippingLabel || '',
-      availableForPickup: sp.shipping?.availableForPickup ?? false,
+      availableForPickup: toBoolean(sp.shipping?.availableForPickup) ?? false,
     },
     warehouse: {
       location: sp.warehouse?.location || '',
@@ -358,19 +402,19 @@ export const transformBackendToForm = (backendData: any): SubProductFormInput =>
     displayName: size.displayName || '',
     sizeCategory: size.sizeCategory || '',
     unitType: size.unitType || 'volume_ml',
-    volumeMl: size.volumeMl ?? null,
-    weightGrams: size.weightGrams ?? null,
-    servingsPerUnit: size.servingsPerUnit ?? null,
+    volumeMl: size.volumeMl ?? 0,
+    weightGrams: size.weightGrams ?? 0,
+    servingsPerUnit: size.servingsPerUnit ?? 0,
     unitsPerPack: size.unitsPerPack ?? 1,
-    basePrice: size.basePrice ?? null,
-    compareAtPrice: size.compareAtPrice ?? null,
-    costPrice: size.costPrice ?? null,
-    wholesalePrice: size.wholesalePrice ?? null,
+    basePrice: size.basePrice ?? 0,
+    compareAtPrice: size.compareAtPrice ?? 0,
+    costPrice: size.costPrice ?? 0,
+    wholesalePrice: size.wholesalePrice ?? 0,
     currency: size.currency || sp.currency || 'NGN',
     markupPercentage: size.markupPercentage ?? 25,
     roundUp: size.roundUp || 'none',
     saleDiscountPercentage: size.saleDiscountPercentage ?? 0,
-    salePrice: size.salePrice ?? null,
+    salePrice: size.salePrice ?? 0,
     stock: size.stock ?? 0,
     reservedStock: size.reservedStock ?? 0,
     availableStock: size.availableStock ?? 0,
@@ -379,33 +423,38 @@ export const transformBackendToForm = (backendData: any): SubProductFormInput =>
     reorderQuantity: size.reorderQuantity ?? 50,
     sku: size.sku || '',
     barcode: size.barcode || '',
-    isDefault: size.isDefault ?? false,
-    isOnSale: size.isOnSale ?? false,
+    isDefault: toBoolean(size.isDefault) ?? false,
+    isOnSale: toBoolean(size.isOnSale) ?? false,
     rank: size.rank ?? 1,
   }));
 
   // Return structure matching the form schema: { subProductData: { ... } }
   return {
     subProductData: {
+      _id: sp._id || sp.id,
       product: productId,
       createNewProduct: false,
       newProductData: null,
       sku: sp.sku || '',
-      baseSellingPrice: sp.baseSellingPrice ?? null,
-      costPrice: sp.costPrice ?? null,
+      baseSellingPrice: sp.baseSellingPrice ?? 0,
+      costPrice: sp.costPrice ?? 0,
       currency: sp.currency || 'NGN',
       taxRate: sp.taxRate ?? 0,
-      marginPercentage: sp.marginPercentage ?? null,
+      marginPercentage: sp.marginPercentage ?? 0,
       markupPercentage: sp.markupPercentage ?? 25,
       roundUp: sp.roundUp || 'none',
+      pricingStrategy: sp.pricingStrategy || 'cost_plus',
+      minPrice: sp.minPrice ?? null,
+      maxPrice: sp.maxPrice ?? null,
+      competitorPrice: sp.competitorPrice || '',
       saleDiscountPercentage: sp.inputSaleDiscountPercentage ?? sp.saleDiscountPercentage ?? 0,
-      salePrice: sp.salePrice ?? null,
-      saleStartDate: sp.saleStartDate ? new Date(sp.saleStartDate).toISOString().slice(0, 16) : null,
-      saleEndDate: sp.saleEndDate ? new Date(sp.saleEndDate).toISOString().slice(0, 16) : null,
+      salePrice: sp.salePrice ?? 0,
+      saleStartDate: sp.saleStartDate ? new Date(sp.saleStartDate).toISOString().slice(0, 16) : '',
+      saleEndDate: sp.saleEndDate ? new Date(sp.saleEndDate).toISOString().slice(0, 16) : '',
       saleType: sp.saleType || '',
-      saleDiscountValue: sp.saleDiscountValue ?? null,
+      saleDiscountValue: sp.saleDiscountValue ?? 0,
       saleBanner: sp.saleBanner || { url: '', alt: '' },
-      isOnSale: sp.isOnSale ?? false,
+      isOnSale: toBoolean(sp.isOnSale) ?? false,
       shortDescriptionOverride: sp.shortDescriptionOverride || '',
       descriptionOverride: sp.descriptionOverride || '',
       imagesOverride: sp.imagesOverride || [],
@@ -422,15 +471,14 @@ export const transformBackendToForm = (backendData: any): SubProductFormInput =>
       lowStockThreshold: sp.lowStockThreshold ?? 10,
       reorderPoint: sp.reorderPoint ?? 5,
       reorderQuantity: sp.reorderQuantity ?? 50,
-      lastRestockDate: sp.lastRestockDate ? new Date(sp.lastRestockDate).toISOString().slice(0, 16) : null,
-      nextRestockDate: sp.nextRestockDate ? new Date(sp.nextRestockDate).toISOString().slice(0, 16) : null,
+      lastRestockDate: sp.lastRestockDate ? new Date(sp.lastRestockDate).toISOString().slice(0, 16) : '',
       vendor: sp.vendor || '',
       supplierSKU: sp.supplierSKU || '',
-      supplierPrice: sp.supplierPrice ?? null,
-      leadTimeDays: sp.leadTimeDays ?? null,
-      minimumOrderQuantity: sp.minimumOrderQuantity ?? null,
-      estimatedShippingCost: sp.estimatedShippingCost ?? null,
-      supplierRating: sp.supplierRating ?? null,
+      supplierPrice: sp.supplierPrice ?? 0,
+      leadTimeDays: sp.leadTimeDays ?? 0,
+      minimumOrderQuantity: sp.minimumOrderQuantity ?? 0,
+      estimatedShippingCost: sp.estimatedShippingCost ?? 0,
+      supplierRating: sp.supplierRating ?? 0,
       vendorNotes: sp.vendorNotes || '',
       vendorContactName: sp.vendorContactName || '',
       vendorPhone: sp.vendorPhone || '',
@@ -438,71 +486,88 @@ export const transformBackendToForm = (backendData: any): SubProductFormInput =>
       vendorWebsite: sp.vendorWebsite || '',
       vendorAddress: sp.vendorAddress || '',
       status: sp.status || 'draft',
-      isFeaturedByTenant: sp.isFeaturedByTenant ?? false,
-      isNewArrival: sp.isNewArrival ?? false,
-      isBestSeller: sp.isBestSeller ?? false,
-      isPublished: sp.isPublished ?? false,
-      visibleInPOS: sp.visibleInPOS ?? true,
-      visibleInOnlineStore: sp.visibleInOnlineStore ?? true,
-      activatedAt: sp.activatedAt ? new Date(sp.activatedAt).toISOString().slice(0, 16) : null,
-      deactivatedAt: sp.deactivatedAt ? new Date(sp.deactivatedAt).toISOString().slice(0, 16) : null,
-      discontinuedAt: sp.discontinuedAt ? new Date(sp.discontinuedAt).toISOString().slice(0, 16) : null,
+      isFeaturedByTenant: toBoolean(sp.isFeaturedByTenant) ?? false,
+      isNewArrival: toBoolean(sp.isNewArrival) ?? false,
+      isBestSeller: toBoolean(sp.isBestSeller) ?? false,
+      isPublished: toBoolean(sp.isPublished) ?? false,
+      visibleInPOS: toBoolean(sp.visibleInPOS) ?? true,
+      visibleInOnlineStore: toBoolean(sp.visibleInOnlineStore) ?? true,
+      activatedAt: sp.activatedAt ? new Date(sp.activatedAt).toISOString().slice(0, 16) : '',
+      deactivatedAt: sp.deactivatedAt ? new Date(sp.deactivatedAt).toISOString().slice(0, 16) : '',
+      discontinuedAt: sp.discontinuedAt ? new Date(sp.discontinuedAt).toISOString().slice(0, 16) : '',
       discount: sp.discount ?? 0,
       discountType: sp.discountType || '',
-      discountStart: sp.discountStart ? new Date(sp.discountStart).toISOString().slice(0, 16) : null,
-      discountEnd: sp.discountEnd ? new Date(sp.discountEnd).toISOString().slice(0, 16) : null,
+      discountStart: sp.discountStart ? new Date(sp.discountStart).toISOString().slice(0, 16) : '',
+      discountEnd: sp.discountEnd ? new Date(sp.discountEnd).toISOString().slice(0, 16) : '',
       flashSale: sp.flashSale || {
         isActive: false,
-        startDate: null,
-        endDate: null,
-        discountPercentage: null,
-        remainingQuantity: null,
+        startDate: '',
+        endDate: '',
+        discountPercentage: 0,
+        remainingQuantity: 0,
       },
       bundleDeals: sp.bundleDeals || [],
-      shipping: sp.shipping ? {
-        weight: sp.shipping.weight ?? null,
-        length: sp.shipping.length ?? null,
-        width: sp.shipping.width ?? null,
-        height: sp.shipping.height ?? null,
-        fragile: sp.shipping.fragile ?? true,
-        requiresAgeVerification: sp.shipping.requiresAgeVerification ?? true,
-        hazmat: sp.shipping.hazmat ?? false,
-        shippingClass: sp.shipping.shippingClass || '',
-        carrier: sp.shipping.carrier || '',
-        deliveryArea: sp.shipping.deliveryArea || '',
-        minDeliveryDays: sp.shipping.minDeliveryDays ?? null,
-        maxDeliveryDays: sp.shipping.maxDeliveryDays ?? null,
-        fixedShippingCost: sp.shipping.fixedShippingCost ?? null,
-        isFreeShipping: sp.shipping.isFreeShipping ?? false,
-        freeShippingMinOrder: sp.shipping.freeShippingMinOrder ?? null,
-        freeShippingLabel: sp.shipping.freeShippingLabel || '',
-        availableForPickup: sp.shipping.availableForPickup ?? false,
-      } : {
-        weight: null,
-        length: null,
-        width: null,
-        height: null,
-        fragile: true,
-        requiresAgeVerification: true,
-        hazmat: false,
-        shippingClass: '',
-        carrier: '',
-        deliveryArea: '',
-        minDeliveryDays: null,
-        maxDeliveryDays: null,
-        fixedShippingCost: null,
-        isFreeShipping: false,
-        freeShippingMinOrder: null,
-        freeShippingLabel: '',
-        availableForPickup: false,
-      },
-      warehouse: sp.warehouse || {
-        location: '',
-        zone: '',
-        aisle: '',
-        shelf: '',
-        bin: '',
-      },
+      // Handle shipping - could be ObjectId, populated object, number (corrupt), string, or null
+      shipping: (() => {
+        const ship = sp.shipping;
+        const emptyShipping = {
+          weight: 0, length: 0, width: 0, height: 0,
+          fragile: true, requiresAgeVerification: true, hazmat: false,
+          shippingClass: '', carrier: '', deliveryArea: '',
+          minDeliveryDays: 0, maxDeliveryDays: 0,
+          fixedShippingCost: 0, isFreeShipping: false,
+          freeShippingMinOrder: 0, freeShippingLabel: '', availableForPickup: false,
+        };
+        // Handle null, undefined, numbers (corrupt data like 6000), or non-object strings
+        if (!ship || typeof ship === 'number' || typeof ship === 'string') {
+          return emptyShipping;
+        }
+        // If it's a populated object with actual data
+        if (typeof ship === 'object' && ship._id) {
+          return {
+            weight: ship.weight ?? 0,
+            length: ship.length ?? 0,
+            width: ship.width ?? 0,
+            height: ship.height ?? 0,
+            fragile: toBoolean(ship.fragile) ?? true,
+            requiresAgeVerification: toBoolean(ship.requiresAgeVerification) ?? true,
+            hazmat: toBoolean(ship.hazmat) ?? false,
+            shippingClass: ship.shippingClass || '',
+            carrier: ship.carrier || '',
+            deliveryArea: ship.deliveryArea || '',
+            minDeliveryDays: ship.minDeliveryDays ?? 0,
+            maxDeliveryDays: ship.maxDeliveryDays ?? 0,
+            fixedShippingCost: ship.fixedShippingCost ?? 0,
+            isFreeShipping: toBoolean(ship.isFreeShipping) ?? false,
+            freeShippingMinOrder: ship.freeShippingMinOrder ?? 0,
+            freeShippingLabel: ship.freeShippingLabel || '',
+            availableForPickup: toBoolean(ship.availableForPickup) ?? false,
+          };
+        }
+        // If it's just an ObjectId (not populated) or any other invalid format, return empty
+        return emptyShipping;
+      })(),
+      // Handle warehouse - could be ObjectId, populated object, number (corrupt), string, or null
+      warehouse: (() => {
+        const wh = sp.warehouse;
+        const emptyWarehouse = { location: '', zone: '', aisle: '', shelf: '', bin: '' };
+        // Handle null, undefined, numbers (corrupt data), or non-object strings
+        if (!wh || typeof wh === 'number' || typeof wh === 'string') {
+          return emptyWarehouse;
+        }
+        // If it's a populated object with actual data
+        if (typeof wh === 'object' && wh._id) {
+          return {
+            location: wh.location || '',
+            zone: wh.zone || '',
+            aisle: wh.aisle || '',
+            shelf: wh.shelf || '',
+            bin: wh.bin || '',
+          };
+        }
+        // If it's just an ObjectId (not populated) or any other invalid format, return empty
+        return emptyWarehouse;
+      })(),
     },
   };
 };

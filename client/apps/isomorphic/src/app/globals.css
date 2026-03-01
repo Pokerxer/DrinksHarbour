@@ -1532,3 +1532,47 @@ div[style='z-index: 1000001;'],
 .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   @apply rounded-md bg-gray-400/70;
 }
+
+/* Shimmer animation for loading skeletons */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.5s infinite;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.4) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+}
+
+/* Enhanced table row animations */
+.table-row-enter {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+
+.table-row-enter-active {
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 300ms, transform 300ms;
+}
+
+.table-row-exit {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.table-row-exit-active {
+  opacity: 0;
+  transform: translateX(20px);
+  transition: opacity 300ms, transform 300ms;
+}

@@ -8,10 +8,9 @@ const Tenant = require('../models/Tenant');
 /**
  * @desc    Get tenant's SubProducts
  * @route   GET /api/subproducts
- * @access  Private (Tenant admin)
+ * @access  Private (Tenant admin or Super admin)
  */
 const getMySubProducts = asyncHandler(async (req, res) => {
-  const tenantId = req.tenant._id;
   const {
     page = 1,
     limit = 20,
@@ -21,6 +20,17 @@ const getMySubProducts = asyncHandler(async (req, res) => {
     order = 'desc',
   } = req.query;
 
+  // For super_admin without tenant context, get all subproducts or allow tenant filter
+  let tenantId = req.tenant?._id;
+  
+  // Super admins can optionally filter by tenant via query param
+  if (!tenantId && req.user?.role === 'super_admin') {
+    if (req.query.tenantId) {
+      tenantId = req.query.tenantId;
+    }
+    // If no tenant specified, super_admin gets all subproducts
+  }
+
   const result = await subProductService.getMySubProducts(tenantId, {
     page: parseInt(page),
     limit: parseInt(limit),
@@ -28,6 +38,7 @@ const getMySubProducts = asyncHandler(async (req, res) => {
     search,
     sort,
     order,
+    isSuperAdmin: req.user?.role === 'super_admin',
   });
 
   res.status(200).json({

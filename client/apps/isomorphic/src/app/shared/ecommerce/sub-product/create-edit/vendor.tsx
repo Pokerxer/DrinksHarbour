@@ -8,7 +8,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   PiStorefront, PiFactory, PiNumberCircleOne, PiTimer, PiNumberCircleTwo,
   PiCurrencyNgn, PiPackage, PiTruck, PiPhone, PiEnvelope, PiGlobe,
-  PiStar, PiPlus, PiTrash, PiNotes, PiWarningCircle, PiCheckCircle
+  PiStar, PiPlus, PiTrash, PiNotes, PiWarningCircle, PiCheckCircle,
+  PiHandshake, PiTrendUp, PiTrendDown
 } from 'react-icons/pi';
 import { fieldStaggerVariants, containerVariants } from './animations';
 
@@ -68,10 +69,17 @@ export default function SubProductVendor() {
       className="space-y-6"
     >
       <motion.div variants={fieldStaggerVariants} custom={0}>
-        <Text className="mb-2 text-lg font-semibold">Vendor & Sourcing</Text>
-        <Text className="text-sm text-gray-500">
-          Configure supplier information and sourcing details for this product
-        </Text>
+        <div className="flex items-center gap-3 mb-2">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-purple-500/30">
+            <PiHandshake className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <Text className="text-lg font-semibold">Vendor & Sourcing</Text>
+            <Text className="text-sm text-gray-500">
+              Configure supplier information and sourcing details for this product
+            </Text>
+          </div>
+        </div>
       </motion.div>
 
       {/* Vendor Summary Card */}
@@ -115,28 +123,42 @@ export default function SubProductVendor() {
       {supplierPrice && costPrice && priceDifference && (
         <motion.div 
           variants={fieldStaggerVariants}
-          className={`rounded-lg border p-4 ${
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className={`rounded-xl border p-4 ${
             parseFloat(priceDifference) > 0 
-              ? 'border-green-200 bg-green-50' 
-              : 'border-amber-200 bg-amber-50'
+              ? 'border-green-200 bg-gradient-to-r from-green-50 to-emerald-50' 
+              : 'border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50'
           }`}
         >
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               {parseFloat(priceDifference) > 0 ? (
-                <PiCheckCircle className="h-5 w-5 text-green-600" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100">
+                  <PiTrendUp className="h-5 w-5 text-green-600" />
+                </div>
               ) : (
-                <PiWarningCircle className="h-5 w-5 text-amber-600" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100">
+                  <PiTrendDown className="h-5 w-5 text-amber-600" />
+                </div>
               )}
-              <Text className={`font-medium ${
-                parseFloat(priceDifference) > 0 ? 'text-green-800' : 'text-amber-800'
-              }`}>
-                {parseFloat(priceDifference) > 0 
-                  ? `Your margin: ${priceDifference}% above supplier price`
-                  : `Warning: Supplier price is ${Math.abs(parseFloat(priceDifference))}% above your selling price`
-                }
-              </Text>
+              <div>
+                <Text className={`font-semibold ${
+                  parseFloat(priceDifference) > 0 ? 'text-green-800' : 'text-amber-800'
+                }`}>
+                  {parseFloat(priceDifference) > 0 
+                    ? `Your margin: +${priceDifference}% above supplier price`
+                    : `Warning: Supplier price is ${Math.abs(parseFloat(priceDifference))}% above your price`
+                  }
+                </Text>
+                <Text className="text-xs text-gray-600 mt-0.5">
+                  Supplier: {supplierCurrencySymbol}{supplierPrice?.toLocaleString()} → Your Cost: {supplierCurrencySymbol}{costPrice?.toLocaleString()}
+                </Text>
+              </div>
             </div>
+            <Badge color={parseFloat(priceDifference) > 0 ? 'success' : 'warning'} variant="flat">
+              {parseFloat(priceDifference) > 0 ? 'Profitable' : 'Loss'}
+            </Badge>
           </div>
         </motion.div>
       )}
@@ -214,6 +236,22 @@ export default function SubProductVendor() {
           <Text className="mt-1 text-xs text-gray-500">
             Days from order to delivery
           </Text>
+          <div className="flex flex-wrap gap-1 mt-2">
+            {[1, 3, 5, 7, 14, 21, 30].map((days) => (
+              <button
+                key={days}
+                type="button"
+                onClick={() => setValue?.('subProductData.leadTimeDays', days)}
+                className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                  watch?.('subProductData.leadTimeDays') === days 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {days}d
+              </button>
+            ))}
+          </div>
         </motion.div>
 
         {/* Minimum Order Quantity */}
@@ -234,6 +272,22 @@ export default function SubProductVendor() {
           <Text className="mt-1 text-xs text-gray-500">
             Minimum units per order from this supplier
           </Text>
+          <div className="flex flex-wrap gap-1 mt-2">
+            {[6, 10, 12, 24, 50, 100].map((qty) => (
+              <button
+                key={qty}
+                type="button"
+                onClick={() => setValue?.('subProductData.minimumOrderQuantity', qty)}
+                className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                  watch?.('subProductData.minimumOrderQuantity') === qty 
+                    ? 'bg-purple-600 text-white' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {qty}
+              </button>
+            ))}
+          </div>
         </motion.div>
 
         {/* Estimated Shipping Cost */}

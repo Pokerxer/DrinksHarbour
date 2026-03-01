@@ -3,9 +3,28 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
 import { env } from '@/env.mjs';
 import { pagesOptions } from './pages-options';
+import type { UserRole } from '@/types/authorization';
 
-// Server API URL
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+
+interface LoginResponse {
+  success: boolean;
+  data: {
+    user: {
+      _id: string;
+      id: string;
+      email: string;
+      firstName: string;
+      lastName: string;
+      role: UserRole;
+      tenant?: string;
+      tenantId?: string;
+      avatar?: { url: string };
+    };
+    token: string;
+  };
+  message?: string;
+}
 
 export const authOptions: NextAuthOptions = {
   pages: {
@@ -23,6 +42,7 @@ export const authOptions: NextAuthOptions = {
           ...session.user,
           id: token.id as string,
           role: token.role as string,
+          tenantId: token.tenantId as string | null,
           token: token.accessToken as string,
         },
       };
@@ -31,6 +51,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id;
         token.role = user.role;
+        token.tenantId = user.tenantId;
         token.accessToken = user.token;
       }
       return token;
@@ -53,7 +74,6 @@ export const authOptions: NextAuthOptions = {
         }
 
         try {
-          // Call the server API for authentication
           const response = await fetch(`${API_URL}/api/users/login`, {
             method: 'POST',
             headers: {
@@ -65,35 +85,34 @@ export const authOptions: NextAuthOptions = {
             }),
           });
 
-          const data = await response.json();
+          const data = await response.json() as LoginResponse;
 
           if (!response.ok || !data.success) {
-            // Pass through the server error message
             const errorMessage = data.message || 'Invalid email or password';
             throw new Error(errorMessage);
           }
 
-          // Check if user has admin role
           const userRole = data.data.user.role;
-          if (!['admin', 'super_admin', 'tenant_admin', 'tenant_owner'].includes(userRole)) {
-            throw new Error('Access denied. Admin privileges required.');
+          const validRoles: UserRole[] = ['admin', 'super_admin', 'tenant_admin', 'tenant_owner', 'staff', 'cashier', 'viewer'];
+          if (!validRoles.includes(userRole)) {
+            throw new Error('Access denied. Valid role required.');
           }
 
-          // Return user data for NextAuth
           return {
             id: data.data.user._id || data.data.user.id,
             email: data.data.user.email,
             name: `${data.data.user.firstName} ${data.data.user.lastName}`,
             firstName: data.data.user.firstName,
             lastName: data.data.user.lastName,
-            role: data.data.user.role,
+            role: userRole,
+            tenantId: data.data.user.tenant || data.data.user.tenantId || null,
             image: data.data.user.avatar?.url || null,
             token: data.data.token,
           };
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.error('Auth error:', error);
-          // Re-throw the error with the message for NextAuth to handle
-          throw new Error(error.message || 'Authentication failed');
+          const message = error instanceof Error ? error.message : 'Authentication failed';
+          throw new Error(message);
         }
       },
     }),

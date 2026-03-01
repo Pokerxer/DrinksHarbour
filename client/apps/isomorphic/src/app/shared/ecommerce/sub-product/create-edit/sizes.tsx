@@ -1,12 +1,128 @@
 // @ts-nocheck
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useFormContext, useFieldArray, Controller } from 'react-hook-form';
-import { Input, Text, Button, Switch } from 'rizzui';
-import { motion, AnimatePresence } from 'framer-motion';
-import { PiPlus, PiTrash, PiRuler, PiPackage } from 'react-icons/pi';
+import { Input, Text, Button, Switch, Badge } from 'rizzui';
+import { motion, AnimatePresence, Reorder } from 'framer-motion';
+import { 
+  PiPlus, PiTrash, PiRuler, PiPackage, PiCaretDown, PiCaretUp, 
+  PiCopy, PiArrowsDownUp, PiCheck, PiWarning, PiX, PiCheckCircle,
+  PiMagnifyingGlass, PiFunnel, PiGauge, PiSparkle, PiTrendUp, PiStack,
+  PiCurrencyNgn, PiPercent, PiWarehouse, PiTimer, PiEraser, PiInfo,
+  PiDotsSixVertical, PiCopySimple, PiTrashSimple, PiChartLine
+} from 'react-icons/pi';
 import { fieldStaggerVariants, containerVariants, toggleVariants, itemVariants } from './animations';
+import toast from 'react-hot-toast';
+import cn from '@core/utils/class-names';
+
+// Enhanced animations
+const cardVariants = {
+  hidden: { opacity: 0, scale: 0.95, y: 20 },
+  visible: (i: number) => ({
+    opacity: 1,
+    scale: 1,
+    y: 0,
+    transition: {
+      delay: i * 0.08,
+      duration: 0.4,
+      ease: [0.25, 0.46, 0.45, 0.94]
+    }
+  }),
+  exit: { 
+    opacity: 0, 
+    scale: 0.95, 
+    x: -100,
+    transition: { duration: 0.2 }
+  },
+  hover: {
+    scale: 1.01,
+    boxShadow: '0 8px 30px rgba(0, 0, 0, 0.12)',
+    transition: { duration: 0.2 }
+  }
+};
+
+const expandVariants = {
+  hidden: { 
+    opacity: 0, 
+    height: 0,
+    overflow: 'hidden'
+  },
+  visible: { 
+    opacity: 1, 
+    height: 'auto',
+    transition: {
+      duration: 0.3,
+      ease: 'easeInOut'
+    }
+  },
+  exit: { 
+    opacity: 0, 
+    height: 0,
+    transition: {
+      duration: 0.2
+    }
+  }
+};
+
+const buttonTapVariants = {
+  tap: { scale: 0.95 },
+  hover: { scale: 1.02 }
+};
+
+const shimmerVariants = {
+  initial: { x: '-100%' },
+  animate: { x: '100%' }
+};
+
+const quickAddVariants = {
+  hidden: { opacity: 0, y: -10 },
+  visible: { opacity: 1, y: 0 }
+};
+
+// Quick size presets for beverages
+const SIZE_PRESETS = {
+  wine: [
+    { value: '37.5cl', label: '37.5cl (Half)', quickAdd: true },
+    { value: '75cl', label: '75cl (Standard)', quickAdd: true },
+    { value: '150cl', label: '150cl (Magnum)', quickAdd: true },
+    { value: '300cl', label: '300cl (Double Mag)', quickAdd: true },
+  ],
+  spirit: [
+    { value: '5cl', label: '5cl (Mini)', quickAdd: true },
+    { value: '70cl', label: '70cl (Standard)', quickAdd: true },
+    { value: '1L', label: '1 Liter', quickAdd: true },
+    { value: '1.5L', label: '1.5 Liter', quickAdd: true },
+  ],
+  beer: [
+    { value: '33cl', label: '33cl', quickAdd: true },
+    { value: '50cl', label: '50cl', quickAdd: true },
+    { value: 'bottle-500ml', label: '500ml Bottle', quickAdd: true },
+    { value: 'can-440ml', label: '440ml Can', quickAdd: true },
+  ],
+  soft: [
+    { value: '250ml', label: '250ml', quickAdd: true },
+    { value: '500ml', label: '500ml', quickAdd: true },
+    { value: '1L', label: '1 Liter', quickAdd: true },
+    { value: '2L', label: '2 Liter', quickAdd: true },
+  ],
+  packs: [
+    { value: 'pack-6', label: '6-Pack', quickAdd: true },
+    { value: 'pack-12', label: '12-Pack', quickAdd: true },
+    { value: 'case-12', label: 'Case of 12', quickAdd: true },
+    { value: 'case-24', label: 'Case of 24', quickAdd: true },
+  ],
+};
+
+const BEVERAGE_CATEGORIES = [
+  { id: 'wine', label: 'Wine', icon: '🍷', color: 'bg-red-100 text-red-700' },
+  { id: 'spirit', label: 'Spirit', icon: '🥃', color: 'bg-amber-100 text-amber-700' },
+  { id: 'beer', label: 'Beer', icon: '🍺', color: 'bg-yellow-100 text-yellow-700' },
+  { id: 'soft', label: 'Soft Drinks', icon: '🥤', color: 'bg-blue-100 text-blue-700' },
+  { id: 'packs', label: 'Multi-Packs', icon: '📦', color: 'bg-green-100 text-green-700' },
+];
+
+const MARKUP_PRESETS = [10, 15, 20, 25, 30, 35, 50, 75, 100];
 
 export const SIZE_OPTIONS = [
   // Wine & Champagne Bottles
@@ -208,6 +324,27 @@ export default function SubProductSizes() {
       isOnSale: false,
       rank: fields.length + 1,
     });
+    toast.success('Size variant added');
+  };
+
+  const duplicateSize = (index: number) => {
+    const currentSize = watch(`subProductData.sizes.${index}`);
+    if (currentSize) {
+      append({
+        ...currentSize,
+        size: `${currentSize.size} (Copy)`,
+        displayName: currentSize.displayName ? `${currentSize.displayName} (Copy)` : '',
+        rank: fields.length + 1,
+      });
+      toast.success('Size variant duplicated');
+    }
+  };
+
+  const clearAllSizes = () => {
+    for (let i = fields.length - 1; i >= 0; i--) {
+      remove(i);
+    }
+    toast.success('All sizes cleared');
   };
 
   return (
@@ -217,27 +354,66 @@ export default function SubProductSizes() {
       animate="visible"
       className="space-y-6"
     >
+      {/* Enhanced Header */}
       <motion.div variants={fieldStaggerVariants} custom={0}>
-        <Text className="mb-2 text-lg font-semibold">Sizes & Variants</Text>
-        <Text className="text-sm text-gray-500">
-          Configure product size variants
-        </Text>
+        <div className="relative overflow-hidden rounded-xl border-l-4 border-blue-500 bg-gradient-to-r from-blue-50 via-white to-indigo-50 p-4">
+          <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-blue-100/50" />
+          <div className="absolute -bottom-4 right-12 h-16 w-16 rounded-full bg-indigo-100/50" />
+          
+          <div className="relative flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <motion.div 
+                whileHover={{ rotate: 360 }}
+                transition={{ duration: 0.5 }}
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg"
+              >
+                <PiPackage className="h-5 w-5 text-white" />
+              </motion.div>
+              <div>
+                <Text className="font-semibold text-gray-900">Sizes & Variants</Text>
+                <Text className="text-xs text-gray-500">
+                  Configure product size variants for inventory management
+                </Text>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {fields.length > 0 && (
+                <>
+                  <Badge variant="flat" color="primary" className="font-medium">
+                    {fields.length} Variant{fields.length !== 1 ? 's' : ''}
+                  </Badge>
+                  <Button
+                    type="button"
+                    variant="text"
+                    size="sm"
+                    onClick={clearAllSizes}
+                    className="text-red-600 hover:bg-red-50"
+                  >
+                    <PiEraser className="mr-1 h-4 w-4" />
+                    Clear All
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       </motion.div>
 
       {/* Sell Without Variants Toggle */}
       <motion.div 
         variants={fieldStaggerVariants} 
         custom={1}
-        className="flex items-center justify-between rounded-lg border border-gray-200 p-4 transition-all hover:border-gray-300"
+        className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-all hover:shadow-md"
       >
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50">
-            <PiPackage className="h-5 w-5 text-blue-500" />
+        <div className="flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50">
+            <PiRuler className="h-6 w-6 text-blue-500" />
           </div>
           <div>
-            <Text className="font-medium">Sell Without Size Variants</Text>
+            <Text className="font-semibold text-gray-800">Sell Without Size Variants</Text>
             <Text className="text-sm text-gray-500">
-              Offer this product without size options
+              Offer this product as a single item without size options
             </Text>
           </div>
         </div>
@@ -256,48 +432,253 @@ export default function SubProductSizes() {
         />
       </motion.div>
 
-      <AnimatePresence>
+      <AnimatePresence mode="wait">
         {!sellWithoutSizeVariants && (
-<motion.div
+          <motion.div
+            key="sizes-section"
             variants={toggleVariants}
             initial="hidden"
             animate="visible"
             exit="exit"
             className="space-y-4"
           >
-            {fields.map((field, index) => (
-              <motion.div
-                key={field.id}
-                variants={itemVariants}
+            {/* Summary Header */}
+            {fields.length > 0 && (
+              <motion.div 
+                variants={fieldStaggerVariants}
+                className="flex items-center justify-between rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 p-4 border border-blue-100"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100">
+                    <PiStack className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <Text className="font-semibold text-gray-800">
+                      {fields.length} Size Variant{fields.length !== 1 ? 's' : ''} Configured
+                    </Text>
+                    <div className="flex items-center gap-3 mt-1">
+                      <Text className="text-sm text-gray-500">
+                        Total stock: <span className="font-medium text-blue-600">{fields.reduce((sum, _, i) => {
+                          const stock = watch(`subProductData.sizes.${i}.stock`) || 0;
+                          return sum + stock;
+                        }, 0)}</span> units
+                      </Text>
+                      <div className="h-3 w-px bg-gray-300" />
+                      <Text className="text-sm text-gray-500">
+                        Avg Price: <span className="font-medium text-green-600">
+                          {fields.filter((_, i) => watch(`subProductData.sizes.${i}.basePrice`)).length > 0 
+                            ? `${defaultCurrency} ${(fields.reduce((sum, _, i) => {
+                              const price = watch(`subProductData.sizes.${i}.basePrice`) || 0;
+                              return sum + price;
+                            }, 0) / fields.filter((_, i) => watch(`subProductData.sizes.${i}.basePrice`)).length).toFixed(2)}`
+                            : '-'}
+                        </span>
+                      </Text>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  {fields.filter((_, i) => watch(`subProductData.sizes.${i}.isDefault`)).length > 0 ? (
+                    <Badge color="success" variant="flat" className="gap-1">
+                      <PiCheckCircle className="h-3 w-3" />
+                      Default Set
+                    </Badge>
+                  ) : (
+                    <Badge color="warning" variant="flat" className="gap-1">
+                      <PiWarning className="h-3 w-3" />
+                      No Default
+                    </Badge>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* Quick Add Section with Category Tabs */}
+            {fields.length < 20 && (
+              <motion.div 
+                variants={quickAddVariants}
                 initial="hidden"
                 animate="visible"
-                exit={{ opacity: 0, height: 0 }}
-                layout
+                className="rounded-xl bg-white border border-gray-200 p-4 shadow-sm"
               >
-                <SizeVariantRow
-                  index={index}
-                  setValue={setValue}
-                  watch={watch}
-                  control={control}
-                  remove={remove}
-                  totalSizes={fields.length}
-                  calculateBasePrice={calculateBasePrice}
-                  calculateSalePrice={calculateSalePrice}
-                />
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <PiSparkle className="h-4 w-4 text-amber-500" />
+                    <Text className="text-sm font-medium text-gray-700">Quick Add Common Sizes</Text>
+                  </div>
+                  <Badge variant="flat" color="secondary" size="sm">
+                    Click to add
+                  </Badge>
+                </div>
+                
+                {/* Category Tabs */}
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {BEVERAGE_CATEGORIES.map((cat) => (
+                    <motion.button
+                      key={cat.id}
+                      type="button"
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className={cn(
+                        'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
+                        SIZE_PRESETS[cat.id as keyof typeof SIZE_PRESETS]?.length > 0
+                          ? 'cursor-pointer hover:shadow-md'
+                          : 'cursor-not-allowed opacity-50'
+                      )}
+                    >
+                      <span>{cat.icon}</span>
+                      <span>{cat.label}</span>
+                    </motion.button>
+                  ))}
+                </div>
+                
+                {/* Size Buttons by Category */}
+                <div className="space-y-3">
+                  {BEVERAGE_CATEGORIES.map((cat) => {
+                    const sizes = SIZE_PRESETS[cat.id as keyof typeof SIZE_PRESETS];
+                    if (!sizes || sizes.length === 0) return null;
+                    
+                    return (
+                      <div key={cat.id} className="space-y-2">
+                        <Text className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                          {cat.icon} {cat.label}
+                        </Text>
+                        <div className="flex flex-wrap gap-2">
+                          {sizes.map((size) => (
+                            <motion.button
+                              key={size.value}
+                              type="button"
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => {
+                                const exists = fields.some((_, i) => watch(`subProductData.sizes.${i}.size`) === size.value);
+                                if (exists) {
+                                  toast.error(`${size.label} already exists`);
+                                  return;
+                                }
+                                const baseSellingPrice = defaultCostPrice ? calculateBasePrice(defaultCostPrice, defaultMarkup, defaultRoundUp) : null;
+                                const salePrice = baseSellingPrice && defaultDiscount > 0 ? calculateSalePrice(baseSellingPrice, defaultDiscount) : null;
+                                append({
+                                  size: size.value,
+                                  displayName: size.label,
+                                  sizeCategory: 'standard',
+                                  unitType: 'volume_cl',
+                                  volumeMl: parseFloat(size.value.replace('cl', '').replace('ml', '').replace('L', '')) * 10 || null,
+                                  weightGrams: null,
+                                  servingsPerUnit: null,
+                                  unitsPerPack: 1,
+                                  basePrice: baseSellingPrice,
+                                  compareAtPrice: null,
+                                  costPrice: defaultCostPrice ?? null,
+                                  wholesalePrice: null,
+                                  currency: defaultCurrency,
+                                  stock: 0,
+                                  reservedStock: 0,
+                                  availableStock: 0,
+                                  lowStockThreshold: 10,
+                                  reorderPoint: 5,
+                                  reorderQuantity: 50,
+                                  sku: '',
+                                  barcode: '',
+                                  markupPercentage: defaultMarkup,
+                                  roundUp: defaultRoundUp,
+                                  saleDiscountPercentage: defaultDiscount,
+                                  salePrice: salePrice,
+                                  isDefault: fields.length === 0,
+                                  isOnSale: false,
+                                  rank: fields.length + 1,
+                                });
+                                toast.success(`Added ${size.label}`);
+                              }}
+                              className="px-3 py-1.5 text-xs font-medium rounded-full bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
+                            >
+                              + {size.label}
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </motion.div>
-            ))}
+            )}
 
+            {/* Size Variants */}
+            <div className="space-y-4">
+              <AnimatePresence mode="popLayout">
+                {fields.map((field, index) => (
+                  <motion.div
+                    key={field.id}
+                    custom={index}
+                    variants={cardVariants}
+                    initial="hidden"
+                    animate="visible"
+                    exit="exit"
+                    whileHover="hover"
+                    layout
+                  >
+                    <SizeVariantRow
+                      index={index}
+                      setValue={setValue}
+                      watch={watch}
+                      control={control}
+                      remove={remove}
+                      totalSizes={fields.length}
+                      calculateBasePrice={calculateBasePrice}
+                      calculateSalePrice={calculateSalePrice}
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+
+            {/* Add Button */}
             <motion.div variants={fieldStaggerVariants} custom={fields.length + 2}>
-              <Button
+              <motion.button
                 type="button"
-                variant="outline"
+                whileHover="hover"
+                whileTap="tap"
+                variants={buttonTapVariants}
                 onClick={addSize}
-                className="w-full"
+                className="w-full flex items-center justify-center gap-2 py-4 px-6 rounded-xl border-2 border-dashed border-gray-300 text-gray-600 font-medium hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50/50 transition-all group"
               >
-                <PiPlus className="mr-2 h-4 w-4" />
-                Add Size Variant
-              </Button>
+                <motion.div
+                  whileHover={{ scale: 1.1, rotate: 90 }}
+                  transition={{ type: 'spring', stiffness: 400 }}
+                >
+                  <PiPlus className="h-5 w-5" />
+                </motion.div>
+                <span>Add Size Variant</span>
+                <Text className="text-xs text-gray-400 group-hover:text-blue-400">
+                  (Max 20 variants)
+                </Text>
+              </motion.button>
             </motion.div>
+
+            {/* Empty State */}
+            {fields.length === 0 && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-center py-12 px-6 rounded-xl border-2 border-dashed border-gray-200"
+              >
+                <div className="flex h-16 w-16 items-center justify-center mx-auto mb-4 rounded-full bg-gray-50">
+                  <PiRuler className="h-8 w-8 text-gray-400" />
+                </div>
+                <Text className="text-lg font-medium text-gray-600 mb-2">No Size Variants Yet</Text>
+                <Text className="text-sm text-gray-500 mb-4">
+                  Add size variants to manage different product sizes and their stock levels
+                </Text>
+                <Button
+                  type="button"
+                  onClick={addSize}
+                  className="mx-auto"
+                >
+                  <PiPlus className="mr-2 h-4 w-4" />
+                  Add Your First Size
+                </Button>
+              </motion.div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -314,6 +695,15 @@ function SizeVariantRow({
   totalSizes,
   calculateBasePrice,
   calculateSalePrice,
+}: {
+  index: number;
+  setValue: any;
+  watch: any;
+  control: any;
+  remove: (index: number) => void;
+  totalSizes: number;
+  calculateBasePrice: (costPrice: number, markup: number, roundUp: string) => number;
+  calculateSalePrice: (basePrice: number, discount: number) => number | null;
 }) {
   const variantCostPrice = watch(`subProductData.sizes.${index}.costPrice`);
   const variantMarkup = watch(`subProductData.sizes.${index}.markupPercentage`) ?? 25;
@@ -488,16 +878,40 @@ function SizeVariantRow({
             onClick={() => setExpanded(!expanded)}
             className="text-gray-600"
           >
+            {expanded ? <PiCaretUp className="h-4 w-4" /> : <PiCaretDown className="h-4 w-4" />}
             {expanded ? 'Collapse' : 'Expand'}
           </Button>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => remove(index)}
+            onClick={() => {
+              const currentSize = watch(`subProductData.sizes.${index}`);
+              if (currentSize) {
+                append({
+                  ...currentSize,
+                  size: `${currentSize.size} (Copy)`,
+                  displayName: currentSize.displayName ? `${currentSize.displayName} (Copy)` : '',
+                  rank: totalSizes + 1,
+                });
+                toast.success('Size variant duplicated');
+              }
+            }}
+            className="text-blue-600 hover:bg-blue-50"
+          >
+            <PiCopySimple className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              remove(index);
+              toast.success('Size variant removed');
+            }}
             className="text-red-600 hover:bg-red-50"
           >
-            <PiTrash className="h-4 w-4" />
+            <PiTrashSimple className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -686,8 +1100,25 @@ function SizeVariantRow({
             placeholder="25"
             value={localMarkup}
             onChange={(e) => handleMarkupChange(parseFloat(e.target.value) || 0)}
-            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 mb-2"
           />
+          {/* Quick Markup Presets */}
+          <div className="flex flex-wrap gap-1">
+            {MARKUP_PRESETS.slice(0, 6).map((markup) => (
+              <button
+                key={markup}
+                type="button"
+                onClick={() => handleMarkupChange(markup)}
+                className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                  localMarkup === markup 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {markup}%
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Round Up */}
@@ -775,8 +1206,25 @@ function SizeVariantRow({
             placeholder="0"
             value={localDiscount}
             onChange={(e) => handleDiscountChange(parseFloat(e.target.value) || 0)}
-            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 mb-2"
           />
+          {/* Quick Discount Presets */}
+          <div className="flex flex-wrap gap-1">
+            {[5, 10, 15, 20, 25, 50].map((discount) => (
+              <button
+                key={discount}
+                type="button"
+                onClick={() => handleDiscountChange(discount)}
+                className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                  localDiscount === discount 
+                    ? 'bg-green-600 text-white' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {discount}%
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Sale Price (Read-only - Auto-calculated) */}

@@ -28,6 +28,7 @@ const geminiRoutes = require('./routes/gemini.routes');
 const subcategoryRoutes = require('./routes/subcategory.routes');
 const wishlistRoutes = require('./routes/wishlist.routes');
 const subproductRoutes = require('./routes/subproduct.routes');
+const inventoryRoutes = require('./routes/inventory.routes');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -136,6 +137,7 @@ app.use('/api/gemini', geminiRoutes);
 app.use('/api/subcategories', subcategoryRoutes);
 app.use('/api/wishlist', wishlistRoutes);
 app.use('/api/subproducts', subproductRoutes);
+app.use('/api/inventory', inventoryRoutes);
 
 // ────────────────────────────────────────────────
 // Health Check Endpoint

@@ -9395,13 +9395,21 @@ const getProductBySlug = async (slug) => {
 
 /**
  * Get product by ID with full details
+ * @param {string} id - Product ID
+ * @param {boolean} includePending - Whether to include pending products (for SubProduct editing)
  */
-const getProductById = async (id) => {
+const getProductById = async (id, includePending = false) => {
   if (!/^[0-9a-fA-F]{24}$/.test(id)) {
     throw new ValidationError('Invalid product ID format');
   }
 
-  const product = await Product.findOne({ _id: id, status: 'approved' })
+  // Allow fetching pending products when editing SubProducts
+  const query = { _id: id };
+  if (!includePending) {
+    query.status = 'approved';
+  }
+
+  const product = await Product.findOne(query)
     .populate('brand', 'name slug logo description website countryOfOrigin verified')
     .populate('category', 'name slug type description')
     .populate('subCategory', 'name slug subType')
@@ -9413,25 +9421,30 @@ const getProductById = async (id) => {
     throw new NotFoundError('Product not found');
   }
 
-  // Get active SubProducts with tenants and sizes
-  const subProducts = await SubProduct.find({
-    product: product._id,
-    status: 'active',
-  })
+  // Get SubProducts - include all statuses when editing SubProducts (includePending mode)
+  const subProductQuery = includePending 
+    ? { product: product._id }
+    : { product: product._id, status: 'active' };
+
+  const subProducts = await SubProduct.find(subProductQuery)
     .populate({
       path: 'tenant',
-      match: {
-        status: 'approved',
-        subscriptionStatus: { $in: ['active', 'trialing'] },
-      },
+      match: includePending 
+        ? undefined 
+        : {
+            status: 'approved',
+            subscriptionStatus: { $in: ['active', 'trialing'] },
+          },
       select:
         'name slug logo primaryColor revenueModel markupPercentage commissionPercentage defaultCurrency country city state',
     })
     .populate({
       path: 'sizes',
-      match: {
-        availability: { $in: ['available', 'low_stock', 'pre_order'] },
-      },
+      match: includePending 
+        ? undefined 
+        : {
+            availability: { $in: ['available', 'low_stock', 'pre_order'] },
+          },
       select:
         'size displayName sellingPrice costPrice stock availability currency discountValue discountType discountStart discountEnd lowStockThreshold sku barcode weightGrams volumeMl minOrderQuantity maxOrderQuantity',
     })
@@ -9440,19 +9453,34 @@ const getProductById = async (id) => {
     )
     .lean();
 
-  product.subProducts = subProducts.filter((sp) => sp.tenant);
+  // When not in includePending mode, filter to only approved tenants
+  product.subProducts = includePending 
+    ? subProducts 
+    : subProducts.filter((sp) => sp.tenant);
 
-  if (product.subProducts.length === 0) {
+  // Only throw error when NOT in includePending mode (for SubProduct editing)
+  if (!includePending && product.subProducts.length === 0) {
     throw new NotFoundError('Product is not currently available from any seller');
   }
 
-  // Build tenant map
-  const tenantIds = product.subProducts.map((sp) => sp.tenant._id.toString());
-  const tenants = await Tenant.find({ _id: { $in: tenantIds } })
-    .select(
-      'revenueModel markupPercentage commissionPercentage defaultCurrency name slug logo'
-    )
-    .lean();
+  // When includePending is true, skip all the extra processing and return basic product
+  // This is editing where we just used for SubProduct need product details
+  if (includePending) {
+    return product;
+  }
+
+  // Build tenant map - handle null tenants in includePending mode
+  const tenantIds = product.subProducts
+    .filter((sp) => sp.tenant)  // Filter out null tenants
+    .map((sp) => sp.tenant._id.toString());
+  
+  const tenants = tenantIds.length > 0 
+    ? await Tenant.find({ _id: { $in: tenantIds } })
+        .select(
+          'revenueModel markupPercentage commissionPercentage defaultCurrency name slug logo'
+        )
+        .lean()
+    : [];
 
   const tenantMap = tenants.reduce((map, tenant) => {
     map[tenant._id.toString()] = tenant;

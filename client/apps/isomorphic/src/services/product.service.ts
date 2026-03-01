@@ -86,8 +86,12 @@ export const productService = {
     return response.json();
   },
 
-  async getProductById(id: string, token: string) {
-    const response = await fetch(`${API_URL}/api/products/${id}`, {
+  async getProductById(id: string, token: string, includePending: boolean = false) {
+    const url = includePending 
+      ? `${API_URL}/api/products/${id}?includePending=true`
+      : `${API_URL}/api/products/${id}`;
+    
+    const response = await fetch(url, {
       headers: {
         'Authorization': `Bearer ${token}`,
       },

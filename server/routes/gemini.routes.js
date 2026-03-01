@@ -4,7 +4,6 @@ const router = express.Router();
 const {
   generateProductDetails,
   generateDescription,
-  generateOrigin,
   generateBeverageInfo,
   generateSeo,
   generateTags,
@@ -43,7 +42,6 @@ const {
   generateBrandCountry,
   generateBrandFounded,
   generateBrandCategory,
-  getRecommendations,
 } = require('../controllers/gemini.controller');
 const { authenticate } = require('../middleware/auth.middleware');
 
@@ -63,13 +61,6 @@ router.post('/generate-product', generateProductDetails);
  * @access  Private
  */
 router.post('/generate-description', generateDescription);
-
-/**
- * @route   POST /api/gemini/generate-origin
- * @desc    Generate origin and production details
- * @access  Private
- */
-router.post('/generate-origin', generateOrigin);
 
 /**
  * @route   POST /api/gemini/generate-beverage-info
@@ -336,12 +327,5 @@ router.post('/brand-founded', generateBrandFounded);
  * @access  Private
  */
 router.post('/brand-category', generateBrandCategory);
-
-/**
- * @route   POST /api/gemini/recommendations
- * @desc    Get beverage recommendations
- * @access  Private
- */
-router.post('/recommendations', getRecommendations);
 
 module.exports = router;
