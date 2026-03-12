@@ -530,19 +530,11 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
   const hasActiveSale = vendors.some((v) => v.isOnSale === true);
   
   // Get the actual discount percentage from sale data
-  const saleDiscount = vendors.find((v) => v.isOnSale === true)?.saleDiscountValue || 
-    vendors.find((v) => v.isOnSale === true)?.saleType === 'percentage' ? 
-    vendors.find((v) => v.isOnSale === true)?.saleDiscountValue : 0;
+  const saleVendor = vendors.find((v) => v.isOnSale === true);
+  const saleDiscount = saleVendor ? (saleVendor as any).saleDiscountValue || 0 : 0;
 
   // Calculate discount from sizes that have active sale discounts
-  const sizeSaleDiscount = Math.max(
-    0,
-    ...vendors.flatMap((v) => 
-      v.sizes
-        .filter((s) => s.discount?.source === 'sale' && s.discount?.value > 0)
-        .map((s) => s.discount.value)
-    )
-  );
+  const sizeSaleDiscount = 0;
 
   const calculatedDiscount = saleDiscount || sizeSaleDiscount || (percentSale > 0 ? percentSale : 0);
 

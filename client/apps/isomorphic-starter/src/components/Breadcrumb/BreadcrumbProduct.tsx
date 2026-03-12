@@ -68,7 +68,7 @@ const BreadcrumbProduct: React.FC<BreadcrumbProductProps> = ({
   if (data?.name) {
     breadcrumbItems.push({
       label: data.name,
-      href: null, // Current page, no link
+      href: '#', // Current page, no link
     });
   }
 
