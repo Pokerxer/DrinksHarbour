@@ -1,5 +1,5 @@
 {
-  "buildCommand": "pnpm install && pnpm run build",
-  "outputDirectory": "apps/isomorphic/.next",
-  "installCommand": "pnpm install"
+  "buildCommand": "npm install && npm run build",
+  "outputDirectory": "apps/isomorphic-starter/.next",
+  "installCommand": "npm install"
 }
