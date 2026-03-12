@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AnnouncementBanner } from '@/components/Banner';
 import { useModalSearchContext } from '@/context/ModalSearchContext';
 import { useModalCartContext } from '@/context/ModalCartContext';
 import { useCart } from '@/context/CartContext';

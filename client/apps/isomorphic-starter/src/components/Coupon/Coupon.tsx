@@ -4,13 +4,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import * as Icon from 'react-icons/pi';
 
 interface CartItem {
-  _id: string;
+  _id?: string;
   cartItemId: string;
   name: string;
   price: number;
   quantity: number;
   selectedVendor?: string;
   selectedSize?: string;
+  [key: string]: any;
 }
 
 interface CouponProps {

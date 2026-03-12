@@ -16,6 +16,11 @@ import { useModalCartContext } from '@/context/ModalCartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useModalWishlistContext } from '@/context/ModalWishlistContext';
 
+interface TabFeaturesProps {
+  start?: number;
+  limit?: number;
+}
+
 interface ProductSize {
   _id: string;
   size: string;
@@ -81,7 +86,7 @@ interface TabConfig {
   apiEndpoint: string;
 }
 
-const TabFeatures: React.FC = () => {
+const TabFeatures: React.FC<TabFeaturesProps> = ({ start = 0, limit = 8 }) => {
   const [activeTab, setActiveTab] = useState<string>('on-sale');
   const [isAnimating, setIsAnimating] = useState(false);
   const [products, setProducts] = useState<TabProduct[]>([]);

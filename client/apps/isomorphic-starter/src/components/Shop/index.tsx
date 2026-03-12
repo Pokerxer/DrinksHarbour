@@ -31,6 +31,7 @@ interface Props {
   initialFilters?: FilterState;
   onFilterChange?: (key: keyof FilterState, value: any) => void;
   isLoading?: boolean;
+  searchQuery?: string | null;
 }
 
 const Shop: React.FC<Props> = ({ 
@@ -40,7 +41,8 @@ const Shop: React.FC<Props> = ({
   productStyle,
   initialFilters,
   onFilterChange,
-  isLoading = false
+  isLoading = false,
+  searchQuery = null
 }) => {
   const searchParams = useSearchParams();
   const router = useRouter();
