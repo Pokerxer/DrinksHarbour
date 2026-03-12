@@ -36,6 +36,18 @@ export const authOptions: NextAuthOptions = {
   },
   callbacks: {
     async session({ session, token }) {
+      // Check if token is expired
+      if (token.accessToken) {
+        try {
+          const decoded = JSON.parse(Buffer.from((token.accessToken as string).split('.')[1], 'base64').toString());
+          if (decoded.exp && decoded.exp * 1000 < Date.now()) {
+            return { ...session, error: 'RefreshAccessTokenError' };
+          }
+        } catch (error) {
+          console.error('Error decoding token in session callback:', error);
+        }
+      }
+
       return {
         ...session,
         user: {
@@ -45,6 +57,7 @@ export const authOptions: NextAuthOptions = {
           tenantId: token.tenantId as string | null,
           token: token.accessToken as string,
         },
+        error: token.error,
       };
     },
     async jwt({ token, user }) {
@@ -54,6 +67,19 @@ export const authOptions: NextAuthOptions = {
         token.tenantId = user.tenantId;
         token.accessToken = user.token;
       }
+
+      // Check if token is expired
+      if (token.accessToken) {
+        try {
+          const decoded = JSON.parse(Buffer.from((token.accessToken as string).split('.')[1], 'base64').toString());
+          if (decoded.exp && decoded.exp * 1000 < Date.now()) {
+            token.error = 'RefreshAccessTokenError';
+          }
+        } catch (error) {
+          console.error('Error decoding token in jwt callback:', error);
+        }
+      }
+
       return token;
     },
     async redirect({ url, baseUrl }) {
@@ -85,6 +111,20 @@ export const authOptions: NextAuthOptions = {
             }),
           });
 
+          // Check if response is actually JSON
+          const contentType = response.headers.get('content-type');
+          if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            console.error('Non-JSON response from login API:', text);
+            
+            // If it's HTML, try to extract useful info
+            if (text.startsWith('<')) {
+              throw new Error('Login service unavailable. Please check if the backend server is running.');
+            }
+            
+            throw new Error(`Server returned invalid response: ${text.substring(0, 100)}...`);
+          }
+
           const data = await response.json() as LoginResponse;
 
           if (!response.ok || !data.success) {
@@ -111,6 +151,12 @@ export const authOptions: NextAuthOptions = {
           };
         } catch (error: unknown) {
           console.error('Auth error:', error);
+          
+          // Handle network errors specifically
+          if (error instanceof TypeError && error.message === 'Failed to fetch') {
+            throw new Error('Network error: Unable to connect to authentication server. Please check your internet connection and ensure the backend server is running.');
+          }
+          
           const message = error instanceof Error ? error.message : 'Authentication failed';
           throw new Error(message);
         }

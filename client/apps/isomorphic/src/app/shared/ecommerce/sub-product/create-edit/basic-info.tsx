@@ -257,7 +257,9 @@ export default function SubProductBasicInfo({
     setIsLoading(true);
     try {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
-      let url = `${API_URL}/api/products/search?q=${encodeURIComponent(query)}&limit=15`;
+      // Use getAllProducts with search parameter instead of search endpoint (which has embedding issues)
+      // Use inStock=false to get all products, and status= (empty) to include all statuses
+      let url = `${API_URL}/api/products?limit=15&inStock=false&status=&search=${encodeURIComponent(query)}`;
       if (selectedTypeFilter) {
         url += `&type=${encodeURIComponent(selectedTypeFilter)}`;
       }

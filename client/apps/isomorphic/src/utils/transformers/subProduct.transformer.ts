@@ -123,11 +123,26 @@ export interface SubProductFormData {
     endDate?: string | null;
     discountPercentage?: number | null;
     remainingQuantity?: number | null;
+    sizes?: string[];
+    sizeVariants?: string[];
+  };
+  loyaltyDiscount?: {
+    enabled?: boolean;
+    percentage?: number;
+    tierRequirement?: string;
+    sizes?: string[];
+    sizeVariants?: string[];
   };
   bundleDeals?: Array<{
     name?: string;
+    description?: string;
     products?: string[];
+    sizes?: string[];
+    sizeVariants?: string[];
+    quantity?: number;
     discount?: number | null;
+    discountType?: string;
+    active?: boolean;
     validUntil?: string | null;
   }>;
   shipping?: {
@@ -278,7 +293,7 @@ export const transformFormData = (data: SubProductFormInput) => {
     salePrice: toNumber(sp.salePrice) ?? 0,
     saleStartDate: cleanDate(sp.saleStartDate),
     saleEndDate: cleanDate(sp.saleEndDate),
-    saleType: sp.saleType || '',
+    saleType: sp.saleType && sp.saleType !== '' ? sp.saleType : 'percentage',  // Default to 'percentage'
     saleDiscountValue: toNumber(sp.saleDiscountValue) ?? 0,
     saleBanner: sp.saleBanner || { url: '', alt: '' },
     isOnSale: toBoolean(sp.isOnSale) ?? false,
@@ -306,7 +321,7 @@ export const transformFormData = (data: SubProductFormInput) => {
     leadTimeDays: toNumber(sp.leadTimeDays) ?? 0,
     minimumOrderQuantity: toNumber(sp.minimumOrderQuantity) ?? 0,
     estimatedShippingCost: toNumber(sp.estimatedShippingCost) ?? 0,
-    supplierRating: toNumber(sp.supplierRating) ?? 0,
+    supplierRating: toNumber(sp.supplierRating) || 0,  // Use || to handle empty string, NaN, undefined
     vendorNotes: sp.vendorNotes || '',
     vendorContactName: sp.vendorContactName || '',
     vendorPhone: sp.vendorPhone || '',
@@ -324,17 +339,51 @@ export const transformFormData = (data: SubProductFormInput) => {
     deactivatedAt: cleanDate(sp.deactivatedAt),
     discontinuedAt: cleanDate(sp.discontinuedAt),
     discount: toNumber(sp.discount) ?? 0,
-    discountType: sp.discountType || '',
+    discountType: sp.discountType && sp.discountType !== '' ? sp.discountType : 'percentage',  // Default to 'percentage'
     discountStart: cleanDate(sp.discountStart),
     discountEnd: cleanDate(sp.discountEnd),
-    flashSale: sp.flashSale || {
+    flashSale: sp.flashSale ? {
+      isActive: sp.flashSale.isActive ?? false,
+      startDate: cleanDate(sp.flashSale.startDate),
+      endDate: cleanDate(sp.flashSale.endDate),
+      discountPercentage: toNumber(sp.flashSale.discountPercentage) ?? 0,
+      remainingQuantity: toNumber(sp.flashSale.remainingQuantity) ?? 0,
+      sizes: sp.flashSale.sizes || [],
+      sizeVariants: sp.flashSale.sizeVariants || [],
+    } : {
       isActive: false,
       startDate: null,
       endDate: null,
       discountPercentage: 0,
       remainingQuantity: 0,
+      sizes: [],
+      sizeVariants: [],
     },
-    bundleDeals: sp.bundleDeals || [],
+    bundleDeals: sp.bundleDeals?.map((deal: any) => ({
+      name: deal.name || '',
+      description: deal.description || '',
+      products: deal.products || [],
+      sizes: deal.sizes || [],
+      sizeVariants: deal.sizeVariants || [],
+      quantity: deal.quantity || 2,
+      discount: deal.discount ?? 0,
+      discountType: deal.discountType || 'percentage',
+      active: deal.active !== false,
+      validUntil: cleanDate(deal.validUntil),
+    })) || [],
+    loyaltyDiscount: sp.loyaltyDiscount ? {
+      enabled: sp.loyaltyDiscount.enabled ?? false,
+      percentage: toNumber(sp.loyaltyDiscount.percentage) ?? 0,
+      tierRequirement: sp.loyaltyDiscount.tierRequirement || '',
+      sizes: sp.loyaltyDiscount.sizes || [],
+      sizeVariants: sp.loyaltyDiscount.sizeVariants || [],
+    } : {
+      enabled: false,
+      percentage: 0,
+      tierRequirement: '',
+      sizes: [],
+      sizeVariants: [],
+    },
     shipping: {
       weight: toNumber(sp.shipping?.weight) ?? 0,
       length: toNumber(sp.shipping?.length) ?? 0,

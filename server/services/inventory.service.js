@@ -3,6 +3,7 @@
 const mongoose = require('mongoose');
 const InventoryMovement = require('../models/InventoryMovement');
 const SubProduct = require('../models/SubProduct');
+const Size = require('../models/Size');
 const Warehouse = require('../models/Warehouse');
 const { NotFoundError, ValidationError, ForbiddenError } = require('../utils/errors');
 
@@ -29,6 +30,8 @@ const MOVEMENT_CATEGORIES = {
 
 // Create inventory movement and update stock
 const createMovement = async (data, userId, tenantId) => {
+  console.log('🔧 createMovement called with:', { userId, tenantId, data: { ...data, quantity: data.quantity } });
+  
   const {
     subProductId,
     productId,
@@ -69,14 +72,20 @@ const createMovement = async (data, userId, tenantId) => {
   }
 
   // Get current subproduct
+  console.log('🔍 Looking for SubProduct:', subProductId, 'tenant:', tenantId);
+  
   const subProduct = await SubProduct.findOne({
     _id: subProductId,
     tenant: tenantId,
-  });
+  }).populate('sizes');
 
   if (!subProduct) {
+    console.error('❌ SubProduct not found:', { subProductId, tenantId });
     throw new NotFoundError('SubProduct not found');
   }
+
+  console.log('✅ SubProduct found:', subProduct._id, 'current stock:', subProduct.totalStock);
+  console.log('   Sizes in SubProduct:', subProduct.sizes?.map(s => ({ _id: s._id, size: s.size })) || []);
 
   const quantityBefore = subProduct.totalStock || 0;
   let quantityAfter;
@@ -138,12 +147,91 @@ const createMovement = async (data, userId, tenantId) => {
   });
 
   // Update SubProduct stock
-  await SubProduct.findByIdAndUpdate(subProductId, {
+  const updateData = {
     totalStock: quantityAfter,
     availableStock: quantityAfter - (subProduct.reservedStock || 0),
     stockStatus: quantityAfter === 0 ? 'out_of_stock' : quantityAfter <= (subProduct.lowStockThreshold || 10) ? 'low_stock' : 'in_stock',
     lastRestockDate: ['received', 'purchase', 'return'].includes(type) ? new Date() : subProduct.lastRestockDate,
-  });
+  };
+
+  console.log(`📦 Updating SubProduct ${subProductId} stock:`);
+  console.log(`   - quantityBefore: ${quantityBefore}`);
+  console.log(`   - quantity: ${quantity}`);
+  console.log(`   - quantityAfter: ${quantityAfter}`);
+  console.log(`   - totalStock will be: ${quantityAfter}`);
+  console.log(`   - availableStock will be: ${quantityAfter - (subProduct.reservedStock || 0)}`);
+  console.log(`   - stockStatus will be: ${updateData.stockStatus}`);
+
+  // If this is an incoming movement with a new unit cost, update the overall average cost price
+  if (['in', 'adjustment_in', 'return'].includes(category) && unitCost !== undefined && unitCost !== null) {
+    const existingPrice = subProduct.costPrice || 0;
+    
+    if (quantityBefore > 0) {
+      const totalPrice = (quantityBefore * existingPrice) + (quantity * unitCost);
+      const averagePrice = quantityAfter > 0 ? totalPrice / quantityAfter : unitCost;
+      updateData.costPrice = parseFloat(averagePrice.toFixed(4));
+      console.log(`📈 Overall price updated: ${existingPrice} -> ${averagePrice.toFixed(4)}`);
+    } else {
+      updateData.costPrice = parseFloat(Number(unitCost).toFixed(4));
+    }
+  }
+
+  // If this is an incoming movement and we have sizeId, update size-specific data in Size collection
+  // Note: SubProduct.sizes[] is just an array of ObjectIds - we can't store stock there
+  // Instead, we update the Size collection directly (below)
+  if (['in', 'adjustment_in', 'return'].includes(category) && sizeId) {
+    console.log(`⚠️ SizeId provided (${sizeId}) - will update Size collection directly`);
+  }
+
+  await SubProduct.findByIdAndUpdate(subProductId, updateData);
+
+  // Also update the Size collection directly if sizeId is provided
+  if (sizeId && ['in', 'adjustment_in', 'return'].includes(category)) {
+    try {
+      const size = await Size.findById(sizeId);
+      if (size) {
+        const existingSizeStock = size.stock || 0;
+        const existingReservedStock = size.reservedStock || 0;
+        const newSizeStock = existingSizeStock + quantity;
+        
+        const sizeUpdate = { 
+          stock: newSizeStock,
+          availableStock: newSizeStock - existingReservedStock,
+        };
+        
+        // Also update cost price with weighted average
+        if (unitCost !== undefined && unitCost !== null && existingSizeStock > 0) {
+          const totalPrice = (existingSizeStock * (size.costPrice || 0)) + (quantity * unitCost);
+          const averagePrice = newSizeStock > 0 ? totalPrice / newSizeStock : unitCost;
+          sizeUpdate.costPrice = parseFloat(averagePrice.toFixed(4));
+        } else if (unitCost !== undefined && unitCost !== null) {
+          sizeUpdate.costPrice = parseFloat(Number(unitCost).toFixed(4));
+        }
+        
+        await Size.findByIdAndUpdate(sizeId, sizeUpdate);
+        console.log(`📦 Size collection updated: ${size.size} stock ${existingSizeStock} -> ${newSizeStock}, availableStock: ${sizeUpdate.availableStock}`);
+      }
+    } catch (sizeError) {
+      console.error('Failed to update Size collection:', sizeError.message);
+    }
+  } else if (sizeId && ['out', 'adjustment_out'].includes(category)) {
+    try {
+      const size = await Size.findById(sizeId);
+      if (size) {
+        const existingSizeStock = size.stock || 0;
+        const existingReservedStock = size.reservedStock || 0;
+        const newSizeStock = Math.max(0, existingSizeStock - quantity);
+        
+        await Size.findByIdAndUpdate(sizeId, { 
+          stock: newSizeStock,
+          availableStock: Math.max(0, newSizeStock - existingReservedStock),
+        });
+        console.log(`📦 Size collection updated (out): ${size.size} stock ${existingSizeStock} -> ${newSizeStock}`);
+      }
+    } catch (sizeError) {
+      console.error('Failed to update Size collection:', sizeError.message);
+    }
+  }
 
   // Update Warehouse if specified
   if (warehouseId) {
@@ -330,7 +418,9 @@ const getInventorySummary = async (tenantId, subProductId) => {
 const adjustInventory = async (subProductId, tenantId, adjustment, reason, userId, notes, reference) => {
   const type = adjustment >= 0 ? 'adjustment_in' : 'adjustment_out';
   
-  return createMovement(
+  console.log('📦 adjustInventory called:', { subProductId, tenantId, adjustment, reason, type });
+  
+  const movement = await createMovement(
     {
       subProductId,
       type,
@@ -344,11 +434,16 @@ const adjustInventory = async (subProductId, tenantId, adjustment, reason, userI
     userId,
     tenantId
   );
+  
+  console.log('✅ Adjustment movement created:', movement._id);
+  return movement;
 };
 
 // Record received goods
 const recordReceived = async (subProductId, tenantId, data, userId) => {
-  return createMovement(
+  console.log('📦 recordReceived called:', { subProductId, tenantId, data, userId });
+  
+  const movement = await createMovement(
     {
       subProductId,
       type: 'received',
@@ -358,6 +453,9 @@ const recordReceived = async (subProductId, tenantId, data, userId) => {
     userId,
     tenantId
   );
+  
+  console.log('✅ Movement created:', movement._id);
+  return movement;
 };
 
 // Record sale (decrease stock)
@@ -444,6 +542,29 @@ const cancelMovement = async (movementId, tenantId, userId, reason) => {
   return reversal;
 };
 
+// Get Next PO Number
+const getNextPONumber = async (tenantId) => {
+  const PurchaseOrder = require('../models/PurchaseOrder');
+  
+  // Find the most recent PO for this tenant
+  const lastPO = await PurchaseOrder.findOne({ tenant: tenantId })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  if (!lastPO || !lastPO.poNumber) {
+    return 'PO000001';
+  }
+
+  // Extract the number, increment, and pad
+  const match = lastPO.poNumber.match(/^PO(\d+)$/i);
+  if (match && match[1]) {
+    const nextNum = parseInt(match[1], 10) + 1;
+    return `PO${String(nextNum).padStart(6, '0')}`;
+  }
+
+  return 'PO000001';
+};
+
 // Get low stock items
 const getLowStockItems = async (tenantId) => {
   const subProducts = await SubProduct.find({
@@ -497,6 +618,141 @@ const getInventoryValuation = async (tenantId) => {
   };
 };
 
+/**
+ * Transfer stock between warehouses
+ */
+const transferStock = async (data, userId, tenantId) => {
+  const {
+    subProductId,
+    sourceWarehouseId,
+    destinationWarehouseId,
+    quantity,
+    notes,
+    reference,
+  } = data;
+
+  if (!subProductId) {
+    throw new ValidationError('SubProduct ID is required');
+  }
+  if (!sourceWarehouseId || !destinationWarehouseId) {
+    throw new ValidationError('Source and destination warehouse IDs are required');
+  }
+  if (sourceWarehouseId === destinationWarehouseId) {
+    throw new ValidationError('Source and destination warehouses must be different');
+  }
+  if (!quantity || quantity <= 0) {
+    throw new ValidationError('Quantity must be greater than 0');
+  }
+
+  // Get subproduct to verify ownership
+  const subProduct = await SubProduct.findOne({
+    _id: subProductId,
+    tenant: tenantId,
+  });
+
+  if (!subProduct) {
+    throw new NotFoundError('SubProduct not found');
+  }
+
+  // Verify source warehouse has sufficient stock
+  const sourceWarehouse = await Warehouse.findOne({
+    _id: sourceWarehouseId,
+    tenant: tenantId,
+  });
+
+  if (!sourceWarehouse) {
+    throw new NotFoundError('Source warehouse not found');
+  }
+
+  if (sourceWarehouse.currentQuantity < quantity) {
+    throw new ValidationError(
+      `Insufficient stock in source warehouse. Available: ${sourceWarehouse.currentQuantity}, Requested: ${quantity}`
+    );
+  }
+
+  // Verify destination warehouse exists
+  const destWarehouse = await Warehouse.findOne({
+    _id: destinationWarehouseId,
+    tenant: tenantId,
+  });
+
+  if (!destWarehouse) {
+    throw new NotFoundError('Destination warehouse not found');
+  }
+
+  // Check capacity at destination
+  if (destWarehouse.capacity > 0 && destWarehouse.currentQuantity + quantity > destWarehouse.capacity) {
+    throw new ValidationError(
+      `Insufficient capacity in destination warehouse. Available: ${destWarehouse.capacity - destWarehouse.currentQuantity}, Requested: ${quantity}`
+    );
+  }
+
+  // Generate transfer reference
+  const transferRef = reference || `TRF-${Date.now().toString(36).toUpperCase()}`;
+
+  // Create transfer out movement
+  const transferOut = await createMovement(
+    {
+      subProductId,
+      type: 'transfer_out',
+      quantity,
+      warehouseId: sourceWarehouseId,
+      destinationWarehouseId,
+      reference: transferRef,
+      referenceType: 'transfer',
+      notes: `Transfer to ${destWarehouse.location}. ${notes || ''}`,
+      source: 'manual',
+    },
+    userId,
+    tenantId
+  );
+
+  // Create transfer in movement
+  const transferIn = await createMovement(
+    {
+      subProductId,
+      type: 'transfer_in',
+      quantity,
+      warehouseId: destinationWarehouseId,
+      sourceWarehouseId,
+      reference: transferRef,
+      referenceType: 'transfer',
+      notes: `Transfer from ${sourceWarehouse.location}. ${notes || ''}`,
+      source: 'manual',
+    },
+    userId,
+    tenantId
+  );
+
+  // Update warehouse quantities
+  await Warehouse.findByIdAndUpdate(sourceWarehouseId, {
+    $inc: { currentQuantity: -quantity },
+  });
+
+  await Warehouse.findByIdAndUpdate(destinationWarehouseId, {
+    $inc: { currentQuantity: quantity },
+  });
+
+  console.log(`✅ Transfer completed: ${quantity} units from ${sourceWarehouse.location} to ${destWarehouse.location}`);
+
+  return {
+    transferReference: transferRef,
+    transferOut,
+    transferIn,
+    quantity,
+    sourceWarehouse: {
+      id: sourceWarehouse._id,
+      location: sourceWarehouse.location,
+      newQuantity: sourceWarehouse.currentQuantity - quantity,
+    },
+    destinationWarehouse: {
+      id: destWarehouse._id,
+      location: destWarehouse.location,
+      newQuantity: destWarehouse.currentQuantity + quantity,
+    },
+  };
+};
+
 module.exports = {
   createMovement,
   getMovements,
@@ -506,7 +762,9 @@ module.exports = {
   recordSale,
   recordReturn,
   cancelMovement,
+  getNextPONumber,
   getLowStockItems,
   getInventoryValuation,
+  transferStock,
   MOVEMENT_CATEGORIES,
 };

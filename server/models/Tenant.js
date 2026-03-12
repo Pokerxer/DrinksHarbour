@@ -1,5 +1,5 @@
 // models/Tenant.js
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 const { Schema } = mongoose;
 const { ObjectId } = Schema;
 
@@ -30,13 +30,13 @@ const tenantSchema = new Schema(
 
     logo: {
       url: String,
-      publicId: String,       // Cloudinary public_id
+      publicId: String, // Cloudinary public_id
       alt: String,
     },
 
     primaryColor: {
       type: String,
-      default: '#1a202c',     // fallback dark slate
+      default: "#1a202c", // fallback dark slate
       match: /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/,
     },
 
@@ -45,14 +45,21 @@ const tenantSchema = new Schema(
     // ────────────────────────────────────────────────
     plan: {
       type: String,
-      enum: ['free_trial', 'starter', 'pro', 'enterprise', 'custom'],
-      default: 'free_trial',
+      enum: ["free_trial", "starter", "pro", "enterprise", "custom"],
+      default: "free_trial",
     },
 
     subscriptionStatus: {
       type: String,
-      enum: ['trialing', 'active', 'past_due', 'canceled', 'incomplete', 'incomplete_expired'],
-      default: 'trialing',
+      enum: [
+        "trialing",
+        "active",
+        "past_due",
+        "canceled",
+        "incomplete",
+        "incomplete_expired",
+      ],
+      default: "trialing",
       index: true,
     },
 
@@ -76,15 +83,15 @@ const tenantSchema = new Schema(
     // ────────────────────────────────────────────────
     revenueModel: {
       type: String,
-      enum: ['markup', 'commission'],
-      default: 'markup',
+      enum: ["markup", "commission"],
+      default: "markup",
       required: true,
     },
 
     markupPercentage: {
       type: Number,
       min: 0,
-      max: 500,               // extreme cases allowed
+      max: 500, // extreme cases allowed
       default: 40,
     },
 
@@ -111,26 +118,37 @@ const tenantSchema = new Schema(
     // ────────────────────────────────────────────────
     defaultCurrency: {
       type: String,
-      enum: ['NGN', 'USD', 'EUR', 'GBP'],
-      default: 'NGN',
+      enum: ["NGN", "USD", "EUR", "GBP"],
+      default: "NGN",
     },
 
-    supportedCurrencies: [{
-      type: String,
-      enum: ['NGN', 'USD', 'EUR', 'GBP'],
-    }],
+    supportedCurrencies: [
+      {
+        type: String,
+        enum: ["NGN", "USD", "EUR", "GBP"],
+      },
+    ],
 
     country: {
       type: String,
-      default: 'Nigeria',
+      default: "Nigeria",
     },
 
     city: String,
-    state: String,            // e.g. "Lagos", "Abuja FCT"
+    state: String, // e.g. "Lagos", "Abuja FCT"
+
+    address: {
+      street: { type: String },
+      city: { type: String },
+      state: { type: String },
+      country: { type: String, default: "Nigeria" },
+      zipCode: { type: String },
+      phone: { type: String },
+    },
 
     enforceAgeVerification: {
       type: Boolean,
-      default: true,          // most tenants sell alcohol
+      default: true, // most tenants sell alcohol
     },
 
     // ────────────────────────────────────────────────
@@ -138,8 +156,8 @@ const tenantSchema = new Schema(
     // ────────────────────────────────────────────────
     status: {
       type: String,
-      enum: ['pending', 'approved', 'rejected', 'suspended', 'archived'],
-      default: 'pending',
+      enum: ["pending", "approved", "rejected", "suspended", "archived"],
+      default: "pending",
       index: true,
     },
 
@@ -150,7 +168,7 @@ const tenantSchema = new Schema(
     },
 
     approvedAt: Date,
-    approvedBy: { type: ObjectId, ref: 'User' }, // super-admin
+    approvedBy: { type: ObjectId, ref: "User" }, // super-admin
 
     rejectionReason: String,
 
@@ -182,7 +200,7 @@ const tenantSchema = new Schema(
     // ────────────────────────────────────────────────
     // Admin / Support
     // ────────────────────────────────────────────────
-    notes: String,              // internal admin notes
+    notes: String, // internal admin notes
 
     contactEmail: {
       type: String,
@@ -191,25 +209,72 @@ const tenantSchema = new Schema(
     },
 
     contactPhone: String,
+
+    // ────────────────────────────────────────────────
+    // Purchase Settings (Odoo-style)
+    // ────────────────────────────────────────────────
+    purchaseSettings: {
+      // Bill Control Policy
+      billControlPolicy: {
+        type: String,
+        enum: ["ordered", "received"],
+        default: "received",
+      },
+      // Enable 3-way matching
+      enable3WayMatching: {
+        type: Boolean,
+        default: true,
+      },
+      // Require approval for all POs
+      requirePOApproval: {
+        type: Boolean,
+        default: true,
+      },
+      // Approval threshold amount (0 = all POs require approval)
+      approvalThreshold: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      // Default payment terms for POs
+      defaultPaymentTerms: {
+        type: String,
+        default: "Net 30",
+      },
+      // Auto-generate vendor bill when goods received
+      autoGenerateBill: {
+        type: Boolean,
+        default: false,
+      },
+      // Allow partial receipts
+      allowPartialReceipts: {
+        type: Boolean,
+        default: true,
+      },
+      // Default receiving location/warehouse
+      defaultReceivingLocation: String,
+    },
   },
   {
     timestamps: true,
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
-  }
+  },
 );
 
 // ────────────────────────────────────────────────
 // Virtuals / Helpers
 // ────────────────────────────────────────────────
 
-tenantSchema.virtual('subdomain').get(function () {
+tenantSchema.virtual("subdomain").get(function () {
   return `${this.slug}.drinksharbour.com`;
 });
 
-tenantSchema.virtual('isActive').get(function () {
-  return this.status === 'approved' && 
-         ['active', 'trialing'].includes(this.subscriptionStatus);
+tenantSchema.virtual("isActive").get(function () {
+  return (
+    this.status === "approved" &&
+    ["active", "trialing"].includes(this.subscriptionStatus)
+  );
 });
 
 // Compound index examples – very useful in practice
@@ -217,6 +282,6 @@ tenantSchema.index({ slug: 1, status: 1 });
 tenantSchema.index({ stripeCustomerId: 1 });
 tenantSchema.index({ status: 1, subscriptionStatus: 1 });
 
-const Tenant = mongoose.models.Tenant || mongoose.model('Tenant', tenantSchema);
+const Tenant = mongoose.models.Tenant || mongoose.model("Tenant", tenantSchema);
 
 module.exports = Tenant;

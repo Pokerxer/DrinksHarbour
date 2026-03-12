@@ -1,0 +1,181 @@
+
+> iso@7.6.2 dev
+> next dev
+
+   ▲ Next.js 15.2.4
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.1.114:3000
+   - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 3.4s
+ ✓ Compiled /middleware in 398ms (206 modules)
+ ○ Compiling /ecommerce/sub-products/create ...
+ ✓ Compiled /ecommerce/sub-products/create in 15.3s (3530 modules)
+ GET /ecommerce/sub-products/create 200 in 18973ms
+ ○ Compiling /api/auth/[...nextauth] ...
+ ✓ Compiled /api/auth/[...nextauth] in 5.3s (3539 modules)
+ GET /api/auth/session 200 in 6950ms
+ GET /api/auth/session 200 in 32ms
+ GET /ecommerce/sub-products/create 200 in 2675ms
+ GET /api/auth/session 200 in 548ms
+ GET /api/auth/session 200 in 98ms
+ ○ Compiling /ecommerce/sub-products ...
+ ✓ Compiled /ecommerce/sub-products in 21.5s (3640 modules)
+ GET /ecommerce/sub-products 200 in 24793ms
+ GET /api/auth/session 200 in 70ms
+ GET /api/auth/session 200 in 30ms
+ GET /ecommerce/sub-products/create 200 in 350ms
+ GET /api/auth/session 200 in 49ms
+ GET /api/auth/session 200 in 37ms
+ GET /ecommerce/sub-products/create 200 in 69ms
+ GET /api/auth/session 200 in 60ms
+ GET /api/auth/session 200 in 49ms
+ GET /api/auth/session 200 in 62ms
+ GET /api/auth/session 200 in 51ms
+ GET /ecommerce/sub-products 200 in 75ms
+ ○ Compiling /ecommerce/sub-products/[slug]/edit ...
+ ✓ Compiled /ecommerce/sub-products/[slug]/edit in 7s (3634 modules)
+ GET /ecommerce/sub-products/69a7a79d106bccb873bddf99/edit 200 in 9625ms
+ GET /ecommerce/sub-products/69a7a79d106bccb873bddf99/edit 200 in 63ms
+ GET /ecommerce/sub-products 200 in 1116ms
+ GET /ecommerce/sub-products/69a1b7fa948bfb5ff62f51ba/edit 200 in 49ms
+ GET /ecommerce/sub-products 200 in 58ms
+ ○ Compiling /api/auth/[...nextauth] ...
+ ✓ Compiled /api/auth/[...nextauth] in 5.2s (2014 modules)
+ GET /api/auth/session 200 in 5632ms
+ GET /api/auth/session 200 in 14ms
+ ○ Compiling /ecommerce/promotions/create ...
+ ✓ Compiled /ecommerce/promotions in 20.3s (3669 modules)
+ GET /ecommerce/promotions/create 200 in 25097ms
+ GET /ecommerce/promotions 200 in 23952ms
+ GET /ecommerce/promotions/create 200 in 100ms
+Browserslist: browsers data (caniuse-lite) is 13 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+ ✓ Compiled in 26.1s (3677 modules)
+ GET /ecommerce/promotions/create 200 in 1400ms
+ ✓ Compiled in 9s (3677 modules)
+ GET /ecommerce/promotions/create 200 in 481ms
+ ○ Compiling /api/auth/[...nextauth] ...
+ ✓ Compiled /api/auth/[...nextauth] in 3.7s (2032 modules)
+ GET /api/auth/session 200 in 4065ms
+ GET /api/auth/session 200 in 18ms
+ ○ Compiling /api/auth/[...nextauth] ...
+ ✓ Compiled /api/auth/[...nextauth] in 20.2s (3685 modules)
+ GET /api/auth/session 200 in 9519ms
+ GET /api/auth/session 200 in 31ms
+ GET /ecommerce/promotions/create 200 in 1347ms
+ ✓ Compiled in 8.9s (3685 modules)
+ GET /ecommerce/promotions/create 200 in 502ms
+ GET /api/auth/session 200 in 224ms
+ GET /api/auth/session 200 in 142ms
+ GET /api/auth/session 200 in 343ms
+ GET /api/auth/session 200 in 79ms
+ GET /api/auth/session 200 in 528ms
+ GET /api/auth/session 200 in 94ms
+ GET /api/auth/session 200 in 244ms
+ GET /api/auth/session 200 in 87ms
+ GET /api/auth/session 200 in 566ms
+ GET /api/auth/session 200 in 127ms
+ GET /api/auth/session 200 in 340ms
+ GET /api/auth/session 200 in 292ms
+ GET /api/auth/session 200 in 181ms
+ GET /api/auth/session 200 in 54ms
+ GET /api/auth/session 200 in 166ms
+ GET /api/auth/session 200 in 156ms
+ GET /api/auth/session 200 in 148ms
+ GET /api/auth/session 200 in 63ms
+ GET /api/auth/session 200 in 183ms
+ GET /api/auth/session 200 in 131ms
+ GET /api/auth/session 200 in 315ms
+ GET /api/auth/session 200 in 73ms
+ GET /api/auth/session 200 in 686ms
+ GET /api/auth/session 200 in 263ms
+ GET /api/auth/session 200 in 77ms
+ GET /api/auth/session 200 in 87ms
+ ✓ Compiled in 67.2s (3677 modules)
+ ✓ Compiled in 5.6s (3677 modules)
+ ✓ Compiled in 11.6s (3677 modules)
+ GET /ecommerce/promotions/create 200 in 7535ms
+ ○ Compiling /ecommerce/purchases/create ...
+ ✓ Compiled /ecommerce/purchases/create in 42.5s (3686 modules)
+ GET /ecommerce/purchases/create 200 in 47746ms
+ ○ Compiling /api/auth/[...nextauth] ...
+ ✓ Compiled /api/auth/[...nextauth] in 9.4s (2036 modules)
+ GET /api/auth/session 200 in 9990ms
+ ✓ Compiled in 6.7s (3684 modules)
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ GET /ecommerce/purchases/create 200 in 3952ms
+ GET /ecommerce/promotions/create 200 in 3980ms
+ ✓ Compiled in 7.8s (3684 modules)
+ GET /ecommerce/purchases/create 200 in 1537ms
+ GET /ecommerce/promotions/create 200 in 1539ms
+ ○ Compiling /api/auth/[...nextauth] ...
+ ✓ Compiled /api/auth/[...nextauth] in 27.4s (3684 modules)
+ ✓ Compiled in 2ms (2036 modules)
+ GET /api/auth/session 200 in 20439ms
+ GET /ecommerce/purchases/create 200 in 8270ms
+ GET /api/auth/session 200 in 58ms
+ GET /ecommerce/promotions/create 200 in 8300ms
+ ✓ Compiled in 18s (3692 modules)
+ GET /ecommerce/purchases/create 200 in 1447ms
+ GET /ecommerce/promotions/create 200 in 1450ms
+ ✓ Compiled in 18.5s (3692 modules)
+ GET /ecommerce/purchases/create 200 in 6297ms
+ GET /ecommerce/promotions/create 200 in 6319ms
+ GET /api/auth/session 200 in 671ms
+ GET /api/auth/session 200 in 115ms
+ ✓ Compiled in 17.8s (3692 modules)
+ GET /ecommerce/purchases/create 200 in 851ms
+ GET /ecommerce/promotions/create 200 in 869ms
+ ✓ Compiled in 9.4s (3692 modules)
+ GET /ecommerce/promotions/create 200 in 825ms
+ GET /ecommerce/purchases/create 200 in 829ms
+ GET /api/auth/session 200 in 1194ms
+ GET /api/auth/session 200 in 53ms
+ ✓ Compiled in 15.2s (3692 modules)
+ GET /ecommerce/purchases/create 200 in 2319ms
+ GET /ecommerce/promotions/create 200 in 2312ms
+ ✓ Compiled in 11s (3692 modules)
+ GET /ecommerce/purchases/create 200 in 764ms
+ GET /ecommerce/promotions/create 200 in 769ms
+ ✓ Compiled in 5s (3692 modules)
+ GET /ecommerce/promotions/create 200 in 561ms
+ GET /ecommerce/purchases/create 200 in 565ms
+ ✓ Compiled in 8.3s (3684 modules)
+ GET /ecommerce/purchases/create 200 in 4076ms
+ GET /ecommerce/promotions/create 200 in 4096ms
+ ✓ Compiled in 4.1s (3684 modules)
+ GET /ecommerce/promotions/create 200 in 517ms
+ GET /ecommerce/purchases/create 200 in 518ms
+ ○ Compiling /api/auth/[...nextauth] ...
+ ✓ Compiled /api/auth/[...nextauth] in 10.5s (2036 modules)
+ GET /api/auth/session 200 in 11070ms
+ GET /api/auth/session 200 in 19ms
+ ✓ Compiled in 8.2s (3692 modules)
+ GET /ecommerce/purchases/create 200 in 2539ms
+ GET /ecommerce/promotions/create 200 in 2560ms
+ GET /api/auth/session 200 in 191ms
+ GET /api/auth/session 200 in 55ms
+ ✓ Compiled in 15.4s (3692 modules)
+ GET /ecommerce/promotions/create 200 in 685ms
+ GET /ecommerce/purchases/create 200 in 688ms
+ GET /api/auth/session 200 in 48ms
+ GET /api/auth/session 200 in 43ms
+ ✓ Compiled in 28.5s (3692 modules)
+ GET /ecommerce/purchases/create 200 in 1207ms
+ GET /ecommerce/promotions/create 200 in 1221ms
+ ✓ Compiled in 9s (3684 modules)
+ GET /ecommerce/purchases/create 200 in 17821ms
+ GET /ecommerce/promotions/create 200 in 18615ms
+ ○ Compiling /api/auth/[...nextauth] ...
+ ✓ Compiled /api/auth/[...nextauth] in 80.7s (3692 modules)
+ GET /api/auth/session 200 in 19250ms
+ GET /api/auth/session 200 in 64744ms
+ GET /api/auth/session 200 in 2850ms
+ GET /ecommerce/purchases/create 200 in 2959ms
+ ✓ Compiled in 12.1s (1656 modules)
+ GET /ecommerce/purchases/create 200 in 115ms
+ GET /api/auth/session 200 in 32ms
+ GET /api/auth/session 200 in 102ms

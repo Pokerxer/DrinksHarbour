@@ -174,57 +174,24 @@ export const menuItems = [
         href: routes.eCommerce.createProduct,
       },
       {
-        name: 'Edit Product',
-        href: routes.eCommerce.ediProduct(DUMMY_ID),
-      },
-      {
         name: 'Sub Products',
         href: routes.eCommerce.subProducts,
-        badge: '',
-      },
-      {
-        name: 'Sub Product Details',
-        href: routes.eCommerce.subProductDetails(DUMMY_ID),
-      },
-      {
-        name: 'Create Sub Product',
-        href: routes.eCommerce.createSubProduct,
-      },
-      {
-        name: 'Edit Sub Product',
-        href: routes.eCommerce.editSubProduct(DUMMY_ID),
       },
       {
         name: 'Categories',
         href: routes.eCommerce.categories,
       },
       {
-        name: 'Create Category',
-        href: routes.eCommerce.createCategory,
-      },
-      {
-        name: 'Edit Category',
-        href: routes.eCommerce.editCategory(DUMMY_ID),
-      },
-      {
         name: 'Orders',
         href: routes.eCommerce.orders,
       },
       {
-        name: 'Order Details',
-        href: routes.eCommerce.orderDetails(DUMMY_ID),
-      },
-      {
-        name: 'Create Order',
-        href: routes.eCommerce.createOrder,
-      },
-      {
-        name: 'Edit Order',
-        href: routes.eCommerce.editOrder(DUMMY_ID),
-      },
-      {
         name: 'Reviews',
         href: routes.eCommerce.reviews,
+      },
+      {
+        name: 'Promotions',
+        href: routes.eCommerce.promotions,
       },
       {
         name: 'Shop',
@@ -241,117 +208,63 @@ export const menuItems = [
     ],
   },
   {
-    name: 'Support',
-    href: '#',
-    icon: <PiHeadsetDuotone />,
-    dropdownItems: [
-      {
-        name: 'Inbox',
-        href: routes.support.inbox,
-      },
-      {
-        name: 'Snippets',
-        href: routes.support.snippets,
-      },
-      {
-        name: 'Templates',
-        href: routes.support.templates,
-      },
-    ],
-  },
-  {
-    name: 'Invoice',
-    href: '#',
-    icon: <PiCurrencyDollarDuotone />,
-    dropdownItems: [
-      {
-        name: 'List',
-        href: routes.invoice.home,
-      },
-      {
-        name: 'Details',
-        href: routes.invoice.details(DUMMY_ID),
-      },
-      {
-        name: 'Create',
-        href: routes.invoice.create,
-      },
-      {
-        name: 'Edit',
-        href: routes.invoice.edit(DUMMY_ID),
-      },
-    ],
-  },
-  {
-    name: 'Logistics',
+    name: 'Purchases',
     href: '#',
     icon: <PiPackageDuotone />,
     dropdownItems: [
       {
-        name: 'Shipment List',
-        href: routes.logistics.shipmentList,
+        name: 'Purchase Orders',
+        href: routes.eCommerce.purchases,
       },
       {
-        name: 'Shipment Details',
-        href: routes.logistics.shipmentDetails(DUMMY_ID),
+        name: 'Create Purchase Order',
+        href: routes.eCommerce.createPurchase,
       },
       {
-        name: 'Create Shipment',
-        href: routes.logistics.createShipment,
+        name: 'Purchase Agreements',
+        href: routes.eCommerce.purchaseAgreements,
       },
       {
-        name: 'Edit Shipment',
-        href: routes.logistics.editShipment(DUMMY_ID),
+        name: 'Create Agreement',
+        href: routes.eCommerce.createPurchaseAgreement,
       },
       {
-        name: 'Customer Profile',
-        href: routes.logistics.customerProfile,
+        name: 'Vendor Bills',
+        href: routes.eCommerce.vendorBills,
       },
       {
-        name: 'Tracking',
-        href: routes.logistics.tracking(DUMMY_ID),
+        name: 'Create Vendor Bill',
+        href: routes.eCommerce.createVendorBill,
+      },
+      {
+        name: 'Vendor Returns',
+        href: routes.eCommerce.vendorReturns,
+      },
+      {
+        name: 'Create Return',
+        href: routes.eCommerce.createVendorReturn,
+      },
+      {
+        name: 'Purchase Analytics',
+        href: routes.eCommerce.purchaseAnalytics,
+      },
+      {
+        name: 'Vendor Pricelists',
+        href: routes.eCommerce.vendorPricelists,
+      },
+      {
+        name: 'Create Pricelist',
+        href: routes.eCommerce.createVendorPricelist,
+      },
+      {
+        name: 'UOM Conversions',
+        href: routes.eCommerce.uomConversions,
+      },
+      {
+        name: 'Exchange Rates',
+        href: routes.eCommerce.exchangeRates,
       },
     ],
-  },
-  {
-    name: 'Job Feeds',
-    href: routes.jobBoard.jobFeed,
-    icon: <PiShapesDuotone />,
-  },
-  {
-    name: 'Appointment',
-    href: routes.appointment.appointmentList,
-    icon: <PiCalendarDuotone />,
-  },
-  {
-    name: 'File Manager',
-    href: routes.file.manager,
-    icon: <PiFoldersDuotone />,
-  },
-  {
-    name: 'Event Calendar',
-    href: routes.eventCalendar,
-    icon: <PiCalendarPlusDuotone />,
-  },
-  {
-    name: 'Roles & Permissions',
-    href: routes.rolesPermissions,
-    icon: <PiFolderLockDuotone />,
-  },
-  {
-    name: 'Point of Sale',
-    href: routes.pos.index,
-    icon: <PiCreditCardDuotone />,
-  },
-  {
-    name: 'Invoice Builder',
-    href: routes.invoice.builder,
-    icon: <PiNewspaperClippingDuotone />,
-  },
-  {
-    name: 'Image Viewer',
-    href: routes.imageViewer,
-    icon: <PiCodesandboxLogoDuotone />,
   },
   // label start
   {

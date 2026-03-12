@@ -1,5 +1,4 @@
 import type { Config } from "tailwindcss";
-import sharedConfig from "tailwind-config";
 
 const config: Config = { 
   content: [ 
@@ -7,10 +6,9 @@ const config: Config = {
     './src/components/**/*.{js,ts,jsx,tsx,mdx}', 
     './src/app/**/*.{js,ts,jsx,tsx,mdx}', 
   ],
-  presets: [sharedConfig],
   theme: { 
     extend: { 
-      colors: {  // Move colors inside extend
+      colors: {  
         transparent: 'transparent', 
         'secondary': '#696C70', 
         'secondary2': '#A0A0A0', 

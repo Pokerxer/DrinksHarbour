@@ -29,6 +29,16 @@ const subcategoryRoutes = require('./routes/subcategory.routes');
 const wishlistRoutes = require('./routes/wishlist.routes');
 const subproductRoutes = require('./routes/subproduct.routes');
 const inventoryRoutes = require('./routes/inventory.routes');
+const warehouseRoutes = require('./routes/warehouse.routes');
+const reorderRoutes = require('./routes/reorder.routes');
+const promotionRoutes = require('./routes/promotion.routes');
+const vendorRoutes = require('./routes/vendor.routes');
+const purchaseOrderRoutes = require('./routes/purchaseOrder.routes');
+const vendorBillRoutes = require('./routes/vendorBill.routes');
+const purchaseAgreementRoutes = require('./routes/purchaseAgreement.routes');
+const vendorPricelistRoutes = require('./routes/vendorPricelist.routes');
+const uomConversionRoutes = require('./routes/uomConversion.routes');
+const exchangeRateRoutes = require('./routes/exchangeRate.routes');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -138,9 +148,20 @@ app.use('/api/subcategories', subcategoryRoutes);
 app.use('/api/wishlist', wishlistRoutes);
 app.use('/api/subproducts', subproductRoutes);
 app.use('/api/inventory', inventoryRoutes);
+app.use('/api/warehouses', warehouseRoutes);
+app.use('/api/reorder', reorderRoutes);
+app.use('/api/promotions', promotionRoutes);
+app.use('/api/vendors', vendorRoutes);
+app.use('/api/purchase-orders', purchaseOrderRoutes);
+app.use('/api/vendor-bills', vendorBillRoutes);
+app.use('/api/vendor-returns', require('./routes/vendorReturn.routes'));
+app.use('/api/purchase-agreements', purchaseAgreementRoutes);
+app.use('/api/vendor-pricelists', vendorPricelistRoutes);
+app.use('/api/uom-conversions', uomConversionRoutes);
+app.use('/api/exchange-rates', exchangeRateRoutes);
 
 // ────────────────────────────────────────────────
-// Health Check Endpoint
+ // Health Check Endpoint
 // ────────────────────────────────────────────────
 app.get('/health', (req, res) => {
   res.json({

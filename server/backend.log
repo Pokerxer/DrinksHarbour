@@ -1,0 +1,94 @@
+
+> drinksharbour-backend@1.0.0 dev
+> nodemon -x 'node -r dotenv/config server.js'
+
+[33m[nodemon] 3.1.11[39m
+[33m[nodemon] to restart at any time, enter `rs`[39m
+[33m[nodemon] watching path(s): server.js config/**/*.js controllers/**/*.js middleware/**/*.js models/**/*.js routes/**/*.js services/**/*.js utils/**/*.js schemas/**/*.js[39m
+[33m[nodemon] watching extensions: js,json[39m
+[32m[nodemon] starting `node -r dotenv/config server.js`[39m
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+Creating new database connection
+(node:87991) [MONGOOSE] Warning: Duplicate schema index on {"stripeCustomerId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:87991) [MONGOOSE] Warning: Duplicate schema index on {"name":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:87991) [MONGOOSE] Warning: Duplicate schema index on {"slug":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:87991) [MONGOOSE] Warning: `isNew` is a reserved schema pathname and may break some functionality. You are allowed to use it, but use at your own risk. To disable this warning pass `suppressReservedKeysWarning` as a schema option.
+(node:87991) [MONGOOSE] Warning: Duplicate schema index on {"sku":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:87991) [MONGOOSE] Warning: Duplicate schema index on {"user":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:87991) [MONGOOSE] Warning: Duplicate schema index on {"user":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:87991) [MONGOOSE] Warning: Duplicate schema index on {"stripeCustomerId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:87991) [MONGOOSE] Warning: Duplicate schema index on {"sku":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+New database connection established
+
+┌──────────────────────────────────────────────────────┐
+│              DrinksHarbour Backend API               │
+└──────────────────────────────────────────────────────┘
+   Environment: DEVELOPMENT
+   Port:        5001
+   MongoDB:     ✅ Connected
+   CORS:        Enabled
+
+📍 Available Routes:
+   GET  /health
+   GET  /api/ping
+   POST /api/test
+   POST /api/users/register
+   POST /api/users/login
+   GET  /api/products
+   GET  /api/banners
+   GET  /api/brands
+   GET  /api/coupons
+   POST /api/payments/stripe/initialize
+   POST /api/payments/paystack/initialize
+   GET  /api/payments/paystack/verify/:reference
+
+✅ Server running on http://localhost:5001
+   Press Ctrl+C to stop
+
+✅ Email service initialized (Simple SMTP)
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `node -r dotenv/config server.js`[39m
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+Creating new database connection
+(node:91169) [MONGOOSE] Warning: Duplicate schema index on {"stripeCustomerId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:91169) [MONGOOSE] Warning: Duplicate schema index on {"name":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:91169) [MONGOOSE] Warning: Duplicate schema index on {"slug":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:91169) [MONGOOSE] Warning: `isNew` is a reserved schema pathname and may break some functionality. You are allowed to use it, but use at your own risk. To disable this warning pass `suppressReservedKeysWarning` as a schema option.
+(node:91169) [MONGOOSE] Warning: Duplicate schema index on {"sku":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:91169) [MONGOOSE] Warning: Duplicate schema index on {"user":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:91169) [MONGOOSE] Warning: Duplicate schema index on {"user":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:91169) [MONGOOSE] Warning: Duplicate schema index on {"stripeCustomerId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:91169) [MONGOOSE] Warning: Duplicate schema index on {"sku":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+New database connection established
+
+┌──────────────────────────────────────────────────────┐
+│              DrinksHarbour Backend API               │
+└──────────────────────────────────────────────────────┘
+   Environment: DEVELOPMENT
+   Port:        5001
+   MongoDB:     ✅ Connected
+   CORS:        Enabled
+
+📍 Available Routes:
+   GET  /health
+   GET  /api/ping
+   POST /api/test
+   POST /api/users/register
+   POST /api/users/login
+   GET  /api/products
+   GET  /api/banners
+   GET  /api/brands
+   GET  /api/coupons
+   POST /api/payments/stripe/initialize
+   POST /api/payments/paystack/initialize
+   GET  /api/payments/paystack/verify/:reference
+
+✅ Server running on http://localhost:5001
+   Press Ctrl+C to stop
+
+✅ Email service initialized (Simple SMTP)
+[32m[nodemon] restarting due to changes...[39m
+[32m[nodemon] starting `node -r dotenv/config server.js`[39m
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }

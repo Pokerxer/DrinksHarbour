@@ -12,6 +12,38 @@ export const routes = {
     createSubProduct: '/ecommerce/sub-products/create',
     subProductDetails: (slug: string) => `/ecommerce/sub-products/${slug}`,
     editSubProduct: (slug: string) => `/ecommerce/sub-products/${slug}/edit`,
+    purchases: '/ecommerce/purchases',
+    createPurchase: '/ecommerce/purchases/create',
+    purchaseReceipt: (id: string) => `/ecommerce/purchases/receipt/${id}`,
+    purchaseDetails: (id: string) => `/ecommerce/purchases/${id}`,
+    receivePurchase: '/ecommerce/purchases/receive',
+    validateReceipt: '/ecommerce/purchases/validate',
+    // Vendor Bills Routes
+    vendorBills: '/ecommerce/purchases/bills',
+    createVendorBill: '/ecommerce/purchases/bills/create',
+    vendorBillDetails: (id: string) => `/ecommerce/purchases/bills/${id}`,
+    // Vendor Returns Routes
+    vendorReturns: '/ecommerce/purchases/returns',
+    createVendorReturn: '/ecommerce/purchases/returns/create',
+    vendorReturnDetails: (id: string) => `/ecommerce/purchases/returns/${id}`,
+    // Purchase Analytics
+    purchaseAnalytics: '/ecommerce/purchases/analytics',
+    // Purchase Settings
+    purchaseSettings: '/ecommerce/purchases/settings',
+    // Purchase Agreements (Blanket Orders)
+    purchaseAgreements: '/ecommerce/purchases/agreements',
+    createPurchaseAgreement: '/ecommerce/purchases/agreements/create',
+    purchaseAgreementDetails: (id: string) => `/ecommerce/purchases/agreements/${id}`,
+    // Vendor Pricelists
+    vendorPricelists: '/ecommerce/purchases/pricelists',
+    createVendorPricelist: '/ecommerce/purchases/pricelists/create',
+    vendorPricelistDetails: (id: string) => `/ecommerce/purchases/pricelists/${id}`,
+    // UOM Conversions
+    uomConversions: '/ecommerce/purchases/uom-conversions',
+    createUomConversion: '/ecommerce/purchases/uom-conversions/create',
+    // Exchange Rates
+    exchangeRates: '/ecommerce/purchases/exchange-rates',
+    createExchangeRate: '/ecommerce/purchases/exchange-rates/create',
     categories: '/ecommerce/categories',
     createCategory: '/ecommerce/categories/create',
     editCategory: (id: string) => `/ecommerce/categories/${id}/edit`,
@@ -20,6 +52,9 @@ export const routes = {
     orderDetails: (id: string) => `/ecommerce/orders/${id}`,
     editOrder: (id: string) => `/ecommerce/orders/${id}/edit`,
     reviews: '/ecommerce/reviews',
+    promotions: '/ecommerce/promotions',
+    createPromotion: '/ecommerce/promotions/create',
+    editPromotion: (id: string) => `/ecommerce/promotions/${id}/edit`,
     shop: '/ecommerce/shop',
     cart: '/ecommerce/cart',
     checkout: '/ecommerce/checkout',

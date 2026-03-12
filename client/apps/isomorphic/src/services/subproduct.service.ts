@@ -277,7 +277,7 @@ export const subproductService = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(data),
     });
@@ -300,22 +300,36 @@ export const subproductService = {
         }
       }
     }
-    const queryString = Object.keys(stringParams).length > 0 
-      ? new URLSearchParams(stringParams).toString() 
-      : '';
+    const queryString =
+      Object.keys(stringParams).length > 0
+        ? new URLSearchParams(stringParams).toString()
+        : '';
     const url = `${API_URL}/api/subproducts${queryString ? `?${queryString}` : ''}`;
-    
+
     console.log('SubProduct service: fetching from', url);
-    
+    console.log('Authorization token present:', !!token);
+
     const response = await fetch(url, {
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      console.error('SubProduct service error:', error);
+      console.error('SubProduct service error status:', response.status);
+      console.error(
+        'SubProduct service error status text:',
+        response.statusText
+      );
+      const errorText = await response.text();
+      console.error('SubProduct service error response:', errorText);
+      let error;
+      try {
+        error = JSON.parse(errorText);
+      } catch {
+        error = { message: errorText };
+      }
+      console.error('SubProduct service parsed error:', error);
       throw new Error(error.message || 'Failed to fetch subproducts');
     }
 
@@ -325,7 +339,7 @@ export const subproductService = {
   async getSubProduct(id: string, token: string) {
     const response = await fetch(`${API_URL}/api/subproducts/${id}`, {
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 
@@ -337,12 +351,16 @@ export const subproductService = {
     return response.json();
   },
 
-  async updateSubProduct(id: string, data: Partial<SubProductData>, token: string) {
+  async updateSubProduct(
+    id: string,
+    data: Partial<SubProductData>,
+    token: string
+  ) {
     const response = await fetch(`${API_URL}/api/subproducts/${id}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(data),
     });
@@ -359,7 +377,7 @@ export const subproductService = {
     const response = await fetch(`${API_URL}/api/subproducts/${id}`, {
       method: 'DELETE',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 
@@ -372,11 +390,14 @@ export const subproductService = {
   },
 
   async getSubProductsByTenant(tenantId: string, token: string) {
-    const response = await fetch(`${API_URL}/api/subproducts/tenant/${tenantId}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-    });
+    const response = await fetch(
+      `${API_URL}/api/subproducts/tenant/${tenantId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
 
     if (!response.ok) {
       const error = await response.json();
@@ -387,11 +408,14 @@ export const subproductService = {
   },
 
   async getSubProductsByProduct(productId: string, token: string) {
-    const response = await fetch(`${API_URL}/api/subproducts/product/${productId}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-    });
+    const response = await fetch(
+      `${API_URL}/api/subproducts/product/${productId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
 
     if (!response.ok) {
       const error = await response.json();
@@ -406,7 +430,7 @@ export const subproductService = {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(stockData),
     });
@@ -424,7 +448,7 @@ export const subproductService = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ subProductId: id, ...discountData }),
     });
@@ -442,7 +466,7 @@ export const subproductService = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ subProductId: id }),
     });
@@ -459,7 +483,7 @@ export const subproductService = {
     const response = await fetch(`${API_URL}/api/subproducts/${id}/duplicate`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 
@@ -475,7 +499,7 @@ export const subproductService = {
     const response = await fetch(`${API_URL}/api/subproducts/${id}/archive`, {
       method: 'PATCH',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 

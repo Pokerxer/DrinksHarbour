@@ -129,6 +129,7 @@ const sizeSchema = new Schema(
         'miniature', 'single_serve', 'standard', 'large', 'extra_large',
         'multi_pack', 'bulk', 'gift_set', 'variety_pack', 'keg',
       ],
+      default: 'standard',
       index: true,
     },
 
@@ -161,8 +162,9 @@ const sizeSchema = new Schema(
     
     servingsPerUnit: {
       type: Number,
-      min: 1,
-      // How many servings in this size
+      min: 0,
+      default: 0,
+      // How many servings in this size (0 for non-serving products like bottles)
     },
     
     unitsPerPack: {
@@ -178,12 +180,14 @@ const sizeSchema = new Schema(
     sellingPrice: {
       type: Number,
       min: 0,
-      required: true,
+      default: 0,
+      // Required is handled in validation - can be derived from basePrice or salePrice
     },
     costPrice: {
       type: Number,
       min: 0,
-      required: true,
+      default: 0,
+      // Can be derived from supplierPrice if not set
     },
     compareAtPrice: {
       type: Number,
@@ -691,7 +695,8 @@ sizeSchema.pre('save', function() {
 // ════════════════════════════════════════════════════════════
 
 sizeSchema.index({ subproduct: 1, size: 1 }, { unique: true });
-sizeSchema.index({ sku: 1 });
+// Make sku index sparse to allow empty strings (non-unique for empty values)
+sizeSchema.index({ sku: 1 }, { sparse: true });
 // barcode index is defined inline with partialFilterExpression
 // Remove duplicate index: sizeSchema.index({ availability: 1 });
 sizeSchema.index({ stock: 1 });

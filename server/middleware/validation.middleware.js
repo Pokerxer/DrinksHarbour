@@ -452,9 +452,16 @@ const validateSubProductUpdate = [
     .withMessage('Sale discount percentage must be between 0 and 100'),
 
   body('saleType')
-    .optional()
-    .isIn(['percentage', 'fixed', 'flash_sale', 'bundle', 'bogo', null])
-    .withMessage('Invalid sale type'),
+    .optional({ nullable: true })
+    .custom((value) => {
+      // Allow empty string, null, undefined, or valid enum values
+      if (value === '' || value === null || value === undefined) return true;
+      const validValues = ['percentage', 'fixed', 'flash_sale', 'bundle', 'bogo'];
+      if (!validValues.includes(value)) {
+        throw new Error('Invalid sale type');
+      }
+      return true;
+    }),
 
   body('saleDiscountValue')
     .optional()
@@ -590,6 +597,18 @@ const validateSubProductUpdate = [
     .isFloat({ min: 0 })
     .withMessage('Estimated shipping cost must be a positive number'),
 
+  body('supplierRating')
+    .optional({ nullable: true })
+    .custom((value) => {
+      // Allow empty string, null, undefined, or valid number
+      if (value === '' || value === null || value === undefined) return true;
+      const num = parseFloat(value);
+      if (isNaN(num) || num < 0 || num > 5) {
+        throw new Error('Supplier rating must be between 0 and 5');
+      }
+      return true;
+    }),
+
   // Shipping fields
   body('shipping.weight')
     .optional({ nullable: true })
@@ -662,8 +681,15 @@ const validateSubProductUpdate = [
 
   body('discountType')
     .optional({ nullable: true })
-    .isIn(['fixed', 'percentage', null])
-    .withMessage('Invalid discount type'),
+    .custom((value) => {
+      // Allow empty string, null, undefined, or valid enum values
+      if (value === '' || value === null || value === undefined) return true;
+      const validValues = ['fixed', 'percentage'];
+      if (!validValues.includes(value)) {
+        throw new Error('Invalid discount type');
+      }
+      return true;
+    }),
 
   // Flash sale fields
   body('flashSale.isActive')

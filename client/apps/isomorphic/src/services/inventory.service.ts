@@ -2,6 +2,16 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
+export interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  message?: string;
+}
+
+export interface PONumberResponse {
+  poNumber: string;
+}
+
 export interface InventoryMovement {
   _id: string;
   subProduct: string;
@@ -197,6 +207,9 @@ export const inventoryService = {
     lotNumber?: string;
     expirationDate?: string;
     notes?: string;
+    reason?: string;
+    sizeId?: string;
+    sizeName?: string;
   }) {
     const response = await fetch(`${API_URL}/api/inventory/received`, {
       method: 'POST',
@@ -289,6 +302,21 @@ export const inventoryService = {
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.message || 'Failed to fetch inventory valuation');
+    }
+
+    return response.json();
+  },
+
+  async getNextPONumber(token: string): Promise<ApiResponse<PONumberResponse>> {
+    const response = await fetch(`${API_URL}/api/inventory/next-po`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to fetch next PO number');
     }
 
     return response.json();

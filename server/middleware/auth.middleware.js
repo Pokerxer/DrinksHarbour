@@ -27,11 +27,13 @@ const protect = asyncHandler(async (req, res, next) => {
   }
 
   try {
+    console.log('JWT_SECRET in middleware:', process.env.JWT_SECRET ? 'loaded' : 'undefined');
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Attach user (lean + select minimal fields)
     // JWT payload uses userId, not id
     const userId = decoded.userId || decoded.id;
+    console.log('JWT decoded:', { userId, exp: decoded.exp, iat: decoded.iat });
     req.user = await User.findById(userId)
       .select('_id email role tenant status firstName lastName')
       .lean();

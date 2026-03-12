@@ -158,7 +158,7 @@ const Checkout = () => {
     state: '',
     zipCode: '',
     country: 'Nigeria',
-    paymentMethod: 'cod',
+    paymentMethod: 'cash_on_delivery' as 'card' | 'bank_transfer' | 'cash_on_delivery',
   });
 
   // Ensure all form values are strings (not undefined)
@@ -273,7 +273,12 @@ const Checkout = () => {
 
   const handlePayment = (item: string) => {
     setActivePayment(item);
-    setFormData(prev => ({ ...prev, paymentMethod: item as 'card' | 'bank' | 'cod' }));
+    let method: 'card' | 'bank_transfer' | 'cash_on_delivery' = 'cash_on_delivery';
+    if (item === 'card') method = 'card';
+    else if (item === 'bank') method = 'bank_transfer';
+    else method = 'cash_on_delivery';
+    
+    setFormData(prev => ({ ...prev, paymentMethod: method }));
     setShowPaymentModal(false);
   };
 
@@ -854,7 +859,7 @@ const Checkout = () => {
                             </div>
                             {isActive && (
                               <div className="w-5 h-5 rounded-full bg-green-500 text-white flex items-center justify-center">
-                                <Icon.PiCheck size={12} weight="bold" />
+                                <Icon.PiCheck size={12} />
                               </div>
                             )}
                           </label>
@@ -886,19 +891,25 @@ const Checkout = () => {
                         className="flex items-center gap-3 p-2 rounded-lg bg-gray-50"
                       >
                         <div className="w-14 h-14 rounded-lg overflow-hidden bg-white flex-shrink-0 border border-gray-200">
-                          {(item.thumbImage?.[0] || item.primaryImage?.url || item.images?.[0]?.url) ? (
-                            <Image 
-                              src={item.thumbImage?.[0] || item.primaryImage?.url || item.images?.[0]?.url} 
-                              alt={item.name} 
-                              width={56} 
-                              height={56} 
-                              className="w-full h-full object-cover" 
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-gray-100">
-                              <Icon.PiImage size={16} className="text-gray-400" />
-                            </div>
-                          )}
+                          {(() => {
+                            const imgSrc = item.thumbImage?.[0] || item.primaryImage?.url || item.images?.[0]?.url;
+                            if (imgSrc) {
+                              return (
+                                <Image 
+                                  src={imgSrc} 
+                                  alt={item.name} 
+                                  width={56} 
+                                  height={56} 
+                                  className="w-full h-full object-cover" 
+                                />
+                              );
+                            }
+                            return (
+                              <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                                <Icon.PiImage size={16} className="text-gray-400" />
+                              </div>
+                            );
+                          })()}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-sm text-gray-900 truncate">{item.name}</p>

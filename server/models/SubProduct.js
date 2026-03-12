@@ -352,14 +352,37 @@ const subProductSchema = new Schema(
       endDate: Date,
       discountPercentage: Number,
       remainingQuantity: Number,
+      // Size-specific flash sales
+      sizes: [String], // Size names like "70cl", "1L"
+      sizeVariants: [{ type: ObjectId, ref: 'Size' }],
     },
     
     bundleDeals: [{
       name: String,
+      description: String,
       products: [{ type: ObjectId, ref: 'SubProduct' }],
+      // Size-specific deals - can apply to specific sizes
+      sizes: [String], // Size names like "70cl", "1L"
+      sizeVariants: [{ type: ObjectId, ref: 'Size' }],
+      // Quantity and discount
+      quantity: { type: Number, default: 2 },
       discount: Number,
+      discountType: { type: String, enum: ['percentage', 'fixed'], default: 'percentage' },
+      // Status
+      active: { type: Boolean, default: true },
       validUntil: Date,
+      createdAt: Date,
     }],
+
+    // Loyalty Discount
+    loyaltyDiscount: {
+      enabled: { type: Boolean, default: false },
+      percentage: { type: Number, default: 0 },
+      tierRequirement: { type: String, default: '' },
+      // Size-specific loyalty discounts
+      sizes: [String], // Size names like "70cl", "1L"
+      sizeVariants: [{ type: ObjectId, ref: 'Size' }],
+    },
 
     // ════════════════════════════════════════════════════════════
     // ANALYTICS & REPORTING
@@ -447,12 +470,98 @@ const subProductSchema = new Schema(
     }],
 
     // ════════════════════════════════════════════════════════════
-    // SHIPPING & LOGISTICS (References to separate models)
+    // SHIPPING & LOGISTICS (Embedded)
     // ════════════════════════════════════════════════════════════
     shipping: {
-      type: ObjectId,
-      ref: 'Shipping',
-      sparse: true,
+      // Reference to separate Shipping model (optional - for advanced use)
+      shippingId: {
+        type: ObjectId,
+        ref: 'Shipping',
+        sparse: true,
+      },
+      // Embedded shipping details (primary way to store shipping info)
+      weight: {
+        type: Number,
+        min: 0,
+        default: 0,
+        comment: 'Weight in grams',
+      },
+      length: {
+        type: Number,
+        min: 0,
+        default: 0,
+        comment: 'Length in cm',
+      },
+      width: {
+        type: Number,
+        min: 0,
+        default: 0,
+        comment: 'Width in cm',
+      },
+      height: {
+        type: Number,
+        min: 0,
+        default: 0,
+        comment: 'Height in cm',
+      },
+      fragile: {
+        type: Boolean,
+        default: false,
+      },
+      requiresAgeVerification: {
+        type: Boolean,
+        default: false,
+      },
+      hazmat: {
+        type: Boolean,
+        default: false,
+      },
+      shippingClass: {
+        type: String,
+        enum: ['standard', 'express', 'overnight', 'freight', 'oversized', 'hazardous', ''],
+        default: 'standard',
+      },
+      carrier: {
+        type: String,
+        maxlength: 100,
+      },
+      deliveryArea: {
+        type: String,
+        maxlength: 100,
+      },
+      minDeliveryDays: {
+        type: Number,
+        min: 0,
+        default: 3,
+      },
+      maxDeliveryDays: {
+        type: Number,
+        min: 0,
+        default: 7,
+      },
+      fixedShippingCost: {
+        type: Number,
+        min: 0,
+        default: 0,
+      },
+      isFreeShipping: {
+        type: Boolean,
+        default: false,
+      },
+      freeShippingMinOrder: {
+        type: Number,
+        min: 0,
+        default: 0,
+      },
+      freeShippingLabel: {
+        type: String,
+        maxlength: 50,
+        default: 'Free Shipping',
+      },
+      availableForPickup: {
+        type: Boolean,
+        default: false,
+      },
     },
     
     // ════════════════════════════════════════════════════════════

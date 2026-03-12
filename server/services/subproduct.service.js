@@ -25,11 +25,15 @@ const sanitizeSubProductReferences = (subProduct, identifier) => {
   if (!subProduct) return;
 
   // Sanitize shipping field
+  // Now supports both ObjectId (legacy) and embedded object (new)
   if (subProduct.shipping) {
     const isValidObjectId = mongoose.Types.ObjectId.isValid(subProduct.shipping);
     const isPopulatedObject = typeof subProduct.shipping === 'object' && subProduct.shipping._id;
-    if (!isValidObjectId && !isPopulatedObject) {
-      console.warn(`⚠️ SubProduct ${identifier} has invalid shipping value: ${subProduct.shipping}. Setting to null.`);
+    const isEmbeddedObject = typeof subProduct.shipping === 'object' && (subProduct.shipping.weight !== undefined || subProduct.shipping.length !== undefined);
+    
+    // Keep if it's a valid ObjectId, populated object, or embedded shipping data
+    if (!isValidObjectId && !isPopulatedObject && !isEmbeddedObject) {
+      console.warn(`⚠️ SubProduct ${identifier} has invalid shipping value: ${JSON.stringify(subProduct.shipping).slice(0, 100)}. Setting to null.`);
       subProduct.shipping = null;
     }
   }
@@ -194,7 +198,6 @@ const getMySubProducts = async (tenantId, options) => {
     },
     {
       path: 'sizes',
-      select: 'size displayName sellingPrice stock availability lowStockThreshold',
     },
   ];
 
@@ -784,8 +787,21 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
       endDate: null,
       discountPercentage: null,
       remainingQuantity: null,
+      sizes: [],
+      sizeVariants: [],
     },
-    bundleDeals,
+    loyaltyDiscount: data.loyaltyDiscount || {
+      enabled: false,
+      percentage: 0,
+      tierRequirement: '',
+      sizes: [],
+      sizeVariants: [],
+    },
+    bundleDeals: bundleDeals?.map(deal => ({
+      ...deal,
+      sizes: deal.sizes || [],
+      sizeVariants: deal.sizeVariants || [],
+    })) || [],
     addedAt: new Date(),
     metadata: {
       createdBy: user?._id,
@@ -806,70 +822,10 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
   }
 
   // ========================================================================
-  // CREATE SHIPPING RECORD
+  // SHIPPING IS NOW STORED AS EMBEDDED DATA IN SUBPRODUCT
+  // The shipping data is already embedded in the SubProduct via lines 755-773
+  // No separate Shipping document is created - data is stored directly in SubProduct.shipping
   // ========================================================================
-  let createdShipping = null;
-  const shippingData = shipping || {};
-  const hasShippingData = (
-    (shippingData.weight > 0) || 
-    (shippingData.length > 0) || 
-    (shippingData.width > 0) || 
-    (shippingData.height > 0) ||
-    shippingData.carrier || 
-    shippingData.shippingClass || 
-    shippingData.deliveryArea ||
-    (shippingData.fixedShippingCost > 0) || 
-    shippingData.isFreeShipping
-  );
-
-  if (hasShippingData) {
-    const shippingPayload = {
-      subProduct: createdSubProduct._id,
-      tenant: tenantObjectId,
-      product: productObjectId,
-      weight: shippingData?.weight || 0,
-      length: shippingData?.length || 0,
-      width: shippingData?.width || 0,
-      height: shippingData?.height || 0,
-      volume: (shippingData?.length || 0) * (shippingData?.width || 0) * (shippingData?.height || 0),
-      fragile: shippingData?.fragile ?? true,
-      requiresAgeVerification: shippingData?.requiresAgeVerification ?? true,
-      hazmat: shippingData?.hazmat ?? false,
-      shippingClass: shippingData?.shippingClass || 'standard',
-      carrier: shippingData?.carrier || '',
-      deliveryArea: shippingData?.deliveryArea || '',
-      minDeliveryDays: shippingData?.minDeliveryDays || 3,
-      maxDeliveryDays: shippingData?.maxDeliveryDays || 7,
-      fixedShippingCost: shippingData?.fixedShippingCost || 0,
-      isFreeShipping: shippingData?.isFreeShipping ?? false,
-      freeShippingMinOrder: shippingData?.freeShippingMinOrder || 0,
-      freeShippingLabel: shippingData?.freeShippingLabel || '',
-      availableForPickup: shippingData?.availableForPickup ?? false,
-      isActive: true,
-      status: 'active',
-    };
-
-    try {
-      if (session) {
-        const shippingDocs = await Shipping.create([shippingPayload], { session });
-        createdShipping = shippingDocs[0];
-      } else {
-        createdShipping = await Shipping.create(shippingPayload);
-      }
-
-      // Link shipping to SubProduct
-      createdSubProduct.shipping = createdShipping._id;
-      if (session) {
-        await createdSubProduct.save({ session });
-      } else {
-        await createdSubProduct.save();
-      }
-      console.log('✅ Shipping record created:', createdShipping._id);
-    } catch (shippingError) {
-      console.error('❌ Error creating shipping record:', shippingError.message);
-      // Continue without shipping - don't fail the whole operation
-    }
-  }
 
   // ========================================================================
   // CREATE WAREHOUSE RECORD
@@ -1102,15 +1058,18 @@ const getSubProduct = async (subProductId, tenantId) => {
     throw new NotFoundError('Product not found in your catalog');
   }
 
-  // Check if shipping/warehouse fields have corrupt data (non-ObjectId values)
-  const hasValidShipping = rawSubProduct.shipping && 
-    mongoose.Types.ObjectId.isValid(rawSubProduct.shipping);
+  // Check if shipping/warehouse fields have corrupt data (non-ObjectId, non-embedded values)
+  // Now supports both ObjectId (legacy) and embedded object (new)
+  const isShippingObject = typeof rawSubProduct.shipping === 'object' && rawSubProduct.shipping !== null;
+  const hasValidShipping = rawSubProduct.shipping && (
+    mongoose.Types.ObjectId.isValid(rawSubProduct.shipping) || isShippingObject
+  );
   const hasValidWarehouse = rawSubProduct.warehouse && 
     mongoose.Types.ObjectId.isValid(rawSubProduct.warehouse);
 
-  // Log and fix corrupt data if found
-  if (rawSubProduct.shipping && !hasValidShipping) {
-    console.warn(`⚠️ SubProduct ${subProductId} has invalid shipping value: ${rawSubProduct.shipping}. Clearing field.`);
+  // Log and fix corrupt data if found (only for non-object values)
+  if (rawSubProduct.shipping && !hasValidShipping && !isShippingObject) {
+    console.warn(`⚠️ SubProduct ${subProductId} has invalid shipping value: ${JSON.stringify(rawSubProduct.shipping).slice(0, 100)}. Clearing field.`);
     await SubProduct.updateOne({ _id: subProductId }, { $unset: { shipping: 1 } });
   }
   if (rawSubProduct.warehouse && !hasValidWarehouse) {
@@ -1119,6 +1078,7 @@ const getSubProduct = async (subProductId, tenantId) => {
   }
 
   // Build populate array dynamically, excluding corrupt fields
+  // Note: Shipping is now embedded, so we don't need to populate it separately
   const populateFields = [
     {
       path: 'product',
@@ -1141,8 +1101,9 @@ const getSubProduct = async (subProductId, tenantId) => {
     },
   ];
 
-  // Only populate shipping if it's a valid ObjectId
-  if (hasValidShipping) {
+  // Only populate shipping if it's a valid ObjectId (legacy support)
+  // Embedded shipping is already in the document, no need to populate
+  if (hasValidShipping && !isShippingObject) {
     populateFields.push({
       path: 'shipping',
       select: 'weight length width height volume fragile requiresAgeVerification hazmat shippingClass carrier deliveryArea minDeliveryDays maxDeliveryDays fixedShippingCost isFreeShipping freeShippingMinOrder freeShippingLabel availableForPickup',
@@ -1166,7 +1127,8 @@ const getSubProduct = async (subProductId, tenantId) => {
     .lean();
 
   // Ensure shipping/warehouse are null if they were corrupt (just cleaned)
-  if (!hasValidShipping) {
+  // But preserve embedded shipping objects
+  if (!hasValidShipping && !isShippingObject) {
     subProduct.shipping = null;
   }
   if (!hasValidWarehouse) {
@@ -1200,7 +1162,24 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
   // Handle both direct data and nested subProductData format from frontend
   const data = updateData.subProductData || updateData;
 
+  console.log('📥 UpdateSubProduct received updateData:', JSON.stringify(updateData, null, 2).slice(0, 500));
   console.log('📥 UpdateSubProduct received data keys:', Object.keys(data));
+  console.log('📥 Inventory fields from data:', {
+    totalStock: data.totalStock,
+    reservedStock: data.reservedStock,
+    availableStock: data.availableStock,
+    lowStockThreshold: data.lowStockThreshold,
+    reorderPoint: data.reorderPoint,
+    reorderQuantity: data.reorderQuantity,
+  });
+  console.log('📥 Current subProduct inventory before update:', {
+    totalStock: subProduct.totalStock,
+    reservedStock: subProduct.reservedStock,
+    availableStock: subProduct.availableStock,
+    lowStockThreshold: subProduct.lowStockThreshold,
+    reorderPoint: subProduct.reorderPoint,
+    reorderQuantity: subProduct.reorderQuantity,
+  });
 
   // ========================================================================
   // PRICING FIELDS
@@ -1515,75 +1494,31 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
   }
 
   // ========================================================================
-  // SHIPPING FIELDS (Using separate Shipping model)
+  // SHIPPING FIELDS (Now stored as embedded data in SubProduct)
+  // No longer creating/updating separate Shipping document
   // ========================================================================
   if (data.shipping !== undefined) {
-    // Get shipping ID - could be ObjectId (new) or object with _id (old populated)
-    const shippingId = subProduct.shipping?._id || subProduct.shipping;
-    const hasShippingData = data.shipping && (
-      data.shipping.weight > 0 || data.shipping.length > 0 || data.shipping.width > 0 || data.shipping.height > 0 ||
-      data.shipping.carrier || data.shipping.shippingClass || data.shipping.deliveryArea ||
-      data.shipping.fixedShippingCost > 0 || data.shipping.isFreeShipping
-    );
-
-    if (hasShippingData) {
-      if (shippingId) {
-        // Update existing shipping record
-        await Shipping.findByIdAndUpdate(shippingId, {
-          weight: data.shipping?.weight ?? 0,
-          length: data.shipping?.length ?? 0,
-          width: data.shipping?.width ?? 0,
-          height: data.shipping?.height ?? 0,
-          volume: (data.shipping?.length || 0) * (data.shipping?.width || 0) * (data.shipping?.height || 0),
-          fragile: data.shipping?.fragile ?? true,
-          requiresAgeVerification: data.shipping?.requiresAgeVerification ?? true,
-          hazmat: data.shipping?.hazmat ?? false,
-          shippingClass: data.shipping?.shippingClass || 'standard',
-          carrier: data.shipping?.carrier || '',
-          deliveryArea: data.shipping?.deliveryArea || '',
-          minDeliveryDays: data.shipping?.minDeliveryDays ?? 3,
-          maxDeliveryDays: data.shipping?.maxDeliveryDays ?? 7,
-          fixedShippingCost: data.shipping?.fixedShippingCost ?? 0,
-          isFreeShipping: data.shipping?.isFreeShipping ?? false,
-          freeShippingMinOrder: data.shipping?.freeShippingMinOrder ?? 0,
-          freeShippingLabel: data.shipping?.freeShippingLabel || '',
-          availableForPickup: data.shipping?.availableForPickup ?? false,
-        });
-      } else {
-        // Create new shipping record
-        const shippingPayload = {
-          subProduct: subProduct._id,
-          tenant: subProduct.tenant,
-          product: subProduct.product,
-          weight: data.shipping?.weight ?? 0,
-          length: data.shipping?.length ?? 0,
-          width: data.shipping?.width ?? 0,
-          height: data.shipping?.height ?? 0,
-          volume: (data.shipping?.length || 0) * (data.shipping?.width || 0) * (data.shipping?.height || 0),
-          fragile: data.shipping?.fragile ?? true,
-          requiresAgeVerification: data.shipping?.requiresAgeVerification ?? true,
-          hazmat: data.shipping?.hazmat ?? false,
-          shippingClass: data.shipping?.shippingClass || 'standard',
-          carrier: data.shipping?.carrier || '',
-          deliveryArea: data.shipping?.deliveryArea || '',
-          minDeliveryDays: data.shipping?.minDeliveryDays ?? 3,
-          maxDeliveryDays: data.shipping?.maxDeliveryDays ?? 7,
-          fixedShippingCost: data.shipping?.fixedShippingCost ?? 0,
-          isFreeShipping: data.shipping?.isFreeShipping ?? false,
-          freeShippingMinOrder: data.shipping?.freeShippingMinOrder ?? 0,
-          freeShippingLabel: data.shipping?.freeShippingLabel || '',
-          availableForPickup: data.shipping?.availableForPickup ?? false,
-          isActive: true,
-          status: 'active',
-        };
-        const newShipping = await Shipping.create(shippingPayload);
-        subProduct.shipping = newShipping._id;
-      }
-    } else if (shippingId) {
-      // Delete shipping record if all fields are empty
-      await Shipping.findByIdAndDelete(shippingId);
-      subProduct.shipping = null;
-    }
+    // Store shipping data directly in embedded fields
+    const shippingData = data.shipping || {};
+    subProduct.shipping = {
+      weight: shippingData?.weight ?? 0,
+      length: shippingData?.length ?? 0,
+      width: shippingData?.width ?? 0,
+      height: shippingData?.height ?? 0,
+      fragile: shippingData?.fragile ?? false,
+      requiresAgeVerification: shippingData?.requiresAgeVerification ?? false,
+      hazmat: shippingData?.hazmat ?? false,
+      shippingClass: shippingData?.shippingClass || 'standard',
+      carrier: shippingData?.carrier || '',
+      deliveryArea: shippingData?.deliveryArea || '',
+      minDeliveryDays: shippingData?.minDeliveryDays ?? 3,
+      maxDeliveryDays: shippingData?.maxDeliveryDays ?? 7,
+      fixedShippingCost: shippingData?.fixedShippingCost ?? 0,
+      isFreeShipping: shippingData?.isFreeShipping ?? false,
+      freeShippingMinOrder: shippingData?.freeShippingMinOrder ?? 0,
+      freeShippingLabel: shippingData?.freeShippingLabel || 'Free Shipping',
+      availableForPickup: shippingData?.availableForPickup ?? false,
+    };
   }
 
   // ========================================================================
@@ -1666,6 +1601,21 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
       endDate: data.flashSale?.endDate ? new Date(data.flashSale.endDate) : (subProduct.flashSale?.endDate || null),
       discountPercentage: data.flashSale?.discountPercentage ?? subProduct.flashSale?.discountPercentage ?? null,
       remainingQuantity: data.flashSale?.remainingQuantity ?? subProduct.flashSale?.remainingQuantity ?? null,
+      sizes: data.flashSale?.sizes || [],
+      sizeVariants: data.flashSale?.sizeVariants || [],
+    };
+  }
+
+  // ========================================================================
+  // LOYALTY DISCOUNT
+  // ========================================================================
+  if (data.loyaltyDiscount !== undefined) {
+    subProduct.loyaltyDiscount = {
+      enabled: data.loyaltyDiscount?.enabled ?? false,
+      percentage: data.loyaltyDiscount?.percentage ?? 0,
+      tierRequirement: data.loyaltyDiscount?.tierRequirement ?? '',
+      sizes: data.loyaltyDiscount?.sizes || [],
+      sizeVariants: data.loyaltyDiscount?.sizeVariants || [],
     };
   }
 
@@ -1673,7 +1623,11 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
   // BUNDLE DEALS
   // ========================================================================
   if (data.bundleDeals !== undefined) {
-    subProduct.bundleDeals = data.bundleDeals;
+    subProduct.bundleDeals = data.bundleDeals.map(deal => ({
+      ...deal,
+      sizes: deal.sizes || [],
+      sizeVariants: deal.sizeVariants || [],
+    }));
   }
 
   // ========================================================================
@@ -1704,6 +1658,14 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
   await subProduct.save();
 
   console.log('✅ SubProduct updated successfully:', subProduct._id);
+  console.log('📦 Saved inventory values:', {
+    totalStock: subProduct.totalStock,
+    reservedStock: subProduct.reservedStock,
+    availableStock: subProduct.availableStock,
+    lowStockThreshold: subProduct.lowStockThreshold,
+    reorderPoint: subProduct.reorderPoint,
+    reorderQuantity: subProduct.reorderQuantity,
+  });
 
   // ========================================================================
   // HANDLE SIZE VARIANTS UPDATE
@@ -1719,23 +1681,37 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
     } else {
       // Get existing sizes to preserve IDs for updates
       const existingSizes = await Size.find({ subproduct: subProductId }).lean();
-      const existingSizeMap = new Map(existingSizes.map(s => [s.size, s]));
+      
+      console.log('📦 Existing sizes in DB:', existingSizes.map(s => ({ _id: s._id, size: s.size })));
+      console.log('📦 Sizes from client:', data.sizes.map(s => ({ size: s.size, stock: s.stock })));
+      
+      // Create a map by size name (case-insensitive matching)
+      const existingSizeMap = new Map();
+      for (const s of existingSizes) {
+        existingSizeMap.set(s.size.toLowerCase(), s);
+        existingSizeMap.set(s.size, s); // Also store exact match
+      }
       
       const updatedSizeIds = [];
       
       for (const sizeData of data.sizes) {
-        const existingSize = existingSizeMap.get(sizeData.size);
+        const sizeKey = sizeData.size?.toLowerCase();
+        const existingSize = existingSizeMap.get(sizeData.size) || existingSizeMap.get(sizeKey);
+        
+        console.log(`📦 Matching size "${sizeData.size}":`, existingSize ? `Found (${existingSize._id})` : 'Not found - will create new');
         
         if (existingSize) {
           // Update existing size
           Object.assign(existingSize, {
             displayName: sizeData.displayName || existingSize.displayName,
-            sizeCategory: sizeData.sizeCategory || existingSize.sizeCategory,
+            // Map empty string to 'standard' for valid enum
+            sizeCategory: sizeData.sizeCategory || existingSize.sizeCategory || 'standard',
             unitType: sizeData.unitType || existingSize.unitType,
             volumeMl: sizeData.volumeMl ?? existingSize.volumeMl,
             weightGrams: sizeData.weightGrams ?? existingSize.weightGrams,
             servingsPerUnit: sizeData.servingsPerUnit ?? existingSize.servingsPerUnit,
-            unitsPerPack: sizeData.unitsPerPack ?? existingSize.unitsPerPack,
+            unitsPerPack: sizeData.unitsPerPack ?? existingSize.unitsPerPack ?? 6,
+            packaging: sizeData.packaging ?? existingSize.packaging ?? 'pack-6',
             basePrice: sizeData.basePrice ?? existingSize.basePrice,
             compareAtPrice: sizeData.compareAtPrice ?? existingSize.compareAtPrice,
             costPrice: sizeData.costPrice ?? existingSize.costPrice,
@@ -1747,12 +1723,15 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
             lowStockThreshold: sizeData.lowStockThreshold ?? existingSize.lowStockThreshold,
             reorderPoint: sizeData.reorderPoint ?? existingSize.reorderPoint,
             reorderQuantity: sizeData.reorderQuantity ?? existingSize.reorderQuantity,
-            sku: sizeData.sku || existingSize.sku,
-            barcode: sizeData.barcode || existingSize.barcode,
+            // Generate unique SKU if empty to avoid duplicate key errors
+            sku: sizeData.sku || existingSize.sku || `${subProduct.sku}-${sizeData.size}`.toUpperCase().replace(/\s+/g, ''),
+            barcode: sizeData.barcode || existingSize.barcode || '',
             markupPercentage: sizeData.markupPercentage ?? existingSize.markupPercentage,
             roundUp: sizeData.roundUp || existingSize.roundUp || 'none',
             saleDiscountPercentage: sizeData.saleDiscountPercentage ?? existingSize.saleDiscountPercentage,
             salePrice: sizeData.salePrice ?? existingSize.salePrice,
+            // Map salePrice to sellingPrice for compatibility
+            sellingPrice: sizeData.sellingPrice ?? sizeData.salePrice ?? existingSize.sellingPrice ?? existingSize.salePrice ?? 0,
             isDefault: sizeData.isDefault ?? existingSize.isDefault,
             isOnSale: sizeData.isOnSale ?? existingSize.isOnSale,
             rank: sizeData.rank ?? existingSize.rank,
@@ -1768,15 +1747,17 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
             tenant: tenantObjectId,
             size: sizeData.size,
             displayName: sizeData.displayName || sizeData.size,
-            sizeCategory: sizeData.sizeCategory || '',
+            // Map empty string to 'standard' for valid enum
+            sizeCategory: sizeData.sizeCategory || 'standard',
             unitType: sizeData.unitType || 'volume_ml',
             volumeMl: sizeData.volumeMl ?? null,
             weightGrams: sizeData.weightGrams ?? null,
-            servingsPerUnit: sizeData.servingsPerUnit ?? null,
-            unitsPerPack: sizeData.unitsPerPack ?? 1,
+            servingsPerUnit: sizeData.servingsPerUnit ?? 0,
+            unitsPerPack: sizeData.unitsPerPack ?? 6,
+            packaging: sizeData.packaging ?? 'pack-6',
             basePrice: sizeData.basePrice ?? subProduct.baseSellingPrice,
             compareAtPrice: sizeData.compareAtPrice ?? null,
-            costPrice: sizeData.costPrice ?? subProduct.costPrice,
+            costPrice: sizeData.costPrice ?? subProduct.costPrice ?? 0,
             wholesalePrice: sizeData.wholesalePrice ?? null,
             currency: sizeData.currency || subProduct.currency,
             stock: sizeData.stock ?? 0,
@@ -1785,12 +1766,15 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
             lowStockThreshold: sizeData.lowStockThreshold ?? 10,
             reorderPoint: sizeData.reorderPoint ?? 5,
             reorderQuantity: sizeData.reorderQuantity ?? 50,
-            sku: sizeData.sku || '',
+            // Generate unique SKU if empty to avoid duplicate key errors
+            sku: sizeData.sku || `${subProduct.sku}-${sizeData.size}`.toUpperCase().replace(/\s+/g, ''),
             barcode: sizeData.barcode || '',
             markupPercentage: sizeData.markupPercentage ?? subProduct.markupPercentage,
             roundUp: sizeData.roundUp || 'none',
             saleDiscountPercentage: sizeData.saleDiscountPercentage ?? 0,
             salePrice: sizeData.salePrice ?? null,
+            // Map salePrice to sellingPrice for compatibility
+            sellingPrice: sizeData.sellingPrice ?? sizeData.salePrice ?? subProduct.baseSellingPrice ?? 0,
             isDefault: sizeData.isDefault ?? false,
             isOnSale: sizeData.isOnSale ?? false,
             rank: sizeData.rank ?? (data.sizes.indexOf(sizeData) + 1),
@@ -1802,8 +1786,11 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
       }
       
       // Delete sizes that are no longer in the update
-      const sizesToDelete = existingSizes.filter(s => !updatedSizeIds.includes(s._id));
+      // Convert both to strings for comparison
+      const existingSizeIds = existingSizes.map(s => s._id.toString());
+      const sizesToDelete = existingSizes.filter(s => !updatedSizeIds.map(id => id.toString()).includes(s._id.toString()));
       if (sizesToDelete.length > 0) {
+        console.log('📦 Deleting sizes:', sizesToDelete.map(s => s.size));
         await Size.deleteMany({ 
           _id: { $in: sizesToDelete.map(s => s._id) }
         });
@@ -1811,29 +1798,32 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
       
       subProduct.sizes = updatedSizeIds;
       
-      // Calculate total stock from sizes
-      const updatedSizes = await Size.find({ _id: { $in: updatedSizeIds } }).lean();
-      const totalSizeStock = updatedSizes.reduce((sum, s) => sum + (s.stock || 0), 0);
-      subProduct.totalStock = totalSizeStock;
-      subProduct.availableStock = totalSizeStock - (subProduct.reservedStock || 0);
-      
-      // Update stock status based on sizes
-      if (totalSizeStock === 0) {
-        subProduct.stockStatus = 'out_of_stock';
-      } else if (totalSizeStock <= (subProduct.lowStockThreshold || 10)) {
-        subProduct.stockStatus = 'low_stock';
-      } else {
-        subProduct.stockStatus = 'in_stock';
-      }
-      
-      // Set default size if not set
-      if (!subProduct.defaultSize && updatedSizes.length > 0) {
-        const defaultSize = updatedSizes.find(s => s.isDefault) || updatedSizes[0];
-        subProduct.defaultSize = defaultSize._id;
+      // Only recalculate stock from sizes if there are actual sizes
+      // This prevents overwriting manually set inventory when sizes array is empty
+      if (updatedSizeIds.length > 0) {
+        const updatedSizes = await Size.find({ _id: { $in: updatedSizeIds } }).lean();
+        const totalSizeStock = updatedSizes.reduce((sum, s) => sum + (s.stock || 0), 0);
+        subProduct.totalStock = totalSizeStock;
+        subProduct.availableStock = totalSizeStock - (subProduct.reservedStock || 0);
+        
+        // Update stock status based on sizes
+        if (totalSizeStock === 0) {
+          subProduct.stockStatus = 'out_of_stock';
+        } else if (totalSizeStock <= (subProduct.lowStockThreshold || 10)) {
+          subProduct.stockStatus = 'low_stock';
+        } else {
+          subProduct.stockStatus = 'in_stock';
+        }
+        
+        // Set default size if not set
+        if (!subProduct.defaultSize && updatedSizes.length > 0) {
+          const defaultSize = updatedSizes.find(s => s.isDefault) || updatedSizes[0];
+          subProduct.defaultSize = defaultSize._id;
+        }
+        
+        await subProduct.save();
       }
     }
-    
-await subProduct.save();
   }
 
   // ========================================================================
@@ -4214,6 +4204,7 @@ const getAllSubProducts = async (filters = {}) => {
     SubProduct.find(query)
       .populate('product', 'name slug images')
       .populate('tenant', 'name businessName')
+      .populate('sizes')
       .sort({ [sort]: sortOrder })
       .skip(skip)
       .limit(parseInt(limit))
@@ -4246,6 +4237,7 @@ const getSubProductsByTenant = async (tenantId, filters = {}) => {
   const [subProducts, total] = await Promise.all([
     SubProduct.find(query)
       .populate('product', 'name slug images')
+      .populate('sizes')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))

@@ -266,7 +266,7 @@ export default function SubProductSizes() {
 
   const sellWithoutSizeVariants = watch?.('subProductData.sellWithoutSizeVariants');
   const defaultMarkup = watch?.('subProductData.markupPercentage') ?? 25;
-  const defaultRoundUp = watch?.('subProductData.roundUp') ?? 'none';
+  const defaultRoundUp = watch?.('subProductData.roundUp') ?? '100';
   const defaultCostPrice = watch?.('subProductData.costPrice');
   const defaultDiscount = watch?.('subProductData.saleDiscountPercentage') ?? 0;
   const defaultCurrency = watch?.('subProductData.currency') ?? 'NGN';
@@ -302,7 +302,8 @@ export default function SubProductSizes() {
       volumeMl: null,
       weightGrams: null,
       servingsPerUnit: null,
-      unitsPerPack: 1,
+      unitsPerPack: 6,
+      packaging: 'pack-6',
       basePrice: baseSellingPrice,
       compareAtPrice: null,
       costPrice: defaultCostPrice ?? null,
@@ -566,7 +567,8 @@ export default function SubProductSizes() {
                                   volumeMl: parseFloat(size.value.replace('cl', '').replace('ml', '').replace('L', '')) * 10 || null,
                                   weightGrams: null,
                                   servingsPerUnit: null,
-                                  unitsPerPack: 1,
+                                  unitsPerPack: 6,
+                                  packaging: 'pack-6',
                                   basePrice: baseSellingPrice,
                                   compareAtPrice: null,
                                   costPrice: defaultCostPrice ?? null,
@@ -707,7 +709,7 @@ function SizeVariantRow({
 }) {
   const variantCostPrice = watch(`subProductData.sizes.${index}.costPrice`);
   const variantMarkup = watch(`subProductData.sizes.${index}.markupPercentage`) ?? 25;
-  const variantRoundUp = watch(`subProductData.sizes.${index}.roundUp`) ?? 'none';
+  const variantRoundUp = watch(`subProductData.sizes.${index}.roundUp`) ?? '100';
   const variantBasePrice = watch(`subProductData.sizes.${index}.basePrice`);
   const variantDiscount = watch(`subProductData.sizes.${index}.saleDiscountPercentage`) ?? 0;
 
@@ -810,6 +812,8 @@ function SizeVariantRow({
   ];
 
   const packagingOptions = [
+    { value: 'pack-6', label: '6-Pack' },
+    { value: 'pack-12', label: '12-Pack' },
     { value: 'bottle', label: 'Bottle' },
     { value: 'can', label: 'Can' },
     { value: 'glass_bottle', label: 'Glass Bottle' },

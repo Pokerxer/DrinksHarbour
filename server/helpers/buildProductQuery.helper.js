@@ -6,7 +6,10 @@ const Sales = require('../models/Sales');
  * Build the product query based on filters
  */
 const buildProductQuery = (filters) => {
-    const query = { status: 'approved' };
+    // If status is provided and not empty, use it; otherwise default to approved
+    const query = filters.status !== undefined && filters.status !== '' 
+        ? { status: filters.status } 
+        : { status: 'approved' };
     
     // Text search
     if (filters.search) {

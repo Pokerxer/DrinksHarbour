@@ -9,7 +9,7 @@
  * Run: node scripts/create-system-tenant.js
  */
 
-require('dotenv').config();
+require('dotenv').config({ path: __dirname + '/../.env' });
 
 const mongoose = require('mongoose');
 
@@ -26,8 +26,16 @@ const SYSTEM_TENANT_DATA = {
   defaultCurrency: 'NGN',
   supportedCurrencies: ['NGN', 'USD', 'EUR', 'GBP'],
   country: 'Nigeria',
-  city: 'Lagos',
-  state: 'Lagos',
+  city: 'Abuja',
+  state: 'Abuja',
+  address: {
+    street: '39 Gana Street',
+    city: 'Maitama',
+    state: 'Abuja',
+    country: 'Nigeria',
+    zipCode: '42245632',
+    phone: '+234 800 000 0000',
+  },
   revenueModel: 'markup',
   markupPercentage: 0, // No markup - platform's own store
   commissionPercentage: 0,

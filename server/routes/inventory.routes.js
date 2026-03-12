@@ -12,41 +12,40 @@ const {
   cancelMovement,
   getLowStockItems,
   getInventoryValuation,
+  getNextPONumber,
+  transferStock,
 } = require('../controllers/inventory.controller');
-const { protect, authorize, superAdminOnly, tenantAdminOrSuperAdmin } = require('../middleware/auth.middleware');
-const { ForbiddenError } = require('../utils/errors');
+const { 
+  protect, 
+  attachTenant,
+  tenantAdminOrSuperAdmin 
+} = require('../middleware/auth.middleware');
 
-// All routes require authentication
+// All routes require authentication and tenant context
 router.use(protect);
+router.use(attachTenant);
 
-// Helper to allow super_admin or tenant roles
-const allowSuperAdminOrTenant = (...roles) => (req, res, next) => {
-  if (req.user?.role === 'super_admin') {
-    return next();
-  }
-  if (!roles.includes(req.user?.role)) {
-    return next(new ForbiddenError(`Access denied. Required roles: ${roles.join(', ')}`));
-  }
-  next();
-};
-
-// Movement routes - super_admin can access all
+// Movement routes - use tenantAdminOrSuperAdmin which already handles super_admin
 router.route('/movements')
-  .post(allowSuperAdminOrTenant('tenant_admin', 'tenant_staff'), createMovement)
-  .get(allowSuperAdminOrTenant('tenant_admin', 'tenant_staff', 'tenant_viewer'), getMovements);
+  .post(tenantAdminOrSuperAdmin, createMovement)
+  .get(tenantAdminOrSuperAdmin, getMovements);
 
-router.post('/movements/:id/cancel', allowSuperAdminOrTenant('tenant_admin'), cancelMovement);
+router.post('/movements/:id/cancel', tenantAdminOrSuperAdmin, cancelMovement);
 
-// Summary - super_admin can access
-router.get('/summary/:subProductId', allowSuperAdminOrTenant('tenant_admin', 'tenant_staff', 'tenant_viewer'), getInventorySummary);
+// Summary
+router.get('/summary/:subProductId', tenantAdminOrSuperAdmin, getInventorySummary);
 
 // Adjustments
-router.post('/adjust', allowSuperAdminOrTenant('tenant_admin', 'tenant_staff'), adjustInventory);
-router.post('/received', allowSuperAdminOrTenant('tenant_admin', 'tenant_staff'), recordReceived);
-router.post('/return', allowSuperAdminOrTenant('tenant_admin', 'tenant_staff'), recordReturn);
+router.post('/adjust', tenantAdminOrSuperAdmin, adjustInventory);
+router.post('/received', tenantAdminOrSuperAdmin, recordReceived);
+router.post('/return', tenantAdminOrSuperAdmin, recordReturn);
+router.post('/transfer', tenantAdminOrSuperAdmin, transferStock);
+
+// Utils
+router.get('/next-po', tenantAdminOrSuperAdmin, getNextPONumber);
 
 // Reports
-router.get('/low-stock', allowSuperAdminOrTenant('tenant_admin', 'tenant_staff', 'tenant_viewer'), getLowStockItems);
-router.get('/valuation', allowSuperAdminOrTenant('tenant_admin', 'tenant_viewer'), getInventoryValuation);
+router.get('/low-stock', tenantAdminOrSuperAdmin, getLowStockItems);
+router.get('/valuation', tenantAdminOrSuperAdmin, getInventoryValuation);
 
 module.exports = router;

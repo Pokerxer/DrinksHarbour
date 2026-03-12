@@ -1,6 +1,13 @@
 // services/payment.service.js
 
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+let stripe;
+try {
+  stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+} catch (e) {
+  console.warn('Stripe key not found, payment service will be disabled.');
+  stripe = null;
+}
+
 const axios = require('axios');
 const Order = require('../models/Order');
 const { ValidationError, NotFoundError } = require('../utils/errors');
@@ -11,6 +18,9 @@ const PAYSTACK_BASE_URL = 'https://api.paystack.co';
  * Initialize Stripe payment intent (without order)
  */
 const createStripePaymentIntent = async (amount, currency = 'ngn', metadata = {}) => {
+  if (!stripe) {
+    throw new Error('Stripe is not configured');
+  }
   try {
     // Create payment intent without order association
     const paymentIntent = await stripe.paymentIntents.create({

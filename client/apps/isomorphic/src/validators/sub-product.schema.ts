@@ -170,7 +170,10 @@ const subProductDataSchema = z.object({
   salePrice: optionalPositiveNumber,
   saleStartDate: z.string().nullable().optional(),
   saleEndDate: z.string().nullable().optional(),
-  saleType: z.enum(['percentage', 'fixed', 'flash_sale', 'bundle', 'bogo']).nullable().optional(),
+  saleType: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined) ? 'percentage' : val,
+    z.enum(['percentage', 'fixed', 'flash_sale', 'bundle', 'bogo']).default('percentage')
+  ),
   saleDiscountValue: optionalPositiveNumber,
   saleBanner: z.object({
     url: z.string().optional(),
@@ -229,14 +232,14 @@ const subProductDataSchema = z.object({
   estimatedShippingCost: optionalPositiveNumber,
   supplierRating: z.preprocess(
     (val) => {
-      if (val === '' || val === null || val === undefined) return null;
+      if (val === '' || val === null || val === undefined) return 0;
       if (typeof val === 'string') {
         const parsed = parseFloat(val);
-        return isNaN(parsed) ? null : parsed;
+        return isNaN(parsed) ? 0 : parsed;
       }
       return val;
     },
-    z.number().min(1).max(5).nullable().optional()
+    z.number().min(0).max(5).default(0)
   ),
   vendorNotes: z.string().optional(),
   vendorContactName: z.string().optional(),
@@ -263,7 +266,10 @@ const subProductDataSchema = z.object({
     (val) => (val === '' || val === null || val === undefined) ? 0 : Number(val),
     z.number().min(0).default(0)
   ),
-  discountType: z.enum(['fixed', 'percentage']).nullable().optional(),
+  discountType: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined) ? 'percentage' : val,
+    z.enum(['fixed', 'percentage']).default('percentage')
+  ),
   discountStart: z.string().nullable().optional(),
   discountEnd: z.string().nullable().optional(),
   flashSale: z.object({

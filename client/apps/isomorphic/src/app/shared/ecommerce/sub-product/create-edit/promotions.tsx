@@ -163,6 +163,8 @@ export default function SubProductPromotions() {
   const loyaltyDiscount = watch?.('subProductData.loyaltyDiscount') || {};
   const seasonalPromos = watch?.('subProductData.seasonalPromos') || [];
   const advancedFeatures = watch?.('subProductData.advancedFeatures') || {};
+  const sizes = watch?.('subProductData.sizes') || [];
+  const sellWithoutSizeVariants = watch?.('subProductData.sellWithoutSizeVariants');
 
   const [showFlashSale, setShowFlashSale] = useState(flashSale?.isActive || false);
   const [showBundleDeals, setShowBundleDeals] = useState(bundleDeals.length > 0);
@@ -198,34 +200,77 @@ export default function SubProductPromotions() {
     return true;
   };
 
-  const calculateDiscount = () => {
-    if (!baseSellingPrice || baseSellingPrice <= 0 || !discount) return 0;
+  // Helper to get selected sizes' prices
+  const getSelectedSizesPrices = (selectedSizes: string[]) => {
+    if (!sizes.length || selectedSizes.length === 0) return [];
+    return sizes
+      .filter((s: any) => selectedSizes.includes(s.size) || selectedSizes.includes(s._id))
+      .map((s: any) => ({
+        size: s.size || s._id,
+        basePrice: s.basePrice || baseSellingPrice,
+        salePrice: s.salePrice || s.basePrice || baseSellingPrice,
+      }));
+  };
+
+  // Calculate average price for selected sizes
+  const getAveragePriceForSizes = (selectedSizes: string[]) => {
+    const selectedPrices = getSelectedSizesPrices(selectedSizes);
+    if (selectedPrices.length === 0) return baseSellingPrice;
+    const total = selectedPrices.reduce((sum, p) => sum + (p.salePrice || p.basePrice), 0);
+    return total / selectedPrices.length;
+  };
+
+  // Get total price for selected sizes (for bundles)
+  const getTotalPriceForSelectedSizes = (selectedSizes: string[], quantity: number = 1) => {
+    const selectedPrices = getSelectedSizesPrices(selectedSizes);
+    if (selectedPrices.length === 0) return baseSellingPrice * quantity;
+    const avgPrice = selectedPrices.reduce((sum, p) => sum + (p.salePrice || p.basePrice), 0);
+    return avgPrice * quantity;
+  };
+
+  const calculateDiscount = (price: number = baseSellingPrice) => {
+    if (!price || price <= 0 || !discount) return 0;
     
     if (discountType === 'percentage') {
-      return baseSellingPrice * (discount / 100);
+      return price * (discount / 100);
     } else {
-      return Math.min(discount, baseSellingPrice);
+      return Math.min(discount, price);
     }
   };
 
-  const calculateFlashDiscount = () => {
-    if (!flashSale?.discountPercentage || !baseSellingPrice) return 0;
-    return baseSellingPrice * (flashSale.discountPercentage / 100);
+  const calculateFlashDiscount = (price: number = baseSellingPrice) => {
+    if (!flashSale?.discountPercentage || !price) return 0;
+    return price * (flashSale.discountPercentage / 100);
   };
 
   const calculateTotalSavings = () => {
-    let total = calculateDiscount();
-    if (flashSaleActive()) total += calculateFlashDiscount();
+    const price = baseSellingPrice;
+    let total = calculateDiscount(price);
+    if (flashSaleActive()) total += calculateFlashDiscount(price);
     if (loyaltyDiscount?.enabled && loyaltyDiscount?.percentage) {
-      total += baseSellingPrice * (loyaltyDiscount.percentage / 100);
+      total += price * (loyaltyDiscount.percentage / 100);
     }
-    return Math.min(total, baseSellingPrice * 0.9); // Max 90% discount
+    return Math.min(total, price * 0.9); // Max 90% discount
   };
 
   const discountedPrice = baseSellingPrice - calculateDiscount();
   const flashSalePrice = baseSellingPrice - calculateFlashDiscount();
   const totalSavings = calculateTotalSavings();
   const finalPrice = baseSellingPrice - totalSavings;
+
+  // Calculate prices based on selected sizes for flash sale
+  const flashSaleSelectedSizes = flashSale?.sizes || [];
+  const flashSalePriceForSelectedSizes = flashSaleSelectedSizes.length > 0 
+    ? getAveragePriceForSizes(flashSaleSelectedSizes)
+    : baseSellingPrice;
+  const flashSaleDiscountedPrice = flashSalePriceForSelectedSizes - calculateFlashDiscount(flashSalePriceForSelectedSizes);
+
+  // Calculate prices based on selected sizes for loyalty
+  const loyaltySelectedSizes = loyaltyDiscount?.sizes || [];
+  const loyaltyPriceForSelectedSizes = loyaltySelectedSizes.length > 0
+    ? getAveragePriceForSizes(loyaltySelectedSizes)
+    : baseSellingPrice;
+  const loyaltyDiscountedAmount = loyaltyPriceForSelectedSizes * ((loyaltyDiscount?.percentage || 0) / 100);
 
   const activePromotionsCount = [
     isDiscountActive,
@@ -266,6 +311,9 @@ export default function SubProductPromotions() {
       discount: preset?.discount || 10,
       discountType: preset?.discountType || 'percentage',
       active: true,
+      // Size-specific promotion - if sizes exist, default to all sizes
+      sizes: sizes.length > 0 ? sizes.map((s: any) => s.size).filter(Boolean) : [],
+      sizeVariants: sizes.length > 0 ? sizes.map((s: any) => s._id || s.size).filter(Boolean) : [],
       createdAt: new Date().toISOString(),
     };
     setValue('subProductData.bundleDeals', [...bundleDeals, newBundle]);
@@ -463,10 +511,13 @@ export default function SubProductPromotions() {
                   <div className="rounded-lg bg-white/80 p-3">
                     <div className="flex items-center gap-2 mb-1">
                       <PiStar className="h-4 w-4 text-purple-600" />
-                      <Text className="text-xs font-medium text-purple-800">Loyalty Bonus</Text>
+                      <Text className="text-xs font-medium text-purple-800">
+                        Loyalty Bonus
+                        {loyaltySelectedSizes.length > 0 && ` (${loyaltySelectedSizes.length} size${loyaltySelectedSizes.length > 1 ? 's' : ''})`}
+                      </Text>
                     </div>
                     <Text className="font-bold text-purple-700">
-                      -{CURRENCY_SYMBOL}{(baseSellingPrice * (loyaltyDiscount.percentage / 100)).toLocaleString()}
+                      -{CURRENCY_SYMBOL}{loyaltyDiscountedAmount.toLocaleString()}
                     </Text>
                   </div>
                 )}
@@ -898,6 +949,75 @@ export default function SubProductPromotions() {
                 </motion.div>
               </div>
 
+              {/* Flash Sale Size Selection */}
+              {sizes.length > 0 && !sellWithoutSizeVariants && (
+                <motion.div variants={fieldStaggerVariants}>
+                  <label className="mb-2 block text-sm font-medium text-gray-700">
+                    Apply Flash Sale to Sizes
+                  </label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allSizes = sizes.map((s: any) => s.size || s._id).filter(Boolean);
+                        const currentSizes = flashSale?.sizes || [];
+                        if (currentSizes.length === allSizes.length) {
+                          setValue('subProductData.flashSale.sizes', []);
+                          setValue('subProductData.flashSale.sizeVariants', []);
+                        } else {
+                          setValue('subProductData.flashSale.sizes', allSizes);
+                          setValue('subProductData.flashSale.sizeVariants', sizes.map((s: any) => s._id || s.size).filter(Boolean));
+                        }
+                      }}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                        (flashSale?.sizes || []).length === sizes.length
+                          ? 'bg-amber-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      All Sizes
+                    </button>
+                    {sizes.map((size: any) => {
+                      const sizeName = size.size || size._id;
+                      const isSelected = (flashSale?.sizes || []).includes(sizeName);
+                      return (
+                        <button
+                          key={size._id || size.size}
+                          type="button"
+                          onClick={() => {
+                            const currentSizes = flashSale?.sizes || [];
+                            const currentVariantIds = flashSale?.sizeVariants || [];
+                            let newSizes = [];
+                            let newVariantIds = [];
+                            if (isSelected) {
+                              newSizes = currentSizes.filter((s: string) => s !== sizeName);
+                              newVariantIds = currentVariantIds.filter((id: string) => id !== (size._id || size.size));
+                            } else {
+                              newSizes = [...currentSizes, sizeName];
+                              newVariantIds = [...currentVariantIds, size._id || size.size];
+                            }
+                            setValue('subProductData.flashSale.sizes', newSizes);
+                            setValue('subProductData.flashSale.sizeVariants', newVariantIds);
+                          }}
+                          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                            isSelected
+                              ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                              : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
+                          }`}
+                        >
+                          {size.size || size.displayName || sizeName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <Text className="text-xs text-gray-500">
+                    {(flashSale?.sizes || []).length === 0 
+                      ? 'Applied to all sizes' 
+                      : `Applied to ${(flashSale?.sizes || []).length} size(s)`}
+                  </Text>
+                </motion.div>
+              )}
+
               {/* Flash Sale Preview */}
               {flashSale?.discountPercentage > 0 && (
                 <div className="rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 p-4">
@@ -907,17 +1027,25 @@ export default function SubProductPromotions() {
                       <div>
                         <Text className="font-medium text-amber-800">Flash Sale Preview</Text>
                         <Text className="text-xs text-amber-600">
-                          {flashSale.discountPercentage}% off for limited time
+                          {flashSale.discountPercentage}% off 
+                          {flashSaleSelectedSizes.length > 0 && sizes.length > 0 
+                            ? ` (${flashSaleSelectedSizes.length} size${flashSaleSelectedSizes.length > 1 ? 's' : ''})`
+                            : ' for all sizes'}
                         </Text>
                       </div>
                     </div>
                     <div className="text-right">
                       <Text className="font-bold text-amber-700 text-xl">
-                        {CURRENCY_SYMBOL}{flashSalePrice.toLocaleString()}
+                        {CURRENCY_SYMBOL}{flashSaleDiscountedPrice.toLocaleString()}
                       </Text>
                       <Text className="text-xs text-amber-600 line-through">
-                        {CURRENCY_SYMBOL}{baseSellingPrice.toLocaleString()}
+                        {CURRENCY_SYMBOL}{flashSalePriceForSelectedSizes.toLocaleString()}
                       </Text>
+                      {flashSaleSelectedSizes.length > 0 && flashSaleSelectedSizes.length < sizes.length && (
+                        <Text className="text-xs text-amber-500">
+                          (Selected sizes avg)
+                        </Text>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1163,29 +1291,108 @@ export default function SubProductPromotions() {
                       />
                     </div>
 
-                    {/* Bundle Preview */}
-                    {baseSellingPrice > 0 && bundle.discount > 0 && (
-                      <div className="rounded-lg bg-purple-50 border border-purple-200 p-3">
-                        <Text className="text-xs font-medium text-purple-700 mb-1">Bundle Preview:</Text>
-                        <div className="flex items-center justify-between">
-                          <Text className="text-sm text-purple-800">
-                            Buy {bundle.quantity} items
-                          </Text>
-                          <div className="text-right">
-                            <Text className="text-sm line-through text-purple-600">
-                              {CURRENCY_SYMBOL}{(baseSellingPrice * bundle.quantity).toLocaleString()}
-                            </Text>
-                            <Text className="font-bold text-purple-800">
-                              {CURRENCY_SYMBOL}{
-                                bundle.discountType === 'percentage'
-                                  ? ((baseSellingPrice * bundle.quantity) * (1 - bundle.discount / 100)).toLocaleString()
-                                  : ((baseSellingPrice * bundle.quantity) - bundle.discount).toLocaleString()
+                    {/* Size Selection for Bundle */}
+                    {sizes.length > 0 && !sellWithoutSizeVariants && (
+                      <div>
+                        <label className="mb-2 block text-xs font-medium text-gray-700">
+                          Apply to Sizes
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...bundleDeals];
+                              const allSizes = sizes.map((s: any) => s.size || s._id).filter(Boolean);
+                              const currentSizes = updated[index].sizes || [];
+                              // Toggle all sizes
+                              if (currentSizes.length === allSizes.length) {
+                                updated[index].sizes = [];
+                                updated[index].sizeVariants = [];
+                              } else {
+                                updated[index].sizes = allSizes;
+                                updated[index].sizeVariants = sizes.map((s: any) => s._id || s.size).filter(Boolean);
                               }
-                            </Text>
-                          </div>
+                              setValue('subProductData.bundleDeals', updated);
+                            }}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                              (bundle.sizes || []).length === sizes.length
+                                ? 'bg-purple-600 text-white'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            }`}
+                          >
+                            All Sizes
+                          </button>
+                          {sizes.map((size: any) => {
+                            const sizeName = size.size || size._id;
+                            const isSelected = (bundle.sizes || []).includes(sizeName);
+                            return (
+                              <button
+                                key={size._id || size.size}
+                                type="button"
+                                onClick={() => {
+                                  const updated = [...bundleDeals];
+                                  const currentSizes = updated[index].sizes || [];
+                                  const currentVariantIds = updated[index].sizeVariants || [];
+                                  if (isSelected) {
+                                    updated[index].sizes = currentSizes.filter((s: string) => s !== sizeName);
+                                    updated[index].sizeVariants = currentVariantIds.filter((id: string) => id !== (size._id || size.size));
+                                  } else {
+                                    updated[index].sizes = [...currentSizes, sizeName];
+                                    updated[index].sizeVariants = [...currentVariantIds, size._id || size.size];
+                                  }
+                                  setValue('subProductData.bundleDeals', updated);
+                                }}
+                                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                                  isSelected
+                                    ? 'bg-purple-100 text-purple-700 border border-purple-300'
+                                    : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
+                                }`}
+                              >
+                                {size.size || size.displayName || sizeName}
+                              </button>
+                            );
+                          })}
                         </div>
+                        <Text className="mt-1 text-xs text-gray-500">
+                          {(bundle.sizes || []).length === 0 
+                            ? 'Applied to all sizes' 
+                            : `Applied to ${(bundle.sizes || []).length} size(s)`}
+                        </Text>
                       </div>
                     )}
+
+                    {/* Bundle Preview */}
+                    {baseSellingPrice > 0 && bundle.discount > 0 && (() => {
+                      const bundleSelectedSizes = bundle.sizes || [];
+                      const bundlePrice = bundleSelectedSizes.length > 0 
+                        ? getTotalPriceForSelectedSizes(bundleSelectedSizes, bundle.quantity)
+                        : baseSellingPrice * bundle.quantity;
+                      return (
+                        <div className="rounded-lg bg-purple-50 border border-purple-200 p-3">
+                          <Text className="text-xs font-medium text-purple-700 mb-1">
+                            Bundle Preview
+                            {bundleSelectedSizes.length > 0 && ` (${bundleSelectedSizes.length} size${bundleSelectedSizes.length > 1 ? 's' : ''})`}
+                          </Text>
+                          <div className="flex items-center justify-between">
+                            <Text className="text-sm text-purple-800">
+                              Buy {bundle.quantity} items
+                            </Text>
+                            <div className="text-right">
+                              <Text className="text-sm line-through text-purple-600">
+                                {CURRENCY_SYMBOL}{bundlePrice.toLocaleString()}
+                              </Text>
+                              <Text className="font-bold text-purple-800">
+                                {CURRENCY_SYMBOL}{
+                                  bundle.discountType === 'percentage'
+                                    ? (bundlePrice * (1 - bundle.discount / 100)).toLocaleString()
+                                    : (bundlePrice - bundle.discount).toLocaleString()
+                                }
+                              </Text>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </motion.div>
               ))}
@@ -1287,6 +1494,75 @@ export default function SubProductPromotions() {
                   )}
                 />
               </div>
+
+              {/* Loyalty Discount Size Selection */}
+              {sizes.length > 0 && !sellWithoutSizeVariants && (
+                <motion.div variants={fieldStaggerVariants}>
+                  <label className="mb-2 block text-sm font-medium text-gray-700">
+                    Apply to Sizes
+                  </label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allSizes = sizes.map((s: any) => s.size || s._id).filter(Boolean);
+                        const currentSizes = loyaltyDiscount?.sizes || [];
+                        if (currentSizes.length === allSizes.length) {
+                          setValue('subProductData.loyaltyDiscount.sizes', []);
+                          setValue('subProductData.loyaltyDiscount.sizeVariants', []);
+                        } else {
+                          setValue('subProductData.loyaltyDiscount.sizes', allSizes);
+                          setValue('subProductData.loyaltyDiscount.sizeVariants', sizes.map((s: any) => s._id || s.size).filter(Boolean));
+                        }
+                      }}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                        (loyaltyDiscount?.sizes || []).length === sizes.length
+                          ? 'bg-violet-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      All Sizes
+                    </button>
+                    {sizes.map((size: any) => {
+                      const sizeName = size.size || size._id;
+                      const isSelected = (loyaltyDiscount?.sizes || []).includes(sizeName);
+                      return (
+                        <button
+                          key={size._id || size.size}
+                          type="button"
+                          onClick={() => {
+                            const currentSizes = loyaltyDiscount?.sizes || [];
+                            const currentVariantIds = loyaltyDiscount?.sizeVariants || [];
+                            let newSizes = [];
+                            let newVariantIds = [];
+                            if (isSelected) {
+                              newSizes = currentSizes.filter((s: string) => s !== sizeName);
+                              newVariantIds = currentVariantIds.filter((id: string) => id !== (size._id || size.size));
+                            } else {
+                              newSizes = [...currentSizes, sizeName];
+                              newVariantIds = [...currentVariantIds, size._id || size.size];
+                            }
+                            setValue('subProductData.loyaltyDiscount.sizes', newSizes);
+                            setValue('subProductData.loyaltyDiscount.sizeVariants', newVariantIds);
+                          }}
+                          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                            isSelected
+                              ? 'bg-violet-100 text-violet-700 border border-violet-300'
+                              : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
+                          }`}
+                        >
+                          {size.size || size.displayName || sizeName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <Text className="text-xs text-gray-500">
+                    {(loyaltyDiscount?.sizes || []).length === 0 
+                      ? 'Applied to all sizes' 
+                      : `Applied to ${(loyaltyDiscount?.sizes || []).length} size(s)`}
+                  </Text>
+                </motion.div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -1423,7 +1699,8 @@ export default function SubProductPromotions() {
                 </div>
                 <Text className="text-xl font-bold mb-1">{flashSale.discountPercentage}% off</Text>
                 <Text className="text-xs text-gray-400">
-                  Price: {CURRENCY_SYMBOL}{flashSalePrice.toLocaleString()}
+                  Price: {CURRENCY_SYMBOL}{flashSaleDiscountedPrice.toLocaleString()}
+                  {flashSaleSelectedSizes.length > 0 && ` (${flashSaleSelectedSizes.length} size${flashSaleSelectedSizes.length > 1 ? 's' : ''})`}
                 </Text>
               </div>
             )}
@@ -1450,7 +1727,13 @@ export default function SubProductPromotions() {
                 <Text className="text-xl font-bold mb-1">{loyaltyDiscount.percentage}% off</Text>
                 <Text className="text-xs text-gray-400">
                   For {loyaltyDiscount.tierRequirement || 'all'} members
+                  {loyaltySelectedSizes.length > 0 && ` (${loyaltySelectedSizes.length} size${loyaltySelectedSizes.length > 1 ? 's' : ''})`}
                 </Text>
+                {loyaltySelectedSizes.length > 0 && (
+                  <Text className="text-xs text-gray-400 mt-1">
+                    Save: {CURRENCY_SYMBOL}{loyaltyDiscountedAmount.toLocaleString()}/unit
+                  </Text>
+                )}
               </div>
             )}
           </div>
