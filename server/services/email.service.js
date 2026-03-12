@@ -1373,10 +1373,125 @@ const sendVerificationCodeEmail = async ({ email, code, firstName }) => {
   });
 };
 
+// @desc    Send Purchase Order to Vendor
+// @access  Private
+const sendPurchaseOrderToVendor = async (purchaseOrder, vendor, tenant) => {
+  const docType = purchaseOrder.type === 'rfq' ? 'Request for Quotation (RFQ)' : 'Purchase Order (PO)';
+  const docNumber = purchaseOrder.poNumber || purchaseOrder.rfqNumber || 'N/A';
+  
+  const itemsHtml = (purchaseOrder.items || [])
+    .map((item, index) => `
+      <tr>
+        <td style="padding: 10px; border: 1px solid #ddd;">${index + 1}</td>
+        <td style="padding: 10px; border: 1px solid #ddd;">${item.subProductName || '-'} ${item.sizeName ? `(${item.sizeName})` : ''}</td>
+        <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${item.quantity || 0}</td>
+        <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">${formatCurrency(item.unitCost || 0)}</td>
+        <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">${formatCurrency(item.totalCost || 0)}</td>
+      </tr>
+    `)
+    .join('');
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
+      <div style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); color: white; padding: 30px; border-radius: 10px 10px 0 0;">
+        <h1 style="margin: 0; font-size: 24px;">${docType}</h1>
+        <p style="margin: 10px 0 0 0; font-size: 14px; opacity: 0.9;">From: ${tenant?.name || 'DrinksHarbour'}</p>
+      </div>
+      
+      <div style="background: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none;">
+        <table style="width: 100%; margin-bottom: 20px;">
+          <tr>
+            <td style="padding: 10px; background: white; border: 1px solid #e5e7eb;">
+              <strong>${docType} #:</strong><br/>
+              <span style="font-size: 18px; color: #1e3a8a;">${docNumber}</span>
+            </td>
+            <td style="padding: 10px; background: white; border: 1px solid #e5e7eb;">
+              <strong>Date:</strong><br/>
+              ${formatDate(purchaseOrder.orderDate || new Date())}
+            </td>
+            <td style="padding: 10px; background: white; border: 1px solid #e5e7eb;">
+              <strong>Expected Delivery:</strong><br/>
+              ${formatDate(purchaseOrder.expectedArrival)}
+            </td>
+          </tr>
+        </table>
+
+        <h3 style="color: #374151; margin-top: 0;">Vendor Details</h3>
+        <table style="width: 100%; margin-bottom: 20px;">
+          <tr>
+            <td style="padding: 10px; background: white; border: 1px solid #e5e7eb;">
+              <strong>Vendor:</strong> ${vendor?.name || purchaseOrder.vendorName || 'N/A'}<br/>
+              <strong>Contact:</strong> ${vendor?.contactPerson?.name || '-'}
+            </td>
+            <td style="padding: 10px; background: white; border: 1px solid #e5e7eb;">
+              <strong>Email:</strong> ${vendor?.email || '-'}<br/>
+              <strong>Phone:</strong> ${vendor?.phone || '-'}
+            </td>
+          </tr>
+        </table>
+
+        <h3 style="color: #374151;">Order Items</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+          <thead>
+            <tr style="background: #f3f4f6;">
+              <th style="padding: 12px; border: 1px solid #e5e7eb; text-align: left;">#</th>
+              <th style="padding: 12px; border: 1px solid #e5e7eb; text-align: left;">Product</th>
+              <th style="padding: 12px; border: 1px solid #e5e7eb; text-align: center;">Qty</th>
+              <th style="padding: 12px; border: 1px solid #e5e7eb; text-align: right;">Unit Price</th>
+              <th style="padding: 12px; border: 1px solid #e5e7eb; text-align: right;">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsHtml}
+          </tbody>
+          <tfoot>
+            <tr style="background: #f3f4f6;">
+              <td colspan="4" style="padding: 12px; border: 1px solid #e5e7eb; text-align: right; font-weight: bold;">Total:</td>
+              <td style="padding: 12px; border: 1px solid #e5e7eb; text-align: right; font-weight: bold; font-size: 18px; color: #1e3a8a;">
+                ${formatCurrency(purchaseOrder.totalAmount || purchaseOrder.grandTotal || 0)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+
+        ${purchaseOrder.notes ? `
+          <h3 style="color: #374151;">Notes</h3>
+          <p style="background: white; padding: 15px; border: 1px solid #e5e7eb; border-radius: 5px;">
+            ${purchaseOrder.notes}
+          </p>
+        ` : ''}
+
+        ${purchaseOrder.termsConditions ? `
+          <h3 style="color: #374151;">Terms & Conditions</h3>
+          <p style="background: white; padding: 15px; border: 1px solid #e5e7eb; border-radius: 5px; font-size: 14px;">
+            ${purchaseOrder.termsConditions}
+          </p>
+        ` : ''}
+
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #e5e7eb; text-align: center; color: #6b7280; font-size: 12px;">
+          <p>This is an automated email from DrinksHarbour. Please do not reply directly to this email.</p>
+          <p>© ${new Date().getFullYear()} DrinksHarbour. All rights reserved.</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const subject = purchaseOrder.type === 'rfq' 
+    ? `Request for Quotation ${docNumber} - ${tenant?.name || 'DrinksHarbour'}`
+    : `Purchase Order ${docNumber} - ${tenant?.name || 'DrinksHarbour'}`;
+
+  await sendEmail({
+    to: vendor?.email || purchaseOrder.vendorEmail,
+    subject,
+    html,
+  });
+};
+
 module.exports = {
   sendEmail,
   sendOrderConfirmationToCustomer,
   sendNewOrderNotificationToTenant,
   sendNewOrderNotificationToAdmin,
   sendVerificationCodeEmail,
+  sendPurchaseOrderToVendor,
 };

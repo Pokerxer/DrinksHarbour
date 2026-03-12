@@ -427,41 +427,60 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                 </p>
               )}
 
-              {/* Vendor Selection */}
-              {vendors.length > 1 && (
+              {/* Vendor Selection - Always show when vendors exist */}
+              {vendors.length > 0 && (
                 <div className="p-4 bg-gray-50 rounded-xl">
                   <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
                     <Icon.PiStorefront size={18} />
-                    Select Seller
+                    {vendors.length > 1 ? 'Select Seller' : 'Sold By'}
                   </h3>
                   <div className="flex flex-wrap gap-2">
                     {vendors.map((vendor: any) => {
                       const isActive = selectedVendor?.tenant._id === vendor.tenant._id;
                       const bg = VENDOR_PALETTE[vendorPaletteIndex(vendor.tenant.name)];
+                      const totalStock = vendor.sizes?.reduce((sum: number, s: any) => sum + (s.stock || 0), 0) || 0;
                       return (
                         <button
                           key={vendor.tenant._id}
                           onClick={() => setActiveVendor(vendor.tenant._id)}
-                          className={`flex items-center gap-2 px-4 py-2 rounded-xl border-2 transition-all ${
-                            isActive
+                          className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all ${
+                            isActive || vendors.length === 1
                               ? 'border-black bg-white shadow-md'
                               : 'border-gray-200 hover:border-gray-300 bg-white'
                           }`}
                         >
                           <div
-                            className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                            className="w-12 h-12 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
                             style={{ backgroundColor: bg }}
                           >
                             {vendor.tenant.logo?.url ? (
-                              <Image src={vendor.tenant.logo.url} alt="" width={32} height={32} className="rounded-full" />
+                              <Image src={vendor.tenant.logo.url} alt="" width={44} height={44} className="rounded-full object-cover" />
                             ) : (
                               getInitials(vendor.tenant.name)
                             )}
                           </div>
-                          <div className="text-left">
-                            <div className="text-sm font-medium text-gray-900">{vendor.tenant.name}</div>
-                            <div className="text-xs text-gray-500">{vendor.tenant.city}, {vendor.tenant.country}</div>
+                          <div className="text-left flex-1 min-w-0">
+                            <div className="text-sm font-semibold text-gray-900 truncate">{vendor.tenant.name}</div>
+                            <div className="text-xs text-gray-500 flex items-center gap-1">
+                              <Icon.PiMapPin size={12} />
+                              {vendor.tenant.city}, {vendor.tenant.country}
+                            </div>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className={`text-xs font-medium ${totalStock > 10 ? 'text-green-600' : totalStock > 0 ? 'text-orange-500' : 'text-red-500'}`}>
+                                {totalStock > 0 ? `${totalStock} in stock` : 'Out of stock'}
+                              </span>
+                              {vendor.tenant.revenueModel && (
+                                <span className="text-xs text-gray-400 capitalize">
+                                  • {vendor.tenant.revenueModel}
+                                </span>
+                              )}
+                            </div>
                           </div>
+                          {isActive && (
+                            <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                              <Icon.PiCheck size={14} className="text-white" />
+                            </div>
+                          )}
                         </button>
                       );
                     })}
@@ -529,60 +548,70 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
 
               {/* Quantity & Add to Cart */}
               <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex items-center border-2 border-gray-200 rounded-xl p-1 w-fit">
+                <div className="flex items-center border-2 border-gray-200 rounded-xl p-1 bg-white">
                   <button
                     onClick={() => handleQuantityChange(-1)}
                     disabled={localQuantity <= (selectedSizeData?.minOrderQuantity || 1)}
-                    className="w-12 h-12 flex items-center justify-center rounded-lg bg-white hover:bg-gray-100 disabled:opacity-40 transition-colors"
+                    className="w-12 h-12 flex items-center justify-center rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-white transition-colors"
                   >
                     <Icon.PiMinus size={18} />
                   </button>
-                  <span className="w-16 text-center font-bold text-lg">{localQuantity}</span>
+                  <div className="w-20 text-center">
+                    <span className="block font-bold text-lg">{localQuantity}</span>
+                    <span className="block text-xs text-gray-400">items</span>
+                  </div>
                   <button
                     onClick={() => handleQuantityChange(1)}
                     disabled={selectedSizeData?.maxOrderQuantity ? localQuantity >= selectedSizeData.maxOrderQuantity : false}
-                    className="w-12 h-12 flex items-center justify-center rounded-lg bg-white hover:bg-gray-100 disabled:opacity-40 transition-colors"
+                    className="w-12 h-12 flex items-center justify-center rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-white transition-colors"
                   >
                     <Icon.PiPlus size={18} />
                   </button>
                 </div>
 
-                <button
-                  onClick={handleAddToCart}
-                  disabled={!inStock || !activeSize || isAddingToCart}
-                  className={`flex-1 py-4 px-8 rounded-xl font-bold text-base transition-all flex items-center justify-center gap-2 ${
-                    !activeSize
-                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                      : !inStock
-                        ? 'bg-red-100 text-red-600 cursor-not-allowed'
-                        : 'bg-gray-900 text-white hover:bg-black shadow-lg hover:shadow-xl'
-                  }`}
-                >
-                  {isAddingToCart ? (
-                    <>
-                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Adding...
-                    </>
-                  ) : !activeSize ? (
-                    <>
-                      <Icon.PiWarningCircle size={20} />
-                      Select a Size
-                    </>
-                  ) : !inStock ? (
-                    <>
-                      <Icon.PiProhibit size={20} />
-                      Out of Stock
-                    </>
-                  ) : (
-                    <>
-                      <Icon.PiShoppingCart size={20} />
-                      Add to Cart
-                      <span className="text-sm font-normal opacity-80">
-                        ({displayCurrencySymbol}{(displayPrice * localQuantity).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')})
-                      </span>
-                    </>
+                <div className="flex-1 flex flex-col gap-2">
+                  <button
+                    onClick={handleAddToCart}
+                    disabled={!inStock || !activeSize || isAddingToCart}
+                    className={`w-full py-4 px-8 rounded-xl font-bold text-base transition-all flex items-center justify-center gap-3 ${
+                      !activeSize
+                        ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                        : !inStock
+                          ? 'bg-red-100 text-red-600 cursor-not-allowed'
+                          : 'bg-gradient-to-r from-gray-900 to-gray-800 text-white hover:from-black hover:to-gray-900 shadow-lg hover:shadow-xl'
+                    }`}
+                  >
+                    {isAddingToCart ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>Adding to Cart...</span>
+                      </>
+                    ) : !activeSize ? (
+                      <>
+                        <Icon.PiWarningCircle size={20} />
+                        <span>Select a Size</span>
+                      </>
+                    ) : !inStock ? (
+                      <>
+                        <Icon.PiProhibit size={20} />
+                        <span>Out of Stock</span>
+                      </>
+                    ) : (
+                      <>
+                        <Icon.PiShoppingCart size={20} />
+                        <span>Add to Cart</span>
+                        <span className="text-sm font-normal opacity-80 bg-white/20 px-2 py-1 rounded-lg">
+                          {displayCurrencySymbol}{(displayPrice * localQuantity).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                        </span>
+                      </>
+                    )}
+                  </button>
+                  {selectedSizeData && inStock && localQuantity > 1 && (
+                    <div className="text-center text-sm text-gray-500">
+                      Total: <span className="font-bold text-gray-900">{displayCurrencySymbol}{(displayPrice * localQuantity).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</span>
+                    </div>
                   )}
-                </button>
+                </div>
               </div>
 
               {/* Action Buttons */}
@@ -623,70 +652,132 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                 </button>
               </div>
 
-              {/* Trust Indicators */}
+              {/* Trust Indicators - Enhanced with vendor-specific info */}
               <div className="grid grid-cols-2 gap-4 py-6 border-t border-gray-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                    <Icon.PiTruck size={20} className="text-green-600" />
+                <div className="flex items-center gap-3 p-3 bg-green-50 rounded-xl">
+                  <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                    <Icon.PiTruck size={22} className="text-green-600" />
                   </div>
                   <div>
-                    <div className="text-sm font-semibold text-gray-900">Free Delivery</div>
-                    <div className="text-xs text-gray-500">Orders over ₦10,000</div>
+                    <div className="text-sm font-bold text-gray-900">Free Delivery</div>
+                    <div className="text-xs text-gray-500">Orders over {displayCurrencySymbol}10,000</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                    <Icon.PiShieldCheck size={20} className="text-blue-600" />
+                <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-xl">
+                  <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                    <Icon.PiShieldCheck size={22} className="text-blue-600" />
                   </div>
                   <div>
-                    <div className="text-sm font-semibold text-gray-900">Secure Payment</div>
+                    <div className="text-sm font-bold text-gray-900">Secure Payment</div>
                     <div className="text-xs text-gray-500">100% Protected</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center">
-                    <Icon.PiArrowUUpLeft size={20} className="text-orange-600" />
+                <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-xl">
+                  <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+                    <Icon.PiArrowUUpLeft size={22} className="text-orange-600" />
                   </div>
                   <div>
-                    <div className="text-sm font-semibold text-gray-900">Easy Returns</div>
+                    <div className="text-sm font-bold text-gray-900">Easy Returns</div>
                     <div className="text-xs text-gray-500">30 Day Policy</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
-                    <Icon.PiCertificate size={20} className="text-purple-600" />
+                <div className="flex items-center gap-3 p-3 bg-purple-50 rounded-xl">
+                  <div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+                    <Icon.PiCertificate size={22} className="text-purple-600" />
                   </div>
                   <div>
-                    <div className="text-sm font-semibold text-gray-900">Authentic</div>
+                    <div className="text-sm font-bold text-gray-900">Authentic</div>
                     <div className="text-xs text-gray-500">Guaranteed</div>
                   </div>
                 </div>
               </div>
 
-              {/* Product Meta */}
-              <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+              {/* Quick Info Cards */}
+              <div className="grid grid-cols-3 gap-3">
+                {productData.isAlcoholic && (
+                  <div className="flex items-center justify-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                    <Icon.PiWine size={18} className="text-amber-600" />
+                    <span className="text-xs font-semibold text-amber-700">18+ Required</span>
+                  </div>
+                )}
                 {productData.abv && (
+                  <div className="flex items-center justify-center gap-2 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                    <Icon.PiFlask size={18} className="text-gray-600" />
+                    <span className="text-xs font-semibold text-gray-700">{productData.abv}% ABV</span>
+                  </div>
+                )}
+                {productData.volumeMl && (
+                  <div className="flex items-center justify-center gap-2 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                    <Icon.PiDrop size={18} className="text-gray-600" />
+                    <span className="text-xs font-semibold text-gray-700">{productData.volumeMl}ml</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Product Meta - Enhanced */}
+              <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                {productData.sku && (
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Alcohol Content</span>
-                    <span className="font-medium text-gray-900">{productData.abv}% ABV</span>
+                    <span className="text-gray-500 flex items-center gap-2">
+                      <Icon.PiBarcode size={14} /> SKU
+                    </span>
+                    <span className="font-mono text-gray-900">{productData.sku}</span>
+                  </div>
+                )}
+                {productData.barcode && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500 flex items-center gap-2">
+                      <Icon.PiBarcode size={14} /> Barcode
+                    </span>
+                    <span className="font-mono text-gray-900">{productData.barcode}</span>
+                  </div>
+                )}
+                {productData.category && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500 flex items-center gap-2">
+                      <Icon.PiTag size={14} /> Category
+                    </span>
+                    <span className="font-medium text-gray-900">{productData.category.name || productData.category}</span>
                   </div>
                 )}
                 {productData.originCountry && (
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Origin</span>
+                    <span className="text-gray-500 flex items-center gap-2">
+                      <Icon.PiGlobe size={14} /> Origin
+                    </span>
                     <span className="font-medium text-gray-900">{productData.originCountry}</span>
                   </div>
                 )}
-                {productData.type && (
+                {productData.region && (
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Category</span>
-                    <span className="font-medium text-gray-900 capitalize">{productData.type.replace(/_/g, ' ')}</span>
+                    <span className="text-gray-500 flex items-center gap-2">
+                      <Icon.PiMapPin size={14} /> Region
+                    </span>
+                    <span className="font-medium text-gray-900">{productData.region}</span>
                   </div>
                 )}
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Availability</span>
-                  <span className={`font-medium ${inStock ? 'text-green-600' : 'text-red-600'}`}>
-                    {inStock ? 'In Stock' : 'Out of Stock'}
+                {productData.producer && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500 flex items-center gap-2">
+                      <Icon.PiFactory size={14} /> Producer
+                    </span>
+                    <span className="font-medium text-gray-900">{productData.producer}</span>
+                  </div>
+                )}
+                {productData.abv && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500 flex items-center gap-2">
+                      <Icon.PiFlask size={14} /> Alcohol
+                    </span>
+                    <span className="font-medium text-gray-900">{productData.abv}% ABV</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-sm pt-2 border-t border-gray-200">
+                  <span className="text-gray-500 flex items-center gap-2">
+                    <Icon.PiPackage size={14} /> Status
+                  </span>
+                  <span className={`font-bold ${inStock ? 'text-green-600' : 'text-red-600'}`}>
+                    {inStock ? '✓ In Stock' : '✗ Out of Stock'}
                   </span>
                 </div>
               </div>
@@ -701,9 +792,9 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
           {/* Tab Navigation */}
           <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
             {[
-              { id: 'description', label: 'Description', icon: PiFileText },
-              { id: 'specifications', label: 'Specifications', icon: PiList },
-              { id: 'reviews', label: 'Reviews', icon: PiChatCircle },
+              { id: 'description', label: 'Description', icon: Icon.PiFileText },
+              { id: 'specifications', label: 'Specifications', icon: Icon.PiList },
+              { id: 'reviews', label: 'Reviews', icon: Icon.PiChatCircle },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -803,8 +894,5 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     </div>
   );
 };
-
-// Import the icons we need
-import { PiFileText, PiList, PiChatCircle } from 'react-icons/pi';
 
 export default ProductDetail;

@@ -3620,6 +3620,9 @@ const searchProducts = async (searchParams = {}) => {
     onSale,
     minRating,
     
+    // Status - passed from controller
+    status = 'approved',
+    
     // Search mode - using semantic search with local embeddings
     searchMode = 'semantic', // 'text', 'semantic', 'hybrid'
     useEmbeddings = true, // Enabled - using local transformers.js model
@@ -3634,6 +3637,13 @@ const searchProducts = async (searchParams = {}) => {
   const baseQuery = {
     status: 'approved',
   };
+  
+  // Build status filter - if explicitly undefined, don't filter by status
+  if (status === undefined || status === '') {
+    // Don't filter by status - get all products
+  } else {
+    baseQuery.status = status || 'approved';
+  }
 
   // Resolve and build category filter
   let categoryFilter = null;

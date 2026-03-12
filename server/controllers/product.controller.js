@@ -570,6 +570,9 @@ const searchProducts = asyncHandler(async (req, res) => {
   // Check if user is super_admin to include pending products
   const isSuperAdmin = req.user?.role === 'super_admin';
 
+  // Get status from query - if empty string, include all statuses
+  const statusParam = req.query.status;
+  
   const searchParams = {
     query,
     category: req.query.category,
@@ -591,6 +594,8 @@ const searchProducts = asyncHandler(async (req, res) => {
     sort: req.query.sort || 'relevance',
     order: req.query.order || 'desc',
     includePending: isSuperAdmin, // Include pending products for super admin
+    // Allow passing status parameter - if empty, won't filter by status
+    status: statusParam === '' ? undefined : (statusParam || 'approved'),
   };
 
   const result = await productService.searchProducts(searchParams);
