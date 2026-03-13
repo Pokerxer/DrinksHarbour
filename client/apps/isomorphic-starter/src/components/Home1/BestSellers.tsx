@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { motion, AnimatePresence, useScroll, useTransform, useSpring, useInView } from 'framer-motion';
+import { motion, AnimatePresence, useInView } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
 import { useModalCartContext } from '@/context/ModalCartContext';
 import { useWishlist } from '@/context/WishlistContext';
@@ -255,17 +255,8 @@ const BestSellers: React.FC<BestSellersProps> = ({ limit = 5 }) => {
   const [activeTenant, setActiveTenant] = useState<string | null>(null);
   const [activeSize, setActiveSize] = useState<string | null>(null);
 
-  useEffect(() => {
-    setScrollTarget(containerRef);
-  }, []);
-
   const containerRef = useRef<HTMLDivElement>(null);
-  const [scrollTarget, setScrollTarget] = useState<React.RefObject<HTMLElement> | undefined>(undefined);
   const isInView = useInView(containerRef, { once: true, margin: '-100px' });
-  const { scrollYProgress } = useScroll({ target: scrollTarget, offset: ['start end', 'end start'] });
-
-  const backgroundY = useTransform(scrollYProgress ?? 0, [0, 1], ['0%', '20%']);
-  const backgroundYSpring = useSpring(backgroundY, { stiffness: 80, damping: 25 });
 
   const featuredAvailableAt = useMemo(() => featuredProduct?.availableAt || [], [featuredProduct]);
   

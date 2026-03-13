@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { motion, AnimatePresence, useScroll, useTransform, useSpring } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
 import { useModalCartContext } from '@/context/ModalCartContext';
 import { useWishlist } from '@/context/WishlistContext';
@@ -207,18 +207,7 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
   subtitle = "Handpicked selections from our premium collection"
 }) => {
   const sectionRef = useRef<HTMLDivElement>(null);
-  const [scrollTarget, setScrollTarget] = useState<React.RefObject<HTMLElement> | undefined>(undefined);
   
-  const { scrollYProgress } = useScroll({
-    target: scrollTarget,
-    offset: ["start end", "end start"]
-  });
-  
-  const y1 = useTransform(scrollYProgress ?? 0, [0, 1], [0, -50]);
-  const y2 = useTransform(scrollYProgress ?? 0, [0, 1], [0, 50]);
-  const springY1 = useSpring(y1, { stiffness: 100, damping: 30 });
-  const springY2 = useSpring(y2, { stiffness: 100, damping: 30 });
-
   const { addToCart, cartState } = useCart();
   const { openModalCart } = useModalCartContext();
   const { wishlistState, addToWishlist, removeFromWishlist } = useWishlist();
@@ -233,10 +222,6 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
   const [hoveredProduct, setHoveredProduct] = useState<string | null>(null);
   const [imageLoaded, setImageLoaded] = useState<Record<string, boolean>>({});
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-
-  useEffect(() => {
-    setScrollTarget(sectionRef);
-  }, []);
 
   useEffect(() => {
     fetchFeaturedProducts();
