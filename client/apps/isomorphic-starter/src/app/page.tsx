@@ -1,15 +1,14 @@
 import React from "react";
-import Collection from "@/components/Home1/Collection";
-import TabFeatures from "@/components/Home1/TabFeatures";
-import Instagram from "@/components/Home1/Instagram";
-import Brand from "@/components/Home1/Brand";
-import FlashSale from "@/components/Home1/FlashSale";
-import Benefit from "@/components/Home1/Benefit";
-import NewArrivals from "@/components/Home1/NewArrivals";
-import BestSellers from "@/components/Home1/BestSellers";
-import FeaturedDeals from "@/components/Home1/FeaturedDeals";
 import AnnouncementBanner from "@/components/Banner/AnnouncementBanner";
 import CategoryBanner from "@/components/Banner/CategoryBanner";
+import NewArrivals from "@/components/Home1/NewArrivals";
+import BestSellers from "@/components/Home1/BestSellers";
+import FlashSale from "@/components/Home1/FlashSale";
+import Collection from "@/components/Home1/Collection";
+import TabFeatures from "@/components/Home1/TabFeatures";
+import Benefit from "@/components/Home1/Benefit";
+import Instagram from "@/components/Home1/Instagram";
+import Brand from "@/components/Home1/Brand";
 
 export default function Home() {
   return (
@@ -20,7 +19,6 @@ export default function Home() {
       </div>
 
       <NewArrivals />
-      <FeaturedDeals />
       <BestSellers />
       <FlashSale />
       <Collection />

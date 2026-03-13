@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useScroll, useTransform, useSpring } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
 import { useModalCartContext } from '@/context/ModalCartContext';
 import { useWishlist } from '@/context/WishlistContext';
@@ -211,6 +211,16 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({
   const sectionRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   
+  const { scrollYProgress } = useScroll({
+    target: sectionRef,
+    offset: ["start end", "end start"]
+  });
+  
+  const y1 = useTransform(scrollYProgress, [0, 1], [0, -30]);
+  const y2 = useTransform(scrollYProgress, [0, 1], [0, 30]);
+  const springY1 = useSpring(y1, { stiffness: 100, damping: 30 });
+  const springY2 = useSpring(y2, { stiffness: 100, damping: 30 });
+
   const { addToCart, cartState } = useCart();
   const { openModalCart } = useModalCartContext();
   const { wishlistState, addToWishlist, removeFromWishlist } = useWishlist();
@@ -427,8 +437,8 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({
   return (
     <section ref={sectionRef} className="py-16 md:py-24 bg-gradient-to-b from-gray-50 via-white to-gray-50 overflow-hidden relative">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-20 -right-20 w-[500px] h-[500px] bg-gradient-to-br from-green-100/50 to-emerald-100/50 rounded-full blur-3xl" />
-        <div className="absolute -bottom-20 -left-20 w-[500px] h-[500px] bg-gradient-to-br from-blue-100/50 to-purple-100/50 rounded-full blur-3xl" />
+        <motion.div style={{ y: springY1 }} className="absolute -top-20 -right-20 w-[500px] h-[500px] bg-gradient-to-br from-green-100/50 to-emerald-100/50 rounded-full blur-3xl" />
+        <motion.div style={{ y: springY2 }} className="absolute -bottom-20 -left-20 w-[500px] h-[500px] bg-gradient-to-br from-blue-100/50 to-purple-100/50 rounded-full blur-3xl" />
       </div>
 
       <AnimatePresence>

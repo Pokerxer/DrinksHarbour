@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { motion, AnimatePresence, useInView } from 'framer-motion';
+import { motion, AnimatePresence, useScroll, useTransform, useSpring, useInView } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
 import { useModalCartContext } from '@/context/ModalCartContext';
 import { useWishlist } from '@/context/WishlistContext';
@@ -257,6 +257,10 @@ const BestSellers: React.FC<BestSellersProps> = ({ limit = 5 }) => {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const isInView = useInView(containerRef, { once: true, margin: '-100px' });
+  const { scrollYProgress } = useScroll({ target: containerRef, offset: ['start end', 'end start'] });
+
+  const backgroundY = useTransform(scrollYProgress, [0, 1], ['0%', '20%']);
+  const backgroundYSpring = useSpring(backgroundY, { stiffness: 80, damping: 25 });
 
   const featuredAvailableAt = useMemo(() => featuredProduct?.availableAt || [], [featuredProduct]);
   
@@ -473,10 +477,10 @@ const BestSellers: React.FC<BestSellersProps> = ({ limit = 5 }) => {
 
   return (
     <section ref={containerRef} className="py-12 sm:py-16 md:py-20 lg:py-24 relative overflow-hidden bg-gradient-to-br from-purple-50 via-white to-pink-50">
-      <div className="absolute inset-0 pointer-events-none">
+      <motion.div className="absolute inset-0 pointer-events-none" style={{ y: backgroundYSpring }}>
         <motion.div className="absolute top-10 sm:top-20 -left-10 sm:left-10 w-48 sm:w-64 md:w-96 h-48 sm:h-64 md:h-96 bg-purple-200/30 rounded-full blur-xl sm:blur-3xl" animate={{ scale: [1, 1.2, 1], x: [0, 20, 0] }} transition={{ repeat: Infinity, duration: 12 }} />
         <motion.div className="absolute bottom-10 sm:bottom-20 -right-10 sm:right-10 w-40 sm:w-64 h-40 sm:h-64 bg-pink-200/30 rounded-full blur-xl sm:blur-3xl" animate={{ scale: [1.2, 1, 1.2], x: [0, -20, 0] }} transition={{ repeat: Infinity, duration: 10 }} />
-      </div>
+      </motion.div>
 
       <AnimatePresence>{toast && (
         <motion.div 

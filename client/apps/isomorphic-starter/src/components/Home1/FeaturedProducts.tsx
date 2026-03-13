@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useScroll, useTransform, useSpring } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
 import { useModalCartContext } from '@/context/ModalCartContext';
 import { useWishlist } from '@/context/WishlistContext';
@@ -207,7 +207,16 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
   subtitle = "Handpicked selections from our premium collection"
 }) => {
   const sectionRef = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: sectionRef,
+    offset: ["start end", "end start"]
+  });
   
+  const y1 = useTransform(scrollYProgress, [0, 1], [0, -50]);
+  const y2 = useTransform(scrollYProgress, [0, 1], [0, 50]);
+  const springY1 = useSpring(y1, { stiffness: 100, damping: 30 });
+  const springY2 = useSpring(y2, { stiffness: 100, damping: 30 });
+
   const { addToCart, cartState } = useCart();
   const { openModalCart } = useModalCartContext();
   const { wishlistState, addToWishlist, removeFromWishlist } = useWishlist();
@@ -427,8 +436,8 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
   return (
     <section ref={sectionRef} className="py-16 md:py-24 bg-gradient-to-b from-purple-50 via-white to-purple-50 overflow-hidden relative">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-20 -right-20 w-[500px] h-[500px] bg-gradient-to-br from-purple-200/50 to-indigo-200/50 rounded-full blur-3xl" />
-        <div className="absolute -bottom-20 -left-20 w-[500px] h-[500px] bg-gradient-to-br from-pink-200/50 to-rose-200/50 rounded-full blur-3xl" />
+        <motion.div style={{ y: springY1 }} className="absolute -top-20 -right-20 w-[500px] h-[500px] bg-gradient-to-br from-purple-200/50 to-indigo-200/50 rounded-full blur-3xl" />
+        <motion.div style={{ y: springY2 }} className="absolute -bottom-20 -left-20 w-[500px] h-[500px] bg-gradient-to-br from-pink-200/50 to-rose-200/50 rounded-full blur-3xl" />
       </div>
 
       <AnimatePresence>

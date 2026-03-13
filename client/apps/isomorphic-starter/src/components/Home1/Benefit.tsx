@@ -75,7 +75,7 @@ const Benefit: React.FC<BenefitProps> = ({ className = '' }) => {
       y: 0,
       scale: 1,
       transition: {
-        type: 'spring' as const,
+        type: 'spring',
         stiffness: 100,
         damping: 15,
         duration: 0.6

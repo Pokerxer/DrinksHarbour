@@ -8,7 +8,7 @@ import { Autoplay, Navigation } from 'swiper/modules';
 import type { Swiper as SwiperType } from 'swiper';
 import 'swiper/css';
 import 'swiper/css/navigation';
-import { motion, AnimatePresence, useInView } from 'framer-motion';
+import { motion, AnimatePresence, useScroll, useTransform, useSpring, useInView } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
 import { useModalCartContext } from '@/context/ModalCartContext';
 import { useWishlist } from '@/context/WishlistContext';
@@ -173,9 +173,6 @@ const mapApiProductToProduct = (apiProduct: ApiProduct): Product => {
 };
 
 const TrendingProduct: React.FC<TrendingProductProps> = ({ limit = 8 }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const isInView = useInView(containerRef, { once: true, margin: '-100px' });
-  
   const { addToCart } = useCart();
   const { openModalCart } = useModalCartContext();
   const { wishlistState, addToWishlist, removeFromWishlist } = useWishlist();
@@ -189,6 +186,19 @@ const TrendingProduct: React.FC<TrendingProductProps> = ({ limit = 8 }) => {
   const [addingToCart, setAddingToCart] = useState<string | null>(null);
   const [imageLoaded, setImageLoaded] = useState<Record<string, boolean>>({});
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isInView = useInView(containerRef, { once: true, margin: '-100px' });
+  const { scrollYProgress } = useScroll({
+    target: containerRef,
+    offset: ['start end', 'end start'],
+  });
+
+  const backgroundY = useTransform(scrollYProgress, [0, 1], ['0%', '30%']);
+  const opacity = useTransform(scrollYProgress, [0, 0.3, 0.7, 1], [0.3, 1, 1, 0.3]);
+
+  const springConfig = { stiffness: 100, damping: 30, restDelta: 0.001 };
+  const backgroundYSpring = useSpring(backgroundY, springConfig);
 
   useEffect(() => {
     const fetchTrendingProducts = async () => {
@@ -350,7 +360,10 @@ const TrendingProduct: React.FC<TrendingProductProps> = ({ limit = 8 }) => {
 
   return (
     <section ref={containerRef} className="trending-block py-16 sm:py-24 relative overflow-hidden bg-gradient-to-b from-white via-amber-50/30 to-white">
-      <div className="absolute inset-0 bg-gradient-to-b from-white via-amber-50/30 to-white" />
+      <motion.div
+        className="absolute inset-0 bg-gradient-to-b from-white via-amber-50/30 to-white"
+        style={{ y: backgroundYSpring, opacity }}
+      />
 
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <motion.div
