@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Instrument_Sans } from 'next/font/google';
+import { Inter } from 'next/font/google';
 import '@/styles/styles.scss';
 import GlobalProvider from './GlobalProvider';
 import ModalCart from '@/components/Modal/ModalCart';
@@ -11,7 +11,7 @@ import { Header } from '@/components/Header';
 import ModalNewsletter from '@/components/Modal/ModalNewsletter';
 import Footer from '@/components/Footer/Footer';
 
-const instrument = Instrument_Sans({ subsets: ['latin'] });
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: 'DrinksHarbour - Premium Beverages Delivered',
@@ -26,7 +26,7 @@ export default function RootLayout({
   return (
     <GlobalProvider>
       <html lang="en">
-        <body className={instrument.className}>
+        <body className={inter.className}>
           <Header variant="default" showAnnouncement={true} />
           {children}
           <ModalCart />
