@@ -78,6 +78,29 @@ export interface ProductType {
     inStock?: boolean;
   }>;
 
+  // Vendor/Tenant availability (for multi-tenant beverage platform)
+  availableAt?: Array<{
+    _id: string;
+    tenant: {
+      _id: string;
+      name: string;
+      slug: string;
+      logo?: string;
+    };
+    sizes: Array<{
+      _id: string;
+      size: string;
+      stock: number;
+      pricing: {
+        websitePrice: number;
+        currencySymbol?: string;
+      };
+    }>;
+    isOnSale?: boolean;
+    saleDiscountValue?: number;
+    sku?: string;
+  }>;
+
   // Variations (for legacy compatibility)
   variation?: Array<{
     id: string;

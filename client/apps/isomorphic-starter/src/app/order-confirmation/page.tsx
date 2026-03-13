@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+export const dynamic = 'force-dynamic';
+
+import React, { useState, useEffect, Suspense } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -52,9 +54,9 @@ interface OrderData {
   }>;
 }
 
-const OrderConfirmation = () => {
+function OrderConfirmationContent() {
   const searchParams = useSearchParams();
-  const orderId = searchParams.get('orderId');
+  const orderId = searchParams?.get('orderId');
 
   const [mounted, setMounted] = useState(false);
   const [order, setOrder] = useState<OrderData | null>(null);
@@ -318,4 +320,14 @@ const OrderConfirmation = () => {
   );
 };
 
-export default OrderConfirmation;
+export default function OrderConfirmation() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="animate-spin w-12 h-12 border-4 border-gray-200 border-t-gray-900 rounded-full"></div>
+      </div>
+    }>
+      <OrderConfirmationContent />
+    </Suspense>
+  );
+}

@@ -167,7 +167,7 @@ const InfiniteProductGrid: React.FC<InfiniteProductGridProps> = ({
             className="animate-fade-in-up"
             style={{ animationDelay: `${index * 50}ms` }}
           >
-            <ProductCard data={item} type="grid" />
+            <ProductCard data={item as any} type="grid" />
           </div>
         ))}
       </div>

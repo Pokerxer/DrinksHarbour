@@ -40,10 +40,10 @@ const ProductGrid: React.FC<ProductGridProps> = ({ data, style = 'style-1' }) =>
   const getImage = () => {
     if (activeColor) {
       const variant = data.variation?.find((item) => item.color === activeColor);
-      if (variant?.image) return variant.image;
+      if (variant?.image) return String(variant.image);
     }
-    if (data.thumbImage?.[0]) return data.thumbImage[0];
-    if (data.images?.[0]) return data.images[0];
+    if (data.thumbImage?.[0]) return String(data.thumbImage[0]);
+    if (data.images?.[0]) return String(data.images[0]);
     return '/images/placeholder-product.png';
   };
 

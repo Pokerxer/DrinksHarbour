@@ -23,6 +23,7 @@ import Rate from '@/components/Other/Rate';
 import ProductSpecifications from './ProductSpecifications';
 import ProductReviews from './ProductReviews';
 import RelatedProducts from './RelatedProducts';
+import { ProductType } from '@/types/product.types';
 import * as Icon from 'react-icons/pi';
 
 const VENDOR_PALETTE = [

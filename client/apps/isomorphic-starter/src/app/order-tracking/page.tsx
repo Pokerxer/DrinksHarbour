@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+export const dynamic = 'force-dynamic';
+
+import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -55,7 +57,7 @@ const getStatusIndex = (status: string) => {
   return index >= 0 ? index : 0;
 };
 
-const OrderTracking = () => {
+function OrderTrackingContent() {
   const searchParams = useSearchParams();
   const [orderNumber, setOrderNumber] = useState(searchParams.get('orderId') || '');
   const [email, setEmail] = useState(searchParams.get('email') || '');
@@ -385,4 +387,14 @@ const OrderTracking = () => {
   );
 };
 
-export default OrderTracking;
+export default function OrderTracking() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="animate-spin w-12 h-12 border-4 border-gray-200 border-t-gray-900 rounded-full"></div>
+      </div>
+    }>
+      <OrderTrackingContent />
+    </Suspense>
+  );
+}

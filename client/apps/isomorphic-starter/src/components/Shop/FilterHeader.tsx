@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 import { FilterState, SortOption } from '@/types/filter.types';
 
@@ -138,9 +138,7 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
         {/* Left Section */}
         <div className="flex flex-wrap items-center gap-3">
           {/* Filter Button */}
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
+          <button
             onClick={onOpenSidebar}
             onMouseEnter={() => setIsFilterTooltipVisible(true)}
             onMouseLeave={() => setIsFilterTooltipVisible(false)}
@@ -149,41 +147,25 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
           >
             <Icon.PiFadersHorizontal size={18} />
             <span className="font-medium">Filters</span>
-            <AnimatePresence>
-              {activeFiltersCount > 0 && (
-                <motion.span
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  exit={{ scale: 0 }}
-                  className="px-2 py-0.5 bg-white text-gray-900 text-xs font-bold rounded-full"
-                >
-                  {activeFiltersCount}
-                </motion.span>
-              )}
-            </AnimatePresence>
+            {activeFiltersCount > 0 && (
+              <span className="px-2 py-0.5 bg-white text-gray-900 text-xs font-bold rounded-full">
+                {activeFiltersCount}
+              </span>
+            )}
             
             {/* Tooltip */}
-            <AnimatePresence>
-              {isFilterTooltipVisible && hasActiveFilters && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10 }}
-                  className="absolute left-0 -top-12 bg-gray-800 text-white text-xs px-3 py-2 rounded-lg whitespace-nowrap z-10"
-                >
-                  {activeFiltersCount} active filter{activeFiltersCount !== 1 ? 's' : ''}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </motion.button>
+            {isFilterTooltipVisible && hasActiveFilters && (
+              <div className="absolute left-0 -top-12 bg-gray-800 text-white text-xs px-3 py-2 rounded-lg whitespace-nowrap z-10">
+                {activeFiltersCount} active filter{activeFiltersCount !== 1 ? 's' : ''}
+              </div>
+            )}
+          </button>
 
           {/* Layout Toggles */}
           <div className="hidden md:flex items-center gap-2 border-l border-gray-200 pl-4">
             {LAYOUT_OPTIONS.map(({ value, label }) => (
-              <motion.button
+              <button
                 key={value}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
                 onClick={() => onLayoutChange(value)}
                 className={`p-2.5 rounded-lg border-2 transition-all ${
                   layoutCol === value
@@ -195,9 +177,8 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
               >
                 <div className="flex items-center gap-0.5">
                   {Array.from({ length: value }).map((_, i) => (
-                    <motion.div
+                    <div
                       key={i}
-                      layout
                       className={`w-1.5 rounded-sm transition-colors ${
                         layoutCol === value ? 'bg-gray-900' : 'bg-gray-300'
                       }`}
@@ -205,17 +186,13 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
                     />
                   ))}
                 </div>
-              </motion.button>
+              </button>
             ))}
           </div>
 
           {/* Product Count */}
           {typeof totalProducts === 'number' && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="hidden sm:flex items-center gap-2 text-sm text-gray-500"
-            >
+            <div className="hidden sm:flex items-center gap-2 text-sm text-gray-500">
               <Icon.PiPackage size={18} />
               <span>
                 {isLoading ? (
@@ -227,7 +204,7 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
                   </>
                 )}
               </span>
-            </motion.div>
+            </div>
           )}
         </div>
 
@@ -235,9 +212,7 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
         <div className="flex flex-wrap items-center gap-3">
           {/* Sort Dropdown */}
           <div className="relative" ref={sortRef}>
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+            <button
               onClick={() => setIsSortOpen(!isSortOpen)}
               className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 hover:border-gray-400 rounded-lg transition-colors bg-white"
               aria-label="Sort options"
@@ -247,39 +222,27 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
               <span className="font-medium hidden sm:inline">
                 {sortOptions.find((o) => o.value === filters.sortOption)?.label || 'Sort by'}
               </span>
-              <motion.div
-                animate={{ rotate: isSortOpen ? 180 : 0 }}
-                transition={{ duration: 0.2 }}
-              >
+              <div className={isSortOpen ? 'rotate-180' : ''}>
                 <Icon.PiCaretDown size={16} />
-              </motion.div>
-            </motion.button>
+              </div>
+            </button>
 
-            <AnimatePresence>
-              {isSortOpen && (
+            {isSortOpen && (
                 <>
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
+                  <div
                     className="fixed inset-0 z-10"
                     onClick={() => setIsSortOpen(false)}
                     aria-hidden="true"
                   />
-                  <motion.div
-                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                    transition={{ duration: 0.15 }}
+                  <div
                     className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-20 overflow-hidden"
                   >
                     <div className="px-4 py-2 text-xs font-medium text-gray-400 uppercase tracking-wider">
                       Sort by
                     </div>
                     {sortOptions.map((option) => (
-                      <motion.button
+                      <button
                         key={option.value}
-                        whileHover={{ backgroundColor: 'rgba(0,0,0,0.05)' }}
                         onClick={() => {
                           updateFilter('sortOption', option.value);
                           setIsSortOpen(false);
@@ -295,17 +258,15 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
                         {filters.sortOption === option.value && (
                           <Icon.PiCheck size={18} className="text-gray-900" />
                         )}
-                      </motion.button>
+                      </button>
                     ))}
-                  </motion.div>
+                  </div>
                 </>
               )}
-            </AnimatePresence>
-          </div>
+            </div>
 
           {/* On Sale Toggle */}
-          <motion.label
-            whileHover={{ scale: 1.02 }}
+          <label
             className="flex items-center gap-2 cursor-pointer group select-none"
           >
             <div className="relative">
@@ -315,20 +276,13 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
                 onChange={(e) => updateFilter('showOnlySale', e.target.checked)}
                 className="sr-only peer"
               />
-              <motion.div
-                className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-100 rounded-full peer cursor-pointer"
-                animate={{
-                  backgroundColor: filters.showOnlySale ? '#EF4444' : '#E5E7EB'
-                }}
+              <div
+                className={`w-11 h-6 ${filters.showOnlySale ? 'bg-red-500' : 'bg-gray-200'} peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-100 rounded-full peer cursor-pointer transition-colors`}
               >
-                <motion.div
-                  className="absolute top-[2px] left-[2px] bg-white border-gray-300 border rounded-full h-5 w-5 shadow-sm"
-                  animate={{
-                    x: filters.showOnlySale ? 20 : 0
-                  }}
-                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                <div
+                  className={`absolute top-[2px] ${filters.showOnlySale ? 'left-[22px]' : 'left-[2px]'} bg-white border-gray-300 border rounded-full h-5 w-5 shadow-sm transition-transform`}
                 />
-              </motion.div>
+              </div>
             </div>
             <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900 transition-colors hidden sm:flex items-center gap-1.5">
               {filters.showOnlySale ? (
@@ -340,64 +294,48 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
                 'On Sale'
               )}
             </span>
-          </motion.label>
+          </label>
         </div>
       </div>
 
       {/* Active Filters Bar */}
-      <AnimatePresence>
-        {hasActiveFilters && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-gray-100">
-              <span className="text-xs text-gray-500 uppercase font-medium tracking-wide">
-                Active filters:
-              </span>
-              
-              {activeFiltersList.map(({ key, value, label }, index) => (
-                <motion.button
-                  key={`${key}-${index}`}
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.8, opacity: 0 }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => updateFilter(key, null)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                    key === 'showOnlySale'
-                      ? 'bg-red-100 hover:bg-red-200 text-red-700'
-                      : key === 'minRating'
-                      ? 'bg-yellow-100 hover:bg-yellow-200 text-yellow-700'
-                      : key === 'priceRange'
-                      ? 'bg-green-100 hover:bg-green-200 text-green-700'
-                      : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                  }`}
-                >
-                  {label}
-                  <Icon.PiX size={12} />
-                </motion.button>
-              ))}
-              
-              {/* Clear All Button */}
-              <motion.button
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleClearAll}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-white rounded-full text-xs font-medium transition-colors ml-2"
+      {hasActiveFilters && (
+        <div className="overflow-hidden">
+          <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-gray-100">
+            <span className="text-xs text-gray-500 uppercase font-medium tracking-wide">
+              Active filters:
+            </span>
+            
+            {activeFiltersList.map(({ key, value, label }, index) => (
+              <button
+                key={`${key}-${index}`}
+                onClick={() => updateFilter(key, null)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  key === 'showOnlySale'
+                    ? 'bg-red-100 hover:bg-red-200 text-red-700'
+                    : key === 'minRating'
+                    ? 'bg-yellow-100 hover:bg-yellow-200 text-yellow-700'
+                    : key === 'priceRange'
+                    ? 'bg-green-100 hover:bg-green-200 text-green-700'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
               >
-                <Icon.PiTrash size={12} />
-                Clear All
-              </motion.button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                {label}
+                <Icon.PiX size={12} />
+              </button>
+            ))}
+            
+            {/* Clear All Button */}
+            <button
+              onClick={handleClearAll}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-white rounded-full text-xs font-medium transition-colors ml-2"
+            >
+              <Icon.PiTrash size={12} />
+              Clear All
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

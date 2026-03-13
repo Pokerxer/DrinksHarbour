@@ -1,6 +1,6 @@
 import { z } from "zod";
-import isEmpty from "lodash/isEmpty";
-import { messages } from "@/config/messages"; // form zod validation schema
+import { messages } from "@/config/messages";
+
 export const productDetailsSchema = z.object({
   productSize: z.coerce.number({
     invalid_type_error: messages.productSizeRequired,

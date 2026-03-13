@@ -1,7 +1,4 @@
-'use client';
-
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 import Slider from 'rc-slider';
 import 'rc-slider/assets/index.css';
@@ -51,9 +48,8 @@ const FilterSection: React.FC<FilterSectionProps> = ({
 
   return (
     <div className="border-b border-gray-200 last:border-b-0">
-      <motion.button
-        whileHover={{ backgroundColor: 'rgba(0,0,0,0.02)' }}
-        className="w-full flex items-center justify-between py-4 px-4 transition-colors"
+      <button
+        className="w-full flex items-center justify-between py-4 px-4 transition-colors hover:bg-gray-50"
         onClick={() => setIsOpen(!isOpen)}
       >
         <div className="flex items-center gap-3">
@@ -65,22 +61,14 @@ const FilterSection: React.FC<FilterSectionProps> = ({
             </span>
           )}
         </div>
-        <motion.div
-          animate={{ rotate: isOpen ? 180 : 0 }}
-          transition={{ duration: 0.2 }}
+        <div
+          className={isOpen ? 'rotate-180' : ''}
         >
           <Icon.PiCaretDown size={18} className="text-gray-400" />
-        </motion.div>
-      </motion.button>
-      <AnimatePresence initial={false}>
-        {isOpen && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="overflow-hidden"
-          >
+        </div>
+      </button>
+      {isOpen && (
+          <div className="overflow-hidden">
             <div className="pb-4 px-4">
               {isLoading ? (
                 <div className="space-y-2">
@@ -92,9 +80,8 @@ const FilterSection: React.FC<FilterSectionProps> = ({
                 children
               )}
             </div>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
     </div>
   );
 };
@@ -281,29 +268,18 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
   return (
     <>
       {/* Backdrop */}
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
+      {open && (
+          <div
             className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
             onClick={onClose}
             aria-hidden="true"
           />
         )}
-      </AnimatePresence>
 
       {/* Sidebar */}
-      <AnimatePresence>
-        {open && (
-          <motion.aside
+      {open && (
+          <aside
             ref={sidebarRef}
-            initial={{ x: '-100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '-100%' }}
-            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
             className="fixed top-0 left-0 h-full w-full max-w-md bg-white shadow-2xl z-50"
             role="dialog"
             aria-label="Product filters"
@@ -315,39 +291,30 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                 <div className="flex items-center gap-3">
                   <Icon.PiFadersHorizontal size={24} className="text-gray-900" />
                   <h2 className="text-xl font-bold">Filters</h2>
-                  <AnimatePresence>
-                    {activeFiltersCount > 0 && (
-                      <motion.span
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        exit={{ scale: 0 }}
+                  {activeFiltersCount > 0 && (
+                      <span
                         className="px-2.5 py-0.5 bg-gray-900 text-white text-sm font-medium rounded-full"
                       >
                         {activeFiltersCount}
-                      </motion.span>
+                      </span>
                     )}
-                  </AnimatePresence>
                 </div>
                 <div className="flex items-center gap-2">
                   {activeFiltersCount > 0 && (
-                    <motion.button
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
+                    <button
                       onClick={handleClearAll}
                       className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                     >
                       Clear All
-                    </motion.button>
+                    </button>
                   )}
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
+                  <button
                     onClick={onClose}
                     className="p-2 hover:bg-gray-100 rounded-full transition-colors"
                     aria-label="Close filters"
                   >
                     <Icon.PiX size={20} />
-                  </motion.button>
+                  </button>
                 </div>
               </div>
 
@@ -367,10 +334,8 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                         const isSelected = filters.type === item;
                         
                         return (
-                          <motion.button
+                          <button
                             key={item}
-                            whileHover={{ x: 4 }}
-                            whileTap={{ scale: 0.98 }}
                             className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${
                               isSelected
                                 ? 'bg-gray-900 text-white shadow-md'
@@ -382,7 +347,7 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                             <span className={`text-xs ${isSelected ? 'text-gray-300' : 'text-gray-400'}`}>
                               {count}
                             </span>
-                          </motion.button>
+                          </button>
                         );
                       })}
                     </div>
@@ -403,10 +368,8 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                         const isSelected = filters.categoryType === item;
                         
                         return (
-                          <motion.button
+                          <button
                             key={item}
-                            whileHover={{ x: 4 }}
-                            whileTap={{ scale: 0.98 }}
                             className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${
                               isSelected
                                 ? 'bg-gray-900 text-white shadow-md'
@@ -418,7 +381,7 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                             <span className={`text-xs ${isSelected ? 'text-gray-300' : 'text-gray-400'}`}>
                               {count}
                             </span>
-                          </motion.button>
+                          </button>
                         );
                       })}
                     </div>
@@ -468,10 +431,8 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                           const isSelected = filters.brand === item;
                           
                           return (
-                            <motion.button
+                            <button
                               key={item}
-                              whileHover={{ x: 4 }}
-                              whileTap={{ scale: 0.98 }}
                               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${
                                 isSelected
                                   ? 'bg-gray-900 text-white shadow-md'
@@ -483,7 +444,7 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                               <span className={`text-xs ${isSelected ? 'text-gray-300' : 'text-gray-400'}`}>
                                 {count}
                               </span>
-                            </motion.button>
+                            </button>
                           );
                         })
                       ) : (
@@ -509,10 +470,8 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                         const isSelected = filters.originCountry === item;
                         
                         return (
-                          <motion.button
+                          <button
                             key={item}
-                            whileHover={{ x: 4 }}
-                            whileTap={{ scale: 0.98 }}
                             className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${
                               isSelected
                                 ? 'bg-gray-900 text-white shadow-md'
@@ -524,7 +483,7 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                             <span className={`text-xs ${isSelected ? 'text-gray-300' : 'text-gray-400'}`}>
                               {count}
                             </span>
-                          </motion.button>
+                          </button>
                         );
                       })}
                     </div>
@@ -544,11 +503,10 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                         const isSelected = filters.size === item;
                         
                         return (
-                          <motion.button
+                          <button
                             key={item}
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            className={`w-14 h-14 flex items-center justify-center rounded-lg border-2 text-sm font-medium transition-all ${
+
+className={`w-14 h-14 flex items-center justify-center rounded-lg border-2 text-sm font-medium transition-all ${
                               isSelected
                                 ? 'border-gray-900 bg-gray-900 text-white shadow-md'
                                 : 'border-gray-200 hover:border-gray-400 text-gray-700 hover:bg-gray-50'
@@ -557,7 +515,7 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                             aria-label={`Size ${item}`}
                           >
                             {item}
-                          </motion.button>
+                          </button>
                         );
                       })}
                     </div>
@@ -578,11 +536,10 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                         const isActive = priceRange[0] === preset.min && priceRange[1] === preset.max;
                         
                         return (
-                          <motion.button
+                          <button
                             key={preset.label}
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => handlePricePresetClick(preset)}
+
+onClick={() => handlePricePresetClick(preset)}
                             className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-all ${
                               isActive
                                 ? 'bg-gray-900 text-white border-gray-900'
@@ -590,7 +547,7 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                             }`}
                           >
                             {preset.label}
-                          </motion.button>
+                          </button>
                         );
                       })}
                     </div>
@@ -668,20 +625,15 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                     </div>
 
                     {/* Clear Price */}
-                    <AnimatePresence>
-                      {isPriceFiltered && (
-                        <motion.button
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          exit={{ opacity: 0, height: 0 }}
-                          onClick={handleClearPrice}
-                          className="w-full py-2 text-sm text-gray-500 hover:text-gray-900 transition-colors flex items-center justify-center gap-2"
-                        >
-                          <Icon.PiArrowCounterClockwise size={16} />
-                          Reset price filter
-                        </motion.button>
-                      )}
-                    </AnimatePresence>
+                    {isPriceFiltered && (
+                      <button
+                        onClick={handleClearPrice}
+                        className="w-full py-2 text-sm text-gray-500 hover:text-gray-900 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Icon.PiArrowCounterClockwise size={16} />
+                        Reset price filter
+                      </button>
+                    )}
                   </div>
                 </FilterSection>
 
@@ -700,10 +652,8 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                         const isSelected = filters.flavorCategory === item;
                         
                         return (
-                          <motion.button
+                          <button
                             key={item}
-                            whileHover={{ x: 4 }}
-                            whileTap={{ scale: 0.98 }}
                             className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${
                               isSelected
                                 ? 'bg-gray-900 text-white shadow-md'
@@ -715,7 +665,7 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                             <span className={`text-xs ${isSelected ? 'text-gray-300' : 'text-gray-400'}`}>
                               {count}
                             </span>
-                          </motion.button>
+                          </button>
                         );
                       })}
                     </div>
@@ -735,10 +685,8 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                       const isSelected = filters.minRating === rating;
                       
                       return (
-                        <motion.button
+                        <button
                           key={rating}
-                          whileHover={{ x: 4 }}
-                          whileTap={{ scale: 0.98 }}
                           className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${
                             isSelected
                               ? 'bg-gray-900 text-white shadow-md'
@@ -756,7 +704,7 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                             ))}
                             <span className="text-sm ml-1">& up</span>
                           </div>
-                        </motion.button>
+                        </button>
                       );
                     })}
                   </div>
@@ -764,8 +712,7 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
 
                 {/* On Sale Toggle */}
                 <div className="p-4 border-b border-gray-200">
-                  <motion.label
-                    whileHover={{ scale: 1.01 }}
+                  <label
                     className="flex items-center gap-3 cursor-pointer group p-2 -m-2 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     <div className="relative">
@@ -775,21 +722,13 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                         onChange={(e) => updateFilter('showOnlySale', e.target.checked)}
                         className="sr-only peer"
                       />
-                      <motion.div
-                        className="w-11 h-6 rounded-full peer cursor-pointer"
-                        animate={{
-                          backgroundColor: filters.showOnlySale ? '#EF4444' : '#E5E7EB'
-                        }}
-                        transition={{ duration: 0.2 }}
+                      <div
+                        className={`w-11 h-6 rounded-full peer cursor-pointer ${filters.showOnlySale ? 'bg-red-500' : 'bg-gray-200'}`}
                       >
-                        <motion.div
-                          className="absolute top-[2px] left-[2px] bg-white rounded-full h-5 w-5 shadow-md"
-                          animate={{
-                            x: filters.showOnlySale ? 20 : 0
-                          }}
-                          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                        <div
+                          className={`absolute top-[2px] ${filters.showOnlySale ? 'left-[22px]' : 'left-[2px]'} bg-white rounded-full h-5 w-5 shadow-md transition-transform`}
                         />
-                      </motion.div>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Icon.PiTagSimple size={20} className="text-red-500" />
@@ -797,15 +736,13 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                         On Sale Only
                       </span>
                     </div>
-                  </motion.label>
+                  </label>
                 </div>
               </div>
 
               {/* Footer - Clear All */}
               <div className="p-4 border-t border-gray-200 bg-gray-50">
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+                <button
                   onClick={handleClearAll}
                   disabled={activeFiltersCount === 0}
                   className={`w-full py-3 px-4 font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
@@ -821,12 +758,11 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                       {activeFiltersCount}
                     </span>
                   )}
-                </motion.button>
+                </button>
               </div>
             </div>
-          </motion.aside>
+          </aside>
         )}
-      </AnimatePresence>
     </>
   );
 };

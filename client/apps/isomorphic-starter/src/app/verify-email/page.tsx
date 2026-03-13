@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 
-const VerifyEmail = () => {
+function VerifyEmailContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -156,4 +156,14 @@ const VerifyEmail = () => {
   );
 };
 
-export default VerifyEmail;
+export default function VerifyEmail() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="animate-spin w-12 h-12 border-4 border-gray-200 border-t-gray-900 rounded-full"></div>
+      </div>
+    }>
+      <VerifyEmailContent />
+    </Suspense>
+  );
+}

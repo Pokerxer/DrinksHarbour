@@ -376,7 +376,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
         imageUrls.push('/images/placeholder-product.png');
       }
 
-      const variations = (data.flavors || []).map((flavor, index) => ({
+      const variations = (data.flavors || []).map((flavor: any, index: number) => ({
         id: `flavor-${data._id || (data as any).id}-${index}`,
         color: flavor.name,
         colorCode: flavor.color || getFlavorColor(flavor.name),
@@ -386,8 +386,9 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
         image: data.primaryImage?.url || imageUrls[0] || '',
       }));
 
-      const sizes = (data.availableAt || []).flatMap((store) =>
-        store.sizes.map((size) => ({
+const productData = data as any;
+      const sizes = (productData.availableAt || []).flatMap((store: any) =>
+        store.sizes.map((size: any) => ({
           size: size.size,
           displayName: size.size,
           priceRange: {
@@ -397,10 +398,10 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
         }))
       );
 
-      const uniqueSizes = Array.from(new Map(sizes.map((item) => [item.size, item])).values());
+      const uniqueSizes = Array.from(new Map(sizes.map((item: any) => [item.size, item])).values());
 
-      const allPrices = (data.availableAt || []).flatMap((store) =>
-        store.sizes.map((size) => size.pricing.websitePrice)
+      const allPrices = (productData.availableAt || []).flatMap((store: any) =>
+        store.sizes.map((size: any) => size.pricing?.websitePrice)
       );
       const minPrice = allPrices.length > 0 ? Math.min(...allPrices) : 0;
       const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : minPrice;
@@ -420,7 +421,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
           inStock: (data.stockInfo?.totalStock || 0) > 0,
         },
         thumbImage: imageUrls,
-        variation: variations,
+        variation: variations.length > 0 ? variations : [],
         sizes: uniqueSizes,
         sold: data.totalSold || 0,
         quantity: data.stockInfo?.totalStock || 100,
@@ -445,14 +446,14 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
         },
         quantityPurchase: 1,
         description: data.description || data.shortDescription || `${data.name} - Premium beverage`,
-        images: imageUrls.map((url) => ({ url, alt: data.name })),
+        images: imageUrls.map((url: string) => ({ url, alt: data.name })),
         variants: [],
         discount: data.discount?.percentage,
         weight: 0,
         dimensions: '',
         shippingInfo: data.shippingInfo || 'Free shipping on orders over $50',
         tags: (data.tags || []).map((tag) => tag.name),
-        sku: data.sku || data.availableAt?.[0]?.sku,
+        sku: productData.sku || productData.availableAt?.[0]?.sku,
         status: (data.status as any) || 'published',
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
@@ -466,7 +467,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
         abv: data.abv,
         originCountry: data.originCountry,
         isAlcoholic: data.isAlcoholic,
-        availableAt: data.availableAt,
+        availableAt: productData.availableAt,
         region: data.region || data.originCountry,
         foodPairing: data.foodPairings,
         tastingNotes: data.tastingNotes,
@@ -495,19 +496,21 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
     }
   }, [data]);
 
+  const productData = data as any;
+
   // Vendor (availableAt) derived state
-  const vendors = isBeverageProduct(data) && Array.isArray(data.availableAt) ? data.availableAt : [];
+  const vendors = isBeverageProduct(data) && Array.isArray(productData.availableAt) ? productData.availableAt : [];
 
   const selectedVendor = useMemo(() => {
     if (!vendors.length) return null;
-    if (activeVendor) return vendors.find((v) => v.tenant._id === activeVendor) ?? vendors[0];
+    if (activeVendor) return vendors.find((v: any) => v.tenant._id === activeVendor) ?? vendors[0];
     return vendors[0];
   }, [vendors, activeVendor]);
 
   /** Sizes exposed by the currently-selected vendor */
   const vendorSizes = useMemo(() => {
     if (!selectedVendor) return [];
-    return selectedVendor.sizes.map((s) => ({
+    return selectedVendor.sizes.map((s: any) => ({
       size: s.size,
       displayName: s.size,
       stock: s.stock,
@@ -527,10 +530,9 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
   );
 
   // Check if product has an actual sale (not just price differences between sizes)
-  const hasActiveSale = vendors.some((v) => v.isOnSale === true);
+  const hasActiveSale = vendors.some((v: any) => v.isOnSale === true);
   
-  // Get the actual discount percentage from sale data
-  const saleVendor = vendors.find((v) => v.isOnSale === true);
+  const saleVendor = vendors.find((v: any) => v.isOnSale === true);
   const saleDiscount = saleVendor ? (saleVendor as any).saleDiscountValue || 0 : 0;
 
   // Calculate discount from sizes that have active sale discounts
@@ -548,9 +550,10 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
 
   const handleAddToCart = useCallback(() => {
     // Get vendor info
-    const selectedVendorData = data?.availableAt?.find((v: any) => 
-      v.sizes.some((s: any) => s.size === activeSize)
-    ) || data?.availableAt?.[0];
+    const productData = data as any;
+    const selectedVendorData = productData?.availableAt?.find((v: any) => 
+      v.sizes?.some((s: any) => s.size === activeSize)
+    ) || productData?.availableAt?.[0];
     
     const vendorName = selectedVendorData?.tenant?.name || '';
     const vendorId = selectedVendorData?.tenant?._id || '';
@@ -634,11 +637,12 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
     if (vendorSizes.length > 0) {
       setIsAddingToCart(true);
       
-      const firstAvailableSize = vendorSizes.find(s => s.stock > 0) || vendorSizes[0];
+      const firstAvailableSize = vendorSizes.find((s: any) => s.stock > 0) || vendorSizes[0];
       const sizeToUse = firstAvailableSize.size;
       
       // Get vendor info from the vendorSizes mapping
-      const selectedVendor = data?.availableAt?.[0];
+      const productAny2 = data as any;
+      const selectedVendor = productAny2?.availableAt?.[0];
       const vendorName = selectedVendor?.tenant?.name || '';
       const vendorId = selectedVendor?.tenant?._id || '';
       const sizeId = firstAvailableSize?._id || '';
@@ -781,7 +785,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
                   />
                 ) : (
                   <>
-                    {(mappedProduct.thumbImage || []).slice(0, 2).map((img, index) => (
+                    {(mappedProduct.thumbImage || []).slice(0, 2).map((img, index) => (s: any) => (
                       <Image
                         key={index}
                         src={img || mappedProduct.thumbImage?.[0] || '/images/placeholder-product.png'}
@@ -840,7 +844,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
                       <div className="mb-3">
                         <p className="text-xs font-semibold text-gray-600 mb-2">Select Vendor</p>
                         <div className="flex flex-wrap gap-2">
-                          {vendors.map((vendor) => {
+                          {vendors.map((vendor: any) => {
                             const isActive = selectedVendor?.tenant._id === vendor.tenant._id;
                             return (
                               <button
@@ -865,7 +869,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
                     <div className="mb-3">
                       <p className="text-xs font-semibold text-gray-600 mb-2">Select Size</p>
                       <div className="flex flex-wrap gap-2">
-                        {vendorSizes.map((item, index) => (
+                        {vendorSizes.map((item: any, index: number) => (
                           <button
                             type="button"
                             className={`px-3 py-1.5 text-xs font-medium rounded-lg border-2 transition-all ${
@@ -938,7 +942,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
                       ) : activeSize ? (
                         <span className="flex items-center justify-center gap-2">
                           <Icon.PiShoppingCart size={16} />
-                          Add To Cart - {vendorSizes.find(s => s.size === activeSize)?.currencySymbol || '₦'}{vendorSizes.find(s => s.size === activeSize)?.price.toFixed(2)}
+                          Add To Cart - {vendorSizes.find((s: any) => s.size === activeSize)?.currencySymbol || '₦'}{vendorSizes.find((s: any) => s.size === activeSize)?.price.toFixed(2)}
                         </span>
                       ) : (
                         'Select a Size'
@@ -1032,14 +1036,14 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
                   )}
                   <div className="flex items-center gap-1.5">
                     <span className="text-base md:text-lg font-bold text-gray-900 transition-transform duration-300 group-hover:scale-105">
-                      {vendorSizes.find((s) => s.size === activeSize)?.currencySymbol || '₦'}
-                      {(vendorSizes.find((s) => s.size === activeSize)?.price || mappedProduct.price).toFixed(2)}
+                      {vendorSizes.find((s: any) => s.size === activeSize)?.currencySymbol || '₦'}
+                      {(vendorSizes.find((s: any) => s.size === activeSize)?.price || mappedProduct.price).toFixed(2)}
                     </span>
                     {/* Original price with strikethrough animation */}
                     {hasActiveSale && (
                       <span className="text-xs text-gray-400 line-through decoration-gray-400 decoration-2">
-                        {vendorSizes.find((s) => s.size === activeSize)?.currencySymbol || '₦'}
-                        {mappedProduct.originPrice.toFixed(2)}
+                        {vendorSizes.find((s: any) => s.size === activeSize)?.currencySymbol || '₦'}
+                        {(mappedProduct.originPrice || 0).toFixed(2)}
                       </span>
                     )}
                   </div>
@@ -1066,7 +1070,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
               {/* Vendor Avatars - Desktop only */}
               {isBeverageProduct(data) && vendors.length > 1 && (
                 <div className="vendor-avatars hidden lg:flex py-2 items-center gap-2 flex-wrap">
-                  {vendors.slice(0, 3).map((vendor) => (
+                  {vendors.slice(0, 3).map((vendor: any) => (
                     <VendorAvatar
                       key={vendor.tenant._id}
                       vendor={vendor}
@@ -1122,7 +1126,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
 
               <div className="product-img w-24 sm:w-32 aspect-[3/4] sm:aspect-square rounded-xl sm:rounded-2xl overflow-hidden">
                 <Image
-                  src={mappedProduct.thumbImage[0] || '/images/placeholder-product.png'}
+                  src={mappedProduct.thumbImage?.[0] || '/images/placeholder-product.png'}
                   width={500}
                   height={500}
                   priority={true}
@@ -1141,13 +1145,13 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
 
               <div className="flex items-center gap-2 mt-1.5 sm:mt-2">
                 <span className="text-sm sm:text-base font-bold text-gray-900">
-                  {vendorSizes.find((s) => s.size === activeSize)?.currencySymbol || '₦'}
-                  {(vendorSizes.find((s) => s.size === activeSize)?.price || mappedProduct.price).toFixed(2)}
+                  {vendorSizes.find((s: any) => s.size === activeSize)?.currencySymbol || '₦'}
+                  {(vendorSizes.find((s: any) => s.size === activeSize)?.price || mappedProduct.price).toFixed(2)}
                 </span>
                 {percentSale > 0 && (
                   <span className="text-xs text-gray-400 line-through">
-                    {vendorSizes.find((s) => s.size === activeSize)?.currencySymbol || '₦'}
-                    {mappedProduct.originPrice.toFixed(2)}
+                    {vendorSizes.find((s: any) => s.size === activeSize)?.currencySymbol || '₦'}
+                    {(mappedProduct.originPrice || 0).toFixed(2)}
                   </span>
                 )}
               </div>

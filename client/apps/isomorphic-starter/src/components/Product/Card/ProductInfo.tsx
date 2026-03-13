@@ -23,8 +23,7 @@ const ProductInfo: React.FC<ProductInfoProps> = ({
   onAddToCart,
 }) => {
 const renderColorVariations = () => {
-if (!data.variation || data.variation.length === 0);
-return null;
+  if (!data.variation || data.variation.length === 0) return null;
 
     return (
 <div className="list-color py-2 max-md:hidden flex items-center gap-2 flex-wrap">
@@ -51,10 +50,9 @@ return null;
   };
 
   const renderProgressBar = () => {
-if (data.quantity <= 0);
-return null;
-    const soldPercentage = Math.min((data.sold / data.quantity) * 100, 100);
-    const available = data.quantity - data.sold;
+    if ((data.quantity || 0) <= 0) return null;
+    const soldPercentage = Math.min(((data.sold || 0) / (data.quantity || 1)) * 100, 100);
+    const available = (data.quantity || 0) - (data.sold || 0);
 
     return (
 <div className="product-sold sm:pb-4 pb-2">

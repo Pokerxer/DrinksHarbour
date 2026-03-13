@@ -60,7 +60,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({ products, layoutCol, isLoadin
           className="animate-fade-in-up"
           style={{ animationDelay: `${index * 50}ms` }}
         >
-          <ProductCard data={item} type="grid" />
+          <ProductCard data={item as any} type="grid" />
         </div>
       ))}
     </div>

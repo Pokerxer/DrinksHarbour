@@ -28,6 +28,7 @@ interface CategoryDetails {
   };
   featuredImage?: {
     url?: string;
+    alt?: string;
     isActive?: boolean;
   };
   images?: Array<{
@@ -106,7 +107,7 @@ const CategoryBanner: React.FC<CategoryBannerProps> = ({
   }, [categorySlug, subcategorySlug]);
 
   const getCategoryColor = (color?: string) => {
-    const colors: Record<string, string> = {
+    const categoryColors: Record<string, string> = {
       beer: '#F59E0B',
       wine: '#7C3AED',
       spirits: '#DC2626',
@@ -119,12 +120,12 @@ const CategoryBanner: React.FC<CategoryBannerProps> = ({
       tequila: '#84CC16',
       cocktails: '#EC4899',
       mixers: '#06B6D4',
-      non-alcoholic: '#22C55E',
+      'non-alcoholic': '#22C55E',
     };
     
     if (color) return color;
     const slug = (categorySlug || subcategorySlug || '').toLowerCase();
-    return colors[slug] || '#6366F1';
+    return categoryColors[slug] || '#6366F1';
   };
 
   if (loading) {

@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Breadcrumb from '@/components/Breadcrumb/Breadcrumb';
 import ProductCard from '@/components/Product/Card';
 import * as Icon from 'react-icons/pi';
 import { ProductType } from '@/types/product.types';
 
-const SearchResult = () => {
+function SearchResultContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [searchKeyword, setSearchKeyword] = useState<string>('');
@@ -163,6 +163,16 @@ const SearchResult = () => {
       </div>
     </>
   );
-};
+}
 
-export default SearchResult;
+export default function SearchResult() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="animate-spin w-12 h-12 border-4 border-gray-200 border-t-gray-900 rounded-full"></div>
+      </div>
+    }>
+      <SearchResultContent />
+    </Suspense>
+  );
+}

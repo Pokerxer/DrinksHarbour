@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  reactStrictMode: true,
   images: {
     formats: ['image/avif', 'image/webp'],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
@@ -37,51 +38,6 @@ const nextConfig = {
       },
     ],
   },
-  reactStrictMode: true,
-  swcMinify: true,
-  
-  // Disable caching
-  onDemandEntries: {
-    // period (in ms) where the server will keep pages in the buffer
-    maxInactiveAge: 0,
-    // number of pages that should be kept simultaneously without being disposed
-    pagesBufferLength: 0,
-  },
-  
-  // Add headers to disable caching
-  async headers() {
-    return [
-      {
-        source: '/:path*',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'no-store, no-cache, must-revalidate, proxy-revalidate',
-          },
-          {
-            key: 'Pragma',
-            value: 'no-cache',
-          },
-          {
-            key: 'Expires',
-            value: '0',
-          },
-        ],
-      },
-      {
-        source: '/api/:path*',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'no-store, no-cache, must-revalidate, proxy-revalidate',
-          },
-        ],
-      },
-    ];
-  },
-  
-  // Disable static optimization for dynamic content
-  staticPageGenerationTimeout: 0,
-}
+};
 
-module.exports = nextConfig
+module.exports = nextConfig;

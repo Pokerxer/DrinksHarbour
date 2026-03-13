@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { ProductType } from '@/type/ProductType';
+import { ProductType } from '@/types/product.types';
 
 interface SearchFilters {
   category?: string;

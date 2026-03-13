@@ -8,7 +8,7 @@ import React, {
   useCallback,
   useState,
 } from "react";
-import { ProductType } from "@/type/ProductType";
+import { ProductType } from "@/types/product.types";
 
 interface CompareItem extends ProductType {}
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import Shop from '@/components/Shop';
 import LoadingSpinner from '@/components/loader/LoadingSpinner';
@@ -27,7 +27,7 @@ interface FilterState {
   search: string | null;
 }
 
-export default function ShopPage({ params }: PageProps) {
+function ShopPageContent({ params }: PageProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -266,5 +266,17 @@ export default function ShopPage({ params }: PageProps) {
         />
       </div>
     </>
+  );
+}
+
+export default function ShopPage(props: PageProps) {
+  return (
+    <Suspense fallback={
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="animate-spin w-12 h-12 border-4 border-gray-200 border-t-gray-900 rounded-full"></div>
+      </div>
+    }>
+      <ShopPageContent {...props} />
+    </Suspense>
   );
 }

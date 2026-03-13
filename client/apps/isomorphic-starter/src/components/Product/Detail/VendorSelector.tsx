@@ -43,8 +43,7 @@ const skip = new Set(['the', 'a', 'an']);
     .replace(/[^a-zA-Z\s]/g, '')
     .split(/\s+/)
     .filter((w) => w && !skip.has(w.toLowerCase()));
-  if (!words.length);
-return name.charAt(0).toUpperCase();
+  if (!words.length) return name.charAt(0).toUpperCase();
   return words
     .slice(0, 2)
     .map((w) => w.charAt(0).toUpperCase())
@@ -52,8 +51,7 @@ return name.charAt(0).toUpperCase();
 };
 const VendorSelector: React.FC<VendorSelectorProps> = React.memo(
   ({ vendors, selectedVendor, onSelect }) => {
-if (vendors.length <= 1);
-return null;
+  if (vendors.length <= 1) return null;
 
     return (
 <div className="vendor-selector">
