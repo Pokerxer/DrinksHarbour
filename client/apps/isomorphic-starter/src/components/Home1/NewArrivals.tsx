@@ -210,10 +210,10 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({
 }) => {
   const sectionRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-  const [isMounted, setIsMounted] = useState(false);
+  const [scrollTarget, setScrollTarget] = useState<React.RefObject<HTMLElement> | undefined>(undefined);
   
   const { scrollYProgress } = useScroll({
-    target: isMounted ? sectionRef : undefined,
+    target: scrollTarget,
     offset: ["start end", "end start"]
   });
   
@@ -238,7 +238,7 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
-    setIsMounted(true);
+    setScrollTarget(sectionRef);
   }, []);
 
   useEffect(() => {

@@ -207,10 +207,10 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
   subtitle = "Handpicked selections from our premium collection"
 }) => {
   const sectionRef = useRef<HTMLDivElement>(null);
-  const [isMounted, setIsMounted] = useState(false);
+  const [scrollTarget, setScrollTarget] = useState<React.RefObject<HTMLElement> | undefined>(undefined);
   
   const { scrollYProgress } = useScroll({
-    target: isMounted ? sectionRef : undefined,
+    target: scrollTarget,
     offset: ["start end", "end start"]
   });
   
@@ -235,7 +235,7 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
-    setIsMounted(true);
+    setScrollTarget(sectionRef);
   }, []);
 
   useEffect(() => {

@@ -256,13 +256,13 @@ const BestSellers: React.FC<BestSellersProps> = ({ limit = 5 }) => {
   const [activeSize, setActiveSize] = useState<string | null>(null);
 
   useEffect(() => {
-    setIsMounted(true);
+    setScrollTarget(containerRef);
   }, []);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const [isMounted, setIsMounted] = useState(false);
+  const [scrollTarget, setScrollTarget] = useState<React.RefObject<HTMLElement> | undefined>(undefined);
   const isInView = useInView(containerRef, { once: true, margin: '-100px' });
-  const { scrollYProgress } = useScroll({ target: isMounted ? containerRef : undefined, offset: ['start end', 'end start'] });
+  const { scrollYProgress } = useScroll({ target: scrollTarget, offset: ['start end', 'end start'] });
 
   const backgroundY = useTransform(scrollYProgress ?? 0, [0, 1], ['0%', '20%']);
   const backgroundYSpring = useSpring(backgroundY, { stiffness: 80, damping: 25 });

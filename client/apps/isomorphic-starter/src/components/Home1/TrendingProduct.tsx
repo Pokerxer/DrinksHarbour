@@ -188,14 +188,14 @@ const TrendingProduct: React.FC<TrendingProductProps> = ({ limit = 8 }) => {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
-    setIsMounted(true);
+    setScrollTarget(containerRef);
   }, []);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const [isMounted, setIsMounted] = useState(false);
+  const [scrollTarget, setScrollTarget] = useState<React.RefObject<HTMLElement> | undefined>(undefined);
   const isInView = useInView(containerRef, { once: true, margin: '-100px' });
   const { scrollYProgress } = useScroll({
-    target: isMounted ? containerRef : undefined,
+    target: scrollTarget,
     offset: ['start end', 'end start'],
   });
 
