@@ -187,15 +187,20 @@ const TrendingProduct: React.FC<TrendingProductProps> = ({ limit = 8 }) => {
   const [imageLoaded, setImageLoaded] = useState<Record<string, boolean>>({});
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const containerRef = useRef<HTMLDivElement>(null);
+  const [isMounted, setIsMounted] = useState(false);
   const isInView = useInView(containerRef, { once: true, margin: '-100px' });
   const { scrollYProgress } = useScroll({
-    target: containerRef,
+    target: isMounted ? containerRef : undefined,
     offset: ['start end', 'end start'],
   });
 
-  const backgroundY = useTransform(scrollYProgress, [0, 1], ['0%', '30%']);
-  const opacity = useTransform(scrollYProgress, [0, 0.3, 0.7, 1], [0.3, 1, 1, 0.3]);
+  const backgroundY = useTransform(scrollYProgress ?? 0, [0, 1], ['0%', '30%']);
+  const opacity = useTransform(scrollYProgress ?? 0, [0, 0.3, 0.7, 1], [0.3, 1, 1, 0.3]);
 
   const springConfig = { stiffness: 100, damping: 30, restDelta: 0.001 };
   const backgroundYSpring = useSpring(backgroundY, springConfig);

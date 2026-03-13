@@ -255,11 +255,16 @@ const BestSellers: React.FC<BestSellersProps> = ({ limit = 5 }) => {
   const [activeTenant, setActiveTenant] = useState<string | null>(null);
   const [activeSize, setActiveSize] = useState<string | null>(null);
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const isInView = useInView(containerRef, { once: true, margin: '-100px' });
-  const { scrollYProgress } = useScroll({ target: containerRef, offset: ['start end', 'end start'] });
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
-  const backgroundY = useTransform(scrollYProgress, [0, 1], ['0%', '20%']);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isMounted, setIsMounted] = useState(false);
+  const isInView = useInView(containerRef, { once: true, margin: '-100px' });
+  const { scrollYProgress } = useScroll({ target: isMounted ? containerRef : undefined, offset: ['start end', 'end start'] });
+
+  const backgroundY = useTransform(scrollYProgress ?? 0, [0, 1], ['0%', '20%']);
   const backgroundYSpring = useSpring(backgroundY, { stiffness: 80, damping: 25 });
 
   const featuredAvailableAt = useMemo(() => featuredProduct?.availableAt || [], [featuredProduct]);

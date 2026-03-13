@@ -210,14 +210,15 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({
 }) => {
   const sectionRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const [isMounted, setIsMounted] = useState(false);
   
   const { scrollYProgress } = useScroll({
-    target: sectionRef,
+    target: isMounted ? sectionRef : undefined,
     offset: ["start end", "end start"]
   });
   
-  const y1 = useTransform(scrollYProgress, [0, 1], [0, -30]);
-  const y2 = useTransform(scrollYProgress, [0, 1], [0, 30]);
+  const y1 = useTransform(scrollYProgress ?? 0, [0, 1], [0, -30]);
+  const y2 = useTransform(scrollYProgress ?? 0, [0, 1], [0, 30]);
   const springY1 = useSpring(y1, { stiffness: 100, damping: 30 });
   const springY2 = useSpring(y2, { stiffness: 100, damping: 30 });
 
@@ -235,6 +236,10 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({
   const [hoveredProduct, setHoveredProduct] = useState<string | null>(null);
   const [imageLoaded, setImageLoaded] = useState<Record<string, boolean>>({});
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     fetchNewArrivals();
