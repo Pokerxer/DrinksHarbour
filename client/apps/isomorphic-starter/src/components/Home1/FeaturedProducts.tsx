@@ -207,13 +207,19 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
   subtitle = "Handpicked selections from our premium collection"
 }) => {
   const sectionRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
+  
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  
   const { scrollYProgress } = useScroll({
-    target: sectionRef,
+    target: mounted ? sectionRef : undefined,
     offset: ["start end", "end start"]
   });
   
-  const y1 = useTransform(scrollYProgress, [0, 1], [0, -50]);
-  const y2 = useTransform(scrollYProgress, [0, 1], [0, 50]);
+  const y1 = useTransform(scrollYProgress ?? 0, [0, 1], [0, -50]);
+  const y2 = useTransform(scrollYProgress ?? 0, [0, 1], [0, 50]);
   const springY1 = useSpring(y1, { stiffness: 100, damping: 30 });
   const springY2 = useSpring(y2, { stiffness: 100, damping: 30 });
 
