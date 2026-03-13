@@ -8,6 +8,7 @@ import { Navigation, Pagination } from 'swiper/modules';
 import type { Swiper as SwiperType } from 'swiper';
 import 'swiper/css';
 import 'swiper/css/navigation';
+import { fallbackProducts } from '@/data/fallback-data';
 import 'swiper/css/pagination';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
@@ -467,7 +468,8 @@ const FeaturedDeals: React.FC<FeaturedDealsProps> = ({
           }
         }
       } catch (error) {
-        console.error('Error fetching deals:', error);
+        console.warn('Using fallback products due to API error:', error);
+        setDeals(fallbackProducts.slice(0, limit));
       } finally {
         setLoading(false);
       }

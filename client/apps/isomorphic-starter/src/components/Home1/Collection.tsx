@@ -8,6 +8,7 @@ import { Autoplay, Navigation } from 'swiper/modules';
 import type { Swiper as SwiperType } from 'swiper';
 import 'swiper/css';
 import 'swiper/css/navigation';
+import { fallbackProducts } from '@/data/fallback-data';
 import * as Icon from 'react-icons/pi';
 
 interface Category {

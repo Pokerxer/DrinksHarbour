@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import Link from 'next/link';
 import Image from 'next/image';
 import { motion, AnimatePresence, useScroll, useTransform, useSpring, useInView } from 'framer-motion';
+import { fallbackProducts } from '@/data/fallback-data';
 import { useCart } from '@/context/CartContext';
 import { useModalCartContext } from '@/context/ModalCartContext';
 import { useWishlist } from '@/context/WishlistContext';
@@ -262,8 +263,8 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
         setError('No featured products found');
       }
     } catch (error) {
-      console.error('Error fetching featured products:', error);
-      setError(error instanceof Error ? error.message : 'Failed to load products');
+      console.warn('Using fallback products due to API error:', error);
+      setProducts(fallbackProducts.slice(0, limit));
     } finally {
       setLoading(false);
     }
