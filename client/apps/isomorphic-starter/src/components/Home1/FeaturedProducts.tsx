@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { motion, AnimatePresence, useScroll, useTransform, useSpring } from 'framer-motion';
+import { motion, AnimatePresence, useScroll, useTransform, useSpring, useInView } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
 import { useModalCartContext } from '@/context/ModalCartContext';
 import { useWishlist } from '@/context/WishlistContext';
@@ -207,14 +207,11 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
   subtitle = "Handpicked selections from our premium collection"
 }) => {
   const sectionRef = useRef<HTMLDivElement>(null);
-  const [mounted, setMounted] = useState(false);
   
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const isInView = useInView(sectionRef, { once: true, margin: "-100px" });
   
   const { scrollYProgress } = useScroll({
-    target: mounted ? sectionRef : undefined,
+    target: isInView ? sectionRef : undefined,
     offset: ["start end", "end start"]
   });
   

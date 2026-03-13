@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { motion, AnimatePresence, useScroll, useTransform, useSpring } from 'framer-motion';
+import { motion, AnimatePresence, useScroll, useTransform, useSpring, useInView } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
 import { useModalCartContext } from '@/context/ModalCartContext';
 import { useWishlist } from '@/context/WishlistContext';
@@ -210,14 +210,11 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({
 }) => {
   const sectionRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
   
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const isInView = useInView(sectionRef, { once: true, margin: "-100px" });
   
   const { scrollYProgress } = useScroll({
-    target: mounted ? sectionRef : undefined,
+    target: isInView ? sectionRef : undefined,
     offset: ["start end", "end start"]
   });
   
