@@ -350,10 +350,7 @@ const TrendingProduct: React.FC<TrendingProductProps> = ({ limit = 8 }) => {
 
   return (
     <section ref={containerRef} className="trending-block py-16 sm:py-24 relative overflow-hidden bg-gradient-to-b from-white via-amber-50/30 to-white">
-      <motion.div
-        className="absolute inset-0 bg-gradient-to-b from-white via-amber-50/30 to-white"
-        style={{ y: backgroundYSpring, opacity }}
-      />
+      <div className="absolute inset-0 bg-gradient-to-b from-white via-amber-50/30 to-white" />
 
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <motion.div

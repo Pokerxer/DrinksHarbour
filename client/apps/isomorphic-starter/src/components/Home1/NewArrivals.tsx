@@ -427,8 +427,8 @@ const NewArrivals: React.FC<NewArrivalsProps> = ({
   return (
     <section ref={sectionRef} className="py-16 md:py-24 bg-gradient-to-b from-gray-50 via-white to-gray-50 overflow-hidden relative">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <motion.div style={{ y: springY1 }} className="absolute -top-20 -right-20 w-[500px] h-[500px] bg-gradient-to-br from-green-100/50 to-emerald-100/50 rounded-full blur-3xl" />
-        <motion.div style={{ y: springY2 }} className="absolute -bottom-20 -left-20 w-[500px] h-[500px] bg-gradient-to-br from-blue-100/50 to-purple-100/50 rounded-full blur-3xl" />
+        <div className="absolute -top-20 -right-20 w-[500px] h-[500px] bg-gradient-to-br from-green-100/50 to-emerald-100/50 rounded-full blur-3xl" />
+        <div className="absolute -bottom-20 -left-20 w-[500px] h-[500px] bg-gradient-to-br from-blue-100/50 to-purple-100/50 rounded-full blur-3xl" />
       </div>
 
       <AnimatePresence>

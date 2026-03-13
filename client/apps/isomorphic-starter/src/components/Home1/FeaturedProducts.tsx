@@ -427,8 +427,8 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
   return (
     <section ref={sectionRef} className="py-16 md:py-24 bg-gradient-to-b from-purple-50 via-white to-purple-50 overflow-hidden relative">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <motion.div style={{ y: springY1 }} className="absolute -top-20 -right-20 w-[500px] h-[500px] bg-gradient-to-br from-purple-200/50 to-indigo-200/50 rounded-full blur-3xl" />
-        <motion.div style={{ y: springY2 }} className="absolute -bottom-20 -left-20 w-[500px] h-[500px] bg-gradient-to-br from-pink-200/50 to-rose-200/50 rounded-full blur-3xl" />
+        <div className="absolute -top-20 -right-20 w-[500px] h-[500px] bg-gradient-to-br from-purple-200/50 to-indigo-200/50 rounded-full blur-3xl" />
+        <div className="absolute -bottom-20 -left-20 w-[500px] h-[500px] bg-gradient-to-br from-pink-200/50 to-rose-200/50 rounded-full blur-3xl" />
       </div>
 
       <AnimatePresence>
