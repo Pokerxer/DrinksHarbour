@@ -96,6 +96,14 @@ const ModalCart = () => {
   };
 
   const handleCheckout = () => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    
+    if (!token) {
+      closeModalCart();
+      router.push('/login?redirect=/checkout');
+      return;
+    }
+    
     closeModalCart();
     router.push('/checkout');
   };

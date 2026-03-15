@@ -144,11 +144,18 @@ const Checkout = () => {
 
   useEffect(() => {
     const initCheckout = async () => {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      
+      if (!token) {
+        router.push('/login?redirect=/checkout');
+        return;
+      }
+      
       setMounted(true);
       await loadServerCart();
     };
     initCheckout();
-  }, []);
+  }, [router, loadServerCart]);
 
   const [formData, setFormData] = useState<FormData>({
     firstName: '',
