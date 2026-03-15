@@ -378,7 +378,7 @@ exports.validateBanner = asyncHandler(async (req, res) => {
 
   // Validate references based on linkType
   if (linkType === 'product' && targetProduct) {
-    const Product = require('../models/product');
+    const Product = require('../models/Product');
     const product = await Product.findById(targetProduct);
     if (!product) {
       validationErrors.push({

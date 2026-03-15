@@ -1,7 +1,7 @@
 // controllers/cart.controller.js (EXTENDED)
 
 const Cart = require('../models/Cart');
-const User = require('../models/user');
+const User = require('../models/User');
 const asyncHandler = require('../utils/asyncHandler');
 const cartService = require('../services/cart.service');
 
