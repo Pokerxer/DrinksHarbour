@@ -3,7 +3,7 @@
 const Order = require('../models/Order');
 const Coupon = require('../models/Coupon');
 const User = require('../models/User');
-const Tenant = require('../models/tenant');
+const Tenant = require('../models/Tenant');
 const asyncHandler = require('../utils/asyncHandler');
 const { generateOrderNumber } = require('../utils/orderUtils');
 const {

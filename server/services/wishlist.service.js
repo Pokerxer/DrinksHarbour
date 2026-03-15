@@ -1,8 +1,8 @@
 // services/wishlist.service.js
 
 const Wishlist = require('../models/Wishlist');
-const Product = require('../models/product');
-const SubProduct = require('../models/subProduct');
+const Product = require('../models/Product');
+const SubProduct = require('../models/SubProduct');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 
 /**
@@ -256,7 +256,7 @@ const clearWishlist = async (userId) => {
  */
 const updateUserWishlistCount = async (userId, itemCount) => {
   try {
-    const User = require('../models/user');
+    const User = require('../models/User');
     await User.findByIdAndUpdate(userId, {
       wishlistCount: itemCount,
       lastWishlistUpdate: new Date(),

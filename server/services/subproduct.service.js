@@ -1,12 +1,12 @@
 // services/subproduct.service.js
 
 const mongoose = require('mongoose');
-const SubProduct = require('../models/subProduct');
-const Product = require('../models/product');
-const Size = require('../models/size');
-const Tenant = require('../models/tenant');
-const Shipping = require('../models/shipping');
-const Warehouse = require('../models/warehouse');
+const SubProduct = require('../models/SubProduct');
+const Product = require('../models/Product');
+const Size = require('../models/Size');
+const Tenant = require('../models/Tenant');
+const Shipping = require('../models/Shipping');
+const Warehouse = require('../models/Warehouse');
 const { 
   NotFoundError, 
   ValidationError, 

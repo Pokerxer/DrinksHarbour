@@ -1,10 +1,10 @@
 // utils/skuGenerator.js
 
 const crypto = require('crypto');
-const SubProduct = require('../models/subProduct');
-const Size = require('../models/size');
-const Tenant = require('../models/tenant');
-const Product = require('../models/product');
+const SubProduct = require('../models/SubProduct');
+const Size = require('../models/Size');
+const Tenant = require('../models/Tenant');
+const Product = require('../models/Product');
 
 // ============================================================
 // SKU GENERATION STRATEGIES

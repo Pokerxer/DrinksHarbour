@@ -6,7 +6,7 @@ const Product = require('../models/Product');
 const Category = require('../models/Category');
 const Brand = require('../models/Brand');
 const Order = require('../models/Order');
-const Tenant = require('../models/tenant');
+const Tenant = require('../models/Tenant');
 const { NotFoundError, ValidationError, AuthorizationError } = require('../utils/errors');
 const mongoose = require('mongoose');
 

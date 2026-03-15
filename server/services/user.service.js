@@ -1,7 +1,7 @@
 // services/user.service.js
 
-const User = require('../models/user');
-const Tenant = require('../models/tenant'); // Changed from '../models/tenant' to '../models/Tenant' for consistency
+const User = require('../models/User');
+const Tenant = require('../models/Tenant'); // Changed from '../models/tenant' to '../models/Tenant' for consistency
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');

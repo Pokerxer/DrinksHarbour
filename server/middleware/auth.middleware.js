@@ -3,7 +3,7 @@
 const jwt = require('jsonwebtoken');
 const asyncHandler = require('../utils/asyncHandler');
 const User = require('../models/User');
-const Tenant = require('../models/tenant');
+const Tenant = require('../models/Tenant');
 const { ForbiddenError, UnauthorizedError } = require('../utils/errors');
 
 /**

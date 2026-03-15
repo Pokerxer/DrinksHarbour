@@ -1,10 +1,10 @@
 // services/cart.service.js
 
 const Cart = require('../models/Cart');
-const Product = require('../models/product');
-const Size = require('../models/size');
-const SubProduct = require('../models/subProduct');
-const Tenant = require('../models/tenant');
+const Product = require('../models/Product');
+const Size = require('../models/Size');
+const SubProduct = require('../models/SubProduct');
+const Tenant = require('../models/Tenant');
 const { NotFoundError, ValidationError, ConflictError } = require('../utils/errors');
 
 /**
@@ -374,7 +374,7 @@ const recalculateCartTotals = async (cart) => {
  */
 const updateUserCartCount = async (userId, itemCount) => {
   try {
-    const User = require('../models/user');
+    const User = require('../models/User');
     await User.findByIdAndUpdate(userId, {
       activeCartItemCount: itemCount,
       lastCartUpdate: new Date(),

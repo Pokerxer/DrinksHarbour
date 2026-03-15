@@ -9,12 +9,12 @@ const resolveFlavorReferences = require('../helpers/resolveFlavorReference.helpe
 const Product = require('../models/Product');
 const Category = require('../models/Category');
 const SubCategory = require('../models/SubCategory');
-const Tenant = require('../models/tenant');
+const Tenant = require('../models/Tenant');
 const Sales = require('../models/Sales');
-const Review = require('../models/review');
-const SubProduct = require('../models/subProduct');
-const Size = require('../models/size');
-const Tag = require('../models/tag');
+const Review = require('../models/Review');
+const SubProduct = require('../models/SubProduct');
+const Size = require('../models/Size');
+const Tag = require('../models/Tag');
 const Flavor = require('../models/Flavor');
 const Order = require('../models/Order');
 const cloudinaryService = require('./cloudinary.service');
@@ -5129,7 +5129,7 @@ const getProductsByFlavors = async (flavorIds, filters = {}, pagination = {}) =>
  */
 const getTrendingProducts = async (limit = 10, dateRange = 7) => {
   const Sales = require('../models/Sales');
-  const SubProduct = require('../models/subProduct');
+  const SubProduct = require('../models/SubProduct');
 
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - dateRange);
