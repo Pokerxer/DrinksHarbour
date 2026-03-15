@@ -7,16 +7,24 @@ if (!cached) {
 }
 
 async function connectDB() {
+  // Skip DB connection in serverless if no URI (allows server to start for health checks)
+  const mongoUri = process.env.MONGODB_URI;
+  if (!mongoUri || mongoUri.includes('localhost')) {
+    if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+      console.warn('⚠️  MongoDB URI not configured for production/serverless. Set MONGODB_URI in environment variables.');
+      return null;
+    }
+    if (!mongoUri) {
+      throw new Error('MONGODB_URI is not defined in environment variables');
+    }
+  }
+
   if (cached.conn) {
     console.log('Using existing database connection');
     return cached.conn;
   }
 
   if (!cached.promise) {
-    const mongoUri = process.env.MONGODB_URI;
-    if (!mongoUri) {
-      throw new Error('MONGODB_URI is not defined in environment variables');
-    }
 
     // Modern Mongoose options with improved timeouts and retry logic
     const opts = {

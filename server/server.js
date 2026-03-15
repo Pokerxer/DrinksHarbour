@@ -241,14 +241,17 @@ app.use((err, req, res, next) => {
 // ────────────────────────────────────────────────
 async function startServer() {
   try {
-    await connectDB();
+    const dbConnection = await connectDB();
 
     console.log('\n┌──────────────────────────────────────────────────────┐');
     console.log('│              DrinksHarbour Backend API               │');
     console.log('└──────────────────────────────────────────────────────┘');
     console.log(`   Environment: ${(process.env.NODE_ENV || 'development').toUpperCase()}`);
     console.log(`   Port:        ${PORT}`);
-    console.log(`   MongoDB:     ${mongoose.connection.readyState === 1 ? '✅ Connected' : '❌ Disconnected'}`);
+    const mongoStatus = dbConnection 
+      ? (mongoose.connection.readyState === 1 ? '✅ Connected' : '❌ Disconnected')
+      : '⚠️  Not configured (set MONGODB_URI in env)';
+    console.log(`   MongoDB:     ${mongoStatus}`);
     console.log(`   CORS:        Enabled`);
     console.log('');
     console.log('📍 Available Routes:');
