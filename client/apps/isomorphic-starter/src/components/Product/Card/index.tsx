@@ -785,7 +785,7 @@ const productData = data as any;
                   />
                 ) : (
                   <>
-                    {(mappedProduct.thumbImage || []).slice(0, 2).map((img, index) => (s: any) => (
+                    {(mappedProduct.thumbImage || []).slice(0, 2).map((img, index) => (
                       <Image
                         key={index}
                         src={img || mappedProduct.thumbImage?.[0] || '/images/placeholder-product.png'}
