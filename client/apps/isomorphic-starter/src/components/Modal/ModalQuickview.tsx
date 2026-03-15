@@ -54,7 +54,7 @@ const ModalQuickview: React.FC = () => {
   const { openModalCart } = useModalCartContext();
   const { addToWishlist, removeFromWishlist, wishlistState } = useWishlist();
   const { openModalWishlist } = useModalWishlistContext();
-  const { addToCompare, removeFromCompare, isInCompare, maxCompareLimit } = useCompare();
+  const { addToCompare, removeFromCompare, compareState, isInCompare, maxCompareLimit } = useCompare();
   const { openModalCompare } = useModalCompareContext();
 
   // Memoized values
