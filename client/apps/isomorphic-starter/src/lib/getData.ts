@@ -4,7 +4,7 @@ import { LoginSchema } from "@/utils/validators/login.schema";
 import { SignUpSchema } from "@/utils/validators/signup.schema";
 import { cookies } from "next/headers";
 
-const API_ENDPOINT = process.env.API_ENDPOINT || 'http://localhost:5001';
+const API_ENDPOINT = process.env.NEXT_PUBLIC_API_URL || process.env.API_ENDPOINT || 'http://localhost:5001';
 
 async function getAuthToken() {
   const cookieStore = await cookies();
