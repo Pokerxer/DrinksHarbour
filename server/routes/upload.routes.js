@@ -3,15 +3,16 @@
 const express = require('express');
 const router = express.Router();
 const uploadController = require('../controllers/upload.controller');
-const {
-  uploadSingleImage,
-  uploadMultipleImages,
-  uploadProductImages,
-  uploadProductGallery,
-  uploadBrandLogo,
-  uploadCategoryImage,
-} = require('../middleware/imageUpload.middleware');
 const { authenticate } = require('../middleware/auth.middleware');
+
+// Lazy-load upload middleware to avoid serverless filesystem issues
+let uploadMiddleware;
+const getUploadMiddleware = () => {
+  if (!uploadMiddleware) {
+    uploadMiddleware = require('../middleware/imageUpload.middleware');
+  }
+  return uploadMiddleware;
+};
 
 // All upload routes require authentication
 router.use(authenticate);
@@ -21,14 +22,14 @@ router.use(authenticate);
  * @desc    Upload single image
  * @access  Private
  */
-router.post('/image', uploadSingleImage, uploadController.uploadSingleImage);
+router.post('/image', (req, res, next) => getUploadMiddleware().uploadSingleImage(req, res, next), uploadController.uploadSingleImage);
 
 /**
  * @route   POST /api/upload/images
  * @desc    Upload multiple images (up to 10)
  * @access  Private
  */
-router.post('/images', uploadMultipleImages, uploadController.uploadMultipleImages);
+router.post('/images', (req, res, next) => getUploadMiddleware().uploadMultipleImages(req, res, next), uploadController.uploadMultipleImages);
 
 /**
  * @route   POST /api/upload/product-images
@@ -37,7 +38,7 @@ router.post('/images', uploadMultipleImages, uploadController.uploadMultipleImag
  */
 router.post(
   '/product-images',
-  uploadProductImages,
+  (req, res, next) => getUploadMiddleware().uploadProductImages(req, res, next),
   uploadController.uploadMultipleImages
 );
 
@@ -48,7 +49,7 @@ router.post(
  */
 router.post(
   '/product-gallery',
-  uploadProductGallery,
+  (req, res, next) => getUploadMiddleware().uploadProductGallery(req, res, next),
   uploadController.uploadProductGallery
 );
 
@@ -57,7 +58,7 @@ router.post(
  * @desc    Upload brand logo
  * @access  Private
  */
-router.post('/brand-logo', uploadBrandLogo, uploadController.uploadBrandLogo);
+router.post('/brand-logo', (req, res, next) => getUploadMiddleware().uploadBrandLogo(req, res, next), uploadController.uploadBrandLogo);
 
 /**
  * @route   POST /api/upload/category-image
@@ -66,7 +67,7 @@ router.post('/brand-logo', uploadBrandLogo, uploadController.uploadBrandLogo);
  */
 router.post(
   '/category-image',
-  uploadCategoryImage,
+  (req, res, next) => getUploadMiddleware().uploadCategoryImage(req, res, next),
   uploadController.uploadCategoryImage
 );
 

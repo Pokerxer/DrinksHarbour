@@ -43,10 +43,14 @@ const ensureDirectoryExists = (dirPath) => {
   }
 };
 
-// Create all upload directories on module load
-['uploads/temp', 'uploads/products', 'uploads/brands', 'uploads/categories', 'uploads/reviews', 'uploads/avatars'].forEach(dir => {
-  ensureDirectoryExists(dir);
-});
+// Create all upload directories on module load (skip in serverless/vercel)
+try {
+  ['uploads/temp', 'uploads/products', 'uploads/brands', 'uploads/categories', 'uploads/reviews', 'uploads/avatars'].forEach(dir => {
+    ensureDirectoryExists(dir);
+  });
+} catch (err) {
+  console.warn('⚠️  Could not create upload directories (expected in serverless environment):', err.message);
+}
 
 // ============================================================
 // MEMORY STORAGE (for Cloudinary)
@@ -75,8 +79,12 @@ const diskStorage = multer.diskStorage({
       uploadDir = 'uploads/avatars';
     }
 
-    // Ensure directory exists
-    ensureDirectoryExists(uploadDir);
+    // Ensure directory exists (skip in serverless)
+    try {
+      ensureDirectoryExists(uploadDir);
+    } catch (err) {
+      console.warn('⚠️  Could not create upload directory:', err.message);
+    }
     
     cb(null, uploadDir);
   },
