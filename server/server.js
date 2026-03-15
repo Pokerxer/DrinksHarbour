@@ -173,6 +173,23 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Root endpoint for API info
+app.get('/', (req, res) => {
+  res.json({
+    name: 'DrinksHarbour API',
+    version: '1.0.0',
+    status: 'running',
+    endpoints: {
+      health: '/health',
+      users: '/api/users',
+      products: '/api/products',
+      orders: '/api/orders',
+      categories: '/api/categories',
+      brands: '/api/brands',
+    }
+  });
+});
+
 // ────────────────────────────────────────────────
 // File System Error Handler
 // ────────────────────────────────────────────────
