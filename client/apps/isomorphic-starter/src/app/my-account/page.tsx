@@ -14,9 +14,20 @@ export default function MyAccountPage() {
 
   useEffect(() => {
     const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    const storedUser = localStorage.getItem('user') || sessionStorage.getItem('user');
+    
     if (!token) {
       router.push('/login?redirect=/my-account');
       return;
+    }
+
+    // Try to get user from localStorage first (set during login)
+    if (storedUser) {
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch (e) {
+        console.error('Failed to parse stored user:', e);
+      }
     }
 
     const fetchData = async () => {
@@ -29,7 +40,10 @@ export default function MyAccountPage() {
         
         if (response.ok) {
           const data = await response.json();
-          setUser(data.data?.user || data.user);
+          const userData = data.data?.user || data.user || data.data;
+          setUser(userData);
+          // Store user in localStorage for future use
+          localStorage.setItem('user', JSON.stringify(userData));
         }
       } catch (error) {
         console.error('Failed to fetch user:', error);
@@ -76,11 +90,11 @@ export default function MyAccountPage() {
           <div className="lg:col-span-1">
             <div className="bg-white rounded-2xl shadow-sm p-6">
               <div className="flex items-center gap-4 mb-6">
-                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center">
-                  <Icon.PiUserBold className="w-8 h-8 text-gray-600" />
+                <div className="w-16 h-16 bg-gradient-to-br from-gray-700 to-gray-900 rounded-full flex items-center justify-center text-white text-xl font-bold">
+                  {user?.firstName?.charAt(0)?.toUpperCase() || user?.name?.charAt(0)?.toUpperCase() || 'U'}
                 </div>
                 <div>
-                  <p className="font-semibold text-gray-900">{user?.firstName || 'Guest'}</p>
+                  <p className="font-semibold text-gray-900">{user?.firstName || user?.name || user?.username || 'User'}</p>
                   <p className="text-sm text-gray-500">{user?.email || ''}</p>
                 </div>
               </div>
