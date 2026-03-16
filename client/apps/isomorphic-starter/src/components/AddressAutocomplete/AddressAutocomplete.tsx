@@ -178,7 +178,16 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
 
   const handlePlaceSelect = (place: any) => {
     const address = place.formatted_address;
-    onChange(address, place);
+    
+    // Format place details for parent component
+    const placeDetails = {
+      formatted_address: place.formatted_address,
+      address_components: place.address_components || [],
+      geometry: place.geometry,
+      place_id: place.place_id,
+    };
+    
+    onChange(address, placeDetails);
   };
 
   if (isLoading) {

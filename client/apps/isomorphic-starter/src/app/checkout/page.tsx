@@ -243,25 +243,34 @@ const Checkout = () => {
     // Update form data with all fields at once
     const updates: Partial<FormData> = { address };
     
-    if (placeDetails?.addressComponents) {
-      const components = placeDetails.addressComponents;
+    // Parse address_components array from Google Places API
+    if (placeDetails?.address_components && Array.isArray(placeDetails.address_components)) {
+      const components = placeDetails.address_components;
       
-      // Auto-fill city from locality or sublocality
-      const city = components['locality'] || components['sublocality'] || components['administrative_area_level_2'];
+      // Helper to extract value by type
+      const getComponent = (types: string[]): string | undefined => {
+        const comp = components.find((c: any) => 
+          types.some(t => c.types.includes(t))
+        );
+        return comp?.long_name;
+      };
+      
+      // Auto-fill city
+      const city = getComponent(['locality', 'sublocality', 'administrative_area_level_2']) || getComponent(['postal_town']);
       if (city) {
         updates.city = city;
         console.log('   Auto-filled city:', city);
       }
       
-      // Auto-fill state from administrative_area_level_1
-      const state = components['administrative_area_level_1'];
+      // Auto-fill state
+      const state = getComponent(['administrative_area_level_1']);
       if (state) {
         updates.state = state;
         console.log('   Auto-filled state:', state);
       }
       
-      // Auto-fill zip code from postal_code
-      const zipCode = components['postal_code'];
+      // Auto-fill zip code
+      const zipCode = getComponent(['postal_code']);
       if (zipCode) {
         updates.zipCode = zipCode;
         console.log('   Auto-filled zipCode:', zipCode);
