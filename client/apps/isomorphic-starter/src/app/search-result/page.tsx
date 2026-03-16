@@ -27,7 +27,7 @@ function SearchResultContent() {
     setLoading(true);
     try {
       const response = await fetch(
-        `http://localhost:5001/api/products/search?q=${encodeURIComponent(searchQuery)}&limit=50`,
+        `/api/products/search?q=${encodeURIComponent(searchQuery)}&limit=50`,
         {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },

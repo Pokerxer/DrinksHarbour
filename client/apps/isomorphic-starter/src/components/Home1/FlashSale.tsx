@@ -507,8 +507,8 @@ const FlashSale = () => {
     const fetchData = async () => {
       try {
         const [salesRes, productsRes] = await Promise.all([
-          fetch('http://localhost:5001/api/sales/active?limit=5'),
-          fetch('http://localhost:5001/api/products?onSale=true&limit=8'),
+          fetch('/api/sales/active?limit=5'),
+          fetch('/api/products?onSale=true&limit=8'),
         ]);
         
         const salesData = await salesRes.json();

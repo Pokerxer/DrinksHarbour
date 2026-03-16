@@ -291,7 +291,7 @@ const PromotionalBanner: React.FC<PromotionalBannerProps> = ({
     const fetchBanners = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`http://localhost:5001/api/banners/placement/${placement}?limit=${columns}`);
+        const response = await fetch(`/api/banners/placement/${placement}?limit=${columns}`);
         
         if (response.ok) {
           const data = await response.json();
@@ -312,7 +312,7 @@ const PromotionalBanner: React.FC<PromotionalBannerProps> = ({
   const handleBannerClick = useCallback(async (bannerId: string) => {
     if (!bannerId) return;
     try {
-      await fetch(`http://localhost:5001/api/banners/${bannerId}/click`, { method: 'POST' });
+      await fetch(`/api/banners/${bannerId}/click`, { method: 'POST' });
     } catch {
       // Ignore click tracking errors
     }

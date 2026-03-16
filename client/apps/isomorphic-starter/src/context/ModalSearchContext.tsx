@@ -66,7 +66,7 @@ interface ModalSearchContextValue {
 const ModalSearchContext = createContext<ModalSearchContextValue | undefined>(undefined);
 
 const MAX_RECENT_SEARCHES = 10;
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 export const useModalSearchContext = (): ModalSearchContextValue => {
   const context = useContext(ModalSearchContext);

@@ -189,7 +189,7 @@ const Register = () => {
       };
 
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/api/users/register`,
+        `${process.env.NEXT_PUBLIC_API_URL || ''}/api/users/register`,
         {
           method: 'POST',
           headers: {

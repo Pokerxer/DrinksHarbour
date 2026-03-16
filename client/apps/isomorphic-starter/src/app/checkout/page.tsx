@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
 import CouponComponent from '@/components/Coupon/Coupon';
 import PaymentHandler from '@/components/Payment/PaymentHandler';
+import { API_URL } from '@/lib/api';
 import AddressAutocomplete from '@/components/AddressAutocomplete/AddressAutocomplete';
 
 interface FormData {
@@ -326,7 +327,7 @@ const Checkout = () => {
 
     try {
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
       if (activePayment === 'card') {
         const response = await fetch(`${API_URL}/api/payments/stripe/initialize`, {
@@ -495,7 +496,7 @@ const Checkout = () => {
 
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
 
-      const response = await fetch('http://localhost:5001/api/orders', {
+      const response = await fetch(`${API_URL}/api/orders`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -528,7 +529,7 @@ const Checkout = () => {
     
     try {
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
       const orderData = {
         customer: {

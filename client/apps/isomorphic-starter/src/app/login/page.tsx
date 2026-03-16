@@ -54,7 +54,7 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:5001');
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
       const response = await fetch(`${apiUrl}/api/users/login`, {
         method: 'POST',
         headers: {

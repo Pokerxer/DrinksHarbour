@@ -61,7 +61,7 @@ const SeasonalBanner: React.FC<SeasonalBannerProps> = ({
   const fetchBanners = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:5001/api/banners/placement/${placement}?type=seasonal&limit=${limit}`);
+      const response = await fetch(`/api/banners/placement/${placement}?type=seasonal&limit=${limit}`);
       
       if (response.ok) {
         const data = await response.json();
@@ -224,7 +224,7 @@ const SeasonalBanner: React.FC<SeasonalBannerProps> = ({
   const handleBannerClick = async (bannerId: string) => {
     if (!bannerId) return;
     try {
-      await fetch(`http://localhost:5001/api/banners/${bannerId}/click`, {
+      await fetch(`/api/banners/${bannerId}/click`, {
         method: 'POST'
       });
     } catch (err) {

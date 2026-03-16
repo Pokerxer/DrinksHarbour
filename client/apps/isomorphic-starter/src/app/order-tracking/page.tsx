@@ -96,7 +96,7 @@ function OrderTrackingContent() {
     setOrder(null);
 
     try {
-      const url = 'http://localhost:5001/api/orders/number/' + orderNum + '?email=' + encodeURIComponent(orderEmail);
+      const url = '/api/orders/number/' + orderNum + '?email=' + encodeURIComponent(orderEmail);
       const response = await fetch(url);
       const data = await response.json();
 

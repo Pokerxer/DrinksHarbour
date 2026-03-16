@@ -77,7 +77,7 @@ function ShopPageContent({ params }: PageProps) {
   }, [pathname, router]);
 
   const buildApiUrl = useCallback(() => {
-    const baseUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/api/products/search`;
+    const baseUrl = `${process.env.NEXT_PUBLIC_API_URL || ''}/api/products/search`;
 
     const paramsObj = new URLSearchParams();
 

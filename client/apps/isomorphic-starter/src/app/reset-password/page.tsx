@@ -47,7 +47,7 @@ function ResetPasswordContent() {
     setMessage(null);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
       const response = await fetch(`${apiUrl}/api/users/reset-password/${token}`, {
         method: 'POST',
         headers: {

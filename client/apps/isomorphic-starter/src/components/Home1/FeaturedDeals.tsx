@@ -459,7 +459,7 @@ const FeaturedDeals: React.FC<FeaturedDealsProps> = ({
     const fetchDeals = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`http://localhost:5001/api/products?isFeatured=true&onSale=true&limit=${limit}`);
+        const response = await fetch(`/api/products?isFeatured=true&onSale=true&limit=${limit}`);
         
         if (response.ok) {
           const data = await response.json();

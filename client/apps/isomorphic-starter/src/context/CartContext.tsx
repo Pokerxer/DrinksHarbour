@@ -378,7 +378,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/api/cart/save`, {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/cart/save`, {
           method: 'POST',
           headers,
           body: JSON.stringify({ items }),
@@ -428,7 +428,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/api/cart`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/cart`, {
         headers,
       });
 

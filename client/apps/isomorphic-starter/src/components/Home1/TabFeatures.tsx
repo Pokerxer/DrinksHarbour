@@ -97,7 +97,7 @@ const TabFeatures: React.FC = () => {
   const { wishlistState, addToWishlist, removeFromWishlist } = useWishlist();
   const { openModalWishlist } = useModalWishlistContext();
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
   const tabs: TabConfig[] = [
     {

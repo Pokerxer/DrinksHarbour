@@ -39,6 +39,6 @@ export const getImageUrl = (url: string | undefined | null): string => {
     return url;
   }
   
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || '';
   return `${baseUrl}${url}`;
 };

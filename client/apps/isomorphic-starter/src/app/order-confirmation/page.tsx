@@ -78,7 +78,7 @@ function OrderConfirmationContent() {
         const token = localStorage.getItem('token') || sessionStorage.getItem('token');
         
         // For guest users, we need to provide email for verification
-        let url = `http://localhost:5001/api/orders/${orderId}`;
+        let url = `/api/orders/${orderId}`;
         if (!token) {
           const customerEmail = localStorage.getItem('customerEmail') || sessionStorage.getItem('customerEmail');
           if (customerEmail) {

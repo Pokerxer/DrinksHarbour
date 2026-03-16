@@ -205,7 +205,7 @@ const TrendingProduct: React.FC<TrendingProductProps> = ({ limit = 8 }) => {
     const fetchTrendingProducts = async () => {
       try {
         setLoading(true);
-        const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+        const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
         const response = await fetch(`${API_URL}/api/products/trending?limit=${limit}`);
         
         if (!response.ok) {

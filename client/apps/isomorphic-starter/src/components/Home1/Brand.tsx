@@ -63,7 +63,7 @@ const Brand: React.FC = () => {
   const [hoveredBrand, setHoveredBrand] = useState<string | null>(null);
   const [isVisible, setIsVisible] = useState(false);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
   useEffect(() => {
     setIsVisible(true);

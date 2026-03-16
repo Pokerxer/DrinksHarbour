@@ -39,7 +39,7 @@ interface AvailableCoupon {
   minimumPurchase?: number;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 const formatPrice = (price: number): string => {
   return '₦' + price.toLocaleString();

@@ -64,7 +64,7 @@ const FooterBanner: React.FC<FooterBannerProps> = ({
     const fetchBanner = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`http://localhost:5001/api/banners/placement/${placement}?limit=1`);
+        const response = await fetch(`/api/banners/placement/${placement}?limit=1`);
         if (response.ok) {
           const data = await response.json();
           if (data.success && data.data?.length > 0) {

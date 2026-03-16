@@ -216,7 +216,7 @@ const CategoryBanner: React.FC<CategoryBannerProps> = ({
       // Try to fetch from API
       if (categorySlug) {
         try {
-          const response = await fetch(`http://localhost:5001/api/products/categories/slug/${categorySlug}`);
+          const response = await fetch(`/api/products/categories/slug/${categorySlug}`);
           if (response.ok) {
             const data = await response.json();
             if (data.success) {

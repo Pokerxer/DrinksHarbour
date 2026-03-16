@@ -101,7 +101,7 @@ const FeaturedPromotionalBanner = () => {
     const fetchBanner = async () => {
       try {
         setLoading(true);
-        const response = await fetch('http://localhost:5001/api/banners/placement/home_featured?limit=1');
+        const response = await fetch('/api/banners/placement/home_featured?limit=1');
         
         if (response.ok) {
           const data = await response.json();

@@ -38,7 +38,7 @@ const Product = () => {
   const fetchProduct = useCallback(async () => {
     if (!slug) return;
 
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
     
     try {
       setLoading(true);
@@ -82,7 +82,7 @@ const Product = () => {
   }, [slug]);
 
   const fetchRelatedProducts = useCallback(async (productId: string) => {
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
     try {
       const response = await fetch(`${API_URL}/api/products/${productId}/related?limit=8`, {
         method: 'GET',

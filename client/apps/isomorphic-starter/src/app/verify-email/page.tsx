@@ -26,7 +26,7 @@ function VerifyEmailContent() {
 
   const verifyEmail = async (token: string) => {
     try {
-      const response = await fetch(`http://localhost:5001/api/users/verify-email/${token}`);
+      const response = await fetch(`/api/users/verify-email/${token}`);
       const data = await response.json();
 
       if (response.ok) {
@@ -53,7 +53,7 @@ function VerifyEmailContent() {
     setResendMessage('');
 
     try {
-      const response = await fetch('http://localhost:5001/api/users/resend-verification', {
+      const response = await fetch('/api/users/resend-verification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),

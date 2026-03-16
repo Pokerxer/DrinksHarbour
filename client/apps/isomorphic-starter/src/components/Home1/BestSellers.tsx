@@ -321,7 +321,7 @@ const BestSellers: React.FC<BestSellersProps> = ({ limit = 5 }) => {
     const fetchBestSellers = async () => {
       try {
         setLoading(true);
-        const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+        const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
         const response = await fetch(`${API_URL}/api/products?sort=rating&limit=${limit}`);
         
         if (!response.ok) throw new Error('Failed to fetch products');

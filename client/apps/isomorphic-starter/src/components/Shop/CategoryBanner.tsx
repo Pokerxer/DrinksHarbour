@@ -87,7 +87,7 @@ const CategoryBanner: React.FC<CategoryBannerProps> = ({
         const slug = subcategorySlug || categorySlug;
         
         if (slug) {
-          const response = await fetch(`http://localhost:5001/api/products/categories/slug/${slug}`);
+          const response = await fetch(`/api/products/categories/slug/${slug}`);
           
           if (response.ok) {
             const data = await response.json();
