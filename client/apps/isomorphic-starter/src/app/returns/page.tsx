@@ -52,7 +52,7 @@ export default function ReturnsPage() {
 
           <section>
             <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-              <Icon.PiArrowCycleBold className="w-6 h-6" />
+              <Icon.PiArrowUUpLeftBold className="w-6 h-6" />
               How to Return
             </h2>
             <ol className="mt-4 list-decimal list-inside text-gray-600 space-y-2">
