@@ -54,7 +54,7 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_VERCEL_URL || 'http://localhost:5001';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://drinks-harbour-server.vercel.app';
       const response = await fetch(`${apiUrl}/api/users/login`, {
         method: 'POST',
         headers: {
