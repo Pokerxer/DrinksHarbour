@@ -221,13 +221,13 @@ export default function WishlistPage() {
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
-                whileHover={{ y: -8 }}
-                className="bg-white rounded-2xl shadow-sm hover:shadow-xl transition-all overflow-hidden group"
+                whileHover={{ y: -4 }}
+                className="bg-white rounded-2xl shadow-sm hover:shadow-xl transition-all overflow-hidden group cursor-pointer"
+                onClick={() => router.push(`/product/${item.slug}`)}
               >
                 <motion.div 
-                  className="w-full aspect-square relative bg-gray-100 overflow-hidden cursor-pointer"
-                  whileHover={{ scale: 1.05 }}
-                  onClick={() => router.push(`/product/${item.slug}`)}
+                  className="w-full relative bg-gray-100 overflow-hidden"
+                  style={{ paddingBottom: '140%' }}
                 >
                   {item.thumbImage?.[0] || item.image || item.images?.[0] ? (
                     <Image 
@@ -237,30 +237,61 @@ export default function WishlistPage() {
                       className="object-cover"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Icon.PiImageBold className="w-12 h-12 text-gray-300" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Icon.PiImageBold className="w-16 h-16 text-gray-300" />
                     </div>
                   )}
+                  
                   {item.onSale && (
-                    <span className="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                    <span className="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
                       SALE
                     </span>
                   )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleRemove(item._id || item.id, item.name); }}
-                    className="absolute top-2 right-2 p-2 bg-white/90 backdrop-blur-sm rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-50"
-                  >
-                    <Icon.PiTrashBold className="w-4 h-4 text-red-600" />
-                  </button>
+                  
+                  {item.availability?.status === 'out_of_stock' && (
+                    <span className="absolute top-3 left-3 bg-gray-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                      OUT OF STOCK
+                    </span>
+                  )}
+                  
+                  <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex gap-2">
+                      <motion.button
+                        whileTap={{ scale: 0.9 }}
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          handleAddToCart(item); 
+                        }}
+                        disabled={loadingId === (item._id || item.id) || item.availability?.status === 'out_of_stock'}
+                        className="flex-1 py-2 bg-white text-gray-900 text-xs font-bold rounded-full hover:bg-gray-100 transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+                      >
+                        {loadingId === (item._id || item.id) ? (
+                          <div className="w-3 h-3 border-2 border-gray-300 border-t-gray-900 rounded-full animate-spin" />
+                        ) : (
+                          <>
+                            <Icon.PiShoppingCartBold className="w-3 h-3" />
+                            ADD
+                          </>
+                        )}
+                      </motion.button>
+                      <motion.button
+                        whileTap={{ scale: 0.9 }}
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          handleRemove(item._id || item.id, item.name); 
+                        }}
+                        className="p-2 bg-white/90 backdrop-blur-sm rounded-full hover:bg-red-50 transition-colors"
+                      >
+                        <Icon.PiTrashBold className="w-4 h-4 text-red-600" />
+                      </motion.button>
+                    </div>
+                  </div>
                 </motion.div>
                 
-                <div className="p-3 md:p-4">
-                  <Link 
-                    href={`/product/${item.slug}`}
-                    className="text-sm font-bold text-gray-900 hover:text-gray-700 line-clamp-2 block"
-                  >
+                <div className="p-3">
+                  <h3 className="text-sm font-bold text-gray-900 hover:text-gray-700 line-clamp-2">
                     {item.name}
-                  </Link>
+                  </h3>
                   
                   {item.category && (
                     <p className="text-xs text-gray-500 mt-1 capitalize">
@@ -286,28 +317,6 @@ export default function WishlistPage() {
                       ₦{Number(item.price).toLocaleString()}
                     </p>
                   )}
-
-                  {item.availability?.status === 'out_of_stock' && (
-                    <span className="inline-block mt-2 text-xs text-red-600 font-medium">
-                      Out of Stock
-                    </span>
-                  )}
-
-                  <motion.button
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => handleAddToCart(item)}
-                    disabled={loadingId === (item._id || item.id) || item.availability?.status === 'out_of_stock'}
-                    className="w-full mt-3 py-2 bg-gray-900 text-white text-xs font-medium rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
-                  >
-                    {loadingId === (item._id || item.id) ? (
-                      <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    ) : (
-                      <>
-                        <Icon.PiShoppingCartBold className="w-3 h-3" />
-                        Add to Cart
-                      </>
-                    )}
-                  </motion.button>
                 </div>
               </motion.div>
             ))}
