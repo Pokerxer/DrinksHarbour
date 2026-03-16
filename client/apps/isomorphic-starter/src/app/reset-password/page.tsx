@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
+
+function ResetPasswordForm() {
 
 export default function ResetPassword() {
   const router = useRouter();
@@ -189,3 +191,13 @@ export default function ResetPassword() {
     </div>
   );
 }
+
+function ResetPasswordWithSuspense() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="animate-spin w-8 h-8 border-4 border-gray-300 border-t-gray-900 rounded-full" /></div>}>
+      <ResetPasswordForm />
+    </Suspense>
+  );
+}
+
+export default ResetPasswordWithSuspense;
