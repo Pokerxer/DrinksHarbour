@@ -210,7 +210,7 @@ export default function WishlistPage() {
           variants={containerVariants}
           initial="hidden"
           animate="visible"
-          className="space-y-4"
+          className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6"
         >
           <AnimatePresence mode="popLayout">
             {items.map((item: any) => (
@@ -218,14 +218,14 @@ export default function WishlistPage() {
                 key={item._id || item.id}
                 variants={itemVariants}
                 layout
-                initial={{ opacity: 0, scale: 0.95 }}
+                initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95, x: 100 }}
-                whileHover={{ y: -2 }}
-                className="bg-white rounded-2xl shadow-sm hover:shadow-md transition-shadow p-4 md:p-6 flex flex-col sm:flex-row gap-4 md:gap-6"
+                exit={{ opacity: 0, scale: 0.9 }}
+                whileHover={{ y: -8 }}
+                className="bg-white rounded-2xl shadow-sm hover:shadow-xl transition-all overflow-hidden group"
               >
                 <motion.div 
-                  className="w-full sm:w-28 md:w-32 h-28 md:h-32 relative flex-shrink-0 bg-gray-100 rounded-xl overflow-hidden cursor-pointer"
+                  className="w-full aspect-square relative bg-gray-100 overflow-hidden cursor-pointer"
                   whileHover={{ scale: 1.05 }}
                   onClick={() => router.push(`/product/${item.slug}`)}
                 >
@@ -238,7 +238,7 @@ export default function WishlistPage() {
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
-                      <Icon.PiImageBold className="w-10 h-10 text-gray-300" />
+                      <Icon.PiImageBold className="w-12 h-12 text-gray-300" />
                     </div>
                   )}
                   {item.onSale && (
@@ -246,79 +246,68 @@ export default function WishlistPage() {
                       SALE
                     </span>
                   )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleRemove(item._id || item.id, item.name); }}
+                    className="absolute top-2 right-2 p-2 bg-white/90 backdrop-blur-sm rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-50"
+                  >
+                    <Icon.PiTrashBold className="w-4 h-4 text-red-600" />
+                  </button>
                 </motion.div>
                 
-                <div className="flex-1 min-w-0 flex flex-col">
-                  <div className="flex-1">
-                    <Link 
-                      href={`/product/${item.slug}`}
-                      className="text-lg font-bold text-gray-900 hover:text-gray-700 line-clamp-2"
-                    >
-                      {item.name}
-                    </Link>
-                    
-                    {item.category && (
-                      <p className="text-sm text-gray-500 mt-1 capitalize">
-                        {item.category.name || item.type}
-                      </p>
-                    )}
-                    
-                    {item.priceRange?.min !== undefined && (
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className="text-xl font-bold text-gray-900">
-                          ₦{item.priceRange.min.toLocaleString()}
-                        </span>
-                        {item.priceRange.max > item.priceRange.min && (
-                          <span className="text-gray-400 line-through text-sm">
-                            ₦{item.priceRange.max.toLocaleString()}
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {item.price && !item.priceRange && (
-                      <p className="text-xl font-bold text-gray-900 mt-2">
-                        ₦{Number(item.price).toLocaleString()}
-                      </p>
-                    )}
-
-                    {item.availability?.status === 'out_of_stock' && (
-                      <span className="inline-block mt-2 text-sm text-red-600 font-medium">
-                        Out of Stock
+                <div className="p-3 md:p-4">
+                  <Link 
+                    href={`/product/${item.slug}`}
+                    className="text-sm font-bold text-gray-900 hover:text-gray-700 line-clamp-2 block"
+                  >
+                    {item.name}
+                  </Link>
+                  
+                  {item.category && (
+                    <p className="text-xs text-gray-500 mt-1 capitalize">
+                      {item.category.name || item.type}
+                    </p>
+                  )}
+                  
+                  {item.priceRange?.min !== undefined && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className="text-base font-bold text-gray-900">
+                        ₦{item.priceRange.min.toLocaleString()}
                       </span>
-                    )}
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 mt-4">
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => handleAddToCart(item)}
-                      disabled={loadingId === (item._id || item.id) || item.availability?.status === 'out_of_stock'}
-                      className="px-5 py-2.5 bg-gradient-to-r from-gray-900 to-gray-800 text-white text-sm font-medium rounded-xl hover:from-gray-800 hover:to-gray-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                    >
-                      {loadingId === (item._id || item.id) ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          Adding...
-                        </>
-                      ) : (
-                        <>
-                          <Icon.PiShoppingCartBold className="w-4 h-4" />
-                          Add to Cart
-                        </>
+                      {item.priceRange.max > item.priceRange.min && (
+                        <span className="text-gray-400 line-through text-xs">
+                          ₦{item.priceRange.max.toLocaleString()}
+                        </span>
                       )}
-                    </motion.button>
-                    
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => handleRemove(item._id || item.id, item.name)}
-                      className="p-2.5 border border-gray-200 text-gray-600 rounded-xl hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-all"
-                    >
-                      <Icon.PiTrashBold className="w-4 h-4" />
-                    </motion.button>
-                  </div>
+                    </div>
+                  )}
+
+                  {item.price && !item.priceRange && (
+                    <p className="text-base font-bold text-gray-900 mt-2">
+                      ₦{Number(item.price).toLocaleString()}
+                    </p>
+                  )}
+
+                  {item.availability?.status === 'out_of_stock' && (
+                    <span className="inline-block mt-2 text-xs text-red-600 font-medium">
+                      Out of Stock
+                    </span>
+                  )}
+
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => handleAddToCart(item)}
+                    disabled={loadingId === (item._id || item.id) || item.availability?.status === 'out_of_stock'}
+                    className="w-full mt-3 py-2 bg-gray-900 text-white text-xs font-medium rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+                  >
+                    {loadingId === (item._id || item.id) ? (
+                      <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <Icon.PiShoppingCartBold className="w-3 h-3" />
+                        Add to Cart
+                      </>
+                    )}
+                  </motion.button>
                 </div>
               </motion.div>
             ))}
