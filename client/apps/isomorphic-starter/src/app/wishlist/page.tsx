@@ -28,7 +28,7 @@ export default function WishlistPage() {
     router.push(`/product/${product.slug}`);
   };
 
-  if (wishlistState.items.length === 0) {
+  if (!mounted || !wishlistState?.items || wishlistState.items.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 py-12">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -50,10 +50,10 @@ export default function WishlistPage() {
     <div className="min-h-screen bg-gray-50 py-12">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <h1 className="text-3xl font-bold text-gray-900">My Wishlist</h1>
-        <p className="mt-2 text-gray-600">{wishlistState.items.length} item(s) saved</p>
+        <p className="mt-2 text-gray-600">{wishlistState?.items?.length || 0} item(s) saved</p>
 
         <div className="mt-8 space-y-4">
-          {wishlistState.items.map((item) => (
+          {(wishlistState?.items || []).map((item: any) => (
             <div key={item.id} className="bg-white rounded-2xl shadow-sm p-4 flex gap-4">
               <div className="w-24 h-24 relative flex-shrink-0 bg-gray-100 rounded-lg overflow-hidden">
                 {item.image ? (
