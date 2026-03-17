@@ -264,17 +264,22 @@ const extractIntent = (query) => {
 
   // Beverage type detection
   const beverageTypes = [
-    'wine', 'red wine', 'white wine', 'rose wine', 'champagne', 'prosecco', 'sparkling',
-    'beer', 'lager', 'ale', 'stout', 'porter', 'ipa', 'craft beer',
+    'wine', 'wines', 'red wine', 'white wine', 'rose wine', 'champagne', 'prosecco', 'sparkling',
+    'beer', 'beers', 'lager', 'lagers', 'ale', 'ales', 'stout', 'porter', 'ipa', 'craft beer',
     'whiskey', 'whisky', 'bourbon', 'scotch', 'rye',
     'vodka', 'gin', 'rum', 'tequila', 'mezcal', 'cognac', 'brandy',
-    'cider', 'sake', 'sherry', 'port', 'vermouth',
+    'cider', 'ciders', 'sake', 'sherry', 'port', 'vermouth',
     'soft drink', 'water', 'juice', 'energy drink', 'soda', 'tonic'
   ];
   
   for (const type of beverageTypes) {
     if (lowerQuery.includes(type)) {
-      intent.filters.type = type.replace(/ /g, '_');
+      // Normalize plural to singular
+      let normalizedType = type.replace(/s$/, '');
+      if (normalizedType === 'whisky') normalizedType = 'whiskey';
+      if (normalizedType === 'lager') normalizedType = 'lager';
+      if (normalizedType === ' cider') normalizedType = 'cider';
+      intent.filters.type = normalizedType.replace(/ /g, '_');
       intent.keywords.push(type);
       break;
     }
@@ -622,40 +627,19 @@ const shouldShowProducts = (intent, productCount, products = [], query = '') => 
   // Don't show products if no products found
   if (productCount === 0) return false;
   
-  // Show products if there are keywords (type or brand) even if intent is 'general'
-  if (intent.keywords.length > 0 || intent.filters.type || intent.brand) {
-    return true;
-  }
-  
   // Don't show products for general conversational queries without keywords
   const conversationalPatterns = ['how are you', 'what can you do', 'help me', 'who are you'];
   if (conversationalPatterns.some(p => lowerQuery.includes(p))) {
     return false;
   }
   
-  // Default: show products if we found any
-  return productCount > 0;
-  
-  // If brand was specified, ensure at least some products match
-  if (intent.brand && products.length > 0) {
-    const brandMatch = products.some(p => 
-      p.brand && p.brand.toLowerCase().includes(intent.brand.toLowerCase())
-    );
-    if (!brandMatch) return false;
+  // Show products if there are keywords (type or brand)
+  if (intent.keywords.length > 0 || intent.filters.type || intent.brand) {
+    return true;
   }
   
-  // If type was specified, ensure products match the type
-  if (intent.filters.type && products.length > 0) {
-    const typeMatch = products.some(p => 
-      p.type && p.type.toLowerCase().includes(intent.filters.type.toLowerCase().replace('_', ' '))
-    );
-    if (!typeMatch) return false;
-  }
-  
-  // Don't show products if no specific filters and no keywords (general browse)
-  if (!intent.filters.type && intent.keywords.length === 0) return false;
-  
-  return true;
+  // Default: don't show products for generic queries
+  return false;
 };
 
 // Handle image-based queries (single or multiple)

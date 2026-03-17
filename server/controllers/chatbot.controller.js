@@ -494,28 +494,12 @@ const chatStream = asyncHandler(async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
 
-  let fullResponse = '';
-  let products = [];
-  let intent = 'general';
-  let hasProducts = false;
-
   try {
-    // First, get products synchronously for quick reply
-    const { extractIntent, queryProducts } = require('../services/chatbot.service');
-    const intentObj = extractIntent(query);
-    const searchTerm = intentObj.keywords.length > 0 ? intentObj.keywords.join(' ') : null;
-    const foundProducts = await queryProducts(intentObj.filters, searchTerm, 4, intentObj.brand);
+    // Get handleChatbotQuery function
+    const { handleChatbotQuery } = require('../services/chatbot.service');
     
-    products = foundProducts.slice(0, 4).map(p => ({
-      id: p._id, name: p.name, slug: p.slug, type: p.type,
-      minPrice: p.minPrice, hasDiscount: p.hasDiscount,
-      image: p.images?.[0]?.url
-    }));
-    intent = intentObj.type;
-    hasProducts = foundProducts.length > 0;
-
-    // Stream the response
-    const result = await require('../services/chatbot.service').handleChatbotQuery(
+    // Call with streaming callback
+    const result = await handleChatbotQuery(
       {
         query,
         imageUrl,
@@ -523,22 +507,17 @@ const chatStream = asyncHandler(async (req, res) => {
         conversationHistory: conversationHistory || [],
       },
       (chunk) => {
-        fullResponse += chunk;
         res.write(`data: ${JSON.stringify({ type: 'chunk', content: chunk })}\n\n`);
       }
     );
 
-    if (result && !fullResponse) {
-      fullResponse = result.response;
-    }
-
-    // Send final message with products
+    // Send final message
     res.write(`data: ${JSON.stringify({ 
       type: 'done', 
-      response: fullResponse,
-      products: products,
-      intent: intent,
-      hasProducts: hasProducts
+      response: result.response,
+      products: result.products || [],
+      intent: result.intent,
+      hasProducts: result.hasProducts
     })}\n\n`);
     
   } catch (error) {
