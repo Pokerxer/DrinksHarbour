@@ -330,7 +330,11 @@ export default function ChatbotWidget() {
     const docToSend = selectedDoc;
     clearSelectedFiles();
 
-    // Use streaming endpoint
+    const filesToSend = [...selectedFiles];
+    const docToSend = selectedDoc;
+    clearSelectedFiles();
+
+    // Use streaming endpoint (fallback to query if fails)
     try {
       const queryToSend = input.trim() || 'What do you have?';
       
@@ -343,9 +347,11 @@ export default function ChatbotWidget() {
         })
       });
 
-      if (!response.ok) throw new Error('Request failed');
+      if (!response.ok || !response.body) {
+        throw new Error('Stream failed');
+      }
 
-      const reader = response.body?.getReader();
+      const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let fullContent = '';
       let products: Product[] = [];
@@ -394,13 +400,49 @@ export default function ChatbotWidget() {
       ));
       setNewMessage(true);
 
-    } catch (error) {
-      console.error('Error sending message:', error);
-      setMessages(prev => prev.map(m => 
-        m.timestamp === placeholderId 
-          ? { ...m, content: 'Sorry, something went wrong. Try again!', timestamp: Date.now() }
-          : m
-      ));
+    } catch (streamError) {
+      // Fallback to regular query endpoint
+      console.log('Stream failed, using query endpoint:', streamError);
+      try {
+        const formData = new FormData();
+        
+        filesToSend.forEach(file => {
+          formData.append('images', file);
+        });
+
+        if (docToSend) {
+          formData.append('file', docToSend);
+        }
+        
+        if (input.trim()) formData.append('query', input);
+        formData.append('conversationHistory', JSON.stringify(conversationHistory));
+
+        const res = await fetch(`${API_URL}/api/chatbot/query`, {
+          method: 'POST',
+          body: formData,
+        });
+        
+        const data = await res.json();
+        
+        if (data.success) {
+          // Remove placeholder and add real response
+          setMessages(prev => prev.filter(m => m.timestamp !== placeholderId));
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: data.data.response,
+            products: data.data.products,
+            timestamp: Date.now()
+          }]);
+          setNewMessage(true);
+        }
+      } catch (queryError) {
+        console.error('Query fallback also failed:', queryError);
+        setMessages(prev => prev.map(m => 
+          m.timestamp === placeholderId 
+            ? { ...m, content: 'Sorry, something went wrong. Try again!', timestamp: Date.now() }
+            : m
+        ));
+      }
     } finally {
       setIsLoading(false);
       setIsTyping(false);
