@@ -1,9 +1,10 @@
 // server/services/chatbot.service.js
-// Enhanced Chatbot Service using Ollama Cloud API for DrinksHarbour Multi-tenant Platform
+// Enhanced Chatbot Service using Google Generative AI for DrinksHarbour Multi-tenant Platform
 // Supports: Text queries, Image analysis, Database products, General beverage knowledge
 
 const mongoose = require('mongoose');
 const productService = require('./product.service');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const Product = mongoose.models.Product || mongoose.model('Product');
 const SubProduct = mongoose.models.SubProduct || mongoose.model('SubProduct');
@@ -11,14 +12,13 @@ const Size = mongoose.models.Size || mongoose.model('Size');
 const Category = mongoose.models.Category || mongoose.model('Category');
 const Tenant = mongoose.models.Tenant || mongoose.model('Tenant');
 
-// Ollama Configuration
-const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
-const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || '';
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'kimi-k2.5:cloud';
-const OLLAMA_VISION_MODEL = process.env.OLLAMA_VISION_MODEL || 'kimi-k2.5:cloud';
+// Google AI Configuration
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const GOOGLE_MODEL = process.env.GOOGLE_MODEL || 'gemini-2.0-flash';
+const GOOGLE_VISION_MODEL = process.env.GOOGLE_VISION_MODEL || 'gemini-1.5-flash';
 
-// Call Ollama Cloud API
-const callOllama = async (prompt, systemPrompt = null) => {
+// Call Google Generative AI
+const callGoogleAI = async (prompt, systemPrompt = null) => {
   const defaultSystemPrompt = `You are DrinksHarbour AI - the friendly, expert beverage assistant for DrinksHarbour.com, Nigeria's premier multi-tenant drinks marketplace.
 Your goal is to help customers find drinks, check prices, plan events, and get beverage recommendations.
 
@@ -40,37 +40,26 @@ Remember: Be helpful, quick, and human-like!`;
   const finalSystemPrompt = systemPrompt || defaultSystemPrompt;
 
   try {
-    const headers = { 'Content-Type': 'application/json' };
-    if (OLLAMA_API_KEY) headers['Authorization'] = `Bearer ${OLLAMA_API_KEY}`;
-
-    const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: OLLAMA_MODEL,
-        messages: [
-          { role: 'system', content: finalSystemPrompt },
-          { role: 'user', content: prompt }
-        ],
+    const model = genAI.getGenerativeModel({ model: GOOGLE_MODEL });
+    
+    const result = await model.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      systemInstruction: { parts: [{ text: finalSystemPrompt }] },
+      generationConfig: {
         temperature: 0.7,
-        stream: false
-      })
+        maxOutputTokens: 2048,
+      }
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Ollama API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.message?.content || null;
+    const response = await result.response;
+    return response.text() || null;
   } catch (error) {
-    console.error('Ollama Error:', error.message);
+    console.error('Google AI Error:', error.message);
     return null;
   }
 };
 
-// Analyze image using Ollama Vision
+// Analyze image using Google Vision AI
 const analyzeImage = async (imageUrl, contextPrompt = '') => {
   try {
     if (!imageUrl) {
@@ -78,18 +67,13 @@ const analyzeImage = async (imageUrl, contextPrompt = '') => {
       return null;
     }
 
-    const headers = { 'Content-Type': 'application/json' };
-    if (OLLAMA_API_KEY) headers['Authorization'] = `Bearer ${OLLAMA_API_KEY}`;
-
-    // Convert image URL to base64
-    let base64Image = imageUrl;
+    let imageData = imageUrl;
     
-    // If it's already a data URL, extract the base64 part
+    // If it's a data URL, extract the base64 part
     if (imageUrl.startsWith('data:')) {
       const matches = imageUrl.match(/^data:([^;]+);base64,(.+)$/);
       if (matches) {
-        base64Image = matches[2];
-        console.log('Using data URL image, length:', base64Image.length);
+        imageData = matches[2];
       } else {
         console.error('Invalid data URL format');
         return null;
@@ -98,25 +82,20 @@ const analyzeImage = async (imageUrl, contextPrompt = '') => {
     // If it's an HTTP URL, fetch and convert
     else if (imageUrl.startsWith('http')) {
       try {
-        console.log('Fetching image from URL:', imageUrl.substring(0, 50));
         const imageRes = await fetch(imageUrl);
         if (!imageRes.ok) {
           throw new Error(`Failed to fetch: ${imageRes.status}`);
         }
         const imageBuffer = await imageRes.arrayBuffer();
-        base64Image = Buffer.from(imageBuffer).toString('base64');
-        console.log('Converted HTTP image to base64, length:', base64Image.length);
+        imageData = Buffer.from(imageBuffer).toString('base64');
       } catch (e) {
         console.error('Failed to fetch image:', e.message);
         return null;
       }
-    } else {
-      console.error('Unknown image format');
-      return null;
     }
 
-    if (!base64Image || base64Image.length < 100) {
-      console.error('Invalid base64 image, length:', base64Image?.length);
+    if (!imageData || imageData.length < 100) {
+      console.error('Invalid image data');
       return null;
     }
 
@@ -130,32 +109,29 @@ Examine this image and identify the drink(s). Provide your findings in a structu
 
 Keep it concise, and if you're very confident in the brand, explicitly state it so I can search our catalog for exact matches.`;
 
-    const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: OLLAMA_VISION_MODEL,
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-            images: [base64Image]
-          }
-        ],
-        temperature: 0.3,
-        stream: false
-      })
+    const visionModel = genAI.getGenerativeModel({ model: GOOGLE_VISION_MODEL });
+    
+    const result = await visionModel.generateContent({
+      contents: [{
+        role: 'user',
+        parts: [
+          { text: prompt },
+          { inlineData: { mimeType: 'image/jpeg', data: imageData } }
+        ]
+      }]
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Ollama Vision API error: ${response.status} - ${errorText}`);
+    const response = await result.response;
+    const text = response.text();
+    
+    if (!text) {
+      console.error('Empty response from vision API');
+      return null;
     }
 
-    const data = await response.json();
-    return data.message?.content || null;
+    return text;
   } catch (error) {
-    console.error('Ollama Vision Error:', error.message);
+    console.error('Vision AI Error:', error.message);
     return null;
   }
 };
@@ -688,7 +664,7 @@ Remember: Be helpful, quick, and human-like!`;
 
     const fullPrompt = recentMessages ? `${recentMessages}\n\nUser: ${query}` : query;
 
-    let response = await callOllama(fullPrompt, systemPrompt);
+    let response = await callGoogleAI(fullPrompt, systemPrompt);
 
     // Filter out products with invalid/zero prices for display
     const validProducts = products.filter(p => p.minPrice > 0);
@@ -1096,7 +1072,7 @@ const generateProductDetails = async (productId) => {
       });
     }
 
-    const response = await callOllama(
+    const response = await callGoogleAI(
       `Summarize these drink details into a compelling, 2-3 sentence overview for a customer. Highlight the brand, type, key flavors, and the best available price:\n\n${details}`,
       'You are DrinksHarbour AI, an engaging beverage expert.'
     );
