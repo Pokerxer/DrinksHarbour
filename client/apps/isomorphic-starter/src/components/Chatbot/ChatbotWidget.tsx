@@ -4,6 +4,8 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
+console.log('[Chatbot] API_URL:', API_URL);
+
 interface Message {
   role: 'user' | 'assistant';
   content: string;
@@ -257,8 +259,15 @@ export default function ChatbotWidget() {
   };
   const hasContent = selectedFiles.length > 0 || docPreview;
 
+  console.log('[Chatbot] Rendering, isOpen:', isOpen, 'isMinimized:', isMinimized);
+
   return (
     <>
+      {/* DEBUG: Chatbot is rendering */}
+      <div className="fixed bottom-20 left-4 z-[9999] bg-red-500 text-white text-xs px-2 py-1 rounded">
+        DEBUG: Chatbot loaded
+      </div>
+      
       {/* Floating Button */}
       <div className="fixed bottom-6 right-6 z-50" id="chatbot-floating-btn">
         <button 
