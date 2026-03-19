@@ -359,13 +359,20 @@ const search = asyncHandler(async (req, res) => {
     data: {
       products: products.map(p => ({
         id: p._id,
+        _id: p._id,
         name: p.name,
         slug: p.slug,
         type: p.type,
         brand: p.brand,
         minPrice: p.minPrice,
         hasDiscount: p.hasDiscount,
-        image: p.images?.[0]?.url
+        image: p.images?.[0]?.url,
+        images: p.images,
+        primaryImage: p.primaryImage,
+        priceRange: p.priceRange,
+        availableAt: p.availableAt || [],
+        subProducts: p.subProducts || [],
+        sizes: p.sizes || []
       }))
     }
   });
@@ -466,68 +473,6 @@ const compare = asyncHandler(async (req, res) => {
   });
 });
 
-// @route   POST /api/chatbot/stream
-// @desc    Handle streaming chatbot conversation
-// @access  Public
-const chatStream = asyncHandler(async (req, res) => {
-  let { query, imageUrl, tenantId, conversationHistory } = req.body;
-  
-  if (!query || !query.trim()) {
-    return res.status(400).json({
-      success: false,
-      message: 'Please provide a query'
-    });
-  }
-
-  // Parse conversationHistory if it's a string
-  if (conversationHistory && typeof conversationHistory === 'string') {
-    try {
-      conversationHistory = JSON.parse(conversationHistory);
-    } catch (e) {
-      conversationHistory = [];
-    }
-  }
-
-  // Set SSE headers
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-
-  try {
-    // Get handleChatbotQuery function
-    const { handleChatbotQuery } = require('../services/chatbot.service');
-    
-    // Call with streaming callback
-    const result = await handleChatbotQuery(
-      {
-        query,
-        imageUrl,
-        tenantId,
-        conversationHistory: conversationHistory || [],
-      },
-      (chunk) => {
-        res.write(`data: ${JSON.stringify({ type: 'chunk', content: chunk })}\n\n`);
-      }
-    );
-
-    // Send final message
-    res.write(`data: ${JSON.stringify({ 
-      type: 'done', 
-      response: result.response,
-      products: result.products || [],
-      intent: result.intent,
-      hasProducts: result.hasProducts
-    })}\n\n`);
-    
-  } catch (error) {
-    console.error('Stream Error:', error);
-    res.write(`data: ${JSON.stringify({ type: 'error', message: 'Something went wrong' })}\n\n`);
-  } finally {
-    res.end();
-  }
-});
-
 // Export with upload middleware
 module.exports = {
   chat,
@@ -539,6 +484,5 @@ module.exports = {
   greeting,
   knowledge,
   compare,
-  chatStream,
   upload
 };

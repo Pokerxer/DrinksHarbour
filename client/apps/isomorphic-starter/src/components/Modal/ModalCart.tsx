@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -18,14 +18,13 @@ const ModalCart = () => {
   const { openModalWishlist } = useModalWishlistContext();
   const router = useRouter();
   const [removingId, setRemovingId] = useState<string | null>(null);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [note, setNote] = useState('');
   const modalRef = useRef<HTMLDivElement>(null);
 
-  const shipping = cartTotal > 50000 ? 0 : 2500;
-  const remainingForFree = Math.max(0, 50000 - cartTotal);
-  const freeShippingProgress = Math.min(100, (cartTotal / 50000) * 100);
+  const shipping = useMemo(() => cartTotal > 50000 ? 0 : 2500, [cartTotal]);
+  const remainingForFree = useMemo(() => Math.max(0, 50000 - cartTotal), [cartTotal]);
+  const freeShippingProgress = useMemo(() => Math.min(100, (cartTotal / 50000) * 100), [cartTotal]);
 
   // Close modal on escape key
   useEffect(() => {
@@ -54,15 +53,12 @@ const ModalCart = () => {
     return '₦' + price.toLocaleString();
   };
 
-  const handleQuantityChange = async (cartItemId: string, newQuantity: number) => {
-    setUpdatingId(cartItemId);
+  const handleQuantityChange = (cartItemId: string, newQuantity: number) => {
     if (newQuantity <= 0) {
-      await handleRemove(cartItemId);
+      handleRemove(cartItemId);
     } else {
       updateQuantity(cartItemId, newQuantity);
-      await new Promise(resolve => setTimeout(resolve, 300));
     }
-    setUpdatingId(null);
   };
 
   const handleRemove = async (cartItemId: string) => {
@@ -233,7 +229,6 @@ const ModalCart = () => {
                   <AnimatePresence mode="popLayout">
                     {cartState.cartArray.map((item, index) => {
                       const isRemoving = removingId === item.cartItemId;
-                      const isUpdating = updatingId === item.cartItemId;
 
                       return (
                         <motion.div
@@ -254,7 +249,7 @@ const ModalCart = () => {
                             <Link
                               href={`/product/${item.slug}`}
                               onClick={closeModalCart}
-                              className="relative w-24 h-24 flex-shrink-0"
+                              className="relative w-20 h-20 md:w-24 md:h-24 flex-shrink-0"
                             >
                               <div className="w-full h-full rounded-xl overflow-hidden bg-gray-100">
                                 {getItemImage(item) ? (
@@ -263,10 +258,11 @@ const ModalCart = () => {
                                     alt={item.name}
                                     fill
                                     className="object-cover hover:scale-105 transition-transform duration-300"
+                                    sizes="96px"
                                   />
                                 ) : (
                                   <div className="w-full h-full flex items-center justify-center">
-                                    <Icon.PiImage size={32} className="text-gray-300" />
+                                    <Icon.PiImage size={24} className="text-gray-300" />
                                   </div>
                                 )}
                               </div>
@@ -309,30 +305,20 @@ const ModalCart = () => {
                               {/* Price & Quantity */}
                               <div className="flex items-center justify-between mt-3">
                                 {/* Quantity Controls */}
-                                <div className={`flex items-center border border-gray-200 rounded-lg overflow-hidden transition-opacity duration-200 ${isUpdating ? 'opacity-50' : ''}`}>
+                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
                                   <button
                                     onClick={() => handleQuantityChange(item.cartItemId, (item.quantity || 1) - 1)}
-                                    disabled={(item.quantity || 1) <= 1 || isUpdating}
+                                    disabled={(item.quantity || 1) <= 1}
                                     className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                                   >
                                     <Icon.PiMinusBold size={12} />
                                   </button>
                                   <span className="w-10 text-center text-sm font-semibold">
-                                    {isUpdating ? (
-                                      <motion.div
-                                        animate={{ rotate: 360 }}
-                                        transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
-                                        className="inline-block"
-                                      >
-                                        <Icon.PiSpinner size={14} />
-                                      </motion.div>
-                                    ) : (
-                                      item.quantity || 1
-                                    )}
+                                    {item.quantity || 1}
                                   </span>
                                   <button
                                     onClick={() => handleQuantityChange(item.cartItemId, (item.quantity || 1) + 1)}
-                                    disabled={(item.quantity || 1) >= 99 || isUpdating}
+                                    disabled={(item.quantity || 1) >= 99}
                                     className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                                   >
                                     <Icon.PiPlusBold size={12} />

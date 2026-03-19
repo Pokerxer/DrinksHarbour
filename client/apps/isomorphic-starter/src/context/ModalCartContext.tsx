@@ -1,5 +1,14 @@
 "use client";
-import React, { createContext, useContext, useState, ReactNode } from "react";
+import React, { createContext, useContext, useState, ReactNode, useCallback } from "react";
+
+interface LastAddedItem {
+  name: string;
+  quantity: number;
+  isNewItem: boolean;
+  cartItemId: string;
+  price?: number;
+  image?: string;
+}
 
 interface ModalCartContextProps {
   children: ReactNode;
@@ -7,9 +16,12 @@ interface ModalCartContextProps {
 
 interface ModalCartContextValue {
   isModalOpen: boolean;
+  lastAddedItem: LastAddedItem | null;
   openModalCart: () => void;
   closeModalCart: () => void;
   toggleModalCart: () => void;
+  openCartWithItem: (item: LastAddedItem) => void;
+  clearLastAddedItem: () => void;
 }
 
 const ModalCartContext = createContext<ModalCartContextValue | undefined>(undefined);
@@ -28,24 +40,37 @@ export const ModalCartProvider: React.FC<ModalCartContextProps> = ({
   children,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [lastAddedItem, setLastAddedItem] = useState<LastAddedItem | null>(null);
 
-  const openModalCart = () => {
+  const openModalCart = useCallback(() => {
     setIsModalOpen(true);
-  };
+  }, []);
 
-  const closeModalCart = () => {
+  const closeModalCart = useCallback(() => {
     setIsModalOpen(false);
-  };
+  }, []);
 
-  const toggleModalCart = () => {
+  const toggleModalCart = useCallback(() => {
     setIsModalOpen(prev => !prev);
-  };
+  }, []);
+
+  const openCartWithItem = useCallback((item: LastAddedItem) => {
+    setLastAddedItem(item);
+    setIsModalOpen(true);
+  }, []);
+
+  const clearLastAddedItem = useCallback(() => {
+    setLastAddedItem(null);
+  }, []);
 
   const contextValue: ModalCartContextValue = {
     isModalOpen,
+    lastAddedItem,
     openModalCart,
     closeModalCart,
     toggleModalCart,
+    openCartWithItem,
+    clearLastAddedItem,
   };
 
   return (

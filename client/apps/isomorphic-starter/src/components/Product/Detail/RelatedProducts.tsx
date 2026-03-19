@@ -16,11 +16,7 @@ interface RelatedProductsProps {
 }
 
 const RelatedProducts: React.FC<RelatedProductsProps> = ({ products, title = 'You May Also Like' }) => {
-  console.log('RelatedProducts - products:', products);
-  console.log('RelatedProducts - length:', products?.length);
-
   if (!products || products.length === 0) {
-    console.log('RelatedProducts - returning null, products is empty');
     return null;
   }
 

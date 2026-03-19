@@ -4,6 +4,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 import Marquee from 'react-fast-marquee';
 import { useCart } from '@/context/CartContext';
@@ -306,6 +307,16 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
   const { addToCompare, removeFromCompare, compareState, isInCompare } = useCompare();
   const { openModalCompare } = useModalCompareContext();
   const { openQuickview } = useModalQuickviewContext();
+
+  const cardVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } }
+  };
+
+  const buttonVariants = {
+    hover: { scale: 1.05, transition: { duration: 0.2 } },
+    tap: { scale: 0.95 }
+  };
 
   // Helper function to determine if data is BeverageProduct
   const isBeverageProduct = (product: ProductData): product is BeverageProduct => {
@@ -667,6 +678,7 @@ const productData = data as any;
 
   // Image loading state
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
   
   // Card entrance animation state
   const [isVisible, setIsVisible] = useState(false);
@@ -690,74 +702,123 @@ const productData = data as any;
     return () => observer.disconnect();
   }, []);
 
+  // Reset image state when product changes
+  useEffect(() => {
+    setImageLoaded(false);
+    setImageError(false);
+  }, [data?._id]);
+
   return (
     <>
       {type === 'grid' ? (
-        <div 
+        <motion.div 
           ref={cardRef}
-          className={`product-item grid-type style-1 group h-full transform transition-all duration-700 ease-out ${
-            isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
-          }`}
-          style={{ transitionDelay: `${(productCardRef.current ? 0 : Math.random() * 200)}ms` }}
+          variants={cardVariants}
+          initial="hidden"
+          animate="visible"
+          whileHover="hover"
+          className="product-item grid-type style-1 group h-full"
         >
-          <div 
-            className="product-main cursor-pointer block h-full flex flex-col transform transition-transform duration-300 hover:-translate-y-2"
+          <motion.div 
+            className="product-main cursor-pointer block h-full flex flex-col"
             onClick={handleCardClick}
           >
-            <div className="product-thumb bg-gray-50 relative overflow-hidden rounded-xl md:rounded-2xl transition-all duration-500 ease-out group-hover:shadow-2xl group-hover:shadow-black/10 group-hover:scale-[1.02]">
-              {/* Sale Badge - Only show when there's an actual sale */}
-              {hasActiveSale && calculatedDiscount > 0 && (
-                <div className="absolute top-2 left-2 z-10 px-2 py-1 bg-gradient-to-r from-red-500 to-pink-500 text-white text-xs font-bold rounded-full transform -rotate-2 group-hover:rotate-0 transition-transform duration-300 shadow-lg animate-pulse">
-                  SALE {calculatedDiscount}% OFF
-                </div>
-              )}
+            <div className="product-thumb bg-gray-50 relative overflow-hidden rounded-2xl transition-all duration-500 ease-out group-hover:shadow-2xl group-hover:shadow-black/10 group-hover:scale-[1.02]">
+              {/* Badges - Responsive positioning */}
+              <div className="absolute top-2 left-2 right-2 z-10 flex flex-wrap gap-1.5">
+                {/* Sale Badge */}
+                <AnimatePresence>
+                  {hasActiveSale && calculatedDiscount > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      className="px-2 py-1 md:px-3 md:py-1.5 bg-gradient-to-r from-red-500 to-pink-500 text-white text-[10px] md:text-xs font-bold rounded-full shadow-lg"
+                    >
+                      <span className="hidden sm:inline">SALE {calculatedDiscount}% OFF</span>
+                      <span className="sm:hidden">-{calculatedDiscount}%</span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
-              {/* Beverage Product Badge Overlay */}
-              {isBeverageProduct(data) && data.badge && data.badge.name && (
-                <div
-                  className={`absolute z-10 px-1.5 py-0.5 md:px-2 md:py-1 rounded-full text-[10px] md:text-xs font-bold text-gray-50 transform transition-all duration-300 group-hover:scale-105 ${hasActiveSale ? 'top-12 left-2' : 'top-2 left-2'}`}
-                  style={{ backgroundColor: data.badge?.color || '#10B981' }}
-                >
-                  {data.badge.name.toUpperCase()}
-                </div>
-              )}
+                {/* Product Badge */}
+                {isBeverageProduct(data) && data.badge && data.badge.name && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className={`px-2 py-1 md:px-2.5 md:py-1 rounded-full text-[10px] font-bold text-white shadow-md`}
+                    style={{ backgroundColor: data.badge?.color || '#10B981' }}
+                  >
+                    {data.badge.name.toUpperCase()}
+                  </motion.div>
+                )}
+
+                {/* ABV Badge - Below other badges */}
+                {isBeverageProduct(data) && data.abv && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="px-2 py-1 md:px-2.5 md:py-1 bg-gray-900/80 backdrop-blur-sm text-white text-[10px] font-bold rounded-full shadow-lg"
+                  >
+                    {data.abv}% ABV
+                  </motion.div>
+                )}
+              </div>
 
               {/* Right Side Actions - Desktop only with staggered animation */}
               <div className="hidden lg:flex flex-col gap-2 absolute top-3 right-3 z-20">
-                <TooltipButton
-                  label={wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id)
-                    ? 'Remove From Wishlist'
-                    : 'Add To Wishlist'}
-                  onClick={handleAddToWishlist}
-                  isActive={wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id)}
-                  activeColor="bg-red-500"
-                  ariaLabel="Toggle wishlist"
-                  className="w-8 h-8 transform translate-x-4 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all duration-300 delay-75 hover:scale-110"
+                <motion.div
+                  variants={buttonVariants}
+                  whileHover="hover"
+                  whileTap="tap"
                 >
-                  {wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id) ? (
-                    <Icon.PiHeartFill size={16} className="text-gray-50 animate-bounce" />
-                  ) : (
-                    <Icon.PiHeart size={16} />
-                  )}
-                </TooltipButton>
-                <TooltipButton
-                  label="Compare Product"
-                  onClick={handleAddToCompare}
-                  isActive={isInCompare(mappedProduct.id)}
-                  activeColor="bg-blue-500"
-                  ariaLabel="Toggle compare"
-                  className="w-8 h-8 transform translate-x-4 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all duration-300 delay-150 hover:scale-110"
+                  <TooltipButton
+                    label={wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id)
+                      ? 'Remove From Wishlist'
+                      : 'Add To Wishlist'}
+                    onClick={handleAddToWishlist}
+                    isActive={wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id)}
+                    activeColor="bg-red-500"
+                    ariaLabel="Toggle wishlist"
+                    className="w-9 h-9 bg-white/90 backdrop-blur-sm shadow-lg transform translate-x-4 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all duration-300 delay-75"
+                  >
+                    {wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id) ? (
+                      <Icon.PiHeartFill size={16} className="text-red-500" />
+                    ) : (
+                      <Icon.PiHeart size={16} />
+                    )}
+                  </TooltipButton>
+                </motion.div>
+                <motion.div
+                  variants={buttonVariants}
+                  whileHover="hover"
+                  whileTap="tap"
                 >
-                  <Icon.PiArrowsCounterClockwise size={16} />
-                </TooltipButton>
-                <TooltipButton
-                  label="Quick View"
-                  onClick={handleQuickviewOpen}
-                  ariaLabel="Quick view"
-                  className="w-8 h-8 transform translate-x-4 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all duration-300 delay-200 hover:scale-110"
+                  <TooltipButton
+                    label="Compare Product"
+                    onClick={handleAddToCompare}
+                    isActive={isInCompare(mappedProduct.id)}
+                    activeColor="bg-blue-500"
+                    ariaLabel="Toggle compare"
+                    className="w-9 h-9 bg-white/90 backdrop-blur-sm shadow-lg transform translate-x-4 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all duration-300 delay-150"
+                  >
+                    <Icon.PiArrowsCounterClockwise size={16} />
+                  </TooltipButton>
+                </motion.div>
+                <motion.div
+                  variants={buttonVariants}
+                  whileHover="hover"
+                  whileTap="tap"
                 >
-                  <Icon.PiEye size={16} />
-                </TooltipButton>
+                  <TooltipButton
+                    label="Quick View"
+                    onClick={handleQuickviewOpen}
+                    ariaLabel="Quick view"
+                    className="w-9 h-9 bg-white/90 backdrop-blur-sm shadow-lg transform translate-x-4 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all duration-300 delay-200"
+                  >
+                    <Icon.PiEye size={16} />
+                  </TooltipButton>
+                </motion.div>
               </div>
 
               {/* Product Images - Enhanced hover with zoom, fade, and shimmer loading */}
@@ -768,38 +829,58 @@ const productData = data as any;
                 )}
                 
                 {activeColor ? (
-                  <Image
-                    src={
-                      mappedProduct.variation?.find((item) => item.color === activeColor)?.image ||
-                      mappedProduct.thumbImage?.[0] ||
-                      '/images/placeholder-product.png'
-                    }
-                    width={500}
-                    height={500}
-                    alt={mappedProduct.name}
-                    priority={true}
-                    className={`w-full h-full object-cover transition-all duration-700 ease-out group-hover:scale-110 ${
-                      imageLoaded ? 'opacity-100' : 'opacity-0'
-                    }`}
-                    onLoad={() => setImageLoaded(true)}
-                  />
+                  imageError ? (
+                    <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                      <Icon.PiImageBold className="w-16 h-16 text-gray-300" />
+                    </div>
+                  ) : (
+                    <Image
+                      src={
+                        mappedProduct.variation?.find((item) => item.color === activeColor)?.image ||
+                        mappedProduct.thumbImage?.[0] ||
+                        '/images/placeholder-product.png'
+                      }
+                      width={500}
+                      height={500}
+                      alt={mappedProduct.name}
+                      priority={true}
+                      className={`w-full h-full object-cover transition-all duration-700 ease-out group-hover:scale-110 ${
+                        imageLoaded ? 'opacity-100' : 'opacity-0'
+                      }`}
+                      onLoad={() => setImageLoaded(true)}
+                      onError={() => {
+                        setImageError(true);
+                        setImageLoaded(true);
+                      }}
+                    />
+                  )
                 ) : (
                   <>
                     {(mappedProduct.thumbImage || []).slice(0, 2).map((img, index) => (
-                      <Image
-                        key={index}
-                        src={img || mappedProduct.thumbImage?.[0] || '/images/placeholder-product.png'}
-                        width={500}
-                        height={500}
-                        priority={true}
-                        alt={mappedProduct.name}
-                        className={`w-full h-full object-cover transition-opacity duration-500 ${
-                          index === 0 
-                            ? 'relative z-10'
-                            : 'absolute inset-0 z-20 opacity-0 group-hover:opacity-100'
-                        }`}
-                        onLoad={() => setImageLoaded(true)}
-                      />
+                      imageError && index === 0 ? (
+                        <div key={index} className={`w-full h-full bg-gray-100 flex items-center justify-center ${index === 0 ? 'relative z-10' : 'absolute inset-0 z-20 opacity-0 group-hover:opacity-100'}`}>
+                          <Icon.PiImageBold className="w-16 h-16 text-gray-300" />
+                        </div>
+                      ) : (
+                        <Image
+                          key={index}
+                          src={img || mappedProduct.thumbImage?.[0] || '/images/placeholder-product.png'}
+                          width={500}
+                          height={500}
+                          priority={true}
+                          alt={mappedProduct.name}
+                          className={`w-full h-full object-cover transition-opacity duration-500 ${
+                            index === 0 
+                              ? 'relative z-10'
+                              : 'absolute inset-0 z-20 opacity-0 group-hover:opacity-100'
+                          }`}
+                          onLoad={() => setImageLoaded(true)}
+                          onError={() => {
+                            setImageError(true);
+                            setImageLoaded(true);
+                          }}
+                        />
+                      )
                     ))}
                   </>
                 )}
@@ -966,8 +1047,8 @@ const productData = data as any;
                 )}
               </div>
 
-              {/* Mobile Action Buttons - Bottom overlay with slide-up animation */}
-              <div className="lg:hidden absolute bottom-3 left-3 right-3 flex items-center gap-2 z-20 transform translate-y-full opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300">
+              {/* Mobile Action Buttons - Always visible on mobile, show on tablet+ */}
+              <div className="lg:hidden absolute bottom-3 left-3 right-3 flex items-center gap-2 z-20">
                 <button
                   onClick={handleMobileAddToCart}
                   disabled={isAddingToCart}
@@ -981,7 +1062,8 @@ const productData = data as any;
                   ) : (
                     <>
                       <Icon.PiShoppingCart size={16} />
-                      <span>Add to Cart</span>
+                      <span className="hidden xs:inline">Add to Cart</span>
+                      <span className="xs:hidden">Add</span>
                     </>
                   )}
                 </button>
@@ -996,7 +1078,7 @@ const productData = data as any;
             </div>
 
             {/* Product Information for Grid Type - Enhanced with animations */}
-            <div className="product-infor mt-3 md:mt-4 flex-grow flex flex-col">
+            <div className="product-infor mt-3 md:mt-4 flex-grow flex flex-col px-1">
               {/* Sold/Available - Hidden on mobile, show on tablet+ with animation */}
               <div className="hidden sm:block product-sold sm:pb-4 pb-2">
                 <div className="progress bg-gray-200 h-1.5 w-full rounded-full overflow-hidden relative">
@@ -1025,25 +1107,33 @@ const productData = data as any;
                 </h3>
               </Link>
 
+              {/* Origin/Region for beverages - Show on tablet+ */}
+              {isBeverageProduct(data) && data.originCountry && (
+                <p className="hidden md:block text-xs text-gray-500 mt-0.5">
+                  {data.region || data.originCountry}
+                </p>
+              )}
+
               {/* Enhanced Price Section */}
-              <div className="flex items-center justify-between mt-1.5 md:mt-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  {/* Discount Badge with pulse animation */}
+              <div className="flex items-center justify-between mt-2 md:mt-3 gap-2">
+                <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
+                  {/* Discount Badge */}
                   {hasActiveSale && calculatedDiscount > 0 && (
-                    <span className="px-2 py-0.5 bg-gradient-to-r from-red-500 to-pink-500 text-white text-xs font-bold rounded-md shadow-sm">
+                    <span className="px-1.5 py-0.5 md:px-2 md:py-0.5 bg-gradient-to-r from-red-500 to-pink-500 text-white text-[10px] md:text-xs font-bold rounded-md shadow-sm">
                       -{calculatedDiscount}%
                     </span>
                   )}
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-base md:text-lg font-bold text-gray-900 transition-transform duration-300 group-hover:scale-105">
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm md:text-lg font-bold text-gray-900 transition-transform duration-300 group-hover:scale-105">
                       {vendorSizes.find((s: any) => s.size === activeSize)?.currencySymbol || '₦'}
-                      {(vendorSizes.find((s: any) => s.size === activeSize)?.price || mappedProduct.price).toFixed(2)}
+                      <span className="inline md:hidden">{(vendorSizes.find((s: any) => s.size === activeSize)?.price || mappedProduct.price).toLocaleString()}</span>
+                      <span className="hidden md:inline">{(vendorSizes.find((s: any) => s.size === activeSize)?.price || mappedProduct.price).toFixed(2)}</span>
                     </span>
                     {/* Original price with strikethrough animation */}
                     {hasActiveSale && (
-                      <span className="text-xs text-gray-400 line-through decoration-gray-400 decoration-2">
+                      <span className="text-[10px] md:text-xs text-gray-400 line-through decoration-gray-400 decoration-2">
                         {vendorSizes.find((s: any) => s.size === activeSize)?.currencySymbol || '₦'}
-                        {(mappedProduct.originPrice || 0).toFixed(2)}
+                        {(mappedProduct.originPrice || 0).toLocaleString()}
                       </span>
                     )}
                   </div>
@@ -1069,7 +1159,7 @@ const productData = data as any;
 
               {/* Vendor Avatars - Desktop only */}
               {isBeverageProduct(data) && vendors.length > 1 && (
-                <div className="vendor-avatars hidden lg:flex py-2 items-center gap-2 flex-wrap">
+                <div className="vendor-avatars hidden lg:flex py-2 md:py-3 items-center gap-2 flex-wrap">
                   {vendors.slice(0, 3).map((vendor: any) => (
                     <VendorAvatar
                       key={vendor.tenant._id}
@@ -1095,17 +1185,42 @@ const productData = data as any;
                 </div>
               )}
 
-              {/* Mobile-only vendor count */}
+              {/* Mobile-only vendor count with pill */}
               {isBeverageProduct(data) && vendors.length > 1 && (
-                <div className="lg:hidden mt-1.5">
+                <div className="lg:hidden mt-2 flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-xs text-gray-600">
+                    <Icon.PiStorefrontBold className="w-3 h-3" />
+                    {vendors.length} {vendors.length === 1 ? 'seller' : 'sellers'}
+                  </span>
+                  {/* Rating display on mobile */}
+                  {(mappedProduct.rating || 0) > 0 && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 rounded-full text-xs text-amber-700">
+                      <Icon.PiStarFill className="w-3 h-3" />
+                      {mappedProduct.rating.toFixed(1)}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Rating display on tablet+ */}
+              {(mappedProduct.rating || 0) > 0 && isBeverageProduct(data) && (
+                <div className="hidden md:flex items-center gap-2 mt-2">
+                  <div className="flex items-center gap-0.5">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <Icon.PiStarFill
+                        key={star}
+                        className={`w-3.5 h-3.5 ${star <= Math.round(mappedProduct.rating || 0) ? 'text-amber-400' : 'text-gray-200'}`}
+                      />
+                    ))}
+                  </div>
                   <span className="text-xs text-gray-500">
-                    {vendors.length} {vendors.length === 1 ? 'seller' : 'sellers'} available
+                    ({mappedProduct.reviewCount || 0} reviews)
                   </span>
                 </div>
               )}
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       ) : (
         // List Type Layout - Simplified for mobile
         <div ref={productCardRef} className="product-item list-type">
@@ -1125,14 +1240,25 @@ const productData = data as any;
               )}
 
               <div className="product-img w-24 sm:w-32 aspect-[3/4] sm:aspect-square rounded-xl sm:rounded-2xl overflow-hidden">
-                <Image
-                  src={mappedProduct.thumbImage?.[0] || '/images/placeholder-product.png'}
-                  width={500}
-                  height={500}
-                  priority={true}
-                  alt={mappedProduct.name}
-                  className="w-full h-full object-cover duration-500 sm:duration-700 hover:scale-105"
-                />
+                {imageError ? (
+                  <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                    <Icon.PiImageBold className="w-8 h-8 sm:w-10 sm:h-10 text-gray-300" />
+                  </div>
+                ) : (
+                  <Image
+                    src={mappedProduct.thumbImage?.[0] || '/images/placeholder-product.png'}
+                    width={500}
+                    height={500}
+                    priority={true}
+                    alt={mappedProduct.name}
+                    className="w-full h-full object-cover duration-500 sm:duration-700 hover:scale-105"
+                    onLoad={() => setImageLoaded(true)}
+                    onError={() => {
+                      setImageError(true);
+                      setImageLoaded(true);
+                    }}
+                  />
+                )}
               </div>
             </div>
 

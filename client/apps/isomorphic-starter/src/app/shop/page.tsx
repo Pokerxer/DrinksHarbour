@@ -77,7 +77,7 @@ function ShopPageContent({ params }: PageProps) {
   }, [pathname, router]);
 
   const buildApiUrl = useCallback(() => {
-    const baseUrl = `${process.env.NEXT_PUBLIC_API_URL || ''}/api/products/search`;
+    const baseUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/api/products/search`;
 
     const paramsObj = new URLSearchParams();
 
@@ -121,8 +121,22 @@ function ShopPageContent({ params }: PageProps) {
       console.log('Products API response:', data);
 
       if (data.success && data.data?.products) {
-        setProducts(data.data.products);
-        setTotalProducts(data.data.pagination?.total || data.data.products.length);
+        // If sale filter returns empty, retry without sale filter
+        const hasSaleFilter = url.includes('onSale=true');
+        if (data.data.products.length === 0 && hasSaleFilter) {
+          const retryRes = await fetch(url.replace('onSale=true&', '').replace('onSale=true', ''));
+          const retryData = await retryRes.json();
+          if (retryData.success && retryData.data?.products) {
+            setProducts(retryData.data.products);
+            setTotalProducts(retryData.data.pagination?.total || retryData.data.products.length);
+          } else {
+            setProducts(data.data.products);
+            setTotalProducts(data.data.pagination?.total || data.data.products.length);
+          }
+        } else {
+          setProducts(data.data.products);
+          setTotalProducts(data.data.pagination?.total || data.data.products.length);
+        }
       } else if (data.success && data.data?.data) {
         setProducts(data.data.data);
         setTotalProducts(data.data.pagination?.total || data.data.data.length);

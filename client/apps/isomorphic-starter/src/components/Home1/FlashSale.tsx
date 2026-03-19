@@ -506,9 +506,10 @@ const FlashSale = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
         const [salesRes, productsRes] = await Promise.all([
-          fetch('/api/sales/active?limit=5'),
-          fetch('/api/products?onSale=true&limit=8'),
+          fetch(`${API_URL}/api/sales/active?limit=5`),
+          fetch(`${API_URL}/api/products?onSale=true&limit=8`),
         ]);
         
         const salesData = await salesRes.json();

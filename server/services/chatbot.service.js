@@ -3,6 +3,7 @@
 // Supports: Text queries, Image analysis, Database products, General beverage knowledge
 
 const mongoose = require('mongoose');
+const productService = require('./product.service');
 
 const Product = mongoose.models.Product || mongoose.model('Product');
 const SubProduct = mongoose.models.SubProduct || mongoose.model('SubProduct');
@@ -10,28 +11,29 @@ const Size = mongoose.models.Size || mongoose.model('Size');
 const Category = mongoose.models.Category || mongoose.model('Category');
 const Tenant = mongoose.models.Tenant || mongoose.model('Tenant');
 
-// Ollama Cloud Configuration
-const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'https://ollama.com';
+// Ollama Configuration
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
 const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || '';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'kimi-k2.5:cloud';
 const OLLAMA_VISION_MODEL = process.env.OLLAMA_VISION_MODEL || 'kimi-k2.5:cloud';
 
-// Call Ollama Cloud API with streaming support
-const callOllama = async (prompt, systemPrompt = null, onChunk = null) => {
-  const defaultSystemPrompt = `You are DrinksHarbour AI - a friendly beverage expert for DrinksHarbour.com, Nigeria's top drinks store.
+// Call Ollama Cloud API
+const callOllama = async (prompt, systemPrompt = null) => {
+  const defaultSystemPrompt = `You are DrinksHarbour AI - the friendly, expert beverage assistant for DrinksHarbour.com, Nigeria's premier multi-tenant drinks marketplace.
+Your goal is to help customers find drinks, check prices, plan events, and get beverage recommendations.
 
-🎯 STYLE:
-- Keep responses SHORT and conversational (2-3 sentences max)
-- Use emojis naturally
-- Be specific about brands and prices
-- Get to the point quickly
-- Sound like a knowledgeable friend
+### YOUR PERSONA & STYLE:
+- **Tone:** Friendly, helpful, knowledgeable, and distinctly human.
+- **Length:** Keep responses concise, direct, and conversational (typically 1-3 short paragraphs).
+- **Emojis:** Use relevant emojis naturally to make the conversation lively (e.g., 🍷, 🍻, 🎉).
+- **Format:** Use bullet points or bold text to highlight key information (like names and prices).
 
-💰 PRICING:
-- Always include prices in ₦
-
-🔄 REPLACEMENTS:
-- If product not available, suggest 1-2 alternatives
+### CORE RULES:
+1. **Pricing & Currency:** Always display prices in Nigerian Naira (₦). Format with commas (e.g., ₦12,500).
+2. **Product Suggestions:** If a user asks for a drink that isn't in the provided context, gracefully suggest 1-2 available alternatives.
+   - *Example:* "I couldn't find Heineken right now, but **Star Lager (₦11,500)** is a fantastic, popular alternative! 🍻"
+3. **Event Planning:** If a user is planning an event (party, wedding, etc.), proactively ask helpful questions (guest count, budget, preferences) and offer a quick estimate (e.g., "A standard bottle of spirits typically serves 15-20 shots").
+4. **No Hallucinations:** Only recommend products and prices that are explicitly provided in the context. If the context is empty, rely on your general beverage knowledge.
 
 Remember: Be helpful, quick, and human-like!`;
 
@@ -41,56 +43,6 @@ Remember: Be helpful, quick, and human-like!`;
     const headers = { 'Content-Type': 'application/json' };
     if (OLLAMA_API_KEY) headers['Authorization'] = `Bearer ${OLLAMA_API_KEY}`;
 
-    // If streaming callback provided, use streaming
-    if (onChunk) {
-      const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: OLLAMA_MODEL,
-          messages: [
-            { role: 'system', content: finalSystemPrompt },
-            { role: 'user', content: prompt }
-          ],
-          temperature: 0.7,
-          stream: true
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Ollama API error: ${response.status}`);
-      }
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let fullContent = '';
-
-      while (reader) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n').filter(line => line.trim() !== '');
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.message?.content) {
-                fullContent += data.message.content;
-                onChunk(data.message.content);
-              }
-            } catch (e) {
-              // Skip malformed JSON
-            }
-          }
-        }
-      }
-
-      return fullContent;
-    }
-
-    // Non-streaming version
     const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
       method: 'POST',
       headers,
@@ -168,13 +120,15 @@ const analyzeImage = async (imageUrl, contextPrompt = '') => {
       return null;
     }
 
-    const prompt = contextPrompt || `Analyze this beverage image. Identify: 
-1. What drink is shown (brand, type, name)
-2. Size/volume if visible
-3. Alcohol type (wine, beer, spirit, etc.)
-4. Any other visible details
+    const prompt = contextPrompt || `You are an expert bartender and beverage analyst.
+Examine this image and identify the drink(s). Provide your findings in a structured, easy-to-read format.
 
-If you recognize the drink, suggest similar products. Be specific about the brand.`;
+1. **Brand & Name:** What is the specific drink?
+2. **Type:** Is it wine, beer, spirits, etc.?
+3. **Volume:** Can you see the size (e.g., 75cl, 33cl)?
+4. **Extra Details:** Note any special edition markers, flavor profiles listed, or serving suggestions.
+
+Keep it concise, and if you're very confident in the brand, explicitly state it so I can search our catalog for exact matches.`;
 
     const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
       method: 'POST',
@@ -245,10 +199,6 @@ const extractIntent = (query) => {
   if (lowerQuery.includes('recommend') || lowerQuery.includes('suggest') || lowerQuery.includes('best') || lowerQuery.includes('top') || lowerQuery.includes('popular')) {
     intent.type = 'recommendation';
   }
-  if (lowerQuery.includes('party') || lowerQuery.includes('event') || lowerQuery.includes('celebration') || lowerQuery.includes('wedding')) {
-    intent.type = 'event';
-    intent.filters.isEvent = true;
-  }
   if (lowerQuery.includes('tell me about') || lowerQuery.includes('details') || lowerQuery.includes('information') || lowerQuery.includes('what is') || lowerQuery.includes('describe')) {
     intent.type = 'product_info';
   }
@@ -305,125 +255,276 @@ const extractIntent = (query) => {
   return intent;
 };
 
-// Build MongoDB query
-const buildProductQuery = (filters, searchQuery, brand = null) => {
-  const query = { status: 'approved' };
-
-  if (searchQuery) {
-    const regex = new RegExp(searchQuery, 'i');
-    query.$or = [
-      { name: regex },
-      { description: regex }
-    ];
-  }
-
-  // Brand filter - query Brand model to get IDs, then filter products
-  if (brand) {
-    query.brand = brand; // Will be replaced with ObjectIds after brand lookup
-    query._brandSearch = brand; // Mark for post-processing
-  }
-
-  if (filters.type) {
-    const typeMap = {
-      'wine': ['wine', 'red_wine', 'white_wine', 'rose_wine', 'sparkling_wine', 'champagne'],
-      'beer': ['beer', 'lager', 'ale', 'stout', 'porter', 'ipa', 'pilsner'],
-      'whiskey': ['whiskey', 'whisky', 'bourbon', 'rye', 'scotch'],
-      'vodka': ['vodka'],
-      'gin': ['gin'],
-      'rum': ['rum'],
-      'champagne': ['champagne', 'sparkling_wine', 'prosecco'],
-      'tequila': ['tequila', 'mezcal'],
-      'cider': ['cider', 'apple_cider'],
-      'spirit': ['spirit', 'whiskey', 'vodka', 'gin', 'rum', 'tequila', 'brandy'],
+// Query products from database (Mirroring exact /shop logic via productService.searchProducts)
+const queryProducts = async (filters, searchQuery, limit = 10, brand = null, tenantId = null) => {
+  try {
+    // Build query params compatible with productService.searchProducts (used by /shop page)
+    const queryParams = {
+      page: 1,
+      limit: limit,
+      inStock: true,
+      status: 'approved',
+      searchMode: 'text', // Use text search for chatbot (faster, more reliable)
+      useEmbeddings: false // Disable semantic search for chatbot
     };
-    const types = typeMap[filters.type] || [filters.type];
-    query.type = { $in: types };
-  }
 
-  if (filters.minAbv) query.abv = { $gte: filters.minAbv };
-  if (filters.maxAbv) query.abv = { ...query.abv, $lte: filters.maxAbv };
+    if (searchQuery) queryParams.query = searchQuery;
+    if (brand) queryParams.brand = brand;
+    if (tenantId) queryParams.tenantId = tenantId;
+    if (filters.type) queryParams.type = filters.type;
+    if (filters.minPrice) queryParams.minPrice = filters.minPrice;
+    if (filters.maxPrice) queryParams.maxPrice = filters.maxPrice;
+    if (filters.minAbv) queryParams.minAbv = filters.minAbv;
+    if (filters.maxAbv) queryParams.maxAbv = filters.maxAbv;
 
-  return query;
-};
-
-// Query products from database
-const queryProducts = async (filters, searchQuery, limit = 10, brand = null) => {
-  let productQuery = buildProductQuery(filters, searchQuery, brand);
-  
-  // If brand is specified, lookup brand IDs from Brand model
-  if (brand && productQuery._brandSearch) {
+    let result;
     try {
-      const Brand = require('../models/Brand');
-      const brandDocs = await Brand.find({
-        name: { $regex: new RegExp(brand, 'i') }
-      }).select('_id').lean();
-      
-      const brandIds = brandDocs.map(b => b._id);
-      
-      if (brandIds.length > 0) {
-        productQuery.brand = { $in: brandIds };
-      }
-      delete productQuery._brandSearch;
+      result = await productService.searchProducts(queryParams);
     } catch (err) {
-      console.error('Brand lookup error:', err);
-      delete productQuery.brand;
-      delete productQuery._brandSearch;
+      console.error('searchProducts failed:', err.message);
     }
+
+    if (!result || !result.products || result.products.length === 0) {
+      // Fallback: Direct MongoDB query
+      
+      // Fallback: Direct MongoDB query as fallback
+      const Product = mongoose.models.Product || mongoose.model('Product');
+      const SubProduct = mongoose.models.SubProduct || mongoose.model('SubProduct');
+      const Tenant = mongoose.models.Tenant || mongoose.model('Tenant');
+      
+      const baseQuery = { status: 'approved' };
+      if (searchQuery) {
+        baseQuery.$or = [
+          { name: { $regex: searchQuery, $options: 'i' } },
+          { description: { $regex: searchQuery, $options: 'i' } }
+        ];
+      }
+      if (filters.type) {
+        const typeMap = {
+          'wine': ['wine', 'red_wine', 'white_wine', 'rose_wine', 'sparkling_wine', 'champagne'],
+          'beer': ['beer', 'lager', 'ale', 'stout', 'porter', 'ipa', 'pilsner'],
+          'whiskey': ['whiskey', 'whisky', 'bourbon', 'rye', 'scotch'],
+          'vodka': ['vodka'],
+          'gin': ['gin'],
+          'rum': ['rum'],
+          'champagne': ['champagne', 'sparkling_wine', 'prosecco'],
+          'tequila': ['tequila', 'mezcal'],
+          'cider': ['cider', 'apple_cider'],
+          'spirit': ['spirit', 'whiskey', 'vodka', 'gin', 'rum', 'tequila', 'brandy'],
+        };
+        const types = typeMap[filters.type] || [filters.type];
+        baseQuery.type = { $in: types };
+      }
+      
+      let products = await Product.find(baseQuery).limit(limit * 2).lean();
+      
+      if (tenantId) {
+        const subProducts = await SubProduct.find({
+          product: { $in: products.map(p => p._id) },
+          tenant: tenantId,
+          status: 'active'
+        }).populate('tenant', 'name slug').lean();
+        
+        const validProductIds = [...new Set(subProducts.map(sp => sp.product.toString()))];
+        products = products.filter(p => validProductIds.includes(p._id.toString()));
+      }
+      
+      // Get pricing from SubProducts (only active ones with stock and valid prices)
+      const productIds = products.map(p => p._id);
+      
+      const subProducts = await SubProduct.find({
+        product: { $in: productIds },
+        status: 'active',
+        availableStock: { $gt: 0 },
+        baseSellingPrice: { $gt: 0 }
+      }).populate('tenant', 'name').lean();
+      
+      // Get size IDs and try to fetch Size documents
+      const allSizeIds = [...new Set(subProducts.flatMap(sp => (sp.sizes || []).map(s => s.toString())))];
+      const sizeDocs = allSizeIds.length > 0 ? await Size.find({ _id: { $in: allSizeIds } }).lean() : [];
+      const sizeMap = {};
+      sizeDocs.forEach(s => { 
+        const id = s._id.toString();
+        sizeMap[id] = s; 
+      });
+
+      // Build availableAt for each product
+      const availableAtMap = {};
+      const subProductMap = {};
+      subProducts.forEach(sp => {
+        const productId = sp.product.toString();
+        
+        // Build subProductMap for min price calculation
+        if (!subProductMap[productId]) {
+          subProductMap[productId] = [];
+        }
+        subProductMap[productId].push(sp);
+        
+        // Build availableAtMap
+        if (!availableAtMap[productId]) {
+          availableAtMap[productId] = {
+            _id: sp._id,
+            tenant: sp.tenant,
+            sizes: []
+          };
+        }
+        // Add sizes - use fetched Size docs, fallback to generic names
+        if (sp.sizes && sp.sizes.length > 0) {
+          sp.sizes.forEach((sizeId, idx) => {
+            const sizeDoc = sizeMap[sizeId.toString()];
+            // Generate a reasonable size name
+            let sizeName = sizeDoc?.size;
+            if (!sizeName) {
+              // Generate names based on index: Standard, Large, Small, etc.
+              const sizeNames = ['Standard', 'Large', 'Small', 'XL', '30cl', '50cl', '75cl', '1L'];
+              sizeName = sizeNames[idx % sizeNames.length] || `Size ${idx + 1}`;
+            }
+            availableAtMap[productId].sizes.push({
+              _id: sizeId,
+              size: sizeName,
+              volumeMl: sizeDoc?.volumeMl,
+              stock: 0,
+              pricing: {
+                websitePrice: sp.baseSellingPrice,
+                originalWebsitePrice: sp.baseSellingPrice
+              },
+              discount: sp.discount
+            });
+          });
+        }
+      });
+      
+      // Only return products that have valid pricing
+      const validProducts = products.filter(p => {
+        const sps = subProductMap[p._id] || [];
+        return sps.length > 0 && sps.some(sp => (sp.baseSellingPrice || 0) > 0);
+      });
+      
+      return validProducts.map(p => {
+        const pid = p._id.toString();
+        const sps = subProductMap[pid] || [];
+        const minPrice = sps.length > 0 ? Math.min(...sps.map(sp => sp.baseSellingPrice || 0)) : 0;
+        const totalStock = sps.reduce((sum, sp) => sum + (sp.availableStock || 0), 0);
+        
+        return {
+          _id: p._id,
+          name: p.name,
+          slug: p.slug,
+          type: p.type,
+          minPrice,
+          totalStock,
+          hasDiscount: sps.some(sp => (sp.discount || 0) > 0),
+          availableAt: availableAtMap[pid] ? [availableAtMap[pid]] : [],
+          subProducts: sps,
+          image: p.images?.[0]?.url || p.images?.[0] || null,
+          primaryImage: p.primaryImage || p.images?.[0]
+        };
+      }).filter(p => p.totalStock > 0).slice(0, limit);
+    }
+
+    // Transform the output slightly to match the existing Chatbot logic format
+    return (result.products || []).map(p => {
+      // Find the minimum pricing info calculated by getAllProducts
+      // In the new processedProducts structure, minPrice is calculated under product.priceRange.min
+      let minPrice = 0;
+      let totalStock = 0;
+      let hasDiscount = false;
+      let sizes = [];
+      let availableAt = p.availableAt || [];
+
+      // Always check for priceRange first (primary path from searchProducts)
+      if (p.priceRange && p.priceRange.min) {
+        minPrice = p.priceRange.min;
+      }
+      
+      // Extract sizes from availableAt (tenants) - always do this if available
+      if (availableAt && availableAt.length > 0) {
+        sizes = availableAt.flatMap(tenantEntry => 
+          (tenantEntry.sizes || []).map(s => ({
+            id: s._id,
+            name: s.size,
+            size: s.size,
+            volumeMl: s.volumeMl,
+            price: s.pricing?.websitePrice || s.pricing?.sellingPrice || 0,
+            originalPrice: s.pricing?.originalWebsitePrice || s.pricing?.sellingPrice,
+            discount: s.discount?.value || 0,
+            tenant: tenantEntry.tenant?.name
+          }))
+        );
+        // If we have sizes from availableAt but no minPrice yet, get it from first size
+        if (minPrice === 0 && sizes.length > 0) {
+          minPrice = sizes[0].price || 0;
+        }
+      } else if (p.activeSubProducts && p.activeSubProducts.length > 0) {
+        const prices = p.activeSubProducts.flatMap(sp => sp.sizes?.map(s => s.pricing?.websitePrice || s.pricing?.sellingPrice || 0) || []);
+        if (prices.length > 0) minPrice = Math.min(...prices.filter(price => price > 0));
+        
+        // Collect all sizes from all subProducts
+        sizes = p.activeSubProducts.flatMap(sp => 
+          (sp.sizes || []).map(s => ({
+            id: s._id,
+            name: s.name,
+            size: s.size,
+            volumeMl: s.volumeMl,
+            price: s.pricing?.websitePrice || s.pricing?.sellingPrice || 0,
+            originalPrice: s.pricing?.originalWebsitePrice || s.pricing?.sellingPrice,
+            discount: s.discount?.value || 0
+          }))
+        );
+      } else if (p.sizes && p.sizes.length > 0) {
+        const prices = p.sizes.map(s => s.pricing?.websitePrice || s.pricing?.sellingPrice || 0);
+        if (prices.length > 0) minPrice = Math.min(...prices.filter(price => price > 0));
+        
+        sizes = p.sizes.map(s => ({
+          id: s._id,
+          name: s.name,
+          size: s.size,
+          volumeMl: s.volumeMl,
+          price: s.pricing?.websitePrice || s.pricing?.sellingPrice || 0,
+          originalPrice: s.pricing?.originalWebsitePrice || s.pricing?.sellingPrice,
+          discount: s.discount?.value || 0
+        }));
+      }
+
+      if (p.stockInfo && p.stockInfo.availableStock !== undefined) {
+        totalStock = p.stockInfo.availableStock;
+      } else if (p.activeSubProducts && p.activeSubProducts.length > 0) {
+        totalStock = p.activeSubProducts.reduce((sum, sp) => sum + (sp.availableStock || 0), 0);
+      } else if (p.sizes && p.sizes.length > 0) {
+        totalStock = p.sizes.reduce((sum, s) => sum + (s.availableStock || 0), 0);
+      }
+
+      hasDiscount = !!p.bestDiscount || (p.activeSubProducts || []).some(sp => 
+        (sp.sizes || []).some(s => s.discount && s.discount.value > 0)
+      );
+      
+      // We already filtered by inStock in getAllProducts
+      // Extract image URL for chatbot display
+      let image = null;
+      if (p.images && p.images.length > 0) {
+        image = p.images[0]?.url || p.images[0];
+      } else if (p.primaryImage) {
+        image = typeof p.primaryImage === 'string' ? p.primaryImage : p.primaryImage?.url;
+      }
+      
+      return {
+        ...p,
+        _id: p._id,
+        name: p.name,
+        subProducts: p.activeSubProducts || p.subProducts,
+        availableAt: availableAt, // Use extracted availableAt
+        minPrice,
+        totalStock,
+        hasDiscount,
+        sizes,
+        image,
+        primaryImage: p.primaryImage || (p.images && p.images[0])
+      };
+    });
+  } catch (error) {
+    console.error('Chatbot queryProducts Error:', error);
+    return [];
   }
-
-  let products = await Product.find(productQuery)
-    .select('name slug type subType description abv volumeMl originCountry region brand images tags averageRating reviewCount flavorNotes')
-    .limit(limit * 2)
-    .lean();
-
-  const productIds = products.map(p => p._id);
-  
-  const subProductQuery = {
-    product: { $in: productIds },
-    status: 'active'
-  };
-  
-  if (filters.maxPrice) {
-    subProductQuery.baseSellingPrice = { $lte: filters.maxPrice };
-  }
-  if (filters.minPrice) {
-    subProductQuery.baseSellingPrice = { ...subProductQuery.baseSellingPrice, $gte: filters.minPrice };
-  }
-  
-  const subProducts = await SubProduct.find(subProductQuery)
-    .populate('tenant', 'name slug logo')
-    .populate('sizes', 'name size volumeMl')
-    .lean();
-
-  const subProductMap = {};
-  subProducts.forEach(sp => {
-    if (!subProductMap[sp.product]) subProductMap[sp.product] = [];
-    subProductMap[sp.product].push(sp);
-  });
-
-  return products.map(p => {
-    const sps = (subProductMap[p._id] || []).filter(sp => sp.stockStatus !== 'out_of_stock');
-    
-    const minPrice = sps.length > 0 ? Math.min(...sps.map(sp => sp.baseSellingPrice || 0)) : 0;
-    const maxPrice = sps.length > 0 ? Math.max(...sps.map(sp => sp.baseSellingPrice || 0)) : 0;
-    const totalStock = sps.reduce((sum, sp) => sum + (sp.availableStock || 0), 0);
-    const hasDiscount = sps.some(sp => (sp.discount || 0) > 0);
-    const sellers = [...new Set(sps.map(sp => sp.tenant?.name).filter(Boolean))];
-
-    return {
-      ...p,
-      subProducts: sps,
-      minPrice,
-      maxPrice,
-      totalStock,
-      hasDiscount,
-      sellers,
-      hasMultipleSellers: sellers.length > 1
-    };
-  })
-  .filter(p => p.totalStock > 0)
-  .sort((a, b) => (b.reviewCount || 0) - (a.reviewCount || 0))
-  .slice(0, limit);
 };
 
 // General beverage knowledge base
@@ -508,15 +609,19 @@ const generateKnowledgeResponse = async (query, intent) => {
 const generateProductContext = (products) => {
   if (!products || products.length === 0) return '';
   
+  // Only include products with valid prices
+  const validProducts = products.filter(p => p.minPrice > 0);
+  if (validProducts.length === 0) return '';
+  
   return `Available: ` + 
-    products.slice(0, 5).map((p) => {
+    validProducts.slice(0, 5).map((p) => {
       return `${p.name} - ₦${(p.minPrice || 0).toLocaleString()}`;
     }).join(', ');
 };
 
-// Main chatbot query handler with streaming support
-const handleChatbotQuery = async (options, onStream = null) => {
-  const { query, imageUrls, imageUrl, tenantId, conversationHistory = [], fileContent, fileName } = options;
+// Main chatbot query handler
+const handleChatbotQuery = async (options) => {
+  const { query, imageUrls, imageUrl, tenantId, conversationHistory = [], fileContent, fileName, userId } = options;
 
   // Support both single imageUrl and multiple imageUrls
   const images = imageUrls || (imageUrl ? [imageUrl] : []);
@@ -528,44 +633,51 @@ const handleChatbotQuery = async (options, onStream = null) => {
   try {
     // Handle image query (single or multiple)
     if (images.length > 0) {
-      return await handleImageQuery(images, query);
+      return await handleImageQuery(images, query, tenantId);
     }
 
     // Handle file content (drink list)
     if (fileContent) {
-      return await handleFileQuery(fileContent, fileName, query);
+      return await handleFileQuery(fileContent, fileName, query, tenantId);
     }
 
     const intent = extractIntent(query);
-    const searchTerm = intent.keywords.length > 0 ? intent.keywords.join(' ') : null;
-    const products = await queryProducts(intent.filters, searchTerm, 10, intent.brand);
+    console.log('[Chatbot] extractIntent result:', JSON.stringify(intent));
+    console.log('[Chatbot] query:', query);
+    
+    // For cart actions, search using the actual query (extract product name)
+    let searchTerm = intent.keywords.length > 0 ? intent.keywords.join(' ') : null;
+    
+    // Don't use brand filter for cart actions - it might be too restrictive
+    const searchBrand = intent.brand;
+    console.log(`[Chatbot] searchTerm: "${searchTerm}", searchBrand: "${searchBrand}", filters:`, intent.filters);
+    let products = await queryProducts(intent.filters, searchTerm, 10, searchBrand, tenantId);
+    console.log(`[Chatbot] queryProducts returned ${products.length} products`);
+    
     const productContext = generateProductContext(products);
 
     // Get general knowledge if no products found
     const knowledgeContext = products.length === 0 ? await generateKnowledgeResponse(query, intent) : '';
 
-    let systemPrompt = `You are DrinksHarbour AI - a friendly beverage expert for DrinksHarbour.com, Nigeria's top drinks store.
+    let systemPrompt = `You are DrinksHarbour AI - the friendly, expert beverage assistant for DrinksHarbour.com, Nigeria's premier multi-tenant drinks marketplace.
+Your goal is to help customers find drinks, check prices, plan events, and get beverage recommendations.
 
+### CONTEXT:
 ${productContext}
-
-🎯 STYLE - BE HUMAN:
-- Keep responses SHORT and conversational (2-3 sentences max for simple questions)
-- Use emojis naturally
-- Get to the point quickly
-- Sound like a knowledgeable friend
-
-💰 PRICING:
-- Always include prices in ₦
-
-🔄 REPLACEMENTS:
-- If product not available, suggest 1-2 alternatives quickly
-- Example: "No Heineken, but Star (₦11,517) is similar and popular"
-
-🎉 EVENTS:
-- Ask guest count, budget, preferences
-- Quick estimate: 1 bottle = 8-10 drinks
-
 ${knowledgeContext}
+
+### YOUR PERSONA & STYLE:
+- **Tone:** Friendly, helpful, knowledgeable, and distinctly human.
+- **Length:** Keep responses concise, direct, and conversational (typically 1-3 short paragraphs).
+- **Emojis:** Use relevant emojis naturally to make the conversation lively (e.g., 🍷, 🍻, 🎉).
+- **Format:** Use bullet points or bold text to highlight key information (like names and prices).
+
+### CORE RULES:
+1. **Pricing & Currency:** Always display prices in Nigerian Naira (₦). Format with commas (e.g., ₦12,500).
+2. **Product Suggestions:** If a user asks for a drink that isn't in the provided context, gracefully suggest 1-2 available alternatives.
+   - *Example:* "I couldn't find Heineken right now, but **Star Lager (₦11,500)** is a fantastic, popular alternative! 🍻"
+3. **Event Planning:** If a user is planning an event (party, wedding, etc.), proactively ask helpful questions (guest count, budget, preferences) and offer a quick estimate (e.g., "A standard bottle of spirits typically serves 15-20 shots").
+4. **No Hallucinations:** Only recommend products and prices that are explicitly listed in the CONTEXT above. If the context is empty, rely on your general beverage knowledge but clarify that they should search the catalog for exact availability.
 
 Remember: Be helpful, quick, and human-like!`;
 
@@ -576,22 +688,48 @@ Remember: Be helpful, quick, and human-like!`;
 
     const fullPrompt = recentMessages ? `${recentMessages}\n\nUser: ${query}` : query;
 
-    let response;
-    
-    // Use streaming if callback provided
-    if (onStream) {
-      response = await callOllama(fullPrompt, systemPrompt, onStream);
-    } else {
-      response = await callOllama(fullPrompt, systemPrompt);
-    }
+    let response = await callOllama(fullPrompt, systemPrompt);
 
+    // Filter out products with invalid/zero prices for display
+    const validProducts = products.filter(p => p.minPrice > 0);
+    
     // Fallback responses
     if (!response) {
-      if (products.length > 0) {
-        response = `I found ${products.length} products for you! Here are some highlights:\n\n`;
-        response += products.slice(0, 3).map(p => 
-          `• ${p.name} - ₦${p.minPrice?.toLocaleString() || 'Contact for price'}${p.hasDiscount ? ' (On Sale!)' : ''}`
-        ).join('\n');
+      const isGreeting = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening', 'howdy', 'what\'s up', 'sup']
+        .some(g => query.toLowerCase().trim() === g || query.toLowerCase().trim().startsWith(g + ' '));
+
+      if (isGreeting) {
+        return getGreetingResponse();
+      } else if (validProducts.length > 0) {
+        // Check if user asked for a specific product and we found it
+        const exactMatch = validProducts.find(p => 
+          p.name.toLowerCase().includes(query.toLowerCase().trim()) || 
+          query.toLowerCase().trim().includes(p.name.toLowerCase())
+        );
+        
+        if (exactMatch) {
+          // Build size info if available
+          let sizeInfo = '';
+          const sizes = exactMatch.sizes || exactMatch.subProducts?.[0]?.sizes || [];
+          if (sizes && sizes.length > 0) {
+            const sizeList = sizes.slice(0, 3).map(s => {
+              const price = s.price || exactMatch.minPrice;
+              const original = s.originalPrice && s.originalPrice > price ? ` (was ₦${s.originalPrice.toLocaleString()})` : '';
+              const discount = s.discount ? ` - ${s.discount}% OFF` : '';
+              const sizeName = s.name || s.size || (s.volumeMl ? s.volumeMl + 'ml' : '');
+              return `• ${sizeName}: ₦${price.toLocaleString()}${original}${discount}`;
+            }).join('\n');
+            sizeInfo = `\n\n**Available Sizes:**\n${sizeList}`;
+          }
+          
+          response = `**${exactMatch.name}** is available! 🎉\n\n**Price: ₦${exactMatch.minPrice.toLocaleString()}**${sizeInfo}`;
+          if (exactMatch.hasDiscount) response += `\n\nIt's currently on sale!`;
+        } else {
+          response = `I found ${validProducts.length} products for you! Here are some highlights:\n\n`;
+          response += validProducts.slice(0, 3).map(p => 
+            `• ${p.name} - ₦${p.minPrice?.toLocaleString()}${p.hasDiscount ? ' (On Sale!)' : ''}`
+          ).join('\n');
+        }
       } else {
         response = await generateFallbackResponse(query, intent, knowledgeContext);
       }
@@ -599,14 +737,36 @@ Remember: Be helpful, quick, and human-like!`;
 
     return {
       response,
-      products: shouldShowProducts(intent, products.length, products, query) ? products.slice(0, 4).map(p => ({
-        id: p._id, name: p.name, slug: p.slug, type: p.type,
-        minPrice: p.minPrice, hasDiscount: p.hasDiscount,
-        image: p.images?.[0]?.url
+      products: shouldShowProducts(intent, validProducts.length, validProducts, query) ? validProducts.slice(0, 4).map(p => ({
+        id: p._id, 
+        name: p.name, 
+        slug: p.slug, 
+        type: p.type,
+        minPrice: p.minPrice, 
+        hasDiscount: p.hasDiscount,
+        image: (p.images && p.images.length > 0) ? (p.images[0].url || p.images[0]) : null,
+        // Include size/variant information if available
+        sizes: p.sizes ? p.sizes.slice(0, 5).map(s => ({
+          id: s._id,
+          name: s.name,
+          size: s.size,
+          volumeMl: s.volumeMl,
+          price: s.pricing?.websitePrice || s.pricing?.sellingPrice || p.minPrice,
+          originalPrice: s.pricing?.originalWebsitePrice || s.pricing?.sellingPrice,
+          discount: s.discount?.value || 0
+        })) : (p.subProducts?.[0]?.sizes || []).slice(0, 5).map(s => ({
+          id: s._id,
+          name: s.name,
+          size: s.size,
+          volumeMl: s.volumeMl,
+          price: s.pricing?.websitePrice || s.pricing?.sellingPrice || p.minPrice,
+          originalPrice: s.pricing?.originalWebsitePrice || s.pricing?.sellingPrice,
+          discount: s.discount?.value || 0
+        }))
       })) : [],
-      quickReplies: buildQuickReplies(intent, products),
+      quickReplies: buildQuickReplies(intent, validProducts),
       intent: intent.type,
-      hasProducts: products.length > 0
+      hasProducts: validProducts.length > 0
     };
 
   } catch (error) {
@@ -617,33 +777,11 @@ Remember: Be helpful, quick, and human-like!`;
 
 // Should show products based on intent and relevance
 const shouldShowProducts = (intent, productCount, products = [], query = '') => {
-  // Don't show products for greetings
-  const lowerQuery = query.toLowerCase().trim();
-  const greetings = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening', 'howdy', 'what\'s up', 'sup'];
-  if (greetings.some(g => lowerQuery === g || lowerQuery.startsWith(g + ' '))) {
-    return false;
-  }
-  
-  // Don't show products if no products found
-  if (productCount === 0) return false;
-  
-  // Don't show products for general conversational queries without keywords
-  const conversationalPatterns = ['how are you', 'what can you do', 'help me', 'who are you'];
-  if (conversationalPatterns.some(p => lowerQuery.includes(p))) {
-    return false;
-  }
-  
-  // Show products if there are keywords (type or brand)
-  if (intent.keywords.length > 0 || intent.filters.type || intent.brand) {
-    return true;
-  }
-  
-  // Default: don't show products for generic queries
-  return false;
+  return productCount > 0;
 };
 
 // Handle image-based queries (single or multiple)
-const handleImageQuery = async (imageUrls, userQuery = '') => {
+const handleImageQuery = async (imageUrls, userQuery = '', tenantId = null) => {
   // Ensure it's an array
   const images = Array.isArray(imageUrls) ? imageUrls : [imageUrls];
   try {
@@ -669,7 +807,7 @@ const handleImageQuery = async (imageUrls, userQuery = '') => {
     // Combine analyses
     const combinedAnalysis = analyses.length === 1 
       ? analyses[0] 
-      : `Here are ${analyses.length} drinks I identified:\n\n${analyses.map((a, i) => `${i + 1}. ${a.substring(0, 200)}`).join('\n\n')}`;
+      : `Here are the ${analyses.length} drinks I identified:\n\n${analyses.map((a, i) => `**Drink ${i + 1}:**\n${a}`).join('\n\n')}`;
 
     // Extract product names and search for all
     const allProducts = [];
@@ -678,7 +816,7 @@ const handleImageQuery = async (imageUrls, userQuery = '') => {
       const productName = extractProductNameFromAnalysis(analysis);
       if (productName) {
         const intent = extractIntent(productName);
-        const products = await queryProducts(intent.filters, productName, 3);
+        const products = await queryProducts(intent.filters, productName, 3, null, tenantId);
         allProducts.push(...products);
       }
     }
@@ -695,7 +833,6 @@ const handleImageQuery = async (imageUrls, userQuery = '') => {
       response += uniqueProducts.slice(0, 3).map((p, i) => 
         `• **${p.name}** - ₦${(p.minPrice || 0).toLocaleString()}`
       ).join('\n');
-      response += `\n\nWant me to add any to your cart?`;
     }
 
     return {
@@ -721,7 +858,7 @@ const handleImageQuery = async (imageUrls, userQuery = '') => {
 };
 
 // Handle file-based queries (drink lists)
-const handleFileQuery = async (fileContent, fileName, userQuery) => {
+const handleFileQuery = async (fileContent, fileName, userQuery, tenantId = null) => {
   try {
     // Parse the drink list from file content
     const lines = fileContent.split(/\r?\n/).filter(line => line.trim().length > 0);
@@ -783,7 +920,7 @@ const handleFileQuery = async (fileContent, fileName, userQuery) => {
     
     for (const item of drinkItems) {
       const intent = extractIntent(item.name);
-      const products = await queryProducts(intent.filters, item.name, 2);
+      const products = await queryProducts(intent.filters, item.name, 2, null, tenantId);
       
       if (products.length > 0) {
         allProducts.push({
@@ -858,7 +995,14 @@ const handleFileQuery = async (fileContent, fileName, userQuery) => {
 
 // Extract product name from AI analysis
 const extractProductNameFromAnalysis = (analysis) => {
+  // Try to match "Brand & Name:" or "Brand:" from our new vision prompt format
+  const structuredMatch = analysis.match(/\*\*(?:Brand & Name|Brand|Name):\*\*\s*([^\n]+)/i);
+  if (structuredMatch) {
+    return structuredMatch[1].trim();
+  }
+  
   const patterns = [
+    /(?:I identified a|This is a|Looks like a)\s+([A-Za-z0-9\s\-\']+?)(?:\.|,|$)/i,
     /similar to (.+?)(?:\.|,|$)/i,
     /like the (.+?)(?:\.|,|$)/i,
     /maybe (.+?)(?:\.|,|$)/i,
@@ -874,6 +1018,13 @@ const extractProductNameFromAnalysis = (analysis) => {
 
 // Generate fallback response using knowledge base
 const generateFallbackResponse = async (query, intent, knowledgeContext) => {
+  const lowerQuery = query.toLowerCase().trim();
+  const greetings = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening', 'howdy', 'what\'s up', 'sup'];
+  
+  if (greetings.some(g => lowerQuery === g || lowerQuery.startsWith(g + ' '))) {
+    return getGreeting();
+  }
+
   const knowledge = knowledgeContext || await generateKnowledgeResponse(query, intent);
   
   if (knowledge) {
@@ -921,31 +1072,33 @@ const buildQuickReplies = (intent, products) => {
 const generateProductDetails = async (productId) => {
   try {
     const product = await Product.findById(productId)
+      .populate('brand', 'name')
       .populate({ path: 'subProducts', populate: [{ path: 'tenant' }, { path: 'sizes' }] })
       .lean();
 
     if (!product) return { error: 'Product not found' };
 
-    let details = `📦 ${product.name}\n`;
-    if (product.brand) details += `🏷️ Brand: ${product.brand}\n`;
-    if (product.type) details += `🍾 Type: ${product.type}\n`;
-    if (product.abv) details += `🔥 ABV: ${product.abv}%\n`;
-    if (product.originCountry) details += `🌍 Origin: ${product.originCountry}\n`;
-    if (product.description) details += `\n📝 ${product.description}\n`;
+    let details = `📦 **${product.name}**\n`;
+    if (product.brand?.name) details += `- **Brand:** ${product.brand.name}\n`;
+    if (product.type) details += `- **Type:** ${product.type}\n`;
+    if (product.abv) details += `- **ABV:** ${product.abv}%\n`;
+    if (product.originCountry) details += `- **Origin:** ${product.originCountry}\n`;
+    if (product.flavorNotes && product.flavorNotes.length > 0) details += `- **Notes:** ${product.flavorNotes.join(', ')}\n`;
+    if (product.description) details += `\n> ${product.description}\n`;
 
     if (product.subProducts?.length > 0) {
-      details += `\n💰 Pricing:\n`;
+      details += `\n💰 **Pricing:**\n`;
       product.subProducts.forEach(sp => {
         const price = sp.baseSellingPrice || 0;
-        details += `• ${sp.tenant?.name || 'DrinksHarbour'}: ₦${price.toLocaleString()}`;
-        if (sp.discount > 0) details += ` (${sp.discount}% off)`;
+        details += `   - ${sp.tenant?.name || 'DrinksHarbour'}: ₦${price.toLocaleString()}`;
+        if (sp.discount > 0) details += ` (${sp.discount}% off!)`;
         details += '\n';
       });
     }
 
     const response = await callOllama(
-      `Provide detailed info about this drink:\n\n${details}`,
-      'You are DrinksHarbour AI, a beverage expert.'
+      `Summarize these drink details into a compelling, 2-3 sentence overview for a customer. Highlight the brand, type, key flavors, and the best available price:\n\n${details}`,
+      'You are DrinksHarbour AI, an engaging beverage expert.'
     );
 
     return { response: response || details, product };

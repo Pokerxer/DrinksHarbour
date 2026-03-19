@@ -5,6 +5,9 @@ import React, {
   useContext,
   useReducer,
   useEffect,
+  useState,
+  useCallback,
+  useMemo,
 } from "react";
 import { ProductType } from "@/types/product.types";
 import { API_URL } from "@/lib/api";
@@ -45,9 +48,17 @@ type CartAction =
   | { type: "LOAD_CART"; payload: CartItem[] }
   | { type: "CLEAR_CART" };
 
+interface AddToCartResult {
+  success: boolean;
+  isNewItem: boolean;
+  cartItemId: string;
+  newQuantity: number;
+  previousQuantity: number;
+}
+
 interface CartContextProps {
   cartState: CartState;
-  addToCart: (product: ProductType, size?: string, color?: string, vendor?: string, vendorId?: string, quantity?: number, sizeId?: string, subProductId?: string) => void;
+  addToCart: (product: ProductType, size?: string, color?: string, vendor?: string, vendorId?: string, quantity?: number, sizeId?: string, subProductId?: string) => AddToCartResult;
   removeFromCart: (cartItemId: string) => void;
   updateCart: (
     cartItemId: string,
@@ -64,6 +75,7 @@ interface CartContextProps {
   cartCount: number;
   syncCartToServer: () => Promise<boolean>;
   loadServerCart: () => Promise<void>;
+  refreshCart: () => void;
 }
 
 const CART_EXPIRY_DAYS = 7;
@@ -200,6 +212,14 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
       };
     
     case "LOAD_CART":
+      // Skip if cart is already the same (compare by IDs and quantities)
+      const sameCart = state.cartArray.length === action.payload.length && 
+        state.cartArray.every((item, i) => 
+          item.cartItemId === action.payload[i].cartItemId && item.quantity === action.payload[i].quantity
+        );
+      if (sameCart) {
+        return state;
+      }
       return { ...state, cartArray: action.payload };
     
     case "CLEAR_CART":
@@ -241,19 +261,74 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   useEffect(() => {
-    if (cartState.cartArray.length > 0) {
-      const storageData = JSON.stringify({
-        cartArray: cartState.cartArray,
-        savedAt: Date.now(),
-        expiryDays: CART_EXPIRY_DAYS,
-      });
-      localStorage.setItem(STORAGE_KEY, storageData);
-    } else {
-      localStorage.removeItem(STORAGE_KEY);
-    }
+    const storageData = JSON.stringify({
+      cartArray: cartState.cartArray,
+      savedAt: Date.now(),
+      expiryDays: CART_EXPIRY_DAYS,
+    });
+    localStorage.setItem(STORAGE_KEY, storageData);
   }, [cartState.cartArray]);
 
-  const addToCart = (product: ProductType, size?: string, color?: string, vendor?: string, vendorId?: string, quantity?: number, sizeId?: string, subProductId?: string) => {
+  // Listen for storage changes (from other tabs) and custom cart update events (from same tab)
+  useEffect(() => {
+    let isProcessing = false;
+    
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY && e.newValue && !isProcessing) {
+        try {
+          const newCart = JSON.parse(e.newValue);
+          if (newCart.cartArray && Array.isArray(newCart.cartArray)) {
+            isProcessing = true;
+            dispatch({ type: "LOAD_CART", payload: newCart.cartArray });
+            setTimeout(() => { isProcessing = false; }, 100);
+          }
+        } catch (err) {
+          isProcessing = false;
+        }
+      }
+    };
+
+    const handleCartUpdate = () => {
+      if (isProcessing) return;
+      const savedCart = localStorage.getItem(STORAGE_KEY);
+      if (savedCart) {
+        try {
+          const parsed = JSON.parse(savedCart);
+          if (parsed.cartArray) {
+            isProcessing = true;
+            dispatch({ type: "LOAD_CART", payload: parsed.cartArray });
+            setTimeout(() => { isProcessing = false; }, 100);
+          }
+        } catch (err) {
+          isProcessing = false;
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('cart-updated', handleCartUpdate);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('cart-updated', handleCartUpdate);
+    };
+  }, []);
+
+  const addToCart = (product: ProductType, size?: string, color?: string, vendor?: string, vendorId?: string, quantity?: number, sizeId?: string, subProductId?: string): AddToCartResult => {
+    const productId = product._id || product.id;
+    const cartItemId = generateCartItemId(productId, size || '', vendor || '', color || '');
+    const qty = quantity || 1;
+    
+    // Get current cart from state
+    let isNewItem = true;
+    let previousQuantity = 0;
+    const existingItem = cartState.cartArray.find(item => item.cartItemId === cartItemId);
+    if (existingItem) {
+      isNewItem = false;
+      previousQuantity = existingItem.quantity;
+    }
+    
+    // Dispatch to update state
     dispatch({ 
       type: "ADD_TO_CART", 
       payload: { 
@@ -262,11 +337,50 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
         color: color || '', 
         vendor: vendor || '', 
         vendorId: vendorId || '', 
-        quantity,
+        quantity: qty,
         sizeId: sizeId || '',
         subProductId: subProductId || ''
       } 
     });
+    
+    // Also directly save to localStorage to ensure persistence
+    const currentCart = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{"cartArray":[]}');
+    let updatedCart = [...(currentCart.cartArray || [])];
+    
+    const existingIdx = updatedCart.findIndex((item: CartItem) => item.cartItemId === cartItemId);
+    if (existingIdx >= 0) {
+      updatedCart[existingIdx].quantity = (updatedCart[existingIdx].quantity || 0) + qty;
+    } else {
+      const itemPrice = getPriceFromAvailableAt(product, vendor || '', size || '');
+      updatedCart.push({
+        ...product,
+        cartItemId,
+        quantity: qty,
+        selectedSize: size || '',
+        selectedColor: color || '',
+        selectedVendor: vendor || '',
+        selectedVendorId: vendorId || '',
+        selectedSizeId: sizeId || '',
+        selectedSubProductId: subProductId || '',
+        selectedProductId: productId,
+        price: itemPrice,
+        addedAt: Date.now(),
+      });
+    }
+    
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      cartArray: updatedCart,
+      savedAt: Date.now(),
+      expiryDays: CART_EXPIRY_DAYS,
+    }));
+    
+    return {
+      success: true,
+      isNewItem,
+      cartItemId,
+      newQuantity: previousQuantity + qty,
+      previousQuantity
+    };
   };
 
   const removeFromCart = (cartItemId: string) => {
@@ -299,21 +413,41 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
     localStorage.removeItem(STORAGE_KEY);
   };
 
+  const refreshCart = () => {
+    const savedCart = localStorage.getItem(STORAGE_KEY);
+    if (savedCart) {
+      try {
+        const parsed = JSON.parse(savedCart);
+        if (parsed.cartArray) {
+          dispatch({ type: "LOAD_CART", payload: parsed.cartArray });
+        }
+      } catch (err) {
+        console.error('Failed to refresh cart:', err);
+      }
+    }
+  };
+
   const getCartItemId = (productId: string, size: string, vendor: string, color: string): string => {
     return generateCartItemId(productId, size, vendor, color);
   };
 
-  const cartTotal = cartState.cartArray.reduce(
-    (sum, item) => {
-      const itemPrice = item.price || 0;
-      return sum + (itemPrice * (item.quantity || 1));
-    },
-    0
+  const cartTotal = useMemo(() => 
+    cartState.cartArray.reduce(
+      (sum, item) => {
+        const itemPrice = item.price || 0;
+        return sum + (itemPrice * (item.quantity || 1));
+      },
+      0
+    ),
+    [cartState.cartArray]
   );
 
-  const cartCount = cartState.cartArray.reduce(
-    (sum, item) => sum + (item.quantity || 1),
-    0
+  const cartCount = useMemo(() => 
+    cartState.cartArray.reduce(
+      (sum, item) => sum + (item.quantity || 1),
+      0
+    ),
+    [cartState.cartArray]
   );
 
   const syncCartToServer = async (): Promise<boolean> => {
@@ -470,6 +604,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
         cartCount,
         syncCartToServer,
         loadServerCart,
+        refreshCart,
       }}
     >
       {children}
