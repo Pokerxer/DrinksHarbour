@@ -264,12 +264,12 @@ export default function ChatbotWidget() {
   return (
     <>
       {/* DEBUG: Chatbot is rendering */}
-      <div className="fixed bottom-20 left-4 z-[9999] bg-red-500 text-white text-xs px-2 py-1 rounded">
-        DEBUG: Chatbot loaded
+      <div className="fixed bottom-20 left-4 z-[99999] bg-red-500 text-white text-xs px-3 py-2 rounded-lg shadow-lg">
+        DEBUG: Chatbot loaded - z-99999
       </div>
       
       {/* Floating Button */}
-      <div className="fixed bottom-6 right-6 z-50" id="chatbot-floating-btn">
+      <div className="fixed bottom-6 right-6 z-[9999]" id="chatbot-floating-btn">
         <button 
           onClick={toggleChat} 
           className={`relative w-14 h-14 rounded-full bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 text-white shadow-xl flex items-center justify-center transition-all duration-300 hover:shadow-2xl hover:shadow-emerald-500/40 ${isOpen && !isMinimized ? 'scale-0 rotate-90 opacity-0' : 'scale-100 rotate-0 opacity-100'}`} 
