@@ -1,7 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import Product from "../Product/Card";
-import { ProductType } from "@/type/ProductType";
+import { ProductType } from "@/types/product.types";
 import { motion } from "framer-motion";
 interface Props {
   data: Array<ProductType>;
@@ -14,7 +14,7 @@ const [activeTab, setActiveTab] = useState<string>("t-shirt");
     setActiveTab(type);
   };
   const filteredProducts = data.filter(
-    (product) => product.type === activeTab && product.category === "fashion",
+    (product) => product.type === activeTab,
   );
   return (
 <>
@@ -52,7 +52,7 @@ const [activeTab, setActiveTab] = useState<string>("t-shirt");
           <div className="list-product hide-product-sold grid lg:grid-cols-4 grid-cols-2 sm:gap-[30px] gap-[20px] md:mt-10 mt-6">
             {" "}
             {filteredProducts.slice(start, limit).map((prd, index) => (
-              <Product data={prd} type="grid" key={index} style="style-1" />
+              <Product data={prd} type="grid" key={index} />
             ))}{" "}
           </div>{" "}
         </div>{" "}

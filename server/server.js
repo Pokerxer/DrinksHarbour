@@ -39,6 +39,7 @@ const purchaseAgreementRoutes = require('./routes/purchaseAgreement.routes');
 const vendorPricelistRoutes = require('./routes/vendorPricelist.routes');
 const uomConversionRoutes = require('./routes/uomConversion.routes');
 const exchangeRateRoutes = require('./routes/exchangeRate.routes');
+const chatbotRoutes = require('./routes/chatbot.routes');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -161,6 +162,7 @@ app.use('/api/purchase-agreements', purchaseAgreementRoutes);
 app.use('/api/vendor-pricelists', vendorPricelistRoutes);
 app.use('/api/uom-conversions', uomConversionRoutes);
 app.use('/api/exchange-rates', exchangeRateRoutes);
+app.use('/api/chatbot', chatbotRoutes);
 
 // ────────────────────────────────────────────────
  // Health Check Endpoint

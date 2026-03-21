@@ -3,11 +3,11 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, Variants } from "framer-motion";
 import * as Icon from "react-icons/pi";
 import { useModalCompareContext } from "@/context/ModalCompareContext";
 import { useCompare } from "@/context/CompareContext";
-import { ProductType } from "@/type/ProductType";
+import { ProductType } from "@/types/product.types";
 
 const ModalCompare = () => {
   const { isModalOpen, closeModalCompare } = useModalCompareContext();
@@ -55,7 +55,7 @@ const ModalCompare = () => {
   };
 
   // Animation variants for content only
-  const containerVariants = {
+  const containerVariants: Variants = {
     hidden: { opacity: 0 },
     visible: {
       opacity: 1,
@@ -66,14 +66,14 @@ const ModalCompare = () => {
     }
   };
 
-  const itemVariants = {
+  const itemVariants: Variants = {
     hidden: { opacity: 0, y: 20, scale: 0.95 },
     visible: {
       opacity: 1,
       y: 0,
       scale: 1,
       transition: {
-        type: "spring",
+        type: "spring" as const,
         stiffness: 300,
         damping: 25
       }
@@ -86,13 +86,13 @@ const ModalCompare = () => {
     }
   };
 
-  const emptyStateVariants = {
+  const emptyStateVariants: Variants = {
     hidden: { opacity: 0, scale: 0.9 },
     visible: { 
       opacity: 1, 
       scale: 1,
       transition: {
-        type: "spring",
+        type: "spring" as const,
         stiffness: 200,
         damping: 20
       }

@@ -108,7 +108,7 @@ const mapApiProductToProduct = (apiProduct: ApiProduct): Product => {
   const isOnSaleFromApi = availableAt?.isOnSale || (apiProduct.discount?.value && apiProduct.discount.value > 0);
   const saleDiscountValue = availableAt?.saleDiscountValue || apiProduct.discount?.value || 0;
   
-  const sale = isOnSaleFromApi && saleDiscountValue > 0;
+  const sale = Boolean(isOnSaleFromApi && saleDiscountValue > 0);
   
   const discount = sale 
     ? Math.round(saleDiscountValue)
@@ -599,7 +599,7 @@ interface ProductCardProps {
   getStockStatus: (product: Product) => { text: string; color: string; bg: string };
   getMainBadge: (product: Product) => { type: string; text: string; color: string } | null;
   imageLoaded: Record<string, boolean>;
-  setImageLoaded: (loaded: Record<string, boolean>) => void;
+  setImageLoaded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
 }
 
 const ProductCard: React.FC<ProductCardProps> = ({

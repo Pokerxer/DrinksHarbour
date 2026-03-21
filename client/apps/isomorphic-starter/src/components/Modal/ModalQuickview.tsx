@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Image from 'next/image';
+import { motion, AnimatePresence } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 import { useModalQuickviewContext } from '@/context/ModalQuickviewContext';
 import { useCart } from '@/context/CartContext';
@@ -18,13 +19,13 @@ import { getInitials, VENDOR_PALETTE, vendorPaletteIndex } from '@/data/vendor-h
 interface VendorSize {
   _id: string;
   size: string;
-  displayName: string;
+  displayName?: string;
   stock: number;
-  availability: string;
+  availability?: string;
   price: number;
   originalPrice?: number;
-  displayPrice: string;
-  currencySymbol: string;
+  displayPrice?: string;
+  currencySymbol?: string;
   discount?: { label?: string; percentage?: number } | null;
   volumeMl?: number;
   minOrderQuantity?: number;
@@ -35,10 +36,22 @@ interface Vendor {
   tenant: {
     _id: string;
     name: string;
+    slug?: string;
     city?: string;
-    logo?: { url: string };
+    logo?: string;
   };
-  sizes: any[];
+  sizes: {
+    _id: string;
+    size: string;
+    stock: number;
+    pricing: {
+      websitePrice: number;
+      currencySymbol?: string;
+    };
+  }[];
+  isOnSale?: boolean;
+  saleDiscountValue?: number;
+  sku?: string;
 }
 
 const ModalQuickview: React.FC = () => {
@@ -49,6 +62,7 @@ const ModalQuickview: React.FC = () => {
   const [quantity, setQuantity] = useState<number>(1);
   const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [showAddedAnimation, setShowAddedAnimation] = useState(false);
+  const [imageError, setImageError] = useState(false);
   
   const { addToCart } = useCart();
   const { openModalCart } = useModalCartContext();
@@ -73,28 +87,31 @@ const ModalQuickview: React.FC = () => {
   const selectedVendor = useMemo(() => {
     if (!vendors.length) return null;
     if (activeVendor) {
-      return vendors.find((v: Vendor) => v.tenant._id === activeVendor) ?? vendors[0];
+      return vendors.find((v) => v.tenant?._id === activeVendor) ?? vendors[0];
     }
     return vendors[0];
   }, [vendors, activeVendor]);
 
   const vendorSizes: VendorSize[] = useMemo(() => {
     if (!selectedVendor) return [];
-    return selectedVendor.sizes.map(s => ({
-      _id: s._id,
-      size: s.size,
-      displayName: s.displayName || s.size,
-      stock: s.stock,
-      availability: s.availability,
-      price: s.pricing.websitePrice,
-      originalPrice: s.pricing.originalWebsitePrice || s.pricing.websitePrice,
-      displayPrice: s.pricing.displayPrice,
-      currencySymbol: s.pricing.currencySymbol,
-      discount: s.discount,
-      volumeMl: s.volumeMl,
-      minOrderQuantity: s.minOrderQuantity || 1,
-      maxOrderQuantity: s.maxOrderQuantity,
-    }));
+    return selectedVendor.sizes.map(s => {
+      const sizeData = s as any;
+      return {
+        _id: sizeData._id,
+        size: sizeData.size,
+        displayName: sizeData.displayName || sizeData.size,
+        stock: sizeData.stock,
+        availability: sizeData.availability,
+        price: sizeData.pricing?.websitePrice || sizeData.price || 0,
+        originalPrice: sizeData.pricing?.originalWebsitePrice || sizeData.originalPrice,
+        displayPrice: sizeData.pricing?.displayPrice,
+        currencySymbol: sizeData.pricing?.currencySymbol,
+        discount: sizeData.discount,
+        volumeMl: sizeData.volumeMl,
+        minOrderQuantity: sizeData.minOrderQuantity || 1,
+        maxOrderQuantity: sizeData.maxOrderQuantity,
+      };
+    });
   }, [selectedVendor]);
 
   const selectedSizeData = useMemo(() => {
@@ -124,6 +141,7 @@ const ModalQuickview: React.FC = () => {
       setQuantity(1);
       setIsAddingToCart(false);
       setShowAddedAnimation(false);
+      setImageError(false);
     }
   }, [isOpen]);
 
@@ -240,18 +258,18 @@ const ModalQuickview: React.FC = () => {
 
   return (
     <div 
-      className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-all duration-300 ${
+      className={`fixed inset-0 z-50 flex items-end lg:items-center justify-center p-0 lg:p-4 transition-all duration-300 ${
         isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
       }`}
       onClick={closeQuickview}
     >
       {/* Backdrop with blur */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" />
+      <div className="absolute inset-0 bg-black/50 lg:bg-black/40 backdrop-blur-sm transition-opacity" />
 
-      {/* Modal Content */}
+      {/* Modal Content - Full screen on mobile, card on desktop */}
       <div 
-        className={`relative bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden transition-all duration-500 ${
-          isOpen ? 'scale-100 translate-y-0 opacity-100' : 'scale-95 translate-y-8 opacity-0'
+        className={`relative bg-white rounded-t-3xl lg:rounded-3xl shadow-2xl w-full lg:max-w-5xl max-h-[95vh] lg:max-h-[90vh] overflow-hidden transition-all duration-500 flex flex-col ${
+          isOpen ? 'translate-y-0 opacity-100' : 'translate-y-full lg:translate-y-8 lg:scale-95 lg:opacity-0'
         }`}
         onClick={(e) => e.stopPropagation()}
       >
@@ -265,39 +283,53 @@ const ModalQuickview: React.FC = () => {
           </div>
         )}
 
-        {/* Close Button */}
+        {/* Close Button - Fixed position */}
         <button 
-          className="absolute top-4 right-4 z-40 w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors shadow-lg"
+          className="absolute top-3 right-3 z-40 w-10 h-10 flex items-center justify-center rounded-full bg-white lg:bg-gray-100 shadow-lg hover:bg-gray-200 transition-colors"
           onClick={closeQuickview}
           aria-label="Close quick view"
         >
-          <Icon.PiX size={20} />
+          <Icon.PiX size={22} />
         </button>
 
-        <div className="flex flex-col lg:flex-row h-full max-h-[90vh]">
+        {/* Mobile Drag Handle */}
+        <div className="lg:hidden flex justify-center pt-3 pb-1">
+          <div className="w-12 h-1.5 bg-gray-300 rounded-full" />
+        </div>
+
+        <div className="flex flex-col lg:flex-row h-full overflow-y-auto">
           {/* LEFT: Images */}
-          <div className="lg:w-[45%] bg-gray-50 p-6 flex flex-col">
+          <div className="lg:w-[45%] bg-gray-50 p-4 lg:p-6 flex flex-col sticky top-0 lg:static">
             {/* Main Image */}
-            <div className="relative aspect-square rounded-2xl overflow-hidden bg-white shadow-sm flex-1 group">
-              {mainImage ? (
+            <div className="relative aspect-square rounded-xl lg:rounded-2xl overflow-hidden bg-white shadow-sm flex-shrink-0 group">
+              {mainImage && !imageError ? (
                 <Image 
                   src={mainImage} 
                   alt={selectedProduct.name}
                   fill
-                  className="object-cover transition-transform duration-500 group-hover:scale-105"
+                  className="object-cover transition-transform duration-500"
                   priority
-                  sizes="(max-width: 768px) 100vw, 45vw"
+                  sizes="(max-width: 1024px) 100vw, 45vw"
+                  onError={() => setImageError(true)}
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center bg-gray-200 text-gray-400">
-                  <Icon.PiImage size={64} />
+                <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100 text-gray-400">
+                  <Icon.PiImage size={64} className="mb-2" />
+                  <span className="text-sm">Image not available</span>
                 </div>
               )}
 
               {/* Discount Badge */}
               {discountPercentage > 0 && (
-                <div className="absolute top-4 left-4 px-3 py-1.5 bg-red-500 text-white text-sm font-bold rounded-full shadow-lg">
+                <div className="absolute top-3 left-3 px-2.5 py-1 lg:px-3 lg:py-1.5 bg-red-500 text-white text-xs lg:text-sm font-bold rounded-full shadow-lg">
                   -{discountPercentage}%
+                </div>
+              )}
+
+              {/* ABV Badge for beverages */}
+              {selectedProduct.abv && (
+                <div className="absolute top-3 right-3 px-2.5 py-1 lg:px-3 lg:py-1.5 bg-gray-900/80 backdrop-blur-sm text-white text-xs font-bold rounded-full shadow-lg">
+                  {selectedProduct.abv}% ABV
                 </div>
               )}
 
@@ -310,18 +342,18 @@ const ModalQuickview: React.FC = () => {
                 </div>
               )}
 
-              {/* Image Navigation Arrows */}
+              {/* Image Navigation Arrows - Always visible on mobile */}
               {images.length > 1 && (
                 <>
                   <button
                     onClick={() => setActiveImage(prev => prev === 0 ? images.length - 1 : prev - 1)}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white shadow-lg"
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform"
                   >
                     <Icon.PiCaretLeft size={20} />
                   </button>
                   <button
                     onClick={() => setActiveImage(prev => prev === images.length - 1 ? 0 : prev + 1)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white shadow-lg"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform"
                   >
                     <Icon.PiCaretRight size={20} />
                   </button>
@@ -329,14 +361,17 @@ const ModalQuickview: React.FC = () => {
               )}
             </div>
 
-            {/* Thumbnail Gallery */}
+            {/* Thumbnail Gallery - Scrollable */}
             {images.length > 1 && (
-              <div className="flex gap-2 mt-4 overflow-x-auto pb-2 scrollbar-hide">
+              <div className="flex gap-2 mt-3 lg:mt-4 overflow-x-auto pb-2 scrollbar-hide">
                 {images.map((img: any, index: number) => (
                   <button 
                     key={index}
-                    onClick={() => setActiveImage(index)}
-                    className={`relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 border-2 transition-all ${
+                    onClick={() => {
+                      setActiveImage(index);
+                      setImageError(false);
+                    }}
+                    className={`relative w-14 h-14 lg:w-16 lg:h-16 rounded-lg overflow-hidden flex-shrink-0 border-2 transition-all ${
                       activeImage === index 
                         ? 'border-orange-500 shadow-md' 
                         : 'border-transparent hover:border-gray-300'
@@ -347,7 +382,10 @@ const ModalQuickview: React.FC = () => {
                       alt={img.alt || `${selectedProduct.name} ${index + 1}`}
                       fill
                       className="object-cover"
-                      sizes="64px"
+                      sizes="56px"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
                     />
                   </button>
                 ))}
@@ -356,13 +394,13 @@ const ModalQuickview: React.FC = () => {
           </div>
 
           {/* RIGHT: Product Info */}
-          <div className="lg:w-[55%] p-6 lg:p-8 overflow-y-auto">
-            {/* Breadcrumb */}
-            <div className="flex items-center gap-2 mb-3 text-sm">
+          <div className="lg:w-[55%] p-4 lg:p-8 pb-36 lg:pb-8 overflow-y-auto">
+            {/* Breadcrumb - Hidden on mobile */}
+            <div className="hidden lg:flex items-center gap-2 mb-3 text-sm">
               {selectedProduct.category && (
                 <>
                   <Link 
-                    href={`/shop/${selectedProduct.category.slug}`}
+                    href={`/shop/${selectedProduct.category.slug || ''}`}
                     className="text-orange-600 hover:text-orange-700 font-medium"
                     onClick={closeQuickview}
                   >
@@ -371,7 +409,7 @@ const ModalQuickview: React.FC = () => {
                   {selectedProduct.subCategory && (
                     <>
                       <Icon.PiCaretRight size={14} className="text-gray-400" />
-                      <span className="text-gray-600">{selectedProduct.subCategory.name}</span>
+                      <span className="text-gray-600">{selectedProduct.subCategory}</span>
                     </>
                   )}
                 </>
@@ -379,50 +417,50 @@ const ModalQuickview: React.FC = () => {
             </div>
 
             {/* Brand & Title */}
-            <div className="flex items-start justify-between gap-4 mb-2">
-              <div className="flex-1">
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div className="flex-1 min-w-0">
                 {selectedProduct.brand && (
-                  <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                  <p className="text-xs lg:text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">
                     {selectedProduct.brand.name}
                   </p>
                 )}
-                <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 leading-tight">
+                <h1 className="text-xl lg:text-2xl xl:text-3xl font-bold text-gray-900 leading-tight line-clamp-2">
                   {selectedProduct.name}
                 </h1>
               </div>
               <button 
                 onClick={handleAddToWishlist}
-                className={`w-12 h-12 flex items-center justify-center rounded-full border-2 transition-all flex-shrink-0 ${
+                className={`w-10 h-10 lg:w-12 lg:h-12 flex items-center justify-center rounded-full border-2 transition-all flex-shrink-0 ${
                   isWishlistActive 
                     ? 'border-red-500 bg-red-50 text-red-500' 
                     : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                 }`}
               >
-                {isWishlistActive ? <Icon.PiHeartFill size={22} /> : <Icon.PiHeart size={22} />}
+                {isWishlistActive ? <Icon.PiHeartFill size={20} /> : <Icon.PiHeart size={20} />}
               </button>
             </div>
 
             {/* Rating */}
-            <div className="flex items-center gap-3 mb-4">
-              <Rate currentRate={selectedProduct.averageRating || 0} size={16} />
-              <span className="text-sm text-gray-600">
-                <span className="font-semibold">{selectedProduct.averageRating?.toFixed(1) || '0.0'}</span>
-                <span className="text-gray-400 ml-1">({selectedProduct.reviewCount || 0} reviews)</span>
+            <div className="flex items-center gap-2 lg:gap-3 mb-4">
+              <Rate currentRate={selectedProduct.stats?.averageRating || selectedProduct.rate || 0} size={14} />
+              <span className="text-xs lg:text-sm text-gray-600">
+                <span className="font-semibold">{(selectedProduct.stats?.averageRating || selectedProduct.rate || 0).toFixed(1)}</span>
+                <span className="text-gray-400 ml-1">({selectedProduct.stats?.totalReviews || selectedProduct.reviewCount || 0})</span>
               </span>
             </div>
 
             {/* Price */}
-            <div className="flex items-baseline gap-3 mb-4 pb-4 border-b border-gray-100">
-              <span className="text-3xl font-bold text-gray-900">
-                {displayCurrencySymbol}{displayPrice.toFixed(2)}
+            <div className="flex flex-wrap items-baseline gap-2 lg:gap-3 mb-4 pb-3 lg:pb-4 border-b border-gray-100">
+              <span className="text-2xl lg:text-3xl font-bold text-gray-900">
+                {displayCurrencySymbol}{displayPrice.toLocaleString()}
               </span>
               {displayOriginalPrice > displayPrice && (
-                <span className="text-xl text-gray-400 line-through">
-                  {displayCurrencySymbol}{displayOriginalPrice.toFixed(2)}
+                <span className="text-lg lg:text-xl text-gray-400 line-through">
+                  {displayCurrencySymbol}{displayOriginalPrice.toLocaleString()}
                 </span>
               )}
               {discountPercentage > 0 && (
-                <span className="px-3 py-1 bg-green-100 text-green-700 text-sm font-bold rounded-full">
+                <span className="px-2 lg:px-3 py-0.5 lg:py-1 bg-green-100 text-green-700 text-xs lg:text-sm font-bold rounded-full">
                   Save {discountPercentage}%
                 </span>
               )}
@@ -430,14 +468,24 @@ const ModalQuickview: React.FC = () => {
 
             {/* Short Description */}
             {selectedProduct.shortDescription && (
-              <p className="text-gray-600 mb-5 leading-relaxed text-sm">
+              <p className="text-sm text-gray-600 mb-4 lg:mb-5 leading-relaxed line-clamp-3">
                 {selectedProduct.shortDescription}
               </p>
             )}
 
-            {/* Vendor Selection */}
+            {/* Mobile: Show vendor name */}
+            {vendors.length > 0 && selectedVendor && (
+              <div className="lg:hidden flex items-center gap-2 mb-4 p-2 bg-gray-50 rounded-xl">
+                <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center">
+                  <Icon.PiStorefront size={16} className="text-orange-600" />
+                </div>
+                <span className="text-sm font-medium text-gray-900">{selectedVendor.tenant.name}</span>
+              </div>
+            )}
+
+            {/* Vendor Selection - Desktop only */}
             {vendors.length > 1 && (
-              <div className="mb-5">
+              <div className="hidden lg:block mb-4 lg:mb-5">
                 <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
                   <Icon.PiStorefront size={18} />
                   Select Seller
@@ -463,13 +511,13 @@ const ModalQuickview: React.FC = () => {
                           className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
                           style={{ backgroundColor: bg }}
                         >
-                          {vendor.tenant.logo?.url ? (
-                            <Image src={vendor.tenant.logo.url} alt="" width={24} height={24} className="rounded-full" />
+                          {typeof vendor.tenant.logo === 'string' ? (
+                            <Image src={vendor.tenant.logo} alt="" width={24} height={24} className="rounded-full" />
                           ) : (
                             getInitials(vendor.tenant.name)
                           )}
                         </div>
-                        {vendor.tenant.name}
+                        <span className="hidden xl:inline">{vendor.tenant.name}</span>
                       </button>
                     );
                   })}
@@ -479,15 +527,15 @@ const ModalQuickview: React.FC = () => {
 
             {/* Size Selection */}
             {vendorSizes.length > 0 && (
-              <div className="mb-5">
+              <div className="mb-4 lg:mb-5">
                 <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center justify-between">
                   <span className="flex items-center gap-2">
                     <Icon.PiRuler size={18} />
                     Select Size
                   </span>
                   {selectedSizeData && (
-                    <span className="text-gray-500 font-normal text-xs">
-                      {selectedSizeData.stock > 10 ? '✓ In Stock' : selectedSizeData.stock > 0 ? `⚠ Only ${selectedSizeData.stock} left` : '✗ Out of Stock'}
+                    <span className={`text-xs font-medium ${selectedSizeData.stock > 10 ? 'text-green-600' : selectedSizeData.stock > 0 ? 'text-amber-600' : 'text-red-500'}`}>
+                      {selectedSizeData.stock > 10 ? '✓ In Stock' : selectedSizeData.stock > 0 ? `Only ${selectedSizeData.stock} left` : '✗ Out of Stock'}
                     </span>
                   )}
                 </h3>
@@ -502,25 +550,25 @@ const ModalQuickview: React.FC = () => {
                         key={size.size}
                         onClick={() => !isOutOfStock && setActiveSize(size.size)}
                         disabled={isOutOfStock}
-                        className={`relative px-4 py-3 rounded-xl border-2 transition-all min-w-[80px] ${
+                        className={`relative px-3 lg:px-4 py-2 lg:py-3 rounded-xl border-2 transition-all min-w-[70px] lg:min-w-[80px] ${
                           isSelected
                             ? 'border-orange-500 bg-orange-500 text-white shadow-lg'
                             : isOutOfStock
-                              ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed line-through'
-                              : 'border-gray-200 bg-white text-gray-900 hover:border-orange-300'
+                                ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed line-through'
+                                : 'border-gray-200 bg-white text-gray-900 hover:border-orange-300'
                         }`}
                       >
-                        <div className="text-sm font-bold">{size.displayName}</div>
+                        <div className="text-xs lg:text-sm font-bold">{size.displayName}</div>
                         {size.volumeMl && (
-                          <div className={`text-xs ${isSelected ? 'text-orange-100' : 'text-gray-500'}`}>
+                          <div className={`text-[10px] lg:text-xs ${isSelected ? 'text-orange-100' : 'text-gray-500'}`}>
                             {size.volumeMl}ml
                           </div>
                         )}
-                        <div className={`text-xs font-semibold ${isSelected ? 'text-white' : 'text-gray-900'}`}>
-                          {size.currencySymbol}{size.price.toFixed(2)}
+                        <div className={`text-xs lg:text-sm font-semibold ${isSelected ? 'text-white' : 'text-gray-900'}`}>
+                          {size.currencySymbol}{size.price.toLocaleString()}
                         </div>
                         {hasDiscount && !isOutOfStock && (
-                          <div className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                          <div className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] lg:text-[10px] font-bold px-1.5 py-0.5 rounded-full">
                             -{Math.round(((size.originalPrice! - size.price) / size.originalPrice!) * 100)}%
                           </div>
                         )}
@@ -536,113 +584,115 @@ const ModalQuickview: React.FC = () => {
               </div>
             )}
 
-            {/* Quantity & Add to Cart */}
-            <div className="flex flex-col sm:flex-row gap-3 mb-5">
-              {/* Quantity Selector */}
-              <div className="flex items-center bg-gray-50 rounded-xl border-2 border-gray-200 p-1 w-fit">
+            {/* Quantity & Add to Cart - Fixed bottom on mobile */}
+            <div className="fixed bottom-0 left-0 right-0 lg:relative bg-white lg:bg-transparent p-3 lg:p-0 border-t lg:border-t-0 border-gray-100 lg:mb-4 z-30 shadow-lg lg:shadow-none">
+              <div className="flex flex-col gap-2">
+                {/* Row 1: Compare + Quantity + View Details */}
+                <div className="flex items-center gap-2">
+                  {/* Compare Button - Mobile */}
+                  <button
+                    onClick={handleAddToCompare}
+                    disabled={!isCompareActive && compareState.compareArray.length >= maxCompareLimit}
+                    className={`hidden lg:flex items-center justify-center w-12 h-12 rounded-xl border-2 font-medium transition-all ${
+                      isCompareActive
+                        ? 'border-orange-500 text-orange-600 bg-orange-50'
+                        : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                    } ${!isCompareActive && compareState.compareArray.length >= maxCompareLimit ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    {isCompareActive ? <Icon.PiCheck size={18} /> : <Icon.PiArrowsCounterClockwise size={18} />}
+                  </button>
+
+                  {/* Quantity Selector */}
+                  <div className="flex-1 flex items-center bg-gray-50 rounded-xl border-2 border-gray-200 p-1">
+                    <button
+                      onClick={() => handleQuantityChange(-1)}
+                      disabled={quantity <= (selectedSizeData?.minOrderQuantity || 1)}
+                      className="w-9 h-9 lg:w-10 lg:h-10 flex items-center justify-center rounded-lg bg-white shadow-sm hover:bg-gray-100 disabled:opacity-40 transition-colors active:scale-95"
+                    >
+                      <Icon.PiMinus size={14} />
+                    </button>
+                    <span className="flex-1 text-center font-bold text-sm">{quantity}</span>
+                    <button
+                      onClick={() => handleQuantityChange(1)}
+                      disabled={selectedSizeData?.maxOrderQuantity ? quantity >= selectedSizeData.maxOrderQuantity : false}
+                      className="w-9 h-9 lg:w-10 lg:h-10 flex items-center justify-center rounded-lg bg-white shadow-sm hover:bg-gray-100 disabled:opacity-40 transition-colors active:scale-95"
+                    >
+                      <Icon.PiPlus size={14} />
+                    </button>
+                  </div>
+
+                  {/* Mobile: View Details Button */}
+                  <Link
+                    href={`/product/${selectedProduct.slug}`}
+                    className="lg:hidden flex items-center justify-center w-10 h-10 rounded-xl bg-orange-500 text-white font-medium hover:bg-orange-600 transition-colors"
+                    onClick={closeQuickview}
+                  >
+                    <Icon.PiArrowRight size={18} />
+                  </Link>
+                </div>
+
+                {/* Row 2: Add to Cart - Full width */}
                 <button
-                  onClick={() => handleQuantityChange(-1)}
-                  disabled={quantity <= (selectedSizeData?.minOrderQuantity || 1)}
-                  className="w-11 h-11 flex items-center justify-center rounded-lg bg-white shadow-sm hover:bg-gray-100 disabled:opacity-40 transition-colors"
+                  onClick={handleAddToCart}
+                  disabled={!inStock || !activeSize || isAddingToCart}
+                  className={`w-full py-2.5 lg:py-3 px-4 rounded-xl font-bold text-sm lg:text-base transition-all flex items-center justify-center gap-2 ${
+                    !activeSize
+                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                      : !inStock
+                          ? 'bg-red-100 text-red-600 cursor-not-allowed'
+                          : 'bg-gray-900 text-white hover:bg-gray-800 shadow-lg'
+                  }`}
                 >
-                  <Icon.PiMinus size={16} />
-                </button>
-                <span className="w-14 text-center font-bold text-lg">{quantity}</span>
-                <button
-                  onClick={() => handleQuantityChange(1)}
-                  disabled={selectedSizeData?.maxOrderQuantity ? quantity >= selectedSizeData.maxOrderQuantity : false}
-                  className="w-11 h-11 flex items-center justify-center rounded-lg bg-white shadow-sm hover:bg-gray-100 disabled:opacity-40 transition-colors"
-                >
-                  <Icon.PiPlus size={16} />
+                  {isAddingToCart ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Adding...</span>
+                    </>
+                  ) : !activeSize ? (
+                    <>
+                      <Icon.PiWarningCircle size={16} />
+                      Select Size
+                    </>
+                  ) : !inStock ? (
+                    <>
+                      <Icon.PiProhibit size={16} />
+                      Out of Stock
+                    </>
+                  ) : (
+                    <>
+                      <Icon.PiShoppingCart size={16} />
+                      Add to Cart
+                      <span className="text-xs opacity-70">
+                        ({displayCurrencySymbol}{(displayPrice * quantity).toLocaleString()})
+                      </span>
+                    </>
+                  )}
                 </button>
               </div>
-
-              {/* Add to Cart Button */}
-              <button
-                onClick={handleAddToCart}
-                disabled={!inStock || !activeSize || isAddingToCart}
-                className={`flex-1 py-3.5 px-6 rounded-xl font-bold text-base transition-all flex items-center justify-center gap-2 ${
-                  !activeSize
-                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                    : !inStock
-                      ? 'bg-red-100 text-red-600 cursor-not-allowed'
-                      : 'bg-gray-900 text-white hover:bg-gray-800 shadow-lg hover:shadow-xl'
-                }`}
-              >
-                {isAddingToCart ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Adding...
-                  </>
-                ) : !activeSize ? (
-                  <>
-                    <Icon.PiWarningCircle size={20} />
-                    Select a Size
-                  </>
-                ) : !inStock ? (
-                  <>
-                    <Icon.PiProhibit size={20} />
-                    Out of Stock
-                  </>
-                ) : (
-                  <>
-                    <Icon.PiShoppingCart size={20} />
-                    Add to Cart
-                    <span className="ml-1">
-                      ({displayCurrencySymbol}{(displayPrice * quantity).toFixed(2)})
-                    </span>
-                  </>
-                )}
-              </button>
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex flex-wrap gap-3 pt-5 border-t border-gray-100">
-              <button
-                onClick={handleAddToCompare}
-                disabled={!isCompareActive && compareState.compareArray.length >= maxCompareLimit}
-                className={`flex-1 py-3 px-4 rounded-xl border-2 font-medium text-sm transition-all flex items-center justify-center gap-2 ${
-                  isCompareActive
-                    ? 'border-orange-500 text-orange-600 bg-orange-50'
-                    : 'border-gray-200 hover:border-gray-300 text-gray-700 hover:bg-gray-50'
-                } ${!isCompareActive && compareState.compareArray.length >= maxCompareLimit ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                {isCompareActive ? <Icon.PiCheck size={18} /> : <Icon.PiArrowsCounterClockwise size={18} />}
-                {isCompareActive ? 'In Compare List' : 'Compare'}
-              </button>
-
-              <Link
-                href={`/product/${selectedProduct.slug}`}
-                className="flex-1 py-3 px-4 rounded-xl bg-orange-500 text-white font-medium hover:bg-orange-600 transition-colors flex items-center justify-center gap-2"
-                onClick={closeQuickview}
-              >
-                <span>View Full Details</span>
-                <Icon.PiArrowRight size={18} />
-              </Link>
-            </div>
-
-            {/* Product Meta */}
-            <div className="mt-5 pt-5 border-t border-gray-100 grid grid-cols-2 gap-3 text-sm">
+            {/* Product Meta - Responsive grid */}
+            <div className="mt-4 lg:mt-5 pt-4 lg:pt-5 border-t border-gray-100 grid grid-cols-2 gap-2 lg:gap-3 text-xs lg:text-sm">
               {selectedProduct.sku && (
-                <div className="flex justify-between">
+                <div className="flex justify-between p-2 bg-gray-50 rounded-lg">
                   <span className="text-gray-500">SKU:</span>
-                  <span className="text-gray-900 font-medium">{selectedProduct.sku}</span>
+                  <span className="text-gray-900 font-medium truncate">{selectedProduct.sku}</span>
                 </div>
               )}
               {selectedProduct.abv && (
-                <div className="flex justify-between">
+                <div className="flex justify-between p-2 bg-gray-50 rounded-lg">
                   <span className="text-gray-500">Alcohol:</span>
                   <span className="text-gray-900 font-medium">{selectedProduct.abv}% ABV</span>
                 </div>
               )}
               {selectedProduct.originCountry && (
-                <div className="flex justify-between">
+                <div className="flex justify-between p-2 bg-gray-50 rounded-lg">
                   <span className="text-gray-500">Origin:</span>
                   <span className="text-gray-900 font-medium">{selectedProduct.originCountry}</span>
                 </div>
               )}
               {selectedProduct.volumeMl && (
-                <div className="flex justify-between">
+                <div className="flex justify-between p-2 bg-gray-50 rounded-lg">
                   <span className="text-gray-500">Volume:</span>
                   <span className="text-gray-900 font-medium">{selectedProduct.volumeMl}ml</span>
                 </div>

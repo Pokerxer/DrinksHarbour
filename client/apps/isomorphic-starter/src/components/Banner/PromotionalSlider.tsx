@@ -47,26 +47,35 @@ interface PromotionalSliderProps {
 
 const defaultPromotionalBanners: BannerData[] = [
   {
-    id: '1',
+    _id: '1',
     title: 'Premium Wines',
     description: 'Discover our exclusive collection of world-class wines',
-    url: 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=1200',
+    type: 'promo',
+    placement: 'home',
+    priority: 'high',
+    image: { url: 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=1200' },
     endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     tags: ['wine', 'premium', 'discount']
   },
   {
-    id: '2',
+    _id: '2',
     title: 'Craft Beer Selection',
     description: 'Artisan brews from around the world',
-    url: 'https://images.unsplash.com/photo-1608270586620-248524c67de9?w=1200',
+    type: 'promo',
+    placement: 'home',
+    priority: 'high',
+    image: { url: 'https://images.unsplash.com/photo-1608270586620-248524c67de9?w=1200' },
     endDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
     tags: ['beer', 'craft', 'sale']
   },
   {
-    id: '3',
+    _id: '3',
     title: 'Luxury Champagne',
     description: 'Celebrate with premium champagnes',
-    url: 'https://images.unsplash.com/photo-1572575626618-6a0b5d6fb858?w=1200',
+    type: 'promo',
+    placement: 'home',
+    priority: 'high',
+    image: { url: 'https://images.unsplash.com/photo-1572575626618-6a0b5d6fb858?w=1200' },
     endDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
     tags: ['champagne', 'luxury', 'gift']
   }

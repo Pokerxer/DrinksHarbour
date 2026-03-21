@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, Variants } from 'framer-motion';
 
 interface HeroBannerProps {
   placement?: string;
@@ -192,7 +192,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
     }),
   };
 
-  const textVariants = {
+  const textVariants: Variants = {
     initial: {
       y: 30,
       opacity: 0,
@@ -202,7 +202,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
       opacity: 1,
       transition: {
         duration: 0.6,
-        ease: 'easeOut',
+        ease: 'easeOut' as const,
       },
     },
     exit: {
@@ -212,7 +212,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
     },
   };
 
-  const buttonVariants = {
+  const buttonVariants: Variants = {
     initial: { scale: 0.8, opacity: 0 },
     animate: {
       scale: 1,
@@ -220,7 +220,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
       transition: {
         delay: 0.4,
         duration: 0.5,
-        ease: 'backOut',
+        ease: 'backOut' as const,
       },
     },
   };
@@ -228,8 +228,9 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   useEffect(() => {
     if (!autoPlay || banners.length <= 1 || isPaused) return;
 
-    const interval = banners[currentIndex]?.autoplay?.enabled
-      ? (banners[currentIndex].autoplay.interval || 6000)
+    const currentBanner = banners[currentIndex];
+    const interval = currentBanner?.autoplay?.enabled
+      ? (currentBanner.autoplay.interval || 6000)
       : 6000;
 
     const timer = setInterval(() => {
@@ -269,7 +270,6 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
       'top-left': 'items-start justify-start', 'top-center': 'items-start justify-center', 'top-right': 'items-start justify-end',
       'center-left': 'items-center justify-start', 'center': 'items-center justify-center', 'center-right': 'items-center justify-end',
       'bottom-left': 'items-end justify-start', 'bottom-center': 'items-end justify-center', 'bottom-right': 'items-end justify-end',
-      'center-left': 'items-center justify-start',
     };
     return positions[position] || 'items-center justify-center';
   };

@@ -204,7 +204,7 @@ const ModalWishlist = () => {
                               />
                               {savings > 0 && (
                                 <div className="absolute -top-2 -right-2 w-8 h-8 bg-red-500 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg">
-                                  -{Math.round((savings / product.originPrice) * 100)}%
+                                  -{Math.round((savings / (product.originPrice || 1)) * 100)}%
                                 </div>
                               )}
                             </div>
@@ -223,10 +223,10 @@ const ModalWishlist = () => {
                                 <span className="text-lg font-bold text-gray-900">
                                   ${product.price?.toFixed(2)}
                                 </span>
-                                {product.originPrice > product.price && (
+                                {(product.originPrice || 0) > (product.price || 0) && (
                                   <>
                                     <span className="text-sm text-gray-400 line-through">
-                                      ${product.originPrice?.toFixed(2)}
+                                      ${(product.originPrice || 0).toFixed(2)}
                                     </span>
                                     <span className="text-xs text-red-500 font-medium">
                                       Save ${savings.toFixed(2)}

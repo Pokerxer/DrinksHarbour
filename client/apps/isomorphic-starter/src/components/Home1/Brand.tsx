@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Autoplay, Pagination, Navigation } from 'swiper/modules';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, Variants } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 import 'swiper/css';
 import 'swiper/css/navigation';
@@ -131,14 +131,14 @@ const Brand: React.FC = () => {
     }
   };
 
-  const itemVariants = {
+  const itemVariants: Variants = {
     hidden: { opacity: 0, scale: 0.8, y: 20 },
     visible: {
       opacity: 1,
       scale: 1,
       y: 0,
       transition: {
-        type: 'spring',
+        type: 'spring' as const,
         stiffness: 100,
         damping: 15
       }

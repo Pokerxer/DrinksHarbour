@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useCart } from '@/context/CartContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
@@ -15,12 +16,26 @@ interface Message {
 
 interface Product {
   id: string;
+  _id?: string;
   name: string;
   slug: string;
   type: string;
   minPrice: number;
   hasDiscount: boolean;
   image?: string;
+  // Cart fields
+  selectedSize?: string;
+  selectedSizeId?: string;
+  selectedVendor?: string;
+  selectedVendorId?: string;
+  selectedSubProductId?: string;
+  selectedProductId?: string;
+  selectedColor?: string;
+  price?: number;
+  images?: any[];
+  primaryImage?: any;
+  priceRange?: any;
+  availableAt?: any[];
 }
 
 const categoryEmojis: Record<string, string> = {
@@ -165,6 +180,7 @@ const formatTime = (timestamp: number) => {
 };
 
 export default function ChatbotWidget() {
+  const { addToCart } = useCart() || {};
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -317,132 +333,72 @@ export default function ChatbotWidget() {
     setIsLoading(true);
     setIsTyping(true);
 
-    // Create a placeholder message for streaming
-    const placeholderId = Date.now();
-    setMessages(prev => [...prev, {
-      role: 'assistant',
-      content: '',
-      products: [],
-      timestamp: placeholderId
-    }]);
-
     const filesToSend = [...selectedFiles];
     const docToSend = selectedDoc;
     clearSelectedFiles();
 
-    const filesToSend = [...selectedFiles];
-    const docToSend = selectedDoc;
-    clearSelectedFiles();
-
-    // Use streaming endpoint (fallback to query if fails)
     try {
-      const queryToSend = input.trim() || 'What do you have?';
+      const formData = new FormData();
       
-      const response = await fetch(`${API_URL}/api/chatbot/stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: queryToSend,
-          conversationHistory: conversationHistory
-        })
+      filesToSend.forEach(file => {
+        formData.append('images', file);
       });
 
-      if (!response.ok || !response.body) {
-        throw new Error('Stream failed');
+      if (docToSend) {
+        formData.append('file', docToSend);
       }
+      
+      if (input.trim()) formData.append('query', input);
+      formData.append('conversationHistory', JSON.stringify(conversationHistory));
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let fullContent = '';
-      let products: Product[] = [];
-      let intent = 'general';
-      let hasProducts = false;
-
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value);
-          const lines = chunk.split('\n');
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                
-                if (data.type === 'chunk' && data.content) {
-                  fullContent += data.content;
-                  // Update the message in real-time
-                  setMessages(prev => prev.map(m => 
-                    m.timestamp === placeholderId 
-                      ? { ...m, content: fullContent }
-                      : m
-                  ));
-                } else if (data.type === 'done') {
-                  products = data.products || [];
-                  intent = data.intent || 'general';
-                  hasProducts = data.hasProducts || false;
-                }
-              } catch (e) {
-                // Skip malformed JSON
-              }
-            }
-          }
-        }
-      }
-
-      // Update with final data including products
-      setMessages(prev => prev.map(m => 
-        m.timestamp === placeholderId 
-          ? { ...m, products, timestamp: Date.now() }
-          : m
-      ));
-      setNewMessage(true);
-
-    } catch (streamError) {
-      // Fallback to regular query endpoint
-      console.log('Stream failed, using query endpoint:', streamError);
-      try {
-        const formData = new FormData();
+      const res = await fetch(`${API_URL}/api/chatbot/query`, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      const data = await res.json();
+      
+      if (data.success) {
+        const responseData = data.data;
         
-        filesToSend.forEach(file => {
-          formData.append('images', file);
-        });
-
-        if (docToSend) {
-          formData.append('file', docToSend);
+        // Handle guest cart add action
+        if (responseData.action === 'ADD_GUEST_CART' && addToCart && responseData.products?.[0]) {
+          const product = responseData.products[0];
+          addToCart(
+            product,
+            product.selectedSize || '',
+            product.selectedColor || '',
+            product.selectedVendor || '',
+            product.selectedVendorId || '',
+            responseData.quantity || 1,
+            product.selectedSizeId || '',
+            product.selectedSubProductId || ''
+          );
         }
         
-        if (input.trim()) formData.append('query', input);
-        formData.append('conversationHistory', JSON.stringify(conversationHistory));
-
-        const res = await fetch(`${API_URL}/api/chatbot/query`, {
-          method: 'POST',
-          body: formData,
-        });
-        
-        const data = await res.json();
-        
-        if (data.success) {
-          // Remove placeholder and add real response
-          setMessages(prev => prev.filter(m => m.timestamp !== placeholderId));
-          setMessages(prev => [...prev, {
-            role: 'assistant',
-            content: data.data.response,
-            products: data.data.products,
-            timestamp: Date.now()
-          }]);
-          setNewMessage(true);
-        }
-      } catch (queryError) {
-        console.error('Query fallback also failed:', queryError);
-        setMessages(prev => prev.map(m => 
-          m.timestamp === placeholderId 
-            ? { ...m, content: 'Sorry, something went wrong. Try again!', timestamp: Date.now() }
-            : m
-        ));
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: responseData.response,
+          products: responseData.products,
+          timestamp: Date.now()
+        }]);
+        setNewMessage(true);
+      } else {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: 'Sorry, something went wrong. Try again!',
+          products: [],
+          timestamp: Date.now()
+        }]);
       }
+    } catch (queryError) {
+      console.error('Query failed:', queryError);
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Sorry, something went wrong. Try again!',
+        products: [],
+        timestamp: Date.now()
+      }]);
     } finally {
       setIsLoading(false);
       setIsTyping(false);

@@ -169,6 +169,14 @@ export interface ProductType {
   // Shopping Cart
   action?: string;
   quantityPurchase?: number;
+  selectedSize?: string;
+  selectedSizeId?: string;
+  selectedVendor?: string;
+  selectedVendorId?: string;
+  selectedSubProductId?: string;
+  selectedProductId?: string;
+  selectedColor?: string;
+  cartItemId?: string;
 
   // Timestamps
   createdAt?: string | Date;

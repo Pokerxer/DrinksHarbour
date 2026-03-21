@@ -310,7 +310,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
 
   const cardVariants = {
     hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } }
+    visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' as const } }
   };
 
   const buttonVariants = {
@@ -1196,7 +1196,7 @@ const productData = data as any;
                   {(mappedProduct.rating || 0) > 0 && (
                     <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 rounded-full text-xs text-amber-700">
                       <Icon.PiStarFill className="w-3 h-3" />
-                      {mappedProduct.rating.toFixed(1)}
+                      {(mappedProduct.rating || 0).toFixed(1)}
                     </span>
                   )}
                 </div>

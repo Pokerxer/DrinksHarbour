@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useCart } from '@/context/CartContext';
+import { useModalCartContext } from '@/context/ModalCartContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
-
-console.log('[Chatbot] API_URL:', API_URL);
 
 interface Message {
   role: 'user' | 'assistant';
@@ -35,7 +35,33 @@ interface Product {
   images?: any[];
   primaryImage?: any;
   priceRange?: any;
-  availableAt?: any[];
+  availableAt?: AvailableAt[];
+  sizes?: SizeInfo[];
+}
+
+interface AvailableAt {
+  _id?: string;
+  tenant?: {
+    _id?: string;
+    name?: string;
+    slug?: string;
+  };
+  sizes?: SizeInfo[];
+}
+
+interface SizeInfo {
+  _id?: string;
+  id?: string;
+  size?: string;
+  name?: string;
+  volumeMl?: number;
+  stock?: number;
+  pricing?: {
+    websitePrice?: number;
+    originalWebsitePrice?: number;
+    sellingPrice?: number;
+  };
+  discount?: number | { value?: number };
 }
 
 const categoryEmojis: Record<string, string> = {
@@ -125,11 +151,15 @@ export default function ChatbotWidget() {
   const [newMessage, setNewMessage] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [addingToCart, setAddingToCart] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const widgetRef = useRef<HTMLDivElement>(null);
+
+  const { addToCart, cartState } = useCart();
+  const { openCartWithItem } = useModalCartContext();
 
   const showToast = useCallback((message: string, type: 'success' | 'error') => {
     setToast({ message, type });
@@ -259,15 +289,103 @@ export default function ChatbotWidget() {
   };
   const hasContent = selectedFiles.length > 0 || docPreview;
 
-  console.log('[Chatbot] Rendering, isOpen:', isOpen, 'isMinimized:', isMinimized);
+  const handleAddToCart = useCallback((product: Product, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const productId = product._id || product.id;
+    if (!productId) return;
+    
+    setAddingToCart(productId);
+    
+    let selectedVendor = '';
+    let selectedVendorId = '';
+    let selectedSize = '';
+    let selectedSizeId = '';
+    let selectedSubProductId = '';
+    let price = product.minPrice || 0;
+    
+    if (product.availableAt && product.availableAt.length > 0) {
+      const firstVendor = product.availableAt[0];
+      selectedVendor = firstVendor.tenant?.name || '';
+      selectedVendorId = firstVendor.tenant?._id || '';
+      selectedSubProductId = firstVendor._id || '';
+      
+      if (firstVendor.sizes && firstVendor.sizes.length > 0) {
+        const firstSize = firstVendor.sizes[0];
+        selectedSize = firstSize.size || firstSize.name || '';
+        selectedSizeId = firstSize._id || firstSize.id || '';
+        if (firstSize.pricing?.websitePrice) {
+          price = firstSize.pricing.websitePrice;
+        }
+      }
+    } else if (product.sizes && product.sizes.length > 0) {
+      const firstSize = product.sizes[0];
+      selectedSize = firstSize.size || firstSize.name || '';
+      selectedSizeId = firstSize._id || firstSize.id || '';
+      if (firstSize.pricing?.websitePrice) {
+        price = firstSize.pricing.websitePrice;
+      }
+    }
+    
+    const productForCart: any = {
+      _id: productId,
+      id: productId,
+      name: product.name,
+      slug: product.slug,
+      type: product.type,
+      image: product.image || product.primaryImage,
+      images: product.images,
+      price: price,
+      minPrice: product.minPrice,
+      hasDiscount: product.hasDiscount,
+      availableAt: product.availableAt,
+      sizes: product.sizes,
+      priceRange: product.priceRange
+    };
+    
+    const result = addToCart(
+      productForCart,
+      selectedSize,
+      '',
+      selectedVendor,
+      selectedVendorId,
+      1,
+      selectedSizeId,
+      selectedSubProductId
+    );
+    
+    window.dispatchEvent(new Event('cart-updated'));
+    
+    const cartItem = cartState.cartArray.find(item => item.cartItemId === result.cartItemId);
+    openCartWithItem({
+      name: product.name,
+      quantity: result.newQuantity,
+      isNewItem: result.isNewItem,
+      cartItemId: result.cartItemId,
+      price: price,
+      image: product.image || undefined
+    });
+    
+    showToast(result.isNewItem 
+      ? `Added ${product.name} to cart!` 
+      : `Updated quantity to ${result.newQuantity}!`
+    , 'success');
+    
+    setTimeout(() => setAddingToCart(null), 500);
+  }, [addToCart, cartState.cartArray, openCartWithItem, showToast]);
+
+  // Auto-open on mount for first-time visitors
+  useEffect(() => {
+    const hasVisitedBefore = localStorage.getItem('drinksharbour_chatbot_visited');
+    if (!hasVisitedBefore) {
+      setIsOpen(true);
+      localStorage.setItem('drinksharbour_chatbot_visited', 'true');
+    }
+  }, []);
 
   return (
     <>
-      {/* DEBUG: Chatbot is rendering */}
-      <div className="fixed bottom-20 left-4 z-[99999] bg-red-500 text-white text-xs px-3 py-2 rounded-lg shadow-lg">
-        DEBUG: Chatbot loaded - z-99999
-      </div>
-      
       {/* Floating Button */}
       <div className="fixed bottom-6 right-6 z-[9999]" id="chatbot-floating-btn">
         <button 
@@ -334,22 +452,54 @@ export default function ChatbotWidget() {
                     const discussedProducts = msg.products.filter(p => p.name && msg.content.toLowerCase().includes(p.name.toLowerCase()));
                     return discussedProducts.length > 0 ? (
                       <div className="grid grid-cols-2 gap-1.5 sm:gap-2 mb-1.5 sm:mb-2 w-full">
-                        {discussedProducts.slice(0, 4).map((product) => (
-                          <a key={product.id} href={`/product/${product.slug}`} target="_blank" rel="noopener noreferrer" className="block bg-white rounded-lg sm:rounded-xl overflow-hidden border border-slate-200 hover:border-emerald-300 hover:shadow-md transition-all duration-200 group">
-                            <div className="aspect-square bg-slate-100 relative overflow-hidden">
-                              {product.image ? (
-                                <img src={product.image} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                              ) : (
-                                <div className="w-full h-full bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center"><span className="text-xl sm:text-2xl">{getProductEmoji(product.type)}</span></div>
-                              )}
-                              {product.hasDiscount && <span className="absolute top-1 left-1 px-1 py-0.5 bg-rose-500 text-white text-[8px] sm:text-[9px] font-bold rounded">SALE</span>}
+                        {discussedProducts.slice(0, 4).map((product) => {
+                          const productId = product._id || product.id;
+                          const isAdding = addingToCart === productId;
+                          return (
+                            <div key={product.id} className="bg-white rounded-lg sm:rounded-xl overflow-hidden border border-slate-200 hover:border-emerald-300 hover:shadow-md transition-all duration-200 group relative">
+                              <a href={`/product/${product.slug}`} target="_blank" rel="noopener noreferrer" className="block">
+                                <div className="aspect-square bg-slate-100 relative overflow-hidden">
+                                  {product.image ? (
+                                    <img 
+                                      src={product.image} 
+                                      alt={product.name} 
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = 'none';
+                                        e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                                      }}
+                                    />
+                                  ) : null}
+                                  <div className={`w-full h-full bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center ${product.image ? 'hidden' : ''}`}>
+                                    <span className="text-xl sm:text-2xl">{getProductEmoji(product.type)}</span>
+                                  </div>
+                                  {product.hasDiscount && <span className="absolute top-1 left-1 px-1 py-0.5 bg-rose-500 text-white text-[8px] sm:text-[9px] font-bold rounded">SALE</span>}
+                                </div>
+                                <div className="p-1.5 sm:p-2">
+                                  <p className="text-[10px] sm:text-xs font-medium text-slate-800 line-clamp-2 leading-tight">{product.name}</p>
+                                  <p className="text-xs sm:text-sm font-bold text-emerald-600 mt-0.5">{formatPrice(product.minPrice)}</p>
+                                </div>
+                              </a>
+                              <button
+                                onClick={(e) => handleAddToCart(product, e)}
+                                disabled={isAdding}
+                                className="absolute bottom-2 right-2 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center shadow-lg hover:shadow-xl transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                                title="Add to cart"
+                              >
+                                {isAdding ? (
+                                  <svg className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                  </svg>
+                                ) : (
+                                  <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                  </svg>
+                                )}
+                              </button>
                             </div>
-                            <div className="p-1.5 sm:p-2">
-                              <p className="text-[10px] sm:text-xs font-medium text-slate-800 line-clamp-2 leading-tight">{product.name}</p>
-                              <p className="text-xs sm:text-sm font-bold text-emerald-600 mt-0.5">{formatPrice(product.minPrice)}</p>
-                            </div>
-                          </a>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : null;
                   })()}

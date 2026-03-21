@@ -155,10 +155,10 @@ const ProductBanner: React.FC<ProductBannerProps> = ({
     return Math.round(((comparePrice - price) / comparePrice) * 100);
   };
 
-  const renderStars = (rating: number) => {
+  const renderStars = (rating: number): React.ReactNode[] => {
     const fullStars = Math.floor(rating);
     const hasHalfStar = rating % 1 >= 0.5;
-    const stars = [];
+    const stars: React.ReactNode[] = [];
     
     for (let i = 0; i < 5; i++) {
       if (i < fullStars) {
@@ -184,7 +184,7 @@ const ProductBanner: React.FC<ProductBannerProps> = ({
     return stars;
   };
 
-  const handleBannerClick = async (bannerId: string) => {
+  const handleBannerClick = async (bannerId?: string) => {
     if (!bannerId) return;
     try {
       await fetch(`/api/banners/${bannerId}/click`, {

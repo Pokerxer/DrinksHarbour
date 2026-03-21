@@ -38,7 +38,7 @@ return (
               {data.slice(0, limit).map((prd, index) => (
                 <SwiperSlide key={index}>
                   {" "}
-                  <TestimonialItem data={prd} type="style-one" />{" "}
+                  <TestimonialItem name={prd.name} rating={prd.star || 5} comment={prd.description || ''} date={prd.date || ''} />{" "}
                 </SwiperSlide>
               ))}{" "}
             </Swiper>{" "}

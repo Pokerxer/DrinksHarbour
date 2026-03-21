@@ -7,7 +7,7 @@ interface RateProps {
 }
 
 const Rate: React.FC<RateProps> = ({ currentRate, size }) => {
-  let arrOfStar = [];
+  const arrOfStar: React.ReactNode[] = [];
   
   for (let i = 0; i < 5; i++) {
     if (currentRate) {

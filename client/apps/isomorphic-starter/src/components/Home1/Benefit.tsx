@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { motion } from 'framer-motion';
+import { motion, Variants } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 
 interface BenefitItem {
@@ -53,7 +53,7 @@ interface BenefitProps {
 }
 
 const Benefit: React.FC<BenefitProps> = ({ className = '' }) => {
-  const containerVariants = {
+  const containerVariants: Variants = {
     hidden: { opacity: 0 },
     visible: {
       opacity: 1,
@@ -64,7 +64,7 @@ const Benefit: React.FC<BenefitProps> = ({ className = '' }) => {
     }
   };
 
-  const itemVariants = {
+  const itemVariants: Variants = {
     hidden: { 
       opacity: 0, 
       y: 40,
@@ -75,7 +75,7 @@ const Benefit: React.FC<BenefitProps> = ({ className = '' }) => {
       y: 0,
       scale: 1,
       transition: {
-        type: 'spring',
+        type: 'spring' as const,
         stiffness: 100,
         damping: 15,
         duration: 0.6
@@ -83,7 +83,7 @@ const Benefit: React.FC<BenefitProps> = ({ className = '' }) => {
     }
   };
 
-  const iconVariants = {
+  const iconVariants: Variants = {
     rest: { 
       scale: 1, 
       rotate: 0,
@@ -96,10 +96,10 @@ const Benefit: React.FC<BenefitProps> = ({ className = '' }) => {
       transition: {
         rotate: {
           duration: 0.5,
-          ease: 'easeInOut'
+          ease: 'easeInOut' as const
         },
         scale: {
-          type: 'spring',
+          type: 'spring' as const,
           stiffness: 300,
           damping: 15
         }
@@ -107,7 +107,7 @@ const Benefit: React.FC<BenefitProps> = ({ className = '' }) => {
     }
   };
 
-  const gradientVariants = {
+  const gradientVariants: Variants = {
     rest: {
       opacity: 0,
       scale: 0.8

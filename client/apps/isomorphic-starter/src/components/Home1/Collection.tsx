@@ -1,13 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import Image from 'next/image';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { Swiper, SwiperSlide } from 'swiper/react';
-import { Autoplay, Navigation } from 'swiper/modules';
-import type { Swiper as SwiperType } from 'swiper';
-import 'swiper/css';
-import 'swiper/css/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 import { fallbackProducts } from '@/data/fallback-data';
 import * as Icon from 'react-icons/pi';
 
@@ -101,7 +96,7 @@ const fallbackCategories: Category[] = [
   },
   {
     _id: '8',
-    name: 'Brandy & Cognac',
+    name: 'Brandy',
     slug: 'brandy',
     description: 'Fine & VSOP',
     featuredImage: { url: 'https://images.unsplash.com/photo-1569529465841-dfecdab7503b?w=600&h=800&fit=crop', alt: 'Brandy' },
@@ -110,116 +105,213 @@ const fallbackCategories: Category[] = [
   },
 ];
 
-const categoryColorMap: Record<string, string> = {
-  whiskey: '#92400e',
-  'whiskey ': '#92400e',
-  vodka: '#0ea5e9',
-  champagne: '#facc15',
-  beer: '#f97316',
-  wine: '#b91c1c',
-  gin: '#10b981',
-  rum: '#d97706',
-  brandy: '#c2410c',
-  'brandy ': '#c2410c',
-  tequila: '#ca8a04',
-  liqueur: '#a855f7',
-  'red-wine': '#7f1d1d',
-  'white-wine': '#fef08a',
-  'rose-wine': '#f472b6',
-  'sparkling-wine': '#fde047',
-  scotch: '#78350f',
-  bourbon: '#92400e',
-  coffee: '#78350f',
-  tea: '#65a30d',
-  juice: '#f97316',
-  water: '#0ea5e9',
-  'soft-drinks': '#ef4444',
-  default: '#6b7280',
+const categoryEmojis: Record<string, string> = {
+  whiskey: '🥃',
+  vodka: '❄️',
+  champagne: '🍾',
+  beer: '🍺',
+  wine: '🍷',
+  gin: '🌿',
+  rum: '🏴‍☠️',
+  brandy: '🍷',
+  tequila: '🌵',
+  liqueur: '🍯',
+  default: '🍹',
 };
 
-const getGradientStyle = (color: string | undefined, slug: string): string => {
-  if (color && color.startsWith('#')) {
-    const darkerColor = adjustBrightness(color, -30);
-    const lighterColor = adjustBrightness(color, 20);
-    return `from-[${lighterColor}] to-[${darkerColor}]`;
-  }
-  const mapColor = categoryColorMap[slug] || categoryColorMap.default;
-  const darkerColor = adjustBrightness(mapColor, -30);
-  const lighterColor = adjustBrightness(mapColor, 20);
-  return `from-[${lighterColor}] to-[${darkerColor}]`;
+const categoryGradients: Record<string, { from: string; to: string }> = {
+  whiskey: { from: 'from-amber-900', to: 'to-orange-900' },
+  vodka: { from: 'from-sky-500', to: 'to-blue-700' },
+  champagne: { from: 'from-yellow-400', to: 'to-amber-500' },
+  beer: { from: 'from-orange-500', to: 'to-red-600' },
+  wine: { from: 'from-red-700', to: 'to-rose-900' },
+  gin: { from: 'from-emerald-500', to: 'to-teal-700' },
+  rum: { from: 'from-amber-600', to: 'to-yellow-800' },
+  brandy: { from: 'from-orange-700', to: 'to-red-800' },
+  tequila: { from: 'from-lime-600', to: 'to-green-700' },
+  liqueur: { from: 'from-purple-500', to: 'to-violet-700' },
+  default: { from: 'from-gray-600', to: 'to-gray-800' },
 };
 
-const adjustBrightness = (hex: string, percent: number): string => {
-  const num = parseInt(hex.replace('#', ''), 16);
-  const amt = Math.round(2.55 * percent);
-  const R = Math.min(255, Math.max(0, (num >> 16) + amt));
-  const G = Math.min(255, Math.max(0, ((num >> 8) & 0x00ff) + amt));
-  const B = Math.min(255, Math.max(0, (num & 0x0000ff) + amt));
-  return `#${(0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1)}`;
+const getCategoryGradient = (slug: string): { from: string; to: string } => {
+  return categoryGradients[slug.toLowerCase()] || categoryGradients.default;
 };
 
-const CollectionCard = ({ category }: { category: Category }) => {
-  const gradientClass = getGradientStyle(category.color, category.slug);
-  
-  const displayImage = category.featuredImage?.url || category.bannerImage?.url || `https://images.unsplash.com/photo-1608270586620-248524c67de9?w=600&h=800&fit=crop`;
+const getCategoryEmoji = (slug: string): string => {
+  return categoryEmojis[slug.toLowerCase()] || categoryEmojis.default;
+};
 
+const CollectionCard = ({ category, index }: { category: Category; index: number }) => {
+  const gradient = getCategoryGradient(category.slug);
+  const emoji = getCategoryEmoji(category.slug);
+  const displayImage = category.featuredImage?.url || category.bannerImage?.url;
   const [imgError, setImgError] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
 
   return (
-    <Link 
-      href={`/shop?type=${category.slug}`}
-      className="group block"
+    <motion.div
+      initial={{ opacity: 0, y: 30 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: index * 0.1 }}
+      whileHover={{ y: -8 }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className="group relative"
     >
-      <div className="relative rounded-3xl overflow-hidden cursor-pointer">
-        <div className="relative aspect-[3/4] overflow-hidden">
-          <Image
-            src={imgError ? '/images/placeholder-product.png' : displayImage}
-            alt={category.featuredImage?.alt || category.name}
-            fill
-            className="object-cover transition-transform duration-700 group-hover:scale-110"
-            sizes="(max-width: 640px) 50vw, 25vw"
-            onError={() => setImgError(true)}
-          />
-          
-          <div className={`absolute inset-0 bg-gradient-to-t ${gradientClass} opacity-50 group-hover:opacity-40 transition-opacity duration-500`} />
-          
-          <div className="absolute inset-0 flex flex-col justify-end p-5 sm:p-6">
-            <div className="transform transition-transform duration-500 group-hover:-translate-y-1">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center mb-3">
-                <Icon.PiWineFill size={20} className="text-white" />
+      <Link href={`/shop?type=${category.slug}`}>
+        <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200 shadow-lg hover:shadow-2xl transition-all duration-500">
+          {/* Image Container */}
+          <div className="relative aspect-[4/5] overflow-hidden">
+            {displayImage && !imgError ? (
+              <>
+                <img
+                  src={displayImage}
+                  alt={category.featuredImage?.alt || category.name}
+                  className={`absolute inset-0 w-full h-full object-cover transition-transform duration-700 ${isHovered ? 'scale-110' : 'scale-100'}`}
+                  onError={() => setImgError(true)}
+                />
+                {/* Overlay */}
+                <div className={`absolute inset-0 bg-gradient-to-t ${gradient} opacity-60 group-hover:opacity-70 transition-opacity duration-500`} />
+              </>
+            ) : (
+              <div className={`absolute inset-0 bg-gradient-to-br ${gradient} flex items-center justify-center`}>
+                <span className="text-7xl opacity-50">{emoji}</span>
               </div>
-              
-              <h3 className="text-xl sm:text-2xl font-bold text-white mb-1">
-                {category.name}
-              </h3>
-              
-              {category.description && (
-                <p className="text-white/75 text-xs sm:text-sm mb-2">
-                  {category.description}
-                </p>
-              )}
-              
-              <div className="flex items-center gap-2 text-white/60 text-xs">
-                <Icon.PiPackage size={14} />
-                <span>{category.productCount || 0} products</span>
-              </div>
-              
-              <div className="flex items-center gap-2 mt-3 opacity-0 group-hover:opacity-100 transform translate-y-2 group-hover:translate-y-0 transition-all duration-500">
-                <span className="text-white font-medium text-sm">Shop Now</span>
-                <Icon.PiArrowRight size={14} className="text-white" />
+            )}
+
+            {/* Shimmer Effect */}
+            {displayImage && !imgError && (
+              <div className={`absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12 ${isHovered ? 'animate-shimmer' : 'opacity-0'} transition-opacity`} />
+            )}
+
+            {/* Content */}
+            <div className="absolute inset-0 flex flex-col justify-end p-5 sm:p-6">
+              {/* Icon */}
+              <motion.div
+                initial={{ scale: 0, rotate: -10 }}
+                animate={{ scale: 1, rotate: 0 }}
+                className="absolute top-4 right-4 sm:top-5 sm:right-5"
+              >
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center shadow-lg">
+                  <span className="text-xl sm:text-2xl">{emoji}</span>
+                </div>
+              </motion.div>
+
+              {/* Text Content */}
+              <div className="transform transition-transform duration-500">
+                <h3 className="text-xl sm:text-2xl font-black text-white mb-1 drop-shadow-lg">
+                  {category.name}
+                </h3>
+
+                {category.description && (
+                  <p className="text-white/85 text-xs sm:text-sm mb-3 font-medium">
+                    {category.description}
+                  </p>
+                )}
+
+                {/* Stats */}
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="flex items-center gap-1.5 text-white/80 text-xs">
+                    <Icon.PiPackage size={14} />
+                    <span className="font-semibold">{category.productCount || 0}</span>
+                    <span className="font-normal opacity-75">products</span>
+                  </div>
+                </div>
+
+                {/* CTA */}
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: isHovered ? 1 : 0, y: isHovered ? 0 : 10 }}
+                  className="flex items-center gap-2"
+                >
+                  <span className="text-white font-bold text-sm bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full inline-flex items-center gap-2 shadow-lg">
+                    Explore
+                    <Icon.PiArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                  </span>
+                </motion.div>
               </div>
             </div>
+
+            {/* Border Glow on Hover */}
+            <div className={`absolute inset-0 rounded-3xl border-2 transition-opacity duration-500 ${isHovered ? 'opacity-100' : 'opacity-0'} border-white/30`} />
           </div>
         </div>
-      </div>
-    </Link>
+      </Link>
+    </motion.div>
+  );
+};
+
+const FeaturedCollection = ({ category }: { category: Category }) => {
+  const gradient = getCategoryGradient(category.slug);
+  const emoji = getCategoryEmoji(category.slug);
+  const displayImage = category.featuredImage?.url || category.bannerImage?.url;
+  const [imgError, setImgError] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      whileHover={{ scale: 1.02 }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className="relative rounded-3xl overflow-hidden h-[400px] sm:h-[450px] cursor-pointer group"
+    >
+      <Link href={`/shop?type=${category.slug}`} className="block h-full">
+        {displayImage && !imgError ? (
+          <>
+            <img
+              src={displayImage}
+              alt={category.featuredImage?.alt || category.name}
+              className="absolute inset-0 w-full h-full object-cover"
+              onError={() => setImgError(true)}
+            />
+            <div className={`absolute inset-0 bg-gradient-to-t ${gradient.from} via-${gradient.from}/60 to-transparent`} />
+          </>
+        ) : (
+          <div className={`absolute inset-0 bg-gradient-to-br ${gradient} flex items-center justify-center`}>
+            <span className="text-8xl opacity-30">{emoji}</span>
+          </div>
+        )}
+
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+
+        <div className="absolute bottom-0 left-0 right-0 p-6 sm:p-8">
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-4xl">{emoji}</span>
+            <div>
+              <h3 className="text-2xl sm:text-3xl font-black text-white">
+                {category.name}
+              </h3>
+              {category.description && (
+                <p className="text-white/80 text-sm">{category.description}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-white/80 text-sm">
+              <Icon.PiPackage size={16} />
+              <span>{category.productCount || 0} products</span>
+            </div>
+
+            <motion.div
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: isHovered ? 1 : 0, x: isHovered ? 0 : -10 }}
+              className="flex items-center gap-2 bg-white text-gray-900 px-5 py-2.5 rounded-full font-bold text-sm shadow-lg"
+            >
+              Shop Now <Icon.PiArrowRight size={16} />
+            </motion.div>
+          </div>
+        </div>
+      </Link>
+    </motion.div>
   );
 };
 
 const Collection = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  const [swiper, setSwiper] = useState<SwiperType | null>(null);
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -248,28 +340,38 @@ const Collection = () => {
     fetchCategories();
   }, []);
 
-  const goNext = () => {
-    if (swiper) swiper.slideNext();
-  };
+  const featuredCategories = useMemo(() => {
+    return categories.slice(0, 3);
+  }, [categories]);
 
-  const goPrev = () => {
-    if (swiper) swiper.slidePrev();
-  };
+  const gridCategories = useMemo(() => {
+    return categories.slice(3);
+  }, [categories]);
+
+  const totalProducts = useMemo(() => {
+    return categories.reduce((sum, cat) => sum + (cat.productCount || 0), 0);
+  }, [categories]);
 
   if (loading) {
     return (
-      <div className="collection-block py-16 sm:py-20 bg-white">
+      <div className="py-16 sm:py-24 bg-gradient-to-b from-white to-gray-50">
         <div className="container mx-auto px-4">
-          <div className="text-center mb-10">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-gray-100 rounded-full text-xs font-medium text-gray-600 mb-3">
-              <Icon.PiSparkleFill size={12} className="text-amber-500" />
-              Curated Selection
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-100 rounded-full text-xs font-bold text-amber-700 mb-4">
+              <Icon.PiSparkleFill size={14} />
+              Featured Collection
             </div>
-            <div className="h-10 bg-gray-200 rounded w-48 mx-auto animate-pulse" />
+            <div className="h-12 bg-gray-200 rounded-xl w-64 mx-auto animate-pulse" />
+            <div className="h-5 bg-gray-100 rounded w-96 mx-auto mt-3 animate-pulse" />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="aspect-[3/4] bg-gray-200 rounded-3xl animate-pulse" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-[400px] bg-gray-200 rounded-3xl animate-pulse" />
+            ))}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="aspect-[4/5] bg-gray-200 rounded-3xl animate-pulse" />
             ))}
           </div>
         </div>
@@ -278,84 +380,137 @@ const Collection = () => {
   }
 
   return (
-    <div className="collection-block py-16 sm:py-20 bg-white">
+    <div className="py-16 sm:py-24 bg-gradient-to-b from-white via-gray-50/50 to-white">
       <div className="container mx-auto px-4">
         
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-10">
-          <div className="text-center sm:text-left">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-gray-100 rounded-full text-xs font-medium text-gray-600 mb-3">
-              <Icon.PiSparkleFill size={12} className="text-amber-500" />
-              Curated Selection
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900">
-              Explore Collections
-            </h2>
-            <p className="text-gray-500 mt-2">
-              Discover our premium selection of fine beverages
-            </p>
-          </div>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center mb-12"
+        >
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-100 to-orange-100 rounded-full text-xs font-bold text-amber-700 mb-4 shadow-sm"
+          >
+            <Icon.PiSparkleFill size={14} className="text-amber-500" />
+            Curated Selection
+          </motion.div>
           
-          <div className="flex items-center gap-3 justify-center sm:justify-end">
-            <button
-              onClick={goPrev}
-              className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl border-2 border-gray-200 flex items-center justify-center text-gray-600 hover:border-gray-900 hover:text-gray-900 transition-all duration-300"
-            >
-              <Icon.PiArrowLeft size={18} />
-            </button>
-            <button
-              onClick={goNext}
-              className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl border-2 border-gray-200 flex items-center justify-center text-gray-600 hover:border-gray-900 hover:text-gray-900 transition-all duration-300"
-            >
-              <Icon.PiArrowRight size={18} />
-            </button>
-          </div>
-        </div>
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-gray-900 mb-4">
+            Explore Our
+            <span className="bg-gradient-to-r from-amber-600 via-orange-600 to-rose-600 bg-clip-text text-transparent"> Collections</span>
+          </h2>
+          
+          <p className="text-gray-500 text-base sm:text-lg max-w-2xl mx-auto">
+            Discover our premium selection of fine beverages, carefully curated for every taste and occasion
+          </p>
 
-        {/* Categories Grid */}
+          <div className="flex items-center justify-center gap-6 mt-6">
+            <div className="flex items-center gap-2 text-gray-600">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center">
+                <Icon.PiPackage size={18} className="text-amber-600" />
+              </div>
+              <div>
+                <div className="font-bold text-gray-900">{categories.length}</div>
+                <div className="text-xs text-gray-500">Categories</div>
+              </div>
+            </div>
+            <div className="w-px h-10 bg-gray-200" />
+            <div className="flex items-center gap-2 text-gray-600">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center">
+                <Icon.PiStorefront size={18} className="text-emerald-600" />
+              </div>
+              <div>
+                <div className="font-bold text-gray-900">{totalProducts.toLocaleString()}</div>
+                <div className="text-xs text-gray-500">Products</div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
         {categories.length > 0 ? (
           <>
-            <div className="hidden lg:block">
-              <Swiper
-                modules={[Autoplay, Navigation]}
-                onSwiper={setSwiper}
-                slidesPerView={4}
-                spaceBetween={24}
-                loop={categories.length > 4}
-                className="h-full"
-              >
-                {categories.map((category) => (
-                  <SwiperSlide key={category._id}>
-                    <CollectionCard category={category} />
-                  </SwiperSlide>
-                ))}
-              </Swiper>
-            </div>
+            {/* Featured Collections */}
+            {featuredCategories.length > 0 && (
+              <div className="mb-12">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {featuredCategories.map((category, index) => (
+                    <FeaturedCollection key={category._id} category={category} />
+                  ))}
+                </div>
+              </div>
+            )}
 
-            <div className="lg:hidden grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-6">
-              {categories.slice(0, 8).map((category) => (
-                <CollectionCard key={category._id} category={category} />
-              ))}
-            </div>
+            {/* All Collections Grid */}
+            {gridCategories.length > 0 && (
+              <>
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl sm:text-2xl font-bold text-gray-900">
+                    All Collections
+                  </h3>
+                  <Link
+                    href="/shop"
+                    className="text-sm font-semibold text-gray-600 hover:text-gray-900 flex items-center gap-1 transition-colors"
+                  >
+                    View All <Icon.PiArrowRight size={16} />
+                  </Link>
+                </div>
 
-            {/* View All CTA */}
-            <div className="text-center mt-12">
-              <Link
-                href="/shop"
-                className="inline-flex items-center gap-2 px-8 py-4 bg-gray-900 text-white rounded-xl font-semibold hover:bg-gray-800 transition-all duration-300 shadow-lg hover:shadow-xl"
-              >
-                View All Collections
-                <Icon.PiArrowRight size={20} />
-              </Link>
-            </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-5">
+                  {gridCategories.map((category, index) => (
+                    <CollectionCard key={category._id} category={category} index={index} />
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* CTA Section */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="text-center mt-16"
+            >
+              <div className="bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 rounded-3xl p-8 sm:p-12 relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-rose-500/10" />
+                <div className="relative">
+                  <h3 className="text-2xl sm:text-3xl font-black text-white mb-3">
+                    Can't Find What You're Looking For?
+                  </h3>
+                  <p className="text-gray-400 mb-6 max-w-lg mx-auto">
+                    Browse our complete collection or use our AI assistant to find the perfect drink
+                  </p>
+                  <div className="flex flex-wrap items-center justify-center gap-4">
+                    <Link
+                      href="/shop"
+                      className="inline-flex items-center gap-2 bg-white text-gray-900 px-6 py-3 rounded-full font-bold hover:bg-gray-100 transition-all shadow-lg"
+                    >
+                      <Icon.PiStorefront size={18} />
+                      Browse All
+                    </Link>
+                    <Link
+                      href="/chat"
+                      className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white px-6 py-3 rounded-full font-bold hover:from-amber-600 hover:to-orange-600 transition-all shadow-lg"
+                    >
+                      <Icon.PiChatCircle size={18} />
+                      Ask AI
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
           </>
         ) : (
-          <div className="text-center py-12">
-            <Icon.PiPackage size={48} className="mx-auto text-gray-300 mb-4" />
-            <p className="text-gray-500">No categories found</p>
+          <div className="text-center py-20">
+            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Icon.PiPackage size={40} className="text-gray-300" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">No Collections Found</h3>
+            <p className="text-gray-500">Check back soon for our curated collections</p>
           </div>
         )}
-
       </div>
     </div>
   );

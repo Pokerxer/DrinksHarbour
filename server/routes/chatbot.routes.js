@@ -8,7 +8,6 @@ const path = require('path');
 const {
   chat,
   chatAlt,
-  chatStream,
   analyzeImageEndpoint,
   getProductInfo,
   recommendations,
@@ -38,11 +37,6 @@ const chatbotUpload = multer({
 // @desc    Handle chatbot conversation with multiple images, files, or text
 // @access  Public
 router.post('/query', chatbotUpload.fields([{ name: 'images', maxCount: 5 }, { name: 'file', maxCount: 1 }]), chat);
-
-// @route   POST /api/chatbot/stream
-// @desc    Handle streaming chatbot conversation
-// @access  Public
-router.post('/stream', chatStream);
 
 // @route   POST /api/chatbot/chat
 // @desc    Alternative chat endpoint

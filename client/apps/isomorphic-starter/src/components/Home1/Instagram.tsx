@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Autoplay, Pagination } from 'swiper/modules';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, Variants } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 import 'swiper/css';
 import 'swiper/css/pagination';
@@ -45,14 +45,14 @@ const Instagram: React.FC = () => {
     }
   };
 
-  const itemVariants = {
+  const itemVariants: Variants = {
     hidden: { opacity: 0, y: 30, scale: 0.9 },
     visible: {
       opacity: 1,
       y: 0,
       scale: 1,
       transition: {
-        type: 'spring',
+        type: 'spring' as const,
         stiffness: 100,
         damping: 15
       }

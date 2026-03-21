@@ -1,14 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
-import { motion, AnimatePresence, useScroll, useTransform, useSpring, useInView } from 'framer-motion';
-import { fallbackProducts } from '@/data/fallback-data';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
 import { useModalCartContext } from '@/context/ModalCartContext';
 import { useWishlist } from '@/context/WishlistContext';
-import { useModalQuickviewContext } from '@/context/ModalQuickviewContext';
 import { useModalWishlistContext } from '@/context/ModalWishlistContext';
 import * as Icon from 'react-icons/pi';
 
@@ -17,16 +14,13 @@ interface Tenant {
   name: string;
   slug: string;
   city?: string;
-  state?: string;
-  country?: string;
 }
 
 interface ProductSize {
   _id: string;
   size: string;
   volumeMl?: number;
-  stock: number;
-  availability?: string;
+  stock?: number;
   pricing?: {
     websitePrice?: number;
     originalWebsitePrice?: number;
@@ -41,14 +35,9 @@ interface AvailableAtEntry {
     websitePrice?: number;
     originalWebsitePrice?: number;
     compareAtPrice?: number;
-    displayPrice?: string;
-    formattedPrice?: string;
   };
   isOnSale?: boolean;
   saleDiscountValue?: number;
-  saleType?: string;
-  saleStartDate?: string;
-  saleEndDate?: string;
   totalStock?: number;
   availableStock?: number;
 }
@@ -60,20 +49,17 @@ interface ApiProduct {
   description?: string;
   type: string;
   primaryImage?: { url: string; alt?: string };
-  images?: Array<{ url: string; alt?: string; isPrimary?: boolean }>;
-  priceRange?: { min: number; max: number; display?: string };
-  discount?: { value?: number; type?: string; label?: string; originalPrice?: number };
-  badge?: { type?: string; name?: string; color?: string };
+  images?: Array<{ url: string; alt?: string }>;
+  priceRange?: { min: number; max: number };
+  discount?: { value?: number };
+  badge?: { name?: string };
   category?: { name: string; slug: string };
   averageRating?: number;
   reviewCount?: number;
   totalSold?: number;
-  stockInfo?: { totalStock?: number; availableStock?: number };
   createdAt?: string;
-  isFeatured?: boolean;
   abv?: number;
   originCountry?: string;
-  region?: string;
   volumeMl?: number;
   availableAt?: AvailableAtEntry[];
 }
@@ -88,21 +74,16 @@ interface Product {
   discount: number;
   thumbImage: string[];
   primaryImage?: { url: string };
-  images?: Array<{ url: string }>;
-  badge?: { type: string; name: string; color: string };
   category?: { name: string };
   averageRating: number;
   reviewCount: number;
   isNew: boolean;
   totalSold: number;
   totalStock: number;
-  availableStock: number;
-  isOnSale: boolean;
   sizes?: ProductSize[];
   defaultSize?: string;
   abv?: number;
   originCountry?: string;
-  region?: string;
   volumeMl?: number;
   availableAt?: AvailableAtEntry[];
 }
@@ -120,10 +101,9 @@ const mapApiProductToProduct = (apiProduct: ApiProduct): Product => {
     thumbImage.push(apiProduct.primaryImage.url);
   }
   
-  if (apiProduct.images && apiProduct.images.length > 0) {
-    const primaryImageUrl = apiProduct.primaryImage?.url;
+  if (apiProduct.images) {
     apiProduct.images.forEach((img) => {
-      if (img.url && img.url !== primaryImageUrl && !thumbImage.includes(img.url)) {
+      if (img.url && !thumbImage.includes(img.url)) {
         thumbImage.push(img.url);
       }
     });
@@ -135,71 +115,343 @@ const mapApiProductToProduct = (apiProduct: ApiProduct): Product => {
 
   const availableAt = apiProduct.availableAt?.[0];
   const pricing = availableAt?.pricing;
-  const sizes = availableAt?.sizes as ProductSize[] | undefined;
-  const defaultSize = sizes?.find(s => s.isDefault)?.size || sizes?.[0]?.size || apiProduct.volumeMl ? `${apiProduct.volumeMl}ml` : undefined;
+  const sizes = availableAt?.sizes;
+  const defaultSize = sizes?.[0]?.size || apiProduct.volumeMl ? `${apiProduct.volumeMl}ml` : undefined;
   
   const websitePrice = pricing?.websitePrice || apiProduct.priceRange?.min || 0;
   const compareAtPrice = pricing?.compareAtPrice || pricing?.originalWebsitePrice || apiProduct.priceRange?.max || websitePrice;
   
-  const isOnSaleFromApi = availableAt?.isOnSale || (apiProduct.discount?.value && apiProduct.discount.value > 0);
+  const isOnSale = availableAt?.isOnSale || (apiProduct.discount?.value && apiProduct.discount.value > 0);
   const saleDiscountValue = availableAt?.saleDiscountValue || apiProduct.discount?.value || 0;
-  
-  const sale = isOnSaleFromApi && saleDiscountValue > 0;
+  const sale = !!(isOnSale && saleDiscountValue > 0);
   const discount = sale ? Math.round(saleDiscountValue) : 0;
   const price = sale ? Math.round(compareAtPrice * (1 - discount / 100)) : websitePrice;
-  const originPrice = compareAtPrice;
-
-  const isNew = apiProduct.createdAt 
-    ? (() => {
-        try {
-          const createdDate = new Date(apiProduct.createdAt);
-          const weekAgo = new Date();
-          weekAgo.setDate(weekAgo.getDate() - 7);
-          return createdDate > weekAgo;
-        } catch {
-          return false;
-        }
-      })()
-    : false;
-
-  const totalStock = availableAt?.totalStock || apiProduct.stockInfo?.totalStock || 100;
-  const availableStock = availableAt?.availableStock || apiProduct.stockInfo?.availableStock || totalStock;
-  const totalSold = apiProduct.totalSold || (totalStock - availableStock);
-
-  const badge = apiProduct.badge?.name
-    ? { type: apiProduct.badge.type || 'default', name: apiProduct.badge.name, color: apiProduct.badge.color || '#10B981' }
-    : sale ? { type: 'sale', name: `${discount}% OFF`, color: '#ef4444' }
-    : isNew ? { type: 'new', name: 'NEW', color: '#10B981' }
-    : undefined;
 
   return {
     _id: apiProduct._id,
     slug: apiProduct.slug,
     name: apiProduct.name,
     price,
-    originPrice,
+    originPrice: compareAtPrice,
     sale,
     discount,
     thumbImage,
     primaryImage: apiProduct.primaryImage,
-    images: apiProduct.images?.map(img => ({ url: img.url })),
-    badge,
     category: apiProduct.category,
     averageRating: apiProduct.averageRating || 0,
     reviewCount: apiProduct.reviewCount || 0,
-    isNew,
-    totalSold,
-    totalStock,
-    availableStock,
-    isOnSale: sale,
+    isNew: false,
+    totalSold: apiProduct.totalSold || 50,
+    totalStock: 100,
     sizes,
     defaultSize,
     abv: apiProduct.abv,
     originCountry: apiProduct.originCountry,
-    region: apiProduct.region,
     volumeMl: apiProduct.volumeMl,
     availableAt: apiProduct.availableAt,
   };
+};
+
+const ProductCard = ({ 
+  product, 
+  index, 
+  onAddToCart,
+  onWishlistToggle,
+  onRemoveFromCart,
+  addingToCart,
+  wishlistAdding,
+  inWishlist,
+  inCart,
+  cartQty
+}: { 
+  product: Product;
+  index: number;
+  onAddToCart: () => void;
+  onWishlistToggle: () => void;
+  onRemoveFromCart?: () => void;
+  addingToCart: boolean;
+  wishlistAdding: boolean;
+  inWishlist: boolean;
+  inCart: boolean;
+  cartQty: number;
+}) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const [selectedSize, setSelectedSize] = useState<ProductSize | null>(product.sizes?.[0] || null);
+  const [imgError, setImgError] = useState(false);
+  
+  const mainImage = product.thumbImage?.[0] || product.primaryImage?.url;
+  const hasSecondImage = (product.thumbImage?.length || 0) > 1;
+  
+  const soldPercentage = Math.min(100, Math.round((product.totalSold / product.totalStock) * 100));
+
+  const getStockStatus = () => {
+    if (soldPercentage >= 90) return { text: 'Almost Gone', color: 'text-red-500 bg-red-100', dot: 'bg-red-500' };
+    if (soldPercentage >= 70) return { text: 'Selling Fast', color: 'text-orange-500 bg-orange-100', dot: 'bg-orange-500' };
+    if (soldPercentage >= 50) return { text: 'Limited', color: 'text-yellow-600 bg-yellow-100', dot: 'bg-yellow-500' };
+    return { text: 'In Stock', color: 'text-emerald-600 bg-emerald-100', dot: 'bg-emerald-500' };
+  };
+
+  const stockStatus = getStockStatus();
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 30 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: index * 0.08 }}
+      whileHover={{ y: -6 }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className="group relative"
+    >
+      <div className="bg-white rounded-3xl overflow-hidden shadow-sm hover:shadow-2xl transition-all duration-500 border border-gray-100">
+        {/* Image Section */}
+        <div className="relative aspect-square overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
+          <Link href={`/product/${product.slug}`}>
+            <div className="relative w-full h-full">
+              {!imgError && mainImage ? (
+                <>
+                  <img
+                    src={mainImage}
+                    alt={product.name}
+                    className={`absolute inset-0 w-full h-full object-cover transition-all duration-700 ${
+                      hasSecondImage && isHovered ? 'opacity-0 scale-110' : 'opacity-100 scale-100'
+                    }`}
+                    onError={() => setImgError(true)}
+                  />
+                  {hasSecondImage && product.thumbImage?.[1] && (
+                    <img
+                      src={product.thumbImage[1]}
+                      alt={`${product.name} view 2`}
+                      className={`absolute inset-0 w-full h-full object-cover transition-all duration-700 ${
+                        isHovered ? 'opacity-100 scale-105' : 'opacity-0 scale-100'
+                      }`}
+                    />
+                  )}
+                </>
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+                  <span className="text-5xl opacity-30">✨</span>
+                </div>
+              )}
+            </div>
+          </Link>
+
+          {/* Badges */}
+          <div className="absolute top-3 left-3 flex flex-col gap-2">
+            {product.sale && product.discount > 0 && (
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="px-2.5 py-1 bg-gradient-to-r from-violet-500 to-purple-500 text-white text-xs font-bold rounded-lg shadow-lg"
+              >
+                -{product.discount}%
+              </motion.div>
+            )}
+            {product.isNew && (
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="px-2.5 py-1 bg-gradient-to-r from-cyan-500 to-blue-500 text-white text-xs font-bold rounded-lg shadow-lg"
+              >
+                NEW
+              </motion.div>
+            )}
+            {product.averageRating >= 4.5 && (
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="px-2.5 py-1 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xs font-bold rounded-lg shadow-lg flex items-center gap-1"
+              >
+                <Icon.PiStarFill size={10} />
+                TOP
+              </motion.div>
+            )}
+          </div>
+
+          {/* Wishlist Button */}
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={onWishlistToggle}
+            disabled={wishlistAdding}
+            className={`absolute top-3 right-3 z-20 w-10 h-10 rounded-full flex items-center justify-center shadow-lg transition-all ${
+              wishlistAdding
+                ? 'bg-gray-400'
+                : inWishlist
+                  ? 'bg-red-500 text-white'
+                  : 'bg-white/95 text-gray-500 hover:bg-red-50 hover:text-red-500'
+            }`}
+          >
+            {wishlistAdding ? (
+              <Icon.PiSpinner size={18} className="animate-spin" />
+            ) : inWishlist ? (
+              <Icon.PiHeartFill size={18} />
+            ) : (
+              <Icon.PiHeart size={18} />
+            )}
+          </motion.button>
+
+          {/* Vendor Badge */}
+          {product.availableAt?.[0]?.tenant && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="absolute bottom-3 left-3 z-10"
+            >
+              <div className="bg-white/95 backdrop-blur-sm px-2.5 py-1 rounded-lg shadow-md border border-gray-100">
+                <span className="text-[10px] font-medium text-gray-600 truncate max-w-[80px] block">
+                  {product.availableAt[0].tenant.name}
+                </span>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Quick Add Button */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: isHovered ? 1 : 0, y: isHovered ? 0 : 20 }}
+            className="absolute bottom-3 right-3 z-20"
+          >
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (inCart && onRemoveFromCart) {
+                  onRemoveFromCart();
+                } else {
+                  onAddToCart();
+                }
+              }}
+              disabled={addingToCart}
+              className={`w-10 h-10 rounded-full flex items-center justify-center shadow-lg transition-all ${
+                addingToCart
+                  ? 'bg-violet-500 text-white'
+                  : inCart
+                    ? 'bg-red-500 text-white hover:bg-red-600'
+                    : 'bg-gray-900 text-white hover:bg-gray-800'
+              }`}
+            >
+              {addingToCart ? (
+                <Icon.PiSpinner size={18} className="animate-spin" />
+              ) : inCart ? (
+                <Icon.PiTrash size={18} />
+              ) : (
+                <Icon.PiPlus size={18} />
+              )}
+            </motion.button>
+          </motion.div>
+        </div>
+
+        {/* Content Section */}
+        <div className="p-4">
+          {/* Category */}
+          {product.category && (
+            <span className="text-[10px] font-semibold text-violet-500 uppercase tracking-wider">
+              {product.category.name}
+            </span>
+          )}
+
+          {/* Product Name */}
+          <Link href={`/product/${product.slug}`}>
+            <h3 className="font-bold text-gray-900 text-sm leading-snug line-clamp-2 hover:text-violet-600 transition-colors mt-1 min-h-[2.5rem]">
+              {product.name}
+            </h3>
+          </Link>
+
+          {/* Rating */}
+          {product.averageRating > 0 && (
+            <div className="flex items-center gap-1.5 mt-2">
+              <div className="flex items-center">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Icon.PiStarFill
+                    key={i}
+                    size={10}
+                    className={i < Math.floor(product.averageRating) ? 'text-amber-400' : 'text-gray-200'}
+                  />
+                ))}
+              </div>
+              <span className="text-[10px] text-gray-500">
+                {product.averageRating.toFixed(1)} ({product.reviewCount})
+              </span>
+            </div>
+          )}
+
+          {/* Price Section */}
+          <div className="mt-3 flex items-end gap-2">
+            {product.sale ? (
+              <>
+                <span className="text-lg font-black text-gray-900">
+                  ₦{product.price.toLocaleString()}
+                </span>
+                <span className="text-xs text-gray-400 line-through">
+                  ₦{product.originPrice.toLocaleString()}
+                </span>
+                <span className="ml-auto text-[10px] font-bold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full">
+                  -{product.discount}%
+                </span>
+              </>
+            ) : (
+              <span className="text-lg font-black text-gray-900">
+                ₦{product.price.toLocaleString()}
+              </span>
+            )}
+          </div>
+
+          {/* Size Selector */}
+          {product.sizes && product.sizes.length > 1 && (
+            <div className="mt-3 flex flex-wrap gap-1">
+              {product.sizes.slice(0, 3).map((size) => (
+                <button
+                  key={size._id}
+                  onClick={() => setSelectedSize(size)}
+                  className={`px-2 py-0.5 text-[10px] font-medium rounded-md transition-all ${
+                    selectedSize?._id === size._id
+                      ? 'bg-violet-500 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {size.size}
+                </button>
+              ))}
+              {product.sizes.length > 3 && (
+                <span className="px-2 py-0.5 text-[10px] text-gray-400">
+                  +{product.sizes.length - 3}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Stock Status */}
+          <div className="mt-3 flex items-center gap-2">
+            <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${stockStatus.color}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${stockStatus.dot}`} />
+              {stockStatus.text}
+            </div>
+            <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
+              <div 
+                className={`h-full rounded-full ${stockStatus.dot}`}
+                style={{ width: `${soldPercentage}%` }}
+              />
+            </div>
+          </div>
+
+          {/* In Cart Indicator */}
+          {inCart && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="mt-3 flex items-center justify-center gap-1.5 bg-violet-50 text-violet-600 px-3 py-1.5 rounded-lg text-xs font-semibold"
+            >
+              <Icon.PiShoppingCart size={14} />
+              {cartQty} in cart
+            </motion.div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
 };
 
 const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
@@ -209,22 +461,9 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
 }) => {
   const sectionRef = useRef<HTMLDivElement>(null);
   
-  const isInView = useInView(sectionRef, { once: true, margin: "-100px" });
-  
-  const { scrollYProgress } = useScroll({
-    target: isInView ? sectionRef : undefined,
-    offset: ["start end", "end start"]
-  });
-  
-  const y1 = useTransform(scrollYProgress ?? 0, [0, 1], [0, -50]);
-  const y2 = useTransform(scrollYProgress ?? 0, [0, 1], [0, 50]);
-  const springY1 = useSpring(y1, { stiffness: 100, damping: 30 });
-  const springY2 = useSpring(y2, { stiffness: 100, damping: 30 });
-
-  const { addToCart, cartState } = useCart();
+  const { addToCart, removeFromCart, cartState } = useCart();
   const { openModalCart } = useModalCartContext();
   const { wishlistState, addToWishlist, removeFromWishlist } = useWishlist();
-  const { openQuickview } = useModalQuickviewContext();
   const { openModalWishlist } = useModalWishlistContext();
   
   const [products, setProducts] = useState<Product[]>([]);
@@ -232,8 +471,6 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [addingToCart, setAddingToCart] = useState<string | null>(null);
   const [wishlistAdding, setWishlistAdding] = useState<string | null>(null);
-  const [hoveredProduct, setHoveredProduct] = useState<string | null>(null);
-  const [imageLoaded, setImageLoaded] = useState<Record<string, boolean>>({});
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
@@ -262,58 +499,17 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
       } else {
         setError('No featured products found');
       }
-    } catch (error) {
-      console.warn('Using fallback products due to API error:', error);
-      setProducts(fallbackProducts.slice(0, limit));
+    } catch {
+      setProducts([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const showToast = (message: string, type: 'success' | 'error') => {
+  const showToast = useCallback((message: string, type: 'success' | 'error') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
-  };
-
-  const getProductImage = (product: Product, index: number = 0) => {
-    if (product.thumbImage?.[index]) return product.thumbImage[index];
-    if (product.primaryImage?.url) return product.primaryImage.url;
-    return '/images/placeholder-product.png';
-  };
-
-  const formatPrice = (price: number) => {
-    return '₦' + Math.round(price).toLocaleString();
-  };
-
-  const getSoldPercentage = (product: Product) => {
-    if (product.totalStock <= 0) return 0;
-    const sold = product.totalSold;
-    return Math.min(100, Math.round((sold / product.totalStock) * 100));
-  };
-
-  const getStockStatus = (product: Product) => {
-    const percentage = getSoldPercentage(product);
-    if (percentage >= 90) return { text: 'Almost Gone', color: 'text-red-500', bg: 'bg-red-500' };
-    if (percentage >= 70) return { text: 'Selling Fast', color: 'text-orange-500', bg: 'bg-orange-500' };
-    if (percentage >= 50) return { text: 'Limited Stock', color: 'text-yellow-500', bg: 'bg-yellow-500' };
-    return { text: 'In Stock', color: 'text-green-500', bg: 'bg-green-500' };
-  };
-
-  const getMainBadge = (product: Product) => {
-    if (product.sale && product.discount > 0) {
-      return { type: 'sale' as const, text: `-${product.discount}%`, color: 'bg-red-500' };
-    }
-    if (product.isNew) {
-      return { type: 'new' as const, text: 'NEW', color: 'bg-green-500' };
-    }
-    if (product.badge && product.badge.name) {
-      return { type: 'badge' as const, text: product.badge.name, color: '' };
-    }
-    if (product.isFeatured) {
-      return { type: 'featured' as const, text: 'FEATURED', color: 'bg-purple-500' };
-    }
-    return null;
-  };
+  }, []);
 
   const isProductInCart = useCallback((product: Product) => {
     const availableAt = product.availableAt?.[0];
@@ -344,10 +540,8 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
       const size = sizeData?.size || product.defaultSize || 'Default';
       const tenantName = availableAt?.tenant?.name || '';
       const tenantId = availableAt?.tenant?._id || '';
-      const cartItemId = `${product._id}-${size}-${tenantName || 'default'}-default`;
       
-      const existingItem = cartState.cartArray.find(item => item.cartItemId === cartItemId);
-      const wasAlreadyInCart = !!existingItem;
+      const existingItem = cartState.cartArray.find(item => item.cartItemId === `${product._id}-${size}-${tenantName || 'default'}-default`);
       
       await addToCart(
         { ...product, id: product._id } as any,
@@ -360,13 +554,24 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
         availableAt?._id || ''
       );
       
-      await new Promise(resolve => setTimeout(resolve, 400));
-      showToast(wasAlreadyInCart ? `Quantity increased to ${(existingItem?.quantity || 0) + 1}!` : `${product.name} added to cart!`, 'success');
+      showToast(existingItem ? `Quantity increased to ${(existingItem?.quantity || 0) + 1}!` : `${product.name} added!`, 'success');
       openModalCart();
-    } catch (error) {
+    } catch {
       showToast('Failed to add to cart', 'error');
     } finally {
-      setAddingToCart(null);
+      setTimeout(() => setAddingToCart(null), 300);
+    }
+  };
+
+  const handleRemoveFromCart = (product: Product) => {
+    try {
+      const cartItem = cartState.cartArray.find(item => item.cartItemId.startsWith(product._id));
+      if (cartItem) {
+        removeFromCart(cartItem.cartItemId);
+        showToast(`${product.name} removed from cart`, 'success');
+      }
+    } catch {
+      showToast('Failed to remove from cart', 'error');
     }
   };
 
@@ -389,24 +594,20 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
     }
   };
 
-  const handleQuickView = (product: Product) => {
-    openQuickview({ ...product, id: product._id, quantityPurchase: 1 } as any);
-  };
-
   if (loading) {
     return (
-      <section ref={sectionRef} className="py-16 md:py-24 bg-gradient-to-b from-purple-50 via-white to-purple-50">
+      <section ref={sectionRef} className="py-16 sm:py-24 bg-gradient-to-b from-white to-violet-50/30">
         <div className="container mx-auto px-4">
           <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-purple-100 rounded-full text-sm font-medium text-purple-700 mb-4">
-              <Icon.PiStar size={16} className="text-purple-600" />
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-violet-100 rounded-full text-xs font-bold text-violet-700 mb-4">
+              <Icon.PiStarFill size={14} />
               Premium Selection
             </div>
-            <div className="h-10 bg-gray-200 rounded-full w-56 mx-auto shimmer" />
+            <div className="h-12 bg-gray-200 rounded-xl w-56 mx-auto animate-pulse" />
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 md:gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
             {Array.from({ length: limit }).map((_, i) => (
-              <div key={i} className="aspect-[3/4] bg-gray-200 rounded-2xl shimmer" />
+              <div key={i} className="aspect-square bg-gray-200 rounded-3xl animate-pulse" />
             ))}
           </div>
         </div>
@@ -414,363 +615,123 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
     );
   }
 
-  if (error) {
-    return (
-      <section ref={sectionRef} className="py-16 md:py-24 bg-purple-50">
-        <div className="container mx-auto px-4 text-center">
-          <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-5">
-            <Icon.PiWarning size={40} className="text-red-500" />
-          </div>
-          <h3 className="text-xl font-bold text-gray-900 mb-2">Oops!</h3>
-          <p className="text-gray-600 mb-5">{error}</p>
-          <button
-            onClick={fetchFeaturedProducts}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-gray-900 text-white font-medium rounded-full hover:bg-gray-800 transition-all"
-          >
-            <Icon.PiArrowClockwise size={18} />
-            Try Again
-          </button>
-        </div>
-      </section>
-    );
-  }
+  if (error || products.length === 0) return null;
 
-  if (products.length === 0) return null;
+  const totalVendors = products.reduce((sum, p) => sum + (p.availableAt?.[0]?.tenant ? 1 : 0), 0);
+  const avgRating = products.reduce((sum, p) => sum + p.averageRating, 0) / products.length;
 
   return (
-    <section ref={sectionRef} className="py-16 md:py-24 bg-gradient-to-b from-purple-50 via-white to-purple-50 overflow-hidden relative">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <motion.div style={{ y: springY1 }} className="absolute -top-20 -right-20 w-[500px] h-[500px] bg-gradient-to-br from-purple-200/50 to-indigo-200/50 rounded-full blur-3xl" />
-        <motion.div style={{ y: springY2 }} className="absolute -bottom-20 -left-20 w-[500px] h-[500px] bg-gradient-to-br from-pink-200/50 to-rose-200/50 rounded-full blur-3xl" />
-      </div>
-
+    <section ref={sectionRef} className="py-16 sm:py-24 bg-gradient-to-b from-white via-violet-50/20 to-white overflow-hidden">
+      {/* Toast */}
       <AnimatePresence>
         {toast && (
           <motion.div
             initial={{ opacity: 0, y: 30, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.9 }}
-            className={`fixed bottom-6 right-6 z-50 px-5 py-3.5 rounded-xl shadow-xl flex items-center gap-2.5 ${
-              toast.type === 'success' ? 'bg-purple-500 text-white' : 'bg-red-500 text-white'
+            className={`fixed bottom-6 right-6 z-50 px-5 py-3.5 rounded-xl shadow-xl flex items-center gap-2.5 text-white ${
+              toast.type === 'success' ? 'bg-violet-500' : 'bg-red-500'
             }`}
           >
             {toast.type === 'success' ? <Icon.PiCheckCircle size={20} /> : <Icon.PiWarning size={20} />}
             <span className="font-medium text-sm">{toast.message}</span>
-            <button onClick={() => setToast(null)} className="ml-1 hover:opacity-70">
-              <Icon.PiX size={16} />
-            </button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <div className="container mx-auto px-4 relative z-10">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="text-center mb-14"
-        >
-          <motion.div 
-            initial={{ scale: 0.8, opacity: 0 }}
-            whileInView={{ scale: 1, opacity: 1 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-purple-50 border border-purple-100 rounded-full mb-4"
-          >
-            <Icon.PiStar size={16} className="text-purple-600" />
-            <span className="text-sm font-medium text-purple-700">Premium Selection</span>
-          </motion.div>
-          
-          <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 mb-3">{title}</h2>
-          <p className="text-gray-500 text-base md:text-lg max-w-2xl mx-auto">{subtitle}</p>
-        </motion.div>
-
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 md:gap-6">
-          {products.map((product, index) => {
-            const isHovered = hoveredProduct === product._id;
-            const isAdding = addingToCart === product._id;
-            const isWishlistAdding = wishlistAdding === product._id;
-            const inWishlist = isProductInWishlist(product);
-            const inCart = isProductInCart(product);
-            const cartQty = getCartQuantity(product);
-            const hasSecondImage = (product.thumbImage?.length || 0) > 1;
-            const mainBadge = getMainBadge(product);
-            const stockStatus = getStockStatus(product);
-            const soldPercentage = getSoldPercentage(product);
-
-            return (
-              <motion.div
-                key={product._id}
-                initial={{ opacity: 0, y: 40 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.06, duration: 0.5 }}
-                onMouseEnter={() => setHoveredProduct(product._id)}
-                onMouseLeave={() => setHoveredProduct(null)}
-                className="group"
-              >
-                <motion.div 
-                  whileHover={{ y: -8 }}
-                  transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-                  className="bg-white rounded-2xl overflow-hidden shadow-sm border border-purple-100 hover:shadow-xl transition-all duration-300"
-                >
-                  <div className="relative aspect-[3/4] overflow-hidden bg-gray-50">
-                    {!imageLoaded[product._id] && (
-                      <motion.div 
-                        initial={{ opacity: 1 }}
-                        animate={{ opacity: 0 }}
-                        className="absolute inset-0 bg-gradient-to-r from-purple-100 to-purple-200 animate-pulse z-10"
-                      />
-                    )}
-                    
-                    <Link href={`/product/${product.slug}`}>
-                      <motion.div
-                        animate={{ scale: isHovered ? 1.05 : 1 }}
-                        transition={{ duration: 0.4 }}
-                        className="relative w-full h-full"
-                      >
-                        <Image
-                          src={getProductImage(product, 0)}
-                          alt={product.name}
-                          fill
-                          className={`object-cover transition-all duration-500 ${hasSecondImage && isHovered ? 'opacity-0 scale-110' : 'opacity-100'}`}
-                          onLoad={() => setImageLoaded(prev => ({ ...prev, [product._id]: true }))}
-                          priority={index < 4}
-                        />
-                        
-                        {hasSecondImage && (
-                          <Image
-                            src={getProductImage(product, 1)}
-                            alt={`${product.name} - 2`}
-                            fill
-                            className={`object-cover absolute inset-0 transition-all duration-500 ${isHovered ? 'opacity-100 scale-110' : 'opacity-0'}`}
-                          />
-                        )}
-                      </motion.div>
-                    </Link>
-
-                    {mainBadge && (
-                      <motion.div
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        className={`absolute top-3 left-3 px-2.5 py-1 rounded-lg text-xs font-bold text-white shadow-md ${mainBadge.color}`}
-                        style={mainBadge.type === 'badge' && product.badge?.color ? { backgroundColor: product.badge.color } : {}}
-                      >
-                        {mainBadge.text}
-                      </motion.div>
-                    )}
-
-                    <motion.div 
-                      className={`absolute top-3 right-3 flex gap-2 transition-all duration-300 ${isHovered ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-2'}`}
-                    >
-                      <motion.button
-                        whileHover={{ scale: isWishlistAdding ? 1 : 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={() => handleWishlistToggle(product)}
-                        disabled={isWishlistAdding}
-                        className={`w-9 h-9 rounded-full flex items-center justify-center shadow-md transition-colors ${
-                          isWishlistAdding 
-                            ? 'bg-gray-400' 
-                            : inWishlist 
-                              ? 'bg-red-500 text-white' 
-                              : 'bg-white text-gray-600 hover:bg-red-50 hover:text-red-500'
-                        }`}
-                      >
-                        {isWishlistAdding ? (
-                          <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}>
-                            <Icon.PiSpinner size={16} />
-                          </motion.div>
-                        ) : inWishlist ? (
-                          <Icon.PiHeartFill size={16} />
-                        ) : (
-                          <Icon.PiHeart size={16} />
-                        )}
-                      </motion.button>
-                      <motion.button
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={() => handleQuickView(product)}
-                        className="w-9 h-9 rounded-full bg-white text-gray-600 flex items-center justify-center shadow-md hover:bg-purple-600 hover:text-white transition-colors"
-                      >
-                        <Icon.PiEye size={16} />
-                      </motion.button>
-                    </motion.div>
-
-                    <motion.div 
-                      className={`absolute bottom-0 left-0 right-0 transition-all duration-300 ${isHovered ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}
-                    >
-                      <button
-                        onClick={() => handleAddToCart(product)}
-                        disabled={isAdding || inCart}
-                        className={`w-full py-2.5 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all ${
-                          isAdding 
-                            ? 'bg-green-500 text-white'
-                            : inCart 
-                              ? 'bg-purple-100 text-purple-700 border-2 border-purple-300'
-                              : 'bg-purple-600 text-white hover:bg-purple-700'
-                        }`}
-                      >
-                        {isAdding ? (
-                          <>
-                            <motion.div 
-                              initial={{ scale: 0 }} 
-                              animate={{ scale: 1 }} 
-                              transition={{ type: 'spring', stiffness: 200, damping: 15 }}
-                            >
-                              <Icon.PiCheck size={16} />
-                            </motion.div>
-                            Added!
-                          </>
-                        ) : inCart ? (
-                          <>
-                            <Icon.PiShoppingCart size={16} />
-                            ({cartQty})
-                          </>
-                        ) : (
-                          <>
-                            <Icon.PiShoppingCart size={16} />
-                            Add to Cart
-                          </>
-                        )}
-                      </button>
-                    </motion.div>
-                  </div>
-
-                  <div className="p-4">
-                    {product.category && (
-                      <span className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1.5 block">
-                        {product.category.name}
-                      </span>
-                    )}
-                    
-                    <Link href={`/product/${product.slug}`}>
-                      <h3 className="font-semibold text-gray-900 text-sm md:text-base line-clamp-2 mb-2 hover:text-purple-600 transition-colors">
-                        {product.name}
-                      </h3>
-                    </Link>
-
-                    {product.availableAt?.[0]?.tenant && (
-                      <Link href={`/shop?tenant=${product.availableAt[0].tenant.slug}`} className="flex items-center gap-1 text-xs text-gray-500 hover:text-purple-600 transition-colors mb-2">
-                        <Icon.PiStorefront size={12} />
-                        <span>{product.availableAt[0].tenant.name}</span>
-                      </Link>
-                    )}
-
-                    {product.averageRating > 0 && (
-                      <div className="flex items-center gap-2 mb-2.5">
-                        <div className="flex items-center gap-0.5">
-                          {Array.from({ length: 5 }).map((_, i) => {
-                            const rating = product.averageRating;
-                            const filled = i < Math.floor(rating);
-                            const partial = !filled && i < rating;
-                            return (
-                              <motion.div
-                                key={i}
-                                initial={{ scale: 0, rotate: -180 }}
-                                whileInView={{ scale: 1, rotate: 0 }}
-                                viewport={{ once: true }}
-                                transition={{ delay: i * 0.03, type: 'spring', stiffness: 200, damping: 15 }}
-                              >
-                                <Icon.PiStarFill
-                                  size={12}
-                                  className={filled || partial ? 'text-amber-400' : 'text-gray-200'}
-                                />
-                              </motion.div>
-                            );
-                          })}
-                        </div>
-                        <motion.span 
-                          initial={{ opacity: 0, x: -10 }}
-                          whileInView={{ opacity: 1, x: 0 }}
-                          viewport={{ once: true }}
-                          className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full"
-                        >
-                          {product.averageRating.toFixed(1)}
-                        </motion.span>
-                        <motion.span 
-                          initial={{ opacity: 0 }}
-                          whileInView={{ opacity: 1 }}
-                          viewport={{ once: true }}
-                          className="text-xs text-gray-400"
-                        >
-                          ({product.reviewCount})
-                        </motion.span>
-                      </div>
-                    )}
-
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-lg font-bold text-gray-900">
-                        {formatPrice(product.price)}
-                      </span>
-                      {product.sale && product.originPrice > product.price && (
-                        <span className="text-sm text-gray-400 line-through">
-                          {formatPrice(product.originPrice)}
-                        </span>
-                      )}
-                    </div>
-
-                    {(product.defaultSize || product.abv || product.originCountry) && (
-                      <div className="flex flex-wrap gap-2 mb-3">
-                        {product.defaultSize && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded text-xs text-gray-600">
-                            <Icon.PiFlask size={10} />
-                            {product.defaultSize}
-                          </span>
-                        )}
-                        {product.abv && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 rounded text-xs text-purple-600">
-                            <Icon.PiWine size={10} />
-                            {product.abv}%
-                          </span>
-                        )}
-                        {product.originCountry && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 rounded text-xs text-blue-600">
-                            <Icon.PiGlobe size={10} />
-                            {product.originCountry}
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className={`font-medium ${stockStatus.color}`}>{stockStatus.text}</span>
-                        <span className="text-gray-400">{soldPercentage}% sold</span>
-                      </div>
-                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          whileInView={{ width: `${soldPercentage}%` }}
-                          viewport={{ once: true }}
-                          transition={{ duration: 0.8, delay: index * 0.1 }}
-                          className={`h-full rounded-full ${stockStatus.bg}`}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              </motion.div>
-            );
-          })}
-        </div>
-
+      <div className="container mx-auto px-4">
+        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ delay: 0.3 }}
+          className="text-center mb-12"
+        >
+          <motion.div
+            initial={{ scale: 0 }}
+            whileInView={{ scale: 1 }}
+            viewport={{ once: true }}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-100 to-purple-100 rounded-full text-xs font-bold text-violet-700 mb-4 shadow-sm"
+          >
+            <Icon.PiStarFill size={14} className="text-violet-500" />
+            Premium Selection
+          </motion.div>
+          
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-gray-900 mb-4">
+            {title}
+          </h2>
+          
+          <p className="text-gray-500 text-base sm:text-lg max-w-2xl mx-auto">
+            {subtitle}
+          </p>
+
+          {/* Stats */}
+          <div className="flex items-center justify-center gap-6 mt-6">
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-100 to-purple-100 flex items-center justify-center">
+                <Icon.PiSparkle size={18} className="text-violet-600" />
+              </div>
+              <div className="text-left">
+                <div className="font-bold text-gray-900">{products.length}</div>
+                <div className="text-xs text-gray-500">Featured</div>
+              </div>
+            </div>
+            <div className="w-px h-10 bg-gray-200" />
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center">
+                <Icon.PiStar size={18} className="text-amber-600" />
+              </div>
+              <div className="text-left">
+                <div className="font-bold text-gray-900">{avgRating.toFixed(1)}</div>
+                <div className="text-xs text-gray-500">Avg Rating</div>
+              </div>
+            </div>
+            <div className="w-px h-10 bg-gray-200" />
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center">
+                <Icon.PiStorefront size={18} className="text-emerald-600" />
+              </div>
+              <div className="text-left">
+                <div className="font-bold text-gray-900">{totalVendors}</div>
+                <div className="text-xs text-gray-500">Vendors</div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Products Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+          {products.map((product, index) => (
+            <ProductCard
+              key={product._id}
+              product={product}
+              index={index}
+              onAddToCart={() => handleAddToCart(product)}
+              onWishlistToggle={() => handleWishlistToggle(product)}
+              onRemoveFromCart={() => handleRemoveFromCart(product)}
+              addingToCart={addingToCart === product._id}
+              wishlistAdding={wishlistAdding === product._id}
+              inWishlist={isProductInWishlist(product)}
+              inCart={isProductInCart(product)}
+              cartQty={getCartQuantity(product)}
+            />
+          ))}
+        </div>
+
+        {/* CTA */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
           className="text-center mt-12"
         >
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => window.location.href = '/shop?isFeatured=true'}
-            className="inline-flex items-center gap-2.5 px-8 py-3.5 bg-purple-600 text-white font-medium rounded-full hover:bg-purple-700 transition-all shadow-lg hover:shadow-xl"
+          <Link
+            href="/shop?isFeatured=true"
+            className="inline-flex items-center gap-2.5 px-8 py-4 bg-gradient-to-r from-violet-600 to-purple-600 text-white font-bold rounded-full hover:from-violet-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl"
           >
             View All Featured Products
-            <Icon.PiArrowRight size={18} />
-          </motion.button>
+            <Icon.PiArrowRight size={20} />
+          </Link>
         </motion.div>
       </div>
     </section>

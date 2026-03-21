@@ -8,10 +8,6 @@ export default function PromotionalBannerSection() {
       <div className="container mx-auto px-4">
         <PromotionalBanner
           placement="home_secondary"
-          limit={4}
-          layout="modern"
-          showCountdown={true}
-          columns={2}
         />
       </div>
     </section>

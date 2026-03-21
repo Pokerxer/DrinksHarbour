@@ -108,16 +108,6 @@ const Product = () => {
     }
   }, []);
 
-  useEffect(() => {
-    fetchProduct();
-  }, [fetchProduct]);
-
-  useEffect(() => {
-    if (productData?._id && relatedProducts.length === 0) {
-      fetchRelatedProducts(productData._id);
-    }
-  }, [productData, relatedProducts.length, fetchRelatedProducts]);
-
   if (loading) {
     return (
       <>

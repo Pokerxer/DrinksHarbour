@@ -93,12 +93,12 @@ export default function Home() {
       {/* Tab Features */}
       <section className="py-16 bg-gray-50">
         <div className="container mx-auto px-4">
-          <TabFeatures start={0} limit={8} />
+          <TabFeatures />
         </div>
       </section>
 
       {/* Benefits/Value Propositions */}
-      <Benefit props="md:py-20 py-10" />
+      <Benefit className="md:py-20 py-10" />
 
       {/* Instagram Feed */}
       <Instagram />

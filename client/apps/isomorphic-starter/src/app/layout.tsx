@@ -10,6 +10,7 @@ import ModalCompare from '@/components/Modal/ModalCompare';
 import { Header } from '@/components/Header';
 import ModalNewsletter from '@/components/Modal/ModalNewsletter';
 import Footer from '@/components/Footer/Footer';
+import ChatbotWidget from '@/components/Chatbot/ChatbotWidget';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -36,6 +37,7 @@ export default function RootLayout({
           <ModalCompare />
           <Footer />
           <ModalNewsletter />
+          <ChatbotWidget />
         </body>
       </html>
     </GlobalProvider>
