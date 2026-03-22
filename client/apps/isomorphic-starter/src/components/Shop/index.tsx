@@ -462,7 +462,7 @@ const Shop: React.FC<Props> = ({
 
         {/* Recently Viewed - only show when not filtering */}
         {!filters.type && !filters.brand && !filters.categoryType && (
-          <RecentlyViewed products={data?.slice(0, 6) || []} />
+          <RecentlyViewed />
         )}
       </div>
     </>

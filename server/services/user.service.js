@@ -1316,7 +1316,86 @@ async function getUserStatistics(baseQuery = {}) {
     admins: 0,
     superAdmins: 0,
   };
-}
+};
+
+/**
+ * Get recently viewed products for a user
+ */
+const getRecentlyViewed = async (userId, limit = 10) => {
+  const user = await User.findById(userId)
+    .select('recentlyViewedProducts')
+    .populate({
+      path: 'recentlyViewedProducts.product',
+      select: 'name type images priceRange discount brand abv',
+    })
+    .lean();
+
+  if (!user) {
+    throw new NotFoundError('User not found');
+  }
+
+  // Sort by viewedAt descending and limit
+  const products = (user.recentlyViewedProducts || [])
+    .filter(item => item.product) // Filter out any null products
+    .sort((a, b) => new Date(b.viewedAt) - new Date(a.viewedAt))
+    .slice(0, limit)
+    .map(item => ({
+      ...item.product,
+      viewedAt: item.viewedAt,
+    }));
+
+  return { products };
+};
+
+/**
+ * Add product to recently viewed
+ */
+const addRecentlyViewed = async (userId, productId) => {
+  // Validate productId
+  if (!mongoose.Types.ObjectId.isValid(productId)) {
+    throw new ValidationError('Invalid product ID');
+  }
+
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new NotFoundError('User not found');
+  }
+
+  // Remove if already exists (to avoid duplicates)
+  user.recentlyViewedProducts = user.recentlyViewedProducts.filter(
+    item => item.product.toString() !== productId
+  );
+
+  // Add to beginning
+  user.recentlyViewedProducts.unshift({
+    product: productId,
+    viewedAt: new Date(),
+  });
+
+  // Keep only last 20 products
+  if (user.recentlyViewedProducts.length > 20) {
+    user.recentlyViewedProducts = user.recentlyViewedProducts.slice(0, 20);
+  }
+
+  await user.save();
+
+  return { success: true };
+};
+
+/**
+ * Clear recently viewed products
+ */
+const clearRecentlyViewed = async (userId) => {
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new NotFoundError('User not found');
+  }
+
+  user.recentlyViewedProducts = [];
+  await user.save();
+
+  return { success: true };
+};
 
 module.exports = {
   registerUser,
@@ -1345,4 +1424,7 @@ module.exports = {
   bulkUpdateUsers,
   searchUsers,
   getUserStatistics,
+  getRecentlyViewed,
+  addRecentlyViewed,
+  clearRecentlyViewed,
 };

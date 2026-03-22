@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
+import { useRouter } from 'next/navigation';
 
 interface RecentProduct {
   _id: string;
@@ -15,19 +16,19 @@ interface RecentProduct {
   discount?: { value: number };
   brand?: { name: string };
   abv?: number;
+  viewedAt?: string;
 }
 
 interface RecentlyViewedProps {
-  products: RecentProduct[];
+  productId?: string;
   maxItems?: number;
 }
 
-const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ products, maxItems = 6 }) => {
-  const recentProducts = useMemo(() => {
-    return products.slice(0, maxItems);
-  }, [products, maxItems]);
-
-  if (recentProducts.length === 0) return null;
+const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 6 }) => {
+  const router = useRouter();
+  const [products, setProducts] = useState<RecentProduct[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-NG', {
@@ -65,6 +66,145 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ products, maxItems = 6 
     return 0;
   };
 
+  const checkAuth = useCallback(async () => {
+    try {
+      const response = await fetch('/api/auth/me');
+      if (response.ok) {
+        const data = await response.json();
+        setIsAuthenticated(!!data.user);
+      } else {
+        setIsAuthenticated(false);
+      }
+    } catch {
+      setIsAuthenticated(false);
+    }
+  }, []);
+
+  const fetchRecentlyViewed = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/user/recently-viewed?limit=${maxItems}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data?.products) {
+          setProducts(data.data.products);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching recently viewed:', error);
+      // Fallback to localStorage
+      try {
+        const local = localStorage.getItem('recentlyViewed');
+        if (local) {
+          setProducts(JSON.parse(local));
+        }
+      } catch (e) {
+        console.error('Error reading localStorage:', e);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [maxItems]);
+
+  const trackViewed = useCallback(async (prodId: string) => {
+    try {
+      await fetch('/api/user/recently-viewed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: prodId }),
+      });
+    } catch (error) {
+      console.error('Error tracking viewed product:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchRecentlyViewed();
+    } else {
+      // Fallback to localStorage for non-logged-in users
+      try {
+        const local = localStorage.getItem('recentlyViewed');
+        if (local) {
+          setProducts(JSON.parse(local));
+        }
+      } catch (e) {
+        console.error('Error reading localStorage:', e);
+      }
+      setLoading(false);
+    }
+  }, [isAuthenticated, fetchRecentlyViewed]);
+
+  useEffect(() => {
+    if (productId) {
+      // Track this product view
+      if (isAuthenticated) {
+        trackViewed(productId);
+      } else {
+        // Save to localStorage for non-logged-in users
+        try {
+          const local = localStorage.getItem('recentlyViewed');
+          let viewed: RecentProduct[] = local ? JSON.parse(local) : [];
+          
+          // Remove if already exists
+          viewed = viewed.filter(p => p._id !== productId);
+          
+          // Add to beginning (with minimal data for now)
+          viewed.unshift({ _id: productId, name: '', type: '' } as RecentProduct);
+          
+          // Keep only last 20
+          viewed = viewed.slice(0, 20);
+          
+          localStorage.setItem('recentlyViewed', JSON.stringify(viewed));
+        } catch (e) {
+          console.error('Error saving to localStorage:', e);
+        }
+      }
+    }
+  }, [productId, isAuthenticated, trackViewed]);
+
+  const handleClearHistory = async () => {
+    if (isAuthenticated) {
+      try {
+        await fetch('/api/user/recently-viewed', {
+          method: 'DELETE',
+        });
+        setProducts([]);
+      } catch (error) {
+        console.error('Error clearing history:', error);
+      }
+    } else {
+      localStorage.removeItem('recentlyViewed');
+      setProducts([]);
+    }
+  };
+
+  if (loading) {
+    return (
+      <section className="w-full bg-white border-t border-gray-100">
+        <div className="container mx-auto px-4 py-8">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-xl bg-gray-200 animate-pulse" />
+            <div>
+              <div className="h-5 w-36 bg-gray-200 rounded animate-pulse mb-1" />
+              <div className="h-3 w-24 bg-gray-200 rounded animate-pulse" />
+            </div>
+          </div>
+          <div className="flex gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="w-44 h-52 bg-gray-100 rounded-xl animate-pulse" />
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (products.length === 0) return null;
+
   return (
     <section className="w-full bg-white border-t border-gray-100">
       <div className="container mx-auto px-4 py-8">
@@ -84,7 +224,10 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ products, maxItems = 6 
             </div>
           </div>
 
-          <button className="text-sm text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1">
+          <button 
+            onClick={handleClearHistory}
+            className="text-sm text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1"
+          >
             Clear History
             <Icon.PiX size={14} />
           </button>
@@ -93,7 +236,7 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ products, maxItems = 6 
         {/* Products Scroll */}
         <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-4 px-4">
           <AnimatePresence mode="popLayout">
-            {recentProducts.map((product, index) => {
+            {products.map((product, index) => {
               const discount = getDiscount(product);
               const isOnSale = discount > 0;
 
@@ -155,7 +298,7 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ products, maxItems = 6 
                           {product.brand?.name || product.type}
                         </p>
                         <h4 className="text-xs font-semibold text-gray-900 line-clamp-2 mb-1.5 min-h-[2rem]">
-                          {product.name}
+                          {product.name || 'Loading...'}
                         </h4>
                         <div className="flex items-center gap-1.5">
                           <span className={`font-bold text-sm ${isOnSale ? 'text-red-600' : 'text-gray-900'}`}>

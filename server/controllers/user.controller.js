@@ -312,6 +312,50 @@ exports.logoutUser = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Get recently viewed products
+ * @route   GET /api/users/recently-viewed
+ * @access  Private
+ */
+exports.getRecentlyViewed = asyncHandler(async (req, res) => {
+  const limit = parseInt(req.query.limit) || 10;
+  
+  const result = await userService.getRecentlyViewed(req.user._id, limit);
+
+  successResponse(res, result, 'Recently viewed products retrieved successfully');
+});
+
+/**
+ * @desc    Add product to recently viewed
+ * @route   POST /api/users/recently-viewed
+ * @access  Private
+ */
+exports.addRecentlyViewed = asyncHandler(async (req, res) => {
+  const { productId } = req.body;
+  
+  if (!productId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Product ID is required',
+    });
+  }
+  
+  const result = await userService.addRecentlyViewed(req.user._id, productId);
+
+  successResponse(res, result, 'Product added to recently viewed');
+});
+
+/**
+ * @desc    Clear recently viewed products
+ * @route   DELETE /api/users/recently-viewed
+ * @access  Private
+ */
+exports.clearRecentlyViewed = asyncHandler(async (req, res) => {
+  const result = await userService.clearRecentlyViewed(req.user._id);
+
+  successResponse(res, result, 'Recently viewed products cleared');
+});
+
+/**
  * @desc    Get user statistics
  * @route   GET /api/users/stats/summary
  * @access  Private/Admin

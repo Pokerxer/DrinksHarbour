@@ -185,6 +185,14 @@ const userSchema = new Schema(
         max: { type: Number },
       },
     },
+
+    // ────────────────────────────────────────────────
+    // Recently Viewed Products (for customers)
+    // ────────────────────────────────────────────────
+    recentlyViewedProducts: [{
+      product: { type: ObjectId, ref: 'Product' },
+      viewedAt: { type: Date, default: Date.now },
+    }],
   },
   {
     timestamps: true,

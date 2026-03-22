@@ -262,6 +262,24 @@ router.post(
  */
 router.post('/logout', userController.logoutUser);
 
+/**
+ * Get recently viewed products
+ * @route GET /api/users/recently-viewed
+ */
+router.get('/recently-viewed', userController.getRecentlyViewed);
+
+/**
+ * Add product to recently viewed
+ * @route POST /api/users/recently-viewed
+ */
+router.post('/recently-viewed', userController.addRecentlyViewed);
+
+/**
+ * Clear recently viewed products
+ * @route DELETE /api/users/recently-viewed
+ */
+router.delete('/recently-viewed', userController.clearRecentlyViewed);
+
 // ============================================================
 // ADMIN ROUTES
 // ============================================================
