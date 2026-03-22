@@ -81,16 +81,6 @@ const Product = () => {
     }
   }, [slug]);
 
-  useEffect(() => {
-    fetchProduct();
-  }, [fetchProduct]);
-
-  useEffect(() => {
-    if (productData?._id) {
-      fetchRelatedProducts(productData._id);
-    }
-  }, [productData, fetchRelatedProducts]);
-
   const fetchRelatedProducts = useCallback(async (productId: string) => {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
     try {
@@ -117,6 +107,16 @@ const Product = () => {
       console.error('Error fetching related products:', err);
     }
   }, []);
+
+  useEffect(() => {
+    fetchProduct();
+  }, [fetchProduct]);
+
+  useEffect(() => {
+    if (productData?._id) {
+      fetchRelatedProducts(productData._id);
+    }
+  }, [productData, fetchRelatedProducts]);
 
   if (loading) {
     return (
