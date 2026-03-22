@@ -110,18 +110,18 @@ const BrandCard: React.FC<BrandCardProps> = ({ brand, onHover, isHovered }) => {
       <motion.div
         onMouseEnter={() => onHover(brand._id)}
         onMouseLeave={() => onHover(null)}
-        whileHover={{ y: -8, scale: 1.02 }}
+        whileHover={{ y: -6 }}
         animate={{
           boxShadow: isHovered 
-            ? `0 30px 60px -15px ${brandColor}50, 0 0 0 2px ${brandColor}30` 
+            ? `0 25px 50px -12px ${brandColor}40, 0 0 0 1px ${brandColor}20` 
             : '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
         }}
-        transition={{ duration: 0.35, ease: [0.25, 0.1, 0.25, 1] }}
+        transition={{ duration: 0.3 }}
         className="relative bg-white rounded-2xl overflow-hidden cursor-pointer h-full flex flex-col"
       >
         {/* Hero Banner with Gradient */}
         <div 
-          className="relative h-36 overflow-hidden"
+          className="relative h-24 sm:h-28 md:h-36 overflow-hidden"
           style={{
             background: `linear-gradient(135deg, ${brandColor}30 0%, ${brandColor}15 50%, ${brandColor}05 100%)`
           }}
@@ -129,89 +129,80 @@ const BrandCard: React.FC<BrandCardProps> = ({ brand, onHover, isHovered }) => {
           {/* Animated Glow Orbs */}
           <motion.div
             animate={{
-              x: isHovered ? [0, 30, 0] : 0,
-              scale: isHovered ? [1, 1.3, 1] : 1,
-              opacity: isHovered ? [0.5, 0.8, 0.5] : 0.4
+              x: isHovered ? [0, 20, 0] : 0,
+              scale: isHovered ? [1, 1.2, 1] : 1,
+              opacity: isHovered ? [0.4, 0.7, 0.4] : 0.3
             }}
             transition={{ duration: 3, repeat: isHovered ? Infinity : 0 }}
-            className="absolute -top-16 -left-16 w-48 h-48 rounded-full"
-            style={{ backgroundColor: brandColor, filter: 'blur(30px)' }}
+            className="absolute -top-8 -left-8 w-32 h-32 sm:w-40 sm:h-40 md:w-48 md:h-48 rounded-full"
+            style={{ backgroundColor: brandColor, filter: 'blur(25px)' }}
           />
           <motion.div
             animate={{
-              x: isHovered ? [0, -20, 0] : 0,
-              scale: isHovered ? [1, 1.2, 1] : 1,
-              opacity: isHovered ? [0.4, 0.6, 0.4] : 0.3
+              x: isHovered ? [0, -15, 0] : 0,
+              scale: isHovered ? [1, 1.15, 1] : 1,
+              opacity: isHovered ? [0.3, 0.5, 0.3] : 0.2
             }}
             transition={{ duration: 2.5, repeat: isHovered ? Infinity : 0, delay: 0.5 }}
-            className="absolute -bottom-12 -right-12 w-40 h-40 rounded-full"
-            style={{ backgroundColor: brandColor, filter: 'blur(25px)' }}
-          />
-
-          {/* Subtle Grid Pattern */}
-          <div 
-            className="absolute inset-0 opacity-15"
-            style={{
-              backgroundImage: `linear-gradient(${brandColor}30 1px, transparent 1px), linear-gradient(90deg, ${brandColor}30 1px, transparent 1px)`,
-              backgroundSize: '24px 24px'
-            }}
+            className="absolute -bottom-6 -right-6 w-28 h-28 sm:w-32 sm:h-32 md:w-40 md:h-40 rounded-full"
+            style={{ backgroundColor: brandColor, filter: 'blur(20px)' }}
           />
 
           {/* Top Badges */}
-          <div className="absolute top-3 left-3 flex items-center gap-2 z-10">
+          <div className="absolute top-2 left-2 right-2 sm:top-3 sm:left-3 flex items-center gap-1.5 sm:gap-2 z-10">
             {brand.isPremium && (
               <motion.div
-                initial={{ scale: 0, x: -20, opacity: 0 }}
-                animate={{ scale: 1, x: 0, opacity: 1 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400 rounded-full shadow-lg"
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400 rounded-full shadow-lg"
               >
-                <Icon.PiCrown size={12} className="text-white" />
-                <span className="text-[10px] font-bold text-white tracking-wide">Premium</span>
+                <Icon.PiCrown size={10} className="text-white w-3 h-3 sm:w-4 sm:h-4" />
+                <span className="text-[8px] sm:text-[10px] font-bold text-white">Premium</span>
               </motion.div>
             )}
             {brand.verified && (
               <motion.div
-                initial={{ scale: 0, x: -20, opacity: 0 }}
-                animate={{ scale: 1, x: 0, opacity: 1 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full shadow-lg"
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full shadow-lg"
               >
-                <Icon.PiSealCheck size={12} className="text-white" />
-                <span className="text-[10px] font-bold text-white tracking-wide">Verified</span>
+                <Icon.PiSealCheck size={10} className="text-white w-3 h-3 sm:w-4 sm:h-4" />
+                <span className="text-[8px] sm:text-[10px] font-bold text-white">Verified</span>
               </motion.div>
             )}
           </div>
 
           {/* Arrow Indicator */}
           <motion.div
-            initial={{ opacity: 0, x: 10 }}
-            animate={{ opacity: isHovered ? 1 : 0, x: isHovered ? 0 : 10 }}
-            transition={{ duration: 0.25 }}
-            className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center z-10"
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: isHovered ? 1 : 0, scale: isHovered ? 1 : 0.5 }}
+            transition={{ duration: 0.2 }}
+            className="absolute top-2 right-2 sm:top-3 sm:right-3 w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center z-10"
             style={{ backgroundColor: brandColor }}
           >
-            <Icon.PiArrowRight size={16} className="text-white" />
+            <Icon.PiArrowRight size={14} className="text-white w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </motion.div>
 
           {/* Logo Container */}
           <motion.div
             animate={{
               scale: isHovered ? 1.1 : 1,
-              y: isHovered ? -6 : 0,
+              y: isHovered ? -4 : 0,
             }}
-            transition={{ duration: 0.3, ease: 'easeOut' }}
-            className="absolute left-1/2 -translate-x-1/2 bottom-0 translate-y-1/2 w-28 h-28 rounded-2xl bg-white shadow-2xl border-4 border-white flex items-center justify-center overflow-hidden z-20"
+            transition={{ duration: 0.3 }}
+            className="absolute left-1/2 -translate-x-1/2 bottom-0 translate-y-1/2 w-16 h-16 sm:w-20 sm:h-20 md:w-28 md:h-28 rounded-xl sm:rounded-2xl bg-white shadow-xl border-2 sm:border-4 border-white flex items-center justify-center overflow-hidden z-20"
           >
             {brandImage ? (
               <Image
                 src={brandImage}
                 alt={brand.name}
                 fill
-                className="object-contain p-3"
-                sizes="112px"
+                className="object-contain p-1.5 sm:p-2 md:p-3"
+                sizes="(max-width: 640px) 64px, (max-width: 768px) 80px, 112px"
               />
             ) : (
               <div 
-                className="w-full h-full flex items-center justify-center text-3xl font-black text-white"
+                className="w-full h-full flex items-center justify-center text-lg sm:text-xl md:text-3xl font-black text-white"
                 style={{ backgroundColor: brandColor }}
               >
                 {getInitials(brand.name)}
@@ -221,19 +212,19 @@ const BrandCard: React.FC<BrandCardProps> = ({ brand, onHover, isHovered }) => {
         </div>
 
         {/* Content Section */}
-        <div className="flex-1 flex flex-col items-center px-4 pt-12 pb-4 text-center">
+        <div className="flex-1 flex flex-col items-center px-3 sm:px-4 pt-8 sm:pt-10 md:pt-12 pb-3 sm:pb-4 text-center">
           {/* Brand Name */}
           <motion.h3 
             animate={{ y: isHovered ? -2 : 0 }}
-            className="text-base font-bold text-gray-900 mb-2 group-hover:text-gray-700 transition-colors"
+            className="text-xs sm:text-sm md:text-base font-bold text-gray-900 mb-1 sm:mb-2 group-hover:text-gray-700 transition-colors line-clamp-1"
           >
             {brand.name}
           </motion.h3>
 
-          {/* Country & Year */}
-          <div className="flex items-center justify-center gap-2 text-xs text-gray-500 mb-3">
+          {/* Country & Year - Hidden on small screens */}
+          <div className="hidden sm:flex items-center justify-center gap-1.5 text-xs text-gray-500 mb-2 sm:mb-3">
             {countryEmoji && (
-              <span className="text-base leading-none">{countryEmoji}</span>
+              <span className="text-sm leading-none">{countryEmoji}</span>
             )}
             <span className="font-medium">{brand.countryOfOrigin || 'Worldwide'}</span>
             {brand.founded && (
@@ -245,15 +236,15 @@ const BrandCard: React.FC<BrandCardProps> = ({ brand, onHover, isHovered }) => {
           </div>
 
           {/* Info Pills */}
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-gray-50 to-gray-100 rounded-full border border-gray-200">
-              <Icon.PiWine size={14} className="text-gray-500" />
-              <span className="text-xs font-bold text-gray-700">{brand.productCount || 0}</span>
+          <div className="flex items-center gap-1 sm:gap-2">
+            <div className="flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 bg-gradient-to-r from-gray-50 to-gray-100 rounded-full border border-gray-200">
+              <Icon.PiWine size={12} className="text-gray-500 w-3 h-3 sm:w-4 sm:h-4" />
+              <span className="text-[10px] sm:text-xs font-bold text-gray-700">{brand.productCount || 0}</span>
             </div>
             {brand.popularityScore && (
-              <div className="flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-amber-50 to-amber-100 rounded-full border border-amber-200">
-                <Icon.PiStar size={14} className="text-amber-500 fill-amber-500" />
-                <span className="text-xs font-bold text-amber-700">{brand.popularityScore}</span>
+              <div className="hidden sm:flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-amber-50 to-amber-100 rounded-full border border-amber-200">
+                <Icon.PiStar size={12} className="text-amber-500 fill-amber-500 w-3 h-3 sm:w-4 sm:h-4" />
+                <span className="text-[10px] sm:text-xs font-bold text-amber-700">{brand.popularityScore}</span>
               </div>
             )}
           </div>
@@ -426,17 +417,17 @@ const Brand: React.FC = () => {
           className="relative"
         >
           {loading ? (
-            <div className="flex gap-4 overflow-hidden">
+            <div className="flex gap-3 sm:gap-4 overflow-hidden">
               {Array.from({ length: 6 }).map((_, i) => (
                 <motion.div
                   key={i}
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: i * 0.05 }}
-                  className="flex-shrink-0 w-[200px] bg-white rounded-2xl p-6 animate-pulse border border-gray-100"
+                  className="flex-shrink-0 w-[140px] sm:w-[180px] md:w-[200px] bg-white rounded-2xl p-4 sm:p-6 animate-pulse border border-gray-100"
                 >
-                  <div className="w-full h-14 bg-gray-200 rounded-xl mb-3" />
-                  <div className="w-16 h-4 bg-gray-200 rounded mx-auto" />
+                  <div className="w-full h-12 sm:h-14 bg-gray-200 rounded-xl mb-3" />
+                  <div className="w-12 sm:w-16 h-3 sm:h-4 bg-gray-200 rounded mx-auto" />
                 </motion.div>
               ))}
             </div>
@@ -473,7 +464,7 @@ const Brand: React.FC = () => {
           ) : (
             <>
               <Swiper
-                spaceBetween={20}
+                spaceBetween={16}
                 slidesPerView={2}
                 loop={brands.length > 4}
                 speed={800}
@@ -488,11 +479,13 @@ const Brand: React.FC = () => {
                   nextEl: '.brand-slider-next'
                 }}
                 breakpoints={{
-                  320: { slidesPerView: 2, spaceBetween: 12 },
-                  480: { slidesPerView: 3, spaceBetween: 16 },
-                  640: { slidesPerView: 4, spaceBetween: 20 },
-                  900: { slidesPerView: 5, spaceBetween: 20 },
-                  1200: { slidesPerView: 6, spaceBetween: 24 },
+                  320: { slidesPerView: 2, spaceBetween: 10 },
+                  400: { slidesPerView: 2.5, spaceBetween: 12 },
+                  480: { slidesPerView: 3, spaceBetween: 14 },
+                  640: { slidesPerView: 4, spaceBetween: 16 },
+                  768: { slidesPerView: 4.5, spaceBetween: 18 },
+                  1024: { slidesPerView: 5, spaceBetween: 20 },
+                  1280: { slidesPerView: 6, spaceBetween: 24 },
                 }}
                 className="brand-slider pb-12"
               >
@@ -509,19 +502,19 @@ const Brand: React.FC = () => {
 
               {/* Navigation Arrows */}
               <motion.button
-                whileHover={{ scale: 1.1, x: -3 }}
+                whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.95 }}
-                className="brand-slider-prev absolute -left-4 top-1/2 -translate-y-1/2 z-10 w-12 h-12 bg-white rounded-full shadow-xl shadow-gray-200/50 flex items-center justify-center text-gray-700 hover:text-gray-900 hover:shadow-2xl transition-all hidden md:flex"
+                className="brand-slider-prev absolute -left-2 sm:-left-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 sm:w-12 sm:h-12 bg-white rounded-full shadow-xl shadow-gray-200/50 flex items-center justify-center text-gray-700 hover:text-gray-900 hover:shadow-2xl transition-all hidden lg:flex"
               >
-                <Icon.PiCaretLeft size={20} />
+                <Icon.PiCaretLeft size={18} className="w-4 h-4 sm:w-5 sm:h-5" />
               </motion.button>
 
               <motion.button
-                whileHover={{ scale: 1.1, x: 3 }}
+                whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.95 }}
-                className="brand-slider-next absolute -right-4 top-1/2 -translate-y-1/2 z-10 w-12 h-12 bg-white rounded-full shadow-xl shadow-gray-200/50 flex items-center justify-center text-gray-700 hover:text-gray-900 hover:shadow-2xl transition-all hidden md:flex"
+                className="brand-slider-next absolute -right-2 sm:-right-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 sm:w-12 sm:h-12 bg-white rounded-full shadow-xl shadow-gray-200/50 flex items-center justify-center text-gray-700 hover:text-gray-900 hover:shadow-2xl transition-all hidden lg:flex"
               >
-                <Icon.PiCaretRight size={20} />
+                <Icon.PiCaretRight size={18} className="w-4 h-4 sm:w-5 sm:h-5" />
               </motion.button>
             </>
           )}
