@@ -106,136 +106,152 @@ const BrandCard: React.FC<BrandCardProps> = ({ brand, onHover, isHovered }) => {
   const countryEmoji = getCountryEmoji(brand.countryOfOrigin);
 
   return (
-    <Link href={`/shop?brand=${encodeURIComponent(brand.name)}`}>
+    <Link href={`/shop?brand=${encodeURIComponent(brand.name)}`} className="block h-full">
       <motion.div
         onMouseEnter={() => onHover(brand._id)}
         onMouseLeave={() => onHover(null)}
+        whileHover={{ y: -6 }}
         animate={{
-          y: isHovered ? -8 : 0,
           boxShadow: isHovered 
-            ? '0 25px 50px -12px rgba(0, 0, 0, 0.15)' 
+            ? '0 30px 60px -15px rgba(0, 0, 0, 0.2)' 
             : '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
         }}
         transition={{ duration: 0.3 }}
-        className="relative bg-white rounded-2xl p-6 border border-gray-100 overflow-hidden cursor-pointer min-h-[180px] flex flex-col items-center justify-center"
+        className="relative bg-white rounded-2xl border border-gray-100 overflow-hidden cursor-pointer h-full flex flex-col"
       >
-        {/* Background Glow */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: isHovered ? 1 : 0 }}
-          transition={{ duration: 0.3 }}
-          className="absolute inset-0 -z-10"
+        {/* Gradient Header */}
+        <div 
+          className="relative h-20 overflow-hidden"
           style={{
-            background: `radial-gradient(circle at center, ${brandColor}15 0%, transparent 70%)`
+            background: `linear-gradient(135deg, ${brandColor}15 0%, ${brandColor}05 100%)`
           }}
-        />
+        >
+          {/* Background Pattern */}
+          <div 
+            className="absolute inset-0 opacity-30"
+            style={{
+              backgroundImage: `radial-gradient(circle at 2px 2px, ${brandColor}30 1px, transparent 0)`,
+              backgroundSize: '16px 16px'
+            }}
+          />
 
-        {/* Badges Row */}
-        <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
-          {brand.isPremium && (
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              className="flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-amber-400 to-amber-500 rounded-full shadow-sm"
-            >
-              <Icon.PiCrown size={10} className="text-white" />
-              <span className="text-[10px] font-bold text-white">Premium</span>
-            </motion.div>
-          )}
-          {brand.verified && (
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              className="flex items-center gap-1 px-2 py-1 bg-emerald-500 rounded-full shadow-sm"
-            >
-              <Icon.PiSealCheck size={10} className="text-white" />
-              <span className="text-[10px] font-bold text-white">Verified</span>
-            </motion.div>
-          )}
-          {!brand.isPremium && !brand.verified && <div />}
-          
-          {/* Product Count Badge */}
-          <div className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full">
-            <Icon.PiWine size={10} className="text-gray-500" />
-            <span className="text-[10px] font-medium text-gray-600">
-              {brand.productCount || 0}
+          {/* Badges */}
+          <div className="absolute top-3 left-3 right-3 flex items-center justify-between z-10">
+            {brand.isPremium && (
+              <motion.div
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-amber-400 to-amber-500 rounded-full shadow-md"
+              >
+                <Icon.PiCrown size={10} className="text-white" />
+                <span className="text-[10px] font-bold text-white">Premium</span>
+              </motion.div>
+            )}
+            {brand.verified && (
+              <motion.div
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="flex items-center gap-1 px-2.5 py-1 bg-emerald-500 rounded-full shadow-md"
+              >
+                <Icon.PiSealCheck size={10} className="text-white" />
+                <span className="text-[10px] font-bold text-white">Verified</span>
+              </motion.div>
+            )}
+            {!brand.isPremium && !brand.verified && <div />}
+          </div>
+
+          {/* Logo Container */}
+          <motion.div
+            animate={{
+              scale: isHovered ? 1.08 : 1,
+            }}
+            transition={{ duration: 0.3 }}
+            className="absolute left-1/2 -translate-x-1/2 -bottom-8 w-16 h-16 rounded-2xl bg-white shadow-lg border-2 border-white flex items-center justify-center overflow-hidden"
+          >
+            {brandImage ? (
+              <Image
+                src={brandImage}
+                alt={brand.name}
+                fill
+                className="object-contain p-1"
+                sizes="64px"
+              />
+            ) : (
+              <div 
+                className="w-full h-full flex items-center justify-center text-lg font-black text-white"
+                style={{ backgroundColor: brandColor }}
+              >
+                {getInitials(brand.name)}
+              </div>
+            )}
+          </motion.div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 p-4 pt-10 flex flex-col items-center text-center">
+          {/* Brand Name */}
+          <h3 className="text-sm font-bold text-gray-900 mb-2 group-hover:text-gray-700 transition-colors line-clamp-1">
+            {brand.name}
+          </h3>
+
+          {/* Country & Info */}
+          <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-3">
+            {countryEmoji && <span className="text-base">{countryEmoji}</span>}
+            <span>{brand.countryOfOrigin || 'Worldwide'}</span>
+            {brand.founded && (
+              <>
+                <span className="text-gray-300">•</span>
+                <span className="text-gray-400">Est. {brand.founded}</span>
+              </>
+            )}
+          </div>
+
+          {/* Product Count */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 rounded-full">
+            <Icon.PiWine size={12} className="text-gray-400" />
+            <span className="text-xs font-medium text-gray-600">
+              {brand.productCount || 0} products
             </span>
           </div>
         </div>
 
-        {/* Logo */}
-        <motion.div
-          animate={{
-            scale: isHovered ? 1.1 : 1,
-          }}
-          transition={{ duration: 0.3 }}
-          className="relative w-20 h-14 flex items-center justify-center mb-3 mt-2"
-        >
-          {brandImage ? (
-            <Image
-              src={brandImage}
-              alt={brand.name}
-              fill
-              className="object-contain"
-              sizes="100px"
-            />
-          ) : (
-            <motion.div
-              animate={{
-                scale: isHovered ? 1.1 : 1,
-                rotate: isHovered ? [0, -5, 5, 0] : 0
-              }}
-              transition={{ duration: 0.5, repeat: isHovered ? Infinity : 0 }}
-              className="w-14 h-14 rounded-xl flex items-center justify-center text-lg font-black text-white shadow-lg"
-              style={{ backgroundColor: brandColor }}
-            >
-              {getInitials(brand.name)}
-            </motion.div>
-          )}
-        </motion.div>
-
-        {/* Brand Name */}
-        <h3 className="text-sm font-bold text-gray-900 text-center mb-1 group-hover:text-gray-800 transition-colors line-clamp-1">
-          {brand.name}
-        </h3>
-
-        {/* Country & Founded */}
+        {/* Explore Button */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center gap-2 text-xs text-gray-500"
+          animate={{ opacity: isHovered ? 1 : 0.7, y: 0 }}
+          className="px-4 pb-4"
         >
-          {countryEmoji && <span>{countryEmoji}</span>}
-          <span>{brand.countryOfOrigin || 'Worldwide'}</span>
-          {brand.founded && (
-            <>
-              <span className="text-gray-300">•</span>
-              <span>Est. {brand.founded}</span>
-            </>
-          )}
+          <div 
+            className="flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm transition-all duration-300"
+            style={{
+              backgroundColor: isHovered ? brandColor : '#f3f4f6',
+              color: isHovered ? 'white' : '#6b7280'
+            }}
+          >
+            <span>Explore</span>
+            <motion.span
+              animate={{ x: isHovered ? [0, 4, 0] : 0 }}
+              transition={{ repeat: isHovered ? Infinity : 0, duration: 1.5 }}
+            >
+              <Icon.PiArrowRight size={16} />
+            </motion.span>
+          </div>
         </motion.div>
 
-        {/* Hover Arrow */}
+        {/* Hover Shine Effect */}
         <motion.div
-          initial={{ opacity: 0, scale: 0 }}
-          animate={{ 
-            opacity: isHovered ? 1 : 0,
-            scale: isHovered ? 1 : 0,
-            x: isHovered ? 0 : -10
-          }}
-          transition={{ duration: 0.2 }}
-          className="absolute bottom-3 right-3 w-7 h-7 rounded-full flex items-center justify-center text-white"
-          style={{ backgroundColor: brandColor }}
-        >
-          <Icon.PiArrowRight size={14} />
-        </motion.div>
+          initial={{ x: '-100%' }}
+          animate={{ x: isHovered ? '100%' : '-100%' }}
+          transition={{ duration: 0.6 }}
+          className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent pointer-events-none"
+        />
 
-        {/* Bottom Border Accent */}
+        {/* Bottom Accent Line */}
         <motion.div
           initial={{ scaleX: 0 }}
           animate={{ scaleX: isHovered ? 1 : 0 }}
           transition={{ duration: 0.3 }}
-          className="absolute bottom-0 left-0 right-0 h-1 origin-left rounded-b-xl"
+          className="absolute bottom-0 left-0 right-0 h-1 origin-left"
           style={{ backgroundColor: brandColor }}
         />
       </motion.div>
