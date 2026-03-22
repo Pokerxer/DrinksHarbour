@@ -22,6 +22,10 @@ interface BenefitItem {
   stats?: BenefitStat;
 }
 
+interface BenefitProps {
+  className?: string;
+}
+
 const AnimatedCounter = ({ value, suffix }: { value: number; suffix: string }) => {
   const [count, setCount] = useState(0);
   const ref = useRef<HTMLSpanElement>(null);
@@ -146,11 +150,11 @@ const iconFloatVariants: Variants = {
   }
 };
 
-const Benefit: React.FC = () => {
+const Benefit: React.FC<BenefitProps> = ({ className = '' }) => {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   return (
-    <section className="py-20 md:py-28 relative overflow-hidden">
+    <section className={`py-20 md:py-28 relative overflow-hidden ${className}`}>
       {/* Dynamic Background */}
       <div className="absolute inset-0 bg-gradient-to-br from-gray-50 via-white to-red-50/30" />
       

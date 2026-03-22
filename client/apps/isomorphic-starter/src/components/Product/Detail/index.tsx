@@ -92,6 +92,9 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
   const { addToCompare, removeFromCompare, isInCompare } = useCompare();
   const { openModalCompare } = useModalCompareContext();
 
+  const productId = productData?._id || productData?.id || '';
+  const isProductInCompare = isInCompare(productId);
+
   const vendors = useMemo(() => productData?.availableAt || [], [productData]);
 
   const selectedVendor = useMemo(() => {
@@ -213,7 +216,6 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
   const handleAddToCompare = useCallback(() => {
     if (!productData) return;
     
-    const productId = productData._id;
     const isActive = isInCompare(productId);
     
     if (isActive) {
@@ -230,7 +232,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
         openModalCompare();
       }
     }
-  }, [productData, isInCompare, removeFromCompare, addToCompare, openModalCompare]);
+  }, [productData, productId, isInCompare, removeFromCompare, addToCompare, openModalCompare]);
 
   const handleShare = useCallback(async () => {
     if (navigator.share) {
@@ -636,13 +638,13 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                 <button
                   onClick={handleAddToCompare}
                   className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-medium transition-all ${
-                    isInCompare(productData._id)
+                    isProductInCompare
                       ? 'border-blue-500 text-blue-600 bg-blue-50'
                       : 'border-gray-200 hover:border-gray-300 text-gray-700'
                   }`}
                 >
                   <Icon.PiScales size={18} />
-                  {isInCompare(productData._id) ? 'In Compare' : 'Compare'}
+                  {isProductInCompare ? 'In Compare' : 'Compare'}
                 </button>
 
                 <button

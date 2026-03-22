@@ -1,13 +1,15 @@
-'use client';
+"use client";
 
-import React, { useEffect, useState, useCallback } from 'react';
-import { useParams } from 'next/navigation';
-import BreadcrumbProduct from '@/components/Breadcrumb/BreadcrumbProduct';
-import ProductDetail from '@/components/Product/Detail';
-import type { ProductType } from '@/types/product.types';
-import * as Icon from 'react-icons/pi';
+import React, { useEffect, useState, useCallback } from "react";
+import { useParams } from "next/navigation";
+import BreadcrumbProduct from "@/components/Breadcrumb/BreadcrumbProduct";
+import ProductDetail from "@/components/Product/Detail";
+import RecentlyViewed from "@/components/Shop/RecentlyViewed";
+// import AgeGate from '@/components/AgeGate/AgeGate';
+import type { ProductType } from "@/types/product.types";
+import * as Icon from "react-icons/pi";
 
-import { AnnouncementBanner } from '@/components/Banner';
+import { AnnouncementBanner } from "@/components/Banner";
 
 interface ApiResponse {
   success: boolean;
@@ -38,18 +40,18 @@ const Product = () => {
   const fetchProduct = useCallback(async () => {
     if (!slug) return;
 
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
-    
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
     try {
       setLoading(true);
       setError(null);
 
       const response = await fetch(`${API_URL}/api/products/slug/${slug}`, {
-        method: 'GET',
+        method: "GET",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        cache: 'no-store',
+        cache: "no-store",
       });
 
       if (!response.ok) {
@@ -68,13 +70,17 @@ const Product = () => {
       } else if (Array.isArray(data) && data.length > 0) {
         setProductData(data[0]);
       } else {
-        console.warn('Unexpected API response structure:', data);
-        setError('Product data format not recognized');
+        console.warn("Unexpected API response structure:", data);
+        setError("Product data format not recognized");
         setProductData(null);
       }
     } catch (err) {
-      console.error('Error fetching product:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load product. Please try again later.');
+      console.error("Error fetching product:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to load product. Please try again later.",
+      );
       setProductData(null);
     } finally {
       setLoading(false);
@@ -82,15 +88,18 @@ const Product = () => {
   }, [slug]);
 
   const fetchRelatedProducts = useCallback(async (productId: string) => {
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
     try {
-      const response = await fetch(`${API_URL}/api/products/${productId}/related?limit=8`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
+      const response = await fetch(
+        `${API_URL}/api/products/${productId}/related?limit=8`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          cache: "no-store",
         },
-        cache: 'no-store',
-      });
+      );
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -104,7 +113,7 @@ const Product = () => {
         setRelatedProducts(data.data.products);
       }
     } catch (err) {
-      console.error('Error fetching related products:', err);
+      console.error("Error fetching related products:", err);
     }
   }, []);
 
@@ -121,18 +130,16 @@ const Product = () => {
   if (loading) {
     return (
       <>
-        <AnnouncementBanner
-          placement="header"
-          layout="static"
-          variant="info"
-        />
+        <AnnouncementBanner placement="header" layout="static" variant="info" />
         <div className="min-h-screen flex items-center justify-center bg-gray-50">
           <div className="text-center">
             <div className="relative w-16 h-16 mx-auto mb-4">
               <div className="absolute inset-0 border-4 border-gray-200 rounded-full"></div>
               <div className="absolute inset-0 border-4 border-black rounded-full border-t-transparent animate-spin"></div>
             </div>
-            <p className="text-gray-600 font-medium">Loading product details...</p>
+            <p className="text-gray-600 font-medium">
+              Loading product details...
+            </p>
           </div>
         </div>
       </>
@@ -142,21 +149,18 @@ const Product = () => {
   if (error || !productData) {
     return (
       <>
-        <AnnouncementBanner
-          placement="header"
-          layout="static"
-          variant="info"
-        />
+        <AnnouncementBanner placement="header" layout="static" variant="info" />
         <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
           <div className="text-center max-w-md">
             <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <Icon.PiWarningCircle size={40} className="text-red-500" />
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-3">
-              {error ? 'Something went wrong' : 'Product Not Found'}
+              {error ? "Something went wrong" : "Product Not Found"}
             </h2>
             <p className="text-gray-600 mb-6">
-              {error || "The product you're looking for doesn't exist or has been removed."}
+              {error ||
+                "The product you're looking for doesn't exist or has been removed."}
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button
@@ -180,21 +184,61 @@ const Product = () => {
     );
   }
 
+  // const isAlcoholic =
+  //   productData?.isAlcoholic ||
+  //   productData?.abv > 0 ||
+  //   productData?.alcoholCategory === "alcoholic" ||
+  //   productData?.type?.toLowerCase().includes("wine") ||
+  //   productData?.type?.toLowerCase().includes("beer") ||
+  //   productData?.type?.toLowerCase().includes("spirit") ||
+  //   productData?.type?.toLowerCase().includes("whiskey") ||
+  //   productData?.type?.toLowerCase().includes("vodka") ||
+  //   productData?.type?.toLowerCase().includes("gin") ||
+  //   productData?.type?.toLowerCase().includes("rum") ||
+  //   productData?.type?.toLowerCase().includes("tequila") ||
+  //   productData?.type?.toLowerCase().includes("brandy");
+
+  const currentProductData = {
+    _id: productData._id,
+    name: productData.name,
+    type: productData.type,
+    slug: productData.slug,
+    images: productData.images,
+    priceRange: productData.priceRange,
+    price: productData.price,
+    originPrice: productData.originPrice,
+    discount: productData.discount,
+    brand: productData.brand,
+    abv: productData.abv,
+    sale: productData.sale,
+    new: productData.new,
+  };
+
   return (
     <>
-      <AnnouncementBanner
-        placement="header"
-        layout="static"
-        variant="info"
-      />
-      
+      <AnnouncementBanner placement="header" layout="static" variant="info" />
+
       {/* Breadcrumb */}
       <div className="container mx-auto px-4 pt-6">
-        <BreadcrumbProduct data={productData} productPage="default" productId={slug} />
+        <BreadcrumbProduct
+          data={productData}
+          productPage="default"
+          productId={slug}
+        />
       </div>
 
       {/* Product Details */}
-      <ProductDetail productData={productData} relatedProducts={relatedProducts} />
+      <ProductDetail
+        productData={productData}
+        relatedProducts={relatedProducts}
+      />
+
+      {/* Recently Viewed Section */}
+      <RecentlyViewed
+        productId={productData._id}
+        currentProduct={currentProductData}
+        maxItems={6}
+      />
     </>
   );
 };

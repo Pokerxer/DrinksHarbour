@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { motion, AnimatePresence, Variants } from "framer-motion";
@@ -14,6 +14,10 @@ const ModalCompare = () => {
   const { compareState, removeFromCompare, clearCompare, compareCount } = useCompare();
   const [removingId, setRemovingId] = useState<string | null>(null);
 
+  const getProductId = (product: ProductType): string => {
+    return product._id || product.id || '';
+  };
+
   // Lock body scroll when modal is open
   useEffect(() => {
     if (isModalOpen) {
@@ -26,7 +30,8 @@ const ModalCompare = () => {
     };
   }, [isModalOpen]);
 
-  const handleRemove = (productId: string) => {
+  const handleRemove = (product: ProductType) => {
+    const productId = getProductId(product);
     setRemovingId(productId);
     setTimeout(() => {
       removeFromCompare(productId);
@@ -51,8 +56,18 @@ const ModalCompare = () => {
     if (product.badge) {
       return { text: product.badge.text, className: `bg-${product.badge.color}-500` };
     }
+    if (product.new) {
+      return { text: "New", className: "bg-blue-500" };
+    }
     return null;
   };
+
+  const getCurrencySymbol = useMemo(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('currency_symbol') || '₦';
+    }
+    return '₦';
+  }, []);
 
   // Animation variants for content only
   const containerVariants: Variants = {
@@ -218,12 +233,13 @@ const ModalCompare = () => {
                     animate={isModalOpen ? "visible" : "hidden"}
                   >
                     {compareState.compareArray.slice(0, 4).map((product, index) => {
+                      const productId = getProductId(product);
                       const badge = getProductBadge(product);
-                      const isRemoving = removingId === product.id;
+                      const isRemoving = removingId === productId;
                       
                       return (
                         <motion.div
-                          key={product.id}
+                          key={productId || index}
                           className={`item p-3 border border-line rounded-xl relative min-w-[200px] transition-all duration-200 ${
                             isRemoving ? "opacity-0 scale-95" : "opacity-100 scale-100"
                           }`}
@@ -238,7 +254,7 @@ const ModalCompare = () => {
                           <AnimatePresence>
                             {badge && (
                               <motion.div
-                                key={`badge-${product.id}`}
+                                key={`badge-${productId}`}
                                 initial={{ opacity: 0, scale: 0.8 }}
                                 animate={{ opacity: 1, scale: 1 }}
                                 exit={{ opacity: 0, scale: 0.8 }}
@@ -251,9 +267,9 @@ const ModalCompare = () => {
 
                           <div className="infor flex items-center gap-4">
                             <div className="bg-img w-[80px] h-[80px] flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
-                              {product.images && product.images.length > 0 && typeof product.images[0] === 'string' && product.images[0] ? (
+                              {product.images && product.images.length > 0 ? (
                                 <Image
-                                  src={product.images[0]}
+                                  src={typeof product.images[0] === 'string' ? product.images[0] : product.images[0]?.url}
                                   width={300}
                                   height={300}
                                   alt={product.name}
@@ -271,20 +287,20 @@ const ModalCompare = () => {
                               </div>
                               <div className="flex items-center gap-2 mt-1">
                                 <div className="product-price text-title font-bold text-gray-900">
-                                  {formatPrice(product.price)}
+                                  {formatPrice(product.price, getCurrencySymbol)}
                                 </div>
                                 {product.originPrice && product.originPrice > product.price && (
                                   <div className="product-origin-price text-xs text-gray-400 line-through">
-                                    {formatPrice(product.originPrice)}
+                                    {formatPrice(product.originPrice, getCurrencySymbol)}
                                   </div>
                                 )}
                               </div>
                               {/* Rating */}
-                              {product.rating && (
+                              {(product.rating || product.rate) && (
                                 <div className="flex items-center gap-1 mt-1">
                                   <Icon.PiStarFill size={12} className="text-yellow-400" />
                                   <span className="text-xs text-gray-600">
-                                    {product.rating} ({product.reviewCount || 0})
+                                    {product.rating || product.rate} ({product.reviewCount || 0})
                                   </span>
                                 </div>
                               )}
@@ -294,7 +310,7 @@ const ModalCompare = () => {
                           {/* Remove Button */}
                           <motion.button
                             className="close-btn absolute -right-2 -top-2 w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center shadow-md"
-                            onClick={() => handleRemove(product.id)}
+                            onClick={() => handleRemove(product)}
                             aria-label={`Remove ${product.name} from comparison`}
                             whileHover={{ scale: 1.1 }}
                             whileTap={{ scale: 0.9 }}

@@ -38,6 +38,10 @@ const MAX_COMPARE_ITEMS = 4;
 
 const CompareContext = createContext<CompareContextProps | undefined>(undefined);
 
+const getProductId = (item: ProductType | CompareItem): string => {
+  return item._id || item.id || '';
+};
+
 const CompareReducer = (
   state: CompareState,
   action: CompareAction,
@@ -50,7 +54,7 @@ const CompareReducer = (
       return {
         ...state,
         compareArray: state.compareArray.filter(
-          (item) => item.id !== action.payload,
+          (item) => getProductId(item) !== action.payload,
         ),
       };
     case "LOAD_COMPARE":
@@ -102,8 +106,10 @@ export const CompareProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [compareState.compareArray, isInitialized]);
 
   const addToCompare = useCallback((item: ProductType): { success: boolean; message: string } => {
+    const itemId = getProductId(item);
+    
     // Check if already in compare
-    if (compareState.compareArray.some((compareItem) => compareItem.id === item.id)) {
+    if (compareState.compareArray.some((compareItem) => getProductId(compareItem) === itemId)) {
       return {
         success: false,
         message: "Product is already in your comparison list",
@@ -135,7 +141,7 @@ export const CompareProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const isInCompare = useCallback(
     (itemId: string) => {
-      return compareState.compareArray.some((item) => item.id === itemId);
+      return compareState.compareArray.some((item) => getProductId(item) === itemId);
     },
     [compareState.compareArray],
   );
