@@ -9,6 +9,7 @@ import FilterHeader from './FilterHeader';
 import ActiveFilters from './ActiveFilters';
 import ProductGrid from './ProductGrid';
 import PaginationSection from './PaginationSection';
+import RecentlyViewed from './RecentlyViewed';
 import * as Icon from 'react-icons/pi';
 
 const SORT_OPTIONS: SortOption[] = [
@@ -417,6 +418,11 @@ const Shop: React.FC<Props> = ({
                       onPageChange={handlePageChange} 
                     />
                   )}
+                  
+                  {/* Recently Viewed Section */}
+                  <div className="mt-12">
+                    <RecentlyViewed maxItems={4} />
+                  </div>
                 </>
               ) : (
                 <div className="text-center py-20 animate-fade-in">
