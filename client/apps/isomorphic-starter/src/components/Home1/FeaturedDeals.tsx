@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
@@ -50,6 +50,7 @@ interface FeaturedDeal {
   reviewCount?: number;
   availableAt?: AvailableAtEntry[];
   isFeatured?: boolean;
+  saleEndsAt?: string;
 }
 
 interface FeaturedDealsProps {
@@ -58,50 +59,137 @@ interface FeaturedDealsProps {
   limit?: number;
 }
 
-const DealCountdown = ({ hours = 24, minutes = 0, seconds = 0 }: { hours?: number; minutes?: number; seconds?: number }) => {
-  const [timeLeft, setTimeLeft] = useState({ hours, minutes, seconds });
+interface TimeLeft {
+  days: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+  total: number;
+}
+
+const calculateTimeLeft = (endDate: Date | null): TimeLeft => {
+  if (!endDate) {
+    const defaultEnd = new Date();
+    defaultEnd.setHours(defaultEnd.getHours() + 24);
+    endDate = defaultEnd;
+  }
+  
+  const difference = endDate.getTime() - new Date().getTime();
+  
+  if (difference <= 0) {
+    return { days: 0, hours: 0, minutes: 0, seconds: 0, total: 0 };
+  }
+  
+  return {
+    days: Math.floor(difference / (1000 * 60 * 60 * 24)),
+    hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
+    minutes: Math.floor((difference / 1000 / 60) % 60),
+    seconds: Math.floor((difference / 1000) % 60),
+    total: difference
+  };
+};
+
+const CountdownUnit = ({ value, label, bg, isLast = false }: { value: number; label: string; bg: string; isLast?: boolean }) => (
+  <div className="flex items-center">
+    <div className="flex flex-col items-center">
+      <div className={`${bg} text-white px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg min-w-[40px] sm:min-w-[50px] text-center shadow-lg relative overflow-hidden`}>
+        <div className="absolute inset-0 bg-white/10" />
+        <span className="text-lg sm:text-2xl font-black tabular-nums relative z-10">
+          {String(value).padStart(2, '0')}
+        </span>
+      </div>
+      <span className="text-[9px] sm:text-[10px] text-white/80 mt-1 font-medium uppercase tracking-wider">
+        {label}
+      </span>
+    </div>
+    {!isLast && <span className="text-white/60 text-lg sm:text-2xl font-bold mx-1 -mt-4">:</span>}
+  </div>
+);
+
+const GlobalCountdown = ({ endDate }: { endDate: Date | null }) => {
+  const [timeLeft, setTimeLeft] = useState<TimeLeft>(() => calculateTimeLeft(endDate));
 
   useEffect(() => {
-    const calculateTimeLeft = () => {
-      const target = new Date();
-      target.setHours(target.getHours() + hours);
-      target.setMinutes(target.getMinutes() + minutes);
-      target.setSeconds(target.getSeconds() + seconds);
-      
-      const now = new Date().getTime();
-      const diff = target.getTime() - now;
-
-      if (diff > 0) {
-        setTimeLeft({
-          hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
-          minutes: Math.floor((diff / (1000 * 60)) % 60),
-          seconds: Math.floor((diff / 1000) % 60),
-        });
-      }
-    };
-
-    calculateTimeLeft();
-    const timer = setInterval(calculateTimeLeft, 1000);
+    const timer = setInterval(() => {
+      setTimeLeft(calculateTimeLeft(endDate));
+    }, 1000);
     return () => clearInterval(timer);
-  }, [hours, minutes, seconds]);
+  }, [endDate]);
 
-  const units = [
-    { value: timeLeft.hours, label: 'Hours', bg: 'bg-red-500' },
-    { value: timeLeft.minutes, label: 'Mins', bg: 'bg-orange-500' },
-    { value: timeLeft.seconds, label: 'Secs', bg: 'bg-amber-500' },
-  ];
+  const isUrgent = timeLeft.total > 0 && timeLeft.total < 3600000;
 
   return (
-    <div className="flex items-center gap-2">
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className={`flex items-center justify-center gap-1 sm:gap-2 py-3 sm:py-4 px-4 sm:px-6 rounded-2xl ${
+        isUrgent 
+          ? 'bg-gradient-to-r from-red-600 to-rose-600 animate-pulse' 
+          : 'bg-gradient-to-r from-red-500 to-orange-500'
+      } shadow-xl`}
+    >
+      <Icon.PiClock size={18} className="text-white/90" />
+      <span className="text-white/90 text-xs sm:text-sm font-medium mr-1 sm:mr-2">Sale ends in:</span>
+      
+      {timeLeft.days > 0 && (
+        <CountdownUnit value={timeLeft.days} label="Days" bg="bg-white/20" />
+      )}
+      <CountdownUnit value={timeLeft.hours} label="Hours" bg="bg-white/25" />
+      <CountdownUnit value={timeLeft.minutes} label="Mins" bg="bg-white/25" />
+      <CountdownUnit value={timeLeft.seconds} label="Secs" bg="bg-white/25" isLast />
+    </motion.div>
+  );
+};
+
+const DealCardCountdown = ({ endDate, size = 'sm' }: { endDate?: string; size?: 'sm' | 'lg' }) => {
+  const targetDate = useMemo(() => {
+    if (endDate) {
+      const date = new Date(endDate);
+      if (!isNaN(date.getTime())) return date;
+    }
+    const defaultEnd = new Date();
+    defaultEnd.setHours(defaultEnd.getHours() + 4);
+    return defaultEnd;
+  }, [endDate]);
+
+  const [timeLeft, setTimeLeft] = useState<TimeLeft>(() => calculateTimeLeft(targetDate));
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeLeft(calculateTimeLeft(targetDate));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [targetDate]);
+
+  const isExpired = timeLeft.total <= 0;
+  const isUrgent = timeLeft.total > 0 && timeLeft.total < 3600000;
+
+  if (isExpired) {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-gray-400">
+        <Icon.PiStopCircle size={12} />
+        <span>Expired</span>
+      </div>
+    );
+  }
+
+  const units = [
+    { value: timeLeft.days, label: 'Days', show: timeLeft.days > 0 },
+    { value: timeLeft.hours, label: 'Hrs', show: true },
+    { value: timeLeft.minutes, label: 'Mins', show: true },
+    { value: timeLeft.seconds, label: 'Secs', show: true },
+  ].filter(u => u.show);
+
+  const bgClass = isUrgent ? 'bg-red-500' : 'bg-orange-500';
+
+  return (
+    <div className="flex items-center gap-1">
       {units.map((unit, idx) => (
         <React.Fragment key={unit.label}>
-          <div className="flex flex-col items-center">
-            <div className={`${unit.bg} text-white px-2 py-1 rounded-lg min-w-[40px] text-center shadow-lg`}>
-              <span className="text-sm font-bold">{String(unit.value).padStart(2, '0')}</span>
-            </div>
-            <span className="text-[9px] text-white/70 mt-1 font-medium">{unit.label}</span>
+          <div className={`${bgClass} text-white px-1.5 py-0.5 rounded text-[10px] font-bold shadow-sm min-w-[24px] text-center`}>
+            {String(unit.value).padStart(2, '0')}
           </div>
-          {idx < units.length - 1 && <span className="text-white/70 text-lg font-bold -mt-2">:</span>}
+          {idx < units.length - 1 && <span className="text-gray-400 text-[10px]">:</span>}
         </React.Fragment>
       ))}
     </div>
@@ -277,7 +365,7 @@ const DealCard = ({
               <Icon.PiClock size={10} />
               <span>Ends in:</span>
             </div>
-            <DealCountdown hours={4} minutes={30} seconds={0} />
+            <DealCardCountdown endDate={deal.saleEndsAt} />
           </div>
 
           {/* Product Name */}
@@ -529,6 +617,16 @@ const FeaturedDeals: React.FC<FeaturedDealsProps> = ({
     fetchDeals();
   }, [limit]);
 
+  const earliestEndDate = useMemo(() => {
+    if (deals.length === 0) return null;
+    const dates = deals
+      .filter(d => d.saleEndsAt)
+      .map(d => new Date(d.saleEndsAt!))
+      .filter(d => !isNaN(d.getTime()));
+    if (dates.length === 0) return null;
+    return new Date(Math.min(...dates.map(d => d.getTime())));
+  }, [deals]);
+
   if (loading) {
     return (
       <section className="py-16 sm:py-24 bg-gradient-to-b from-white to-red-50/30">
@@ -588,7 +686,7 @@ const FeaturedDeals: React.FC<FeaturedDealsProps> = ({
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          className="text-center mb-12"
+          className="text-center mb-8"
         >
           <motion.div
             initial={{ scale: 0 }}
@@ -604,9 +702,14 @@ const FeaturedDeals: React.FC<FeaturedDealsProps> = ({
             {title}
           </h2>
           
-          <p className="text-gray-500 text-base sm:text-lg max-w-2xl mx-auto">
+          <p className="text-gray-500 text-base sm:text-lg max-w-2xl mx-auto mb-8">
             {subtitle}
           </p>
+
+          {/* Global Countdown */}
+          <div className="max-w-xl mx-auto mb-8">
+            <GlobalCountdown endDate={earliestEndDate} />
+          </div>
 
           {/* Stats */}
           <div className="flex items-center justify-center gap-6 mt-6">
@@ -634,7 +737,7 @@ const FeaturedDeals: React.FC<FeaturedDealsProps> = ({
 
         {/* Deals Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
-          {deals.map((deal, index) => (
+          {deals.map((deal) => (
             <DealCard
               key={deal._id}
               deal={deal}
