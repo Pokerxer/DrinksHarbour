@@ -9,7 +9,7 @@ import FilterHeader from './FilterHeader';
 import ActiveFilters from './ActiveFilters';
 import ProductGrid from './ProductGrid';
 import PaginationSection from './PaginationSection';
-import RecentlyViewed from './RecentlyViewed';
+import OnSaleHighlight from './OnSaleHighlight';
 import * as Icon from 'react-icons/pi';
 
 const SORT_OPTIONS: SortOption[] = [
@@ -355,6 +355,12 @@ const Shop: React.FC<Props> = ({
         categoryTypes={filterOptions.type}
         totalProducts={sortedProducts.length}
       />
+      
+      {/* On Sale Highlight Section */}
+      {!filters.showOnlySale && !filters.type && (
+        <OnSaleHighlight products={data || []} />
+      )}
+      
       <FilterSidebar 
         open={openSidebar} 
         onClose={() => setOpenSidebar(false)} 
@@ -418,11 +424,6 @@ const Shop: React.FC<Props> = ({
                       onPageChange={handlePageChange} 
                     />
                   )}
-                  
-                  {/* Recently Viewed Section */}
-                  <div className="mt-12">
-                    <RecentlyViewed maxItems={4} />
-                  </div>
                 </>
               ) : (
                 <div className="text-center py-20 animate-fade-in">
