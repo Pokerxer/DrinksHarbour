@@ -158,27 +158,25 @@ const BrandCard: React.FC<BrandCardProps> = ({ brand, onHover, isHovered }) => {
           />
 
           {/* Top Badges */}
-          <div className="absolute top-3 left-3 right-3 flex items-center justify-between z-10">
+          <div className="absolute top-3 left-3 flex items-center gap-2 z-10">
             {brand.isPremium && (
               <motion.div
                 initial={{ scale: 0, x: -20, opacity: 0 }}
                 animate={{ scale: 1, x: 0, opacity: 1 }}
-                whileHover={{ scale: 1.1 }}
-                className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 rounded-full shadow-xl border-2 border-amber-300"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400 rounded-full shadow-lg"
               >
-                <Icon.PiCrown size={14} className="text-white drop-shadow-md" />
-                <span className="text-[11px] font-extrabold text-white tracking-wider drop-shadow-md">Premium</span>
+                <Icon.PiCrown size={12} className="text-white" />
+                <span className="text-[10px] font-bold text-white tracking-wide">Premium</span>
               </motion.div>
             )}
             {brand.verified && (
               <motion.div
-                initial={{ scale: 0, x: 20, opacity: 0 }}
+                initial={{ scale: 0, x: -20, opacity: 0 }}
                 animate={{ scale: 1, x: 0, opacity: 1 }}
-                whileHover={{ scale: 1.1 }}
-                className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-emerald-500 via-emerald-400 to-emerald-500 rounded-full shadow-xl border-2 border-emerald-300"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full shadow-lg"
               >
-                <Icon.PiSealCheck size={14} className="text-white drop-shadow-md" />
-                <span className="text-[11px] font-extrabold text-white tracking-wider drop-shadow-md">Verified</span>
+                <Icon.PiSealCheck size={12} className="text-white" />
+                <span className="text-[10px] font-bold text-white tracking-wide">Verified</span>
               </motion.div>
             )}
           </div>
