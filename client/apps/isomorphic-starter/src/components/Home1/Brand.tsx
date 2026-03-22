@@ -110,91 +110,108 @@ const BrandCard: React.FC<BrandCardProps> = ({ brand, onHover, isHovered }) => {
       <motion.div
         onMouseEnter={() => onHover(brand._id)}
         onMouseLeave={() => onHover(null)}
-        whileHover={{ y: -8 }}
+        whileHover={{ y: -8, scale: 1.02 }}
         animate={{
           boxShadow: isHovered 
-            ? `0 25px 50px -12px ${brandColor}40, 0 0 0 1px ${brandColor}20` 
+            ? `0 30px 60px -15px ${brandColor}50, 0 0 0 2px ${brandColor}30` 
             : '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
         }}
-        transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
-        className="relative bg-white rounded-2xl overflow-hidden cursor-pointer h-full flex flex-col border border-gray-100"
+        transition={{ duration: 0.35, ease: [0.25, 0.1, 0.25, 1] }}
+        className="relative bg-white rounded-2xl overflow-hidden cursor-pointer h-full flex flex-col"
       >
-        {/* Hero Banner */}
+        {/* Hero Banner with Gradient */}
         <div 
-          className="relative h-24 overflow-hidden"
+          className="relative h-28 overflow-hidden"
           style={{
-            background: `linear-gradient(135deg, ${brandColor}20 0%, ${brandColor}05 50%, ${brandColor}10 100%)`
+            background: `linear-gradient(135deg, ${brandColor}25 0%, ${brandColor}10 50%, ${brandColor}05 100%)`
           }}
         >
-          {/* Animated Gradient Overlay */}
+          {/* Animated Glow Orbs */}
           <motion.div
             animate={{
-              background: isHovered 
-                ? [
-                    `radial-gradient(circle at 20% 50%, ${brandColor}30 0%, transparent 50%)`,
-                    `radial-gradient(circle at 80% 50%, ${brandColor}30 0%, transparent 50%)`,
-                    `radial-gradient(circle at 20% 50%, ${brandColor}30 0%, transparent 50%)`
-                  ]
-                : `radial-gradient(circle at 50% 50%, ${brandColor}20 0%, transparent 60%)`
+              x: isHovered ? [0, 20, 0] : 0,
+              scale: isHovered ? [1, 1.2, 1] : 1,
+              opacity: isHovered ? [0.4, 0.7, 0.4] : 0.3
             }}
-            transition={{ duration: 2, repeat: isHovered ? Infinity : 0 }}
-            className="absolute inset-0"
+            transition={{ duration: 3, repeat: isHovered ? Infinity : 0 }}
+            className="absolute -top-10 -left-10 w-32 h-32 rounded-full"
+            style={{ backgroundColor: brandColor, filter: 'blur(20px)' }}
+          />
+          <motion.div
+            animate={{
+              x: isHovered ? [0, -15, 0] : 0,
+              scale: isHovered ? [1, 1.1, 1] : 1,
+              opacity: isHovered ? [0.3, 0.5, 0.3] : 0.2
+            }}
+            transition={{ duration: 2.5, repeat: isHovered ? Infinity : 0, delay: 0.5 }}
+            className="absolute -bottom-8 -right-8 w-28 h-28 rounded-full"
+            style={{ backgroundColor: brandColor, filter: 'blur(18px)' }}
           />
 
-          {/* Abstract Pattern */}
-          <svg className="absolute inset-0 w-full h-full opacity-20" viewBox="0 0 100 100" preserveAspectRatio="none">
-            <defs>
-              <pattern id={`dots-${brand._id}`} x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse">
-                <circle cx="2" cy="2" r="1" fill={brandColor} />
-              </pattern>
-            </defs>
-            <rect width="100" height="100" fill={`url(#dots-${brand._id})`} />
-          </svg>
+          {/* Subtle Grid Pattern */}
+          <div 
+            className="absolute inset-0 opacity-10"
+            style={{
+              backgroundImage: `linear-gradient(${brandColor}20 1px, transparent 1px), linear-gradient(90deg, ${brandColor}20 1px, transparent 1px)`,
+              backgroundSize: '20px 20px'
+            }}
+          />
 
           {/* Top Badges */}
           <div className="absolute top-3 left-3 flex items-center gap-2 z-10">
             {brand.isPremium && (
               <motion.div
-                initial={{ scale: 0, x: -20 }}
-                animate={{ scale: 1, x: 0 }}
-                className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400 rounded-full shadow-lg backdrop-blur-sm"
+                initial={{ scale: 0, x: -20, opacity: 0 }}
+                animate={{ scale: 1, x: 0, opacity: 1 }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400 rounded-full shadow-lg"
               >
                 <Icon.PiCrown size={12} className="text-white" />
-                <span className="text-[11px] font-bold text-white">Premium</span>
+                <span className="text-[10px] font-bold text-white tracking-wide">Premium</span>
               </motion.div>
             )}
             {brand.verified && (
               <motion.div
-                initial={{ scale: 0, x: -20 }}
-                animate={{ scale: 1, x: 0 }}
-                className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full shadow-lg backdrop-blur-sm"
+                initial={{ scale: 0, x: -20, opacity: 0 }}
+                animate={{ scale: 1, x: 0, opacity: 1 }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-400 to-emerald-500 rounded-full shadow-lg"
               >
                 <Icon.PiSealCheck size={12} className="text-white" />
-                <span className="text-[11px] font-bold text-white">Verified</span>
+                <span className="text-[10px] font-bold text-white tracking-wide">Verified</span>
               </motion.div>
             )}
           </div>
 
-          {/* Logo Circle */}
+          {/* Arrow Indicator */}
+          <motion.div
+            initial={{ opacity: 0, x: 10 }}
+            animate={{ opacity: isHovered ? 1 : 0, x: isHovered ? 0 : 10 }}
+            transition={{ duration: 0.25 }}
+            className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center z-10"
+            style={{ backgroundColor: brandColor }}
+          >
+            <Icon.PiArrowRight size={16} className="text-white" />
+          </motion.div>
+
+          {/* Logo Container */}
           <motion.div
             animate={{
-              scale: isHovered ? 1.1 : 1,
-              y: isHovered ? -4 : 0
+              scale: isHovered ? 1.15 : 1,
+              y: isHovered ? -5 : 0,
             }}
-            transition={{ duration: 0.3 }}
-            className="absolute left-1/2 -translate-x-1/2 bottom-0 translate-y-1/2 w-20 h-20 rounded-full bg-white shadow-xl border-4 border-white flex items-center justify-center overflow-hidden z-20"
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="absolute left-1/2 -translate-x-1/2 bottom-0 translate-y-1/2 w-24 h-24 rounded-2xl bg-white shadow-2xl border-4 border-white flex items-center justify-center overflow-hidden z-20"
           >
             {brandImage ? (
               <Image
                 src={brandImage}
                 alt={brand.name}
                 fill
-                className="object-contain p-2"
-                sizes="80px"
+                className="object-contain p-3"
+                sizes="96px"
               />
             ) : (
               <div 
-                className="w-full h-full flex items-center justify-center text-xl font-black text-white"
+                className="w-full h-full flex items-center justify-center text-2xl font-black text-white"
                 style={{ backgroundColor: brandColor }}
               >
                 {getInitials(brand.name)}
@@ -204,98 +221,53 @@ const BrandCard: React.FC<BrandCardProps> = ({ brand, onHover, isHovered }) => {
         </div>
 
         {/* Content Section */}
-        <div className="flex-1 flex flex-col items-center px-4 pt-8 pb-4 text-center">
+        <div className="flex-1 flex flex-col items-center px-5 pt-10 pb-5 text-center">
           {/* Brand Name */}
           <motion.h3 
-            animate={{ y: isHovered ? -2 : 0 }}
-            className="text-base font-bold text-gray-900 mb-2 group-hover:text-gray-700 transition-colors"
+            animate={{ y: isHovered ? -3 : 0 }}
+            className="text-lg font-bold text-gray-900 mb-2 group-hover:text-gray-700 transition-colors"
           >
             {brand.name}
           </motion.h3>
 
           {/* Country & Year */}
-          <div className="flex items-center justify-center gap-2 text-xs text-gray-500 mb-4">
+          <div className="flex items-center justify-center gap-2 text-sm text-gray-500 mb-4">
             {countryEmoji && (
-              <span className="text-base leading-none">{countryEmoji}</span>
+              <span className="text-lg leading-none">{countryEmoji}</span>
             )}
-            <span>{brand.countryOfOrigin || 'Worldwide'}</span>
+            <span className="font-medium">{brand.countryOfOrigin || 'Worldwide'}</span>
             {brand.founded && (
               <>
-                <span className="text-gray-300">|</span>
+                <span className="text-gray-300">•</span>
                 <span className="text-gray-400">Est. {brand.founded}</span>
               </>
             )}
           </div>
 
-          {/* Stats Bar */}
-          <div className="w-full flex items-center justify-center gap-4 py-2 px-4 bg-gradient-to-r from-gray-50 via-white to-gray-50 rounded-xl border border-gray-100">
-            <div className="flex items-center gap-1.5">
-              <Icon.PiWine size={14} className="text-gray-400" />
-              <span className="text-xs font-semibold text-gray-700">{brand.productCount || 0}</span>
+          {/* Info Pills */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-gray-50 to-gray-100 rounded-full border border-gray-200">
+              <Icon.PiWine size={16} className="text-gray-500" />
+              <span className="text-sm font-bold text-gray-700">{brand.productCount || 0}</span>
               <span className="text-xs text-gray-400">products</span>
             </div>
             {brand.popularityScore && (
-              <>
-                <div className="w-px h-4 bg-gray-200" />
-                <div className="flex items-center gap-1">
-                  <Icon.PiStar size={14} className="text-amber-400 fill-amber-400" />
-                  <span className="text-xs font-semibold text-gray-700">{brand.popularityScore}</span>
-                </div>
-              </>
+              <div className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-amber-50 to-amber-100 rounded-full border border-amber-200">
+                <Icon.PiStar size={16} className="text-amber-500 fill-amber-500" />
+                <span className="text-sm font-bold text-amber-700">{brand.popularityScore}</span>
+              </div>
             )}
           </div>
         </div>
 
-        {/* CTA Button */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="px-4 pb-4"
-        >
-          <motion.div
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="relative overflow-hidden rounded-xl font-bold text-sm flex items-center justify-center gap-2 py-3 transition-all duration-300"
-            style={{
-              background: isHovered 
-                ? `linear-gradient(135deg, ${brandColor} 0%, ${brandColor}dd 100%)` 
-                : 'linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)',
-              color: isHovered ? 'white' : '#374151',
-              boxShadow: isHovered ? `0 10px 20px -5px ${brandColor}40` : 'none'
-            }}
-          >
-            {/* Shine Effect */}
-            <motion.div
-              initial={{ x: '-100%', rotate: 25 }}
-              animate={{ x: isHovered ? '150%' : '-100%' }}
-              transition={{ duration: 0.6 }}
-              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent"
-            />
-            
-            <span className="relative z-10 flex items-center gap-2">
-              Explore Collection
-              <motion.span
-                animate={{ x: isHovered ? [0, 4, 0] : 0 }}
-                transition={{ repeat: isHovered ? Infinity : 0, duration: 1 }}
-              >
-                <Icon.PiArrowRight size={16} />
-              </motion.span>
-            </span>
-          </motion.div>
-        </motion.div>
-
-        {/* Corner Decoration */}
+        {/* Click Indicator */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: isHovered ? 1 : 0 }}
-          transition={{ duration: 0.3 }}
-          className="absolute top-0 right-0 w-16 h-16 overflow-hidden"
-        >
-          <div 
-            className="absolute top-0 right-0 w-24 h-24 rounded-bl-full opacity-20"
-            style={{ backgroundColor: brandColor }}
-          />
-        </motion.div>
+          transition={{ duration: 0.2 }}
+          className="absolute inset-0 border-2 border-dashed rounded-2xl pointer-events-none"
+          style={{ borderColor: brandColor }}
+        />
       </motion.div>
     </Link>
   );
