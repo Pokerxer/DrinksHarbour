@@ -416,7 +416,7 @@ const Benefit: React.FC = () => {
           {[
             { icon: <Icon.PiLock size={18} />, text: 'Secure Checkout' },
             { icon: <Icon.PiCreditCard size={18} />, text: 'Multiple Payment Options' },
-            { icon: <Icon.PiArrowCounterClockwise size={18} />, text: 'Easy Returns' },
+            { icon: <Icon.PiThermometer size={18} />, text: 'Temp Controlled' },
             { icon: <Icon.PiCalendarCheck size={18} />, text: '24/7 Availability' }
           ].map((badge, idx) => (
             <motion.div
