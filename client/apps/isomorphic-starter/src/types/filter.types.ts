@@ -11,6 +11,8 @@ export interface FilterState {
   showOnlySale: boolean;
   sortOption: string;
   minRating: number | null;
+  abvRange: { min: number; max: number } | null;
+  volumeRange: string | null;
 }
 
 export interface FilterOptions {
@@ -23,6 +25,8 @@ export interface FilterOptions {
   subCategoryType: string[];
   flavorCategory: string[];
   priceRange: { min: number; max: number };
+  abvRanges: { min: number; max: number; label: string }[];
+  volumes: string[];
 }
 
 export interface SortOption {

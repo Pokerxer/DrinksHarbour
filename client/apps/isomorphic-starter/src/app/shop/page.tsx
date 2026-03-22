@@ -25,6 +25,8 @@ interface FilterState {
   flavorCategory: string | null;
   minRating: number | null;
   search: string | null;
+  abvRange: { min: number; max: number } | null;
+  volumeRange: string | null;
 }
 
 function ShopPageContent({ params }: PageProps) {
@@ -58,6 +60,8 @@ function ShopPageContent({ params }: PageProps) {
     flavorCategory: null,
     minRating: null,
     search: searchQuery,
+    abvRange: null,
+    volumeRange: null,
   });
 
   const updateUrlFilters = useCallback((newFilters: FilterState) => {
@@ -199,6 +203,8 @@ function ShopPageContent({ params }: PageProps) {
       flavorCategory: null,
       minRating: null,
       search: null,
+      abvRange: null,
+      volumeRange: null,
     });
     router.replace(pathname, { scroll: false });
   };

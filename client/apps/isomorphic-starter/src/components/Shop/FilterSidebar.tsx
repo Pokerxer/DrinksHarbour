@@ -212,6 +212,19 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
     updateFilter('minRating', filters.minRating === rating ? null : rating);
   };
 
+  const handleAbvRangeClick = (range: { min: number; max: number }) => {
+    const isSelected = filters.abvRange?.min === range.min && filters.abvRange?.max === range.max;
+    updateFilter('abvRange', isSelected ? null : range);
+  };
+
+  const handleVolumeClick = (volume: string) => {
+    const isSelected = filters.volumeRange === volume;
+    updateFilter('volumeRange', isSelected ? null : volume);
+    if (!isSelected) {
+      updateFilter('size', null);
+    }
+  };
+
   const handleClearPrice = () => {
     const defaultRange = {
       min: filterOptions.priceRange?.min ?? 0,
@@ -235,6 +248,8 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
       updateFilter('minRating', null);
       updateFilter('showOnlySale', false);
       updateFilter('priceRange', filterOptions.priceRange);
+      updateFilter('abvRange', null);
+      updateFilter('volumeRange', null);
     }
     setBrandSearch('');
   }, [onClearAllFilters, updateFilter, filterOptions.priceRange]);
@@ -259,6 +274,8 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
     if ((filters.priceRange?.min ?? 0) !== (filterOptions.priceRange?.min ?? 0) || 
         (filters.priceRange?.max ?? 100000) !== (filterOptions.priceRange?.max ?? 100000)) count++;
     if (filters.showOnlySale) count++;
+    if (filters.abvRange) count++;
+    if (filters.volumeRange) count++;
     return count;
   }, [filters, filterOptions.priceRange]);
 
@@ -490,34 +507,125 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                   </FilterSection>
                 )}
 
-                {/* Size */}
-                {filterOptions.size.length > 0 && (
+                {/* Size / Volume */}
+                {(filterOptions.size.length > 0 || filterOptions.volumes.length > 0) && (
                   <FilterSection 
-                    title="Size" 
-                    icon={<Icon.PiRuler size={20} />}
-                    badge={filters.size ? 1 : undefined}
+                    title="Volume" 
+                    icon={<Icon.PiDrop size={20} />}
+                    badge={filters.size || filters.volumeRange ? 1 : undefined}
                     isLoading={isLoading}
                   >
                     <div className="flex flex-wrap gap-2">
-                      {filterOptions.size.map((item) => {
+                      {filterOptions.volumes.length > 0 ? filterOptions.volumes.map((item) => {
+                        const isSelected = filters.volumeRange === item;
+                        
+                        return (
+                          <button
+                            key={item}
+                            className={`px-4 py-2 rounded-lg border-2 text-sm font-medium transition-all ${
+                              isSelected
+                                ? 'border-gray-900 bg-gray-900 text-white shadow-md'
+                                : 'border-gray-200 hover:border-gray-400 text-gray-700 hover:bg-gray-50'
+                            }`}
+                            onClick={() => {
+                              updateFilter('volumeRange', filters.volumeRange === item ? null : item);
+                              updateFilter('size', null);
+                            }}
+                            aria-label={`Volume ${item}`}
+                          >
+                            {item}
+                          </button>
+                        );
+                      }) : filterOptions.size.map((item) => {
                         const isSelected = filters.size === item;
                         
                         return (
                           <button
                             key={item}
-
-className={`w-14 h-14 flex items-center justify-center rounded-lg border-2 text-sm font-medium transition-all ${
+                            className={`px-4 py-2 rounded-lg border-2 text-sm font-medium transition-all ${
                               isSelected
                                 ? 'border-gray-900 bg-gray-900 text-white shadow-md'
                                 : 'border-gray-200 hover:border-gray-400 text-gray-700 hover:bg-gray-50'
                             }`}
-                            onClick={() => handleSizeClick(item)}
+                            onClick={() => {
+                              handleSizeClick(item);
+                              updateFilter('volumeRange', null);
+                            }}
                             aria-label={`Size ${item}`}
                           >
                             {item}
                           </button>
                         );
                       })}
+                    </div>
+                  </FilterSection>
+                )}
+
+                {/* ABV Filter */}
+                {filterOptions.abvRanges && filterOptions.abvRanges.length > 0 && (
+                  <FilterSection 
+                    title="Alcohol (ABV)" 
+                    icon={<Icon.PiWine size={20} />}
+                    badge={filters.abvRange ? 1 : undefined}
+                    isLoading={isLoading}
+                  >
+                    <div className="space-y-2">
+                      {filterOptions.abvRanges.map((range) => {
+                        const isSelected = filters.abvRange?.min === range.min && filters.abvRange?.max === range.max;
+                        
+                        return (
+                          <button
+                            key={range.label}
+                            onClick={() => {
+                              updateFilter('abvRange', isSelected ? null : { min: range.min, max: range.max });
+                            }}
+                            className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border-2 transition-all ${
+                              isSelected
+                                ? 'border-amber-500 bg-amber-50 text-amber-900'
+                                : 'border-gray-200 hover:border-gray-400 text-gray-700 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                isSelected ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-600'
+                              }`}>
+                                <Icon.PiWine size={16} />
+                              </div>
+                              <span className="text-sm font-medium">{range.label}</span>
+                            </div>
+                            {isSelected && (
+                              <Icon.PiCheck size={18} className="text-amber-500" />
+                            )}
+                          </button>
+                        );
+                      })}
+                      
+                      {/* Non-Alcoholic Option */}
+                      <button
+                        onClick={() => {
+                          updateFilter('abvRange', filters.abvRange?.max === 0 ? null : { min: 0, max: 0 });
+                        }}
+                        className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border-2 transition-all ${
+                          filters.abvRange?.max === 0
+                            ? 'border-emerald-500 bg-emerald-50 text-emerald-900'
+                            : 'border-gray-200 hover:border-gray-400 text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                            filters.abvRange?.max === 0 ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-600'
+                          }`}>
+                            <Icon.PiDrop size={16} />
+                          </div>
+                          <div>
+                            <span className="text-sm font-medium block">Non-Alcoholic</span>
+                            <span className="text-xs text-gray-500">0% ABV</span>
+                          </div>
+                        </div>
+                        {filters.abvRange?.max === 0 && (
+                          <Icon.PiCheck size={18} className="text-emerald-500" />
+                        )}
+                      </button>
                     </div>
                   </FilterSection>
                 )}

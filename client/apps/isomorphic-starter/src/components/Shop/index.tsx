@@ -68,7 +68,15 @@ const Shop: React.FC<Props> = ({
     categoryType: [],
     subCategoryType: [],
     flavorCategory: [],
-    priceRange: { min: 0, max: 100000 }
+    priceRange: { min: 0, max: 100000 },
+    abvRanges: [
+      { min: 0, max: 5, label: 'Low (0-5%)' },
+      { min: 5, max: 10, label: 'Light (5-10%)' },
+      { min: 10, max: 20, label: 'Medium (10-20%)' },
+      { min: 20, max: 40, label: 'Strong (20-40%)' },
+      { min: 40, max: 100, label: 'Very Strong (40%+)' },
+    ],
+    volumes: [],
   });
 
   const [filters, setFilters] = useState<FilterState>({
@@ -84,6 +92,8 @@ const Shop: React.FC<Props> = ({
     subCategoryType: subCategoryType,
     flavorCategory: null,
     minRating: null,
+    abvRange: null,
+    volumeRange: null,
   });
 
   const offset = currentPage * productPerPage;
@@ -115,13 +125,15 @@ const Shop: React.FC<Props> = ({
     setFilterOptions({
       type: types,
       size: sizes,
-      color: [],
+      color: [] as string[],
       brand: brands,
       originCountry: origins,
       categoryType: categoryTypes,
-      subCategoryType: [],
+      subCategoryType: [] as string[],
       flavorCategory: flavorCategories,
-      priceRange: { min: minPrice, max: maxPrice }
+      priceRange: { min: minPrice, max: maxPrice },
+      abvRanges: filterOptions.abvRanges,
+      volumes: filterOptions.volumes,
     });
     
     setFilters(prev => ({
@@ -165,6 +177,27 @@ const Shop: React.FC<Props> = ({
         const hasDiscount = product.discount?.value > 0 || 
           product.availableAt?.some((sp: any) => sp.isOnSale === true);
         if (!hasDiscount) return false;
+      }
+      
+      // ABV Filter
+      if (filters.abvRange) {
+        const productAbv = product.abv || 0;
+        if (filters.abvRange.max === 0) {
+          // Non-alcoholic filter
+          if (productAbv > 0) return false;
+        } else {
+          if (productAbv < filters.abvRange.min || productAbv > filters.abvRange.max) return false;
+        }
+      }
+      
+      // Volume Filter
+      if (filters.volumeRange) {
+        const hasVolume = product.sizes?.some((s: any) => {
+          const sizeStr = String(s.size || s.displayName || '').toLowerCase();
+          const volumeStr = filters.volumeRange!.toLowerCase();
+          return sizeStr.includes(volumeStr) || volumeStr.includes(sizeStr);
+        });
+        if (!hasVolume) return false;
       }
       
       return true;
@@ -274,6 +307,8 @@ const Shop: React.FC<Props> = ({
       subCategoryType: null,
       flavorCategory: null,
       minRating: null,
+      abvRange: null,
+      volumeRange: null,
     });
     
     // Clear URL params
