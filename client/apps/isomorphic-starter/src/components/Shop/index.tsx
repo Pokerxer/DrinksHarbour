@@ -316,7 +316,8 @@ const Shop: React.FC<Props> = ({
         dataType={initialDataType} 
         filters={filters} 
         updateFilter={updateFilter} 
-        categoryTypes={filterOptions.type} 
+        categoryTypes={filterOptions.type}
+        totalProducts={sortedProducts.length}
       />
       <FilterSidebar 
         open={openSidebar} 
