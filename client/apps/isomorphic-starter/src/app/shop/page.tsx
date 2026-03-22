@@ -5,7 +5,6 @@ import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import Shop from '@/components/Shop';
 import LoadingSpinner from '@/components/loader/LoadingSpinner';
 import CategoryBanner from '@/components/Banner/CategoryBanner';
-import FeaturedDealsBanner from '@/components/Shop/FeaturedDealsBanner';
 import * as Icon from 'react-icons/pi';
 
 interface PageProps {
@@ -250,9 +249,6 @@ function ShopPageContent({ params }: PageProps) {
   return (
     <>
       <div className="bg-gray-50 min-h-screen">
-        {/* Featured Deals Banner */}
-        <FeaturedDealsBanner />
-
         {/* Search Results Header */}
         {searchQuery && (
           <div className="bg-white border-b border-gray-200 py-4">
