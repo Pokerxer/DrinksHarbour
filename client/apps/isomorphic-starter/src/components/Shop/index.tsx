@@ -10,6 +10,7 @@ import ActiveFilters from './ActiveFilters';
 import ProductGrid from './ProductGrid';
 import PaginationSection from './PaginationSection';
 import OnSaleHighlight from './OnSaleHighlight';
+import RecentlyViewed from './RecentlyViewed';
 import * as Icon from 'react-icons/pi';
 
 const SORT_OPTIONS: SortOption[] = [
@@ -458,6 +459,11 @@ const Shop: React.FC<Props> = ({
             </div>
           )}
         </div>
+
+        {/* Recently Viewed - only show when not filtering */}
+        {!filters.type && !filters.brand && !filters.categoryType && (
+          <RecentlyViewed products={data?.slice(0, 6) || []} />
+        )}
       </div>
     </>
   );

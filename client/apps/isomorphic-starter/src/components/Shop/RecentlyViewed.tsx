@@ -1,79 +1,33 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 
-interface RecentlyViewedProduct {
-  id: string;
+interface RecentProduct {
+  _id: string;
   name: string;
-  image: string;
-  price: number;
-  originalPrice?: number;
-  type?: string;
-  slug: string;
-  viewedAt: number;
+  type: string;
+  images?: { url: string }[];
+  priceRange?: { min: number; max: number };
+  discount?: { value: number };
+  brand?: { name: string };
+  abv?: number;
 }
 
 interface RecentlyViewedProps {
+  products: RecentProduct[];
   maxItems?: number;
-  onClose?: () => void;
 }
 
-const RECENTLY_VIEWED_KEY = 'drinksharbour_recently_viewed';
+const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ products, maxItems = 6 }) => {
+  const recentProducts = useMemo(() => {
+    return products.slice(0, maxItems);
+  }, [products, maxItems]);
 
-const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ maxItems = 8, onClose }) => {
-  const [products, setProducts] = useState<RecentlyViewedProduct[]>([]);
-  const [isVisible, setIsVisible] = useState(false);
-
-  useEffect(() => {
-    loadRecentlyViewed();
-  }, []);
-
-  const loadRecentlyViewed = () => {
-    try {
-      const stored = localStorage.getItem(RECENTLY_VIEWED_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as RecentlyViewedProduct[];
-        const sorted = parsed.sort((a, b) => b.viewedAt - a.viewedAt).slice(0, maxItems);
-        setProducts(sorted);
-        setIsVisible(sorted.length > 0);
-      }
-    } catch (error) {
-      console.error('Error loading recently viewed:', error);
-    }
-  };
-
-  const removeProduct = (id: string) => {
-    try {
-      const stored = localStorage.getItem(RECENTLY_VIEWED_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as RecentlyViewedProduct[];
-        const filtered = parsed.filter(p => p.id !== id);
-        localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify(filtered));
-        setProducts(filtered);
-        if (filtered.length === 0) {
-          setIsVisible(false);
-        }
-      }
-    } catch (error) {
-      console.error('Error removing product:', error);
-    }
-  };
-
-  const clearAll = () => {
-    try {
-      localStorage.removeItem(RECENTLY_VIEWED_KEY);
-      setProducts([]);
-      setIsVisible(false);
-    } catch (error) {
-      console.error('Error clearing recently viewed:', error);
-    }
-  };
-
-  if (!isVisible || products.length === 0) return null;
+  if (recentProducts.length === 0) return null;
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-NG', {
@@ -83,155 +37,147 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ maxItems = 8, onClose }
     }).format(price);
   };
 
+  const getEmoji = (type: string) => {
+    const emojis: Record<string, string> = {
+      wine: '🍷',
+      beer: '🍺',
+      whiskey: '🥃',
+      vodka: '❄️',
+      gin: '🌿',
+      rum: '🏴‍☠️',
+      tequila: '🌵',
+      champagne: '🍾',
+      brandy: '🍷',
+      liqueur: '🍯',
+    };
+    return emojis[type?.toLowerCase()] || '🍹';
+  };
+
+  const getDiscount = (product: RecentProduct) => {
+    if (product.discount?.value && product.discount.value > 0) {
+      return product.discount.value;
+    }
+    if (product.priceRange?.min !== undefined && product.priceRange?.max !== undefined) {
+      if (product.priceRange.max > product.priceRange.min) {
+        return Math.round(((product.priceRange.max - product.priceRange.min) / product.priceRange.max) * 100);
+      }
+    }
+    return 0;
+  };
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 20 }}
-      className="bg-white rounded-2xl border border-gray-200 shadow-lg overflow-hidden"
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center">
-            <Icon.PiClockCounterClockwise size={20} className="text-amber-600" />
+    <section className="w-full bg-white border-t border-gray-100">
+      <div className="container mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
+              <Icon.PiClockCounterClockwise size={20} className="text-white" />
+            </div>
+            <div>
+              <h3 className="text-lg md:text-xl font-bold text-gray-900">
+                Recently Viewed
+              </h3>
+              <p className="text-xs text-gray-500">
+                Pick up where you left off
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="font-bold text-gray-900">Recently Viewed</h3>
-            <p className="text-xs text-gray-500">{products.length} item{products.length !== 1 ? 's' : ''}</p>
-          </div>
+
+          <button className="text-sm text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1">
+            Clear History
+            <Icon.PiX size={14} />
+          </button>
         </div>
-        <div className="flex items-center gap-2">
-          {products.length > 2 && (
-            <button
-              onClick={clearAll}
-              className="text-xs text-gray-500 hover:text-gray-700 transition-colors px-2 py-1 hover:bg-gray-100 rounded-lg"
-            >
-              Clear All
-            </button>
-          )}
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <Icon.PiX size={18} className="text-gray-400" />
-            </button>
-          )}
-        </div>
-      </div>
 
-      {/* Products Grid */}
-      <div className="p-4">
-        <div className="grid grid-cols-4 gap-3">
-          {products.slice(0, 4).map((product, index) => {
-            const hasDiscount = product.originalPrice && product.originalPrice > product.price;
-            const discount = hasDiscount 
-              ? Math.round((1 - product.price / product.originalPrice!) * 100)
-              : 0;
+        {/* Products Scroll */}
+        <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-4 px-4">
+          <AnimatePresence mode="popLayout">
+            {recentProducts.map((product, index) => {
+              const discount = getDiscount(product);
+              const isOnSale = discount > 0;
 
-            return (
-              <motion.div
-                key={product.id}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                transition={{ delay: index * 0.05 }}
-                className="relative group"
-              >
-                <Link href={`/product/${product.slug}`}>
-                  <div className="relative aspect-square rounded-xl bg-gray-100 overflow-hidden border border-gray-200 group-hover:border-gray-300 transition-colors">
-                    {product.image ? (
-                      <Image
-                        src={product.image}
-                        alt={product.name}
-                        fill
-                        className="object-cover group-hover:scale-105 transition-transform duration-300"
-                        sizes="80px"
-                      />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center text-3xl">
-                        🍷
-                      </div>
-                    )}
-                    
-                    {/* Discount Badge */}
-                    {hasDiscount && (
-                      <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-md">
-                        -{discount}%
-                      </div>
-                    )}
-
-                    {/* Remove Button */}
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        removeProduct(product.id);
-                      }}
-                      className="absolute top-1 right-1 w-5 h-5 bg-white/90 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-white hover:shadow-md"
+              return (
+                <motion.div
+                  key={product._id}
+                  layout
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ delay: index * 0.05 }}
+                  className="flex-shrink-0 w-44"
+                >
+                  <Link href={`/product/${product._id}`}>
+                    <motion.div
+                      whileHover={{ y: -4 }}
+                      className="group bg-white rounded-xl overflow-hidden border border-gray-100 hover:border-gray-200 hover:shadow-lg transition-all duration-300"
                     >
-                      <Icon.PiX size={12} className="text-gray-500" />
-                    </button>
-                  </div>
+                      {/* Image */}
+                      <div className="relative aspect-square bg-gradient-to-br from-gray-100 to-gray-50">
+                        {product.images?.[0]?.url ? (
+                          <Image
+                            src={product.images[0].url}
+                            alt={product.name}
+                            fill
+                            className="object-cover group-hover:scale-105 transition-transform duration-500"
+                            sizes="176px"
+                          />
+                        ) : (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="text-4xl opacity-50">{getEmoji(product.type)}</span>
+                          </div>
+                        )}
 
-                  {/* Product Info */}
-                  <div className="mt-2">
-                    <h4 className="text-xs font-medium text-gray-900 line-clamp-2 leading-tight group-hover:text-gray-700 transition-colors">
-                      {product.name}
-                    </h4>
-                    <div className="flex items-center gap-1 mt-1">
-                      <span className="text-xs font-bold text-gray-900">
-                        {formatPrice(product.price)}
-                      </span>
-                      {hasDiscount && (
-                        <span className="text-[10px] text-gray-400 line-through">
-                          {formatPrice(product.originalPrice!)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </Link>
-              </motion.div>
-            );
-          })}
+                        {/* Sale Badge */}
+                        {isOnSale && (
+                          <div className="absolute top-2 left-2">
+                            <span className="px-2 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full">
+                              -{discount}%
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Quick View */}
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          whileHover={{ opacity: 1 }}
+                          className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <span className="px-3 py-1.5 bg-white text-gray-900 text-xs font-semibold rounded-full">
+                            View
+                          </span>
+                        </motion.div>
+                      </div>
+
+                      {/* Content */}
+                      <div className="p-3">
+                        <p className="text-[10px] text-gray-400 mb-0.5 truncate">
+                          {product.brand?.name || product.type}
+                        </p>
+                        <h4 className="text-xs font-semibold text-gray-900 line-clamp-2 mb-1.5 min-h-[2rem]">
+                          {product.name}
+                        </h4>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`font-bold text-sm ${isOnSale ? 'text-red-600' : 'text-gray-900'}`}>
+                            {formatPrice(product.priceRange?.min || 0)}
+                          </span>
+                          {isOnSale && product.priceRange?.max && (
+                            <span className="text-[10px] text-gray-400 line-through">
+                              {formatPrice(product.priceRange.max)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  </Link>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
         </div>
-
-        {/* View All Link */}
-        {products.length > 4 && (
-          <div className="mt-4 pt-4 border-t border-gray-100 text-center">
-            <Link
-              href="/shop?viewed=true"
-              className="text-sm font-medium text-amber-600 hover:text-amber-700 transition-colors inline-flex items-center gap-1"
-            >
-              View all {products.length} recently viewed
-              <Icon.PiArrowRight size={14} />
-            </Link>
-          </div>
-        )}
       </div>
-    </motion.div>
+    </section>
   );
-};
-
-export const addToRecentlyViewed = (product: Omit<RecentlyViewedProduct, 'viewedAt'>) => {
-  try {
-    const stored = localStorage.getItem(RECENTLY_VIEWED_KEY);
-    let products: RecentlyViewedProduct[] = stored ? JSON.parse(stored) : [];
-
-    products = products.filter(p => p.id !== product.id);
-
-    products.unshift({
-      ...product,
-      viewedAt: Date.now(),
-    });
-
-    products = products.slice(0, 20);
-
-    localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify(products));
-  } catch (error) {
-    console.error('Error adding to recently viewed:', error);
-  }
 };
 
 export default RecentlyViewed;
