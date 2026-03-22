@@ -154,18 +154,26 @@ const CollectionCard = ({ category, index }: { category: Category; index: number
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 30 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: index * 0.1 }}
-      whileHover={{ y: -8 }}
+      initial={{ opacity: 0, y: 30, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.4, delay: index * 0.06 }}
+      whileHover={{ y: -6 }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       className="group relative"
     >
-      <Link href={`/shop?type=${category.slug}`}>
-        <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200 shadow-lg hover:shadow-2xl transition-all duration-500">
-          {/* Image Container */}
-          <div className="relative aspect-[4/5] overflow-hidden">
+      <Link href={`/shop?type=${category.slug}`} className="block h-full">
+        <motion.div
+          animate={{
+            boxShadow: isHovered 
+              ? '0 30px 60px -15px rgba(0, 0, 0, 0.25)' 
+              : '0 10px 20px -5px rgba(0, 0, 0, 0.1)'
+          }}
+          transition={{ duration: 0.3 }}
+          className="relative rounded-2xl overflow-hidden bg-white border border-gray-100 h-full flex flex-col"
+        >
+          {/* Image Section */}
+          <div className="relative aspect-[3/4] overflow-hidden bg-gradient-to-br from-gray-100 to-gray-50">
             {displayImage && !imgError ? (
               <>
                 <img
@@ -174,72 +182,95 @@ const CollectionCard = ({ category, index }: { category: Category; index: number
                   className={`absolute inset-0 w-full h-full object-cover transition-transform duration-700 ${isHovered ? 'scale-110' : 'scale-100'}`}
                   onError={() => setImgError(true)}
                 />
-                {/* Overlay */}
-                <div className={`absolute inset-0 bg-gradient-to-t ${gradient} opacity-60 group-hover:opacity-70 transition-opacity duration-500`} />
+                {/* Gradient Overlay */}
+                <div className={`absolute inset-0 bg-gradient-to-t ${gradient} opacity-40 group-hover:opacity-50 transition-opacity duration-500`} />
               </>
             ) : (
               <div className={`absolute inset-0 bg-gradient-to-br ${gradient} flex items-center justify-center`}>
-                <span className="text-7xl opacity-50">{emoji}</span>
+                <span className="text-8xl opacity-40">{emoji}</span>
               </div>
             )}
 
-            {/* Shimmer Effect */}
-            {displayImage && !imgError && (
-              <div className={`absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12 ${isHovered ? 'animate-shimmer' : 'opacity-0'} transition-opacity`} />
-            )}
+            {/* Emoji Badge */}
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: isHovered ? 1 : 0 }}
+              transition={{ type: 'spring', stiffness: 300 }}
+              className="absolute top-3 right-3"
+            >
+              <div className="w-10 h-10 bg-white/95 backdrop-blur-md rounded-xl flex items-center justify-center shadow-lg">
+                <span className="text-xl">{emoji}</span>
+              </div>
+            </motion.div>
 
-            {/* Content */}
-            <div className="absolute inset-0 flex flex-col justify-end p-5 sm:p-6">
-              {/* Icon */}
-              <motion.div
-                initial={{ scale: 0, rotate: -10 }}
-                animate={{ scale: 1, rotate: 0 }}
-                className="absolute top-4 right-4 sm:top-5 sm:right-5"
-              >
-                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center shadow-lg">
-                  <span className="text-xl sm:text-2xl">{emoji}</span>
-                </div>
-              </motion.div>
-
-              {/* Text Content */}
-              <div className="transform transition-transform duration-500">
-                <h3 className="text-xl sm:text-2xl font-black text-white mb-1 drop-shadow-lg">
-                  {category.name}
-                </h3>
-
-                {category.description && (
-                  <p className="text-white/85 text-xs sm:text-sm mb-3 font-medium">
-                    {category.description}
-                  </p>
-                )}
-
-                {/* Stats */}
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="flex items-center gap-1.5 text-white/80 text-xs">
-                    <Icon.PiPackage size={14} />
-                    <span className="font-semibold">{category.productCount || 0}</span>
-                    <span className="font-normal opacity-75">products</span>
-                  </div>
-                </div>
-
-                {/* CTA */}
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: isHovered ? 1 : 0, y: isHovered ? 0 : 10 }}
-                  className="flex items-center gap-2"
-                >
-                  <span className="text-white font-bold text-sm bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full inline-flex items-center gap-2 shadow-lg">
-                    Explore
-                    <Icon.PiArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
-                  </span>
-                </motion.div>
+            {/* Product Count Badge */}
+            <div className="absolute top-3 left-3">
+              <div className="px-3 py-1.5 bg-white/95 backdrop-blur-md rounded-full shadow-md flex items-center gap-1.5">
+                <Icon.PiPackage size={14} className="text-gray-600" />
+                <span className="text-xs font-bold text-gray-700">{category.productCount || 0}</span>
               </div>
             </div>
 
-            {/* Border Glow on Hover */}
-            <div className={`absolute inset-0 rounded-3xl border-2 transition-opacity duration-500 ${isHovered ? 'opacity-100' : 'opacity-0'} border-white/30`} />
+            {/* Bottom Gradient */}
+            <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/30 to-transparent" />
+
+            {/* Hover Shimmer */}
+            {displayImage && !imgError && (
+              <motion.div
+                initial={{ x: '-100%' }}
+                animate={{ x: isHovered ? '100%' : '-100%' }}
+                transition={{ duration: 0.6 }}
+                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-12 pointer-events-none"
+              />
+            )}
           </div>
-        </div>
+
+          {/* Content Section */}
+          <div className="flex-1 p-4 flex flex-col justify-between bg-white">
+            <div>
+              {/* Category Name */}
+              <h3 className="text-base font-bold text-gray-900 mb-1 group-hover:text-gray-700 transition-colors">
+                {category.name}
+              </h3>
+
+              {/* Description */}
+              {category.description && (
+                <p className="text-xs text-gray-500 line-clamp-2">
+                  {category.description}
+                </p>
+              )}
+            </div>
+
+            {/* Explore Button */}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: isHovered ? 1 : 0.7, y: 0 }}
+              className="mt-4"
+            >
+              <div className={`flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 ${
+                isHovered 
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/25' 
+                  : 'bg-gray-100 text-gray-600'
+              }`}>
+                <span>Explore</span>
+                <motion.span
+                  animate={{ x: isHovered ? [0, 4, 0] : 0 }}
+                  transition={{ repeat: isHovered ? Infinity : 0, duration: 1.5 }}
+                >
+                  <Icon.PiArrowRight size={16} />
+                </motion.span>
+              </div>
+            </motion.div>
+          </div>
+
+          {/* Accent Border */}
+          <motion.div
+            initial={{ scaleX: 0 }}
+            animate={{ scaleX: isHovered ? 1 : 0 }}
+            transition={{ duration: 0.3 }}
+            className={`absolute bottom-0 left-0 right-0 h-1 origin-left rounded-b-xl bg-gradient-to-r ${gradient.from} ${gradient.to}`}
+          />
+        </motion.div>
       </Link>
     </motion.div>
   );
