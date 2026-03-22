@@ -1,16 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Swiper, SwiperSlide } from 'swiper/react';
-import { Autoplay, Pagination, Navigation } from 'swiper/modules';
 import { motion, AnimatePresence, Variants } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
-import 'swiper/css';
-import 'swiper/css/navigation';
 
-// Interface matching the server response
 interface BrandLogo {
   url: string;
   publicId?: string;
@@ -56,17 +51,218 @@ interface Brand {
   createdAt?: string;
 }
 
+interface BrandCardProps {
+  brand: Brand;
+  index: number;
+  onHover: (id: string | null) => void;
+  isHovered: boolean;
+}
+
+const getInitials = (name: string) => {
+  return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+};
+
+const getBrandImage = (brand: Brand): string | null => {
+  return brand.logo?.url || 
+         brand.logoVariants?.primary || 
+         brand.logoVariants?.white ||
+         brand.featuredImage?.url || 
+         null;
+};
+
+const getBrandColor = (brand: Brand): string => {
+  return brand.brandColors?.primary || brand.brandColors?.accent || '#6366F1';
+};
+
+const getCountryEmoji = (country?: string): string => {
+  if (!country) return '';
+  const countryMap: Record<string, string> = {
+    'France': '🇫🇷',
+    'Italy': '🇮🇹',
+    'USA': '🇺🇸',
+    'United States': '🇺🇸',
+    'UK': '🇬🇧',
+    'United Kingdom': '🇬🇧',
+    'Germany': '🇩🇪',
+    'Spain': '🇪🇸',
+    'Mexico': '🇲🇽',
+    'Japan': '🇯🇵',
+    'Scotland': '🏴󠁧󠁢󠁳󠁣󠁴󠁿',
+    'Ireland': '🇮🇪',
+    'Australia': '🇦🇺',
+    'Canada': '🇨🇦',
+    'Nigeria': '🇳🇬',
+    'South Africa': '🇿🇦',
+  };
+  return countryMap[country] || countryMap[country.split(',')[0].trim()] || '🌍';
+};
+
+const BrandCard: React.FC<BrandCardProps> = ({ brand, index, onHover, isHovered }) => {
+  const brandImage = getBrandImage(brand);
+  const brandColor = getBrandColor(brand);
+  const countryEmoji = getCountryEmoji(brand.countryOfOrigin);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 30, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ 
+        delay: index * 0.05,
+        type: 'spring',
+        stiffness: 100,
+        damping: 12
+      }}
+      className="relative group"
+      onMouseEnter={() => onHover(brand._id)}
+      onMouseLeave={() => onHover(null)}
+    >
+      <Link href={`/shop?brand=${encodeURIComponent(brand.name)}`}>
+        <motion.div
+          animate={{
+            y: isHovered ? -6 : 0,
+            boxShadow: isHovered 
+              ? '0 25px 50px -12px rgba(0, 0, 0, 0.15)' 
+              : '0 4px 6px -1px rgba(0, 0, 0, 0.05)'
+          }}
+          transition={{ duration: 0.3 }}
+          className="relative bg-white rounded-2xl p-6 border border-gray-100 overflow-hidden h-full flex flex-col items-center justify-center min-h-[160px] cursor-pointer"
+        >
+          {/* Background Glow */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: isHovered ? 1 : 0 }}
+            transition={{ duration: 0.3 }}
+            className="absolute inset-0 -z-10"
+            style={{
+              background: `radial-gradient(circle at center, ${brandColor}15 0%, transparent 70%)`
+            }}
+          />
+
+          {/* Badges Row */}
+          <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
+            {brand.isPremium && (
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-amber-400 to-amber-500 rounded-full shadow-sm"
+              >
+                <Icon.PiCrown size={10} className="text-white" />
+                <span className="text-[10px] font-bold text-white">Premium</span>
+              </motion.div>
+            )}
+            {brand.verified && (
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="flex items-center gap-1 px-2 py-1 bg-emerald-500 rounded-full shadow-sm"
+              >
+                <Icon.PiSealCheck size={10} className="text-white" />
+                <span className="text-[10px] font-bold text-white">Verified</span>
+              </motion.div>
+            )}
+            {!brand.isPremium && !brand.verified && <div />}
+            
+            {/* Product Count Badge */}
+            <div className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full">
+              <Icon.PiWine size={10} className="text-gray-500" />
+              <span className="text-[10px] font-medium text-gray-600">
+                {brand.productCount || 0}
+              </span>
+            </div>
+          </div>
+
+          {/* Logo */}
+          <motion.div
+            animate={{
+              scale: isHovered ? 1.1 : 1,
+              filter: isHovered ? 'grayscale(0%)' : 'grayscale(0%)'
+            }}
+            transition={{ duration: 0.3 }}
+            className="relative w-20 h-14 flex items-center justify-center mb-3 mt-4"
+          >
+            {brandImage ? (
+              <Image
+                src={brandImage}
+                alt={brand.name}
+                fill
+                className="object-contain"
+                sizes="100px"
+              />
+            ) : (
+              <motion.div
+                animate={{
+                  scale: isHovered ? 1.1 : 1,
+                  rotate: isHovered ? [0, -5, 5, 0] : 0
+                }}
+                transition={{ duration: 0.5, repeat: isHovered ? Infinity : 0 }}
+                className="w-14 h-14 rounded-xl flex items-center justify-center text-lg font-black text-white shadow-lg"
+                style={{ backgroundColor: brandColor }}
+              >
+                {getInitials(brand.name)}
+              </motion.div>
+            )}
+          </motion.div>
+
+          {/* Brand Name */}
+          <h3 className="text-sm font-bold text-gray-900 text-center mb-1 group-hover:text-gray-800 transition-colors line-clamp-1">
+            {brand.name}
+          </h3>
+
+          {/* Country & Founded */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center gap-2 text-xs text-gray-500"
+          >
+            {countryEmoji && <span>{countryEmoji}</span>}
+            <span>{brand.countryOfOrigin || 'Worldwide'}</span>
+            {brand.founded && (
+              <>
+                <span className="text-gray-300">•</span>
+                <span>Est. {brand.founded}</span>
+              </>
+            )}
+          </motion.div>
+
+          {/* Hover Arrow */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0 }}
+            animate={{ 
+              opacity: isHovered ? 1 : 0,
+              scale: isHovered ? 1 : 0,
+              x: isHovered ? 0 : -10
+            }}
+            transition={{ duration: 0.2 }}
+            className="absolute bottom-3 right-3 w-7 h-7 rounded-full flex items-center justify-center text-white"
+            style={{ backgroundColor: brandColor }}
+          >
+            <Icon.PiArrowRight size={14} />
+          </motion.div>
+
+          {/* Bottom Border Accent */}
+          <motion.div
+            initial={{ scaleX: 0 }}
+            animate={{ scaleX: isHovered ? 1 : 0 }}
+            transition={{ duration: 0.3 }}
+            className="absolute bottom-0 left-0 right-0 h-1 origin-left rounded-b-xl"
+            style={{ backgroundColor: brandColor }}
+          />
+        </motion.div>
+      </Link>
+    </motion.div>
+  );
+};
+
 const Brand: React.FC = () => {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hoveredBrand, setHoveredBrand] = useState<string | null>(null);
-  const [isVisible, setIsVisible] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'featured'>('grid');
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
   useEffect(() => {
-    setIsVisible(true);
     fetchBrands();
   }, []);
 
@@ -82,17 +278,11 @@ const Brand: React.FC = () => {
       }
 
       const data = await response.json();
-      console.log(data.data.brands)
 
       if (data.success && data.data?.brands && Array.isArray(data.data.brands)) {
-        if (data.data.brands.length > 0) {
-          setBrands(data.data.brands);
-        } else {
-          console.log('No brands found in API');
-          setBrands([]);
-        }
+        setBrands(data.data.brands);
       } else {
-        throw new Error('Invalid response format');
+        setBrands([]);
       }
     } catch (error) {
       console.error('Error fetching brands:', error);
@@ -103,360 +293,255 @@ const Brand: React.FC = () => {
     }
   };
 
-  const getBrandImage = (brand: Brand): string | null => {
-    // Priority: logo.url > logoVariants.primary > logoVariants.white > featuredImage.url
-    return brand.logo?.url || 
-           brand.logoVariants?.primary || 
-           brand.logoVariants?.white ||
-           brand.featuredImage?.url || 
-           null;
-  };
+  const featuredBrands = useMemo(() => {
+    return brands.filter(b => b.isPremium || b.isFeatured).slice(0, 4);
+  }, [brands]);
 
-  const getInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-  };
-
-  const getBrandColor = (brand: Brand): string => {
-    return brand.brandColors?.primary || brand.brandColors?.accent || '#3B82F6';
-  };
-
-  const containerVariants = {
+  const containerVariants: Variants = {
     hidden: { opacity: 0 },
     visible: {
       opacity: 1,
-      transition: {
-        staggerChildren: 0.08,
-        delayChildren: 0.2
-      }
-    }
-  };
-
-  const itemVariants: Variants = {
-    hidden: { opacity: 0, scale: 0.8, y: 20 },
-    visible: {
-      opacity: 1,
-      scale: 1,
-      y: 0,
-      transition: {
-        type: 'spring' as const,
-        stiffness: 100,
-        damping: 15
-      }
+      transition: { staggerChildren: 0.08 }
     }
   };
 
   return (
-    <section className="py-16 md:py-24 relative overflow-hidden bg-gradient-to-b from-white via-gray-50/50 to-white">
-      {/* Background Decoration */}
-      <div className="absolute inset-0 pointer-events-none">
-        <motion.div
-          animate={{
-            x: [0, 50, 0],
-            opacity: [0.1, 0.2, 0.1]
-          }}
-          transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
-          className="absolute top-0 left-0 w-96 h-96 bg-blue-200/30 rounded-full blur-3xl"
-        />
-        <motion.div
-          animate={{
-            x: [0, -50, 0],
-            opacity: [0.1, 0.2, 0.1]
-          }}
-          transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
-          className="absolute bottom-0 right-0 w-96 h-96 bg-purple-200/30 rounded-full blur-3xl"
-        />
-      </div>
+    <section className="py-20 md:py-28 relative overflow-hidden">
+      {/* Background */}
+      <div className="absolute inset-0 bg-gradient-to-b from-gray-50 via-white to-gray-50" />
+
+      {/* Animated Orbs */}
+      <motion.div
+        animate={{ 
+          scale: [1, 1.2, 1],
+          x: [0, 30, 0],
+          opacity: [0.2, 0.4, 0.2]
+        }}
+        transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
+        className="absolute -top-10 -left-10 w-80 h-80 bg-gradient-to-br from-indigo-200/30 to-purple-200/20 rounded-full blur-3xl"
+      />
+      <motion.div
+        animate={{ 
+          scale: [1, 1.1, 1],
+          x: [0, -20, 0],
+          opacity: [0.15, 0.35, 0.15]
+        }}
+        transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+        className="absolute -bottom-10 -right-10 w-96 h-96 bg-gradient-to-tl from-amber-200/25 to-rose-200/15 rounded-full blur-3xl"
+      />
 
       <div className="container mx-auto px-4 relative z-10">
-        {/* Header Section */}
+        {/* Header */}
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={isVisible ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.6 }}
+          initial={{ opacity: 0, y: 40 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.7 }}
           className="text-center mb-12"
         >
-          <motion.span
+          {/* Badge */}
+          <motion.div
             initial={{ opacity: 0, scale: 0.8 }}
-            animate={isVisible ? { opacity: 1, scale: 1 } : {}}
-            transition={{ delay: 0.2 }}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-full text-sm font-medium mb-4"
+            whileInView={{ opacity: 1, scale: 1 }}
+            viewport={{ once: true }}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-full text-sm font-semibold mb-6 shadow-sm border border-indigo-100"
           >
-            <Icon.PiCrown size={16} className="text-amber-500" />
-            Premium Brands
-          </motion.span>
+            <motion.span
+              animate={{ rotate: [0, 10, -10, 0] }}
+              transition={{ duration: 1, repeat: Infinity, repeatDelay: 2 }}
+            >
+              <Icon.PiCrown size={16} className="text-amber-500" />
+            </motion.span>
+            <span className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+              Our Partners
+            </span>
+          </motion.div>
 
+          {/* Title */}
           <motion.h2
-            initial={{ opacity: 0, y: 20 }}
-            animate={isVisible ? { opacity: 1, y: 0 } : {}}
-            transition={{ delay: 0.3, duration: 0.5 }}
-            className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 mb-4"
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.1 }}
+            className="text-4xl md:text-5xl lg:text-6xl font-black text-gray-900 mb-5"
           >
-            Trusted by Leading{' '}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-gray-900 via-gray-700 to-gray-900">
-              Brands
+            World-Class
+            <span className="block mt-1 text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 via-purple-600 to-rose-600">
+              Beverage Partners
             </span>
           </motion.h2>
 
+          {/* Subtitle */}
           <motion.p
             initial={{ opacity: 0 }}
-            animate={isVisible ? { opacity: 1 } : {}}
-            transition={{ delay: 0.4 }}
-            className="text-gray-500 text-lg max-w-2xl mx-auto"
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.2 }}
+            className="text-gray-500 text-lg md:text-xl max-w-xl mx-auto mb-8"
           >
-            We partner with the world&apos;s finest beverage brands to bring you authentic quality
+            Discover our curated selection from the most prestigious distilleries, vineyards, and breweries worldwide
           </motion.p>
+
+          {/* Stats */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.3 }}
+            className="flex items-center justify-center gap-8 flex-wrap"
+          >
+            {[
+              { value: brands.length.toString(), label: 'Partner Brands', icon: <Icon.PiWine size={18} className="text-indigo-500" /> },
+              { value: '20+', label: 'Countries', icon: <Icon.PiGlobe size={18} className="text-emerald-500" /> },
+              { value: '500+', label: 'Premium Products', icon: <Icon.PiStar size={18} className="text-amber-500" /> },
+            ].map((stat, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                {stat.icon}
+                <span className="text-2xl font-black text-gray-900">{stat.value}</span>
+                <span className="text-sm text-gray-500">{stat.label}</span>
+              </div>
+            ))}
+          </motion.div>
         </motion.div>
 
-        {/* Brands Carousel */}
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate={isVisible ? 'visible' : 'hidden'}
-          className="relative"
-        >
-          {loading ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-6">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 h-[140px] animate-pulse"
-                >
-                  <div className="w-full h-12 bg-gray-200 rounded mb-3" />
-                  <div className="w-20 h-4 bg-gray-200 rounded mx-auto" />
-                </motion.div>
+        {/* Featured Brands (if any) */}
+        {featuredBrands.length > 0 && !loading && (
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="mb-10"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Icon.PiCrown size={18} className="text-amber-500" />
+                Featured Partners
+              </h3>
+              <Link href="/shop" className="text-sm text-indigo-600 font-medium hover:text-indigo-700 flex items-center gap-1">
+                View All <Icon.PiArrowRight size={14} />
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {featuredBrands.map((brand, index) => (
+                <BrandCard
+                  key={brand._id}
+                  brand={brand}
+                  index={index}
+                  onHover={setHoveredBrand}
+                  isHovered={hoveredBrand === brand._id}
+                />
               ))}
             </div>
-          ) : error ? (
-            <div className="text-center py-12">
-              <Icon.PiWarning size={48} className="text-red-400 mx-auto mb-4" />
-              <p className="text-gray-600 mb-4">{error}</p>
-              <button
-                onClick={fetchBrands}
-                className="px-6 py-2 bg-gray-900 text-white rounded-full font-medium hover:bg-gray-800 transition-colors"
+          </motion.div>
+        )}
+
+        {/* All Brands */}
+        {loading ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"
+          >
+            {Array.from({ length: 12 }).map((_, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: i * 0.03 }}
+                className="bg-white rounded-2xl p-6 h-[160px] animate-pulse border border-gray-100"
               >
-                Try Again
-              </button>
-            </div>
-          ) : brands.length === 0 ? (
-            <div className="text-center py-12">
-              <Icon.PiPackage size={48} className="text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500">No brands available at the moment</p>
-            </div>
-          ) : (
-            <>
-              <Swiper
-                spaceBetween={24}
-                slidesPerView={2}
-                loop={brands.length > 4}
-                speed={600}
-                modules={[Autoplay, Pagination, Navigation]}
-                autoplay={{
-                  delay: 3000,
-                  disableOnInteraction: false,
-                  pauseOnMouseEnter: true
-                }}
-                navigation={{
-                  prevEl: '.brand-prev',
-                  nextEl: '.brand-next'
-                }}
-                breakpoints={{
-                  320: { slidesPerView: 2, spaceBetween: 16 },
-                  500: { slidesPerView: 3, spaceBetween: 20 },
-                  680: { slidesPerView: 4, spaceBetween: 24 },
-                  992: { slidesPerView: 5, spaceBetween: 24 },
-                  1200: { slidesPerView: 6, spaceBetween: 32 },
-                }}
-                className="brand-swiper pb-8"
-              >
-                {brands.map((brand, index) => {
-                  const brandImage = getBrandImage(brand);
-                  const brandColor = getBrandColor(brand);
-                  const isHovered = hoveredBrand === brand._id;
-
-                  return (
-                    <SwiperSlide key={brand._id}>
-                      <motion.div
-                        variants={itemVariants}
-                        className="relative group"
-                        onMouseEnter={() => setHoveredBrand(brand._id)}
-                        onMouseLeave={() => setHoveredBrand(null)}
-                      >
-                        <Link
-                          href={`/shop?brand=${encodeURIComponent(brand.name)}`}
-                          className="block relative"
-                        >
-                          <motion.div
-                            whileHover={{ y: -8, scale: 1.02 }}
-                            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                            className="relative bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-xl hover:border-gray-200 transition-all duration-300 flex flex-col items-center justify-center min-h-[140px]"
-                          >
-                            {/* Brand Image/Logo */}
-                            <div className="relative w-full h-14 flex items-center justify-center mb-3">
-                              {brandImage ? (
-                                <motion.div
-                                  animate={{
-                                    scale: isHovered ? 1.1 : 1,
-                                    filter: isHovered ? 'grayscale(0%)' : 'grayscale(100%)'
-                                  }}
-                                  transition={{ duration: 0.3 }}
-                                  className="relative w-full h-full"
-                                >
-                                  <Image
-                                    src={brandImage}
-                                    alt={brand.name}
-                                    fill
-                                    className="object-contain"
-                                    sizes="(max-width: 500px) 50vw, (max-width: 680px) 33vw, (max-width: 992px) 25vw, 16vw"
-                                    onError={(e) => {
-                                      // Hide image on error, will show initials fallback
-                                      (e.target as HTMLImageElement).style.display = 'none';
-                                    }}
-                                  />
-                                </motion.div>
-                              ) : (
-                                <motion.div
-                                  animate={{
-                                    scale: isHovered ? 1.1 : 1,
-                                    rotate: isHovered ? [0, -5, 5, 0] : 0
-                                  }}
-                                  transition={{ duration: 0.5 }}
-                                  className="w-14 h-14 rounded-xl flex items-center justify-center text-xl font-bold text-white"
-                                  style={{ backgroundColor: brandColor }}
-                                >
-                                  {getInitials(brand.name)}
-                                </motion.div>
-                              )}
-                            </div>
-
-                            {/* Brand Name */}
-                            <motion.h3
-                              className="text-sm font-semibold text-gray-800 text-center line-clamp-1 group-hover:text-gray-900 transition-colors"
-                            >
-                              {brand.name}
-                            </motion.h3>
-
-                            {/* Brand Info */}
-                            <motion.div
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{
-                                opacity: isHovered ? 1 : 0,
-                                y: isHovered ? 0 : 10
-                              }}
-                              className="flex flex-col items-center mt-2 space-y-1"
-                            >
-                              {brand.countryOfOrigin && (
-                                <span className="text-xs text-gray-500 flex items-center gap-1">
-                                  <Icon.PiGlobe size={12} />
-                                  {brand.countryOfOrigin}
-                                </span>
-                              )}
-                              {brand.founded && (
-                                <span className="text-xs text-gray-400">
-                                  Est. {brand.founded}
-                                </span>
-                              )}
-                              <span className="text-xs text-gray-500">
-                                {brand.productCount || 0} products
-                              </span>
-                            </motion.div>
-
-                            {/* Hover Glow Effect */}
-                            <motion.div
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: isHovered ? 1 : 0 }}
-                              className="absolute inset-0 rounded-2xl -z-10"
-                              style={{
-                                background: `linear-gradient(135deg, ${brandColor}10 0%, ${brandColor}05 100%)`
-                              }}
-                            />
-
-                            {/* Premium Badge */}
-                            {brand.isPremium && (
-                              <motion.div
-                                initial={{ scale: 0 }}
-                                animate={{ scale: 1 }}
-                                className="absolute top-2 left-2"
-                              >
-                                <Icon.PiCrown size={16} className="text-amber-500" />
-                              </motion.div>
-                            )}
-
-                            {/* Verified Badge */}
-                            {brand.verified && (
-                              <motion.div
-                                initial={{ scale: 0 }}
-                                animate={{ scale: 1 }}
-                                className="absolute top-2 right-8"
-                              >
-                                <Icon.PiSealCheck size={16} className="text-blue-500" />
-                              </motion.div>
-                            )}
-
-                            {/* Corner Arrow */}
-                            <motion.div
-                              initial={{ opacity: 0, scale: 0 }}
-                              animate={{
-                                opacity: isHovered ? 1 : 0,
-                                scale: isHovered ? 1 : 0
-                              }}
-                              className="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center"
-                              style={{ backgroundColor: brandColor }}
-                            >
-                              <Icon.PiArrowUpRight size={14} className="text-white" />
-                            </motion.div>
-                          </motion.div>
-                        </Link>
-                      </motion.div>
-                    </SwiperSlide>
-                  );
-                })}
-              </Swiper>
-
-              {/* Custom Navigation Arrows */}
-              <motion.button
-                whileHover={{ scale: 1.1, x: -3 }}
-                whileTap={{ scale: 0.95 }}
-                className="brand-prev absolute -left-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 bg-white rounded-full shadow-lg shadow-gray-200/50 flex items-center justify-center text-gray-700 hover:text-gray-900 hover:shadow-xl transition-all hidden lg:flex"
-              >
-                <Icon.PiArrowLeft size={18} />
-              </motion.button>
-
-              <motion.button
-                whileHover={{ scale: 1.1, x: 3 }}
-                whileTap={{ scale: 0.95 }}
-                className="brand-next absolute -right-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 bg-white rounded-full shadow-lg shadow-gray-200/50 flex items-center justify-center text-gray-700 hover:text-gray-900 hover:shadow-xl transition-all hidden lg:flex"
-              >
-                <Icon.PiArrowRight size={18} />
-              </motion.button>
-            </>
-          )}
-        </motion.div>
-
-        {/* View All Brands CTA */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={isVisible ? { opacity: 1, y: 0 } : {}}
-          transition={{ delay: 0.8 }}
-          className="text-center mt-12"
-        >
-          <Link href="/shop">
+                <div className="w-full h-14 bg-gray-200 rounded-xl mb-3" />
+                <div className="w-16 h-4 bg-gray-200 rounded mx-auto" />
+              </motion.div>
+            ))}
+          </motion.div>
+        ) : error ? (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center py-16 bg-white rounded-3xl border border-gray-100"
+          >
+            <Icon.PiWarningCircle size={56} className="text-red-400 mx-auto mb-4" />
+            <p className="text-gray-600 font-medium mb-2">{error}</p>
+            <p className="text-gray-400 text-sm mb-4">Please try again later</p>
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              className="inline-flex items-center gap-2 px-8 py-4 bg-gray-900 text-white font-semibold rounded-full hover:bg-gray-800 transition-all shadow-lg hover:shadow-xl"
+              onClick={fetchBrands}
+              className="px-6 py-2.5 bg-gray-900 text-white rounded-full font-medium hover:bg-gray-800 transition-colors"
             >
-              Browse All Brands
+              Try Again
+            </motion.button>
+          </motion.div>
+        ) : brands.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center py-16"
+          >
+            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Icon.PiPackage size={36} className="text-gray-400" />
+            </div>
+            <p className="text-gray-500">No brands available at the moment</p>
+            <p className="text-gray-400 text-sm mt-1">Check back soon for our partner brands</p>
+          </motion.div>
+        ) : (
+          <motion.div
+            variants={containerVariants}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true }}
+            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"
+          >
+            {brands.map((brand, index) => (
+              <BrandCard
+                key={brand._id}
+                brand={brand}
+                index={index}
+                onHover={setHoveredBrand}
+                isHovered={hoveredBrand === brand._id}
+              />
+            ))}
+          </motion.div>
+        )}
+
+        {/* View All CTA */}
+        {!loading && brands.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="text-center mt-12"
+          >
+            <motion.a
+              href="/shop"
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              className="inline-flex items-center gap-3 px-10 py-4 bg-gradient-to-r from-indigo-600 via-purple-600 to-rose-600 text-white font-bold rounded-full shadow-xl hover:shadow-2xl transition-all relative overflow-hidden group"
+            >
+              <motion.div
+                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent"
+                initial={{ x: '-100%' }}
+                whileHover={{ x: '100%' }}
+                transition={{ duration: 0.8 }}
+              />
+              <Icon.PiStorefront size={22} className="relative z-10" />
+              <span className="relative z-10">Explore All Brands</span>
               <motion.span
                 animate={{ x: [0, 5, 0] }}
                 transition={{ repeat: Infinity, duration: 1.5 }}
+                className="relative z-10"
               >
-                <Icon.PiArrowRight size={18} />
+                <Icon.PiArrowRight size={20} />
               </motion.span>
-            </motion.button>
-          </Link>
-        </motion.div>
+            </motion.a>
+
+            <p className="text-gray-400 text-sm mt-4">
+              Join thousands of customers who trust our brand partners
+            </p>
+          </motion.div>
+        )}
       </div>
     </section>
   );
