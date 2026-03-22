@@ -5,7 +5,20 @@ const asyncHandler = require('express-async-handler');
 const multer = require('multer');
 const path = require('path');
 const XLSX = require('xlsx');
-const pdfParse = require('pdf-parse');
+
+// pdf-parse is loaded lazily to avoid DOMMatrix error in Vercel/Node.js serverless
+let pdfParse = null;
+const loadPdfParse = () => {
+  if (!pdfParse) {
+    try {
+      pdfParse = require('pdf-parse');
+    } catch (err) {
+      console.warn('pdf-parse not available, PDF parsing disabled:', err.message);
+      pdfParse = false;
+    }
+  }
+  return pdfParse;
+};
 const {
   handleChatbotQuery,
   generateProductDetails,
@@ -96,8 +109,13 @@ const chat = asyncHandler(async (req, res) => {
         }
       } else if (ext === '.pdf') {
         try {
-          const pdfData = await pdfParse(file.buffer);
-          fileContent = pdfData.text;
+          const parser = loadPdfParse();
+          if (parser) {
+            const pdfData = await parser(file.buffer);
+            fileContent = pdfData.text;
+          } else {
+            fileContent = `PDF file: ${fileName} (PDF parsing not available)`;
+          }
         } catch (err) {
           console.error('Error parsing PDF:', err);
           fileContent = `PDF file: ${fileName}`;
