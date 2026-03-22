@@ -2,9 +2,13 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { Swiper, SwiperSlide } from 'swiper/react';
+import { Autoplay, Pagination, Navigation } from 'swiper/modules';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fallbackProducts } from '@/data/fallback-data';
 import * as Icon from 'react-icons/pi';
+import 'swiper/css';
+import 'swiper/css/navigation';
 
 interface Category {
   _id: string;
@@ -380,7 +384,7 @@ const Collection = () => {
   }
 
   return (
-    <div className="py-16 sm:py-24 bg-gradient-to-b from-white via-gray-50/50 to-white">
+    <section className="py-16 sm:py-24 bg-gradient-to-b from-white via-gray-50/50 to-white relative overflow-hidden">
       <div className="container mx-auto px-4">
         
         {/* Header */}
@@ -443,9 +447,9 @@ const Collection = () => {
               </div>
             )}
 
-            {/* All Collections Grid */}
+            {/* All Collections Slider */}
             {gridCategories.length > 0 && (
-              <>
+              <div className="relative">
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-xl sm:text-2xl font-bold text-gray-900">
                     All Collections
@@ -458,12 +462,54 @@ const Collection = () => {
                   </Link>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-5">
+                <Swiper
+                  spaceBetween={16}
+                  slidesPerView={2}
+                  loop={gridCategories.length > 4}
+                  speed={600}
+                  modules={[Autoplay, Pagination, Navigation]}
+                  autoplay={{
+                    delay: 3500,
+                    disableOnInteraction: false,
+                    pauseOnMouseEnter: true
+                  }}
+                  navigation={{
+                    prevEl: '.collection-slider-prev',
+                    nextEl: '.collection-slider-next'
+                  }}
+                  breakpoints={{
+                    320: { slidesPerView: 2, spaceBetween: 12 },
+                    480: { slidesPerView: 3, spaceBetween: 14 },
+                    640: { slidesPerView: 4, spaceBetween: 16 },
+                    900: { slidesPerView: 5, spaceBetween: 20 },
+                    1200: { slidesPerView: 6, spaceBetween: 24 },
+                  }}
+                  className="collection-slider pb-12"
+                >
                   {gridCategories.map((category, index) => (
-                    <CollectionCard key={category._id} category={category} index={index} />
+                    <SwiperSlide key={category._id}>
+                      <CollectionCard category={category} index={index} />
+                    </SwiperSlide>
                   ))}
-                </div>
-              </>
+                </Swiper>
+
+                {/* Navigation Arrows */}
+                <motion.button
+                  whileHover={{ scale: 1.1, x: -3 }}
+                  whileTap={{ scale: 0.95 }}
+                  className="collection-slider-prev absolute -left-3 top-[45%] -translate-y-1/2 z-10 w-10 h-10 bg-white rounded-full shadow-xl shadow-gray-200/50 flex items-center justify-center text-gray-700 hover:text-gray-900 hover:shadow-2xl transition-all hidden lg:flex"
+                >
+                  <Icon.PiCaretLeft size={18} />
+                </motion.button>
+
+                <motion.button
+                  whileHover={{ scale: 1.1, x: 3 }}
+                  whileTap={{ scale: 0.95 }}
+                  className="collection-slider-next absolute -right-3 top-[45%] -translate-y-1/2 z-10 w-10 h-10 bg-white rounded-full shadow-xl shadow-gray-200/50 flex items-center justify-center text-gray-700 hover:text-gray-900 hover:shadow-2xl transition-all hidden lg:flex"
+                >
+                  <Icon.PiCaretRight size={18} />
+                </motion.button>
+              </div>
             )}
 
             {/* CTA Section */}
@@ -512,7 +558,30 @@ const Collection = () => {
           </div>
         )}
       </div>
-    </div>
+
+      {/* Slider Styles */}
+      <style jsx global>{`
+        .collection-slider .swiper-pagination {
+          bottom: 0 !important;
+        }
+        .collection-slider .swiper-pagination-bullet {
+          width: 8px;
+          height: 8px;
+          background: #d1d5db;
+          opacity: 1;
+          transition: all 0.3s ease;
+        }
+        .collection-slider .swiper-pagination-bullet-active {
+          width: 24px;
+          border-radius: 4px;
+          background: linear-gradient(to right, #f59e0b, #ea580c);
+        }
+        .collection-slider .swiper-button-disabled {
+          opacity: 0.3;
+          cursor: not-allowed;
+        }
+      `}</style>
+    </section>
   );
 };
 
