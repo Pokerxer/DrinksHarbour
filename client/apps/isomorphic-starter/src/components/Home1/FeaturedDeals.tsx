@@ -123,12 +123,6 @@ const TemuProductCard = ({
             </div>
           )}
 
-          {/* Free Shipping Badge */}
-          <div className="absolute top-2 right-2">
-            <div className="bg-green-500 text-white text-[9px] font-medium px-1.5 py-0.5 rounded-full">
-              Free
-            </div>
-          </div>
         </div>
 
         {/* Product Info */}

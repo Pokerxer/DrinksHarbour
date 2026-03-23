@@ -164,16 +164,10 @@ const FlashSaleCard = ({
             </div>
           )}
 
-          {/* Flash Sale Badge */}
-          <div className="absolute top-0 left-0 bg-gradient-to-r from-red-500 to-orange-500 text-white text-[9px] font-bold px-2 py-1 rounded-br-lg flex items-center gap-0.5">
-            <Icon.PiLightningFill size={8} />
-            FLASH
-          </div>
-
           {/* Discount Badge */}
           {discountPercent > 0 && (
-            <div className="absolute top-6 left-0">
-              <div className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-br-lg">
+            <div className="absolute top-0 left-0">
+              <div className="bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded-br-lg">
                 -{discountPercent}%
               </div>
             </div>

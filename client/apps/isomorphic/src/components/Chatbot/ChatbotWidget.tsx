@@ -192,7 +192,7 @@ export default function ChatbotWidget() {
   const [isTyping, setIsTyping] = useState(false);
   const [newMessage, setNewMessage] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [position, setPosition] = useState({ x: 24, y: 24 });
+  const [position, setPosition] = useState({ x: 24, y: 96 });
   const [isDragging, setIsDragging] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -258,7 +258,7 @@ export default function ChatbotWidget() {
       const newY = window.innerHeight - (e.clientY - rect.height / 2) - 24;
       setPosition({
         x: Math.max(0, Math.min(newX, window.innerWidth - rect.width)),
-        y: Math.max(24, Math.min(newY, window.innerHeight - rect.height)),
+        y: Math.max(80, Math.min(newY, window.innerHeight - rect.height)),
       });
     };
 
@@ -271,7 +271,7 @@ export default function ChatbotWidget() {
       const newY = window.innerHeight - (e.touches[0].clientY - rect.height / 2) - 24;
       setPosition({
         x: Math.max(0, Math.min(newX, window.innerWidth - rect.width)),
-        y: Math.max(24, Math.min(newY, window.innerHeight - rect.height)),
+        y: Math.max(80, Math.min(newY, window.innerHeight - rect.height)),
       });
     };
 
