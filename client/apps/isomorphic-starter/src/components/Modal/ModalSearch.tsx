@@ -54,14 +54,14 @@ const ModalSearch: React.FC = () => {
   } = useModalSearchContext();
 
   const categories = useMemo(() => [
-    { name: 'Spirits', icon: '🥃', href: '/shop?type=spirit', count: 45 },
-    { name: 'Wine', icon: '🍷', href: '/shop?type=wine', count: 128 },
-    { name: 'Beer', icon: '🍺', href: '/shop?type=beer', count: 67 },
-    { name: 'Champagne', icon: '🍾', href: '/shop?type=champagne', count: 23 },
-    { name: 'Vodka', icon: '❄️', href: '/shop?type=vodka', count: 34 },
-    { name: 'Whiskey', icon: '🥃', href: '/shop?type=whiskey', count: 56 },
-    { name: 'Gin', icon: '🍸', href: '/shop?type=gin', count: 29 },
-    { name: 'Rum', icon: '🏝️', href: '/shop?type=rum', count: 41 },
+    { name: 'Spirits', icon: '🥃', href: '/shop?category=spirit', count: 45 },
+    { name: 'Wine', icon: '🍷', href: '/shop?category=wine', count: 128 },
+    { name: 'Beer', icon: '🍺', href: '/shop?category=beer', count: 67 },
+    { name: 'Champagne', icon: '🍾', href: '/shop?category=champagne', count: 23 },
+    { name: 'Vodka', icon: '❄️', href: '/shop?category=vodka', count: 34 },
+    { name: 'Whiskey', icon: '🥃', href: '/shop?category=whiskey', count: 56 },
+    { name: 'Gin', icon: '🍸', href: '/shop?category=gin', count: 29 },
+    { name: 'Rum', icon: '🏝️', href: '/shop?category=rum', count: 41 },
   ], []);
 
   const quickActions = useMemo(() => [

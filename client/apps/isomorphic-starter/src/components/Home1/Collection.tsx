@@ -49,7 +49,7 @@ const Collection = () => {
         {categories.map((cat) => (
           <Link
             key={cat.slug}
-            href={`/shop?type=${cat.slug}`}
+            href={`/shop?category=${cat.slug}`}
             className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-gray-50 transition-colors"
           >
             <div

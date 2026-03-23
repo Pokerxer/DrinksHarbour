@@ -162,7 +162,7 @@ const MobileBottomNav: React.FC = () => {
     if (activeCategorySubs.length > 0) {
       return activeCategorySubs.map((sub) => ({
         name: sub.name,
-        slug: `/shop?type=${sub.slug}`,
+        slug: `/shop?category=${sub.slug}`,
       }));
     }
 
@@ -178,7 +178,7 @@ const MobileBottomNav: React.FC = () => {
     ];
     return prefixes.slice(0, 6).map((prefix) => ({
       name: `${prefix} ${category.name}`,
-      slug: `/shop?type=${category.slug}&q=${encodeURIComponent(prefix.toLowerCase())}`,
+      slug: `/shop?category=${category.slug}&q=${encodeURIComponent(prefix.toLowerCase())}`,
     }));
   };
 
@@ -276,7 +276,7 @@ const MobileBottomNav: React.FC = () => {
 
                     {/* Shop Now */}
                     <Link
-                      href={`/shop?type=${activeCategoryData.slug}`}
+                      href={`/shop?category=${activeCategoryData.slug}`}
                       onClick={handleCloseCategories}
                       className="flex items-center justify-center gap-2 w-full py-2.5 mb-4 bg-orange-500 text-white text-sm font-semibold rounded-xl hover:bg-orange-600 transition-colors"
                     >
@@ -315,7 +315,7 @@ const MobileBottomNav: React.FC = () => {
                           (occasion) => (
                             <Link
                               key={occasion}
-                              href={`/shop?type=${activeCategoryData.slug}&occasion=${occasion.split(" ")[0].toLowerCase()}`}
+                              href={`/shop?category=${activeCategoryData.slug}&occasion=${occasion.split(" ")[0].toLowerCase()}`}
                               onClick={handleCloseCategories}
                               className="px-3 py-1.5 bg-gray-100 hover:bg-orange-50 rounded-full text-xs text-gray-600 hover:text-orange-600 transition-colors"
                             >
