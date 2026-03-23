@@ -6,11 +6,13 @@ import { motion } from 'framer-motion';
 interface SkeletonProps {
   className?: string;
   rounded?: 'sm' | 'md' | 'lg' | 'full';
+  style?: React.CSSProperties;
 }
 
 export const Skeleton: React.FC<SkeletonProps> = ({
   className = '',
   rounded = 'md',
+  style,
 }) => {
   const roundedClasses = {
     sm: 'rounded-sm',
@@ -24,6 +26,7 @@ export const Skeleton: React.FC<SkeletonProps> = ({
       animate={{ opacity: [0.5, 1, 0.5] }}
       transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
       className={`bg-gray-200 ${roundedClasses[rounded]} ${className}`}
+      style={style}
     />
   );
 };
