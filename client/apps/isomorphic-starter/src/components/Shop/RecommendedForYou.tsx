@@ -26,7 +26,7 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
     return [];
   };
 
-  const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 5000): Promise<Response> => {
+  const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 8000): Promise<Response> => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     
