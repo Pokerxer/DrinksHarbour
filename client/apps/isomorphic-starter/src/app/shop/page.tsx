@@ -6,6 +6,7 @@ import Shop from '@/components/Shop';
 import LoadingSpinner from '@/components/loader/LoadingSpinner';
 import CategoryBanner from '@/components/Banner/CategoryBanner';
 import * as Icon from 'react-icons/pi';
+import RecommendedForYou from '@/components/Shop/RecommendedForYou';
 
 interface PageProps {
   params?: { slug?: string };
@@ -284,6 +285,11 @@ function ShopPageContent({ params }: PageProps) {
           onFilterChange={handleFilterChange}
           searchQuery={searchQuery}
         />
+        
+        {/* Recommended For You Section */}
+        <div className="mt-8">
+          <RecommendedForYou maxItems={12} />
+        </div>
       </div>
     </>
   );

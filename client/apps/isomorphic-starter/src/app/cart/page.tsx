@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useModalWishlistContext } from '@/context/ModalWishlistContext';
+import RecommendedForYou from '@/components/Shop/RecommendedForYou';
 
 const CartPage = () => {
   const router = useRouter();
@@ -109,6 +110,11 @@ const CartPage = () => {
               <Icon.PiStorefront size={20} />
               Start Shopping
             </Link>
+          </div>
+          
+          {/* Recommended For You Section - Empty Cart */}
+          <div className="mt-8 mb-8 max-w-7xl mx-auto">
+            <RecommendedForYou maxItems={6} />
           </div>
         </div>
       </div>
@@ -355,6 +361,13 @@ const CartPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Recommended For You */}
+      {isClient ? (
+        <div className="mt-8 mb-8 max-w-7xl mx-auto px-4">
+          <RecommendedForYou maxItems={6} />
+        </div>
+      ) : null}
 
       {/* Clear Cart Confirmation Modal */}
       <AnimatePresence>
