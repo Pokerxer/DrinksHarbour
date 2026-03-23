@@ -16,18 +16,15 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
 
-  const checkAuth = useCallback(async () => {
-    try {
-      const response = await fetch('/api/auth/me');
-      if (response.ok) {
-        const data = await response.json();
-        setIsAuthenticated(!!data.user);
-      }
-    } catch {
-      setIsAuthenticated(false);
-    }
-  }, []);
+  const normalizeProducts = (data: any): any[] => {
+    if (Array.isArray(data)) return data;
+    if (data?.products && Array.isArray(data.products)) return data.products;
+    if (data?.data?.products && Array.isArray(data.data.products)) return data.data.products;
+    if (data?.data && Array.isArray(data.data)) return data.data;
+    return [];
+  };
 
   const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 5000): Promise<Response> => {
     const controller = new AbortController();
@@ -46,19 +43,20 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
     }
   };
 
-  const fetchRecommendations = useCallback(async () => {
+  const fetchRecommendations = useCallback(async (auth: boolean) => {
     try {
       setLoading(true);
       setHasError(false);
 
       // Step 1: Try personalized endpoint if user is authenticated
-      if (isAuthenticated) {
+      if (auth) {
         try {
           const response = await fetchWithTimeout(`/api/user/recommendations?limit=${maxItems}`);
           if (response.ok) {
             const data = await response.json();
-            if (data.success && data.data && data.data.length > 0) {
-              setProducts(data.data);
+            const prods = normalizeProducts(data);
+            if (data.success && prods.length > 0) {
+              setProducts(prods);
               return;
             }
           }
@@ -72,8 +70,9 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
         const response = await fetchWithTimeout(`${API_URL}/api/products/trending?limit=${maxItems}`);
         if (response.ok) {
           const data = await response.json();
-          if (data.success && data.data) {
-            setProducts(data.data);
+          const prods = normalizeProducts(data);
+          if (data.success && prods.length > 0) {
+            setProducts(prods);
             return;
           }
         }
@@ -86,8 +85,9 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
         const response = await fetchWithTimeout(`${API_URL}/api/products/bestsellers?limit=${maxItems}`);
         if (response.ok) {
           const data = await response.json();
-          if (data.success) {
-            setProducts(data.products || data.data || []);
+          const prods = normalizeProducts(data);
+          if (data.success && prods.length > 0) {
+            setProducts(prods);
             return;
           }
         }
@@ -100,8 +100,9 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
         const response = await fetchWithTimeout(`${API_URL}/api/products/new-arrivals?limit=${maxItems}`);
         if (response.ok) {
           const data = await response.json();
-          if (data.success) {
-            setProducts(data.products || data.data || []);
+          const prods = normalizeProducts(data);
+          if (data.success && prods.length > 0) {
+            setProducts(prods);
             return;
           }
         }
@@ -109,7 +110,6 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
         console.log('New arrivals endpoint failed...');
       }
 
-      // If all fallbacks fail, set hasError to hide gracefully
       setHasError(true);
     } catch (error) {
       console.error('Error fetching recommendations:', error);
@@ -117,19 +117,33 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
     } finally {
       setLoading(false);
     }
-  }, [maxItems, isAuthenticated]);
+  }, [maxItems]);
 
+  // Single effect that handles auth check + fetching in sequence
   useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
+    let cancelled = false;
 
-  useEffect(() => {
-    if (!isAuthenticated) return; // Wait for auth check
-    fetchRecommendations();
-  }, [isAuthenticated, fetchRecommendations]);
+    const init = async () => {
+      try {
+        const response = await fetch('/api/auth/me');
+        const isAuth = response.ok && (await response.json()).user;
+        if (cancelled) return;
+        setIsAuthenticated(!!isAuth);
+        setAuthChecked(true);
+        await fetchRecommendations(!!isAuth);
+      } catch {
+        if (cancelled) return;
+        setIsAuthenticated(false);
+        setAuthChecked(true);
+        await fetchRecommendations(false);
+      }
+    };
 
-  // Loading state - show skeletons
-  if (loading) {
+    init();
+    return () => { cancelled = true; };
+  }, [fetchRecommendations]);
+
+  if (loading || !authChecked) {
     return (
       <div className="py-8 bg-gray-50/50 border-t border-gray-100">
         <div className="container mx-auto px-4">
@@ -147,7 +161,6 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
     );
   }
 
-  // Error or no products - return null to hide section gracefully
   if (hasError || !products.length) {
     return null;
   }
