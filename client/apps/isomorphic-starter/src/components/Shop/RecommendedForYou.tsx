@@ -9,8 +9,6 @@ interface RecommendedForYouProps {
   maxItems?: number;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
-
 const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) => {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,9 +63,10 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
         }
       }
       
-      // Step 2: Fallback to trending products from backend
+      // Step 2: Fallback to general products API (same as FlashSale/FeaturedDeals)
+      // This returns products with proper pricing and tenant data
       try {
-        const response = await fetchWithTimeout(`/api/products/trending?limit=${maxItems}`);
+        const response = await fetchWithTimeout(`/api/products?limit=${maxItems}&status=approved`);
         if (response.ok) {
           const data = await response.json();
           const prods = normalizeProducts(data);
@@ -77,7 +76,7 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
           }
         }
       } catch (e) {
-        console.log('Trending endpoint failed, trying more fallbacks...');
+        console.log('Products endpoint failed, trying more fallbacks...');
       }
 
       // Step 3: Fallback to bestsellers
@@ -95,21 +94,6 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
         console.log('Bestsellers endpoint failed, trying more fallbacks...');
       }
 
-      // Step 4: Fallback to new arrivals
-      try {
-        const response = await fetchWithTimeout(`/api/products/new-arrivals?limit=${maxItems}`);
-        if (response.ok) {
-          const data = await response.json();
-          const prods = normalizeProducts(data);
-          if (data.success && prods.length > 0) {
-            setProducts(prods);
-            return;
-          }
-        }
-      } catch (e) {
-        console.log('New arrivals endpoint failed...');
-      }
-
       setHasError(true);
     } catch (error) {
       console.error('Error fetching recommendations:', error);
@@ -124,9 +108,7 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
     let cancelled = false;
 
     const init = async () => {
-    console.log("DEBUG init called");
       try {
-        console.log("DEBUG: checking auth...");
         const response = await fetch('/api/auth/me');
         const isAuth = response.ok && (await response.json()).user;
         if (cancelled) return;
