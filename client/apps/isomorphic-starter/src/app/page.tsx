@@ -30,16 +30,18 @@ export default function Home() {
               onClick={() => setShowCategories(false)}
             />
             <motion.div
-              initial={{ x: "-100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "-100%" }}
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="fixed inset-y-0 left-0 w-[85%] max-w-[400px] bg-white z-50 lg:hidden"
+              className="fixed inset-x-0 inset-y-0 bottom-0 top-[60px] bg-white z-50 lg:hidden overflow-hidden"
             >
-              <CategorySidebar />
+              <div className="h-full overflow-y-auto">
+                <CategorySidebar onClose={() => setShowCategories(false)} />
+              </div>
               <button
                 onClick={() => setShowCategories(false)}
-                className="absolute top-4 right-4 p-2 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
+                className="absolute top-4 right-4 p-2 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors z-10"
               >
                 <Icon.PiX size={20} className="text-gray-600" />
               </button>
@@ -64,8 +66,6 @@ export default function Home() {
         {/* Flash Sale */}
         <FlashSale />
 
-        {/* Personalized Recommendations */}
-        <RecommendedForYou maxItems={12} />
 
         {/* More Deals Section */}
         <section className="py-4 bg-white">
@@ -80,6 +80,8 @@ export default function Home() {
 
         {/* Benefits/Value Propositions */}
         <Benefit className="py-8" />
+        {/* Personalized Recommendations */}
+        <RecommendedForYou maxItems={12} />
       </div>
 
       {/* Bottom padding for mobile category button */}
