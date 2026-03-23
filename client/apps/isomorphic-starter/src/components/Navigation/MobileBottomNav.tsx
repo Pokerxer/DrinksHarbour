@@ -39,10 +39,11 @@ const navItems = [
     activeIcon: Icon.PiGridFourFill,
   },
   {
-    id: "search",
-    label: "Search",
-    icon: Icon.PiMagnifyingGlass,
-    activeIcon: Icon.PiMagnifyingGlassBold,
+    id: "profile",
+    label: "Me",
+    icon: Icon.PiUser,
+    activeIcon: Icon.PiUserFill,
+    href: "/login",
   },
   {
     id: "cart",
@@ -51,11 +52,10 @@ const navItems = [
     activeIcon: Icon.PiShoppingCartFill,
   },
   {
-    id: "profile",
-    label: "Me",
-    icon: Icon.PiUser,
-    activeIcon: Icon.PiUserFill,
-    href: "/login",
+    id: "chatbot",
+    label: "Chat",
+    icon: Icon.PiChatCircle,
+    activeIcon: Icon.PiChatCircleFill,
   },
 ];
 
@@ -135,6 +135,8 @@ const MobileBottomNav: React.FC = () => {
     } else if (id === "categories") {
       setShowCategories(true);
       setActiveCategory(null);
+    } else if (id === "chatbot") {
+      document.dispatchEvent(new CustomEvent('toggle-chatbot'));
     }
   };
 

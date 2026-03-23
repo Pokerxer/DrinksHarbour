@@ -30,7 +30,7 @@ export default function RootLayout({
     <GlobalProvider>
       <html lang="en">
         <body className={inter.className}>
-          <Header variant="default" showAnnouncement={true} />
+          <Header variant="default" showAnnouncement={false} />
           {children}
           <ModalCart />
           <ModalWishlist />

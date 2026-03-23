@@ -207,7 +207,52 @@ export const ModalSearchProvider: React.FC<ModalSearchProviderProps> = ({
     const searchTerm = query ?? searchQuery;
     
     if (!searchTerm.trim() && Object.keys(filters).length === 0) {
-      setSearchResults(null);
+      // When no search term, get default products
+      setIsSearching(true);
+      setSearchError(null);
+      setCurrentPage(1);
+
+      try {
+        const params = new URLSearchParams();
+        params.append('page', '1');
+        params.append('limit', '12');
+
+        const searchUrl = `${API_URL}/api/products/search?${params.toString()}`;
+        
+        const response = await fetch(searchUrl, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+
+        if (data.success) {
+          const responseData = data.data || data;
+          const products = responseData.products || [];
+          const total = responseData.pagination?.totalResults || products.length;
+          const page = responseData.pagination?.currentPage || 1;
+          const totalPages = responseData.pagination?.totalPages || 1;
+          
+          setSearchResults({
+            products,
+            total,
+            page,
+            totalPages,
+          });
+        } else {
+          setSearchResults({ products: [], total: 0, page: 1, totalPages: 0 });
+        }
+      } catch (error) {
+        console.error('Search error:', error);
+        setSearchError(error instanceof Error ? error.message : 'Search failed');
+        setSearchResults({ products: [], total: 0, page: 1, totalPages: 0 });
+      } finally {
+        setIsSearching(false);
+      }
       return;
     }
 

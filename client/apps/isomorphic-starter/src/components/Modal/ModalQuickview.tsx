@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import * as Icon from "react-icons/pi";
@@ -70,6 +70,7 @@ const ModalQuickview: React.FC = () => {
   const { selectedProduct, isOpen, closeQuickview } =
     useModalQuickviewContext();
   const [activeImage, setActiveImage] = useState(0);
+  const imageScrollRef = useRef<HTMLDivElement>(null);
   const [activeSize, setActiveSize] = useState<string>("");
   const [activeVendor, setActiveVendor] = useState<string | null>(null);
   const [quantity, setQuantity] = useState<number>(1);
@@ -377,78 +378,100 @@ const ModalQuickview: React.FC = () => {
         </div>
 
         <div className="flex flex-col lg:flex-row h-full overflow-y-auto">
-          {/* LEFT: Images */}
-          <div className="lg:w-[45%] bg-gray-50 p-4 lg:p-6 flex flex-col sticky top-0 lg:static">
-            {/* Main Image */}
-            <div className="relative aspect-square rounded-xl lg:rounded-2xl overflow-hidden bg-white shadow-sm flex-shrink-0 group">
-              {mainImage && !imageError ? (
-                <Image
-                  src={mainImage}
-                  alt={selectedProduct.name}
-                  fill
-                  className="object-cover transition-transform duration-500"
-                  priority
-                  sizes="(max-width: 1024px) 100vw, 45vw"
-                  onError={() => setImageError(true)}
-                />
+          {/* LEFT: Images - Scrollable */}
+          <div className="lg:w-[45%] bg-gray-50 p-4 lg:p-6 flex flex-col">
+            {/* Scrollable Image Container */}
+            <div ref={imageScrollRef} className="flex overflow-x-auto snap-x snap-mandatory scrollbar-hide -mx-4 px-4 lg:mx-0 lg:px-0">
+              {images.length > 0 ? (
+                images.map((img: any, index: number) => (
+                  <div
+                    key={index}
+                    className="snap-center snap-always flex-shrink-0 w-full pr-0 lg:pr-6"
+                  >
+                    <div className="relative aspect-square rounded-xl lg:rounded-2xl overflow-hidden bg-white shadow-sm">
+                      <Image
+                        src={img.url}
+                        alt={img.alt || `${selectedProduct.name} ${index + 1}`}
+                        fill
+                        className="object-cover"
+                        priority={index === 0}
+                        sizes="(max-width: 1024px) 100vw, 45vw"
+                        onError={() => setImageError(true)}
+                      />
+
+                      {/* Discount Badge */}
+                      {index === 0 && discountPercentage > 0 && (
+                        <div className="absolute top-3 left-3 px-2.5 py-1 lg:px-3 lg:py-1.5 bg-red-500 text-white text-xs lg:text-sm font-bold rounded-full shadow-lg">
+                          -{discountPercentage}%
+                        </div>
+                      )}
+
+                      {/* ABV Badge for beverages */}
+                      {index === 0 && selectedProduct.abv && (
+                        <div className="absolute top-3 right-3 px-2.5 py-1 lg:px-3 lg:py-1.5 bg-gray-900/80 backdrop-blur-sm text-white text-xs font-bold rounded-full shadow-lg">
+                          {selectedProduct.abv}% ABV
+                        </div>
+                      )}
+
+                      {/* Out of Stock Badge */}
+                      {index === 0 && !inStock && (
+                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                          <span className="px-4 py-2 bg-white text-gray-900 font-bold rounded-full">
+                            Out of Stock
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))
               ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100 text-gray-400">
-                  <Icon.PiImage size={64} className="mb-2" />
-                  <span className="text-sm">Image not available</span>
+                <div className="w-full">
+                  <div className="relative aspect-square rounded-xl lg:rounded-2xl overflow-hidden bg-white shadow-sm flex items-center justify-center">
+                    {mainImage && !imageError ? (
+                      <Image
+                        src={mainImage}
+                        alt={selectedProduct.name}
+                        fill
+                        className="object-cover"
+                        priority
+                        sizes="(max-width: 1024px) 100vw, 45vw"
+                        onError={() => setImageError(true)}
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center bg-gray-100 text-gray-400">
+                        <Icon.PiImage size={64} className="mb-2" />
+                        <span className="text-sm">Image not available</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
-
-              {/* Discount Badge */}
-              {discountPercentage > 0 && (
-                <div className="absolute top-3 left-3 px-2.5 py-1 lg:px-3 lg:py-1.5 bg-red-500 text-white text-xs lg:text-sm font-bold rounded-full shadow-lg">
-                  -{discountPercentage}%
-                </div>
-              )}
-
-              {/* ABV Badge for beverages */}
-              {selectedProduct.abv && (
-                <div className="absolute top-3 right-3 px-2.5 py-1 lg:px-3 lg:py-1.5 bg-gray-900/80 backdrop-blur-sm text-white text-xs font-bold rounded-full shadow-lg">
-                  {selectedProduct.abv}% ABV
-                </div>
-              )}
-
-              {/* Out of Stock Badge */}
-              {!inStock && (
-                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                  <span className="px-4 py-2 bg-white text-gray-900 font-bold rounded-full">
-                    Out of Stock
-                  </span>
-                </div>
-              )}
-
-              {/* Image Navigation Arrows - Always visible on mobile */}
-              {images.length > 1 && (
-                <>
-                  <button
-                    onClick={() =>
-                      setActiveImage((prev) =>
-                        prev === 0 ? images.length - 1 : prev - 1,
-                      )
-                    }
-                    className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform"
-                  >
-                    <Icon.PiCaretLeft size={20} />
-                  </button>
-                  <button
-                    onClick={() =>
-                      setActiveImage((prev) =>
-                        prev === images.length - 1 ? 0 : prev + 1,
-                      )
-                    }
-                    className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform"
-                  >
-                    <Icon.PiCaretRight size={20} />
-                  </button>
-                </>
               )}
             </div>
 
-            {/* Thumbnail Gallery - Scrollable */}
+            {/* Dot Indicators */}
+            {images.length > 1 && (
+              <div className="flex justify-center gap-1.5 mt-3">
+                {images.map((_: any, index: number) => (
+                  <button
+                    key={index}
+                    onClick={() => {
+                      setActiveImage(index);
+                      setImageError(false);
+                      document
+                        .querySelector(".snap-center")
+                        ?.scrollIntoView({ behavior: "smooth", inline: "start" });
+                    }}
+                    className={`w-2 h-2 rounded-full transition-all ${
+                      activeImage === index
+                        ? "bg-orange-500 w-4"
+                        : "bg-gray-300 hover:bg-gray-400"
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Thumbnail Gallery - Horizontal scroll */}
             {images.length > 1 && (
               <div className="flex gap-2 mt-3 lg:mt-4 overflow-x-auto pb-2 scrollbar-hide">
                 {images.map((img: any, index: number) => (
@@ -457,6 +480,13 @@ const ModalQuickview: React.FC = () => {
                     onClick={() => {
                       setActiveImage(index);
                       setImageError(false);
+                      const imageContainer = document.querySelector(".scrollbar-hide");
+                      if (imageContainer) {
+                        (imageContainer as HTMLElement).scrollTo({
+                          left: index * (imageContainer as HTMLElement).offsetWidth,
+                          behavior: "smooth",
+                        });
+                      }
                     }}
                     className={`relative w-14 h-14 lg:w-16 lg:h-16 rounded-lg overflow-hidden flex-shrink-0 border-2 transition-all ${
                       activeImage === index

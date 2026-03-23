@@ -133,22 +133,22 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
   }, [onClearAllFilters, updateFilter]);
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-100 p-3 sm:p-4 mb-4 sm:mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
         {/* Left Section */}
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {/* Filter Button */}
           <button
             onClick={onOpenSidebar}
             onMouseEnter={() => setIsFilterTooltipVisible(true)}
             onMouseLeave={() => setIsFilterTooltipVisible(false)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition-colors group relative"
+            className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition-colors group relative text-sm sm:text-base"
             aria-label="Open filters sidebar"
           >
-            <Icon.PiFadersHorizontal size={18} />
+            <Icon.PiFadersHorizontal size={16} />
             <span className="font-medium">Filters</span>
             {activeFiltersCount > 0 && (
-              <span className="px-2 py-0.5 bg-white text-gray-900 text-xs font-bold rounded-full">
+              <span className="px-1.5 sm:px-2 py-0.5 bg-white text-gray-900 text-xs font-bold rounded-full">
                 {activeFiltersCount}
               </span>
             )}
@@ -192,15 +192,15 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
 
           {/* Product Count */}
           {typeof totalProducts === 'number' && (
-            <div className="hidden sm:flex items-center gap-2 text-sm text-gray-500">
-              <Icon.PiPackage size={18} />
+            <div className="hidden xs:flex sm:flex items-center gap-2 text-xs sm:text-sm text-gray-500">
+              <Icon.PiPackage size={16} />
               <span>
                 {isLoading ? (
-                  <span className="inline-block w-12 h-4 bg-gray-200 rounded animate-pulse" />
+                  <span className="inline-block w-10 sm:w-12 h-3 sm:h-4 bg-gray-200 rounded animate-pulse" />
                 ) : (
                   <>
                     <strong className="text-gray-900">{totalProducts.toLocaleString()}</strong>
-                    {' '}{totalProducts === 1 ? 'product' : 'products'}
+                    <span className="hidden sm:inline">{' '}{totalProducts === 1 ? 'product' : 'products'}</span>
                   </>
                 )}
               </span>

@@ -361,7 +361,40 @@ const Shop: React.FC<Props> = ({
       {!filters.showOnlySale && !filters.type && (
         <OnSaleHighlight products={data || []} />
       )}
-      
+
+      {/* Category Filter Scroll */}
+      {filterOptions.type.length > 0 && !filters.type && (
+        <div className="bg-white border-b border-gray-100">
+          <div className="container mx-auto px-3 sm:px-4 py-3 sm:py-4">
+            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-3 sm:-mx-4 px-3 sm:px-4">
+              <button
+                onClick={() => updateFilter('type', null)}
+                className={`flex-shrink-0 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-medium transition-all ${
+                  !filters.type
+                    ? 'bg-gray-900 text-white shadow-md'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                All
+              </button>
+              {filterOptions.type.map((type) => (
+                <button
+                  key={type}
+                  onClick={() => updateFilter('type', type)}
+                  className={`flex-shrink-0 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
+                    filters.type === type
+                      ? 'bg-gray-900 text-white shadow-md'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <FilterSidebar 
         open={openSidebar} 
         onClose={() => setOpenSidebar(false)} 

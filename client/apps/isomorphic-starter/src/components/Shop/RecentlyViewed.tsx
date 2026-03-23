@@ -250,17 +250,17 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 6
   if (loading) {
     return (
       <section className="w-full bg-white border-t border-gray-100">
-        <div className="container mx-auto px-4 py-8">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 rounded-xl bg-gray-200 animate-pulse" />
+        <div className="container mx-auto px-3 sm:px-4 py-6 sm:py-8">
+          <div className="flex items-center gap-3 mb-4 sm:mb-6">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gray-200 animate-pulse" />
             <div>
-              <div className="h-5 w-36 bg-gray-200 rounded animate-pulse mb-1" />
-              <div className="h-3 w-24 bg-gray-200 rounded animate-pulse" />
+              <div className="h-4 w-28 sm:h-5 sm:w-36 bg-gray-200 rounded animate-pulse mb-1" />
+              <div className="h-2 w-20 sm:h-3 sm:w-24 bg-gray-200 rounded animate-pulse" />
             </div>
           </div>
-          <div className="flex gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:gap-5">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="w-44 h-52 bg-gray-100 rounded-xl animate-pulse" />
+              <div key={i} className="bg-gray-100 rounded-lg sm:rounded-xl animate-pulse aspect-[4/5] sm:aspect-square" />
             ))}
           </div>
         </div>
@@ -272,18 +272,18 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 6
 
   return (
     <section className="w-full bg-white border-t border-gray-100">
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-3 sm:px-4 py-6 sm:py-8">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
-              <Icon.PiClockCounterClockwise size={20} className="text-white" />
+        <div className="flex items-center justify-between mb-4 sm:mb-6">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
+              <Icon.PiClockCounterClockwise size={20} className="text-white w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div>
-              <h3 className="text-lg md:text-xl font-bold text-gray-900">
+              <h3 className="text-base sm:text-lg md:text-xl font-bold text-gray-900">
                 Recently Viewed
               </h3>
-              <p className="text-xs text-gray-500">
+              <p className="text-[10px] sm:text-xs text-gray-500 hidden sm:block">
                 Pick up where you left off
               </p>
             </div>
@@ -291,15 +291,15 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 6
 
           <button
             onClick={handleClearHistory}
-            className="text-sm text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1"
+            className="text-xs sm:text-sm text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1"
           >
-            Clear History
-            <Icon.PiX size={14} />
+            Clear
+            <Icon.PiX size={14} className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
           </button>
         </div>
 
-        {/* Products Scroll */}
-        <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-4 px-4">
+        {/* Products Grid - Temu style gallery */}
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:gap-5">
           <AnimatePresence mode="popLayout">
             {filteredProducts.slice(0, maxItems).map((product, index) => {
               const discount = getDiscount(product);
@@ -315,64 +315,65 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 6
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}
                   transition={{ delay: index * 0.05 }}
-                  className="flex-shrink-0 w-44"
+                  className="animate-fade-in-up"
+                  style={{ animationDelay: `${index * 50}ms` }}
                 >
                   <Link href={`/product/${productSlug}`}>
                     <motion.div
-                      whileHover={{ y: -4 }}
-                      className="group bg-white rounded-xl overflow-hidden border border-gray-100 hover:border-gray-200 hover:shadow-lg transition-all duration-300"
+                      whileHover={{ y: -2 }}
+                      className="group bg-white rounded-lg sm:rounded-xl overflow-hidden border border-gray-100 hover:border-gray-200 hover:shadow-md transition-all duration-300"
                     >
                       {/* Image */}
-                      <div className="relative aspect-square bg-gradient-to-br from-gray-100 to-gray-50">
+                      <div className="relative aspect-[4/5] sm:aspect-square bg-gradient-to-br from-gray-100 to-gray-50">
                         {product.images?.[0]?.url ? (
                           <Image
                             src={product.images[0].url}
                             alt={product.name}
                             fill
                             className="object-cover group-hover:scale-105 transition-transform duration-500"
-                            sizes="176px"
+                            sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 25vw"
                           />
                         ) : (
                           <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="text-4xl opacity-50">{getEmoji(product.type)}</span>
+                            <span className="text-3xl sm:text-4xl opacity-50">{getEmoji(product.type)}</span>
                           </div>
                         )}
 
                         {/* Sale Badge */}
                         {isOnSale && (
-                          <div className="absolute top-2 left-2">
-                            <span className="px-2 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full">
+                          <div className="absolute top-1.5 sm:top-2 left-1.5 sm:left-2">
+                            <span className="px-1.5 sm:px-2 py-0.5 bg-red-500 text-white text-[9px] sm:text-[10px] font-bold rounded-full">
                               -{discount}%
                             </span>
                           </div>
                         )}
 
-                        {/* Quick View */}
+                        {/* Quick View overlay */}
                         <motion.div
                           initial={{ opacity: 0 }}
                           whileHover={{ opacity: 1 }}
-                          className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                         >
-                          <span className="px-3 py-1.5 bg-white text-gray-900 text-xs font-semibold rounded-full">
+                          <span className="px-2.5 sm:px-3 py-1 sm:py-1.5 bg-white text-gray-900 text-[10px] sm:text-xs font-semibold rounded-full">
                             View
                           </span>
                         </motion.div>
                       </div>
 
                       {/* Content */}
-                      <div className="p-3">
-                        <p className="text-[10px] text-gray-400 mb-0.5 truncate">
+                      <div className="p-2 sm:p-3">
+                        <p className="text-[9px] sm:text-[10px] text-gray-400 mb-0.5 truncate">
                           {product.brand?.name || product.type}
                         </p>
-                        <h4 className="text-xs font-semibold text-gray-900 line-clamp-2 mb-1.5 min-h-[2rem]">
+                        <h4 className="text-[11px] sm:text-xs font-semibold text-gray-900 line-clamp-2 mb-1 sm:mb-1.5 min-h-[2rem] sm:min-h-[2.5rem]">
                           {product.name || 'Loading...'}
                         </h4>
-                        <div className="flex items-center gap-1.5">
-                          <span className={`font-bold text-sm ${isOnSale ? 'text-red-600' : 'text-gray-900'}`}>
+                        <div className="flex items-center gap-1 sm:gap-1.5">
+                          <span className={`font-bold text-xs sm:text-sm ${isOnSale ? 'text-red-600' : 'text-gray-900'}`}>
                             {formatPrice(product.priceRange?.min || product.price || 0, currencySymbol)}
                           </span>
                           {isOnSale && (product.priceRange?.max || product.originPrice) && (
-                            <span className="text-[10px] text-gray-400 line-through">
+                            <span className="text-[9px] sm:text-[10px] text-gray-400 line-through">
                               {formatPrice(product.priceRange?.max || product.originPrice || 0, currencySymbol)}
                             </span>
                           )}

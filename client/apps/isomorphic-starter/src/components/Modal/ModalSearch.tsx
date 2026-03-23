@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useModalSearchContext } from '@/context/ModalSearchContext';
 import { useCart } from '@/context/CartContext';
 import { useModalCartContext } from '@/context/ModalCartContext';
+import { useModalQuickviewContext } from '@/context/ModalQuickviewContext';
 import { ProductType } from '@/types/product.types';
 
 type Product = ProductType & {
@@ -35,6 +36,7 @@ const ModalSearch: React.FC = () => {
 
   const { addToCart } = useCart();
   const { openModalCart } = useModalCartContext();
+  const { openQuickview } = useModalQuickviewContext() || {};
 
   const {
     isModalOpen,
@@ -115,16 +117,14 @@ const ModalSearch: React.FC = () => {
     setShowFilters(false);
   }, []);
 
-  // Quick add to cart from search
-  const handleQuickAdd = useCallback(async (product: Product, e: React.MouseEvent) => {
+  // Quick add to cart from search - opens quickview instead
+  const handleQuickAdd = useCallback((product: Product, e: React.MouseEvent) => {
     e.stopPropagation();
-    try {
-      await addToCart(product, '', '', product.vendorName || 'DrinksHarbour', undefined, 1, undefined, product._id);
-      openModalCart();
-    } catch (error) {
-      console.error('Failed to add to cart:', error);
+    closeModalSearch();
+    if (openQuickview) {
+      openQuickview(product);
     }
-  }, [addToCart, openModalCart]);
+  }, [openQuickview, closeModalSearch]);
 
   // Format timestamp
   const formatTimeAgo = (timestamp: number): string => {
@@ -140,20 +140,18 @@ const ModalSearch: React.FC = () => {
 
   // Handle real-time search with debounce
   useEffect(() => {
-    const debounceTimer = setTimeout(() => {
-      if (searchQuery.trim().length >= 2) {
-        // Perform real-time search
-        performSearch(searchQuery.trim());
-        setHighlightedText(searchQuery);
-      } else if (searchQuery.trim().length === 0) {
-        // Clear results when search is empty
-        setHighlightedText('');
-        setShowFullDetails(null);
-        // Keep showing default state when cleared
-      }
-    }, 300); // 300ms debounce for better performance
-
-    return () => clearTimeout(debounceTimer);
+    const query = searchQuery.trim();
+    
+    if (query.length >= 1) {
+      const debounceTimer = setTimeout(() => {
+        performSearch(query);
+        setHighlightedText(query);
+      }, 150);
+      return () => clearTimeout(debounceTimer);
+    } else {
+      setHighlightedText('');
+      setShowFullDetails(null);
+    }
   }, [searchQuery, performSearch]);
 
   // Focus input when modal opens and reset state
@@ -314,8 +312,7 @@ const ModalSearch: React.FC = () => {
 
   if (!isModalOpen) return null;
 
-  // Only show results when there's a valid search query (at least 2 chars)
-  const hasResults = searchResults && searchResults.products.length > 0 && searchQuery.trim().length >= 2;
+  const hasResults = searchResults && searchResults.products.length > 0;
   const hasError = !!searchError;
   const isSearchingWithQuery = isSearching && searchQuery.length > 0;
   const totalResults = searchResults?.total || 0;

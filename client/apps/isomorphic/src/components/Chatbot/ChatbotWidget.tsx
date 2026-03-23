@@ -248,6 +248,16 @@ export default function ChatbotWidget() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen]);
 
+  // Listen for toggle event from bottom nav
+  useEffect(() => {
+    const handleToggleChatbot = () => {
+      setIsOpen(prev => !prev);
+      setIsMinimized(false);
+    };
+    document.addEventListener('toggle-chatbot', handleToggleChatbot);
+    return () => document.removeEventListener('toggle-chatbot', handleToggleChatbot);
+  }, []);
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging) return;

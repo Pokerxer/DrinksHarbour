@@ -3,6 +3,7 @@ import * as Icon from 'react-icons/pi';
 import Slider from 'rc-slider';
 import 'rc-slider/assets/index.css';
 import { FilterState, FilterOptions, ProductCountFunctions } from '@/types/filter.types';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface FilterSidebarProps extends ProductCountFunctions {
   open: boolean;
