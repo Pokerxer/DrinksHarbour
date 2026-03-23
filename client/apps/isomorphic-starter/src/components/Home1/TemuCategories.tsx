@@ -92,7 +92,7 @@ const CategorySidebar: React.FC<CategorySidebarProps> = ({ onClose }) => {
     setLoadingProducts(true);
 
     try {
-      const res = await fetch(`${API_URL}/api/products?type=${category.slug}&limit=20`);
+      const res = await fetch(`${API_URL}/api/products/search?category=${category.slug}&limit=20`);
       const data = await res.json();
       if (data.success && data.data?.products) {
         setProducts(data.data.products);
@@ -114,7 +114,7 @@ const CategorySidebar: React.FC<CategorySidebarProps> = ({ onClose }) => {
     setLoadingProducts(true);
 
     try {
-      const res = await fetch(`${API_URL}/api/products?category=${activeCategory?.slug}&subCategory=${subcategory.slug}&limit=20`);
+      const res = await fetch(`${API_URL}/api/products/search?category=${activeCategory?.slug}&subCategory=${subcategory.slug}&limit=20`);
       const data = await res.json();
       if (data.success && data.data?.products) {
         setProducts(data.data.products);
