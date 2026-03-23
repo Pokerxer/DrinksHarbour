@@ -192,11 +192,14 @@ export default function ChatbotWidget() {
   const [isTyping, setIsTyping] = useState(false);
   const [newMessage, setNewMessage] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [position, setPosition] = useState({ x: 24, y: 24 });
+  const [isDragging, setIsDragging] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const widgetRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -245,7 +248,51 @@ export default function ChatbotWidget() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen]);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+      const btn = buttonRef.current;
+      if (!btn) return;
+      const rect = btn.getBoundingClientRect();
+      const newX = window.innerWidth - (e.clientX - rect.width / 2) - 24;
+      const newY = window.innerHeight - (e.clientY - rect.height / 2) - 24;
+      setPosition({
+        x: Math.max(0, Math.min(newX, window.innerWidth - rect.width)),
+        y: Math.max(24, Math.min(newY, window.innerHeight - rect.height)),
+      });
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isDragging || !e.touches[0]) return;
+      const btn = buttonRef.current;
+      if (!btn) return;
+      const rect = btn.getBoundingClientRect();
+      const newX = window.innerWidth - (e.touches[0].clientX - rect.width / 2) - 24;
+      const newY = window.innerHeight - (e.touches[0].clientY - rect.height / 2) - 24;
+      setPosition({
+        x: Math.max(0, Math.min(newX, window.innerWidth - rect.width)),
+        y: Math.max(24, Math.min(newY, window.innerHeight - rect.height)),
+      });
+    };
+
+    const handleEnd = () => setIsDragging(false);
+
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('touchmove', handleTouchMove);
+      document.addEventListener('mouseup', handleEnd);
+      document.addEventListener('touchend', handleEnd);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('mouseup', handleEnd);
+      document.removeEventListener('touchend', handleEnd);
+    };
+  }, [isDragging]);
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     
@@ -253,10 +300,13 @@ export default function ChatbotWidget() {
     const newPreviews: string[] = [];
     
     Array.from(files).forEach(file => {
-      if (file.type.startsWith('image/') && previewImages.length + newPreviews.length < 5) {
+      const isImage = file.type.startsWith('image/');
+      const currentImageCount = previewImages.length + newPreviews.length;
+      
+      if (isImage && currentImageCount < 5) {
         newPreviews.push(URL.createObjectURL(file));
         newFiles.push(file);
-      } else if (!selectedDoc) {
+      } else if (!isImage && !selectedDoc) {
         setSelectedDoc(file);
         setDocPreview(`${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
       }
@@ -266,9 +316,12 @@ export default function ChatbotWidget() {
       setSelectedFiles(prev => [...prev, ...newFiles]);
       setPreviewImages(prev => [...prev, ...newPreviews]);
     }
-  };
+    
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  }, [previewImages.length, selectedDoc]);
 
-  const clearSelectedFile = (index?: number) => {
+  const clearSelectedFile = useCallback((index?: number) => {
     if (index !== undefined) {
       setSelectedFiles(prev => prev.filter((_, i) => i !== index));
       setPreviewImages(prev => prev.filter((_, i) => i !== index));
@@ -278,9 +331,7 @@ export default function ChatbotWidget() {
       setSelectedDoc(null);
       setDocPreview(null);
     }
-    if (fileInputRef.current) fileInputRef.current.value = '';
-    if (imageInputRef.current) imageInputRef.current.value = '';
-  };
+  }, []);
 
   const getGreeting = async () => {
     try {
@@ -405,14 +456,12 @@ export default function ChatbotWidget() {
     }
   };
 
-  const clearSelectedFiles = () => {
+  const clearSelectedFiles = useCallback(() => {
     setSelectedFiles([]);
     setPreviewImages([]);
     setSelectedDoc(null);
     setDocPreview(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-    if (imageInputRef.current) imageInputRef.current.value = '';
-  };
+  }, []);
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -448,35 +497,52 @@ export default function ChatbotWidget() {
   return (
     <>
       {/* Floating Button */}
-      <div className="fixed bottom-6 right-6 z-50" id="chatbot-floating-btn">
-        {newMessage && !isOpen && (
-          <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 rounded-full animate-ping" />
-        )}
-        {newMessage && !isOpen && (
-          <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 rounded-full" />
-        )}
-        <button
-          onClick={toggleChat}
-          className={`w-14 h-14 rounded-full bg-gradient-to-r from-emerald-500 via-emerald-600 to-teal-500 hover:from-emerald-600 hover:via-emerald-700 hover:to-teal-600 text-white shadow-xl flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-2xl ${
-            isOpen ? 'rotate-90' : 'hover:shadow-2xl'
-          }`}
-          aria-label={isOpen ? "Close chat" : "Open chat"}
-        >
-          {isOpen ? (
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          ) : (
-            <div className="relative">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
-              <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-white rounded-full flex items-center justify-center">
-                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-              </span>
-            </div>
+      <div
+        ref={buttonRef}
+        className="fixed z-50 cursor-grab active:cursor-grabbing select-none"
+        style={{ 
+          bottom: `${position.y}px`, 
+          right: `${position.x}px`,
+        }}
+        id="chatbot-floating-btn"
+        onMouseDown={() => setIsDragging(true)}
+        onTouchStart={() => setIsDragging(true)}
+      >
+        <div className={`relative transition-transform duration-200 ${isDragging ? 'scale-110' : ''}`}>
+          {newMessage && !isOpen && !isDragging && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 rounded-full animate-ping" />
           )}
-        </button>
+          {newMessage && !isOpen && !isDragging && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 rounded-full" />
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!isDragging) {
+                toggleChat();
+              }
+            }}
+            className={`w-14 h-14 rounded-full bg-gradient-to-r from-emerald-500 via-emerald-600 to-teal-500 hover:from-emerald-600 hover:via-emerald-700 hover:to-teal-600 text-white shadow-xl flex items-center justify-center transition-all duration-300 hover:scale-110 hover:shadow-2xl ${
+              isOpen ? 'rotate-90' : 'hover:shadow-2xl'
+            }`}
+            aria-label={isOpen ? "Close chat" : "Open chat"}
+          >
+            {isOpen ? (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <div className="relative">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-white rounded-full flex items-center justify-center">
+                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                </span>
+              </div>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Chat Widget */}
@@ -732,34 +798,48 @@ export default function ChatbotWidget() {
               </div>
             )}
             
-            {/* Hidden file inputs */}
-            <input ref={fileInputRef} type="file" accept=".txt,.csv,.json,.pdf,.doc,.docx,.xlsx,.xls" onChange={handleFileSelect} className="hidden" multiple />
-            <input ref={imageInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" multiple />
-            
             <div className="flex gap-2 items-center">
               {/* Attachment buttons */}
               <div className="flex gap-1">
                 <button
                   onClick={() => imageInputRef.current?.click()}
                   disabled={isLoading || previewImages.length >= 5}
-                  className="p-2.5 sm:p-3 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="p-2.5 sm:p-3 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                   title={previewImages.length >= 5 ? "Max 5 images" : "Send image"}
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  <svg style={{ width: '20px', height: '20px', fill: 'currentColor', display: 'block' }} viewBox="0 0 24 24">
+                    <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                 </button>
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isLoading || selectedDoc !== null}
-                  className="p-2.5 sm:p-3 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="p-2.5 sm:p-3 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                   title="Upload file"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  <svg style={{ width: '20px', height: '20px', fill: 'currentColor', display: 'block' }} viewBox="0 0 24 24">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11z" />
                   </svg>
                 </button>
               </div>
+              
+              {/* Hidden file inputs */}
+              <input 
+                ref={imageInputRef} 
+                type="file" 
+                accept="image/*" 
+                onChange={handleFileSelect} 
+                style={{ display: 'none' }} 
+                multiple 
+              />
+              <input 
+                ref={fileInputRef} 
+                type="file" 
+                accept=".txt,.csv,.json,.pdf,.doc,.docx,.xlsx,.xls" 
+                onChange={handleFileSelect} 
+                style={{ display: 'none' }} 
+                multiple 
+              />
               
               <input
                 ref={inputRef}

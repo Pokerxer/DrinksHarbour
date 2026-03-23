@@ -366,15 +366,15 @@ const MobileBottomNav: React.FC = () => {
                     }`}
                   >
                     <div className="relative">
-                      <IconComponent size={28} />
+                      <IconComponent size={22} />
                       {isCart && cartCount > 0 && (
-                        <span className="absolute -top-1 -right-1.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">
+                        <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1">
                           {cartCount > 99 ? "99+" : cartCount}
                         </span>
                       )}
                     </div>
                     <span
-                      className={`text-[12px] font-medium ${active ? "font-semibold" : ""}`}
+                      className={`text-[11px] font-medium ${active ? "font-semibold" : ""}`}
                     >
                       {item.label}
                     </span>
@@ -387,15 +387,15 @@ const MobileBottomNav: React.FC = () => {
                     }`}
                   >
                     <div className="relative">
-                      <IconComponent size={28} />
+                      <IconComponent size={22} />
                       {isCart && cartCount > 0 && (
-                        <span className="absolute -top-1 -right-1.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">
+                        <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1">
                           {cartCount > 99 ? "99+" : cartCount}
                         </span>
                       )}
                     </div>
                     <span
-                      className={`text-[12px] font-medium ${
+                      className={`text-[11px] font-medium ${
                         active ? "font-semibold" : ""
                       }`}
                     >
