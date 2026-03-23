@@ -224,7 +224,7 @@ function ShopPageContent({ params }: PageProps) {
     return (
       <>
         <div className="min-h-[60vh] flex items-center justify-center">
-          <LoadingSpinner />
+          <LoadingSpinner variant="bounce" color="emerald" size="lg" text="Finding the best drinks..." />
         </div>
       </>
     );

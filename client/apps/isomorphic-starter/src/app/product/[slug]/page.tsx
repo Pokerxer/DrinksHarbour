@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import BreadcrumbProduct from "@/components/Breadcrumb/BreadcrumbProduct";
 import ProductDetail from "@/components/Product/Detail";
 import RecentlyViewed from "@/components/Shop/RecentlyViewed";
+import LoadingSpinner from "@/components/loader/LoadingSpinner";
 // import AgeGate from '@/components/AgeGate/AgeGate';
 import type { ProductType } from "@/types/product.types";
 import * as Icon from "react-icons/pi";
@@ -132,15 +133,7 @@ const Product = () => {
       <>
         <AnnouncementBanner placement="header" layout="static" variant="info" />
         <div className="min-h-screen flex items-center justify-center bg-gray-50">
-          <div className="text-center">
-            <div className="relative w-16 h-16 mx-auto mb-4">
-              <div className="absolute inset-0 border-4 border-gray-200 rounded-full"></div>
-              <div className="absolute inset-0 border-4 border-black rounded-full border-t-transparent animate-spin"></div>
-            </div>
-            <p className="text-gray-600 font-medium">
-              Loading product details...
-            </p>
-          </div>
+          <LoadingSpinner variant="pulse" color="amber" size="xl" text="Loading product details..." />
         </div>
       </>
     );
