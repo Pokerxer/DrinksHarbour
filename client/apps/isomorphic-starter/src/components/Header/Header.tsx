@@ -363,17 +363,21 @@ const Header: React.FC<HeaderProps> = ({
                 </div>
               </div>
 
-              {/* Mobile Actions - Search only */}
-              <div className="flex lg:hidden items-center gap-1">
-                <button
-                  onClick={openModalSearch}
-                  className={`p-2 rounded-lg hover:bg-gray-100 transition-colors ${getTextColor()}`}
-                >
-                  <Icon.PiMagnifyingGlass size={20} />
-                </button>
-              </div>
+              {/* Mobile Actions - Hidden (search moved to separate row) */}
+              <div className="flex lg:hidden items-center gap-1" />
             </div>
           </div>
+        </div>
+
+        {/* Mobile Full-Width Search Bar */}
+        <div className="md:hidden px-4 pb-3 bg-white">
+          <button
+            onClick={openModalSearch}
+            className="w-full flex items-center gap-3 px-4 py-3 bg-gray-50 rounded-xl border border-gray-200 hover:border-green-500 transition-colors"
+          >
+            <Icon.PiMagnifyingGlass size={20} className="text-gray-400" />
+            <span className="text-gray-500">Search products...</span>
+          </button>
         </div>
       </header>
 
@@ -430,8 +434,8 @@ const Header: React.FC<HeaderProps> = ({
                 </button>
               </div>
 
-              {/* Search */}
-              <div className="p-4 border-b border-gray-100">
+              {/* Search - Hidden since we have full-width search in header now */}
+              {/* <div className="p-4 border-b border-gray-100">
                 <button
                   onClick={openModalSearch}
                   className="w-full flex items-center gap-3 px-4 py-3 bg-gray-50 rounded-xl border border-gray-200 hover:border-green-500 transition-colors"
@@ -439,7 +443,7 @@ const Header: React.FC<HeaderProps> = ({
                   <Icon.PiMagnifyingGlass size={20} className="text-gray-400" />
                   <span className="text-gray-500">Search products...</span>
                 </button>
-              </div>
+              </div> */}
 
               {/* Navigation */}
               <nav className="p-4">
