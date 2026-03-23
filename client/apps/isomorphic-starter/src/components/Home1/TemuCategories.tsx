@@ -66,7 +66,7 @@ const CategorySidebar: React.FC<CategorySidebarProps> = ({ onClose }) => {
   };
 
   const handleCategoryClick = (category: Category) => {
-    setActiveCategory(activeCategory?._id === category._id ? null : category);
+    setActiveCategory(category);
   };
 
   if (loading) {
@@ -120,7 +120,7 @@ const CategorySidebar: React.FC<CategorySidebarProps> = ({ onClose }) => {
 
       {/* Split Panel Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Panel - Categories */}
+        {/* Left Panel - Categories (buttons for selection) */}
         <div className="w-[35%] bg-gray-50 overflow-y-auto border-r border-gray-100">
           <div className="py-2">
             {categories.map((cat) => (
@@ -144,7 +144,7 @@ const CategorySidebar: React.FC<CategorySidebarProps> = ({ onClose }) => {
           </div>
         </div>
 
-        {/* Right Panel - Subcategories & Shop Link */}
+        {/* Right Panel - Subcategories & Browse Links */}
         <div className="flex-1 overflow-y-auto p-3 bg-white">
           {!activeCategory ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-4">
