@@ -4,7 +4,6 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import * as Icon from "react-icons/pi";
-import { motion, AnimatePresence } from "framer-motion";
 
 interface Category {
   _id: string;
@@ -27,12 +26,12 @@ interface Product {
   _id: string;
   name: string;
   slug: string;
-  type: string;
-  images?: Array<{ url: string }>;
+  images?: Array<{ url: string; alt?: string }>;
   priceRange?: { min: number; max: number; display?: string };
   sale?: boolean;
+  discount?: number;
   originPrice?: number;
-  brand?: { name: string };
+  type?: string;
 }
 
 interface CategorySidebarProps {
@@ -44,12 +43,12 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
 const CategorySidebar: React.FC<CategorySidebarProps> = ({ onClose }) => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [allCategories, setAllCategories] = useState<Category[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeCategory, setActiveCategory] = useState<Category | null>(null);
+  const [activeSubcategory, setActiveSubcategory] = useState<Category | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<string | null>(null);
-  const [activeSubcategory, setActiveSubcategory] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"subcategories" | "products">("subcategories");
+  const [viewMode, setViewMode] = useState<'categories' | 'products'>('categories');
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -83,82 +82,82 @@ const CategorySidebar: React.FC<CategorySidebarProps> = ({ onClose }) => {
     );
   };
 
-  const getActiveCategory = (): Category | undefined => {
-    return categories.find((c) => c.slug === activeCategory);
-  };
-
-  const getActiveSubcategory = (): Category | undefined => {
-    if (!activeSubcategory) return undefined;
-    return allCategories.find((c) => c.slug === activeSubcategory);
-  };
-
-  const handleCategoryClick = async (slug: string) => {
-    setActiveCategory(slug);
+  const handleCategoryClick = async (category: Category) => {
+    if (activeCategory?._id === category._id) {
+      return;
+    }
+    setActiveCategory(category);
     setActiveSubcategory(null);
-    setViewMode("subcategories");
-    setProducts([]);
-    
-    const category = categories.find((c) => c.slug === slug);
-    if (!category) return;
-
+    setViewMode('products');
     setLoadingProducts(true);
+
     try {
-      const res = await fetch(`${API_URL}/api/products?type=${slug}&limit=20`);
+      const res = await fetch(`${API_URL}/api/products?type=${category.slug}&limit=20`);
       const data = await res.json();
-      if (data.success) {
-        const prods = data.data?.products || data.products || [];
-        setProducts(prods);
+      if (data.success && data.data?.products) {
+        setProducts(data.data.products);
+      } else if (data.products) {
+        setProducts(data.products);
+      } else {
+        setProducts([]);
       }
     } catch (error) {
       console.error("Error fetching products:", error);
+      setProducts([]);
     } finally {
       setLoadingProducts(false);
     }
   };
 
-  const handleSubcategoryClick = async (slug: string) => {
-    setActiveSubcategory(slug);
-    
+  const handleSubcategoryClick = async (subcategory: Category) => {
+    setActiveSubcategory(subcategory);
     setLoadingProducts(true);
+
     try {
-      const res = await fetch(`${API_URL}/api/products?type=${activeCategory}&sub=${slug}&limit=20`);
+      const res = await fetch(`${API_URL}/api/products?type=${activeCategory?.slug}&sub=${subcategory.slug}&limit=20`);
       const data = await res.json();
-      if (data.success) {
-        const prods = data.data?.products || data.products || [];
-        setProducts(prods);
+      if (data.success && data.data?.products) {
+        setProducts(data.data.products);
+      } else if (data.products) {
+        setProducts(data.products);
+      } else {
+        setProducts([]);
       }
     } catch (error) {
-      console.error("Error fetching subcategory products:", error);
+      console.error("Error fetching products:", error);
+      setProducts([]);
     } finally {
       setLoadingProducts(false);
     }
   };
 
-  const formatPrice = (price: number) => {
-    return '₦' + price.toLocaleString();
+  const handleBackToCategories = () => {
+    setViewMode('categories');
+    setActiveCategory(null);
+    setActiveSubcategory(null);
+    setProducts([]);
+  };
+
+  const handleBackToSubcategories = () => {
+    setActiveSubcategory(null);
+    setProducts([]);
+    if (activeCategory) {
+      handleCategoryClick(activeCategory);
+    }
   };
 
   if (loading) {
     return (
       <div className="bg-white h-full flex">
-        <div className="w-24 bg-gray-50 p-3">
+        <div className="w-[35%] bg-gray-50 p-4 space-y-3">
           {[...Array(8)].map((_, i) => (
-            <div key={i} className="flex flex-col items-center gap-1.5 py-3 animate-pulse">
-              <div className="w-10 h-10 bg-gray-200 rounded-full" />
-              <div className="h-2 w-12 bg-gray-200 rounded" />
-            </div>
+            <div key={i} className="h-10 bg-gray-200 rounded-lg animate-pulse" />
           ))}
         </div>
-        <div className="flex-1 p-4">
-          <div className="grid grid-cols-2 gap-3">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="animate-pulse">
-                <div className="aspect-square bg-gray-200 rounded-lg mb-2" />
-                <div className="h-3 w-16 bg-gray-200 rounded mb-1" />
-                <div className="h-2 w-12 bg-gray-200 rounded" />
-              </div>
-            ))}
-          </div>
+        <div className="flex-1 p-4 space-y-3">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="h-20 bg-gray-200 rounded-xl animate-pulse" />
+          ))}
         </div>
       </div>
     );
@@ -167,167 +166,146 @@ const CategorySidebar: React.FC<CategorySidebarProps> = ({ onClose }) => {
   return (
     <div className="bg-white h-full flex flex-col">
       {/* Header */}
-      <div className="p-3 border-b border-gray-100 bg-gradient-to-r from-orange-50 to-white flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-sm font-bold text-gray-900">
-            <Icon.PiGridFour size={18} className="text-orange-500" />
+      <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-white sticky top-0 z-20">
+        {viewMode === 'products' ? (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={activeSubcategory ? handleBackToSubcategories : handleBackToCategories}
+              className="p-1 -ml-1"
+            >
+              <Icon.PiArrowLeft size={20} className="text-gray-600" />
+            </button>
+            <h2 className="font-bold text-gray-900 truncate">
+              {activeSubcategory?.name || activeCategory?.name}
+            </h2>
+          </div>
+        ) : (
+          <h2 className="flex items-center gap-2 text-base font-bold text-gray-900">
+            <Icon.PiGridFour size={20} className="text-orange-500" />
             Categories
           </h2>
-          <button
-            onClick={onClose}
-            className="p-1.5 hover:bg-gray-100 rounded-full transition-colors"
-          >
-            <Icon.PiX size={18} className="text-gray-500" />
-          </button>
-        </div>
+        )}
+        <button
+          onClick={onClose}
+          className="p-2 -mr-2 hover:bg-gray-100 rounded-full transition-colors"
+        >
+          <Icon.PiX size={20} className="text-gray-600" />
+        </button>
       </div>
 
-      {/* Main Content - Split View */}
+      {/* Split Panel Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left: Categories & Subcategories */}
-        <div className="w-24 bg-gray-50 overflow-y-auto flex-shrink-0">
-          {categories.map((cat) => (
-            <button
-              key={cat._id}
-              onClick={() => handleCategoryClick(cat.slug)}
-              className={`w-full flex flex-col items-center gap-1 py-3 px-2 border-b border-gray-100 transition-colors ${
-                activeCategory === cat.slug
-                  ? "bg-white border-l-2 border-l-orange-500"
-                  : "hover:bg-gray-100"
-              }`}
-            >
-              <span className="text-xl">{cat.icon || "🍷"}</span>
-              <span className={`text-[10px] text-center leading-tight ${
-                activeCategory === cat.slug ? "text-orange-600 font-medium" : "text-gray-600"
-              }`}>
-                {cat.name}
-              </span>
-            </button>
-          ))}
+        {/* Left Panel - Categories/Subcategories */}
+        <div className="w-[35%] bg-gray-50 overflow-y-auto border-r border-gray-100">
+          <div className="py-2">
+            {viewMode === 'products' && (
+              <button
+                onClick={handleBackToCategories}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-100 transition-colors text-left"
+              >
+                <Icon.PiArrowLeft size={16} className="text-gray-500" />
+                <span className="text-sm font-medium text-gray-700">All Categories</span>
+              </button>
+            )}
+            {(viewMode === 'categories' ? categories : activeCategory ? getSubcategories(activeCategory) : []).map((cat) => {
+              const isActive = viewMode === 'products' 
+                ? cat._id === activeSubcategory?._id
+                : cat._id === activeCategory?._id;
+              
+              return (
+                <button
+                  key={cat._id}
+                  onClick={() => {
+                    if (viewMode === 'categories') {
+                      handleCategoryClick(cat);
+                    } else {
+                      handleSubcategoryClick(cat);
+                    }
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 transition-colors text-left ${
+                    isActive
+                      ? "bg-white border-l-2 border-orange-500"
+                      : "hover:bg-gray-100 border-l-2 border-transparent"
+                  }`}
+                >
+                  <span className="text-xl">{cat.icon || "🍷"}</span>
+                  <span className={`text-sm font-medium truncate ${
+                    isActive ? "text-orange-600" : "text-gray-700"
+                  }`}>
+                    {cat.name}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Right: Subcategories & Products */}
-        <div className="flex-1 overflow-y-auto bg-white">
-          <AnimatePresence mode="wait">
-            {activeCategory ? (
-              <motion.div
-                key={activeCategory}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.15 }}
-                className="p-3"
-              >
-                {/* Subcategories Row */}
-                <div className="flex gap-2 overflow-x-auto pb-3 mb-3 border-b border-gray-100 scrollbar-hide">
-                  <button
-                    onClick={() => {
-                      setActiveSubcategory(null);
-                      handleCategoryClick(activeCategory);
-                    }}
-                    className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                      !activeSubcategory
-                        ? "bg-orange-500 text-white"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                  >
-                    All
-                  </button>
-                  {getSubcategories(getActiveCategory()!).map((sub) => (
-                    <button
-                      key={sub._id}
-                      onClick={() => handleSubcategoryClick(sub.slug)}
-                      className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                        activeSubcategory === sub.slug
-                          ? "bg-orange-500 text-white"
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      }`}
-                    >
-                      {sub.name}
-                    </button>
-                  ))}
+        {/* Right Panel - Products */}
+        <div className="flex-1 overflow-y-auto p-3 bg-white">
+          {loadingProducts ? (
+            <div className="grid grid-cols-2 gap-3">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="space-y-2">
+                  <div className="aspect-square bg-gray-100 rounded-xl animate-pulse" />
+                  <div className="h-3 bg-gray-100 rounded animate-pulse" />
+                  <div className="h-3 w-2/3 bg-gray-100 rounded animate-pulse" />
                 </div>
-
-                {/* Products Grid */}
-                {loadingProducts ? (
-                  <div className="grid grid-cols-2 gap-3">
-                    {[...Array(6)].map((_, i) => (
-                      <div key={i} className="animate-pulse">
-                        <div className="aspect-square bg-gray-200 rounded-lg mb-2" />
-                        <div className="h-3 w-16 bg-gray-200 rounded mb-1" />
-                        <div className="h-2 w-12 bg-gray-200 rounded" />
-                      </div>
-                    ))}
-                  </div>
-                ) : products.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-3">
-                    {products.map((product) => (
-                      <Link
-                        key={product._id}
-                        href={`/product/${product.slug}`}
-                        onClick={onClose}
-                        className="group"
-                      >
-                        <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden mb-2 relative">
-                          {product.images && product.images[0]?.url ? (
-                            <Image
-                              src={product.images[0].url}
-                              alt={product.name}
-                              fill
-                              className="object-cover group-hover:scale-105 transition-transform duration-200"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-3xl">
-                              {getActiveCategory()?.icon || "🍷"}
-                            </div>
-                          )}
-                          {product.sale && (
-                            <span className="absolute top-1 left-1 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded">
-                              SALE
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-gray-800 font-medium line-clamp-2 mb-1 group-hover:text-orange-600 transition-colors">
-                          {product.name}
-                        </p>
-                        <p className="text-xs text-orange-600 font-semibold">
-                          {product.priceRange?.display || (product.priceRange ? formatPrice(product.priceRange.min) : '')}
-                        </p>
-                        {product.brand && (
-                          <p className="text-[10px] text-gray-400 mt-0.5">{product.brand.name}</p>
-                        )}
-                      </Link>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-gray-400 text-sm">
-                    No products found
-                  </div>
-                )}
-
-                {/* Load More */}
-                {products.length > 0 && (
-                  <Link
-                    href={`/shop?type=${activeCategory}${activeSubcategory ? `&sub=${activeSubcategory}` : ''}`}
-                    onClick={onClose}
-                    className="flex items-center justify-center gap-2 w-full py-3 mt-4 bg-gray-100 hover:bg-gray-200 rounded-xl text-xs font-medium text-gray-700 transition-colors"
-                  >
-                    View All {getActiveCategory()?.name}
-                    <Icon.PiArrowRight size={14} />
-                  </Link>
-                )}
-              </motion.div>
-            ) : (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex flex-col items-center justify-center h-full text-center p-6"
+              ))}
+            </div>
+          ) : products.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-center px-4">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-3">
+                <Icon.PiPackage size={32} className="text-gray-400" />
+              </div>
+              <p className="text-sm text-gray-500">
+                No products found in this category
+              </p>
+              <Link
+                href={`/shop?type=${activeCategory?.slug}`}
+                onClick={onClose}
+                className="mt-3 px-4 py-2 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition-colors"
               >
-                <span className="text-4xl mb-3">👆</span>
-                <p className="text-sm text-gray-500">Select a category</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                Browse All
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {products.map((product) => (
+                <Link
+                  key={product._id}
+                  href={`/product/${product.slug}`}
+                  onClick={onClose}
+                  className="group"
+                >
+                  <div className="aspect-square bg-gray-100 rounded-xl overflow-hidden relative mb-2">
+                    {product.images && product.images[0]?.url ? (
+                      <Image
+                        src={product.images[0].url}
+                        alt={product.name}
+                        fill
+                        className="object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Icon.PiImage size={32} className="text-gray-300" />
+                      </div>
+                    )}
+                    {product.sale && (
+                      <span className="absolute top-1 left-1 px-1.5 py-0.5 bg-red-500 text-white text-xs font-medium rounded">
+                        -{product.discount || 0}%
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-xs font-medium text-gray-800 line-clamp-2 mb-1 group-hover:text-orange-600 transition-colors">
+                    {product.name}
+                  </h3>
+                  <p className="text-sm font-bold text-gray-900">
+                    {product.priceRange?.display || `₦${(product.priceRange?.min || 0).toLocaleString()}`}
+                  </p>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
