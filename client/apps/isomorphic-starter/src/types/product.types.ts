@@ -86,6 +86,14 @@ export interface ProductType {
       name: string;
       slug: string;
       logo?: string;
+      city?: string;
+      state?: string;
+      country?: string;
+      address?: {
+        city?: string;
+        state?: string;
+        country?: string;
+      };
     };
     sizes: Array<{
       _id: string;

@@ -46,6 +46,11 @@ interface Vendor {
     country?: string;
     logo?: string;
     primaryColor?: string;
+    address?: {
+      city?: string;
+      state?: string;
+      country?: string;
+    };
   };
   sizes: {
     _id: string;

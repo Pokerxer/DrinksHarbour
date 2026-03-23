@@ -23,6 +23,7 @@ interface Category {
 
 const CategorySidebar = () => {
   const [categories, setCategories] = useState<Category[]>([]);
+  const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
@@ -34,7 +35,10 @@ const CategorySidebar = () => {
         const res = await fetch(`${API_URL}/api/categories`);
         const data = await res.json();
         if (data.success && data.data?.categories) {
-          const cats = data.data.categories.filter((c: Category) => !c.parent);
+          setAllCategories(data.data.categories);
+          const cats = data.data.categories.filter(
+            (c: Category) => !c.parent && c.level === 0,
+          );
           setCategories(cats);
         }
       } catch (error) {
@@ -50,21 +54,15 @@ const CategorySidebar = () => {
 
   const activeCategoryData = categories.find((c) => c.slug === activeCategory);
 
-  const generateSubcategories = (category: Category) => {
-    const prefixes = [
-      "Premium",
-      "Classic",
-      "Budget",
-      "Imported",
-      "Local",
-      "Organic",
-      "Vintage",
-      "Limited Edition",
-    ];
-    return prefixes.map((prefix) => ({
-      name: `${prefix} ${category.name}`,
-      slug: `${category.slug}?q=${encodeURIComponent(prefix.toLowerCase())}`,
-    }));
+  const getSubcategories = (category: Category): Category[] => {
+    if (category.subCategories && category.subCategories.length > 0) {
+      return allCategories.filter((c) =>
+        category.subCategories!.includes(c._id),
+      );
+    }
+    return allCategories.filter(
+      (c) => c.parent === category._id && c.level === 1,
+    );
   };
 
   if (loading) {
@@ -182,22 +180,28 @@ const CategorySidebar = () => {
             </Link>
 
             {/* Subcategories Grid */}
-            <div className="mb-4">
-              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                Popular Types
-              </h4>
-              <div className="grid grid-cols-2 gap-2">
-                {generateSubcategories(activeCategoryData).map((sub, idx) => (
-                  <Link
-                    key={idx}
-                    href={`/shop?${sub.slug}`}
-                    className="px-3 py-2.5 bg-white hover:bg-orange-50 border border-gray-100 hover:border-orange-200 rounded-xl text-sm text-gray-700 hover:text-orange-600 font-medium transition-all text-center"
-                  >
-                    {sub.name}
-                  </Link>
-                ))}
-              </div>
-            </div>
+            {(() => {
+              const subcats = getSubcategories(activeCategoryData);
+              if (subcats.length === 0) return null;
+              return (
+                <div className="mb-4">
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                    Popular Types
+                  </h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {subcats.slice(0, 8).map((sub) => (
+                      <Link
+                        key={sub._id}
+                        href={`/shop?type=${activeCategoryData.slug}&sub=${sub.slug}`}
+                        className="px-3 py-2.5 bg-white hover:bg-orange-50 border border-gray-100 hover:border-orange-200 rounded-xl text-sm text-gray-700 hover:text-orange-600 font-medium transition-all text-center"
+                      >
+                        {sub.name}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Occasions */}
             <div className="mb-4">
