@@ -92,7 +92,6 @@ function ShopPageContent({ params }: PageProps) {
     }
     
     // Add other filters
-    if (type) paramsObj.set('type', type);
     if (category) paramsObj.set('category', category);
     if (subcategory) paramsObj.set('subCategory', subcategory);
     if (brand) paramsObj.set('brand', brand);
