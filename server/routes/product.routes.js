@@ -72,6 +72,18 @@ router.get('/bestsellers', productController.getBestsellers);
 router.get('/trending', productController.getTrendingProducts);
 
 /**
+ * @route   GET /api/products/recommendations/personalized
+ * @desc    Get personalized product recommendations
+ * @access  Private
+ */
+router.get(
+  '/recommendations/personalized',
+  protect,
+  productController.getPersonalizedRecommendations
+);
+
+
+/**
  * Get products by category
  * @route GET /api/products/category/:slug
  * @access Public

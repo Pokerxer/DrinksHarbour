@@ -1412,6 +1412,27 @@ const bulkDeleteProductImages = asyncHandler(async (req, res) => {
 
 
 
+
+/**
+ * @desc    Get personalized product recommendations based on recently viewed
+ * @route   GET /api/products/recommendations/personalized
+ * @access  Private
+ */
+const getPersonalizedRecommendations = asyncHandler(async (req, res) => {
+  const limit = parseInt(req.query.limit, 10) || 10;
+  
+  if (!req.user || !req.user._id) {
+    return res.status(401).json({ success: false, message: 'Not authorized' });
+  }
+
+  const recommendations = await productService.getPersonalizedRecommendations(req.user._id, limit);
+  
+  successResponse(res, {
+    count: recommendations.length,
+    data: recommendations,
+  }, 'Personalized recommendations fetched successfully');
+});
+
 module.exports = {
     createProduct,
     approveProduct,
@@ -1438,6 +1459,7 @@ module.exports = {
     getProductPerformance,
     getProductCompetitors,
     getProductRecommendations,
+  getPersonalizedRecommendations,
 
     // Search & Discovery
     searchProducts,

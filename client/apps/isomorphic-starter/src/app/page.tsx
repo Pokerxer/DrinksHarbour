@@ -9,6 +9,7 @@ import AnnouncementBanner from "@/components/Banner/AnnouncementBanner";
 import HeroBanner from "@/components/Banner/HeroBanner";
 import { motion, AnimatePresence } from "framer-motion";
 import * as Icon from "react-icons/pi";
+import RecommendedForYou from '@/components/Shop/RecommendedForYou';
 
 export default function Home() {
   const [showCategories, setShowCategories] = useState(false);
@@ -63,16 +64,8 @@ export default function Home() {
         {/* Flash Sale */}
         <FlashSale />
 
-        {/* Featured Deals */}
-        <section className="py-4 bg-gray-100">
-          <div className="container mx-auto px-3">
-            <FeaturedDeals
-              title="Just For You"
-              subtitle="Personalized picks based on your preferences"
-              limit={12}
-            />
-          </div>
-        </section>
+        {/* Personalized Recommendations */}
+        <RecommendedForYou maxItems={12} />
 
         {/* More Deals Section */}
         <section className="py-4 bg-white">
