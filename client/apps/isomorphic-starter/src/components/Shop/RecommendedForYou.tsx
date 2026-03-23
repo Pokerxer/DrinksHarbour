@@ -67,7 +67,7 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
       
       // Step 2: Fallback to trending products from backend
       try {
-        const response = await fetchWithTimeout(`${API_URL}/api/products/trending?limit=${maxItems}`);
+        const response = await fetchWithTimeout(`/api/products/trending?limit=${maxItems}`);
         if (response.ok) {
           const data = await response.json();
           const prods = normalizeProducts(data);
@@ -82,7 +82,7 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
 
       // Step 3: Fallback to bestsellers
       try {
-        const response = await fetchWithTimeout(`${API_URL}/api/products/bestsellers?limit=${maxItems}`);
+        const response = await fetchWithTimeout(`/api/products/bestsellers?limit=${maxItems}`);
         if (response.ok) {
           const data = await response.json();
           const prods = normalizeProducts(data);
@@ -97,7 +97,7 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
 
       // Step 4: Fallback to new arrivals
       try {
-        const response = await fetchWithTimeout(`${API_URL}/api/products/new-arrivals?limit=${maxItems}`);
+        const response = await fetchWithTimeout(`/api/products/new-arrivals?limit=${maxItems}`);
         if (response.ok) {
           const data = await response.json();
           const prods = normalizeProducts(data);
@@ -124,7 +124,9 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
     let cancelled = false;
 
     const init = async () => {
+    console.log("DEBUG init called");
       try {
+        console.log("DEBUG: checking auth...");
         const response = await fetch('/api/auth/me');
         const isAuth = response.ok && (await response.json()).user;
         if (cancelled) return;
