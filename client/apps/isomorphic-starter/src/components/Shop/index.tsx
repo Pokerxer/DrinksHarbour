@@ -161,6 +161,7 @@ const Shop: React.FC<Props> = ({
       if (filters.brand && product.brand?.name !== filters.brand) return false;
       if (filters.originCountry && product.originCountry !== filters.originCountry) return false;
       if (filters.categoryType && product.category?.slug !== filters.categoryType) return false;
+      if (filters.subCategoryType && product.subCategory?.slug !== filters.subCategoryType) return false;
       
       if (filters.flavorCategory) {
         const hasFlavor = product.flavors?.some((f: any) => f.category === filters.flavorCategory);

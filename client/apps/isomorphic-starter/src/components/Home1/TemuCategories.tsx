@@ -114,7 +114,7 @@ const CategorySidebar: React.FC<CategorySidebarProps> = ({ onClose }) => {
     setLoadingProducts(true);
 
     try {
-      const res = await fetch(`${API_URL}/api/products?type=${activeCategory?.slug}&sub=${subcategory.slug}&limit=20`);
+      const res = await fetch(`${API_URL}/api/products?category=${activeCategory?.slug}&subCategory=${subcategory.slug}&limit=20`);
       const data = await res.json();
       if (data.success && data.data?.products) {
         setProducts(data.data.products);
@@ -261,7 +261,7 @@ const CategorySidebar: React.FC<CategorySidebarProps> = ({ onClose }) => {
                 No products found in this category
               </p>
                 <Link
-                  href={`/shop?category=${activeCategory?.slug}`}
+                  href={`/shop?category=${activeCategory?.slug}${activeSubcategory ? `&subcategory=${activeSubcategory.slug}` : ''}`}
                   onClick={onClose}
                   className="mt-3 px-4 py-2 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition-colors"
                 >
