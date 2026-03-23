@@ -260,13 +260,13 @@ const CategorySidebar: React.FC<CategorySidebarProps> = ({ onClose }) => {
               <p className="text-sm text-gray-500">
                 No products found in this category
               </p>
-              <Link
-                href={`/shop?type=${activeCategory?.slug}`}
-                onClick={onClose}
-                className="mt-3 px-4 py-2 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition-colors"
-              >
-                Browse All
-              </Link>
+                <Link
+                  href={`/shop?category=${activeCategory?.slug}`}
+                  onClick={onClose}
+                  className="mt-3 px-4 py-2 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition-colors"
+                >
+                  Browse All
+                </Link>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3">
