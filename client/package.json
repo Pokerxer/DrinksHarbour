@@ -32,7 +32,6 @@
     "intl:start": "turbo start --filter=intl",
     "intl:clean": "turbo clean --filter=intl",
     "gen-icons": "turbo gen-icons --filter=core",
-    "prepare": "husky"
   },
   "devDependencies": {
     "@types/node": "^25.2.0",
