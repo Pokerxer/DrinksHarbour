@@ -10,7 +10,6 @@ const nextConfig = {
   },
   experimental: {
     reactCompiler: false,
-    optimizePackageImports: false,
   },
   images: {
     remotePatterns: [
@@ -62,10 +61,6 @@ const nextConfig = {
   },
   reactStrictMode: true,
   transpilePackages: ['core', 'framer-motion'],
-  // Fix for React 19 server components issue
-  reactProductionOptimization: false,
-  // Disable swc transformations that cause issues
-  swcMinify: false,
 };
 
 export default nextConfig;

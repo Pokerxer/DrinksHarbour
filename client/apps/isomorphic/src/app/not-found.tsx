@@ -10,7 +10,7 @@ import { siteConfig } from '@/config/site.config';
 import NotFoundImg from '@public/not-found.png';
 
 // Disable static generation to avoid server component issues
-export const dynamic = 'force-client';
+export const dynamic = 'force-static';
 
 export default function NotFound() {
   return (
