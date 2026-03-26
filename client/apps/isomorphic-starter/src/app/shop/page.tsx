@@ -13,17 +13,16 @@ interface PageProps {
 }
 
 interface FilterState {
-  type: string | null;
   size: string | null;
   color: string | null;
-  brand: string | null;
+  brand: string | string[] | null;
   priceRange: { min: number; max: number };
   showOnlySale: boolean;
   sortOption: string;
-  originCountry: string | null;
-  categoryType: string | null;
-  subCategoryType: string | null;
-  flavorCategory: string | null;
+  originCountry: string | string[] | null;
+  categoryType: string | string[] | null;
+  subCategoryType: string | string[] | null;
+  flavorCategory: string | string[] | null;
   minRating: number | null;
   search: string | null;
   abvRange: { min: number; max: number } | null;
@@ -35,43 +34,101 @@ function ShopPageContent({ params }: PageProps) {
   const router = useRouter();
   const pathname = usePathname();
 
-  const type = searchParams.get('type');
-  const category = searchParams.get('category');
-  const subcategory = searchParams.get('subcategory');
-  const brand = searchParams.get('brand');
+  // Parse all URL params for full filter support
+  const categoryParam = searchParams.get('category');
+  const subcategoryParam = searchParams.get('subcategory');
+  const brandParam = searchParams.get('brand');
+  const originParam = searchParams.get('origin');
+  const flavorParam = searchParams.get('flavor');
+  const volumeParam = searchParams.get('volume');
+  const sizeParam = searchParams.get('size');
   const sort = searchParams.get('sort');
   const sale = searchParams.get('sale');
   const searchQuery = searchParams.get('search');
+  const minPriceParam = searchParams.get('minPrice');
+  const maxPriceParam = searchParams.get('maxPrice');
+  const minABVParam = searchParams.get('minABV');
+  const maxABVParam = searchParams.get('maxABV');
+  const minRatingParam = searchParams.get('minRating');
+  
+  // Handle array vs single values consistently
+  const category = categoryParam?.includes(',') ? categoryParam.split(',') : categoryParam;
+  const subcategory = subcategoryParam?.includes(',') ? subcategoryParam.split(',') : subcategoryParam;
+  const brand = brandParam?.includes(',') ? brandParam.split(',') : brandParam;
+  const origin = originParam?.includes(',') ? originParam.split(',') : originParam;
+  const flavor = flavorParam?.includes(',') ? flavorParam.split(',') : flavorParam;
+
+  // Build initial filters from URL params for bookmarking support
+  const buildInitialFilters = useCallback((): Partial<FilterState> => {
+    const initial: Partial<FilterState> = {
+      categoryType: category || null,
+      subCategoryType: subcategory || null,
+      brand: brand || null,
+      originCountry: origin || null,
+      flavorCategory: flavor || null,
+      sortOption: sort || '',
+      showOnlySale: sale === 'true',
+      size: sizeParam || null,
+      volumeRange: volumeParam || null,
+    };
+
+    // Parse numeric filters
+    if (minPriceParam || maxPriceParam) {
+      initial.priceRange = {
+        min: minPriceParam ? parseInt(minPriceParam, 10) : 0,
+        max: maxPriceParam ? parseInt(maxPriceParam, 10) : 100000,
+      };
+    }
+
+    if (minABVParam || maxABVParam) {
+      initial.abvRange = {
+        min: minABVParam ? parseFloat(minABVParam) : 0,
+        max: maxABVParam ? parseFloat(maxABVParam) : 100,
+      };
+    }
+
+    if (minRatingParam) {
+      const rating = parseInt(minRatingParam, 10);
+      if (rating >= 1 && rating <= 5) {
+        initial.minRating = rating;
+      }
+    }
+
+    return initial;
+  }, [category, subcategory, brand, origin, flavor, sort, sale, sizeParam, volumeParam, minPriceParam, maxPriceParam, minABVParam, maxABVParam, minRatingParam]);
+
+  const [initialFilters] = useState<Partial<FilterState>>(buildInitialFilters);
 
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [totalProducts, setTotalProducts] = useState(0);
-  const [filterState, setFilterState] = useState<FilterState>({
-    type: type,
-    size: null,
-    color: null,
-    brand: brand,
-    priceRange: { min: 0, max: 100000 },
-    showOnlySale: sale === 'true',
-    sortOption: sort || '',
-    originCountry: null,
-    categoryType: category,
-    subCategoryType: subcategory,
-    flavorCategory: null,
-    minRating: null,
-    search: searchQuery,
-    abvRange: null,
-    volumeRange: null,
-  });
+  const [layoutCol, setLayoutCol] = useState<number>(4);
 
   const updateUrlFilters = useCallback((newFilters: FilterState) => {
     const params = new URLSearchParams();
 
-    if (newFilters.type) params.set('type', newFilters.type);
-    if (newFilters.categoryType) params.set('category', newFilters.categoryType);
-    if (newFilters.subCategoryType) params.set('subcategory', newFilters.subCategoryType);
-    if (newFilters.brand) params.set('brand', newFilters.brand);
+    if (newFilters.brand) {
+      if (Array.isArray(newFilters.brand)) {
+        params.set('brand', newFilters.brand.join(','));
+      } else {
+        params.set('brand', newFilters.brand);
+      }
+    }
+    if (newFilters.categoryType) {
+      if (Array.isArray(newFilters.categoryType)) {
+        params.set('category', newFilters.categoryType.join(','));
+      } else {
+        params.set('category', newFilters.categoryType);
+      }
+    }
+    if (newFilters.subCategoryType) {
+      if (Array.isArray(newFilters.subCategoryType)) {
+        params.set('subcategory', newFilters.subCategoryType.join(','));
+      } else {
+        params.set('subcategory', newFilters.subCategoryType);
+      }
+    }
     if (newFilters.sortOption) params.set('sort', newFilters.sortOption);
     if (newFilters.showOnlySale) params.set('sale', 'true');
 
@@ -86,22 +143,48 @@ function ShopPageContent({ params }: PageProps) {
 
     const paramsObj = new URLSearchParams();
 
+    // Read all filter params from searchParams
+    const currentCategory = searchParams.get('category');
+    const currentSubcategory = searchParams.get('subcategory');
+    const currentBrand = searchParams.get('brand');
+    const currentOrigin = searchParams.get('origin');
+    const currentFlavor = searchParams.get('flavor');
+    const currentVolume = searchParams.get('volume');
+    const currentSize = searchParams.get('size');
+    const currentSort = searchParams.get('sort');
+    const currentSale = searchParams.get('sale');
+    const currentMinPrice = searchParams.get('minPrice');
+    const currentMaxPrice = searchParams.get('maxPrice');
+    const currentMinABV = searchParams.get('minABV');
+    const currentMaxABV = searchParams.get('maxABV');
+    const currentMinRating = searchParams.get('minRating');
+    
     // Search query is the most important parameter
     if (searchQuery && searchQuery.trim()) {
       paramsObj.set('q', searchQuery.trim());
     }
     
-    // Add other filters
-    if (category) paramsObj.set('category', category);
-    if (subcategory) paramsObj.set('subCategory', subcategory);
-    if (brand) paramsObj.set('brand', brand);
-    if (sort) paramsObj.set('sort', sort);
-    if (sale === 'true') paramsObj.set('onSale', 'true');
+    // Add all filter parameters
+    if (currentCategory) paramsObj.set('category', currentCategory);
+    if (currentSubcategory) paramsObj.set('subCategory', currentSubcategory);
+    if (currentBrand) paramsObj.set('brand', currentBrand);
+    if (currentOrigin) paramsObj.set('origin', currentOrigin);
+    if (currentFlavor) paramsObj.set('flavor', currentFlavor);
+    if (currentVolume) paramsObj.set('volume', currentVolume);
+    if (currentSize) paramsObj.set('size', currentSize);
+    if (currentSort) paramsObj.set('sort', currentSort);
+    if (currentSale === 'true') paramsObj.set('onSale', 'true');
+    if (currentMinPrice) paramsObj.set('minPrice', currentMinPrice);
+    if (currentMaxPrice) paramsObj.set('maxPrice', currentMaxPrice);
+    if (currentMinABV) paramsObj.set('minABV', currentMinABV);
+    if (currentMaxABV) paramsObj.set('maxABV', currentMaxABV);
+    if (currentMinRating) paramsObj.set('minRating', currentMinRating);
+    
     paramsObj.set('limit', '50');
 
     const queryString = paramsObj.toString();
     return `${baseUrl}?${queryString}`;
-  }, [type, category, subcategory, brand, sort, sale, searchQuery]);
+  }, [searchParams, searchQuery]);
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -109,7 +192,7 @@ function ShopPageContent({ params }: PageProps) {
       setError(null);
 
       const url = buildApiUrl();
-      console.log('Fetching products from:', url);
+      console.log('[ShopPage] Fetching products from:', url);
 
       const response = await fetch(url, {
         method: 'GET',
@@ -169,46 +252,6 @@ function ShopPageContent({ params }: PageProps) {
     fetchProducts();
   }, [fetchProducts]);
 
-  useEffect(() => {
-    setFilterState(prev => ({
-      ...prev,
-      type: type,
-      categoryType: category,
-      subCategoryType: subcategory,
-      brand: brand,
-      sortOption: sort || '',
-      showOnlySale: sale === 'true',
-      search: searchQuery,
-    }));
-  }, [type, category, subcategory, brand, sort, sale, searchQuery]);
-
-  const handleFilterChange = (key: keyof FilterState, value: any) => {
-    const newFilters = { ...filterState, [key]: value };
-    setFilterState(newFilters);
-    updateUrlFilters(newFilters);
-  };
-
-  const handleClearFilters = () => {
-    setFilterState({
-      type: null,
-      size: null,
-      color: null,
-      brand: null,
-      priceRange: { min: 0, max: 100000 },
-      showOnlySale: false,
-      sortOption: '',
-      originCountry: null,
-      categoryType: null,
-      subCategoryType: null,
-      flavorCategory: null,
-      minRating: null,
-      search: null,
-      abvRange: null,
-      volumeRange: null,
-    });
-    router.replace(pathname, { scroll: false });
-  };
-
   const handleClearSearch = () => {
     const params = new URLSearchParams(searchParams.toString());
     params.delete('search');
@@ -216,9 +259,11 @@ function ShopPageContent({ params }: PageProps) {
     router.replace(newUrl, { scroll: false });
   };
 
-  const hasActiveFilters = filterState.type || filterState.brand || filterState.categoryType ||
-    filterState.subCategoryType || filterState.showOnlySale || filterState.originCountry ||
-    filterState.flavorCategory || filterState.minRating || filterState.search;
+  const hasActiveFilters = searchParams.get('category') || searchParams.get('subcategory') || 
+    searchParams.get('brand') || searchParams.get('sale') || searchParams.get('search') ||
+    searchParams.get('origin') || searchParams.get('flavor') || searchParams.get('volume') ||
+    searchParams.get('size') || searchParams.get('minPrice') || searchParams.get('maxPrice') ||
+    searchParams.get('minABV') || searchParams.get('maxABV') || searchParams.get('minRating');
 
   if (loading) {
     return (
@@ -277,17 +322,17 @@ function ShopPageContent({ params }: PageProps) {
         {/* Product Grid */}
         <Shop
           productPerPage={12}
-          dataType={type}
           data={products}
           productStyle="style-1"
-          initialFilters={filterState}
-          onFilterChange={handleFilterChange}
           searchQuery={searchQuery}
+          layoutCol={layoutCol}
+          onLayoutChange={setLayoutCol}
+          initialFilters={initialFilters}
         />
         
         {/* Recommended For You Section */}
         <div className="mt-8">
-          <RecommendedForYou maxItems={12} />
+          <RecommendedForYou maxItems={12} layoutCol={layoutCol} />
         </div>
       </div>
     </>
