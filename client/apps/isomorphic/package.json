@@ -46,7 +46,6 @@
     "@uploadthing/react": "^7.3.0",
     "ahooks": "^3.8.4",
     "clsx": "^2.1.1",
-    "core": "workspace:*",
     "date-arithmetic": "^4.1.0",
     "dayjs": "^1.11.13",
     "eslint": "9.23.0",
@@ -120,9 +119,9 @@
     "prettier": "3.5.3",
     "prettier-plugin-tailwindcss": "^0.6.11",
     "rimraf": "^6.0.1",
-    "tailwind-config": "workspace:*",
+    "tailwind-config": "file:../../packages/config-tailwind",
     "tailwindcss": "^3.4.17",
-    "typescript-config": "workspace:*"
+    "typescript-config": "file:../../packages/config-typescript"
   },
   "engines": {
     "node": ">=18"
