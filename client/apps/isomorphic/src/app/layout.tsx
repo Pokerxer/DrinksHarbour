@@ -9,12 +9,15 @@ import { siteConfig } from '@/config/site.config';
 import { inter, lexendDeca } from '@/app/fonts';
 import cn from '@core/utils/class-names';
 import NextProgress from '@core/components/next-progress';
-import ChatbotWidget from '@/components/Chatbot/ChatbotWidget';
+// import ChatbotWidget from '@/components/Chatbot/ChatbotWidget';
 
 // styles
 import 'swiper/css';
 import 'swiper/css/navigation';
 import '@/app/globals.css';
+
+// Workaround for styled-jsx issues in server components
+export const dynamic = 'force-static';
 
 export const metadata = {
   title: siteConfig.title,
@@ -47,7 +50,7 @@ export default async function RootLayout({
               <Toaster />
               <GlobalDrawer />
               <GlobalModal />
-              <ChatbotWidget />
+              {/* <ChatbotWidget /> */}
             </JotaiProvider>
           </ThemeProvider>
         </AuthProvider>

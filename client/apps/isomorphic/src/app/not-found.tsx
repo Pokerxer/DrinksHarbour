@@ -1,3 +1,5 @@
+'use client';
+
 import Link from 'next/link';
 import Image from 'next/image';
 import { Button } from 'rizzui/button';
@@ -6,6 +8,9 @@ import { PiHouseLineBold } from 'react-icons/pi';
 import SocialItems from '@core/ui/social-shares';
 import { siteConfig } from '@/config/site.config';
 import NotFoundImg from '@public/not-found.png';
+
+// Disable static generation to avoid server component issues
+export const dynamic = 'force-client';
 
 export default function NotFound() {
   return (
