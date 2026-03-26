@@ -3,9 +3,8 @@ export type UserRole =
   | 'admin'
   | 'tenant_admin'
   | 'tenant_owner'
-  | 'staff'
-  | 'cashier'
-  | 'viewer';
+  | 'tenant_staff'
+  | 'customer';
 
 export type Permission =
   | 'products:read'
@@ -143,7 +142,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'settings:read',
     'analytics:read',
   ],
-  staff: [
+  tenant_staff: [
     'products:read',
     'subproducts:read',
     'subproducts:write',
@@ -153,21 +152,11 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'inventory:read',
     'analytics:read',
   ],
-  cashier: [
+  customer: [
     'products:read',
     'subproducts:read',
     'orders:read',
     'orders:write',
-    'customers:read',
-    'inventory:read',
-  ],
-  viewer: [
-    'products:read',
-    'subproducts:read',
-    'orders:read',
-    'inventory:read',
-    'reports:read',
-    'analytics:read',
   ],
 };
 
@@ -183,10 +172,9 @@ export const PLATFORM_ROLES: UserRole[] = ['super_admin', 'admin'];
 export const TENANT_ROLES: UserRole[] = [
   'tenant_admin',
   'tenant_owner',
-  'staff',
-  'cashier',
-  'viewer',
+  'tenant_staff',
 ];
+export const CUSTOMER_ROLES: UserRole[] = ['customer'];
 
 export const isPlatformRole = (role: UserRole): boolean => {
   return PLATFORM_ROLES.includes(role);

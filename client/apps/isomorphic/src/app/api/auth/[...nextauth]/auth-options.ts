@@ -17,13 +17,72 @@ interface LoginResponse {
       firstName: string;
       lastName: string;
       role: UserRole;
-      tenant?: string;
+      tenant?: string | { _id: string };
       tenantId?: string;
       avatar?: { url: string };
     };
     token: string;
+    refreshToken?: string;
   };
   message?: string;
+}
+
+interface RefreshTokenResponse {
+  success: boolean;
+  data: {
+    token: string;
+    refreshToken: string;
+    expiresIn: string;
+  };
+  message?: string;
+}
+
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = parts[1];
+    const decoded = Buffer.from(payload, 'base64').toString();
+    return JSON.parse(decoded) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function isTokenExpired(token: string): boolean {
+  const decoded = decodeJwtPayload(token);
+  if (!decoded || typeof decoded.exp !== 'number') return false;
+  return decoded.exp * 1000 < Date.now();
+}
+
+async function refreshAccessToken(refreshToken: string) {
+  try {
+    const response = await fetch(`${API_URL}/api/users/refresh-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ refreshToken }),
+    });
+
+    if (!response.ok) {
+      console.error('Failed to refresh token');
+      return null;
+    }
+
+    const data = await response.json() as RefreshTokenResponse;
+    if (data.success && data.data) {
+      return {
+        token: data.data.token,
+        refreshToken: data.data.refreshToken,
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error refreshing access token:', error);
+    return null;
+  }
 }
 
 export const authOptions: NextAuthOptions = {
@@ -36,15 +95,20 @@ export const authOptions: NextAuthOptions = {
   },
   callbacks: {
     async session({ session, token }) {
-      // Check if token is expired
-      if (token.accessToken) {
+      if (token.refreshToken && token.accessToken) {
         try {
-          const decoded = JSON.parse(Buffer.from((token.accessToken as string).split('.')[1], 'base64').toString());
-          if (decoded.exp && decoded.exp * 1000 < Date.now()) {
-            return { ...session, error: 'RefreshAccessTokenError' };
+          if (isTokenExpired(token.accessToken as string)) {
+            const refreshedTokens = await refreshAccessToken(token.refreshToken as string);
+            if (refreshedTokens) {
+              token.accessToken = refreshedTokens.token;
+              token.refreshToken = refreshedTokens.refreshToken;
+            } else {
+              return { ...session, error: 'RefreshAccessTokenError' };
+            }
           }
         } catch (error) {
-          console.error('Error decoding token in session callback:', error);
+          console.error('Error refreshing token in session callback:', error);
+          return { ...session, error: 'RefreshAccessTokenError' };
         }
       }
 
@@ -60,29 +124,33 @@ export const authOptions: NextAuthOptions = {
         error: token.error,
       };
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.id = user.id;
         token.role = user.role;
         token.tenantId = user.tenantId;
         token.accessToken = user.token;
+        token.refreshToken = (user as { refreshToken?: string }).refreshToken;
       }
 
-      // Check if token is expired
-      if (token.accessToken) {
-        try {
-          const decoded = JSON.parse(Buffer.from((token.accessToken as string).split('.')[1], 'base64').toString());
-          if (decoded.exp && decoded.exp * 1000 < Date.now()) {
-            token.error = 'RefreshAccessTokenError';
+      if (trigger === 'update' && token.accessToken) {
+        const decoded = decodeJwtPayload(token.accessToken as string);
+        if (decoded && typeof decoded.exp === 'number' && decoded.exp * 1000 < Date.now()) {
+          if (token.refreshToken) {
+            const refreshedTokens = await refreshAccessToken(token.refreshToken as string);
+            if (refreshedTokens) {
+              token.accessToken = refreshedTokens.token;
+              token.refreshToken = refreshedTokens.refreshToken;
+            }
           }
-        } catch (error) {
-          console.error('Error decoding token in jwt callback:', error);
         }
       }
 
       return token;
     },
     async redirect({ url, baseUrl }) {
+      if (url.startsWith(baseUrl)) return url;
+      if (url.startsWith('/')) return `${baseUrl}${url}`;
       return baseUrl;
     },
   },
@@ -133,10 +201,15 @@ export const authOptions: NextAuthOptions = {
           }
 
           const userRole = data.data.user.role;
-          const validRoles: UserRole[] = ['admin', 'super_admin', 'tenant_admin', 'tenant_owner', 'staff', 'cashier', 'viewer'];
+          const validRoles: UserRole[] = ['admin', 'super_admin', 'tenant_admin', 'tenant_owner', 'tenant_staff', 'customer'];
           if (!validRoles.includes(userRole)) {
-            throw new Error('Access denied. Valid role required.');
+            throw new Error(`Access denied. Role '${userRole}' is not authorized to access this system.`);
           }
+
+          const tenantValue = data.data.user.tenant;
+          const tenantId = typeof tenantValue === 'object' && tenantValue !== null 
+            ? tenantValue._id 
+            : tenantValue || data.data.user.tenantId || null;
 
           return {
             id: data.data.user._id || data.data.user.id,
@@ -145,9 +218,10 @@ export const authOptions: NextAuthOptions = {
             firstName: data.data.user.firstName,
             lastName: data.data.user.lastName,
             role: userRole,
-            tenantId: data.data.user.tenant || data.data.user.tenantId || null,
+            tenantId,
             image: data.data.user.avatar?.url || null,
             token: data.data.token,
+            refreshToken: data.data.refreshToken,
           };
         } catch (error: unknown) {
           console.error('Auth error:', error);

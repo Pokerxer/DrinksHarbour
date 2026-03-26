@@ -31,5 +31,7 @@ declare module 'next-auth/jwt' {
     tenantId?: string | null;
     accessToken?: string;
     idToken?: string;
+    refreshToken?: string;
+    error?: string;
   }
 }
