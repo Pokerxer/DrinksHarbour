@@ -8,12 +8,12 @@ import { JotaiProvider, ThemeProvider } from '@/app/shared/theme-provider';
 import { siteConfig } from '@/config/site.config';
 import { inter, lexendDeca } from '@/app/fonts';
 import cn from '@core/utils/class-names';
-import NextProgress from '@core/components/next-progress';
+// import NextProgress from '@core/components/next-progress';
 // import ChatbotWidget from '@/components/Chatbot/ChatbotWidget';
 
 // styles
-import 'swiper/css';
-import 'swiper/css/navigation';
+// import 'swiper/css';
+// import 'swiper/css/navigation';
 import '@/app/globals.css';
 
 // Workaround for styled-jsx issues in server components
@@ -34,23 +34,20 @@ export default async function RootLayout({
     <html
       lang="en"
       dir="ltr"
-      // required this one for next-themes, remove it if you are not using next-theme
       suppressHydrationWarning
     >
       <body
-        // to prevent any warning that is caused by third party extensions like Grammarly
         suppressHydrationWarning
         className={cn(inter.variable, lexendDeca.variable, 'font-inter')}
       >
         <AuthProvider session={session}>
           <ThemeProvider>
-            <NextProgress />
+            {/* <NextProgress /> */}
             <JotaiProvider>
               {children}
               <Toaster />
               <GlobalDrawer />
               <GlobalModal />
-              {/* <ChatbotWidget /> */}
             </JotaiProvider>
           </ThemeProvider>
         </AuthProvider>

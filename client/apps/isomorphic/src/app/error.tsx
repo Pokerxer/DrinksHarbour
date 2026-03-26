@@ -1,8 +1,7 @@
 'use client';
 
-import Link from 'next/link';
-import { Button } from 'rizzui';
-import { PiHouseLineBold } from 'react-icons/pi';
+export const dynamic = 'force-static';
+export const revalidate = 0;
 
 export default function Error({
   error,
@@ -20,22 +19,13 @@ export default function Error({
         <p className="mt-2 text-gray-600">
           We're sorry, but something went wrong. Please try again.
         </p>
-        <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:justify-center">
-          <Button
+        <div className="mt-6">
+          <button
             onClick={() => reset()}
-            className="h-12 px-6"
+            className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
           >
             Try again
-          </Button>
-          <Link href="/">
-            <Button
-              variant="outline"
-              className="h-12 px-6"
-            >
-              <PiHouseLineBold className="mr-2" />
-              Go home
-            </Button>
-          </Link>
+          </button>
         </div>
       </div>
     </div>

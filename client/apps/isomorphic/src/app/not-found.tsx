@@ -1,38 +1,28 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
 import { Button } from 'rizzui/button';
 import { Title } from 'rizzui/typography';
 import { PiHouseLineBold } from 'react-icons/pi';
-import SocialItems from '@core/ui/social-shares';
-import { siteConfig } from '@/config/site.config';
-import NotFoundImg from '@public/not-found.png';
 
-// Disable static generation to avoid server component issues
+// Completely disable static generation to avoid server component issues
 export const dynamic = 'force-static';
+export const revalidate = 0;
 
 export default function NotFound() {
   return (
     <div className="flex min-h-screen flex-col bg-[#F8FAFC]">
       <div className="sticky top-0 z-40 flex justify-center py-5 backdrop-blur-lg lg:backdrop-blur-none xl:py-10">
         <Link href="/">
-          <Image
-            src={siteConfig.logo}
-            alt={siteConfig.title}
-            className="dark:invert"
-            priority
-          />
+          <span className="text-2xl font-bold">DrinksHarbour</span>
         </Link>
       </div>
 
       <div className="flex grow items-center px-6 xl:px-10">
         <div className="mx-auto text-center">
-          <Image
-            src={NotFoundImg}
-            alt="not found"
-            className="mx-auto mb-8 aspect-[360/326] max-w-[256px] xs:max-w-[370px] lg:mb-12 2xl:mb-16"
-          />
+          <div className="mx-auto mb-8 aspect-[360/326] max-w-[256px] xs:max-w-[370px] lg:mb-12 2xl:mb-16">
+            <div className="text-6xl">😢</div>
+          </div>
           <Title
             as="h1"
             className="text-[22px] font-bold leading-normal text-gray-1000 lg:text-3xl"
@@ -41,9 +31,7 @@ export default function NotFound() {
           </Title>
           <p className="mt-3 text-sm leading-loose text-gray-500 lg:mt-6 lg:text-base lg:leading-loose">
             We have been spending long hours in order to launch our new website.
-            Join our
-            <br className="hidden sm:inline-block" />
-            mailing list or follow us on Facebook for get latest update.
+            Join our mailing list or follow us on Facebook for get latest update.
           </p>
           <Link href={'/'}>
             <Button
@@ -58,7 +46,6 @@ export default function NotFound() {
           </Link>
         </div>
       </div>
-      <SocialItems />
     </div>
   );
 }
