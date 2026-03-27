@@ -575,9 +575,9 @@ const searchProducts = asyncHandler(async (req, res) => {
   
   const searchParams = {
     query,
-    category: req.query.category,
-    subCategory: req.query.subCategory,
-    brand: req.query.brand,
+    category: req.query.category ? req.query.category.split(',') : undefined,
+    subCategory: req.query.subCategory ? req.query.subCategory.split(',') : undefined,
+    brand: req.query.brand ? req.query.brand.split(',') : undefined,
     tags: req.query.tags ? req.query.tags.split(',') : undefined,
     flavors: req.query.flavors ? req.query.flavors.split(',') : undefined,
     type: req.query.type ? req.query.type.split(',') : undefined,
@@ -949,14 +949,19 @@ const getAllProducts = asyncHandler(async (req, res) => {
  * @access  Public
  */
 const searchProductsPublic = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 12, q, query, ...filters } = req.query;
+  const { page = 1, limit = 12, q, query, category, subCategory, brand, ...filters } = req.query;
   
-  const result = await productService.searchProducts({
+  const searchParams = {
     ...filters,
-    query: query || q || '', // Support both 'query' and 'q' parameters
+    query: query || q || '',
     page: parseInt(page, 10),
     limit: parseInt(limit, 10),
-  });
+    category: category ? (Array.isArray(category) ? category : category.split(',')) : undefined,
+    subCategory: subCategory ? (Array.isArray(subCategory) ? subCategory : subCategory.split(',')) : undefined,
+    brand: brand ? (Array.isArray(brand) ? brand : brand.split(',')) : undefined,
+  };
+  
+  const result = await productService.searchProducts(searchParams);
 
   res.status(200).json({
     success: true,

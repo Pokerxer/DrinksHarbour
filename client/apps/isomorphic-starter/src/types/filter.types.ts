@@ -1,12 +1,11 @@
 export interface FilterState {
-  type: string | null;
   size: string | null;
   color: string | null;
-  brand: string | null;
-  originCountry: string | null;
-  categoryType: string | null;
-  subCategoryType: string | null;
-  flavorCategory: string | null;
+  brand: string | string[] | null;
+  originCountry: string | string[] | null;
+  categoryType: string | string[] | null;
+  subCategoryType: string | string[] | null;
+  flavorCategory: string | string[] | null;
   priceRange: { min: number; max: number };
   showOnlySale: boolean;
   sortOption: string;
@@ -16,7 +15,6 @@ export interface FilterState {
 }
 
 export interface FilterOptions {
-  type: string[];
   size: string[];
   color: string[];
   brand: string[];
@@ -36,9 +34,9 @@ export interface SortOption {
 }
 
 export interface ProductCountFunctions {
-  getCountByType: (type: string) => number;
   getCountByBrand: (brand: string) => number;
   getCountByOriginCountry: (country: string) => number;
   getCountByCategoryType: (categoryType: string) => number;
+  getCountBySubCategoryType: (subCategoryType: string) => number;
   getCountByFlavorCategory: (flavorCategory: string) => number;
 }

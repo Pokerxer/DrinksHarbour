@@ -12,7 +12,7 @@ const resolveCategoryToObjectIds = async (names) => {
   if (!names || names.length === 0) return [];
   
   const categories = await Category.find({
-    $or: names.map(n => ({ name: new RegExp(`^${n}$`, 'i') })),
+    $or: names.map(n => ({ slug: new RegExp(`^${n}$`, 'i') })),
     status: 'published'
   }).select('_id').lean();
   
@@ -21,6 +21,8 @@ const resolveCategoryToObjectIds = async (names) => {
 
 /**
  * Resolve subcategory names to ObjectIds
+ * Products reference Category documents at level 1 for subcategories,
+ * but SubCategory collection also exists with unprefixed slugs.
  * @param {string[]} names - Subcategory names to resolve
  * @param {string} [parentCategoryId] - Optional parent category ObjectId string
  * @returns {Promise<string[]>} Array of ObjectId strings
@@ -28,17 +30,50 @@ const resolveCategoryToObjectIds = async (names) => {
 const resolveSubCategoryToObjectIds = async (names, parentCategoryId = null) => {
   if (!names || names.length === 0) return [];
   
-  const query = {
-    $or: names.map(n => ({ name: new RegExp(`^${n}$`, 'i') })),
-    status: 'published'
-  };
-  
+  let categoryQuery = { status: 'published', level: 1 };
   if (parentCategoryId) {
-    query.parent = parentCategoryId;
+    categoryQuery.parent = parentCategoryId;
   }
   
-  const subCategories = await SubCategory.find(query).select('_id').lean();
-  return subCategories.map(c => c._id.toString());
+  const categorySubs = await Category.find(categoryQuery).select('_id slug parent').lean();
+  
+  let subCategoryQuery = { status: 'published' };
+  if (parentCategoryId) {
+    subCategoryQuery.parent = parentCategoryId;
+  }
+  const subCategories = await SubCategory.find(subCategoryQuery).select('_id slug parent').lean();
+  
+  const results = [];
+  
+  for (const name of names) {
+    const nameLower = name.toLowerCase();
+    
+    const categoryMatch = categorySubs.find(sc => sc.slug.toLowerCase() === nameLower);
+    if (categoryMatch) {
+      results.push(categoryMatch._id.toString());
+      continue;
+    }
+    
+    let bestMatch = null;
+    let bestMatchLength = 0;
+    
+    const allSubs = [...categorySubs, ...subCategories];
+    for (const sc of allSubs) {
+      const slugLower = sc.slug.toLowerCase();
+      if (nameLower.endsWith('-' + slugLower) || nameLower === slugLower) {
+        if (slugLower.length > bestMatchLength) {
+          bestMatchLength = slugLower.length;
+          bestMatch = sc;
+        }
+      }
+    }
+    
+    if (bestMatch) {
+      results.push(bestMatch._id.toString());
+    }
+  }
+  
+  return results;
 };
 
 /**

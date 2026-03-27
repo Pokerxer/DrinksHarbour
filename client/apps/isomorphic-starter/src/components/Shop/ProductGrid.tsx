@@ -9,18 +9,36 @@ interface ProductGridProps {
   isLoading?: boolean;
 }
 
-const ProductGrid: React.FC<ProductGridProps> = ({ products, layoutCol, isLoading = false }) => {
-  // Always 2 columns on mobile, then responsive for larger screens
-  const gridClass = 'grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5';
+// Shared utility for consistent grid layout across all product display components
+export const getProductGridLayoutClasses = (cols: number) => {
+  const baseGap = "gap-3 sm:gap-5";
+  const baseMargin = "mt-5 sm:mt-7";
+  
+  switch (cols) {
+    case 2: 
+      return `grid grid-cols-2 ${baseGap} ${baseMargin}`;
+    case 3: 
+      return `grid grid-cols-2 sm:grid-cols-3 ${baseGap} ${baseMargin}`;
+    case 4: 
+      return `grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 ${baseGap} ${baseMargin}`;
+    case 5: 
+      return `grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 ${baseGap} ${baseMargin}`;
+    default: 
+      return `grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 ${baseGap} ${baseMargin}`;
+  }
+};
+
+const ProductGrid: React.FC<ProductGridProps> = ({ products, layoutCol, productStyle, isLoading = false }) => {
+  const gridClass = getProductGridLayoutClasses(layoutCol);
 
   if (isLoading) {
     return (
       <div 
-        className={`grid ${gridClass} gap-3 sm:gap-5 mt-5 sm:mt-7`}
+        className={gridClass}
         role="list"
         aria-label="Loading products"
       >
-        <ProductCardSkeleton count={6} layout="grid" />
+        <ProductCardSkeleton count={layoutCol * 2} layout="grid" />
       </div>
     );
   }

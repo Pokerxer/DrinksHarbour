@@ -1,6 +1,13 @@
 /**
  * Search Service Configuration
  */
+const mongoose = require('mongoose');
+const { 
+  resolveCategoryToObjectIds, 
+  resolveSubCategoryToObjectIds, 
+  resolveBrandToObjectIds 
+} = require('../helpers/searchFilter.helper');
+
 const SEARCH_CONFIG = {
   // Caching
   CACHE_ENABLED: true,

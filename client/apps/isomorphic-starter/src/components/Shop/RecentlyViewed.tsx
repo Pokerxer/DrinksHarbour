@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 import { useRouter } from 'next/navigation';
+import { getProductGridLayoutClasses } from './ProductGrid';
 
 interface RecentProduct {
   _id: string;
@@ -21,7 +22,7 @@ interface RecentProduct {
   slug?: string;
   price?: number;
   originPrice?: number;
-}
+  }
 
 interface RecentlyViewedProps {
   productId?: string;
@@ -41,9 +42,10 @@ interface RecentlyViewedProps {
     sale?: boolean;
     new?: boolean;
   };
+  layoutCol?: number; // Add layout column prop
 }
 
-const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 6, currentProduct }) => {
+const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 6, currentProduct, layoutCol = 2 }) => {
   const router = useRouter();
   const [products, setProducts] = useState<RecentProduct[]>([]);
   const [loading, setLoading] = useState(true);
@@ -258,8 +260,8 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 6
               <div className="h-2 w-20 sm:h-3 sm:w-24 bg-gray-200 rounded animate-pulse" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:gap-5">
-            {Array.from({ length: 4 }).map((_, i) => (
+          <div className={getProductGridLayoutClasses(layoutCol)}>
+            {Array.from({ length: layoutCol * 2 }).map((_, i) => (
               <div key={i} className="bg-gray-100 rounded-lg sm:rounded-xl animate-pulse aspect-[4/5] sm:aspect-square" />
             ))}
           </div>
@@ -270,125 +272,125 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 6
 
   if (filteredProducts.length === 0) return null;
 
-  return (
-    <section className="w-full bg-white border-t border-gray-100">
-      <div className="container mx-auto px-3 sm:px-4 py-6 sm:py-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4 sm:mb-6">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
-              <Icon.PiClockCounterClockwise size={20} className="text-white w-4 h-4 sm:w-5 sm:h-5" />
+    return (
+      <section className="w-full bg-white border-t border-gray-100">
+        <div className="container mx-auto px-3 sm:px-4 py-6 sm:py-8">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4 sm:mb-6">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
+                <Icon.PiClockCounterClockwise size={20} className="text-white w-4 h-4 sm:w-5 sm:h-5" />
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg md:text-xl font-bold text-gray-900">
+                  Recently Viewed
+                </h3>
+                <p className="text-[10px] sm:text-xs text-gray-500 hidden sm:block">
+                  Pick up where you left off
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-base sm:text-lg md:text-xl font-bold text-gray-900">
-                Recently Viewed
-              </h3>
-              <p className="text-[10px] sm:text-xs text-gray-500 hidden sm:block">
-                Pick up where you left off
-              </p>
-            </div>
+
+            <button
+              onClick={handleClearHistory}
+              className="text-xs sm:text-sm text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1"
+            >
+              Clear
+              <Icon.PiX size={14} className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+            </button>
           </div>
 
-          <button
-            onClick={handleClearHistory}
-            className="text-xs sm:text-sm text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1"
-          >
-            Clear
-            <Icon.PiX size={14} className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-          </button>
-        </div>
-
         {/* Products Grid - Temu style gallery */}
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:gap-5">
-          <AnimatePresence mode="popLayout">
-            {filteredProducts.slice(0, maxItems).map((product, index) => {
-              const discount = getDiscount(product);
-              const isOnSale = discount > 0;
-              const productSlug = product.slug || product._id || product.id;
-              const currencySymbol = getCurrencySymbol();
+        <div className={getProductGridLayoutClasses(layoutCol)}>
+            <AnimatePresence mode="popLayout">
+              {filteredProducts.slice(0, maxItems).map((product, index) => {
+                const discount = getDiscount(product);
+                const isOnSale = discount > 0;
+                const productSlug = product.slug || product._id || product.id;
+                const currencySymbol = getCurrencySymbol();
 
-              return (
-                <motion.div
-                  key={`${product._id}-${product.id}-${index}`}
-                  layout
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  transition={{ delay: index * 0.05 }}
-                  className="animate-fade-in-up"
-                  style={{ animationDelay: `${index * 50}ms` }}
-                >
-                  <Link href={`/product/${productSlug}`}>
-                    <motion.div
-                      whileHover={{ y: -2 }}
-                      className="group bg-white rounded-lg sm:rounded-xl overflow-hidden border border-gray-100 hover:border-gray-200 hover:shadow-md transition-all duration-300"
-                    >
-                      {/* Image */}
-                      <div className="relative aspect-[4/5] sm:aspect-square bg-gradient-to-br from-gray-100 to-gray-50">
-                        {product.images?.[0]?.url ? (
-                          <Image
-                            src={product.images[0].url}
-                            alt={product.name}
-                            fill
-                            className="object-cover group-hover:scale-105 transition-transform duration-500"
-                            sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 25vw"
-                          />
-                        ) : (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="text-3xl sm:text-4xl opacity-50">{getEmoji(product.type)}</span>
-                          </div>
-                        )}
-
-                        {/* Sale Badge */}
-                        {isOnSale && (
-                          <div className="absolute top-1.5 sm:top-2 left-1.5 sm:left-2">
-                            <span className="px-1.5 sm:px-2 py-0.5 bg-red-500 text-white text-[9px] sm:text-[10px] font-bold rounded-full">
-                              -{discount}%
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Quick View overlay */}
-                        <motion.div
-                          initial={{ opacity: 0 }}
-                          whileHover={{ opacity: 1 }}
-                          className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <span className="px-2.5 sm:px-3 py-1 sm:py-1.5 bg-white text-gray-900 text-[10px] sm:text-xs font-semibold rounded-full">
-                            View
-                          </span>
-                        </motion.div>
-                      </div>
-
-                      {/* Content */}
-                      <div className="p-2 sm:p-3">
-                        <p className="text-[9px] sm:text-[10px] text-gray-400 mb-0.5 truncate">
-                          {product.brand?.name || product.type}
-                        </p>
-                        <h4 className="text-[11px] sm:text-xs font-semibold text-gray-900 line-clamp-2 mb-1 sm:mb-1.5 min-h-[2rem] sm:min-h-[2.5rem]">
-                          {product.name || 'Loading...'}
-                        </h4>
-                        <div className="flex items-center gap-1 sm:gap-1.5">
-                          <span className={`font-bold text-xs sm:text-sm ${isOnSale ? 'text-red-600' : 'text-gray-900'}`}>
-                            {formatPrice(product.priceRange?.min || product.price || 0, currencySymbol)}
-                          </span>
-                          {isOnSale && (product.priceRange?.max || product.originPrice) && (
-                            <span className="text-[9px] sm:text-[10px] text-gray-400 line-through">
-                              {formatPrice(product.priceRange?.max || product.originPrice || 0, currencySymbol)}
-                            </span>
+                return (
+                  <motion.div
+                    key={`${product._id}-${product.id}-${index}`}
+                    layout
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="animate-fade-in-up"
+                    style={{ animationDelay: `${index * 50}ms` }}
+                  >
+                    <Link href={`/product/${productSlug}`}>
+                      <motion.div
+                        whileHover={{ y: -2 }}
+                        className="group bg-white rounded-lg sm:rounded-xl overflow-hidden border border-gray-100 hover:border-gray-200 hover:shadow-md transition-all duration-300"
+                      >
+                        {/* Image */}
+                        <div className="relative aspect-[4/5] sm:aspect-square bg-gradient-to-br from-gray-100 to-gray-50">
+                          {product.images?.[0]?.url ? (
+                            <Image
+                              src={product.images[0].url}
+                              alt={product.name}
+                              fill
+                              className="object-cover group-hover:scale-105 transition-transform duration-500"
+                              sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 25vw"
+                            />
+                          ) : (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="text-3xl sm:text-4xl opacity-50">{getEmoji(product.type)}</span>
+                            </div>
                           )}
+
+                          {/* Sale Badge */}
+                          {isOnSale && (
+                            <div className="absolute top-1.5 sm:top-2 left-1.5 sm:left-2">
+                              <span className="px-1.5 sm:px-2 py-0.5 bg-red-500 text-white text-[9px] sm:text-[10px] font-bold rounded-full">
+                                -{discount}%
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Quick View overlay */}
+                          <motion.div
+                            initial={{ opacity: 0 }}
+                            whileHover={{ opacity: 1 }}
+                            className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <span className="px-2.5 sm:px-3 py-1 sm:py-1.5 bg-white text-gray-900 text-[10px] sm:text-xs font-semibold rounded-full">
+                              View
+                            </span>
+                          </motion.div>
                         </div>
-                      </div>
-                    </motion.div>
-                  </Link>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
+
+                        {/* Content */}
+                        <div className="p-2 sm:p-3">
+                          <p className="text-[9px] sm:text-[10px] text-gray-400 mb-0.5 truncate">
+                            {product.brand?.name || product.type}
+                          </p>
+                          <h4 className="text-[11px] sm:text-xs font-semibold text-gray-900 line-clamp-2 mb-1 sm:mb-1.5 min-h-[2rem] sm:min-h-[2.5rem]">
+                            {product.name || 'Loading...'}
+                          </h4>
+                          <div className="flex items-center gap-1 sm:gap-1.5">
+                            <span className={`font-bold text-xs sm:text-sm ${isOnSale ? 'text-red-600' : 'text-gray-900'}`}>
+                              {formatPrice(product.priceRange?.min || product.price || 0, currencySymbol)}
+                            </span>
+                            {isOnSale && (product.priceRange?.max || product.originPrice) && (
+                              <span className="text-[9px] sm:text-[10px] text-gray-400 line-through">
+                                {formatPrice(product.priceRange?.max || product.originPrice || 0, currencySymbol)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+                    </Link>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
         </div>
-      </div>
-    </section>
-  );
+      </section>
+    );
 };
 
 export default RecentlyViewed;

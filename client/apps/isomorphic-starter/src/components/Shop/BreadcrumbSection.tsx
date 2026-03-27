@@ -5,7 +5,6 @@ import * as Icon from "react-icons/pi";
 import { FilterState } from '@/types/filter.types';
 
 interface BreadcrumbSectionProps {
-  dataType: string | null;
   filters: FilterState;
   updateFilter: (key: keyof FilterState, value: any) => void;
   categoryTypes: string[];
@@ -28,19 +27,31 @@ const categoryConfig: Record<string, { emoji: string; label: string; gradient: s
   sake: { emoji: '🍶', label: 'Sake', gradient: 'from-gray-400 to-gray-600', border: 'border-gray-300' },
   cider: { emoji: '🍎', label: 'Cider', gradient: 'from-green-500 to-emerald-600', border: 'border-green-300' },
   non_alcoholic: { emoji: '🚫', label: 'Non-Alcoholic', gradient: 'from-cyan-500 to-blue-600', border: 'border-cyan-300' },
+  'rose-wine': { emoji: '🍷', label: 'Rosé', gradient: 'from-pink-400 to-rose-500', border: 'border-pink-300' },
+  'red-wine': { emoji: '🍷', label: 'Red Wine', gradient: 'from-red-600 to-red-800', border: 'border-red-400' },
+  'white-wine': { emoji: '🍷', label: 'White Wine', gradient: 'from-yellow-300 to-amber-400', border: 'border-yellow-300' },
 };
 
 const BreadcrumbSection: React.FC<BreadcrumbSectionProps> = ({ 
-  dataType, 
   filters, 
-  updateFilter, 
+  updateFilter,
   categoryTypes,
   totalProducts = 0
 }) => {
-  const displayTitle = dataType?.replace(/_/g, ' ') || 'Shop';
+  const categoryArray = Array.isArray(filters.categoryType) ? filters.categoryType : (filters.categoryType ? [filters.categoryType] : []);
+  const categoryType = categoryArray[0] || null;
+  const displayTitle = categoryType?.replace(/-/g, ' ') || 'Shop';
 
   const handleTabClick = (item: string) => {
-    updateFilter('type', filters.type === item ? null : item);
+    if (categoryArray.length > 0) {
+      if (categoryArray.includes(item)) {
+        updateFilter('categoryType', categoryArray.filter(c => c !== item));
+      } else {
+        updateFilter('categoryType', [...categoryArray, item]);
+      }
+    } else {
+      updateFilter('categoryType', item);
+    }
   };
 
   const handleTabKeyDown = (e: React.KeyboardEvent, item: string) => {
@@ -51,17 +62,20 @@ const BreadcrumbSection: React.FC<BreadcrumbSectionProps> = ({
   };
 
   const handleAllClick = () => {
-    updateFilter('type', null);
+    updateFilter('categoryType', null);
   };
 
-  const getCategoryInfo = (type: string) => {
-    const normalizedType = type.toLowerCase().replace(/\s+/g, '_');
-    return categoryConfig[normalizedType] || {
+  const getCategoryInfo = (slug: string) => {
+    return categoryConfig[slug] || {
       emoji: '🍹',
-      label: type.replace(/_/g, ' '),
+      label: slug.replace(/-/g, ' '),
       gradient: 'from-gray-500 to-gray-600',
       border: 'border-gray-300'
     };
+  };
+
+  const isActive = (item: string) => {
+    return categoryArray.includes(item);
   };
 
   return (
@@ -99,7 +113,7 @@ const BreadcrumbSection: React.FC<BreadcrumbSectionProps> = ({
                   whileTap={{ scale: 0.98 }}
                   onClick={handleAllClick}
                   className={`px-4 py-2 sm:px-5 sm:py-2.5 rounded-full font-semibold text-sm transition-all duration-200 flex items-center gap-2 ${
-                    !filters.type
+                    !categoryType
                       ? 'bg-gray-900 text-white shadow-lg shadow-gray-900/25'
                       : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50 hover:border-gray-300'
                   }`}
@@ -110,25 +124,25 @@ const BreadcrumbSection: React.FC<BreadcrumbSectionProps> = ({
                 </motion.button>
 
                 {/* Category Buttons */}
-                {categoryTypes.slice(0, 8).map((type) => {
-                  const info = getCategoryInfo(type);
-                  const isActive = filters.type === type;
+                {categoryTypes.slice(0, 8).map((item) => {
+                  const info = getCategoryInfo(item);
+                  const active = isActive(item);
                   
                   return (
                     <motion.button
-                      key={type}
+                      key={item}
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
-                      onClick={() => handleTabClick(type)}
+                      onClick={() => handleTabClick(item)}
                       className={`px-3 py-2 sm:px-4 sm:py-2.5 rounded-full font-semibold text-sm transition-all duration-200 flex items-center gap-1.5 sm:gap-2 border ${
-                        isActive
+                        active
                           ? `bg-gradient-to-r ${info.gradient} text-white shadow-lg border-transparent`
                           : `bg-white ${info.border} text-gray-700 hover:bg-gray-50`
                       }`}
                     >
                       <span className="text-base sm:text-lg">{info.emoji}</span>
                       <span className="hidden sm:inline capitalize">{info.label}</span>
-                      {isActive && (
+                      {active && (
                         <motion.span
                           initial={{ scale: 0 }}
                           animate={{ scale: 1 }}

@@ -53,13 +53,22 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
 
   const activeFiltersCount = React.useMemo(() => {
     let count = 0;
-    if (filters.type) count++;
     if (filters.size) count++;
-    if (filters.brand) count++;
-    if (filters.originCountry) count++;
-    if (filters.categoryType) count++;
-    if (filters.flavorCategory) count++;
-    if (filters.subCategoryType) count++;
+    if (filters.brand) {
+      count += Array.isArray(filters.brand) ? filters.brand.length : 1;
+    }
+    if (filters.originCountry) {
+      count += Array.isArray(filters.originCountry) ? filters.originCountry.length : 1;
+    }
+    if (filters.categoryType) {
+      count += Array.isArray(filters.categoryType) ? filters.categoryType.length : 1;
+    }
+    if (filters.subCategoryType) {
+      count += Array.isArray(filters.subCategoryType) ? filters.subCategoryType.length : 1;
+    }
+    if (filters.flavorCategory) {
+      count += Array.isArray(filters.flavorCategory) ? filters.flavorCategory.length : 1;
+    }
     if (filters.minRating) count++;
     if (filters.showOnlySale) count++;
     if (filters.priceRange?.min !== 0 || filters.priceRange?.max !== 100000) count++;
@@ -70,8 +79,6 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
 
   const getActiveFilterLabel = (key: string, value: any): string => {
     switch (key) {
-      case 'type':
-        return `Type: ${value}`;
       case 'categoryType':
         return `Category: ${value}`;
       case 'subCategoryType':
@@ -99,17 +106,70 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
   const activeFiltersList = React.useMemo(() => {
     const list: { key: keyof FilterState; value: any; label: string }[] = [];
     
-    if (filters.type) list.push({ key: 'type', value: filters.type, label: getActiveFilterLabel('type', filters.type) });
-    if (filters.categoryType) list.push({ key: 'categoryType', value: filters.categoryType, label: getActiveFilterLabel('categoryType', filters.categoryType) });
-    if (filters.subCategoryType) list.push({ key: 'subCategoryType', value: filters.subCategoryType, label: getActiveFilterLabel('subCategoryType', filters.subCategoryType) });
-    if (filters.brand) list.push({ key: 'brand', value: filters.brand, label: getActiveFilterLabel('brand', filters.brand) });
-    if (filters.size) list.push({ key: 'size', value: filters.size, label: getActiveFilterLabel('size', filters.size) });
-    if (filters.originCountry) list.push({ key: 'originCountry', value: filters.originCountry, label: getActiveFilterLabel('originCountry', filters.originCountry) });
-    if (filters.flavorCategory) list.push({ key: 'flavorCategory', value: filters.flavorCategory, label: getActiveFilterLabel('flavorCategory', filters.flavorCategory) });
-    if (filters.minRating) list.push({ key: 'minRating', value: filters.minRating, label: getActiveFilterLabel('minRating', filters.minRating) });
-    if (filters.showOnlySale) list.push({ key: 'showOnlySale', value: true, label: getActiveFilterLabel('showOnlySale', true) });
+    if (filters.categoryType) {
+      if (Array.isArray(filters.categoryType)) {
+        filters.categoryType.forEach(c => {
+          list.push({ key: 'categoryType', value: c, label: `Category: ${c.replace(/-/g, ' ')}` });
+        });
+      } else {
+        list.push({ key: 'categoryType', value: filters.categoryType, label: `Category: ${filters.categoryType.replace(/-/g, ' ')}` });
+      }
+    }
+    
+    if (filters.subCategoryType) {
+      if (Array.isArray(filters.subCategoryType)) {
+        filters.subCategoryType.forEach(s => {
+          list.push({ key: 'subCategoryType', value: s, label: `Subcategory: ${s.replace(/-/g, ' ')}` });
+        });
+      } else {
+        list.push({ key: 'subCategoryType', value: filters.subCategoryType, label: `Subcategory: ${filters.subCategoryType.replace(/-/g, ' ')}` });
+      }
+    }
+    
+    if (filters.brand) {
+      if (Array.isArray(filters.brand)) {
+        filters.brand.forEach(b => {
+          list.push({ key: 'brand', value: b, label: `Brand: ${b}` });
+        });
+      } else {
+        list.push({ key: 'brand', value: filters.brand, label: `Brand: ${filters.brand}` });
+      }
+    }
+    
+    if (filters.size) {
+      list.push({ key: 'size', value: filters.size, label: `Size: ${filters.size}` });
+    }
+    
+    if (filters.originCountry) {
+      if (Array.isArray(filters.originCountry)) {
+        filters.originCountry.forEach(c => {
+          list.push({ key: 'originCountry', value: c, label: `Origin: ${c}` });
+        });
+      } else {
+        list.push({ key: 'originCountry', value: filters.originCountry, label: `Origin: ${filters.originCountry}` });
+      }
+    }
+    
+    if (filters.flavorCategory) {
+      if (Array.isArray(filters.flavorCategory)) {
+        filters.flavorCategory.forEach(f => {
+          list.push({ key: 'flavorCategory', value: f, label: `Flavor: ${f.replace(/-/g, ' ')}` });
+        });
+      } else {
+        list.push({ key: 'flavorCategory', value: filters.flavorCategory, label: `Flavor: ${filters.flavorCategory.replace(/-/g, ' ')}` });
+      }
+    }
+    
+    if (filters.minRating) {
+      list.push({ key: 'minRating', value: filters.minRating, label: `${filters.minRating}+ Stars` });
+    }
+    
+    if (filters.showOnlySale) {
+      list.push({ key: 'showOnlySale', value: true, label: 'On Sale' });
+    }
+    
     if (filters.priceRange?.min !== 0 || filters.priceRange?.max !== 100000) {
-      list.push({ key: 'priceRange', value: filters.priceRange, label: getActiveFilterLabel('priceRange', filters.priceRange) });
+      list.push({ key: 'priceRange', value: filters.priceRange, label: `₦${filters.priceRange.min.toLocaleString()} - ₦${filters.priceRange.max.toLocaleString()}` });
     }
     
     return list;
@@ -119,7 +179,6 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
     if (onClearAllFilters) {
       onClearAllFilters();
     } else {
-      updateFilter('type', null);
       updateFilter('size', null);
       updateFilter('brand', null);
       updateFilter('originCountry', null);
@@ -309,7 +368,20 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
             {activeFiltersList.map(({ key, value, label }, index) => (
               <button
                 key={`${key}-${index}`}
-                onClick={() => updateFilter(key, null)}
+                onClick={() => {
+                  const currentValue = filters[key];
+                  if (Array.isArray(currentValue)) {
+                    if (key === 'priceRange') {
+                      updateFilter(key, { min: 0, max: 100000 });
+                    } else if (key === 'minRating') {
+                      updateFilter(key, null);
+                    } else {
+                      updateFilter(key, currentValue.filter((v: any) => v !== value));
+                    }
+                  } else {
+                    updateFilter(key, null);
+                  }
+                }}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                   key === 'showOnlySale'
                     ? 'bg-red-100 hover:bg-red-200 text-red-700'

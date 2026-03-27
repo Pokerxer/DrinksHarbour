@@ -14,6 +14,7 @@ interface FilterSidebarProps extends ProductCountFunctions {
   filterOptions: FilterOptions;
   isLoading?: boolean;
   onClearAllFilters?: () => void;
+  onApplyFilters?: (filters: FilterState) => void;
 }
 
 interface FilterSectionProps {
@@ -37,55 +38,59 @@ const useDebounce = (value: string, delay: number) => {
   return debouncedValue;
 };
 
-const FilterSection: React.FC<FilterSectionProps> = ({ 
-  title, 
-  icon, 
-  children, 
-  defaultOpen = true,
-  badge,
-  isLoading = false
-}) => {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const FilterSection: React.FC<FilterSectionProps> = ({ 
+    title, 
+    icon, 
+    children, 
+    defaultOpen = true,
+    badge,
+    isLoading = false
+  }) => {
+    const [isOpen, setIsOpen] = useState(defaultOpen);
 
-  return (
-    <div className="border-b border-gray-200 last:border-b-0">
-      <button
-        className="w-full flex items-center justify-between py-4 px-4 transition-colors hover:bg-gray-50"
-        onClick={() => setIsOpen(!isOpen)}
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-gray-600">{icon}</span>
-          <h3 className="font-semibold text-gray-900">{title}</h3>
-          {badge !== undefined && badge > 0 && (
-            <span className="px-2 py-0.5 bg-gray-900 text-white text-xs font-medium rounded-full">
-              {badge}
-            </span>
-          )}
-        </div>
-        <div
-          className={isOpen ? 'rotate-180' : ''}
+    return (
+      <div className="border-b border-gray-200 last:border-b-0">
+        <button
+          className="w-full flex items-center justify-between py-4 px-4 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-300 rounded-lg"
+          onClick={() => setIsOpen(!isOpen)}
+          aria-expanded={isOpen}
+          aria-controls={`filter-section-${title.toLowerCase().replace(/\s+/g, '-')}`}
         >
-          <Icon.PiCaretDown size={18} className="text-gray-400" />
-        </div>
-      </button>
-      {isOpen && (
-          <div className="overflow-hidden">
-            <div className="pb-4 px-4">
-              {isLoading ? (
-                <div className="space-y-2">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className="h-10 bg-gray-100 rounded-lg animate-pulse" />
-                  ))}
-                </div>
-              ) : (
-                children
-              )}
-            </div>
+          <div className="flex items-center gap-3">
+            <span className="text-gray-600">{icon}</span>
+            <h3 className="font-semibold text-gray-900">{title}</h3>
+            {badge !== undefined && badge > 0 && (
+              <span className="px-2 py-0.5 bg-gray-900 text-white text-xs font-medium rounded-full">
+                {badge}
+              </span>
+            )}
           </div>
-        )}
-    </div>
-  );
-};
+          <div
+            className={`transform transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          >
+            <Icon.PiCaretDown size={18} className="text-gray-400" />
+          </div>
+        </button>
+        <div 
+          id={`filter-section-${title.toLowerCase().replace(/\s+/g, '-')}`}
+          className={`transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-h-screen' : 'max-h-0'}`}
+          aria-hidden={!isOpen}
+        >
+          <div className="pb-4 px-4">
+            {isLoading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="h-10 bg-gray-100 rounded-lg animate-pulse" />
+                ))}
+              </div>
+            ) : (
+              children
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
 // Quick price presets
 const PRICE_PRESETS = [
@@ -102,14 +107,16 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
   filters,
   updateFilter,
   filterOptions,
-  getCountByType,
   getCountByBrand,
   getCountByOriginCountry,
   getCountByCategoryType,
+  getCountBySubCategoryType,
   getCountByFlavorCategory,
   isLoading = false,
   onClearAllFilters,
+  onApplyFilters,
 }) => {
+  const [pendingFilters, setPendingFilters] = useState<FilterState>(filters);
   const [priceRange, setPriceRange] = useState([
     filters.priceRange?.min ?? filterOptions.priceRange?.min ?? 0,
     filters.priceRange?.max ?? filterOptions.priceRange?.max ?? 100000
@@ -119,6 +126,17 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
   const sidebarRef = useRef<HTMLDivElement>(null);
   
   const debouncedBrandSearch = useDebounce(brandSearch, 300);
+
+  // Sync pendingFilters with filters when sidebar opens
+  useEffect(() => {
+    if (open) {
+      setPendingFilters(filters);
+      setPriceRange([
+        filters.priceRange?.min ?? filterOptions.priceRange?.min ?? 0,
+        filters.priceRange?.max ?? filterOptions.priceRange?.max ?? 100000
+      ]);
+    }
+  }, [open, filters, filterOptions.priceRange]);
 
   // Update price range when filters change externally
   useEffect(() => {
@@ -164,16 +182,113 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open, onClose]);
 
-  const handleTypeClick = (type: string) => {
-    updateFilter('type', filters.type === type ? null : type);
-  };
-
   const handleSizeClick = (size: string) => {
-    updateFilter('size', filters.size === size ? null : size);
+    setPendingFilters(prev => ({ ...prev, size: prev.size === size ? null : size }));
   };
 
   const handleBrandChange = (brand: string) => {
-    updateFilter('brand', filters.brand === brand ? null : brand);
+    const currentBrands = pendingFilters.brand;
+    let newBrands: string[] | null;
+    
+    if (Array.isArray(currentBrands)) {
+      if (currentBrands.includes(brand)) {
+        newBrands = currentBrands.filter(b => b !== brand);
+      } else {
+        newBrands = [...currentBrands, brand];
+      }
+    } else {
+      if (currentBrands === brand) {
+        newBrands = null;
+      } else {
+        newBrands = [brand];
+      }
+    }
+    
+    setPendingFilters(prev => ({ ...prev, brand: newBrands }));
+  };
+
+  const handleOriginCountryClick = (country: string) => {
+    const currentCountries = pendingFilters.originCountry;
+    let newCountries: string[] | null;
+    
+    if (Array.isArray(currentCountries)) {
+      if (currentCountries.includes(country)) {
+        newCountries = currentCountries.filter(c => c !== country);
+      } else {
+        newCountries = [...currentCountries, country];
+      }
+    } else {
+      if (currentCountries === country) {
+        newCountries = null;
+      } else {
+        newCountries = [country];
+      }
+    }
+    
+    setPendingFilters(prev => ({ ...prev, originCountry: newCountries }));
+  };
+
+  const handleCategoryTypeClick = (categoryType: string) => {
+    const current = pendingFilters.categoryType;
+    let newValue: string[] | null;
+    
+    if (Array.isArray(current)) {
+      if (current.includes(categoryType)) {
+        newValue = current.filter(c => c !== categoryType);
+      } else {
+        newValue = [...current, categoryType];
+      }
+    } else {
+      if (current === categoryType) {
+        newValue = null;
+      } else {
+        newValue = [categoryType];
+      }
+    }
+    
+    setPendingFilters(prev => ({ ...prev, categoryType: newValue }));
+  };
+
+  const handleSubCategoryTypeClick = (subCategoryType: string) => {
+    const current = pendingFilters.subCategoryType;
+    let newValue: string[] | null;
+    
+    if (Array.isArray(current)) {
+      if (current.includes(subCategoryType)) {
+        newValue = current.filter(c => c !== subCategoryType);
+      } else {
+        newValue = [...current, subCategoryType];
+      }
+    } else {
+      if (current === subCategoryType) {
+        newValue = null;
+      } else {
+        newValue = [subCategoryType];
+      }
+    }
+    
+    setPendingFilters(prev => ({ ...prev, subCategoryType: newValue }));
+  };
+
+  const handleFlavorCategoryClick = (flavorCategory: string) => {
+    const current = pendingFilters.flavorCategory;
+    let newValue: string[] | null;
+    
+    if (Array.isArray(current)) {
+      if (current.includes(flavorCategory)) {
+        newValue = current.filter(c => c !== flavorCategory);
+      } else {
+        newValue = [...current, flavorCategory];
+      }
+    } else {
+      if (current === flavorCategory) {
+        newValue = null;
+      } else {
+        newValue = [flavorCategory];
+      }
+    }
+    
+    setPendingFilters(prev => ({ ...prev, flavorCategory: newValue }));
   };
 
   const handlePriceChange = (values: number | number[]) => {
@@ -184,46 +299,27 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
 
   const handlePriceAfterChange = (values: number | number[]) => {
     if (Array.isArray(values)) {
-      updateFilter('priceRange', { min: values[0], max: values[1] });
+      setPendingFilters(prev => ({ ...prev, priceRange: { min: values[0], max: values[1] } }));
     }
   };
 
   const handlePricePresetClick = (preset: typeof PRICE_PRESETS[0]) => {
     setPriceRange([preset.min, preset.max]);
-    updateFilter('priceRange', { min: preset.min, max: preset.max });
-  };
-
-  const handleOriginCountryClick = (country: string) => {
-    updateFilter('originCountry', filters.originCountry === country ? null : country);
-  };
-
-  const handleCategoryTypeClick = (categoryType: string) => {
-    updateFilter('categoryType', filters.categoryType === categoryType ? null : categoryType);
-  };
-
-  const handleSubCategoryTypeClick = (subCategoryType: string) => {
-    updateFilter('subCategoryType', filters.subCategoryType === subCategoryType ? null : subCategoryType);
-  };
-
-  const handleFlavorCategoryClick = (flavorCategory: string) => {
-    updateFilter('flavorCategory', filters.flavorCategory === flavorCategory ? null : flavorCategory);
+    setPendingFilters(prev => ({ ...prev, priceRange: { min: preset.min, max: preset.max } }));
   };
 
   const handleRatingClick = (rating: number) => {
-    updateFilter('minRating', filters.minRating === rating ? null : rating);
+    setPendingFilters(prev => ({ ...prev, minRating: prev.minRating === rating ? null : rating }));
   };
 
   const handleAbvRangeClick = (range: { min: number; max: number }) => {
-    const isSelected = filters.abvRange?.min === range.min && filters.abvRange?.max === range.max;
-    updateFilter('abvRange', isSelected ? null : range);
+    const isSelected = pendingFilters.abvRange?.min === range.min && pendingFilters.abvRange?.max === range.max;
+    setPendingFilters(prev => ({ ...prev, abvRange: isSelected ? null : range }));
   };
 
   const handleVolumeClick = (volume: string) => {
-    const isSelected = filters.volumeRange === volume;
-    updateFilter('volumeRange', isSelected ? null : volume);
-    if (!isSelected) {
-      updateFilter('size', null);
-    }
+    const isSelected = pendingFilters.volumeRange === volume;
+    setPendingFilters(prev => ({ ...prev, volumeRange: isSelected ? null : volume, size: isSelected ? null : prev.size }));
   };
 
   const handleClearPrice = () => {
@@ -232,28 +328,95 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
       max: filterOptions.priceRange?.max ?? 100000
     };
     setPriceRange([defaultRange.min, defaultRange.max]);
-    updateFilter('priceRange', defaultRange);
+    setPendingFilters(prev => ({ ...prev, priceRange: defaultRange }));
   };
 
   const handleClearAll = useCallback(() => {
-    if (onClearAllFilters) {
-      onClearAllFilters();
-    } else {
-      updateFilter('type', null);
-      updateFilter('size', null);
-      updateFilter('brand', null);
-      updateFilter('originCountry', null);
-      updateFilter('categoryType', null);
-      updateFilter('subCategoryType', null);
-      updateFilter('flavorCategory', null);
-      updateFilter('minRating', null);
-      updateFilter('showOnlySale', false);
-      updateFilter('priceRange', filterOptions.priceRange);
-      updateFilter('abvRange', null);
-      updateFilter('volumeRange', null);
-    }
+    const defaultFilters: FilterState = {
+      size: null,
+      color: null,
+      brand: null,
+      originCountry: null,
+      categoryType: null,
+      subCategoryType: null,
+      flavorCategory: null,
+      minRating: null,
+      showOnlySale: false,
+      priceRange: filterOptions.priceRange,
+      abvRange: null,
+      volumeRange: null,
+      sortOption: '',
+    };
+    setPendingFilters(defaultFilters);
+    setPriceRange([filterOptions.priceRange?.min ?? 0, filterOptions.priceRange?.max ?? 100000]);
     setBrandSearch('');
-  }, [onClearAllFilters, updateFilter, filterOptions.priceRange]);
+  }, [filterOptions.priceRange]);
+
+  const handleApplyFilters = useCallback(() => {
+    if (onApplyFilters) {
+      onApplyFilters(pendingFilters);
+    } else {
+      // Fallback: build URL manually since updateFilter updates one at a time
+      
+      // First, immediately update the local state
+      if (updateFilter) {
+        Object.entries(pendingFilters).forEach(([key, value]) => {
+          updateFilter(key as keyof FilterState, value);
+        });
+      }
+    }
+    // Delay closing to ensure navigation completes
+    setTimeout(() => {
+      onClose();
+    }, 100);
+  }, [pendingFilters, onApplyFilters, updateFilter, onClose]);
+
+  // Check if filters have actually changed from initial state
+  const hasPendingChanges = useMemo(() => {
+    return JSON.stringify(pendingFilters) !== JSON.stringify(filters);
+  }, [pendingFilters, filters]);
+
+  // Helper to check if a specific filter has pending changes
+  const isFilterPending = useCallback((filterKey: keyof FilterState, value: any) => {
+    return JSON.stringify(pendingFilters[filterKey]) !== JSON.stringify(filters[filterKey]);
+  }, [pendingFilters, filters]);
+
+  // Helper function to format filter display names
+  const formatFilterDisplayName = useCallback((filterKey: string, value: string): string => {
+    switch (filterKey) {
+      case 'categoryType':
+        return value.replace(/-/g, ' ');
+      case 'subCategoryType':
+        return value.replace(/-/g, ' ');
+      case 'flavorCategory':
+        return value.replace(/-/g, ' ');
+      case 'volumeRange':
+        return value;
+      case 'abvRange':
+        if (value === 'non-alcoholic') return 'Non-Alcoholic';
+        return value;
+      default:
+        return value;
+    }
+  }, []);
+  
+  // Helper function to get filter icons
+  const getFilterIcon = useCallback((filterKey: string) => {
+    switch (filterKey) {
+      case 'categoryType': return <Icon.PiGridFour size={16} />;
+      case 'subCategoryType': return <Icon.PiFolders size={16} />;
+      case 'brand': return <Icon.PiBuildingApartment size={16} />;
+      case 'originCountry': return <Icon.PiGlobe size={16} />;
+      case 'flavorCategory': return <Icon.PiAirplaneTilt size={16} />;
+      case 'minRating': return <Icon.PiStar size={16} />;
+      case 'priceRange': return <Icon.PiCurrencyDollar size={16} />;
+      case 'abvRange': return <Icon.PiWine size={16} />;
+      case 'volumeRange': return <Icon.PiDrop size={16} />;
+      case 'showOnlySale': return <Icon.PiTagSimple size={16} />;
+      case 'size': return <Icon.PiRuler size={16} />;
+      default: return null;
+    }
+  }, []);
 
   const filteredBrands = useMemo(() => {
     if (!debouncedBrandSearch) return filterOptions.brand;
@@ -262,17 +425,33 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
     );
   }, [filterOptions.brand, debouncedBrandSearch]);
 
+  const pendingFiltersCount = useMemo(() => {
+    let count = 0;
+    if (pendingFilters.size) count++;
+    if (pendingFilters.brand && (Array.isArray(pendingFilters.brand) ? pendingFilters.brand.length > 0 : true)) count++;
+    if (pendingFilters.originCountry && (Array.isArray(pendingFilters.originCountry) ? pendingFilters.originCountry.length > 0 : true)) count++;
+    if (pendingFilters.categoryType && (Array.isArray(pendingFilters.categoryType) ? pendingFilters.categoryType.length > 0 : true)) count++;
+    if (pendingFilters.subCategoryType && (Array.isArray(pendingFilters.subCategoryType) ? pendingFilters.subCategoryType.length > 0 : true)) count++;
+    if (pendingFilters.flavorCategory && (Array.isArray(pendingFilters.flavorCategory) ? pendingFilters.flavorCategory.length > 0 : true)) count++;
+    if (pendingFilters.minRating) count++;
+    if ((pendingFilters.priceRange?.min ?? 0) !== (filterOptions.priceRange?.min ?? 0) ||
+        (pendingFilters.priceRange?.max ?? 100000) !== (filterOptions.priceRange?.max ?? 100000)) count++;
+    if (pendingFilters.showOnlySale) count++;
+    if (pendingFilters.abvRange) count++;
+    if (pendingFilters.volumeRange) count++;
+    return count;
+  }, [pendingFilters, filterOptions.priceRange]);
+
   const activeFiltersCount = useMemo(() => {
     let count = 0;
-    if (filters.type) count++;
     if (filters.size) count++;
-    if (filters.brand) count++;
-    if (filters.originCountry) count++;
-    if (filters.categoryType) count++;
-    if (filters.subCategoryType) count++;
-    if (filters.flavorCategory) count++;
+    if (filters.brand && (Array.isArray(filters.brand) ? filters.brand.length > 0 : true)) count++;
+    if (filters.originCountry && (Array.isArray(filters.originCountry) ? filters.originCountry.length > 0 : true)) count++;
+    if (filters.categoryType && (Array.isArray(filters.categoryType) ? filters.categoryType.length > 0 : true)) count++;
+    if (filters.subCategoryType && (Array.isArray(filters.subCategoryType) ? filters.subCategoryType.length > 0 : true)) count++;
+    if (filters.flavorCategory && (Array.isArray(filters.flavorCategory) ? filters.flavorCategory.length > 0 : true)) count++;
     if (filters.minRating) count++;
-    if ((filters.priceRange?.min ?? 0) !== (filterOptions.priceRange?.min ?? 0) || 
+    if ((filters.priceRange?.min ?? 0) !== (filterOptions.priceRange?.min ?? 0) ||
         (filters.priceRange?.max ?? 100000) !== (filterOptions.priceRange?.max ?? 100000)) count++;
     if (filters.showOnlySale) count++;
     if (filters.abvRange) count++;
@@ -308,17 +487,27 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 sticky top-0 bg-white z-10">
                 <div className="flex items-center gap-3">
                   <Icon.PiFadersHorizontal size={24} className="text-gray-900" />
-                  <h2 className="text-xl font-bold">Filters</h2>
-                  {activeFiltersCount > 0 && (
+                  <div>
+                    <h2 className="text-xl font-bold">Filters</h2>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {activeFiltersCount} active, {pendingFiltersCount} pending
+                    </p>
+                  </div>
+                  {pendingFiltersCount > 0 && (
                       <span
                         className="px-2.5 py-0.5 bg-gray-900 text-white text-sm font-medium rounded-full"
                       >
-                        {activeFiltersCount}
+                        {pendingFiltersCount}
                       </span>
                     )}
+                  {hasPendingChanges && (
+                    <span className="px-2 py-0.5 bg-amber-500 text-white text-xs font-medium rounded-full">
+                      Pending
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
-                  {activeFiltersCount > 0 && (
+                  {pendingFiltersCount > 0 && (
                     <button
                       onClick={handleClearAll}
                       className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
@@ -338,68 +527,104 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
 
               {/* Filter Content */}
               <div className="flex-1 overflow-y-auto">
-                {/* Product Type */}
-                {filterOptions.type.length > 0 && (
+                {/* Category */}
+                {filterOptions.categoryType.length > 0 && (
                   <FilterSection 
-                    title="Product Type" 
-                    icon={<Icon.PiTag size={20} />}
-                    badge={filters.type ? 1 : undefined}
+                    title="Category" 
+                    icon={<Icon.PiGridFour size={20} />}
+                    badge={Array.isArray(pendingFilters.categoryType) ? pendingFilters.categoryType.length : (pendingFilters.categoryType ? 1 : 0) || undefined}
                     isLoading={isLoading}
                   >
                     <div className="space-y-1">
-                      {filterOptions.type.map((item) => {
-                        const count = getCountByType(item);
-                        const isSelected = filters.type === item;
-                        
-                        return (
-                          <button
-                            key={item}
-                            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${
-                              isSelected
-                                ? 'bg-gray-900 text-white shadow-md'
-                                : 'hover:bg-gray-100 text-gray-700'
-                            }`}
-                            onClick={() => handleTypeClick(item)}
-                          >
-                            <span className="capitalize text-sm">{item.replace(/_/g, ' ')}</span>
-                            <span className={`text-xs ${isSelected ? 'text-gray-300' : 'text-gray-400'}`}>
-                              {count}
-                            </span>
-                          </button>
+                      {filterOptions.categoryType.map((item) => {
+                         const count = getCountByCategoryType(item);
+                         const isAppliedSelected = Array.isArray(filters.categoryType) 
+                           ? filters.categoryType.includes(item)
+                           : filters.categoryType === item;
+                         const isPendingSelected = Array.isArray(pendingFilters.categoryType) 
+                           ? pendingFilters.categoryType.includes(item)
+                           : pendingFilters.categoryType === item;
+                         const isPendingChange = isPendingSelected !== isAppliedSelected;
+                         
+                         return (
+                           <button
+                             key={item}
+                             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all relative ${
+                               isPendingSelected
+                                 ? 'bg-gray-900 text-white shadow-md'
+                                 : 'hover:bg-gray-100 text-gray-700'
+                             }`}
+                             onClick={() => handleCategoryTypeClick(item)}
+                           >
+                             <span className={`w-5 h-5 rounded border flex items-center justify-center ${
+                               isPendingSelected 
+                                 ? 'bg-white border-white' 
+                                 : 'border-gray-400'
+                             }`}>
+                               {isPendingSelected && (
+                                 <Icon.PiCheck size={14} className={isPendingSelected ? 'text-gray-900' : 'text-transparent'} />
+                               )}
+                             </span>
+                             <span className="flex-1 text-left capitalize text-sm">{formatFilterDisplayName('categoryType', item)}</span>
+                             {isPendingChange && (
+                               <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full"></span>
+                             )}
+                             <span className={`text-xs ${isPendingSelected ? 'text-gray-300' : 'text-gray-400'}`}>
+                               {count}
+                             </span>
+                           </button>
                         );
                       })}
                     </div>
                   </FilterSection>
                 )}
 
-                {/* Category */}
-                {filterOptions.categoryType.length > 0 && (
+                {/* Subcategory */}
+                {filterOptions.subCategoryType.length > 0 && (
                   <FilterSection 
-                    title="Category" 
-                    icon={<Icon.PiGridFour size={20} />}
-                    badge={filters.categoryType ? 1 : undefined}
+                    title="Subcategory" 
+                    icon={<Icon.PiFolders size={20} />}
+                    badge={Array.isArray(pendingFilters.subCategoryType) ? pendingFilters.subCategoryType.length : (pendingFilters.subCategoryType ? 1 : 0) || undefined}
                     isLoading={isLoading}
                   >
                     <div className="space-y-1">
-                      {filterOptions.categoryType.map((item) => {
-                        const count = getCountByCategoryType(item);
-                        const isSelected = filters.categoryType === item;
-                        
-                        return (
-                          <button
-                            key={item}
-                            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${
-                              isSelected
-                                ? 'bg-gray-900 text-white shadow-md'
-                                : 'hover:bg-gray-100 text-gray-700'
-                            }`}
-                            onClick={() => handleCategoryTypeClick(item)}
-                          >
-                            <span className="capitalize text-sm">{item.replace(/_/g, ' ')}</span>
-                            <span className={`text-xs ${isSelected ? 'text-gray-300' : 'text-gray-400'}`}>
-                              {count}
-                            </span>
-                          </button>
+                      {filterOptions.subCategoryType.map((item) => {
+                         const count = getCountBySubCategoryType(item);
+                         const isAppliedSelected = Array.isArray(filters.subCategoryType) 
+                           ? filters.subCategoryType.includes(item)
+                           : filters.subCategoryType === item;
+                         const isPendingSelected = Array.isArray(pendingFilters.subCategoryType) 
+                           ? pendingFilters.subCategoryType.includes(item)
+                           : pendingFilters.subCategoryType === item;
+                         const isPendingChange = isPendingSelected !== isAppliedSelected;
+                         
+                         return (
+                           <button
+                             key={item}
+                             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all relative ${
+                               isPendingSelected
+                                 ? 'bg-gray-900 text-white shadow-md'
+                                 : 'hover:bg-gray-100 text-gray-700'
+                             }`}
+                             onClick={() => handleSubCategoryTypeClick(item)}
+                           >
+                             <span className={`w-5 h-5 rounded border flex items-center justify-center ${
+                               isPendingSelected 
+                                 ? 'bg-white border-white' 
+                                 : 'border-gray-400'
+                             }`}>
+                               {isPendingSelected && (
+                                 <Icon.PiCheck size={14} className={isPendingSelected ? 'text-gray-900' : 'text-transparent'} />
+                               )}
+                             </span>
+                             <span className="flex-1 text-left capitalize text-sm">{formatFilterDisplayName('subCategoryType', item)}</span>
+                             {isPendingChange && (
+                               <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full"></span>
+                             )}
+                             <span className={`text-xs ${isPendingSelected ? 'text-gray-300' : 'text-gray-400'}`}>
+                               {count}
+                             </span>
+                           </button>
                         );
                       })}
                     </div>
@@ -411,7 +636,7 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                   <FilterSection 
                     title="Brands" 
                     icon={<Icon.PiBuildingApartment size={20} />}
-                    badge={filters.brand ? 1 : undefined}
+                    badge={Array.isArray(pendingFilters.brand) ? pendingFilters.brand.length : (pendingFilters.brand ? 1 : 0) || undefined}
                     isLoading={isLoading}
                   >
                     <div className="mb-3">
@@ -446,20 +671,38 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                       {filteredBrands.length > 0 ? (
                         filteredBrands.map((item) => {
                           const count = getCountByBrand(item);
-                          const isSelected = filters.brand === item;
+                          const isAppliedSelected = Array.isArray(filters.brand) 
+                            ? filters.brand.includes(item)
+                            : filters.brand === item;
+                          const isPendingSelected = Array.isArray(pendingFilters.brand) 
+                            ? pendingFilters.brand.includes(item)
+                            : pendingFilters.brand === item;
+                          const isPendingChange = isPendingSelected !== isAppliedSelected;
                           
                           return (
                             <button
                               key={item}
-                              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${
-                                isSelected
+                              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all relative ${
+                                isPendingSelected
                                   ? 'bg-gray-900 text-white shadow-md'
                                   : 'hover:bg-gray-100 text-gray-700'
                               }`}
                               onClick={() => handleBrandChange(item)}
                             >
-                              <span className="capitalize text-sm">{item}</span>
-                              <span className={`text-xs ${isSelected ? 'text-gray-300' : 'text-gray-400'}`}>
+                              <span className={`w-5 h-5 rounded border flex items-center justify-center ${
+                                isPendingSelected 
+                                  ? 'bg-white border-white' 
+                                  : 'border-gray-400'
+                              }`}>
+                                {isPendingSelected && (
+                                  <Icon.PiCheck size={14} className={isPendingSelected ? 'text-gray-900' : 'text-transparent'} />
+                                )}
+                              </span>
+                              <span className="flex-1 text-left capitalize text-sm">{item}</span>
+                              {isPendingChange && (
+                                <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full"></span>
+                              )}
+                              <span className={`text-xs ${isPendingSelected ? 'text-gray-300' : 'text-gray-400'}`}>
                                 {count}
                               </span>
                             </button>
@@ -479,29 +722,47 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                   <FilterSection 
                     title="Origin Country" 
                     icon={<Icon.PiGlobe size={20} />}
-                    badge={filters.originCountry ? 1 : undefined}
+                    badge={Array.isArray(pendingFilters.originCountry) ? pendingFilters.originCountry.length : (pendingFilters.originCountry ? 1 : 0) || undefined}
                     isLoading={isLoading}
                   >
                     <div className="space-y-1">
                       {filterOptions.originCountry.map((item) => {
-                        const count = getCountByOriginCountry(item);
-                        const isSelected = filters.originCountry === item;
-                        
-                        return (
-                          <button
-                            key={item}
-                            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${
-                              isSelected
-                                ? 'bg-gray-900 text-white shadow-md'
-                                : 'hover:bg-gray-100 text-gray-700'
-                            }`}
-                            onClick={() => handleOriginCountryClick(item)}
-                          >
-                            <span className="capitalize text-sm">{item}</span>
-                            <span className={`text-xs ${isSelected ? 'text-gray-300' : 'text-gray-400'}`}>
-                              {count}
-                            </span>
-                          </button>
+                         const count = getCountByOriginCountry(item);
+                         const isAppliedSelected = Array.isArray(filters.originCountry) 
+                           ? filters.originCountry.includes(item)
+                           : filters.originCountry === item;
+                         const isPendingSelected = Array.isArray(pendingFilters.originCountry) 
+                           ? pendingFilters.originCountry.includes(item)
+                           : pendingFilters.originCountry === item;
+                         const isPendingChange = isPendingSelected !== isAppliedSelected;
+                         
+                         return (
+                           <button
+                             key={item}
+                             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all relative ${
+                               isPendingSelected
+                                 ? 'bg-gray-900 text-white shadow-md'
+                                 : 'hover:bg-gray-100 text-gray-700'
+                             }`}
+                             onClick={() => handleOriginCountryClick(item)}
+                           >
+                             <span className={`w-5 h-5 rounded border flex items-center justify-center ${
+                               isPendingSelected 
+                                 ? 'bg-white border-white' 
+                                 : 'border-gray-400'
+                             }`}>
+                               {isPendingSelected && (
+                                 <Icon.PiCheck size={14} className={isPendingSelected ? 'text-gray-900' : 'text-transparent'} />
+                               )}
+                             </span>
+                             <span className="flex-1 text-left capitalize text-sm">{item}</span>
+                             {isPendingChange && (
+                               <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full"></span>
+                             )}
+                             <span className={`text-xs ${isPendingSelected ? 'text-gray-300' : 'text-gray-400'}`}>
+                               {count}
+                             </span>
+                           </button>
                         );
                       })}
                     </div>
@@ -513,48 +774,56 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                   <FilterSection 
                     title="Volume" 
                     icon={<Icon.PiDrop size={20} />}
-                    badge={filters.size || filters.volumeRange ? 1 : undefined}
+                    badge={pendingFilters.size || pendingFilters.volumeRange ? 1 : undefined}
                     isLoading={isLoading}
                   >
                     <div className="flex flex-wrap gap-2">
                       {filterOptions.volumes.length > 0 ? filterOptions.volumes.map((item) => {
-                        const isSelected = filters.volumeRange === item;
+                        const isAppliedSelected = filters.volumeRange === item;
+                        const isPendingSelected = pendingFilters.volumeRange === item;
+                        const isPendingChange = isPendingSelected !== isAppliedSelected;
                         
                         return (
                           <button
                             key={item}
-                            className={`px-4 py-2 rounded-lg border-2 text-sm font-medium transition-all ${
-                              isSelected
+                            className={`px-4 py-2 rounded-lg border-2 text-sm font-medium transition-all relative ${
+                              isPendingSelected
                                 ? 'border-gray-900 bg-gray-900 text-white shadow-md'
                                 : 'border-gray-200 hover:border-gray-400 text-gray-700 hover:bg-gray-50'
                             }`}
                             onClick={() => {
-                              updateFilter('volumeRange', filters.volumeRange === item ? null : item);
-                              updateFilter('size', null);
+                              setPendingFilters(prev => ({ ...prev, volumeRange: prev.volumeRange === item ? null : item, size: prev.volumeRange === item ? null : prev.size }));
                             }}
                             aria-label={`Volume ${item}`}
                           >
                             {item}
+                            {isPendingChange && (
+                              <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full"></span>
+                            )}
                           </button>
                         );
                       }) : filterOptions.size.map((item) => {
-                        const isSelected = filters.size === item;
+                        const isAppliedSelected = filters.size === item;
+                        const isPendingSelected = pendingFilters.size === item;
+                        const isPendingChange = isPendingSelected !== isAppliedSelected;
                         
                         return (
                           <button
                             key={item}
-                            className={`px-4 py-2 rounded-lg border-2 text-sm font-medium transition-all ${
-                              isSelected
+                            className={`px-4 py-2 rounded-lg border-2 text-sm font-medium transition-all relative ${
+                              isPendingSelected
                                 ? 'border-gray-900 bg-gray-900 text-white shadow-md'
                                 : 'border-gray-200 hover:border-gray-400 text-gray-700 hover:bg-gray-50'
                             }`}
                             onClick={() => {
-                              handleSizeClick(item);
-                              updateFilter('volumeRange', null);
+                              setPendingFilters(prev => ({ ...prev, size: prev.size === item ? null : item, volumeRange: prev.size === item ? null : prev.volumeRange }));
                             }}
                             aria-label={`Size ${item}`}
                           >
                             {item}
+                            {isPendingChange && (
+                              <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full"></span>
+                            )}
                           </button>
                         );
                       })}
@@ -567,54 +836,64 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                   <FilterSection 
                     title="Alcohol (ABV)" 
                     icon={<Icon.PiWine size={20} />}
-                    badge={filters.abvRange ? 1 : undefined}
+                    badge={pendingFilters.abvRange ? 1 : undefined}
                     isLoading={isLoading}
                   >
                     <div className="space-y-2">
                       {filterOptions.abvRanges.map((range) => {
-                        const isSelected = filters.abvRange?.min === range.min && filters.abvRange?.max === range.max;
-                        
-                        return (
-                          <button
-                            key={range.label}
-                            onClick={() => {
-                              updateFilter('abvRange', isSelected ? null : { min: range.min, max: range.max });
-                            }}
-                            className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border-2 transition-all ${
-                              isSelected
-                                ? 'border-amber-500 bg-amber-50 text-amber-900'
-                                : 'border-gray-200 hover:border-gray-400 text-gray-700 hover:bg-gray-50'
-                            }`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                                isSelected ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-600'
-                              }`}>
-                                <Icon.PiWine size={16} />
-                              </div>
-                              <span className="text-sm font-medium">{range.label}</span>
-                            </div>
-                            {isSelected && (
-                              <Icon.PiCheck size={18} className="text-amber-500" />
-                            )}
-                          </button>
+                         const isAppliedSelected = filters.abvRange?.min === range.min && filters.abvRange?.max === range.max;
+                         const isPendingSelected = pendingFilters.abvRange?.min === range.min && pendingFilters.abvRange?.max === range.max;
+                         const isPendingChange = isPendingSelected !== isAppliedSelected;
+                         
+                         return (
+                           <button
+                             key={range.label}
+                             onClick={() => {
+                               setPendingFilters(prev => ({ 
+                                 ...prev, 
+                                 abvRange: isPendingSelected ? null : { min: range.min, max: range.max }
+                               }));
+                             }}
+                             className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border-2 transition-all relative ${
+                               isPendingSelected
+                                 ? 'border-amber-500 bg-amber-50 text-amber-900'
+                                 : 'border-gray-200 hover:border-gray-400 text-gray-700 hover:bg-gray-50'
+                             }`}
+                           >
+                             <div className="flex items-center gap-3">
+                               <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                 isPendingSelected ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-600'
+                               }`}>
+                                 <Icon.PiWine size={16} />
+                               </div>
+                               <span className="text-sm font-medium">{range.label}</span>
+                             </div>
+                             {isPendingSelected && (
+                               <Icon.PiCheck size={18} className="text-amber-500" />
+                             )}
+                             {isPendingChange && (
+                               <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full"></span>
+                             )}
+                           </button>
                         );
                       })}
                       
-                      {/* Non-Alcoholic Option */}
                       <button
                         onClick={() => {
-                          updateFilter('abvRange', filters.abvRange?.max === 0 ? null : { min: 0, max: 0 });
+                          setPendingFilters(prev => ({ 
+                            ...prev, 
+                            abvRange: prev.abvRange?.max === 0 ? null : { min: 0, max: 0 }
+                          }));
                         }}
-                        className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border-2 transition-all ${
-                          filters.abvRange?.max === 0
+                        className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border-2 transition-all relative ${
+                          pendingFilters.abvRange?.max === 0
                             ? 'border-emerald-500 bg-emerald-50 text-emerald-900'
                             : 'border-gray-200 hover:border-gray-400 text-gray-700 hover:bg-gray-50'
                         }`}
                       >
                         <div className="flex items-center gap-3">
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                            filters.abvRange?.max === 0 ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-600'
+                            pendingFilters.abvRange?.max === 0 ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-600'
                           }`}>
                             <Icon.PiDrop size={16} />
                           </div>
@@ -623,8 +902,11 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                             <span className="text-xs text-gray-500">0% ABV</span>
                           </div>
                         </div>
-                        {filters.abvRange?.max === 0 && (
+                        {pendingFilters.abvRange?.max === 0 && (
                           <Icon.PiCheck size={18} className="text-emerald-500" />
+                        )}
+                        {isFilterPending('abvRange', pendingFilters.abvRange?.max === 0 ? null : { min: 0, max: 0 }) && (
+                          <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full"></span>
                         )}
                       </button>
                     </div>
@@ -700,17 +982,17 @@ onClick={() => handlePricePresetClick(preset)}
                         <label className="text-xs text-gray-500 mb-1 block">Min</label>
                         <div className="relative">
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">₦</span>
-                          <input
-                            type="number"
-                            value={priceRange[0]}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value) || (filterOptions.priceRange?.min ?? 0);
-                              const newRange = [Math.min(val, priceRange[1] - 1), priceRange[1]];
-                              setPriceRange(newRange);
-                              updateFilter('priceRange', { min: newRange[0], max: newRange[1] });
-                            }}
-                            className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 transition-all"
-                          />
+                        <input
+                          type="number"
+                          value={priceRange[0]}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value) || (filterOptions.priceRange?.min ?? 0);
+                            const newRange = [Math.min(val, priceRange[1] - 1), priceRange[1]];
+                            setPriceRange(newRange);
+                            setPendingFilters(prev => ({ ...prev, priceRange: { min: newRange[0], max: newRange[1] } }));
+                          }}
+                          className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 transition-all"
+                        />
                         </div>
                       </div>
                       <span className="text-gray-400 mt-5">-</span>
@@ -718,17 +1000,17 @@ onClick={() => handlePricePresetClick(preset)}
                         <label className="text-xs text-gray-500 mb-1 block">Max</label>
                         <div className="relative">
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">₦</span>
-                          <input
-                            type="number"
-                            value={priceRange[1]}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value) || (filterOptions.priceRange?.max ?? 100000);
-                              const newRange = [priceRange[0], Math.max(val, priceRange[0] + 1)];
-                              setPriceRange(newRange);
-                              updateFilter('priceRange', { min: newRange[0], max: newRange[1] });
-                            }}
-                            className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 transition-all"
-                          />
+                        <input
+                          type="number"
+                          value={priceRange[1]}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value) || (filterOptions.priceRange?.max ?? 100000);
+                            const newRange = [priceRange[0], Math.max(val, priceRange[0] + 1)];
+                            setPriceRange(newRange);
+                            setPendingFilters(prev => ({ ...prev, priceRange: { min: newRange[0], max: newRange[1] } }));
+                          }}
+                          className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 transition-all"
+                        />
                         </div>
                       </div>
                     </div>
@@ -751,69 +1033,92 @@ onClick={() => handlePricePresetClick(preset)}
                   <FilterSection 
                     title="Flavors" 
                     icon={<Icon.PiAirplaneTilt size={20} />}
-                    badge={filters.flavorCategory ? 1 : undefined}
+                    badge={pendingFilters.flavorCategory ? 1 : undefined}
                     defaultOpen={false}
                     isLoading={isLoading}
                   >
                     <div className="space-y-1">
                       {filterOptions.flavorCategory.map((item) => {
-                        const count = getCountByFlavorCategory(item);
-                        const isSelected = filters.flavorCategory === item;
-                        
-                        return (
-                          <button
-                            key={item}
-                            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${
-                              isSelected
-                                ? 'bg-gray-900 text-white shadow-md'
-                                : 'hover:bg-gray-100 text-gray-700'
-                            }`}
-                            onClick={() => handleFlavorCategoryClick(item)}
-                          >
-                            <span className="capitalize text-sm">{item.replace(/_/g, ' ')}</span>
-                            <span className={`text-xs ${isSelected ? 'text-gray-300' : 'text-gray-400'}`}>
-                              {count}
-                            </span>
-                          </button>
+                         const count = getCountByFlavorCategory(item);
+                         const isAppliedSelected = Array.isArray(filters.flavorCategory) 
+                           ? filters.flavorCategory.includes(item)
+                           : filters.flavorCategory === item;
+                         const isPendingSelected = Array.isArray(pendingFilters.flavorCategory) 
+                           ? pendingFilters.flavorCategory.includes(item)
+                           : pendingFilters.flavorCategory === item;
+                         const isPendingChange = isPendingSelected !== isAppliedSelected;
+                         
+                         return (
+                           <button
+                             key={item}
+                             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all relative ${
+                               isPendingSelected
+                                 ? 'bg-gray-900 text-white shadow-md'
+                                 : 'hover:bg-gray-100 text-gray-700'
+                             }`}
+                             onClick={() => handleFlavorCategoryClick(item)}
+                           >
+                             <span className={`w-5 h-5 rounded border flex items-center justify-center ${
+                               isPendingSelected 
+                                 ? 'bg-white border-white' 
+                                 : 'border-gray-400'
+                             }`}>
+                               {isPendingSelected && (
+                                 <Icon.PiCheck size={14} className={isPendingSelected ? 'text-gray-900' : 'text-transparent'} />
+                               )}
+                             </span>
+                             <span className="flex-1 text-left capitalize text-sm">{formatFilterDisplayName('flavorCategory', item)}</span>
+                             {isPendingChange && (
+                               <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full"></span>
+                             )}
+                             <span className={`text-xs ${isPendingSelected ? 'text-gray-300' : 'text-gray-400'}`}>
+                               {count}
+                             </span>
+                           </button>
                         );
                       })}
                     </div>
                   </FilterSection>
                 )}
 
-                {/* Rating */}
-                <FilterSection 
-                  title="Rating" 
-                  icon={<Icon.PiStar size={20} />}
-                  badge={filters.minRating ? 1 : undefined}
-                  defaultOpen={false}
-                  isLoading={isLoading}
-                >
-                  <div className="space-y-1">
-                    {[5, 4, 3, 2, 1].map((rating) => {
-                      const isSelected = filters.minRating === rating;
-                      
-                      return (
-                        <button
-                          key={rating}
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${
-                            isSelected
-                              ? 'bg-gray-900 text-white shadow-md'
-                              : 'hover:bg-gray-100 text-gray-700'
-                          }`}
-                          onClick={() => handleRatingClick(rating)}
-                        >
-                          <div className="flex items-center gap-1">
-                            {[...Array(5)].map((_, i) => (
-                              <Icon.PiStarFill
-                                key={i}
-                                size={16}
-                                className={i < rating ? 'text-yellow-400' : 'text-gray-300'}
-                              />
-                            ))}
-                            <span className="text-sm ml-1">& up</span>
-                          </div>
-                        </button>
+                  {/* Rating */}
+                  <FilterSection 
+                    title="Rating" 
+                    icon={<Icon.PiStar size={20} />}
+                    badge={pendingFilters.minRating ? 1 : undefined}
+                    defaultOpen={false}
+                    isLoading={isLoading}
+                  >
+                    <div className="space-y-1">
+                      {[5, 4, 3, 2, 1].map((rating) => {
+                        const isAppliedSelected = filters.minRating === rating;
+                        const isPendingSelected = pendingFilters.minRating === rating;
+                        const isPendingChange = isPendingSelected !== isAppliedSelected;
+                        
+                        return (
+                          <button
+                            key={rating}
+                            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all relative ${
+                              isPendingSelected
+                                ? 'bg-gray-900 text-white shadow-md'
+                                : 'hover:bg-gray-100 text-gray-700'
+                            }`}
+                            onClick={() => setPendingFilters(prev => ({ ...prev, minRating: prev.minRating === rating ? null : rating }))}
+                          >
+                            <div className="flex items-center gap-1">
+                              {[...Array(5)].map((_, i) => (
+                                <Icon.PiStarFill
+                                  key={i}
+                                  size={16}
+                                  className={i < rating ? 'text-yellow-400' : 'text-gray-300'}
+                                />
+                              ))}
+                              <span className="text-sm ml-1">& up</span>
+                            </div>
+                            {isPendingChange && (
+                              <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full"></span>
+                            )}
+                          </button>
                       );
                     })}
                   </div>
@@ -827,15 +1132,15 @@ onClick={() => handlePricePresetClick(preset)}
                     <div className="relative">
                       <input
                         type="checkbox"
-                        checked={filters.showOnlySale}
-                        onChange={(e) => updateFilter('showOnlySale', e.target.checked)}
+                        checked={pendingFilters.showOnlySale}
+                        onChange={(e) => setPendingFilters(prev => ({ ...prev, showOnlySale: e.target.checked }))}
                         className="sr-only peer"
                       />
                       <div
-                        className={`w-11 h-6 rounded-full peer cursor-pointer ${filters.showOnlySale ? 'bg-red-500' : 'bg-gray-200'}`}
+                        className={`w-11 h-6 rounded-full peer cursor-pointer ${pendingFilters.showOnlySale ? 'bg-red-500' : 'bg-gray-200'}`}
                       >
                         <div
-                          className={`absolute top-[2px] ${filters.showOnlySale ? 'left-[22px]' : 'left-[2px]'} bg-white rounded-full h-5 w-5 shadow-md transition-transform`}
+                          className={`absolute top-[2px] ${pendingFilters.showOnlySale ? 'left-[22px]' : 'left-[2px]'} bg-white rounded-full h-5 w-5 shadow-md transition-transform`}
                         />
                       </div>
                     </div>
@@ -849,29 +1154,43 @@ onClick={() => handlePricePresetClick(preset)}
                 </div>
               </div>
 
-              {/* Footer - Clear All */}
+              {/* Footer - Apply / Clear */}
               <div className="p-4 border-t border-gray-200 bg-gray-50">
-                <button
-                  onClick={handleClearAll}
-                  disabled={activeFiltersCount === 0}
-                  className={`w-full py-3 px-4 font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
-                    activeFiltersCount > 0
-                      ? 'bg-gray-900 hover:bg-gray-800 text-white'
-                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                  }`}
-                >
-                  <Icon.PiTrash size={18} />
-                  Clear All Filters
-                  {activeFiltersCount > 0 && (
-                    <span className="px-2 py-0.5 bg-white/20 rounded-full text-sm">
-                      {activeFiltersCount}
-                    </span>
-                  )}
-                </button>
-              </div>
-            </div>
-          </aside>
-        )}
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleClearAll}
+                    disabled={pendingFiltersCount === 0}
+                    className={`flex-1 py-3 px-4 font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
+                      pendingFiltersCount > 0
+                        ? 'border border-gray-300 text-gray-700 hover:bg-gray-100'
+                        : 'border border-gray-200 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    <Icon.PiArrowCounterClockwise size={18} />
+                    Clear
+                  </button>
+                  <button
+                    onClick={handleApplyFilters}
+                    disabled={!hasPendingChanges}
+                    className={`flex-1 py-3 px-4 font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
+                      hasPendingChanges
+                        ? 'bg-gray-900 hover:bg-gray-800 text-white'
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
+                  >
+                    <Icon.PiCheck size={18} />
+                    Apply Filters
+                    {pendingFiltersCount > 0 && (
+                      <span className="px-2 py-0.5 bg-white/20 rounded-full text-sm">
+                        {pendingFiltersCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
+               </div>
+             </div>
+           </aside>
+         )}
     </>
   );
 };

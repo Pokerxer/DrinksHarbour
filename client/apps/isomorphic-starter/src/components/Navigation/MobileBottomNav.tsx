@@ -162,7 +162,7 @@ const MobileBottomNav: React.FC = () => {
     if (activeCategorySubs.length > 0) {
       return activeCategorySubs.map((sub) => ({
         name: sub.name,
-        slug: `/shop?category=${sub.slug}`,
+        slug: `/shop?category=${category.slug}&subCategory=${sub.slug}`,
       }));
     }
 

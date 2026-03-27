@@ -1,57 +1,10 @@
 {
-  "name": "isomorphic",
-  "version": "7.6.2",
-  "description": "A nextjs template to build dashboard",
+  "name": "client",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
   "scripts": {
-    "dev": "turbo dev --filter=iso",
-    "lint": "turbo lint --filter=iso",
-    "type:check": "turbo type:check --filter=iso",
-    "build": "turbo build --filter=iso",
-    "start": "turbo start --filter=iso",
-    "clean": "turbo clean --filter=iso && rm -rf .turbo",
-    "cache:clean": "turbo cache:clean --filter=iso && rm -rf .turbo",
-    "iso:dev": "turbo dev --filter=iso",
-    "iso:lint": "turbo lint --filter=iso",
-    "iso:build": "turbo build --filter=iso",
-    "iso:start": "turbo start --filter=iso",
-    "iso:clean": "turbo clean --filter=iso",
-    "starter:dev": "turbo dev --filter=starter",
-    "starter:lint": "turbo lint --filter=starter",
-    "starter:build": "turbo build --filter=starter",
-    "starter:start": "turbo start --filter=starter",
-    "starter:clean": "turbo clean --filter=starter",
-    "dnd:dev": "turbo dev --filter=dnd",
-    "dnd:lint": "turbo lint --filter=dnd",
-    "dnd:build": "turbo build --filter=dnd",
-    "dnd:start": "turbo start --filter=dnd",
-    "dnd:clean": "turbo clean --filter=dnd",
-    "intl:dev": "turbo dev --filter=intl",
-    "intl:lint": "turbo lint --filter=intl",
-    "intl:build": "turbo build --filter=intl",
-    "intl:start": "turbo start --filter=intl",
-    "intl:clean": "turbo clean --filter=intl",
-    "gen-icons": "turbo gen-icons --filter=core"
-  },
-  "devDependencies": {
-    "@types/node": "^25.2.0",
-    "@types/react": "^19.2.11",
-    "@types/react-dom": "^19.2.3",
-    "eslint": "9.23.0",
-    "husky": "^9.1.7",
-    "prettier": "^3.5.3",
-    "prettier-plugin-tailwindcss": "^0.6.11",
-    "turbo": "2.4.4",
-    "typescript": "^5.9.3",
-    "typescript-config": "*"
-  },
-  "dependencies": {
-    "next": "^16.1.6",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "build": "npm run build:iso",
+    "build:iso": "cd apps/isomorphic && npm install && npm run build",
+    "postinstall": "echo 'Skipping workspace installation for Vercel'",
+    "dev": "turbo dev --filter=iso"
   }
 }

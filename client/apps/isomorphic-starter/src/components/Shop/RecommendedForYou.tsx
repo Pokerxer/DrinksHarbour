@@ -4,12 +4,16 @@ import React, { useEffect, useState, useCallback } from 'react';
 import ProductCard from '@/components/Product/Card';
 import { ProductCardSkeleton } from '@/components/loader/Skeleton';
 import * as Icon from 'react-icons/pi';
+import { getProductGridLayoutClasses } from './ProductGrid';
 
 interface RecommendedForYouProps {
   maxItems?: number;
+  layoutCol?: number; // Add layout column prop
 }
 
-const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) => {
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+
+const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12, layoutCol = 4 }) => {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -63,10 +67,9 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
         }
       }
       
-      // Step 2: Fallback to general products API (same as FlashSale/FeaturedDeals)
-      // This returns products with proper pricing and tenant data
+      // Step 2: Fallback to trending products from backend
       try {
-        const response = await fetchWithTimeout(`/api/products?limit=${maxItems}&status=approved`);
+        const response = await fetchWithTimeout(`/api/products/trending?limit=${maxItems}`);
         if (response.ok) {
           const data = await response.json();
           const prods = normalizeProducts(data);
@@ -76,7 +79,7 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
           }
         }
       } catch (e) {
-        console.log('Products endpoint failed, trying more fallbacks...');
+        console.log('Trending endpoint failed, trying more fallbacks...');
       }
 
       // Step 3: Fallback to bestsellers
@@ -94,6 +97,21 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
         console.log('Bestsellers endpoint failed, trying more fallbacks...');
       }
 
+      // Step 4: Fallback to new arrivals
+      try {
+        const response = await fetchWithTimeout(`/api/products/new-arrivals?limit=${maxItems}`);
+        if (response.ok) {
+          const data = await response.json();
+          const prods = normalizeProducts(data);
+          if (data.success && prods.length > 0) {
+            setProducts(prods);
+            return;
+          }
+        }
+      } catch (e) {
+        console.log('New arrivals endpoint failed...');
+      }
+
       setHasError(true);
     } catch (error) {
       console.error('Error fetching recommendations:', error);
@@ -108,7 +126,9 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
     let cancelled = false;
 
     const init = async () => {
+    console.log("DEBUG init called");
       try {
+        console.log("DEBUG: checking auth...");
         const response = await fetch('/api/auth/me');
         const isAuth = response.ok && (await response.json()).user;
         if (cancelled) return;
@@ -137,8 +157,8 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
             </div>
             <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900">Recommended For You</h2>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-4">
-            <ProductCardSkeleton count={6} layout="grid" />
+          <div className={getProductGridLayoutClasses(layoutCol)}>
+            <ProductCardSkeleton count={layoutCol * 2} layout="grid" />
           </div>
         </div>
       </div>
@@ -162,7 +182,7 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12 }) 
           <p className="text-sm text-gray-500">Based on your recent activity</p>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-4">
+        <div className={getProductGridLayoutClasses(layoutCol)}>
           {products.map((product) => (
             <ProductCard key={product._id} data={product} type="grid" />
           ))}
