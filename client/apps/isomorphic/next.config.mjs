@@ -61,6 +61,16 @@ const nextConfig = {
   },
   reactStrictMode: true,
   transpilePackages: ['core', 'framer-motion'],
+  // Ignore specific build warnings that don't break the build
+  webpack: (config) => {
+    config.ignoreWarnings = [
+      ...(config.ignoreWarnings || []),
+      {
+        module: /@hookform/,
+      },
+    ];
+    return config;
+  },
 };
 
 export default nextConfig;
