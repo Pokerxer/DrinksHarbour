@@ -7,7 +7,6 @@ import { PiHouseLineBold } from 'react-icons/pi';
 
 // Completely disable static generation to avoid server component issues
 export const dynamic = 'force-static';
-export const revalidate = false; // Changed from 0 to false
 
 export default function NotFound() {
   return (
