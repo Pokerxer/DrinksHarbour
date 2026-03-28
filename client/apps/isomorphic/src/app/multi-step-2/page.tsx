@@ -6,7 +6,7 @@ export const metadata = {
 };
 
 // Disable static generation to avoid server component issues with useForm
-export const dynamic = 'force-client';
+export const dynamic = 'force-dynamic';
 export const dynamicParams = true;
 
 export default function MultiStepFormPageTwo() {

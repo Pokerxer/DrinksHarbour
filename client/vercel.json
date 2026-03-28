@@ -1,5 +1,6 @@
 {
-  "buildCommand": "npm install --legacy-peer-deps && cd apps/isomorphic && npm run build",
+  "installCommand": "npm install --legacy-peer-deps",
+  "buildCommand": "cd apps/isomorphic && npm run build",
   "outputDirectory": "apps/isomorphic/.next",
-  "framework": null
+  "framework": "nextjs"
 }
