@@ -16,9 +16,6 @@ import cn from '@core/utils/class-names';
 // import 'swiper/css/navigation';
 import '@/app/globals.css';
 
-// Workaround for styled-jsx issues in server components
-export const dynamic = 'force-static';
-
 export const metadata = {
   title: siteConfig.title,
   description: siteConfig.description,

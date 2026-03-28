@@ -123,9 +123,8 @@ export default function SignInForm() {
           setAuthError(result.error || 'Authentication failed. Please try again.');
         }
       } else if (result?.ok) {
-        toast.success('Welcome back, Admin!');
+        toast.success('Welcome back!');
         router.push(routes.dashboard);
-        router.refresh();
       }
     } catch (error) {
       setIsLoading(false);
