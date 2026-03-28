@@ -1438,8 +1438,19 @@ const getPersonalizedRecommendations = asyncHandler(async (req, res) => {
   }, 'Personalized recommendations fetched successfully');
 });
 
+const getAdminProductList = asyncHandler(async (req, res) => {
+  const result = await productService.getAdminProductList({
+    page: req.query.page,
+    limit: req.query.limit,
+    search: req.query.search,
+    status: req.query.status,
+  });
+  res.status(200).json({ success: true, data: result });
+});
+
 module.exports = {
     createProduct,
+    getAdminProductList,
     approveProduct,
     rejectProduct,
     updateProduct,

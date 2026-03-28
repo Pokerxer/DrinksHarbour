@@ -20,7 +20,8 @@ import {
   PiWarningCircle, PiWarningDiamond, PiPackage, PiFileText, 
   PiShoppingCart, PiTrendUp, PiTrendDown, PiDotsThree,
   PiGlobe, PiArrowLineLeft, PiArrowLineRight, PiList, PiX,
-  PiWine, PiMapPin, PiTextAa, PiImages, PiStar, PiMagnifyingGlass, PiLink
+  PiWine, PiMapPin, PiTextAa, PiImages, PiStar, PiMagnifyingGlass, PiLink,
+  PiMagicWand, PiSparkle,
 } from 'react-icons/pi';
 import ProductIdentification from '@/app/shared/ecommerce/product/create-edit/product-identification';
 import ProductBeverageInfo from '@/app/shared/ecommerce/product/create-edit/product-beverage-info';
@@ -41,6 +42,7 @@ import {
 import { routes } from '@/config/routes';
 import { productService } from '@/services/product.service';
 import { defaultValues, formParts } from './form-utils';
+import ProductSubProductsPanel from './product-subproducts';
 
 const STEPS = [
   { key: formParts.identification, label: 'Identification', icon: PiTag, color: 'blue' as const, description: 'Basic details' },
@@ -248,6 +250,73 @@ export default function CreateEditProduct({
       console.log('Navigate to next product');
     }
   };
+
+  const handleGenerate = async () => {
+    if (!session?.user?.token || !id) return;
+    setIsGenerating(true);
+    try {
+      const res = await productService.generateFromSubProduct(id, session.user.token);
+      const data = res?.data;
+      if (!data) throw new Error('No data returned from AI');
+
+      // Populate every generated field into the form (skip nulls/empty)
+      const set = (field: string, value: any) => {
+        if (value !== null && value !== undefined && value !== '') {
+          methods.setValue(field as any, value, { shouldDirty: true });
+        }
+      };
+
+      set('type', data.type);
+      set('subType', data.subType);
+      set('isAlcoholic', data.isAlcoholic);
+      set('abv', data.abv);
+      set('proof', data.proof);
+      set('volumeMl', data.volumeMl);
+      set('standardSizes', data.standardSizes);
+      set('servingSize', data.servingSize);
+      set('servingsPerContainer', data.servingsPerContainer);
+      set('originCountry', data.originCountry);
+      set('region', data.region);
+      set('appellation', data.appellation);
+      set('producer', data.producer);
+      set('vintage', data.vintage);
+      set('age', data.age);
+      set('ageStatement', data.ageStatement);
+      set('distilleryName', data.distilleryName);
+      set('breweryName', data.breweryName);
+      set('wineryName', data.wineryName);
+      set('productionMethod', data.productionMethod);
+      set('caskType', data.caskType);
+      set('finish', data.finish);
+      set('shortDescription', data.shortDescription);
+      set('description', data.description);
+      set('tastingNotes', data.tastingNotes);
+      set('flavorProfile', data.flavorProfile);
+      set('foodPairings', data.foodPairings);
+      set('servingSuggestions', data.servingSuggestions);
+      set('isDietary', data.isDietary);
+      set('allergens', data.allergens);
+      set('ingredients', data.ingredients);
+      set('nutritionalInfo', data.nutritionalInfo);
+      set('metaTitle', data.metaTitle);
+      set('metaDescription', data.metaDescription);
+      set('metaKeywords', data.keywords || data.metaKeywords);
+      if (data.category) set('category', data.category);
+      if (data.subCategory) set('subCategory', data.subCategory);
+
+      toast.success(
+        res.fallback
+          ? 'Details generated (demo data — API quota exceeded)'
+          : `Details generated from ${res.metadata?.subProductCount ?? ''} sub-product${res.metadata?.subProductCount !== 1 ? 's' : ''}`
+      );
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to generate product details');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const isEditMode = Boolean(slug || id);
 
@@ -498,6 +567,28 @@ export default function CreateEditProduct({
 
               {/* Save & Settings - Close to product name */}
               <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                {/* Generate with AI - only in edit mode */}
+                {isEditMode && id && (
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleGenerate}
+                    disabled={isGenerating}
+                    className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-purple-300 bg-gradient-to-r from-purple-50 to-indigo-50 text-purple-700 shadow-sm hover:border-purple-400 hover:from-purple-100 hover:to-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-xs font-semibold"
+                    title="Generate missing details with AI using sub-product context"
+                  >
+                    {isGenerating ? (
+                      <PiSpinner className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <PiSparkle className="h-3.5 w-3.5" />
+                    )}
+                    <span className="hidden sm:inline">
+                      {isGenerating ? 'Generating…' : 'Generate'}
+                    </span>
+                  </motion.button>
+                )}
+
                 {/* Save Button */}
                 <button
                   type="button"
@@ -1018,6 +1109,11 @@ export default function CreateEditProduct({
             </motion.div>
           </motion.div>
         </FormProvider>
+
+        {/* Sub-Products Panel — edit mode only */}
+        {isEditMode && id && (
+          <ProductSubProductsPanel productId={id} />
+        )}
 
         {/* Bottom Navigation */}
         <motion.div 

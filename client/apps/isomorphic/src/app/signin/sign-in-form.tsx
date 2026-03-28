@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   PiArrowRightBold, 
@@ -86,7 +85,6 @@ const shakeVariants = {
 };
 
 export default function SignInForm() {
-  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -124,7 +122,9 @@ export default function SignInForm() {
         }
       } else if (result?.ok) {
         toast.success('Welcome back!');
-        router.push(routes.dashboard);
+        // Hard redirect ensures the session cookie is picked up correctly
+        // by the middleware on the next full request
+        window.location.href = routes.dashboard;
       }
     } catch (error) {
       setIsLoading(false);

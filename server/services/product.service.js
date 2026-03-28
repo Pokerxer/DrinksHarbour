@@ -11231,6 +11231,54 @@ const getPersonalizedRecommendations = async (userId, limit = 10) => {
   }
 };
 
+/**
+ * Admin-only: fetch ALL products directly from the database
+ * (no tenant/stock filtering, all statuses)
+ */
+const getAdminProductList = async ({ page = 1, limit = 500, search, status } = {}) => {
+  const pageNum = Math.max(1, parseInt(page, 10));
+  const limitNum = Math.min(Math.max(1, parseInt(limit, 10)), 1000);
+  const skip = (pageNum - 1) * limitNum;
+
+  const query = {};
+  if (status) query.status = status;
+  if (search) query.$text = { $search: search };
+
+  const [products, total] = await Promise.all([
+    Product.find(query)
+      .populate('brand', 'name slug')
+      .populate('category', 'name slug')
+      .select('_id name slug type description images isAlcoholic abv volumeMl originCountry brand category status publishedAt createdAt updatedAt')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum)
+      .lean(),
+    Product.countDocuments(query),
+  ]);
+
+  // Count sub-products per product in one query
+  const productIds = products.map(p => p._id);
+  const subProductCounts = await SubProduct.aggregate([
+    { $match: { product: { $in: productIds } } },
+    { $group: { _id: '$product', count: { $sum: 1 } } },
+  ]);
+  const countMap = subProductCounts.reduce((acc, { _id, count }) => {
+    acc[_id.toString()] = count;
+    return acc;
+  }, {});
+
+  const items = products.map(p => ({
+    ...p,
+    isPublished: p.status === 'approved' && !!p.publishedAt,
+    subProductCount: countMap[p._id.toString()] || 0,
+  }));
+
+  return {
+    products: items,
+    pagination: { total, page: pageNum, limit: limitNum, totalPages: Math.ceil(total / limitNum) },
+  };
+};
+
 module.exports = {
   createProduct,
   updateProduct,
@@ -11259,6 +11307,7 @@ module.exports = {
   getProductRecommendations,
   getPersonalizedRecommendations,
   getAllProducts,
+  getAdminProductList,
   getFeaturedProducts,
   getNewArrivals,
   getBestsellers,

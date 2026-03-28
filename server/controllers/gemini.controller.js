@@ -3,12 +3,14 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const asyncHandler = require('express-async-handler');
 const Category = require('../models/Category');
 const SubCategory = require('../models/SubCategory');
+const Product = require('../models/Product');
+const SubProduct = require('../models/SubProduct');
 
 // Access your API key as an environment variable
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Use Gemini 1.5 Flash 8B - stable and widely available
-const MODEL_NAME = 'gemini-2.5-flash';
+// Use model from env (defaults to gemini-2.0-flash)
+const MODEL_NAME = process.env.GOOGLE_MODEL || 'gemini-2.0-flash';
 
 // Helper function for robust JSON parsing
 function parseJSONResponse(text, defaultValue = {}) {
@@ -2102,6 +2104,247 @@ const generateBrandCategory = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Call Ollama and return the parsed JSON response.
+ * Uses the chat API with format:"json" for guaranteed JSON output.
+ */
+const callOllama = async (prompt) => {
+  const ollamaBase = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+  const ollamaModel = process.env.OLLAMA_MODEL || 'deepseek-v3.1:671b-cloud';
+
+  const response = await fetch(`${ollamaBase}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: ollamaModel,
+      format: 'json',
+      stream: false,
+      options: { temperature: 0.3, num_predict: 4096 },
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert sommelier, master distiller, and beverage industry specialist. Always respond with valid JSON only — no markdown, no explanation.',
+        },
+        { role: 'user', content: prompt },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Ollama API error ${response.status}: ${errText}`);
+  }
+
+  const json = await response.json();
+  // chat API returns { message: { content: "..." } }
+  const text = json?.message?.content || json?.response || '';
+  return parseJSONResponse(text, null);
+};
+
+/**
+ * Generate complete product details using the product's own data + linked sub-products as context.
+ * Uses Ollama (cloud model) instead of Gemini.
+ * POST /api/gemini/generate-from-subproduct
+ */
+const generateProductFromSubProducts = asyncHandler(async (req, res) => {
+  const { productId } = req.body;
+
+  if (!productId) {
+    res.status(400);
+    throw new Error('productId is required');
+  }
+
+  // ── Load product ──────────────────────────────────────────────────────────
+  const product = await Product.findById(productId)
+    .populate('brand', 'name')
+    .populate('category', 'name')
+    .lean();
+
+  if (!product) {
+    res.status(404);
+    throw new Error('Product not found');
+  }
+
+  // ── Load sub-products linked to this product ──────────────────────────────
+  const subProducts = await SubProduct.find({ product: productId })
+    .populate('tenant', 'name')
+    .select('sku baseSellingPrice currency shortDescriptionOverride descriptionOverride customKeywords sizes status tenant')
+    .lean();
+
+  if (!subProducts || subProducts.length === 0) {
+    res.status(400);
+    throw new Error('No sub-products found for this product. Add at least one sub-product before generating details.');
+  }
+
+  // ── Build sub-product context ─────────────────────────────────────────────
+  const subProductContext = subProducts.map((sp, i) => {
+    const lines = [`Sub-product ${i + 1}:`];
+    if (sp.tenant?.name) lines.push(`  Tenant: ${sp.tenant.name}`);
+    if (sp.sku) lines.push(`  SKU: ${sp.sku}`);
+    if (sp.baseSellingPrice) lines.push(`  Price: ${sp.currency || 'NGN'} ${sp.baseSellingPrice}`);
+    if (sp.shortDescriptionOverride) lines.push(`  Short desc: ${sp.shortDescriptionOverride}`);
+    if (sp.descriptionOverride) lines.push(`  Description: ${sp.descriptionOverride}`);
+    if (sp.customKeywords?.length) lines.push(`  Keywords: ${sp.customKeywords.join(', ')}`);
+    if (sp.sizes?.length) lines.push(`  Sizes: ${sp.sizes.length} variants`);
+    return lines.join('\n');
+  }).join('\n\n');
+
+  // ── Fetch DB categories ───────────────────────────────────────────────────
+  const { categories, subCategories } = await fetchCategories();
+
+  // ── Build prompt ──────────────────────────────────────────────────────────
+  const prompt = `You are an expert sommelier and beverage industry specialist. Generate comprehensive product details for the beverage below.
+
+PRODUCT:
+Name: "${product.name}"
+Type: "${product.type || 'unknown'}"
+${product.brand?.name ? `Brand: "${product.brand.name}"` : ''}
+${product.category?.name ? `Category: "${product.category.name}"` : ''}
+${product.originCountry ? `Origin: "${product.originCountry}"` : ''}
+${product.abv ? `ABV: ${product.abv}%` : ''}
+${product.volumeMl ? `Volume: ${product.volumeMl}ml` : ''}
+
+LINKED SUB-PRODUCTS (tenant listings - use as context):
+${subProductContext}
+
+DATABASE CATEGORIES (use EXACT name):
+${categories.length > 0 ? categories.map(c => `- "${c.name}" (ID: ${c.id})`).join('\n') : 'None'}
+
+DATABASE SUB-CATEGORIES:
+${subCategories.length > 0 ? subCategories.map(s => `- "${s.name}" (ID: ${s.id}, Parent: ${s.parent})`).join('\n') : 'None'}
+
+VALID PRODUCT TYPES: ${PRODUCT_ENUMS.type.slice(0, 60).join(', ')}
+VALID FLAVOR PROFILES (pick 4-8): ${PRODUCT_ENUMS.flavorProfile.slice(0, 50).join(', ')}
+VALID STANDARD SIZES (pick 2-4): ${PRODUCT_ENUMS.standardSizes.slice(0, 30).join(', ')}
+VALID PRODUCTION METHODS: ${PRODUCT_ENUMS.productionMethod.join(', ')}
+
+Return ONLY this JSON structure (no markdown, no extra text):
+{
+  "name": "${product.name}",
+  "slug": "kebab-case-slug",
+  "type": "exact_type_enum_value",
+  "subType": "specific style",
+  "categoryName": "EXACT category name from list above",
+  "subCategoryName": "EXACT subcategory name from list above",
+  "isAlcoholic": true,
+  "abv": 40.0,
+  "proof": 80.0,
+  "volumeMl": 750,
+  "standardSizes": ["75cl"],
+  "servingSize": "1.5 oz (44ml)",
+  "servingsPerContainer": 17,
+  "originCountry": "Scotland",
+  "region": "Speyside",
+  "appellation": null,
+  "producer": "Producer name",
+  "brand": "Brand name",
+  "vintage": null,
+  "age": null,
+  "ageStatement": "12 Year Old",
+  "distilleryName": null,
+  "breweryName": null,
+  "wineryName": null,
+  "productionMethod": "pot_still",
+  "caskType": "Bourbon barrel",
+  "finish": null,
+  "shortDescription": "One compelling sentence under 280 characters.",
+  "description": "Four detailed paragraphs covering heritage, production, flavor, and serving.",
+  "tastingNotes": {
+    "nose": ["honey", "vanilla", "citrus"],
+    "aroma": ["oak", "dried fruit"],
+    "palate": ["rich", "spicy", "warm"],
+    "taste": ["caramel", "pepper"],
+    "finish": ["long", "smooth", "warming"],
+    "mouthfeel": ["full-bodied", "creamy"],
+    "appearance": "Deep amber with golden hues",
+    "color": "Amber"
+  },
+  "flavorProfile": ["vanilla", "caramel", "oak", "spicy"],
+  "foodPairings": ["Dark chocolate", "Smoked salmon", "Aged cheddar"],
+  "servingSuggestions": {
+    "temperature": "Room temperature (18-20°C)",
+    "glassware": "Glencairn whisky glass",
+    "garnish": [],
+    "mixers": []
+  },
+  "isDietary": {
+    "vegan": false, "vegetarian": true, "glutenFree": true,
+    "dairyFree": true, "organic": false, "kosher": false,
+    "halal": false, "sugarFree": false, "lowCalorie": false, "lowCarb": false
+  },
+  "allergens": ["sulfites"],
+  "ingredients": ["malted barley", "water", "yeast"],
+  "nutritionalInfo": {
+    "calories": 220, "carbohydrates": 0, "sugar": 0,
+    "protein": 0, "fat": 0, "sodium": 0, "caffeine": null
+  },
+  "metaTitle": "SEO title under 60 chars",
+  "metaDescription": "SEO description under 160 chars",
+  "keywords": ["whisky", "scotch", "single malt"]
+}`;
+
+  // ── Call Ollama ───────────────────────────────────────────────────────────
+  let productData;
+  try {
+    productData = await callOllama(prompt);
+  } catch (error) {
+    console.error('Ollama call failed:', error.message);
+    res.status(500);
+    throw new Error(`Failed to generate product details: ${error.message}`);
+  }
+
+  if (!productData || typeof productData !== 'object') {
+    res.status(500);
+    throw new Error('AI returned invalid data. Please try again.');
+  }
+
+  // ── Category matching ─────────────────────────────────────────────────────
+  const matchedCategory = categories.find(c =>
+    c.name.toLowerCase() === productData.categoryName?.toLowerCase() ||
+    c.name.toLowerCase().includes(productData.categoryName?.toLowerCase() || '') ||
+    (productData.categoryName?.toLowerCase() || '').includes(c.name.toLowerCase())
+  );
+
+  let matchedSubCategory = null;
+  if (matchedCategory) {
+    matchedSubCategory = subCategories.find(s =>
+      s.parent === matchedCategory.id &&
+      (s.name.toLowerCase() === productData.subCategoryName?.toLowerCase() ||
+        s.name.toLowerCase().includes(productData.subCategoryName?.toLowerCase() || ''))
+    );
+  }
+  if (!matchedSubCategory) {
+    matchedSubCategory = subCategories.find(s =>
+      s.name.toLowerCase() === productData.subCategoryName?.toLowerCase() ||
+      s.name.toLowerCase().includes(productData.subCategoryName?.toLowerCase() || '')
+    );
+  }
+
+  productData.category = matchedCategory?.id || product.category?._id?.toString() || null;
+  productData.subCategory = matchedSubCategory?.id || null;
+  delete productData.categoryName;
+  delete productData.subCategoryName;
+
+  productData = sanitizeProductData(productData);
+
+  if (productData.abv > 0 && !productData.isAlcoholic) productData.isAlcoholic = true;
+  if (!productData.proof && productData.abv && productData.isAlcoholic) {
+    productData.proof = parseFloat((productData.abv * 2).toFixed(1));
+  }
+
+  res.json({
+    success: true,
+    data: productData,
+    metadata: {
+      productName: product.name,
+      subProductCount: subProducts.length,
+      model: process.env.OLLAMA_MODEL || 'deepseek-v3.1:671b-cloud',
+      matchedCategory: matchedCategory?.name || null,
+      generatedAt: new Date().toISOString(),
+    },
+  });
+});
+
 module.exports = {
   generateProductDetails,
   generateDescription,
@@ -2144,4 +2387,5 @@ module.exports = {
   generateBrandCountry,
   generateBrandFounded,
   generateBrandCategory,
+  generateProductFromSubProducts,
 };

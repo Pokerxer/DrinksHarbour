@@ -217,11 +217,17 @@ router.post(
 );
 
 // ============================================================
-// ADMIN ROUTES (Super Admin / Tenant Admin)
+// ADMIN ROUTES (Super Admin / Tenant Admin / Tenant Owner)
 // ============================================================
 
 router.use(protect);
-router.use(authorize('super_admin', 'tenant_admin', 'admin'));
+// DEBUG: log user role so we can diagnose 403 issues
+router.use((req, res, next) => {
+  console.log('[products admin] user:', req.user ? `${req.user.email} role=${req.user.role}` : 'none');
+  next();
+});
+// tenant_owner included so owners can browse the product catalogue
+router.use(authorize('super_admin', 'tenant_admin', 'admin', 'tenant_owner'));
 
 /**
  * Create new product
@@ -265,6 +271,13 @@ router.delete(
  * @access Private/Admin
  */
 router.get('/admin/all', productController.getAllProducts);
+
+/**
+ * Get all products directly from DB for admin CRUD (all statuses, no tenant filtering)
+ * @route GET /api/products/admin/list
+ * @access Private/Admin
+ */
+router.get('/admin/list', productController.getAdminProductList);
 
 /**
  * Get pending products

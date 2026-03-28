@@ -69,9 +69,10 @@ export const productService = {
   },
 
   async getProducts(token: string, params?: Record<string, any>) {
+    // Use admin/list endpoint — returns ALL products from DB regardless of status/tenant
     const queryString = params ? new URLSearchParams(params).toString() : '';
-    const url = `${API_URL}/api/products${queryString ? `?${queryString}` : ''}`;
-    
+    const url = `${API_URL}/api/products/admin/list${queryString ? `?${queryString}` : ''}`;
+
     const response = await fetch(url, {
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -118,6 +119,24 @@ export const productService = {
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.message || 'Failed to update product');
+    }
+
+    return response.json();
+  },
+
+  async generateFromSubProduct(productId: string, token: string) {
+    const response = await fetch(`${API_URL}/api/gemini/generate-from-subproduct`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ productId }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to generate product details');
     }
 
     return response.json();
