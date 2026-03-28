@@ -5,6 +5,7 @@ const Category = require('../models/Category');
 const SubCategory = require('../models/SubCategory');
 const Product = require('../models/Product');
 const SubProduct = require('../models/SubProduct');
+const Brand = require('../models/Brand');
 
 // Access your API key as an environment variable
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -2324,6 +2325,24 @@ Return ONLY this JSON structure (no markdown, no extra text):
   productData.subCategory = matchedSubCategory?.id || null;
   delete productData.categoryName;
   delete productData.subCategoryName;
+
+  // ── Brand matching ────────────────────────────────────────────────────────
+  // If the product already has a brand, keep it; otherwise try to match by name
+  const existingBrandId = product.brand?._id?.toString() || null;
+  if (existingBrandId) {
+    productData.brand = existingBrandId;
+  } else if (productData.brand && typeof productData.brand === 'string') {
+    const brandNameFromAI = productData.brand;
+    const allBrands = await Brand.find({ status: 'active' }).select('name _id').lean();
+    const normalised = (s) => s.toLowerCase().trim();
+    const matchedBrand =
+      allBrands.find(b => normalised(b.name) === normalised(brandNameFromAI)) ||
+      allBrands.find(b => normalised(b.name).includes(normalised(brandNameFromAI)) ||
+                          normalised(brandNameFromAI).includes(normalised(b.name)));
+    productData.brand = matchedBrand?._id?.toString() || null;
+  } else {
+    productData.brand = null;
+  }
 
   productData = sanitizeProductData(productData);
 
