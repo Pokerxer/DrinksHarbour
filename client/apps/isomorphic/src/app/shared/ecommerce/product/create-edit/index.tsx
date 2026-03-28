@@ -183,6 +183,8 @@ const transformFormData = (data: CreateProductInput) => {
     allergens: data.allergens,
     ingredients: data.ingredients,
     nutritionalInfo: data.nutritionalInfo,
+    awards: data.awards,
+    certifications: data.certifications,
     images: data.uploadedImages?.map((img, index) => ({
       url: img.url,
       alt: `${data.name} - Image ${index + 1}`,
@@ -193,7 +195,6 @@ const transformFormData = (data: CreateProductInput) => {
     metaTitle: data.metaTitle || data.name,
     metaDescription: data.metaDescription || data.shortDescription,
     metaKeywords: data.metaKeywords,
-    slug: data.slug,
     canonicalUrl: data.canonicalUrl,
     isFeatured: data.isFeatured,
     allowReviews: data.allowReviews,
@@ -351,7 +352,7 @@ export default function CreateEditProduct({
       // ── SEO ──────────────────────────────────────────────────────────────
       set('metaTitle', data.metaTitle);
       set('metaDescription', data.metaDescription);
-      setArr('keywords', data.keywords || data.metaKeywords);
+      setArr('metaKeywords', data.keywords || data.metaKeywords);
 
       toast.success(
         `Details generated from ${res.metadata?.subProductCount ?? ''} sub-product${res.metadata?.subProductCount !== 1 ? 's' : ''}`
@@ -380,9 +381,34 @@ export default function CreateEditProduct({
   const isDirty = formState.isDirty;
 
   const productName = watch('name');
-  const displayTitle = isEditMode 
+  const displayTitle = isEditMode
     ? (productName || 'Edit Product')
     : (productName || 'Create Product');
+
+  // Fetch and populate the form when editing an existing product
+  useEffect(() => {
+    if (!id || !session?.user?.token || product) return; // skip if product already passed as prop
+    setIsFetching(true);
+    productService.getProductById(id, session.user.token, true)
+      .then((res) => {
+        const p = res?.data?.product;
+        if (!p) return;
+        // Extract IDs from populated references
+        const mapped = {
+          ...p,
+          brand: p.brand?._id?.toString() ?? p.brand ?? '',
+          category: p.category?._id?.toString() ?? p.category ?? '',
+          subCategory: p.subCategory?._id?.toString() ?? p.subCategory ?? '',
+          tags: (p.tags ?? []).map((t: any) => t?._id?.toString() ?? t),
+          flavors: (p.flavors ?? []).map((f: any) => f?._id?.toString() ?? f),
+        };
+        methods.reset(defaultValues(mapped));
+      })
+      .catch((err) => {
+        toast.error('Failed to load product: ' + (err.message || 'Unknown error'));
+      })
+      .finally(() => setIsFetching(false));
+  }, [id, session?.user?.token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setWindowSize({
@@ -504,6 +530,15 @@ export default function CreateEditProduct({
   const progress = ((currentStep + 1) / STEPS.length) * 100;
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+
+  if (isFetching) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <PiSpinner className="h-8 w-8 animate-spin text-blue-500" />
+        <span className="ml-3 text-gray-500">Loading product…</span>
+      </div>
+    );
+  }
 
   if (isSuccess) {
     return (

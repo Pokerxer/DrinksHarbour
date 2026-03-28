@@ -33,12 +33,33 @@ const {
 
 
 
-// Schema validation constants
+// Schema validation constants — must stay in sync with Product model type enum
 const VALID_TYPES = [
-  'beer', 'wine', 'sparkling_wine', 'fortified_wine', 'spirit',
-  'liqueur', 'cocktail_ready_to_drink', 'non_alcoholic', 'other',
-  'juice', 'tea', 'coffee', 'energy_drink', 'water', 'mixer',
-  'accessory', 'snack', 'gift'
+  // Alcoholic
+  'beer', 'lager', 'ale', 'stout', 'porter', 'ipa', 'pilsner', 'wheat_beer', 'sour_beer', 'craft_beer',
+  'wine', 'red_wine', 'white_wine', 'rose_wine', 'sparkling_wine', 'champagne', 'prosecco',
+  'fortified_wine', 'dessert_wine', 'orange_wine', 'natural_wine',
+  'spirit', 'whiskey', 'whisky', 'bourbon', 'scotch', 'rye_whiskey', 'irish_whiskey', 'japanese_whisky',
+  'vodka', 'gin', 'rum', 'white_rum', 'dark_rum', 'spiced_rum', 'tequila', 'mezcal',
+  'brandy', 'cognac', 'armagnac', 'grappa', 'absinthe', 'sake', 'soju',
+  'liqueur', 'cream_liqueur', 'coffee_liqueur', 'fruit_liqueur', 'herbal_liqueur',
+  'amaretto', 'vermouth', 'aperitif', 'digestif', 'bitters',
+  'cocktail_ready_to_drink', 'premixed_cocktail', 'hard_seltzer', 'alcopop', 'cooler', 'cider', 'perry', 'mead',
+  // Non-Alcoholic
+  'non_alcoholic', 'non_alcoholic_beer', 'non_alcoholic_wine', 'non_alcoholic_spirit', 'mocktail',
+  'soft_drink', 'cola', 'lemon_lime', 'orange_soda', 'root_beer', 'ginger_ale', 'ginger_beer',
+  'tonic_water', 'club_soda', 'sparkling_water', 'flavored_water',
+  'juice', 'fruit_juice', 'vegetable_juice', 'smoothie', 'kombucha', 'probiotic_drink',
+  'coffee', 'espresso', 'cold_brew', 'instant_coffee',
+  'tea', 'green_tea', 'black_tea', 'herbal_tea', 'oolong_tea', 'white_tea', 'chai', 'matcha', 'hot_chocolate',
+  'energy_drink', 'sports_drink', 'protein_shake', 'vitamin_drink', 'electrolyte_drink',
+  'water', 'mineral_water', 'spring_water', 'alkaline_water', 'coconut_water',
+  'mixer', 'simple_syrup', 'grenadine', 'bitters_mixer',
+  'milk', 'dairy_milk', 'plant_milk', 'almond_milk', 'oat_milk', 'soy_milk', 'coconut_milk', 'milkshake',
+  // Other
+  'accessory', 'glassware', 'bar_tool', 'ice', 'garnish', 'snack', 'gift_set', 'subscription_box', 'other',
+  // Legacy (keep for backwards compat)
+  'gift',
 ];
 
 const VALID_STANDARD_SIZES = [
@@ -1198,20 +1219,35 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
   const {
     name,
     slug,
+    sku,
     barcode,
     gtin,
+    upc,
     isAlcoholic,
     abv,
     proof,
     volumeMl,
     volume,
     standardSizes,
+    servingSize,
+    servingsPerContainer,
     originCountry,
     region,
+    appellation,
     producer,
     brand,
+    vintage,
+    age,
+    ageStatement,
+    distilleryName,
+    breweryName,
+    wineryName,
+    productionMethod,
+    caskType,
+    finish,
     type,
     subType,
+    style,
     category,
     subCategory,
     tags,
@@ -1227,6 +1263,7 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
     allergens,
     nutritionalInfo,
     awards,
+    certifications,
     material,
     shelfLifeDays,
     isPerishable,
@@ -1236,6 +1273,7 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
     metaTitle,
     metaDescription,
     metaKeywords,
+    canonicalUrl,
     externalLinks,
     isFeatured,
     allowReviews,
@@ -1356,12 +1394,26 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
     product.proof = proof;
   }
 
+  if (sku !== undefined) product.sku = sku || undefined;
+  if (upc !== undefined) product.upc = upc || undefined;
   if (volumeMl !== undefined) product.volumeMl = volumeMl;
   if (volume !== undefined) product.volume = volume;
   if (standardSizes !== undefined) product.standardSizes = standardSizes;
+  if (servingSize !== undefined) product.servingSize = servingSize;
+  if (servingsPerContainer !== undefined) product.servingsPerContainer = servingsPerContainer;
   if (originCountry !== undefined) product.originCountry = originCountry;
   if (region !== undefined) product.region = region;
+  if (appellation !== undefined) product.appellation = appellation;
   if (producer !== undefined) product.producer = producer;
+  if (vintage !== undefined) product.vintage = vintage || undefined;
+  if (age !== undefined) product.age = age || undefined;
+  if (ageStatement !== undefined) product.ageStatement = ageStatement;
+  if (distilleryName !== undefined) product.distilleryName = distilleryName;
+  if (breweryName !== undefined) product.breweryName = breweryName;
+  if (wineryName !== undefined) product.wineryName = wineryName;
+  if (productionMethod !== undefined) product.productionMethod = productionMethod || undefined;
+  if (caskType !== undefined) product.caskType = caskType;
+  if (finish !== undefined) product.finish = finish;
 
   // ============================================================
   // STEP 9: Update Brand
@@ -1597,6 +1649,8 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
     shouldRegenerateEmbedding = true;
   }
 
+  if (style !== undefined) product.style = style || undefined;
+
   // ============================================================
   // STEP 13: Update Descriptions & Content
   // ============================================================
@@ -1623,6 +1677,7 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
   if (allergens !== undefined) product.allergens = allergens;
   if (nutritionalInfo !== undefined) product.nutritionalInfo = nutritionalInfo;
   if (awards !== undefined) product.awards = awards;
+  if (certifications !== undefined) product.certifications = certifications;
 
   // ============================================================
   // STEP 14: Update Expansion Fields
@@ -1663,7 +1718,8 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
   // ============================================================
   if (metaTitle !== undefined) product.metaTitle = metaTitle;
   if (metaDescription !== undefined) product.metaDescription = metaDescription;
-  if (keywords !== undefined) product.metaKeywords = keywords;
+  if (metaKeywords !== undefined) product.metaKeywords = metaKeywords;
+  if (canonicalUrl !== undefined) product.canonicalUrl = canonicalUrl;
 
   // ============================================================
   // STEP 17: Update Settings
