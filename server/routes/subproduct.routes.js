@@ -66,6 +66,17 @@ router.patch(
 );
 
 /**
+ * @route   PATCH /api/subproducts/:id/admin-status
+ * @desc    Platform admin approve/decline any sub-product (bypasses tenant ownership)
+ * @access  Private (tenantAdminOrSuperAdmin)
+ */
+router.patch(
+  '/:id/admin-status',
+  tenantAdminOrSuperAdmin,
+  subProductController.adminSetStatus
+);
+
+/**
  * @route   DELETE /api/subproducts/:id
  * @desc    Delete SubProduct
  * @access  Private (Tenant admin or Super admin)

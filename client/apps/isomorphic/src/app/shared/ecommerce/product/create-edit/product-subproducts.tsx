@@ -99,9 +99,9 @@ export default function ProductSubProductsPanel({ productId }: { productId: stri
     if (!session?.user?.token) return;
     setActionLoading(prev => ({ ...prev, [id]: 'approving' }));
     try {
-      await subproductService.updateSubProduct(id, { status: 'active' }, session.user.token);
+      await subproductService.adminSetSubProductStatus(id, 'active', session.user.token);
       setSubProducts(prev => prev.map(sp => sp._id === id ? { ...sp, status: 'active' } : sp));
-      toast.success('Sub-product approved — now active');
+      toast.success('Sub-product approved — now live on the store');
     } catch (err: any) {
       toast.error(err.message || 'Failed to approve sub-product');
     } finally {
@@ -113,7 +113,7 @@ export default function ProductSubProductsPanel({ productId }: { productId: stri
     if (!session?.user?.token) return;
     setActionLoading(prev => ({ ...prev, [id]: 'declining' }));
     try {
-      await subproductService.archiveSubProduct(id, session.user.token);
+      await subproductService.adminSetSubProductStatus(id, 'archived', session.user.token);
       setSubProducts(prev => prev.map(sp => sp._id === id ? { ...sp, status: 'archived' } : sp));
       toast.success('Sub-product declined');
     } catch (err: any) {

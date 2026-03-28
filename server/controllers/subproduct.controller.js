@@ -760,12 +760,36 @@ const getStockStatus = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Admin approve/decline a sub-product (bypasses tenant ownership)
+ * @route   PATCH /api/subproducts/:id/admin-status
+ * @access  Private (Super Admin / Admin / Tenant Owner acting as platform admin)
+ */
+const adminSetStatus = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  if (!status) {
+    res.status(400);
+    throw new Error('status is required');
+  }
+
+  const subProduct = await subProductService.adminSetSubProductStatus(id, status);
+
+  res.status(200).json({
+    success: true,
+    message: `Sub-product ${status === 'active' ? 'approved' : status === 'archived' ? 'declined' : 'updated'}`,
+    data: { subProduct },
+  });
+});
+
 module.exports = {
   getMySubProducts,
   createSubProduct,
   getSubProduct,
   updateSubProduct,
   deleteSubProduct,
+  adminSetStatus,
   updateStockBulk,
   bulkCreate,
   duplicate,

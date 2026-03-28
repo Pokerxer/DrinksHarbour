@@ -4486,12 +4486,51 @@ const getStockStatus = async (subProductId) => {
 };
 
 
+/**
+ * Admin-only: set sub-product status without tenant ownership check.
+ * Used by platform admins to approve/decline any tenant's sub-product.
+ */
+const adminSetSubProductStatus = async (subProductId, status) => {
+  const VALID_STATUSES = ['active', 'archived', 'pending', 'draft', 'hidden', 'discontinued', 'out_of_stock', 'low_stock'];
+  if (!VALID_STATUSES.includes(status)) {
+    throw new ValidationError(`Invalid status: ${status}`);
+  }
+
+  const subProduct = await SubProduct.findById(subProductId);
+  if (!subProduct) {
+    throw new NotFoundError('Sub-product not found');
+  }
+
+  const previousStatus = subProduct.status;
+  subProduct.status = status;
+
+  if (status === 'archived') {
+    subProduct.metadata = {
+      ...subProduct.metadata,
+      archivedAt: new Date(),
+      previousStatus,
+    };
+    await Size.updateMany({ subProduct: subProductId }, { availability: 'unavailable' });
+  } else if (status === 'active' && previousStatus === 'archived') {
+    subProduct.metadata = {
+      ...subProduct.metadata,
+      restoredAt: new Date(),
+      previousStatus,
+    };
+    await Size.updateMany({ subProduct: subProductId }, { availability: 'available' });
+  }
+
+  await subProduct.save();
+  return subProduct;
+};
+
 module.exports = {
   getMySubProducts,
   createSubProduct,
   getSubProduct,
   updateSubProduct,
   deleteSubProduct,
+  adminSetSubProductStatus,
   updateStockBulk,
   bulkCreateSubProducts,
   duplicateSubProduct,
