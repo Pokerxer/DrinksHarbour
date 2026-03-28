@@ -1203,14 +1203,16 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
   // ============================================================
   // STEP 3: Authorization Check
   // ============================================================
-  const isSuperAdmin = user.role === 'super_admin';
+  console.log('[updateProduct] user.role:', user?.role, 'user.email:', user?.email, 'productId:', productId);
+
+  const isSuperAdmin = ['super_admin', 'admin'].includes(user.role);
   const isTenantOwner =
     tenant &&
     product.submittingTenant?.toString() === (tenant._id || tenant).toString() &&
     ['tenant_owner', 'tenant_admin'].includes(user.role);
 
   if (!isSuperAdmin && !isTenantOwner) {
-    throw new ForbiddenError('You do not have permission to update this product');
+    throw new ForbiddenError(`You do not have permission to update this product (role: ${user.role})`);
   }
 
   // ============================================================
