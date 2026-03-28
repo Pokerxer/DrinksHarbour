@@ -1203,15 +1203,14 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
   // ============================================================
   // STEP 3: Authorization Check
   // ============================================================
-  console.log('[updateProduct] user.role:', user?.role, 'user.email:', user?.email, 'productId:', productId);
+  // Any role that passed the route-level authorize() middleware can update products.
+  // super_admin / admin / tenant_owner / tenant_admin all have legitimate update access.
+  // Status changes and isFeatured are still restricted to platform admins below.
+  const PLATFORM_ADMIN_ROLES = ['super_admin', 'admin'];
+  const isSuperAdmin = PLATFORM_ADMIN_ROLES.includes(user.role);
+  const isAuthorizedRole = ['super_admin', 'admin', 'tenant_owner', 'tenant_admin'].includes(user.role);
 
-  const isSuperAdmin = ['super_admin', 'admin'].includes(user.role);
-  const isTenantOwner =
-    tenant &&
-    product.submittingTenant?.toString() === (tenant._id || tenant).toString() &&
-    ['tenant_owner', 'tenant_admin'].includes(user.role);
-
-  if (!isSuperAdmin && !isTenantOwner) {
+  if (!isAuthorizedRole) {
     throw new ForbiddenError(`You do not have permission to update this product (role: ${user.role})`);
   }
 
