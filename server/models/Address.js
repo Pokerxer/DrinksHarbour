@@ -123,9 +123,9 @@ const addressSchema = new Schema(
 );
 
 // Ensure only one default shipping & one default billing per user
+// user field already has index: true in the schema definition
 addressSchema.index({ user: 1, isDefaultShipping: 1 });
 addressSchema.index({ user: 1, isDefaultBilling: 1 });
-addressSchema.index({ user: 1 });
 
 const Address = mongoose.models.Address || mongoose.model('Address', addressSchema);
 

@@ -767,14 +767,14 @@ const getStockStatus = asyncHandler(async (req, res) => {
  */
 const adminSetStatus = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { status } = req.body;
+  const { status, priceOverrides, declineReason } = req.body;
 
   if (!status) {
     res.status(400);
     throw new Error('status is required');
   }
 
-  const subProduct = await subProductService.adminSetSubProductStatus(id, status);
+  const subProduct = await subProductService.adminSetSubProductStatus(id, status, priceOverrides || {}, declineReason || null);
 
   res.status(200).json({
     success: true,

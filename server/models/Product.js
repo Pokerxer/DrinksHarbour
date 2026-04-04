@@ -665,6 +665,28 @@ const productSchema = new Schema(
       type: String,
       enum: ['tenant', 'admin', 'importer', 'api', 'bulk_upload'],
     },
+
+    // ════════════════════════════════════════════════════════════
+    // PLATFORM PRICING
+    // ════════════════════════════════════════════════════════════
+    // Markup applied to platformCostPrice to get platformSellingPrice
+    // platformSellingPrice = platformCostPrice × (1 + platformMarkup / 100)
+    // Then product-level discount is subtracted to get finalPlatformPrice
+    platformMarkup: {
+      type: Number,
+      min: 0,
+      max: 500,
+      default: 15,
+    },
+
+    // Platform-wide promotional discount (applied on drinksharbour.com)
+    // Subtracted from platformSellingPrice to get finalPlatformPrice
+    platformDiscount: {
+      value: { type: Number, min: 0, default: 0 },
+      type: { type: String, enum: ['percentage', 'fixed'], default: 'percentage' },
+      start: { type: Date },
+      end: { type: Date },
+    },
     submittingTenant: {
       type: ObjectId,
       ref: 'Tenant',

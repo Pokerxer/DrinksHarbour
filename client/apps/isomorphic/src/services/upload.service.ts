@@ -41,7 +41,7 @@ export const uploadService = {
     formData.append('image', file);
     formData.append('folder', folder);
 
-    const response = await fetch(`${API_URL}/api/upload/image`, {
+    const response = await fetch(`${API_URL}/api/uploads/image`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -67,7 +67,7 @@ export const uploadService = {
     });
     formData.append('folder', folder);
 
-    const response = await fetch(`${API_URL}/api/upload/product-gallery`, {
+    const response = await fetch(`${API_URL}/api/uploads/images`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -96,7 +96,7 @@ export const uploadService = {
       formData.append('productId', productId);
     }
 
-    const response = await fetch(`${API_URL}/api/upload/product-gallery`, {
+    const response = await fetch(`${API_URL}/api/uploads/product-gallery`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -116,7 +116,7 @@ export const uploadService = {
    * Delete image from Cloudinary
    */
   async deleteImage(publicId: string, token: string): Promise<void> {
-    const response = await fetch(`${API_URL}/api/upload/image/${encodeURIComponent(publicId)}`, {
+    const response = await fetch(`${API_URL}/api/uploads/image/${encodeURIComponent(publicId)}`, {
       method: 'DELETE',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -133,7 +133,7 @@ export const uploadService = {
    * Delete multiple images
    */
   async deleteMultipleImages(publicIds: string[], token: string): Promise<void> {
-    const response = await fetch(`${API_URL}/api/upload/images/delete`, {
+    const response = await fetch(`${API_URL}/api/uploads/images/delete`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

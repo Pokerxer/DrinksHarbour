@@ -187,6 +187,7 @@ const transformFormData = (data: CreateProductInput) => {
     certifications: data.certifications,
     images: data.uploadedImages?.map((img, index) => ({
       url: img.url,
+      publicId: img.publicId,
       alt: `${data.name} - Image ${index + 1}`,
       isPrimary: img.isPrimary || index === 0,
       order: index,

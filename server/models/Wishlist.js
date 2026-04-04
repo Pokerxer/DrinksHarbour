@@ -53,8 +53,7 @@ const wishlistSchema = new Schema(
       type: ObjectId,
       ref: 'User',
       required: true,
-      unique: true,             // one wishlist per user
-      index: true,
+      unique: true,             // one wishlist per user; unique:true creates the index
     },
 
     // ────────────────────────────────────────────────
@@ -103,7 +102,6 @@ wishlistSchema.virtual('isEmpty').get(function () {
 // Indexes
 // ────────────────────────────────────────────────
 
-wishlistSchema.index({ user: 1 });
 wishlistSchema.index({ 'items.product': 1 });
 
 const Wishlist = mongoose.models.Wishlist || mongoose.model('Wishlist', wishlistSchema);

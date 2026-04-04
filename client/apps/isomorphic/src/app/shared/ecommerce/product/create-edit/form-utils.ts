@@ -148,7 +148,15 @@ export function defaultValues(product?: CreateProductInput): CreateProductInput 
     // Media
     images: product?.images ?? [],
     productImages: product?.productImages ?? undefined,
-    uploadedImages: product?.uploadedImages ?? [],
+    // Handle both new uploads (uploadedImages) and existing product images (images)
+    uploadedImages: product?.uploadedImages
+      ?? product?.images?.map((img: any) => ({
+        url: img.url,
+        publicId: img.publicId || img._id,
+        thumbnail: img.thumbnail || img.url,
+        isPrimary: img.isPrimary ?? false,
+      }))
+      ?? [],
     videos: product?.videos ?? [],
 
     // Related Products & External Links

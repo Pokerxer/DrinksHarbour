@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { Badge, Text } from 'rizzui';
+import { Badge, Text, Textarea, ActionIcon } from 'rizzui';
 import {
   PiStorefront,
   PiCheckCircleBold,
@@ -17,6 +17,16 @@ import {
   PiWarningBold,
   PiCurrencyNgnBold,
   PiStackBold,
+  PiEyeBold,
+  PiXBold,
+  PiRulerBold,
+  PiTruckBold,
+  PiNoteBold,
+  PiImageBold,
+  PiTagBold,
+  PiShoppingBagBold,
+  PiUserBold,
+  PiCheckSquareBold,
 } from 'react-icons/pi';
 import { subproductService } from '@/services/subproduct.service';
 import cn from '@core/utils/class-names';
@@ -32,6 +42,46 @@ interface SubProductItem {
   totalStock?: number;
   sizes?: Array<{ size: string; stock?: number; basePrice?: number }>;
   createdAt: string;
+}
+
+interface FullSubProduct extends SubProductItem {
+  costPrice?: number;
+  markupPercentage?: number;
+  marginPercentage?: number;
+  salePrice?: number;
+  saleDiscountPercentage?: number;
+  isOnSale?: boolean;
+  saleStartDate?: string;
+  saleEndDate?: string;
+  shortDescriptionOverride?: string;
+  descriptionOverride?: string;
+  tenantNotes?: string;
+  imagesOverride?: Array<{ url: string; alt?: string; isPrimary?: boolean }>;
+  reservedStock?: number;
+  lowStockThreshold?: number;
+  shipping?: {
+    weight?: number;
+    length?: number;
+    width?: number;
+    height?: number;
+    fragile?: boolean;
+    requiresAgeVerification?: boolean;
+    hazmat?: boolean;
+    shippingClass?: string;
+  };
+  warehouse?: {
+    location?: string;
+    zone?: string;
+    aisle?: string;
+    shelf?: string;
+    bin?: string;
+  };
+  isFeaturedByTenant?: boolean;
+  isNewArrival?: boolean;
+  isBestSeller?: boolean;
+  vendor?: string;
+  supplierSKU?: string;
+  updatedAt?: string;
 }
 
 const STATUS_MAP: Record<string, { label: string; color: 'success' | 'warning' | 'danger' | 'secondary' | 'primary' }> = {
@@ -70,6 +120,643 @@ function RowSkeleton() {
   );
 }
 
+function InfoRow({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
+  if (value == null || value === '' || value === false) return null;
+  return (
+    <div className="flex items-start justify-between py-2 border-b border-gray-50 last:border-0">
+      <span className="text-xs text-gray-500 flex-shrink-0 w-36">{label}</span>
+      <span className={cn('text-xs text-gray-900 text-right', mono && 'font-mono')}>{value}</span>
+    </div>
+  );
+}
+
+function Section({ title, icon: Icon, children }: { title: string; icon?: any; children: React.ReactNode }) {
+  return (
+    <div className="mb-5">
+      <div className="flex items-center gap-2 mb-2">
+        {Icon && <Icon className="w-4 h-4 text-gray-400" />}
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{title}</span>
+      </div>
+      <div className="bg-gray-50 rounded-xl px-4 py-1">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+type PriceOverrides = {
+  baseWebsitePrice?: number;
+  sizes?: Array<{ id: string; websitePrice: number }>;
+};
+
+function ReviewDrawer({
+  subProductId,
+  token,
+  isOpen,
+  onClose,
+  onApprove,
+  onDecline,
+}: {
+  subProductId: string | null;
+  token: string;
+  isOpen: boolean;
+  onClose: () => void;
+  onApprove: (id: string, overrides?: PriceOverrides) => Promise<void>;
+  onDecline: (id: string, reason?: string) => Promise<void>;
+}) {
+  const [sp, setSp] = useState<FullSubProduct | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [actioning, setActioning] = useState<'approving' | 'declining' | null>(null);
+  const [declineReason, setDeclineReason] = useState('');
+  const [showDeclineForm, setShowDeclineForm] = useState(false);
+  const [sizeWebsitePrices, setSizeWebsitePrices] = useState<Record<string, string>>({});
+  const [baseWebsitePrice, setBaseWebsitePrice] = useState<string>('');
+
+  const fmt = (v?: number | null) =>
+    v != null ? `₦${Number(v).toLocaleString('en-NG', { minimumFractionDigits: 2 })}` : null;
+
+  useEffect(() => {
+    if (!isOpen || !subProductId) return;
+    setSp(null);
+    setLoading(true);
+    setDeclineReason('');
+    setShowDeclineForm(false);
+    setSizeWebsitePrices({});
+    setBaseWebsitePrice('');
+
+    subproductService.getSubProduct(subProductId, token)
+      .then((res: any) => {
+        const data = res?.data?.subProduct ?? res?.subProduct ?? res?.data ?? res;
+        setSp(data);
+        if (!data) return;
+
+        // Initialize prices from server-provided pricing
+        if (data.pricing?.platformSellingPrice > 0) {
+          setBaseWebsitePrice(String(data.pricing.platformSellingPrice));
+        }
+
+        // Initialize size website prices from server-provided pricing
+        const initSizes: Record<string, string> = {};
+        for (const s of (data.sizes ?? [])) {
+          if (s.pricing?.platformSellingPrice > 0) {
+            initSizes[s._id] = String(s.pricing.platformSellingPrice);
+          }
+        }
+        setSizeWebsitePrices(initSizes);
+      })
+      .catch(() => setSp(null))
+      .finally(() => setLoading(false));
+  }, [isOpen, subProductId]);
+
+  const handleApprove = async () => {
+    if (!sp) return;
+    setActioning('approving');
+    const overrides: PriceOverrides = {};
+    const bp = parseFloat(baseWebsitePrice);
+    if (!isNaN(bp) && bp > 0) overrides.baseWebsitePrice = bp;
+    const sizeEntries = Object.entries(sizeWebsitePrices)
+      .map(([id, v]) => ({ id, websitePrice: parseFloat(v) }))
+      .filter(e => !isNaN(e.websitePrice) && e.websitePrice > 0);
+    if (sizeEntries.length) overrides.sizes = sizeEntries;
+    try {
+      await onApprove(sp._id, overrides);
+      onClose();
+    } finally {
+      setActioning(null);
+    }
+  };
+
+  const handleDecline = async () => {
+    if (!sp) return;
+    setActioning('declining');
+    try {
+      await onDecline(sp._id, declineReason || undefined);
+      onClose();
+    } finally {
+      setActioning(null);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <>
+      {/* Overlay — click outside to close */}
+      <div
+        className="fixed inset-0 bg-black/40 z-[9998]"
+        onClick={onClose}
+      />
+      {/* Panel — stopPropagation keeps all internal clicks from hitting the overlay */}
+      <div
+        className="fixed top-0 right-0 h-full w-full max-w-lg bg-white z-[9999] flex flex-col shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+      <div className="flex flex-col h-full">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-white sticky top-0 z-10">
+          <div className="flex items-center gap-2">
+            <PiShoppingBagBold className="w-5 h-5 text-blue-500" />
+            <span className="font-semibold text-gray-900 text-sm">Review Sub-Product</span>
+          </div>
+          <ActionIcon size="sm" variant="text" onClick={onClose}>
+            <PiXBold className="w-4 h-4" />
+          </ActionIcon>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-5 py-5">
+          {loading && (
+            <div className="flex items-center justify-center py-20">
+              <PiSpinnerBold className="w-8 h-8 text-blue-400 animate-spin" />
+            </div>
+          )}
+
+          {!loading && !sp && (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <PiWarningBold className="w-8 h-8 text-gray-300 mb-2" />
+              <p className="text-sm text-gray-400">Failed to load sub-product details</p>
+            </div>
+          )}
+
+          {!loading && sp && (() => {
+            const pricing = (sp as any).pricing || {};
+            const revenueModel = pricing.revenueModel ?? 'markup';
+            const markupPct = pricing.markupPct ?? 25;
+            const commissionPct = pricing.commissionPct ?? 12;
+            const platformMarkupPct = pricing.platformMarkupPct ?? 15;
+
+            const supplierCostBase = pricing.costPrice || 0;
+            const tenantSellingBase = pricing.tenantSellingPrice || 0;
+            const platformCostBase = pricing.platformCostPrice || 0;
+            const platformSellingBase = pricing.platformSellingPrice || 0;
+            const platformMargin = pricing.platformMargin || 0;
+            const tenantReceives = pricing.tenantReceives || supplierCostBase;
+            const hasProductDiscount = pricing.productDiscount?.active || false;
+            const tenantStorePrice = pricing.tenantDiscount?.discountedPrice || null;
+
+            return (
+              <>
+                {/* Status + Meta */}
+                <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
+                  <StatusBadge status={sp.status} />
+                  <span className="text-[10px] text-gray-400 font-mono">{sp.sku || 'No SKU'}</span>
+                </div>
+
+                {/* Tenant */}
+                <Section title="Tenant" icon={PiUserBold}>
+                  <InfoRow label="Store" value={(sp as any).tenant?.name || (sp as any).tenant?.businessName} />
+                  <InfoRow label="Tenant Price" value={<span className="text-orange-600 font-semibold">{tenantSellingBase > 0 ? fmt(tenantSellingBase) : '—'}</span>} />
+                  <InfoRow label="Revenue Model" value={
+                    <span className={cn(
+                      'px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase',
+                      revenueModel === 'commission' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                    )}>{revenueModel}</span>
+                  } />
+                  {revenueModel === 'markup'
+                    ? <InfoRow label="Markup %" value={`${markupPct}%`} />
+                    : <InfoRow label="Commission %" value={`${commissionPct}%`} />
+                  }
+                </Section>
+
+                {/* Pricing Chain - Platform Pricing Pipeline */}
+                {(() => {
+                  const currentBaseVal = baseWebsitePrice;
+                  const defaultWebsite = platformSellingBase;
+
+                  return (
+                    <div className="mb-5">
+                      <div className="flex items-center gap-2 mb-3">
+                        <PiCurrencyNgnBold className="w-4 h-4 text-gray-400" />
+                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Platform Pricing</span>
+                        <span className={cn(
+                          'ml-auto text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase',
+                          revenueModel === 'commission' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'
+                        )}>
+                          {revenueModel}
+                        </span>
+                      </div>
+
+                      {revenueModel === 'markup' ? (
+                        // Markup pipeline: Supplier Cost → ×(1+markup%) → Platform Cost → ×(1+platformMarkup%) → Platform Selling
+                        <div className="space-y-2 mb-3">
+                          <div className="flex items-center gap-1 text-[10px]">
+                            <div className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-1.5 py-2 text-center">
+                              <div className="text-gray-500 mb-0.5 text-[9px]">Supplier Cost</div>
+                              <div className="font-bold text-gray-700">{supplierCostBase > 0 ? fmt(supplierCostBase) : '—'}</div>
+                            </div>
+                            <div className="text-gray-400 text-center flex-shrink-0 px-0.5">
+                              ×(1+{markupPct}%)
+                            </div>
+                            <div className="flex-1 bg-blue-50 border border-blue-100 rounded-lg px-1.5 py-2 text-center">
+                              <div className="text-blue-500 mb-0.5 text-[9px]">Platform Cost</div>
+                              <div className="font-bold text-blue-700">{platformCostBase > 0 ? fmt(platformCostBase) : '—'}</div>
+                            </div>
+                            <div className="text-gray-400 text-center flex-shrink-0 px-0.5">
+                              ×(1+{platformMarkupPct}%)
+                            </div>
+                            <div className="flex-1 bg-indigo-50 border border-indigo-100 rounded-lg px-1.5 py-2 text-center">
+                              <div className="text-indigo-500 mb-0.5 text-[9px]">
+                                Platform Selling
+                              </div>
+                              <div className="font-bold text-indigo-700">{platformSellingBase > 0 ? fmt(platformSellingBase) : '—'}</div>
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-gray-400 text-center">
+                            platformCost = supplierCost × (1+{markupPct}%) · platformSelling = platformCost × (1+{platformMarkupPct}%) · margin = selling − cost
+                          </p>
+                          {tenantStorePrice != null && tenantStorePrice < tenantSellingBase && (
+                            <div className="bg-orange-50 border border-orange-100 rounded-lg px-3 py-2 text-[10px]">
+                              <div className="text-orange-600 font-medium">Tenant Store Price (with tenant discount): {fmt(tenantStorePrice)}</div>
+                              <div className="text-orange-400 text-[9px]">Tenant discount is for tenant store only — does not affect platform pricing</div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        // Commission pipeline: Tenant Selling Price → Platform Cost Price → Platform Selling Price → Final Platform Price
+                        <div className="space-y-2 mb-3">
+                          <div className="flex items-center gap-1 text-[10px]">
+                            <div className="flex-1 bg-orange-50 border border-orange-100 rounded-lg px-1.5 py-2 text-center">
+                              <div className="text-orange-500 mb-0.5 text-[9px] flex items-center justify-center gap-0.5">
+                                <PiStorefront className="w-2.5 h-2.5" /> Tenant Price
+                              </div>
+                              <div className="font-bold text-orange-700">{tenantSellingBase > 0 ? fmt(tenantSellingBase) : '—'}</div>
+                            </div>
+                            <div className="text-gray-400 text-center flex-shrink-0 px-0.5">
+                              ×(1−{commissionPct}%)
+                            </div>
+                            <div className="flex-1 bg-blue-50 border border-blue-100 rounded-lg px-1.5 py-2 text-center">
+                              <div className="text-blue-500 mb-0.5 text-[9px]">Platform Cost</div>
+                              <div className="font-bold text-blue-700">{platformCostBase > 0 ? fmt(platformCostBase) : '—'}</div>
+                            </div>
+                            <div className="text-gray-400 text-center flex-shrink-0 px-0.5">
+                              ×(1+{platformMarkupPct}%)
+                            </div>
+                            <div className="flex-1 bg-indigo-50 border border-indigo-100 rounded-lg px-1.5 py-2 text-center">
+                              <div className="text-indigo-500 mb-0.5 text-[9px]">
+                                Platform Selling
+                              </div>
+                              <div className="font-bold text-indigo-700">{platformSellingBase > 0 ? fmt(platformSellingBase) : '—'}</div>
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-gray-400 text-center">
+                            platformCost = tenantPrice × (1−{commissionPct}%) · platformSelling = platformCost × (1+{platformMarkupPct}%) · margin = selling − cost
+                          </p>
+                          {tenantStorePrice != null && tenantStorePrice < tenantSellingBase && (
+                            <div className="bg-orange-50 border border-orange-100 rounded-lg px-3 py-2 text-[10px]">
+                              <div className="text-orange-600 font-medium">Tenant Store Price (with tenant discount): {fmt(tenantStorePrice)}</div>
+                              <div className="text-orange-400 text-[9px]">Tenant discount is for tenant store only — does not affect platform pricing</div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Editable base website price */}
+                      <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold text-green-700">Final Platform Price (editable)</span>
+                          {defaultWebsite > 0 && parseFloat(currentBaseVal) !== defaultWebsite && (
+                            <button type="button" onClick={() => setBaseWebsitePrice(String(defaultWebsite))}
+                              className="text-[10px] text-green-600 underline">
+                              Reset to {fmt(defaultWebsite)}
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-semibold text-green-700">₦</span>
+                          <input type="number" min="0" step="50" value={currentBaseVal}
+                            onChange={e => setBaseWebsitePrice(e.target.value)}
+                            className="flex-1 text-sm font-bold text-green-900 bg-white border border-green-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-300" />
+                        </div>
+                      </div>
+
+                      {/* Summary strip - Platform Margin */}
+                      {(() => {
+                        return (
+                          <div className="mt-3 space-y-2">
+                            <div className="grid grid-cols-3 gap-2 text-[10px]">
+                              <div className="bg-orange-50 rounded-lg px-3 py-2 text-center border border-orange-100">
+                                <div className="text-orange-500 mb-0.5">Tenant Price</div>
+                                <div className="font-bold text-orange-700">{tenantSellingBase > 0 ? fmt(tenantSellingBase) : '—'}</div>
+                              </div>
+                              <div className="bg-gray-50 rounded-lg px-3 py-2 text-center border border-gray-100">
+                                <div className="text-gray-400 mb-0.5">Supplier Cost</div>
+                                <div className="font-bold text-gray-700">{supplierCostBase > 0 ? fmt(supplierCostBase) : '—'}</div>
+                              </div>
+                              <div className="bg-blue-50 rounded-lg px-3 py-2 text-center border border-blue-100">
+                                <div className="text-blue-500 mb-0.5">Platform Margin</div>
+                                <div className={cn('font-bold', platformMargin != null && platformMargin > 0 ? 'text-blue-700' : 'text-red-500')}>
+                                  {platformMargin != null ? fmt(platformMargin) : '—'}
+                                </div>
+                              </div>
+                            </div>
+                            {revenueModel === 'commission' && (
+                              <div className="bg-purple-50 rounded-lg px-3 py-2 text-center border border-purple-100">
+                                <div className="text-purple-500 mb-0.5 text-[10px]">Tenant Receives (after {commissionPct}% commission)</div>
+                                <div className="font-bold text-purple-700">{tenantReceives != null ? fmt(tenantReceives) : '—'}</div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                })()}
+
+                {/* Core Info */}
+                <Section title="Product Info" icon={PiTagBold}>
+                  <InfoRow label="Product" value={(sp as any).product?.name} />
+                  <InfoRow label="Category" value={(sp as any).product?.category?.name} />
+                  <InfoRow label="Brand" value={(sp as any).product?.brand?.name} />
+                  <InfoRow label="ABV" value={(sp as any).product?.abv != null ? `${(sp as any).product.abv}%` : null} />
+                  <InfoRow label="Volume" value={(sp as any).product?.volumeMl != null ? `${(sp as any).product.volumeMl}ml` : null} />
+                  <InfoRow label="Origin" value={(sp as any).product?.originCountry} />
+                </Section>
+
+                {/* Sale */}
+                {sp.isOnSale && (
+                  <>
+                    <InfoRow label="Sale Price" value={fmt(sp.salePrice)} />
+                    <InfoRow label="Sale Discount" value={sp.saleDiscountPercentage != null ? `${sp.saleDiscountPercentage}%` : null} />
+                    <InfoRow label="Sale Start" value={sp.saleStartDate ? new Date(sp.saleStartDate).toLocaleDateString('en-GB') : null} />
+                    <InfoRow label="Sale End" value={sp.saleEndDate ? new Date(sp.saleEndDate).toLocaleDateString('en-GB') : null} />
+                  </>
+                )}
+
+                {/* Inventory */}
+                <Section title="Inventory" icon={PiStackBold}>
+                  <InfoRow label="Total Stock" value={sp.totalStock != null ? sp.totalStock.toString() : null} />
+                  <InfoRow label="Available" value={sp.availableStock != null ? sp.availableStock.toString() : null} />
+                  <InfoRow label="Reserved" value={sp.reservedStock != null ? sp.reservedStock.toString() : null} />
+                  <InfoRow label="Low Stock Alert" value={sp.lowStockThreshold != null ? `≤ ${sp.lowStockThreshold} units` : null} />
+                </Section>
+
+                {/* Size Variants */}
+                {sp.sizes && sp.sizes.length > 0 && (() => {
+                  // Product-level discount for platform pricing
+                  const productDiscount = (sp as any).product?.platformDiscount?.value > 0 && (sp as any).product?.platformDiscount?.type
+                    ? { value: (sp as any).product.platformDiscount.value, type: (sp as any).product.platformDiscount.type, start: (sp as any).product.platformDiscount.start, end: (sp as any).product.platformDiscount.end }
+                    : null;
+
+                  return (
+                    <div className="mb-5">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <PiRulerBold className="w-4 h-4 text-gray-400" />
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                            Size Variants ({sp.sizes.length})
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-green-600 font-medium">Website ₦ is editable</span>
+                      </div>
+
+                      <div className="space-y-2">
+                        {sp.sizes.map((s: any) => {
+                          const sizeId = s._id;
+                          // Use server-provided size pricing
+                          const sizePricing = s.pricing || {};
+                          const sizeSupplierCost = sizePricing.costPrice || 0;
+                          const sizeSellingPrice = sizePricing.tenantSellingPrice || 0;
+                          const sizePlatformCost = sizePricing.platformCostPrice || 0;
+                          const sizePlatformSelling = sizePricing.platformSellingPrice || 0;
+                          const sizePlatformMargin = sizePricing.platformMargin || 0;
+                          const sizeHasDiscount = sizePricing.productDiscount?.active || false;
+                          const sizeTenantStorePrice = sizePricing.tenantDiscount?.discountedPrice || null;
+
+                          const defaultWebsite = sizePlatformSelling;
+                          const currentVal = sizeWebsitePrices[sizeId] ?? '';
+
+                          return (
+                            <div key={sizeId} className="rounded-xl border border-gray-100 bg-gray-50/50 p-3">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-bold text-gray-900">{s.size || s.displayName || '-'}</span>
+                                <span className="text-[10px] text-gray-400">{s.stock ?? 0} in stock</span>
+                              </div>
+
+                              {revenueModel === 'markup' ? (
+                                // Markup pipeline: Tenant Price → Supplier Cost → Platform Cost → Platform Selling (includes discount)
+                                <div className="space-y-1.5 mb-2">
+                                  <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                                    <div className="bg-gray-50 rounded-lg px-2 py-1.5 text-center border border-gray-200">
+                                      <div className="text-gray-500 mb-0.5">Supplier Cost</div>
+                                      <div className="font-bold text-gray-700">
+                                        {sizeSupplierCost > 0 ? `₦${sizeSupplierCost.toLocaleString()}` : '—'}
+                                      </div>
+                                    </div>
+                                    <div className="bg-blue-50 rounded-lg px-2 py-1.5 text-center border border-blue-100">
+                                      <div className="text-blue-500 mb-0.5">Platform Cost</div>
+                                      <div className="font-bold text-blue-700">
+                                        {sizePlatformCost > 0 ? `₦${sizePlatformCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-[10px]">
+                                    <div className="flex-1 bg-indigo-50 rounded-lg px-2 py-1.5 text-center border border-indigo-100">
+                                      <div className="text-indigo-500 mb-0.5">
+                                        Platform Selling
+                                        {sizeHasDiscount && <span className="text-green-600 ml-1">(after discount)</span>}
+                                      </div>
+                                      <div className="font-bold text-indigo-700">
+                                        {sizePlatformSelling > 0 ? `₦${sizePlatformSelling.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                // Commission pipeline: Tenant Selling Price → Platform Cost → Platform Selling (includes discount)
+                                <div className="space-y-1.5 mb-2">
+                                  <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                                    <div className="bg-orange-50 rounded-lg px-2 py-1.5 text-center border border-orange-100">
+                                      <div className="text-orange-500 mb-0.5 flex items-center justify-center gap-0.5">
+                                        <PiStorefront className="w-2.5 h-2.5" /> Tenant Price
+                                      </div>
+                                      <div className="font-bold text-orange-700">
+                                        {sizeSellingPrice > 0 ? `₦${sizeSellingPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
+                                      </div>
+                                    </div>
+                                    <div className="bg-blue-50 rounded-lg px-2 py-1.5 text-center border border-blue-100">
+                                      <div className="text-blue-500 mb-0.5">Platform Cost</div>
+                                      <div className="font-bold text-blue-700">
+                                        {sizePlatformCost > 0 ? `₦${sizePlatformCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-[10px]">
+                                    <div className="flex-1 bg-indigo-50 rounded-lg px-2 py-1.5 text-center border border-indigo-100">
+                                      <div className="text-indigo-500 mb-0.5">
+                                        Platform Selling
+                                        {sizeHasDiscount && <span className="text-green-600 ml-1">(after discount)</span>}
+                                      </div>
+                                      <div className="font-bold text-indigo-700">
+                                        {sizePlatformSelling > 0 ? `₦${sizePlatformSelling.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                                <div className="flex items-center justify-between mb-1">
+                                  <div className="text-[10px] text-green-700 font-semibold">Final Platform Price (editable)</div>
+                                  {defaultWebsite > 0 && parseFloat(currentVal) !== defaultWebsite && (
+                                    <button type="button"
+                                      onClick={() => setSizeWebsitePrices(prev => ({ ...prev, [sizeId]: String(defaultWebsite) }))}
+                                      className="text-[10px] text-green-600 underline">
+                                      Reset to ₦{defaultWebsite.toLocaleString()}
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs font-semibold text-green-700">₦</span>
+                                  <input type="number" min="0" step="50" value={currentVal}
+                                    onChange={e => setSizeWebsitePrices(prev => ({ ...prev, [sizeId]: e.target.value }))}
+                                    className="flex-1 text-sm font-bold text-green-900 bg-white border border-green-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-300" />
+                                  {sizePlatformMargin != null && (
+                                    <span className={cn(
+                                      'text-[10px] whitespace-nowrap font-medium',
+                                      sizePlatformMargin > 0 ? 'text-blue-600' : 'text-red-500'
+                                    )}>
+                                      Margin: {sizePlatformMargin > 0 ? '+' : ''}₦{sizePlatformMargin.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="mt-2 px-1 text-[10px] text-gray-400">
+                        {revenueModel === 'commission'
+                          ? <span>platformCost = tenantPrice × (1−{commissionPct}%) · platformSelling = platformCost × (1+{platformMarkupPct}%) · margin = selling − cost</span>
+                          : <span>platformCost = supplierCost × (1+{markupPct}%) · platformSelling = platformCost × (1+{platformMarkupPct}%) · margin = selling − cost</span>
+                        }
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Description Overrides */}
+                {(sp.shortDescriptionOverride || sp.descriptionOverride) && (
+                  <Section title="Description Override" icon={PiNoteBold}>
+                    {sp.shortDescriptionOverride && (
+                      <div className="py-2">
+                        <p className="text-xs text-gray-500 mb-1">Short Description</p>
+                        <p className="text-xs text-gray-800 leading-relaxed">{sp.shortDescriptionOverride}</p>
+                      </div>
+                    )}
+                    {sp.descriptionOverride && (
+                      <div className="py-2 border-t border-gray-100">
+                        <p className="text-xs text-gray-500 mb-1">Full Description</p>
+                        <p className="text-xs text-gray-800 leading-relaxed line-clamp-6">{sp.descriptionOverride}</p>
+                      </div>
+                    )}
+                  </Section>
+                )}
+
+                {/* Images */}
+                {sp.imagesOverride && sp.imagesOverride.length > 0 && (
+                  <div className="mb-5">
+                    <div className="flex items-center gap-2 mb-2">
+                      <PiImageBold className="w-4 h-4 text-gray-400" />
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                        Image Overrides ({sp.imagesOverride.length})
+                      </span>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      {sp.imagesOverride.slice(0, 6).map((img: any, i: number) => (
+                        <div key={i} className="relative">
+                          <img src={img.url} alt={img.alt || `Image ${i + 1}`}
+                            className="w-16 h-16 object-cover rounded-lg border border-gray-200"
+                            onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }} />
+                          {img.isPrimary && (
+                            <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                              <PiCheckCircleBold className="w-2.5 h-2.5 text-white" />
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Shipping */}
+                {sp.shipping && Object.values(sp.shipping).some(v => v != null && v !== false) && (
+                  <Section title="Shipping" icon={PiTruckBold}>
+                    <InfoRow label="Weight" value={sp.shipping.weight != null ? `${sp.shipping.weight} kg` : null} />
+                    <InfoRow label="Dimensions" value={
+                      sp.shipping.length && sp.shipping.width && sp.shipping.height
+                        ? `${sp.shipping.length} × ${sp.shipping.width} × ${sp.shipping.height} cm`
+                        : null
+                    } />
+                    <InfoRow label="Shipping Class" value={sp.shipping.shippingClass} />
+                    <InfoRow label="Fragile" value={sp.shipping.fragile ? 'Yes' : null} />
+                    <InfoRow label="Age Verification" value={sp.shipping.requiresAgeVerification ? 'Required' : null} />
+                    <InfoRow label="Hazmat" value={sp.shipping.hazmat ? 'Yes' : null} />
+                  </Section>
+                )}
+
+                {/* Flags */}
+                <Section title="Flags" icon={PiCheckSquareBold}>
+                  <InfoRow label="Featured" value={sp.isFeaturedByTenant ? 'Yes' : null} />
+                  <InfoRow label="New Arrival" value={sp.isNewArrival ? 'Yes' : null} />
+                  <InfoRow label="Best Seller" value={sp.isBestSeller ? 'Yes' : null} />
+                </Section>
+
+                {/* Decline form */}
+                {showDeclineForm && (
+                  <div className="mb-4">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Decline Reason (optional)</label>
+                    <Textarea
+                      value={declineReason}
+                      onChange={(e: any) => setDeclineReason(e.target.value)}
+                      rows={3}
+                      placeholder="e.g. Pricing too high, missing images…"
+                      className="w-full text-sm"
+                    />
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
+
+        {/* Footer actions */}
+        {!loading && sp && (
+          <div className="sticky bottom-0 border-t border-gray-100 bg-white px-5 py-4 flex gap-3">
+            {!showDeclineForm ? (
+              <>
+                <button type="button" onClick={handleApprove} disabled={!!actioning}
+                  className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl py-2.5 disabled:opacity-60">
+                  {actioning === 'approving' ? <PiSpinnerBold className="w-4 h-4 animate-spin" /> : <PiCheckCircleBold className="w-4 h-4" />}
+                  Approve
+                </button>
+                <button type="button" onClick={() => setShowDeclineForm(true)} disabled={!!actioning}
+                  className="flex-1 flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-semibold rounded-xl py-2.5 border border-red-200 disabled:opacity-60">
+                  <PiXCircleBold className="w-4 h-4" />
+                  Decline
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" onClick={handleDecline} disabled={!!actioning}
+                  className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-xl py-2.5 disabled:opacity-60">
+                  {actioning === 'declining' ? <PiSpinnerBold className="w-4 h-4 animate-spin" /> : <PiXCircleBold className="w-4 h-4" />}
+                  Confirm Decline
+                </button>
+                <button type="button" onClick={() => setShowDeclineForm(false)} disabled={!!actioning}
+                  className="flex-1 flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold rounded-xl py-2.5 disabled:opacity-60">
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+      </div>
+    </>
+  );
+}
+
 export default function ProductSubProductsPanel({ productId }: { productId: string }) {
   const { data: session } = useSession();
   const [subProducts, setSubProducts] = useState<SubProductItem[]>([]);
@@ -77,6 +764,7 @@ export default function ProductSubProductsPanel({ productId }: { productId: stri
   const [error, setError] = useState<string | null>(null);
   // tracks per-row action: { [subProductId]: 'approving' | 'declining' }
   const [actionLoading, setActionLoading] = useState<Record<string, string>>({});
+  const [reviewId, setReviewId] = useState<string | null>(null);
 
   const fetchSubProducts = useCallback(async () => {
     if (!session?.user?.token || !productId) return;
@@ -95,11 +783,11 @@ export default function ProductSubProductsPanel({ productId }: { productId: stri
 
   useEffect(() => { fetchSubProducts(); }, [fetchSubProducts]);
 
-  const handleApprove = async (id: string) => {
+  const handleApprove = async (id: string, overrides?: PriceOverrides) => {
     if (!session?.user?.token) return;
     setActionLoading(prev => ({ ...prev, [id]: 'approving' }));
     try {
-      await subproductService.adminSetSubProductStatus(id, 'active', session.user.token);
+      await subproductService.adminSetSubProductStatus(id, 'active', session.user.token, overrides);
       setSubProducts(prev => prev.map(sp => sp._id === id ? { ...sp, status: 'active' } : sp));
       toast.success('Sub-product approved — now live on the store');
     } catch (err: any) {
@@ -109,11 +797,11 @@ export default function ProductSubProductsPanel({ productId }: { productId: stri
     }
   };
 
-  const handleDecline = async (id: string) => {
+  const handleDecline = async (id: string, reason?: string) => {
     if (!session?.user?.token) return;
     setActionLoading(prev => ({ ...prev, [id]: 'declining' }));
     try {
-      await subproductService.adminSetSubProductStatus(id, 'archived', session.user.token);
+      await subproductService.adminSetSubProductStatus(id, 'archived', session.user.token, undefined, reason);
       setSubProducts(prev => prev.map(sp => sp._id === id ? { ...sp, status: 'archived' } : sp));
       toast.success('Sub-product declined');
     } catch (err: any) {
@@ -204,6 +892,16 @@ export default function ProductSubProductsPanel({ productId }: { productId: stri
         </div>
       )}
 
+      {/* Review Drawer */}
+      <ReviewDrawer
+        subProductId={reviewId}
+        token={session?.user?.token ?? ''}
+        isOpen={!!reviewId}
+        onClose={() => setReviewId(null)}
+        onApprove={handleApprove}
+        onDecline={handleDecline}
+      />
+
       {/* List */}
       {!isLoading && !error && subProducts.length > 0 && (
         <div className="divide-y divide-gray-100">
@@ -287,6 +985,17 @@ export default function ProductSubProductsPanel({ productId }: { productId: stri
 
                   {/* Action buttons */}
                   <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
+                    {/* Review button — always visible */}
+                    <motion.button
+                      type="button"
+                      whileHover={{ scale: 1.04 }}
+                      whileTap={{ scale: 0.96 }}
+                      onClick={() => setReviewId(sp._id)}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+                    >
+                      <PiEyeBold className="w-3 h-3" />
+                      Review
+                    </motion.button>
                     {needsReview ? (
                       <>
                         {/* Approve */}

@@ -511,14 +511,23 @@ export const subproductService = {
     return response.json();
   },
 
-  async adminSetSubProductStatus(id: string, status: string, token: string) {
+  async adminSetSubProductStatus(
+    id: string,
+    status: string,
+    token: string,
+    priceOverrides?: {
+      baseWebsitePrice?: number;
+      sizes?: Array<{ id: string; websitePrice: number }>;
+    },
+    declineReason?: string
+  ) {
     const response = await fetch(`${API_URL}/api/subproducts/${id}/admin-status`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, priceOverrides, declineReason }),
     });
 
     if (!response.ok) {

@@ -17,15 +17,13 @@ const tagSchema = new Schema(
       unique: true,
       minlength: 2,
       maxlength: 60,
-      index: true,
     },
-    
+
     slug: {
       type: String,
       required: true,
       unique: true,
       lowercase: true,
-      index: true,
       match: /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
     },
     

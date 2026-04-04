@@ -14,6 +14,7 @@ const {
   ConflictError 
 } = require('../utils/errors');
 const { generateSKU } = require('../utils/skuGenerator');
+const { calculateSubProductPricing, calculateSizePricing } = require('../utils/pricing');
 
 /**
  * Sanitize SubProduct reference fields (shipping, warehouse) to handle corrupt data
@@ -110,7 +111,7 @@ const calculatePriceFromRevenueModel = async (costPrice, tenantId, fallbackMarku
   
   if (tenant.revenueModel === 'markup') {
     // Calculate selling price from cost + markup percentage
-    const markupPercent = tenant.markupPercentage || fallbackMarkupPercentage;
+    const markupPercent = tenant.markupPercentage != null ? tenant.markupPercentage : fallbackMarkupPercentage;
     baseSellingPrice = costPrice * (1 + markupPercent / 100);
     
     // Calculate actual margin
@@ -131,8 +132,8 @@ const calculatePriceFromRevenueModel = async (costPrice, tenantId, fallbackMarku
     baseSellingPrice: parseFloat(baseSellingPrice.toFixed(2)),
     costPrice,
     marginPercentage: parseFloat(marginPercentage),
-    revenueModel: tenant.revenueModel || 'markup',
-    markupPercentage: tenant.markupPercentage || fallbackMarkupPercentage,
+    revenueModel: tenant.revenueModel ?? 'markup',
+    markupPercentage: tenant.markupPercentage != null ? tenant.markupPercentage : fallbackMarkupPercentage,
     commissionPercentage: tenant.commissionPercentage,
   };
 };
@@ -656,7 +657,7 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
     pricing = await calculatePriceFromRevenueModel(finalCostPrice, tenantId);
     finalBaseSellingPrice = pricing.baseSellingPrice;
     finalMarginPercentage = pricing.marginPercentage;
-    finalMarkupPercentage = pricing.markupPercentage || finalMarkupPercentage;
+    finalMarkupPercentage = pricing.markupPercentage != null ? pricing.markupPercentage : finalMarkupPercentage;
   } else if (finalBaseSellingPrice && finalCostPrice && finalCostPrice > 0) {
     // Calculate margin from provided prices
     finalMarginPercentage = ((finalBaseSellingPrice - finalCostPrice) / finalBaseSellingPrice * 100).toFixed(2);
@@ -807,8 +808,8 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
       createdBy: user?._id,
       lastModifiedBy: user?._id,
       revenueModel: pricing?.revenueModel || null,
-      markupPercentage: pricing?.markupPercentage || finalMarkupPercentage,
-      commissionPercentage: pricing?.commissionPercentage || null,
+      markupPercentage: pricing?.markupPercentage != null ? pricing.markupPercentage : finalMarkupPercentage,
+      commissionPercentage: pricing?.commissionPercentage ?? null,
     },
   };
 
@@ -1082,7 +1083,7 @@ const getSubProduct = async (subProductId, tenantId) => {
   const populateFields = [
     {
       path: 'product',
-      select: 'name slug type images isAlcoholic abv volumeMl originCountry brand category subCategory tags flavors description tastingNotes',
+      select: 'name slug type images isAlcoholic abv volumeMl originCountry brand category subCategory tags flavors description tastingNotes platformMarkup platformDiscount',
       populate: [
         { path: 'brand', select: 'name slug logo description' },
         { path: 'category', select: 'name slug type' },
@@ -1090,6 +1091,10 @@ const getSubProduct = async (subProductId, tenantId) => {
         { path: 'tags', select: 'name slug type color' },
         { path: 'flavors', select: 'name value color' },
       ],
+    },
+    {
+      path: 'tenant',
+      select: 'name businessName revenueModel markupPercentage commissionPercentage platformMarkupPercentage defaultCurrency',
     },
     {
       path: 'sizes',
@@ -1135,7 +1140,22 @@ const getSubProduct = async (subProductId, tenantId) => {
     subProduct.warehouse = null;
   }
 
-  return subProduct;
+  // Calculate pricing
+  const pricing = calculateSubProductPricing(subProduct, subProduct.product, subProduct.tenant);
+
+  // Calculate pricing for each size
+  const sizesWithPricing = (subProduct.sizes || []).map(size => {
+    return {
+      ...size,
+      pricing: calculateSizePricing(size, subProduct.product, subProduct.tenant, subProduct.costPrice, subProduct.baseSellingPrice)
+    };
+  });
+
+  return {
+    ...subProduct,
+    pricing,
+    sizes: sizesWithPricing
+  };
 };
 
 /**
@@ -2948,7 +2968,7 @@ const restoreSubProduct = async (subProductId, tenantId) => {
 
   // Update availability
   if (hasStock) {
-    subProduct.availability = hasLowStock ? 'low_stock' : 'in_stock';
+    subProduct.availability = hasLowStock ? 'low_stock' : 'available';
   } else {
     subProduct.availability = 'out_of_stock';
   }
@@ -2958,7 +2978,7 @@ const restoreSubProduct = async (subProductId, tenantId) => {
   // Update sizes availability
   for (const size of sizes) {
     if (size.stock > 0) {
-      size.availability = size.stock <= 10 ? 'low_stock' : 'in_stock';
+      size.availability = size.stock <= 10 ? 'low_stock' : 'available';
     } else {
       size.availability = 'out_of_stock';
     }
@@ -3499,7 +3519,7 @@ const adjustStock = async (subProductId, sizeId, adjustment, reason, user) => {
   } else if (newStock <= (size.reorderPoint || 10)) {
     size.availability = 'low_stock';
   } else {
-    size.availability = 'in_stock';
+    size.availability = 'available';
   }
 
   // Add stock movement record to metadata
@@ -3537,7 +3557,7 @@ const adjustStock = async (subProductId, sizeId, adjustment, reason, user) => {
   } else if (hasLowStock) {
     subProduct.availability = 'low_stock';
   } else {
-    subProduct.availability = 'in_stock';
+    subProduct.availability = 'available';
   }
 
   await subProduct.save();
@@ -4261,12 +4281,31 @@ const getSubProductsByTenant = async (tenantId, filters = {}) => {
  */
 const getSubProductsByProduct = async (productId) => {
   const subProducts = await SubProduct.find({ product: productId })
-    .populate('product', 'name slug images')
-    .populate('tenant', 'name businessName')
+    .populate('product', 'name slug images type isAlcoholic abv volumeMl originCountry brand category subCategory tags flavors description tastingNotes platformMarkup platformDiscount')
+    .populate('tenant', 'name businessName revenueModel markupPercentage commissionPercentage')
     .populate('sizes')
     .lean();
 
-  return subProducts;
+  // Calculate pricing for each subproduct
+  const subProductsWithPricing = subProducts.map(sp => {
+    const pricing = calculateSubProductPricing(sp, sp.product, sp.tenant);
+
+    // Calculate pricing for each size
+    const sizesWithPricing = (sp.sizes || []).map(size => {
+      return {
+        ...size,
+        pricing: calculateSizePricing(size, sp.product, sp.tenant, sp.costPrice, sp.baseSellingPrice)
+      };
+    });
+
+    return {
+      ...sp,
+      pricing,
+      sizes: sizesWithPricing
+    };
+  });
+
+  return subProductsWithPricing;
 };
 
 /**
@@ -4489,14 +4528,26 @@ const getStockStatus = async (subProductId) => {
 /**
  * Admin-only: set sub-product status without tenant ownership check.
  * Used by platform admins to approve/decline any tenant's sub-product.
+ *
+ * priceOverrides: { baseWebsitePrice?, sizes: [{ id, websitePrice }] }
+ *   websitePrice = desired platformSellingPrice (what customer pays on drinksharbour.com)
+ *
+ *   Back-calculation (accounting for platform markup):
+ *     platformCostPrice = websitePrice / (1 + platformMarkupPct/100)
+ *     Markup model:     costPrice     = platformCostPrice / (1 + markupPct/100)
+ *     Commission model: sellingPrice  = platformCostPrice / (1 − commissionPct/100)
+ *
+ * declineReason: optional string stored in metadata when declining
  */
-const adminSetSubProductStatus = async (subProductId, status) => {
+const adminSetSubProductStatus = async (subProductId, status, priceOverrides = {}, declineReason = null) => {
   const VALID_STATUSES = ['active', 'archived', 'pending', 'draft', 'hidden', 'discontinued', 'out_of_stock', 'low_stock'];
   if (!VALID_STATUSES.includes(status)) {
     throw new ValidationError(`Invalid status: ${status}`);
   }
 
-  const subProduct = await SubProduct.findById(subProductId);
+  const subProduct = await SubProduct.findById(subProductId)
+    .populate('tenant', 'revenueModel markupPercentage commissionPercentage')
+    .populate('product', 'platformMarkup');
   if (!subProduct) {
     throw new NotFoundError('Sub-product not found');
   }
@@ -4504,20 +4555,77 @@ const adminSetSubProductStatus = async (subProductId, status) => {
   const previousStatus = subProduct.status;
   subProduct.status = status;
 
+  // ── Apply price overrides on approval ──────────────────────────────────────
+  if (status === 'active' && priceOverrides && (priceOverrides.baseWebsitePrice || priceOverrides.sizes?.length)) {
+    const revenueModel      = subProduct.tenant?.revenueModel ?? 'markup';
+    const markupPct         = subProduct.tenant?.markupPercentage ?? 25;
+    const commissionPct     = subProduct.tenant?.commissionPercentage ?? 12;
+    const platformMarkupPct = subProduct.product?.platformMarkup ?? 15;
+
+    /**
+     * Back-calculate the stored field from admin's desired platformSellingPrice.
+     * Markup:     costPrice    = (adminPrice / (1+platformMarkup/100)) / (1+markup/100)
+     * Commission: sellingPrice = (adminPrice / (1+platformMarkup/100)) / (1−commission/100)
+     */
+    const backCalc = (adminPrice) => {
+      const platformCostPrice = adminPrice / (1 + platformMarkupPct / 100);
+      if (revenueModel === 'markup') {
+        return parseFloat((platformCostPrice / (1 + markupPct / 100)).toFixed(2));
+      } else {
+        const divisor = 1 - commissionPct / 100;
+        if (divisor <= 0) return parseFloat(adminPrice.toFixed(2));
+        return parseFloat((platformCostPrice / divisor).toFixed(2));
+      }
+    };
+
+    // Override base price
+    if (priceOverrides.baseWebsitePrice > 0) {
+      const storedValue = backCalc(priceOverrides.baseWebsitePrice);
+      if (revenueModel === 'markup') {
+        subProduct.costPrice = storedValue;
+      } else {
+        subProduct.baseSellingPrice = storedValue;
+      }
+    }
+
+    // Override per-size prices
+    if (priceOverrides.sizes?.length) {
+      const sizes = await Size.find({ _id: { $in: priceOverrides.sizes.map(s => s.id) } });
+      const sizeMap = new Map(sizes.map(s => [s._id.toString(), s]));
+
+      for (const { id, websitePrice } of priceOverrides.sizes) {
+        if (!websitePrice || websitePrice <= 0) continue;
+        const sizeDoc = sizeMap.get(id);
+        if (!sizeDoc) continue;
+        const storedValue = backCalc(websitePrice);
+        if (revenueModel === 'markup') {
+          sizeDoc.costPrice = storedValue;
+        } else {
+          sizeDoc.sellingPrice = storedValue;
+        }
+        await sizeDoc.save();
+      }
+    }
+  }
+
+  // ── Status-specific metadata & side effects ────────────────────────────────
   if (status === 'archived') {
     subProduct.metadata = {
       ...subProduct.metadata,
       archivedAt: new Date(),
       previousStatus,
+      ...(declineReason ? { declineReason } : {}),
     };
     await Size.updateMany({ subProduct: subProductId }, { availability: 'unavailable' });
-  } else if (status === 'active' && previousStatus === 'archived') {
+  } else if (status === 'active') {
     subProduct.metadata = {
       ...subProduct.metadata,
-      restoredAt: new Date(),
+      approvedAt: new Date(),
       previousStatus,
     };
-    await Size.updateMany({ subProduct: subProductId }, { availability: 'available' });
+    if (previousStatus === 'archived') {
+      await Size.updateMany({ subProduct: subProductId }, { availability: 'available' });
+    }
   }
 
   await subProduct.save();

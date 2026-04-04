@@ -503,7 +503,7 @@ const restoreSubProduct = async (subProductId, tenantId) => {
 
   // Update availability
   if (hasStock) {
-    subProduct.availability = hasLowStock ? 'low_stock' : 'in_stock';
+    subProduct.availability = hasLowStock ? 'low_stock' : 'available';
   } else {
     subProduct.availability = 'out_of_stock';
   }
@@ -513,7 +513,7 @@ const restoreSubProduct = async (subProductId, tenantId) => {
   // Update sizes availability
   for (const size of sizes) {
     if (size.stock > 0) {
-      size.availability = size.stock <= 10 ? 'low_stock' : 'in_stock';
+      size.availability = size.stock <= 10 ? 'low_stock' : 'available';
     } else {
       size.availability = 'out_of_stock';
     }

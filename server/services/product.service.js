@@ -1082,7 +1082,7 @@ const createSizeVariants = async (
     // Determine availability based on stock
     let availability = 'out_of_stock';
     if (finalAvailableStock > lowStockThreshold) {
-      availability = 'in_stock';
+      availability = 'available';
     } else if (finalAvailableStock > 0) {
       availability = 'low_stock';
     }

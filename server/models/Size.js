@@ -666,6 +666,13 @@ sizeSchema.methods.releaseStock = async function(quantity) {
 // PRE-SAVE HOOK
 // ════════════════════════════════════════════════════════════
 
+// Fix legacy in_stock values before any validation
+sizeSchema.pre('validate', function() {
+  if (this.availability === 'in_stock') {
+    this.availability = 'available';
+  }
+});
+
 sizeSchema.pre('save', function() {
   // Calculate price per unit
   if (this.volumeMl && this.volumeMl > 0 && this.sellingPrice) {
@@ -695,8 +702,7 @@ sizeSchema.pre('save', function() {
 // ════════════════════════════════════════════════════════════
 
 sizeSchema.index({ subproduct: 1, size: 1 }, { unique: true });
-// Make sku index sparse to allow empty strings (non-unique for empty values)
-sizeSchema.index({ sku: 1 }, { sparse: true });
+// sku index comes from unique:true + sparse:true in the field definition
 // barcode index is defined inline with partialFilterExpression
 // Remove duplicate index: sizeSchema.index({ availability: 1 });
 sizeSchema.index({ stock: 1 });

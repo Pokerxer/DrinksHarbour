@@ -14,8 +14,19 @@ const uploadSingleImage = async (req, res, next) => {
     }
 
     const { folder = 'products', tags } = req.body;
-    
-    const result = await cloudinaryService.uploadImage(req.file.buffer, {
+
+    // Handle both memory storage (buffer) and disk storage (path)
+    let buffer;
+    if (req.file.buffer) {
+      buffer = req.file.buffer;
+    } else if (req.file.path) {
+      const fs = require('fs');
+      buffer = await fs.promises.readFile(req.file.path);
+    } else {
+      throw new ValidationError('Unable to read file data');
+    }
+
+    const result = await cloudinaryService.uploadImage(buffer, {
       folder,
       tags: tags ? tags.split(',') : [],
       context: {
@@ -45,12 +56,24 @@ const uploadMultipleImages = async (req, res, next) => {
     }
 
     const { folder = 'products', tags } = req.body;
-    
-    const files = req.files.map((file, index) => ({
-      buffer: file.buffer,
-      originalname: file.originalname,
+
+    // Handle both memory storage (buffer) and disk storage (path)
+    const files = await Promise.all(req.files.map(async (file) => {
+      let buffer;
+      if (file.buffer) {
+        buffer = file.buffer;
+      } else if (file.path) {
+        const fs = require('fs');
+        buffer = await fs.promises.readFile(file.path);
+      } else {
+        throw new ValidationError('Unable to read file data');
+      }
+      return {
+        buffer,
+        originalname: file.originalname,
+      };
     }));
-    
+
     const results = await cloudinaryService.uploadMultipleImages(files, {
       folder,
       tags: tags ? tags.split(',') : [],
@@ -80,12 +103,26 @@ const uploadProductGallery = async (req, res, next) => {
     }
 
     const { productId, tags } = req.body;
-    
-    const files = req.files.map((file) => ({
-      buffer: file.buffer,
-      originalname: file.originalname,
+
+    // Handle both memory storage (buffer) and disk storage (path)
+    const files = await Promise.all(req.files.map(async (file) => {
+      let buffer;
+      if (file.buffer) {
+        // Memory storage - buffer directly available
+        buffer = file.buffer;
+      } else if (file.path) {
+        // Disk storage - need to read file
+        const fs = require('fs');
+        buffer = await fs.promises.readFile(file.path);
+      } else {
+        throw new ValidationError('Unable to read file data');
+      }
+      return {
+        buffer,
+        originalname: file.originalname,
+      };
     }));
-    
+
     const results = await cloudinaryService.uploadMultipleImages(files, {
       folder: 'products/gallery',
       tags: ['product-gallery', ...(tags ? tags.split(',') : [])],

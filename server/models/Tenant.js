@@ -279,7 +279,7 @@ tenantSchema.virtual("isActive").get(function () {
 
 // Compound index examples – very useful in practice
 tenantSchema.index({ slug: 1, status: 1 });
-tenantSchema.index({ stripeCustomerId: 1 });
+// stripeCustomerId index comes from sparse: true in the field definition
 tenantSchema.index({ status: 1, subscriptionStatus: 1 });
 
 const Tenant = mongoose.models.Tenant || mongoose.model("Tenant", tenantSchema);
