@@ -11299,7 +11299,13 @@ const getAdminProductList = async ({ page = 1, limit = 500, search, status } = {
 
   const query = {};
   if (status) query.status = status;
-  if (search) query.$text = { $search: search };
+  if (search) {
+    query.$or = [
+      { name: { $regex: search, $options: 'i' } },
+      { slug: { $regex: search, $options: 'i' } },
+      { description: { $regex: search, $options: 'i' } },
+    ];
+  }
 
   const [products, total] = await Promise.all([
     Product.find(query)
