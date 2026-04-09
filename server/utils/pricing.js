@@ -49,7 +49,10 @@ const applyDiscount = (price, discount) => {
  * @returns {number} platformCostPrice
  */
 const calcPlatformCostPrice = (costPrice, tenantSellingPrice, revenueModel, markupPct = 25, commissionPct = 12) => {
-  if (revenueModel === 'markup') {
+  // Normalize revenueModel - 'platform_markup' is treated as 'markup'
+  const normalizedRevenueModel = revenueModel === 'platform_markup' ? 'markup' : revenueModel;
+  
+  if (normalizedRevenueModel === 'markup') {
     if (!costPrice || costPrice <= 0) return 0;
     return parseFloat((costPrice * (1 + markupPct / 100)).toFixed(2));
   } else {

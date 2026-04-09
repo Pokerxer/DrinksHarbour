@@ -370,6 +370,11 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
     }
   };
 
+  // Format price with commas
+  const formatPrice = (price: number): string => {
+    return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
   // Map beverage product to ProductType structure
   const mappedProduct = useMemo((): ProductType => {
     if (isBeverageProduct(data)) {
@@ -384,7 +389,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
         imageUrls.push(...additionalImages.slice(0, 2));
       }
       if (imageUrls.length === 0) {
-        imageUrls.push('/images/placeholder-product.png');
+        imageUrls.push('/images/product/1000x1000.png');
       }
 
       const variations = (data.flavors || []).map((flavor: any, index: number) => ({
@@ -397,7 +402,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
         image: data.primaryImage?.url || imageUrls[0] || '',
       }));
 
-const productData = data as any;
+      const productData = data as any;
       const sizes = (productData.availableAt || []).flatMap((store: any) =>
         store.sizes.map((size: any) => ({
           size: size.size,
@@ -412,14 +417,30 @@ const productData = data as any;
       const uniqueSizes = Array.from(new Map(sizes.map((item: any) => [item.size, item])).values());
 
       const allPrices = (productData.availableAt || []).flatMap((store: any) =>
-        store.sizes.map((size: any) => size.pricing?.websitePrice)
+        store.sizes.map((size: any) => size.pricing?.websitePrice).filter(Boolean)
       );
-      const minPrice = allPrices.length > 0 ? Math.min(...allPrices) : 0;
-      const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : minPrice;
+      // Fall back to priceRange.min when availableAt is absent
+      const minPrice = allPrices.length > 0
+        ? Math.min(...allPrices)
+        : (data.priceRange?.min ?? 0);
+
+      // originPrice is the pre-discount price from the platform discount object.
+      // Never use maxPrice (max websitePrice across sizes) — that would show a
+      // fake strikethrough just because larger sizes cost more.
+      const disc = productData.discount;
+      const hasRealDiscount = disc?.savings > 0;
+      const originPrice = hasRealDiscount ? (disc.originalPrice ?? minPrice) : minPrice;
+
+      // Vendor-level sale (isOnSale on the subproduct)
+      const vendorOnSale = (productData.availableAt || []).some((v: any) => v.isOnSale === true);
 
       const isNew = data.badge?.type === 'new-arrival' || isProductNew(data.createdAt);
 
-      console.log(data.images, 'data.images');
+      // Discount percentage for display
+      const discountPct = hasRealDiscount
+        ? (disc.type === 'percentage' ? disc.value : (disc.originalPrice > 0 ? Math.round((disc.savings / disc.originalPrice) * 100) : 0))
+        : undefined;
+
       return {
         id: data._id,
         slug: data.slug,
@@ -437,8 +458,8 @@ const productData = data as any;
         sold: data.totalSold || 0,
         quantity: data.stockInfo?.totalStock || 100,
         price: minPrice,
-        originPrice: maxPrice,
-        sale: data.isOnSale,
+        originPrice,
+        sale: vendorOnSale || hasRealDiscount,
         new: isNew,
         rating: data.averageRating || data.rate || 0,
         reviewCount: data.reviewCount || 0,
@@ -459,7 +480,7 @@ const productData = data as any;
         description: data.description || data.shortDescription || `${data.name} - Premium beverage`,
         images: imageUrls.map((url: string) => ({ url, alt: data.name })),
         variants: [],
-        discount: data.discount?.percentage,
+        discount: discountPct,
         weight: 0,
         dimensions: '',
         shippingInfo: data.shippingInfo || 'Free shipping on orders over $50',
@@ -490,18 +511,23 @@ const productData = data as any;
         isFeatured: data.isFeatured,
       } as ProductType;
     } else {
+      const dataAny = data as any;
+      const dataPrice = data.price || 0;
+      const priceRangePrice = data.priceRange?.min ?? 0;
+      const finalPrice = dataPrice || priceRangePrice || 0;
+      
       return {
         ...data,
         quantityPurchase: data.quantityPurchase || 1,
-        price: data.price || 0,
-        originPrice: data.originPrice || data.price || 0,
+        price: finalPrice,
+        originPrice: data.originPrice || finalPrice,
         thumbImage: data.thumbImage || [],
         variation: data.variation || [],
         sizes: data.sizes || [],
         sold: data.sold || 0,
         quantity: data.quantity || 100,
         action: data.action || 'add to cart',
-        badge: 'badge' in data ? (data as any).badge : undefined,
+        badge: 'badge' in data ? dataAny.badge : undefined,
         rate: data.rate || 4.5,
       } as ProductType;
     }
@@ -535,21 +561,43 @@ const productData = data as any;
     setActiveSize('');
   }, [activeVendor]);
 
-  // Calculate discount - only when there's an actual sale (isOnSale=true or discount with source='sale')
-  const percentSale = Math.floor(
-    100 - (mappedProduct.price / (mappedProduct.originPrice || mappedProduct.price || 1)) * 100
-  );
+  const platformDisc = productData.discount;
+  const hasPlatformDiscount = !!(platformDisc?.savings > 0);
 
-  // Check if product has an actual sale (not just price differences between sizes)
-  const hasActiveSale = vendors.some((v: any) => v.isOnSale === true);
+  // True when any vendor is on a dedicated sale OR the product has a platform discount
+  const hasActiveSale = vendors.some((v: any) => v.isOnSale === true) || hasPlatformDiscount;
+
+  // Discount percentage for the badge — vendor sale takes priority over platform discount
+  const calculatedDiscount = (() => {
+    const saleVend = vendors.find((v: any) => v.isOnSale === true);
+    if (saleVend?.saleDiscountValue > 0) return saleVend.saleDiscountValue;
+    if (hasPlatformDiscount) {
+      if (platformDisc.type === 'percentage') return platformDisc.value;
+      if (platformDisc.originalPrice > 0) return Math.round((platformDisc.savings / platformDisc.originalPrice) * 100);
+    }
+    return 0;
+  })();
+
+  // Used in the quickshop price row to decide whether to show a strikethrough
+  const percentSale = hasActiveSale && (mappedProduct.originPrice || 0) > (mappedProduct.price || 0) ? calculatedDiscount : 0;
+
+  // Unified price display values — derived once, used in both image overlay and info section
+  const selectedSizeData = activeSize ? vendorSizes.find((s: any) => s.size === activeSize) : null;
   
-  const saleVendor = vendors.find((v: any) => v.isOnSale === true);
-  const saleDiscount = saleVendor ? (saleVendor as any).saleDiscountValue || 0 : 0;
-
-  // Calculate discount from sizes that have active sale discounts
-  const sizeSaleDiscount = 0;
-
-  const calculatedDiscount = saleDiscount || sizeSaleDiscount || (percentSale > 0 ? percentSale : 0);
+  // Extract price - all endpoints now return consistent availableAt structure
+  const productPrice = mappedProduct.price || 0;
+  const dataPrice = (data as any)?.price ?? 0;
+  const dataPriceRangeMin = (data as any)?.priceRange?.min ?? 0;
+  
+  // Priority: selected size price > mappedProduct.price > priceRange.min > data.price
+  const displayPrice = selectedSizeData?.price 
+    ?? (productPrice > 0 ? productPrice : null)
+    ?? (dataPriceRangeMin > 0 ? dataPriceRangeMin : null)
+    ?? (dataPrice > 0 ? dataPrice : null)
+    ?? 0;
+  
+  const currencySymbol = selectedSizeData?.currencySymbol || '₦';
+  const showStrikethrough = hasActiveSale && (mappedProduct.originPrice || 0) > displayPrice;
 
   const handleActiveColor = (item: string) => {
     setActiveColor(item);
@@ -676,8 +724,6 @@ const productData = data as any;
     }
   }, [cartState, mappedProduct, vendorSizes, data, addToCart, updateQuantity, getCartItemId, openModalCart]);
 
-  // Image loading state
-  const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
   
   // Card entrance animation state
@@ -702,9 +748,8 @@ const productData = data as any;
     return () => observer.disconnect();
   }, []);
 
-  // Reset image state when product changes
+  // Reset image error state when product changes
   useEffect(() => {
-    setImageLoaded(false);
     setImageError(false);
   }, [data?._id]);
 
@@ -821,68 +866,26 @@ const productData = data as any;
                 </motion.div>
               </div>
 
-              {/* Product Images - Enhanced hover with zoom, fade, and shimmer loading */}
-              <div className="product-img w-full h-full aspect-[3/4] overflow-hidden relative">
-                {/* Shimmer loading effect */}
-                {!imageLoaded && (
-                  <div className="absolute inset-0 bg-gradient-to-r from-gray-100 via-gray-200 to-gray-100 animate-shimmer bg-[length:200%_100%]" />
-                )}
-                
-                {activeColor ? (
-                  imageError ? (
-                    <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-                      <Icon.PiImageBold className="w-16 h-16 text-gray-300" />
-                    </div>
-                  ) : (
-                    <Image
-                      src={
-                        mappedProduct.variation?.find((item) => item.color === activeColor)?.image ||
-                        mappedProduct.thumbImage?.[0] ||
-                        '/images/placeholder-product.png'
-                      }
-                      width={500}
-                      height={500}
-                      alt={mappedProduct.name}
-                      priority={true}
-                      className={`w-full h-full object-cover transition-all duration-700 ease-out group-hover:scale-110 ${
-                        imageLoaded ? 'opacity-100' : 'opacity-0'
-                      }`}
-                      onLoad={() => setImageLoaded(true)}
-                      onError={() => {
-                        setImageError(true);
-                        setImageLoaded(true);
-                      }}
-                    />
-                  )
+              {/* Product Images - Full image display */}
+              <div className="product-img w-full aspect-square overflow-hidden relative bg-gray-50 flex items-center justify-center">
+                {imageError || (!activeColor && !mappedProduct.thumbImage?.[0]) ? (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <Icon.PiImageBold className="w-16 h-16 text-gray-300" />
+                  </div>
                 ) : (
-                  <>
-                    {(mappedProduct.thumbImage || []).slice(0, 2).map((img, index) => (
-                      imageError && index === 0 ? (
-                        <div key={index} className={`w-full h-full bg-gray-100 flex items-center justify-center ${index === 0 ? 'relative z-10' : 'absolute inset-0 z-20 opacity-0 group-hover:opacity-100'}`}>
-                          <Icon.PiImageBold className="w-16 h-16 text-gray-300" />
-                        </div>
-                      ) : (
-                        <Image
-                          key={index}
-                          src={img || mappedProduct.thumbImage?.[0] || '/images/placeholder-product.png'}
-                          width={500}
-                          height={500}
-                          priority={true}
-                          alt={mappedProduct.name}
-                          className={`w-full h-full object-cover transition-opacity duration-500 ${
-                            index === 0 
-                              ? 'relative z-10'
-                              : 'absolute inset-0 z-20 opacity-0 group-hover:opacity-100'
-                          }`}
-                          onLoad={() => setImageLoaded(true)}
-                          onError={() => {
-                            setImageError(true);
-                            setImageLoaded(true);
-                          }}
-                        />
-                      )
-                    ))}
-                  </>
+                  <Image
+                    src={
+                      (activeColor && mappedProduct.variation?.find((item) => item.color === activeColor)?.image) ||
+                      mappedProduct.thumbImage?.[0] ||
+                      '/images/product/1000x1000.png'
+                    }
+                    width={500}
+                    height={500}
+                    priority={true}
+                    alt={mappedProduct.name}
+                    className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
+                    onError={() => setImageError(true)}
+                  />
                 )}
                 
                 {/* Subtle gradient overlay on hover */}
@@ -1023,7 +1026,7 @@ const productData = data as any;
                       ) : activeSize ? (
                         <span className="flex items-center justify-center gap-2">
                           <Icon.PiShoppingCart size={16} />
-                          Add To Cart - {vendorSizes.find((s: any) => s.size === activeSize)?.currencySymbol || '₦'}{vendorSizes.find((s: any) => s.size === activeSize)?.price.toFixed(2)}
+                          Add To Cart - {currencySymbol}{formatPrice(displayPrice)}
                         </span>
                       ) : (
                         'Select a Size'
@@ -1047,12 +1050,13 @@ const productData = data as any;
                 )}
               </div>
 
-              {/* Mobile Action Buttons - Always visible on mobile, show on tablet+ */}
-              <div className="lg:hidden absolute bottom-3 left-3 right-3 flex items-center gap-2 z-20">
+              {/* Mobile Action Buttons - Icon only, positioned to not block image */}
+              <div className="lg:hidden absolute top-2 right-2 flex flex-col gap-2 z-20">
                 <button
                   onClick={handleMobileAddToCart}
                   disabled={isAddingToCart}
-                  className={`flex-1 py-2.5 bg-white/95 backdrop-blur-sm text-gray-900 text-sm font-bold rounded-xl shadow-xl active:scale-95 transition-all hover:bg-gray-900 hover:text-white flex items-center justify-center gap-1.5 ripple ${isAddingToCart ? 'opacity-75' : ''}`}
+                  className={`w-9 h-9 bg-white/95 backdrop-blur-sm rounded-full shadow-lg flex items-center justify-center active:scale-95 transition-all hover:bg-gray-900 hover:text-white ${isAddingToCart ? 'opacity-75' : ''}`}
+                  aria-label="Add to cart"
                 >
                   {isAddingToCart ? (
                     <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -1060,16 +1064,12 @@ const productData = data as any;
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                   ) : (
-                    <>
-                      <Icon.PiShoppingCart size={16} />
-                      <span className="hidden xs:inline">Add to Cart</span>
-                      <span className="xs:hidden">Add</span>
-                    </>
+                    <Icon.PiShoppingCart size={18} />
                   )}
                 </button>
                 <button
                   onClick={handleQuickviewOpen}
-                  className="w-10 h-10 bg-white/95 backdrop-blur-sm rounded-xl shadow-xl flex items-center justify-center active:scale-95 transition-all hover:bg-gray-900 hover:text-white"
+                  className="w-9 h-9 bg-white/95 backdrop-blur-sm rounded-full shadow-lg flex items-center justify-center active:scale-95 transition-all hover:bg-gray-900 hover:text-white"
                   aria-label="Quick view"
                 >
                   <Icon.PiEye size={18} />
@@ -1084,7 +1084,15 @@ const productData = data as any;
                 <div className="progress bg-gray-200 h-1.5 w-full rounded-full overflow-hidden relative">
                   <div
                     className="progress-sold bg-gradient-to-r from-red-400 to-red-600 absolute left-0 top-0 h-full transition-all duration-1000 ease-out"
-                    style={{ width: `${Math.min(100, (mappedProduct.sold || 0) / (mappedProduct.quantity || 1) * 100)}%` }}
+                    style={{
+                      width: isBeverageProduct(data)
+                        // Beverages: sold and quantity are independent counters.
+                        // sold = lifetime totalSold, quantity = current totalStock.
+                        // Show sold as % of all-time throughput (sold + remaining).
+                        ? `${Math.min(100, (mappedProduct.sold || 0) / Math.max(1, (mappedProduct.sold || 0) + (mappedProduct.quantity || 0)) * 100)}%`
+                        // Legacy ProductType: quantity is total batch, sold is units from it.
+                        : `${Math.min(100, (mappedProduct.sold || 0) / (mappedProduct.quantity || 1) * 100)}%`
+                    }}
                   />
                 </div>
                 <div className="flex items-center justify-between gap-3 gap-y-1 flex-wrap mt-2">
@@ -1095,7 +1103,12 @@ const productData = data as any;
                   <div className="text-xs font-medium">
                     <span className="text-gray-500">Available: </span>
                     <span className="text-emerald-600 font-semibold">
-                      {(mappedProduct.quantity ?? 0) - (mappedProduct.sold ?? 0)}
+                      {isBeverageProduct(data)
+                        // quantity IS totalStock (current available) — don't subtract sold
+                        ? (mappedProduct.quantity ?? 0)
+                        // Legacy: total batch minus sold = remaining
+                        : (mappedProduct.quantity ?? 0) - (mappedProduct.sold ?? 0)
+                      }
                     </span>
                   </div>
                 </div>
@@ -1125,15 +1138,11 @@ const productData = data as any;
                   )}
                   <div className="flex items-center gap-1">
                     <span className="text-sm md:text-lg font-bold text-gray-900 transition-transform duration-300 group-hover:scale-105">
-                      {vendorSizes.find((s: any) => s.size === activeSize)?.currencySymbol || '₦'}
-                      <span className="inline md:hidden">{(vendorSizes.find((s: any) => s.size === activeSize)?.price || mappedProduct.price).toLocaleString()}</span>
-                      <span className="hidden md:inline">{(vendorSizes.find((s: any) => s.size === activeSize)?.price || mappedProduct.price).toFixed(2)}</span>
+                      {currencySymbol}{formatPrice(displayPrice)}
                     </span>
-                    {/* Original price with strikethrough animation */}
-                    {hasActiveSale && (
+                    {showStrikethrough && (
                       <span className="text-[10px] md:text-xs text-gray-400 line-through decoration-gray-400 decoration-2">
-                        {vendorSizes.find((s: any) => s.size === activeSize)?.currencySymbol || '₦'}
-                        {(mappedProduct.originPrice || 0).toLocaleString()}
+                        {currencySymbol}{formatPrice(mappedProduct.originPrice || 0)}
                       </span>
                     )}
                   </div>
@@ -1239,24 +1248,20 @@ const productData = data as any;
                 </div>
               )}
 
-              <div className="product-img w-24 sm:w-32 aspect-[3/4] sm:aspect-square rounded-xl sm:rounded-2xl overflow-hidden">
+              <div className="product-img w-24 sm:w-32 aspect-square rounded-xl sm:rounded-2xl overflow-hidden flex items-center justify-center bg-gray-50">
                 {imageError ? (
-                  <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                  <div className="w-full h-full flex items-center justify-center">
                     <Icon.PiImageBold className="w-8 h-8 sm:w-10 sm:h-10 text-gray-300" />
                   </div>
                 ) : (
                   <Image
-                    src={mappedProduct.thumbImage?.[0] || '/images/placeholder-product.png'}
+                    src={mappedProduct.thumbImage?.[0] || '/images/product/1000x1000.png'}
                     width={500}
                     height={500}
                     priority={true}
                     alt={mappedProduct.name}
-                    className="w-full h-full object-cover duration-500 sm:duration-700 hover:scale-105"
-                    onLoad={() => setImageLoaded(true)}
-                    onError={() => {
-                      setImageError(true);
-                      setImageLoaded(true);
-                    }}
+                    className="w-full h-full object-contain duration-500 sm:duration-700 hover:scale-105"
+                    onError={() => setImageError(true)}
                   />
                 )}
               </div>
@@ -1271,13 +1276,11 @@ const productData = data as any;
 
               <div className="flex items-center gap-2 mt-1.5 sm:mt-2">
                 <span className="text-sm sm:text-base font-bold text-gray-900">
-                  {vendorSizes.find((s: any) => s.size === activeSize)?.currencySymbol || '₦'}
-                  {(vendorSizes.find((s: any) => s.size === activeSize)?.price || mappedProduct.price).toFixed(2)}
+                  {currencySymbol}{formatPrice(displayPrice)}
                 </span>
-                {percentSale > 0 && (
+                {showStrikethrough && (
                   <span className="text-xs text-gray-400 line-through">
-                    {vendorSizes.find((s: any) => s.size === activeSize)?.currencySymbol || '₦'}
-                    {(mappedProduct.originPrice || 0).toFixed(2)}
+                    {currencySymbol}{formatPrice(mappedProduct.originPrice || 0)}
                   </span>
                 )}
               </div>

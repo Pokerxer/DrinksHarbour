@@ -3,10 +3,15 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
-import { useRouter } from 'next/navigation';
-import { getProductGridLayoutClasses } from './ProductGrid';
+
+const LAYOUT_OPTIONS = [
+  { value: 2, label: '2 columns' },
+  { value: 3, label: '3 columns' },
+  { value: 4, label: '4 columns' },
+  { value: 5, label: '5 columns' },
+] as const;
 
 interface RecentProduct {
   _id: string;
@@ -22,6 +27,9 @@ interface RecentProduct {
   slug?: string;
   price?: number;
   originPrice?: number;
+  availableAt?: any[];
+  thumbImage?: string[];
+  primaryImage?: { url: string };
   }
 
 interface RecentlyViewedProps {
@@ -41,26 +49,53 @@ interface RecentlyViewedProps {
     abv?: number;
     sale?: boolean;
     new?: boolean;
+    availableAt?: any[];
+    thumbImage?: string[];
+    primaryImage?: { url: string };
   };
-  layoutCol?: number; // Add layout column prop
+  layoutCol?: number;
 }
 
-const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 6, currentProduct, layoutCol = 2 }) => {
-  const router = useRouter();
+const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 10, currentProduct, layoutCol = 4 }) => {
   const [products, setProducts] = useState<RecentProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [layoutColumns, setLayoutColumns] = useState<number>(layoutCol);
+
+  // Sync with layoutCol prop
+  useEffect(() => {
+    if (layoutCol && LAYOUT_OPTIONS.some(opt => opt.value === layoutCol)) {
+      setLayoutColumns(layoutCol);
+    }
+  }, [layoutCol]);
 
   const STORAGE_KEY = 'drinksharbour_recently_viewed';
 
   const formatPrice = (price: number, currencySymbol: string = '₦') => {
     if (price == null || isNaN(price)) return `${currencySymbol}0`;
-    return new Intl.NumberFormat('en-NG', {
-      style: 'currency',
-      currency: 'NGN',
-      minimumFractionDigits: 0,
-    }).format(price);
+    return `${currencySymbol}${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  // Current selling price — lowest websitePrice across all vendor sizes.
+  const getProductPrice = (product: any): number => {
+    if (product.price) return product.price;
+    if (product.priceRange?.min) return product.priceRange.min;
+    const allPrices = (product.availableAt || []).flatMap((store: any) =>
+      (store.sizes || []).map((size: any) => size.pricing?.websitePrice).filter(Boolean)
+    );
+    if (allPrices.length > 0) return Math.min(...allPrices);
+    return 0;
+  };
+
+  // Pre-discount price — only populated when there is a real platform discount.
+  // Never falls back to priceRange.max (which is just the most expensive size,
+  // not a pre-discount price).
+  const getProductOriginalPrice = (product: any): number => {
+    const disc = product.discount as any;
+    if (disc?.savings > 0 && disc?.originalPrice > 0) return disc.originalPrice;
+    if (product.originPrice && product.originPrice > getProductPrice(product)) return product.originPrice;
+    return 0;
   };
 
   const getCurrencySymbol = useCallback(() => {
@@ -86,18 +121,16 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 6
     return emojis[type?.toLowerCase()] || '🍹';
   };
 
-  const getDiscount = (product: RecentProduct) => {
-    if (product.discount && typeof product.discount === 'object' && 'value' in product.discount && product.discount.value && product.discount.value > 0) {
-      return product.discount.value;
-    }
-    if (typeof product.discount === 'number' && product.discount > 0) {
-      return product.discount;
-    }
-    if (product.priceRange?.min !== undefined && product.priceRange?.max !== undefined) {
-      if (product.priceRange.max > product.priceRange.min) {
-        return Math.round(((product.priceRange.max - product.priceRange.min) / product.priceRange.max) * 100);
-      }
-    }
+  // Discount percentage for the badge — derived only from the platform discount
+  // object (same source as the getAllProducts pipeline). Never computed from
+  // priceRange min/max because that would show a fake discount when sizes simply
+  // have different prices.
+  const getDiscount = (product: RecentProduct): number => {
+    const disc = product.discount as any;
+    if (!disc || !(disc.savings > 0)) return 0;
+    if (disc.type === 'percentage') return disc.value;
+    // Fixed-amount discount: compute percentage from saved amount vs original price
+    if (disc.originalPrice > 0) return Math.round((disc.savings / disc.originalPrice) * 100);
     return 0;
   };
 
@@ -214,6 +247,9 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 6
         brand: currentProduct.brand,
         abv: currentProduct.abv,
         viewedAt: new Date().toISOString(),
+        availableAt: currentProduct.availableAt,
+        thumbImage: currentProduct.thumbImage,
+        primaryImage: currentProduct.primaryImage,
       };
 
       if (existingIndex !== -1) {
@@ -252,17 +288,24 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 6
   if (loading) {
     return (
       <section className="w-full bg-white border-t border-gray-100">
-        <div className="container mx-auto px-3 sm:px-4 py-6 sm:py-8">
-          <div className="flex items-center gap-3 mb-4 sm:mb-6">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gray-200 animate-pulse" />
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-xl bg-gray-200 animate-pulse" />
             <div>
-              <div className="h-4 w-28 sm:h-5 sm:w-36 bg-gray-200 rounded animate-pulse mb-1" />
-              <div className="h-2 w-20 sm:h-3 sm:w-24 bg-gray-200 rounded animate-pulse" />
+              <div className="h-5 w-36 bg-gray-200 rounded animate-pulse mb-1" />
+              <div className="h-3 w-24 bg-gray-200 rounded animate-pulse" />
             </div>
           </div>
-          <div className={getProductGridLayoutClasses(layoutCol)}>
-            {Array.from({ length: layoutCol * 2 }).map((_, i) => (
-              <div key={i} className="bg-gray-100 rounded-lg sm:rounded-xl animate-pulse aspect-[4/5] sm:aspect-square" />
+          {/* Mobile skeleton */}
+          <div className="md:hidden flex gap-3 overflow-x-auto pb-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="w-[42%] flex-shrink-0 bg-gray-100 rounded-xl animate-pulse aspect-[3/4]" />
+            ))}
+          </div>
+          {/* Desktop skeleton */}
+          <div className="hidden md:grid grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="bg-gray-100 rounded-xl animate-pulse aspect-[3/4]" />
             ))}
           </div>
         </div>
@@ -272,125 +315,196 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 6
 
   if (filteredProducts.length === 0) return null;
 
-    return (
-      <section className="w-full bg-white border-t border-gray-100">
-        <div className="container mx-auto px-3 sm:px-4 py-6 sm:py-8">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-4 sm:mb-6">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
-                <Icon.PiClockCounterClockwise size={20} className="text-white w-4 h-4 sm:w-5 sm:h-5" />
-              </div>
-              <div>
-                <h3 className="text-base sm:text-lg md:text-xl font-bold text-gray-900">
-                  Recently Viewed
-                </h3>
-                <p className="text-[10px] sm:text-xs text-gray-500 hidden sm:block">
-                  Pick up where you left off
-                </p>
-              </div>
+  return (
+    <section className="w-full bg-white border-t border-gray-100 py-8 lg:py-12">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
+              <Icon.PiClockCounterClockwise size={20} className="text-white" />
+            </div>
+            <div>
+              <h3 className="text-lg md:text-xl font-bold text-gray-900">Recently Viewed</h3>
+              <p className="text-xs text-gray-500 hidden sm:block">Pick up where you left off</p>
+            </div>
+          </div>
+
+          {/* Layout selector */}
+          <div className="flex items-center gap-3">
+            {/* Layout selector */}
+            <div className="hidden md:flex items-center gap-1 p-1 bg-gray-100 rounded-lg">
+              {LAYOUT_OPTIONS.map(({ value, label }) => (
+                <button
+                  key={value}
+                  onClick={() => setLayoutColumns(value)}
+                  className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-all ${
+                    layoutColumns === value
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                  title={label}
+                >
+                  {value}
+                </button>
+              ))}
             </div>
 
             <button
               onClick={handleClearHistory}
-              className="text-xs sm:text-sm text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1"
+              className="text-sm text-gray-400 hover:text-gray-700 transition-colors flex items-center gap-1"
             >
-              Clear
-              <Icon.PiX size={14} className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+              <Icon.PiX size={14} />
+              <span className="hidden sm:inline">Clear</span>
             </button>
           </div>
-
-        {/* Products Grid - Temu style gallery */}
-        <div className={getProductGridLayoutClasses(layoutCol)}>
-            <AnimatePresence mode="popLayout">
-              {filteredProducts.slice(0, maxItems).map((product, index) => {
-                const discount = getDiscount(product);
-                const isOnSale = discount > 0;
-                const productSlug = product.slug || product._id || product.id;
-                const currencySymbol = getCurrencySymbol();
-
-                return (
-                  <motion.div
-                    key={`${product._id}-${product.id}-${index}`}
-                    layout
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="animate-fade-in-up"
-                    style={{ animationDelay: `${index * 50}ms` }}
-                  >
-                    <Link href={`/product/${productSlug}`}>
-                      <motion.div
-                        whileHover={{ y: -2 }}
-                        className="group bg-white rounded-lg sm:rounded-xl overflow-hidden border border-gray-100 hover:border-gray-200 hover:shadow-md transition-all duration-300"
-                      >
-                        {/* Image */}
-                        <div className="relative aspect-[4/5] sm:aspect-square bg-gradient-to-br from-gray-100 to-gray-50">
-                          {product.images?.[0]?.url ? (
-                            <Image
-                              src={product.images[0].url}
-                              alt={product.name}
-                              fill
-                              className="object-cover group-hover:scale-105 transition-transform duration-500"
-                              sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 25vw"
-                            />
-                          ) : (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <span className="text-3xl sm:text-4xl opacity-50">{getEmoji(product.type)}</span>
-                            </div>
-                          )}
-
-                          {/* Sale Badge */}
-                          {isOnSale && (
-                            <div className="absolute top-1.5 sm:top-2 left-1.5 sm:left-2">
-                              <span className="px-1.5 sm:px-2 py-0.5 bg-red-500 text-white text-[9px] sm:text-[10px] font-bold rounded-full">
-                                -{discount}%
-                              </span>
-                            </div>
-                          )}
-
-                          {/* Quick View overlay */}
-                          <motion.div
-                            initial={{ opacity: 0 }}
-                            whileHover={{ opacity: 1 }}
-                            className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                          >
-                            <span className="px-2.5 sm:px-3 py-1 sm:py-1.5 bg-white text-gray-900 text-[10px] sm:text-xs font-semibold rounded-full">
-                              View
-                            </span>
-                          </motion.div>
-                        </div>
-
-                        {/* Content */}
-                        <div className="p-2 sm:p-3">
-                          <p className="text-[9px] sm:text-[10px] text-gray-400 mb-0.5 truncate">
-                            {product.brand?.name || product.type}
-                          </p>
-                          <h4 className="text-[11px] sm:text-xs font-semibold text-gray-900 line-clamp-2 mb-1 sm:mb-1.5 min-h-[2rem] sm:min-h-[2.5rem]">
-                            {product.name || 'Loading...'}
-                          </h4>
-                          <div className="flex items-center gap-1 sm:gap-1.5">
-                            <span className={`font-bold text-xs sm:text-sm ${isOnSale ? 'text-red-600' : 'text-gray-900'}`}>
-                              {formatPrice(product.priceRange?.min || product.price || 0, currencySymbol)}
-                            </span>
-                            {isOnSale && (product.priceRange?.max || product.originPrice) && (
-                              <span className="text-[9px] sm:text-[10px] text-gray-400 line-through">
-                                {formatPrice(product.priceRange?.max || product.originPrice || 0, currencySymbol)}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </motion.div>
-                    </Link>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
-          </div>
         </div>
-      </section>
-    );
+
+        {/* Desktop: CSS Grid */}
+
+        {/* Desktop: CSS Grid */}
+        <div className="hidden md:grid gap-4"
+          style={{
+            gridTemplateColumns: `repeat(${layoutColumns}, minmax(0, 1fr))`,
+          }}
+        >
+          {filteredProducts.slice(0, maxItems).map((product, index) => (
+            <RecentlyViewedCard 
+              key={`${product._id}-${index}`} 
+              product={product} 
+              index={index}
+              getCurrencySymbol={getCurrencySymbol}
+              getProductPrice={getProductPrice}
+              getProductOriginalPrice={getProductOriginalPrice}
+              getDiscount={getDiscount}
+              formatPrice={formatPrice}
+              getEmoji={getEmoji}
+            />
+          ))}
+        </div>
+
+        {/* Mobile: Horizontal scroll with snap */}
+        <div className="md:hidden flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide -mx-4 px-4">
+          {filteredProducts.slice(0, maxItems).map((product, index) => (
+            <div 
+              key={`${product._id}-${index}`} 
+              className="w-[42%] flex-shrink-0 snap-start"
+            >
+              <RecentlyViewedCard 
+                product={product} 
+                index={index}
+                getCurrencySymbol={getCurrencySymbol}
+                getProductPrice={getProductPrice}
+                getProductOriginalPrice={getProductOriginalPrice}
+                getDiscount={getDiscount}
+                formatPrice={formatPrice}
+                getEmoji={getEmoji}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+};
+
+// Extract card component for reuse
+interface RecentlyViewedCardProps {
+  product: RecentProduct;
+  index: number;
+  getCurrencySymbol: () => string;
+  getProductPrice: (product: any) => number;
+  getProductOriginalPrice: (product: any) => number;
+  getDiscount: (product: RecentProduct) => number;
+  formatPrice: (price: number, currencySymbol?: string) => string;
+  getEmoji: (type: string) => string;
+}
+
+const RecentlyViewedCard: React.FC<RecentlyViewedCardProps> = ({
+  product,
+  index,
+  getCurrencySymbol,
+  getProductPrice,
+  getProductOriginalPrice,
+  getDiscount,
+  formatPrice,
+  getEmoji,
+}) => {
+  const discount = getDiscount(product);
+  const vendorOnSale = (product.availableAt || []).some((v: any) => v.isOnSale === true);
+  const isOnSale = discount > 0 || vendorOnSale;
+  const productSlug = product.slug || product._id || product.id;
+  const currencySymbol = getCurrencySymbol();
+  const currentPrice = getProductPrice(product);
+  const originalPrice = getProductOriginalPrice(product);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.04 }}
+    >
+      <Link href={`/product/${productSlug}`}>
+        <motion.div
+          whileHover={{ y: -2 }}
+          className="group bg-white rounded-xl overflow-hidden border border-gray-100 hover:border-gray-300 hover:shadow-md transition-all duration-300 h-full"
+        >
+          {/* Image */}
+          <div className="relative aspect-[3/4] bg-gradient-to-br from-gray-100 to-gray-50">
+            {product.images?.[0]?.url ? (
+              <Image
+                src={product.images[0].url}
+                alt={product.name}
+                fill
+                className="object-cover group-hover:scale-105 transition-transform duration-500"
+                sizes="(max-width: 480px) 44vw, (max-width: 768px) 30vw, (max-width: 1024px) 23vw, 18vw"
+              />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-4xl opacity-40">{getEmoji(product.type)}</span>
+              </div>
+            )}
+
+            {/* Sale badge */}
+            {isOnSale && (
+              <div className="absolute top-2 left-2">
+                <span className="px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full">
+                  -{discount}%
+                </span>
+              </div>
+            )}
+
+            {/* Hover overlay */}
+            <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="px-3 py-1.5 bg-white text-gray-900 text-xs font-semibold rounded-full shadow">
+                View
+              </span>
+            </div>
+          </div>
+
+          {/* Info */}
+          <div className="p-2.5">
+            <p className="text-[10px] text-gray-400 mb-0.5 truncate">
+              {product.brand?.name || product.type}
+            </p>
+            <h4 className="text-xs font-semibold text-gray-900 line-clamp-2 mb-1.5 min-h-[2.5rem]">
+              {product.name}
+            </h4>
+            <div className="flex items-baseline gap-1.5 flex-wrap">
+              <span className={`font-bold text-sm ${isOnSale ? 'text-red-600' : 'text-gray-900'}`}>
+                {formatPrice(currentPrice, currencySymbol)}
+              </span>
+              {isOnSale && originalPrice > 0 && (
+                <span className="text-[10px] text-gray-400 line-through">
+                  {formatPrice(originalPrice, currencySymbol)}
+                </span>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      </Link>
+    </motion.div>
+  );
 };
 
 export default RecentlyViewed;

@@ -15,11 +15,11 @@ const createProduct = asyncHandler(async (req, res) => {
   const user = req.user;
   const tenant = req.tenant; // Attached by tenant middleware if subdomain/header present
 
-  // Authorization check
-  const isSuperAdmin = user.role === 'super_admin';
-  const isApprovedTenant = 
-    tenant && 
-    tenant.status === 'approved' && 
+  // Authorization check — super_admin/admin have all tenant_owner privileges
+  const isSuperAdmin = ['super_admin', 'admin'].includes(user.role);
+  const isApprovedTenant =
+    tenant &&
+    tenant.status === 'approved' &&
     ['active', 'trialing'].includes(tenant.subscriptionStatus) &&
     ['tenant_owner', 'tenant_admin'].includes(user.role);
 
@@ -950,7 +950,7 @@ const getAllProducts = asyncHandler(async (req, res) => {
  */
 const searchProductsPublic = asyncHandler(async (req, res) => {
   const { page = 1, limit = 12, q, query, category, subCategory, brand, ...filters } = req.query;
-  
+
   const searchParams = {
     ...filters,
     query: query || q || '',
@@ -959,8 +959,10 @@ const searchProductsPublic = asyncHandler(async (req, res) => {
     category: category ? (Array.isArray(category) ? category : category.split(',')) : undefined,
     subCategory: subCategory ? (Array.isArray(subCategory) ? subCategory : subCategory.split(',')) : undefined,
     brand: brand ? (Array.isArray(brand) ? brand : brand.split(',')) : undefined,
+    // Public shop always shows only approved/published products — not overridable via query param
+    status: 'approved',
   };
-  
+
   const result = await productService.searchProducts(searchParams);
 
   res.status(200).json({
