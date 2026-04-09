@@ -1,42 +1,217 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import ProductCard from '@/components/Product/Card';
 import { ProductCardSkeleton } from '@/components/loader/Skeleton';
 import * as Icon from 'react-icons/pi';
 import { getProductGridLayoutClasses } from './ProductGrid';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface RecommendedForYouProps {
   maxItems?: number;
-  layoutCol?: number; // Add layout column prop
+  layoutCol?: number;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+interface SectionConfig {
+  title: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  iconBgColor: string;
+  iconColor: string;
+}
+
+type SectionKey = 'recommended' | 'trending' | 'bestsellers' | 'newArrivals';
+
+const SECTION_MAP: Record<SectionKey, SectionConfig> = {
+  recommended: {
+    title: 'Recommended For You',
+    subtitle: 'Based on your browsing history',
+    icon: <Icon.PiSparkle size={20} />,
+    iconBgColor: 'bg-rose-100',
+    iconColor: 'text-rose-600',
+  },
+  trending: {
+    title: 'Trending Now',
+    subtitle: 'Popular with other shoppers',
+    icon: <Icon.PiTrendUp size={20} />,
+    iconBgColor: 'bg-emerald-100',
+    iconColor: 'text-emerald-600',
+  },
+  bestsellers: {
+    title: 'Best Sellers',
+    subtitle: 'Most purchased items',
+    icon: <Icon.PiFire size={20} />,
+    iconBgColor: 'bg-orange-100',
+    iconColor: 'text-orange-600',
+  },
+  newArrivals: {
+    title: 'New Arrivals',
+    subtitle: 'Fresh additions to our catalog',
+    icon: <Icon.PiSparkle size={20} />,
+    iconBgColor: 'bg-violet-100',
+    iconColor: 'text-violet-600',
+  },
+};
+
+const SECTION_KEYS: SectionKey[] = ['recommended', 'trending', 'bestsellers', 'newArrivals'];
+
+const API_ENDPOINTS: Record<SectionKey, string> = {
+  recommended: '/api/user/recommendations',
+  trending: '/api/products/trending',
+  bestsellers: '/api/products/bestsellers',
+  newArrivals: '/api/products/new-arrivals',
+};
 
 const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12, layoutCol = 4 }) => {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [hasError, setHasError] = useState(false);
-  const [authChecked, setAuthChecked] = useState(false);
+  const [currentSection, setCurrentSection] = useState<SectionKey>('recommended');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const authCheckedRef = useRef(false);
 
+  const sectionConfig = SECTION_MAP[currentSection];
+
+  // Unwrap the response envelope into a flat array
   const normalizeProducts = (data: any): any[] => {
     if (Array.isArray(data)) return data;
     if (data?.products && Array.isArray(data.products)) return data.products;
     if (data?.data?.products && Array.isArray(data.data.products)) return data.data.products;
+    if (data?.data?.data && Array.isArray(data.data.data)) return data.data.data;
     if (data?.data && Array.isArray(data.data)) return data.data;
     return [];
+  };
+
+  // Normalize individual product shape to what ProductCard (BeverageProduct path) needs.
+  // Supports multiple API response shapes:
+  //   1. getAllProducts / getTrendingProducts — has _id, images, priceRange, discount, availableAt
+  //   2. processProductForDisplay (bestsellers/new-arrivals) — has `id` (not _id), flavors, rating
+  //   3. getPersonalizedRecommendations — raw Product docs, minimal pricing
+  const normalizeProduct = (p: any): any => {
+    const id = p._id ?? p.id;
+
+    const primaryImage =
+      p.primaryImage ??
+      p.images?.find((i: any) => i.isPrimary) ??
+      p.images?.[0] ??
+      null;
+
+    // Get lowest website price from availableAt structure (same as getAllProducts)
+    const allPrices = (p.availableAt || []).flatMap((store: any) =>
+      (store.sizes || []).map((size: any) => size.pricing?.websitePrice).filter(Boolean)
+    );
+    const minPrice = allPrices.length > 0
+      ? Math.min(...allPrices)
+      : (p.priceRange?.min ?? 0);
+    const maxPrice = allPrices.length > 0
+      ? Math.max(...allPrices)
+      : (p.priceRange?.max ?? minPrice);
+    const currency = p.priceRange?.currency ?? 'NGN';
+
+    // Handle discount from getAllProducts structure:
+    // discount: { value, type, label, savings } - highest discount across all subProducts/sizes
+    const disc = p.discount;
+    const hasRealDiscount = disc?.savings > 0;
+    // originPrice is the pre-discount price - never use maxPrice (would show fake strikethrough)
+    const originPrice = hasRealDiscount ? (disc.originalPrice ?? minPrice) : minPrice;
+
+    // Calculate discount percentage for display
+    const discountPct = hasRealDiscount
+      ? (disc.type === 'percentage' ? disc.value : (disc.originalPrice > 0 ? Math.round((disc.savings / disc.originalPrice) * 100) : 0))
+      : undefined;
+
+    // Check vendor-level sale (isOnSale on subproduct)
+    const vendorOnSale = (p.availableAt || []).some((v: any) => v.isOnSale === true);
+    const isOnSale = vendorOnSale || hasRealDiscount;
+
+    // Determine if product is new (within 7 days)
+    const isProductNew = (createdAt: string): boolean => {
+      try {
+        const createdDate = new Date(createdAt);
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        return createdDate > weekAgo;
+      } catch {
+        return false;
+      }
+    };
+    const isNew = p.badge?.type === 'new-arrival' || isProductNew(p.createdAt);
+
+    const rating = p.averageRating ?? p.rating ?? p.stats?.averageRating ?? 0;
+    const reviewCount = p.reviewCount ?? p.stats?.reviewCount ?? 0;
+    const totalSold = p.totalSold ?? p.stats?.totalSold ?? p.trending?.quantitySold ?? 0;
+
+    const totalStock =
+      p.totalStock ??
+      p.availability?.totalStock ??
+      p.stockInfo?.totalStock ??
+      p.stats?.totalStock ??
+      0;
+
+    const tenantCount =
+      p.availability?.tenantCount ??
+      p.tenantCount ??
+      p.tenants?.length ??
+      0;
+
+    return {
+      ...p,
+      _id: id,
+      // `flavors` must exist for isBeverageProduct() to return true
+      flavors: p.flavors ?? [],
+      images: p.images ?? [],
+      primaryImage,
+      // Price range - ensure proper structure for ProductCard
+      priceRange: {
+        min: minPrice,
+        max: maxPrice,
+        currency,
+        formatted: p.priceRange?.formatted,
+        display: p.priceRange?.display ?? `₦${minPrice.toLocaleString()}`,
+      },
+      // Price fields for ProductCard
+      price: minPrice,
+      originPrice,
+      discount: discountPct,
+      sale: isOnSale,
+      new: isNew,
+      // Rating fields
+      averageRating: rating,
+      reviewCount,
+      totalSold,
+      // trending uses `country`, BeverageProduct expects `originCountry`
+      originCountry: p.originCountry ?? p.country ?? '',
+      // Stock info
+      stockInfo: {
+        totalStock,
+        availableStock: totalStock,
+        tenants: tenantCount,
+        totalSizes: p.sizeCount ?? p.sizes?.length ?? 0,
+      },
+      // Availability
+      availability: {
+        status:
+          p.availability?.status ??
+          (p.isInStock !== false && totalStock > 0 ? 'in_stock' : 'out_of_stock'),
+        stockLevel:
+          p.availability?.stockLevel ??
+          p.stockLevel ??
+          (totalStock > 0 ? 'medium' : 'out'),
+        availableFrom: tenantCount,
+        message:
+          p.availability?.message ??
+          p.availability?.availabilitySummary ??
+          '',
+      },
+    };
   };
 
   const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 8000): Promise<Response> => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
-    
     try {
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal,
-      });
+      const response = await fetch(url, { ...options, signal: controller.signal });
       clearTimeout(timeoutId);
       return response;
     } catch (error) {
@@ -45,117 +220,88 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12, la
     }
   };
 
-  const fetchRecommendations = useCallback(async (auth: boolean) => {
-    try {
-      setLoading(true);
-      setHasError(false);
+  const fetchSection = useCallback(async (section: SectionKey, auth: boolean) => {
+    setHasError(false);
 
-      // Step 1: Try personalized endpoint if user is authenticated
-      if (auth) {
-        try {
-          const response = await fetchWithTimeout(`/api/user/recommendations?limit=${maxItems}`);
-          if (response.ok) {
-            const data = await response.json();
-            const prods = normalizeProducts(data);
-            if (data.success && prods.length > 0) {
-              setProducts(prods);
-              return;
-            }
-          }
-        } catch (e) {
-          console.log('Personalized endpoint failed, trying fallbacks...');
-        }
-      }
-      
-      // Step 2: Fallback to trending products from backend
-      try {
-        const response = await fetchWithTimeout(`/api/products/trending?limit=${maxItems}`);
-        if (response.ok) {
-          const data = await response.json();
-          const prods = normalizeProducts(data);
-          if (data.success && prods.length > 0) {
-            setProducts(prods);
-            return;
-          }
-        }
-      } catch (e) {
-        console.log('Trending endpoint failed, trying more fallbacks...');
-      }
-
-      // Step 3: Fallback to bestsellers
-      try {
-        const response = await fetchWithTimeout(`/api/products/bestsellers?limit=${maxItems}`);
-        if (response.ok) {
-          const data = await response.json();
-          const prods = normalizeProducts(data);
-          if (data.success && prods.length > 0) {
-            setProducts(prods);
-            return;
-          }
-        }
-      } catch (e) {
-        console.log('Bestsellers endpoint failed, trying more fallbacks...');
-      }
-
-      // Step 4: Fallback to new arrivals
-      try {
-        const response = await fetchWithTimeout(`/api/products/new-arrivals?limit=${maxItems}`);
-        if (response.ok) {
-          const data = await response.json();
-          const prods = normalizeProducts(data);
-          if (data.success && prods.length > 0) {
-            setProducts(prods);
-            return;
-          }
-        }
-      } catch (e) {
-        console.log('New arrivals endpoint failed...');
-      }
-
-      setHasError(true);
-    } catch (error) {
-      console.error('Error fetching recommendations:', error);
-      setHasError(true);
-    } finally {
-      setLoading(false);
+    // Build endpoint list with appropriate fallbacks:
+    // - recommended + auth: try personalized, fall back to trending
+    // - recommended + no auth: skip the auth-required endpoint, go straight to trending
+    // - other sections: use their dedicated endpoint only
+    let endpoints: string[];
+    if (section === 'recommended') {
+      endpoints = auth
+        ? [API_ENDPOINTS.recommended, API_ENDPOINTS.trending]
+        : [API_ENDPOINTS.trending];
+    } else {
+      endpoints = [API_ENDPOINTS[section]];
     }
+
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetchWithTimeout(`${endpoint}?limit=${maxItems}`);
+        if (response.ok) {
+          const data = await response.json();
+          const prods = normalizeProducts(data).map(normalizeProduct);
+          if (data.success !== false && prods.length > 0) {
+            setProducts(prods);
+            return;
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    setHasError(true);
   }, [maxItems]);
 
-  // Single effect that handles auth check + fetching in sequence
+  const handleSectionChange = useCallback((section: SectionKey) => {
+    setCurrentSection(section);
+    setLoading(true);
+    fetchSection(section, isAuthenticated).finally(() => setLoading(false));
+  }, [fetchSection, isAuthenticated]);
+
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    fetchSection(currentSection, isAuthenticated).finally(() => setIsRefreshing(false));
+  }, [fetchSection, currentSection, isAuthenticated]);
+
   useEffect(() => {
-    let cancelled = false;
+    if (authCheckedRef.current) return;
+    authCheckedRef.current = true;
 
     const init = async () => {
-    console.log("DEBUG init called");
       try {
-        console.log("DEBUG: checking auth...");
-        const response = await fetch('/api/auth/me');
-        const isAuth = response.ok && (await response.json()).user;
-        if (cancelled) return;
-        setIsAuthenticated(!!isAuth);
-        setAuthChecked(true);
-        await fetchRecommendations(!!isAuth);
+        const response = await fetchWithTimeout('/api/auth/me', {}, 5000);
+        const data = response.ok ? await response.json() : null;
+        const auth = !!data?.user;
+        setIsAuthenticated(auth);
+        await fetchSection('recommended', auth);
       } catch {
-        if (cancelled) return;
         setIsAuthenticated(false);
-        setAuthChecked(true);
-        await fetchRecommendations(false);
+        await fetchSection('recommended', false);
+      } finally {
+        setLoading(false);
       }
     };
 
     init();
-    return () => { cancelled = true; };
-  }, [fetchRecommendations]);
+  }, [fetchSection]);
 
-  if (loading || !authChecked) {
+  if (loading) {
     return (
-      <div className="py-8 bg-gray-50/50 border-t border-gray-100">
+      <div className="py-8 bg-white border-t border-gray-100">
         <div className="container mx-auto px-4">
-          <div className="flex items-center gap-2 mb-6">
-            <div className="p-2 bg-rose-100 text-rose-600 rounded-full">
-              <Icon.PiStarFill className="text-xl" />
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className={`p-2.5 ${sectionConfig.iconBgColor} ${sectionConfig.iconColor} rounded-xl`}>
+                {sectionConfig.icon}
+              </div>
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900">{sectionConfig.title}</h2>
+                <p className="text-sm text-gray-500">{sectionConfig.subtitle}</p>
+              </div>
             </div>
-            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900">Recommended For You</h2>
           </div>
           <div className={getProductGridLayoutClasses(layoutCol)}>
             <ProductCardSkeleton count={layoutCol * 2} layout="grid" />
@@ -166,27 +312,166 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12, la
   }
 
   if (hasError || !products.length) {
-    return null;
+    return (
+      <div className="py-8 bg-white border-t border-gray-100">
+        <div className="container mx-auto px-4">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className={`p-2.5 ${sectionConfig.iconBgColor} ${sectionConfig.iconColor} rounded-xl`}>
+                {sectionConfig.icon}
+              </div>
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900">{sectionConfig.title}</h2>
+                <p className="text-sm text-gray-500">{sectionConfig.subtitle}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 mb-6">
+            {SECTION_KEYS.map((section) => (
+              <button
+                key={section}
+                onClick={() => handleSectionChange(section)}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                  currentSection === section
+                    ? 'bg-gray-900 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {SECTION_MAP[section].title}
+              </button>
+            ))}
+          </div>
+
+          <div className="text-center py-16">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Icon.PiPackage size={32} className="text-gray-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No products available</h3>
+            <p className="text-gray-500 mb-4">We're having trouble loading recommendations. Please try again later.</p>
+            <button
+              onClick={handleRefresh}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+            >
+              <Icon.PiArrowClockwise size={16} />
+              Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="py-8 bg-gray-50/50 border-t border-gray-100 mt-8">
+    <div className="py-8 bg-white border-t border-gray-100">
       <div className="container mx-auto px-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-rose-100 text-rose-600 rounded-full">
-              <Icon.PiStarFill className="text-xl" />
-            </div>
-            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900">Recommended For You</h2>
-          </div>
-          <p className="text-sm text-gray-500">Based on your recent activity</p>
-        </div>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentSection}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div className="flex items-center gap-3">
+                <motion.div
+                  className={`p-2.5 ${sectionConfig.iconBgColor} ${sectionConfig.iconColor} rounded-xl`}
+                  initial={{ scale: 0.9 }}
+                  animate={{ scale: 1 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  {sectionConfig.icon}
+                </motion.div>
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900">{sectionConfig.title}</h2>
+                  <p className="text-sm text-gray-500">{sectionConfig.subtitle}</p>
+                </div>
+              </div>
 
-        <div className={getProductGridLayoutClasses(layoutCol)}>
-          {products.map((product) => (
-            <ProductCard key={product._id} data={product} type="grid" />
-          ))}
-        </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleRefresh}
+                  disabled={isRefreshing}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                  title="Refresh"
+                >
+                  <Icon.PiArrowClockwise size={20} className={isRefreshing ? 'animate-spin' : ''} />
+                </button>
+
+                <button
+                  onClick={() => {
+                    document.getElementById('recommended-scroll')?.scrollBy({ left: -300, behavior: 'smooth' });
+                  }}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors hidden sm:block"
+                  title="Scroll left"
+                >
+                  <Icon.PiCaretLeft size={20} />
+                </button>
+
+                <button
+                  onClick={() => {
+                    document.getElementById('recommended-scroll')?.scrollBy({ left: 300, behavior: 'smooth' });
+                  }}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors hidden sm:block"
+                  title="Scroll right"
+                >
+                  <Icon.PiCaretRight size={20} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mb-6">
+              {SECTION_KEYS.map((section) => (
+                <button
+                  key={section}
+                  onClick={() => handleSectionChange(section)}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                    currentSection === section
+                      ? 'bg-gray-900 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {SECTION_MAP[section].title}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        </AnimatePresence>
+
+        <motion.div
+          id="recommended-scroll"
+          className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent"
+          style={{ scrollbarWidth: 'thin' }}
+        >
+          <AnimatePresence mode="popLayout">
+            {products.slice(0, maxItems).map((product, index) => (
+              <motion.div
+                key={product._id || product.id}
+                layout
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ delay: index * 0.05, duration: 0.2 }}
+                className="flex-shrink-0 w-[calc(50%-8px)] sm:w-[calc(33.333%-11px)] md:w-[calc(25%-12px)]"
+              >
+                <ProductCard data={product} type="grid" />
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </motion.div>
+
+        {products.length >= maxItems && (
+          <div className="text-center mt-6">
+            <a
+              href="/shop"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-colors font-medium"
+            >
+              View All Products
+              <Icon.PiArrowRight size={18} />
+            </a>
+          </div>
+        )}
       </div>
     </div>
   );

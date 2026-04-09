@@ -142,7 +142,7 @@ const TabFeatures: React.FC = () => {
     const thumbImage: string[] = [];
     if (apiProduct.primaryImage?.url) thumbImage.push(apiProduct.primaryImage.url);
     if (apiProduct.images?.length) { apiProduct.images.forEach((img: any) => { if (img.url && !thumbImage.includes(img.url)) thumbImage.push(img.url); }); }
-    if (!thumbImage.length) thumbImage.push('/images/placeholder-product.png');
+    if (!thumbImage.length) thumbImage.push('/images/images/product/1000x1000.png');
     return {
       _id: apiProduct._id || apiProduct.id,
       id: apiProduct._id || apiProduct.id,
@@ -234,7 +234,7 @@ const TabFeatures: React.FC = () => {
     setWishlistAdding(product._id);
     const inWishlist = wishlistState.wishlistArray.some(item => item.id === product._id || item._id === product._id);
     if (inWishlist) { removeFromWishlist(product._id); showToastMessage('Removed from wishlist', 'success'); }
-    else { addToWishlist({ id: product._id, _id: product._id, name: product.name, slug: product.slug, type: product.type, price: product.price, originPrice: product.originPrice, primaryImage: product.primaryImage || { url: product.thumbImage[0] || '/images/placeholder-product.png', alt: product.name }, images: product.images || [], thumbImage: product.thumbImage, sale: product.sale, createdAt: new Date().toISOString() } as any); showToastMessage('Added to wishlist!', 'success'); setTimeout(() => openModalWishlist(), 300); }
+    else { addToWishlist({ id: product._id, _id: product._id, name: product.name, slug: product.slug, type: product.type, price: product.price, originPrice: product.originPrice, primaryImage: product.primaryImage || { url: product.thumbImage[0] || '/images/images/product/1000x1000.png', alt: product.name }, images: product.images || [], thumbImage: product.thumbImage, sale: product.sale, createdAt: new Date().toISOString() } as any); showToastMessage('Added to wishlist!', 'success'); setTimeout(() => openModalWishlist(), 300); }
     setWishlistAdding(null);
   };
 

@@ -95,7 +95,7 @@ const mapApiProductToProduct = (apiProduct: ApiProduct): Product => {
   }
 
   if (thumbImage.length === 0) {
-    thumbImage.push('/images/placeholder-product.png');
+    thumbImage.push('/images/images/product/1000x1000.png');
   }
 
   const availableAt = apiProduct.availableAt?.[0];
@@ -243,7 +243,7 @@ const TrendingProduct: React.FC<TrendingProductProps> = ({ limit = 8 }) => {
   const getProductImage = (product: Product, index: number = 0) => {
     if (product.thumbImage?.[index]) return product.thumbImage[index];
     if (product.primaryImage?.url) return product.primaryImage.url;
-    return '/images/placeholder-product.png';
+    return '/images/images/product/1000x1000.png';
   };
 
   const formatPrice = (price: number) => {

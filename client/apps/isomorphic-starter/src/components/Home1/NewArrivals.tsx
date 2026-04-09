@@ -126,7 +126,7 @@ const mapApiProductToProduct = (apiProduct: ApiProduct): Product => {
   }
 
   if (thumbImage.length === 0) {
-    thumbImage.push('/images/placeholder-product.png');
+    thumbImage.push('/images/images/product/1000x1000.png');
   }
 
   const availableAt = apiProduct.availableAt?.[0];
