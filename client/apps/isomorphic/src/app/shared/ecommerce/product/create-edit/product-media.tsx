@@ -14,6 +14,7 @@ import { useSession } from 'next-auth/react';
 import { uploadService } from '@/services/upload.service';
 import toast from 'react-hot-toast';
 import { openPinterestPicker } from '@/components/PinterestImagePicker';
+import PinterestImagePicker from '@/components/PinterestImagePicker';
 
 interface ProductMediaProps {
   className?: string;
@@ -70,6 +71,7 @@ export default function ProductMedia({
   const [isDragging, setIsDragging] = useState(false);
   const [uploadingIndexes, setUploadingIndexes] = useState<number[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [showPinterestPicker, setShowPinterestPicker] = useState(false);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -277,24 +279,29 @@ export default function ProductMedia({
             <Button
               variant="outline"
               color="secondary"
-              onClick={() => {
-                const productName = watch('name') || '';
-                openPinterestPicker((images) => {
-                  const currentImages = uploadedImages || [];
-                  const newImages = images.map((img, idx) => ({
-                    ...img,
-                    isPrimary: currentImages.length === 0 && idx === 0,
-                  }));
-                  setValue('uploadedImages', [...currentImages, ...newImages]);
-                  toast.success(`${images.length} image(s) imported from Pinterest`);
-                }, productName);
-              }}
+              onClick={() => setShowPinterestPicker(true)}
               className="flex items-center gap-2"
             >
               <PiPinterestLogo className="h-4 w-4 text-red-600" />
               Search Pinterest
             </Button>
           </div>
+
+          {/* Pinterest Image Picker Modal */}
+          <PinterestImagePicker
+            isOpen={showPinterestPicker}
+            onClose={() => setShowPinterestPicker(false)}
+            initialSearch={watch('name') || ''}
+            onImagesSelected={(images) => {
+              const currentImages = uploadedImages || [];
+              const newImages = images.map((img, idx) => ({
+                ...img,
+                isPrimary: currentImages.length === 0 && idx === 0,
+              }));
+              setValue('uploadedImages', [...currentImages, ...newImages]);
+              toast.success(`${images.length} image(s) imported from Pinterest`);
+            }}
+          />
 
           {/* Image Preview Grid */}
           <AnimatePresence>
