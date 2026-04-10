@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useModal } from '@/app/shared/modal-views/use-modal';
 import { Input, Button, Text, Spinner, Badge } from 'rizzui';
-import { PiMagnifyingGlass, PiX, PiCheckCircle, PiImage, PiLinkBreak, PiCheck, PiWarning } from 'react-icons/pi';
+import { PiMagnifyingGlass, PiX, PiCheckCircle, PiImage, PiCheck, PiWarning } from 'react-icons/pi';
 import { pinterestService, PinterestImage } from '@/services/pinterest.service';
 import { uploadService, UploadedImage } from '@/services/upload.service';
 import toast from 'react-hot-toast';
@@ -13,7 +13,7 @@ interface PinterestImagePickerProps {
   initialSearch?: string;
 }
 
-export default function PinterestImagePicker({ onImagesSelected, initialSearch = '' }: PinterestImagePickerProps) {
+function PinterestPickerContent({ onImagesSelected, initialSearch = '' }: PinterestImagePickerProps) {
   const { closeModal } = useModal();
   const [query, setQuery] = useState(initialSearch);
   const [images, setImages] = useState<PinterestImage[]>([]);
@@ -251,6 +251,10 @@ export default function PinterestImagePicker({ onImagesSelected, initialSearch =
       )}
     </div>
   );
+}
+
+export default function PinterestImagePicker(props: PinterestImagePickerProps) {
+  return <PinterestPickerContent {...props} />;
 }
 
 export function openPinterestPicker(onImagesSelected: (images: UploadedImage[]) => void, initialSearch?: string) {
