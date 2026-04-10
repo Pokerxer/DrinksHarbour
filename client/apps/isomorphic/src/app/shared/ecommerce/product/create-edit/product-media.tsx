@@ -8,7 +8,7 @@ import cn from '@core/utils/class-names';
 import { CreateProductInput } from '@/validators/create-product.schema';
 import FormGroup from '@/app/shared/form-group';
 import { useState, useCallback, useEffect } from 'react';
-import { PiX, PiUpload, PiImage, PiVideo, PiSpinner, PiSparkle, PiBrandsLogo } from 'react-icons/pi';
+import { PiX, PiUpload, PiImage, PiVideo, PiSpinner, PiSparkle, PiPinterestLogo } from 'react-icons/pi';
 import Image from 'next/image';
 import { useSession } from 'next-auth/react';
 import { uploadService } from '@/services/upload.service';
@@ -291,7 +291,7 @@ export default function ProductMedia({
               }}
               className="flex items-center gap-2"
             >
-              <PiBrandsLogo className="h-4 w-4 text-red-600" />
+              <PiPinterestLogo className="h-4 w-4 text-red-600" />
               Search Pinterest
             </Button>
           </div>
