@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useModal } from '@/app/shared/modal-views/use-modal';
-import { Input, Button, Text, Spinner } from 'rizzui';
-import { PiMagnifyingGlass, PiX, PiCheckCircle, PiImage, PiDownloadSimple } from 'react-icons/pi';
+import { Input, Button, Text, Spinner, Badge } from 'rizzui';
+import { PiMagnifyingGlass, PiX, PiCheckCircle, PiImage, PiLinkBreak, PiCheck, PiWarning } from 'react-icons/pi';
 import { pinterestService, PinterestImage } from '@/services/pinterest.service';
 import { uploadService, UploadedImage } from '@/services/upload.service';
+import toast from 'react-hot-toast';
 
 interface PinterestImagePickerProps {
   onImagesSelected: (images: UploadedImage[]) => void;
@@ -20,9 +21,44 @@ export default function PinterestImagePicker({ onImagesSelected, initialSearch =
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [status, setStatus] = useState<{ authenticated: boolean; configured: boolean; message: string } | null>(null);
+  const [checkingStatus, setCheckingStatus] = useState(true);
+
+  useEffect(() => {
+    checkStatus();
+  }, []);
+
+  const checkStatus = async () => {
+    try {
+      const statusData = await pinterestService.checkStatus();
+      setStatus(statusData);
+    } catch (error: any) {
+      setStatus({
+        authenticated: false,
+        configured: false,
+        message: error.message || 'Failed to check Pinterest status',
+      });
+    } finally {
+      setCheckingStatus(false);
+    }
+  };
+
+  const handleConnect = async () => {
+    try {
+      const { url } = await pinterestService.getOAuthUrl();
+      window.location.href = url;
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to get Pinterest OAuth URL');
+    }
+  };
 
   const handleSearch = async () => {
     if (!query.trim()) return;
+    if (!status?.authenticated) {
+      toast.error('Please connect to Pinterest first');
+      return;
+    }
+
     setLoading(true);
     setSearched(true);
     setSelectedIds(new Set());
@@ -31,7 +67,7 @@ export default function PinterestImagePicker({ onImagesSelected, initialSearch =
       setImages(result.results.filter((img) => img.imageUrl));
     } catch (error: any) {
       console.error('Pinterest search error:', error);
-      alert(error.message || 'Failed to search Pinterest');
+      toast.error(error.message || 'Failed to search Pinterest');
     } finally {
       setLoading(false);
     }
@@ -72,15 +108,63 @@ export default function PinterestImagePicker({ onImagesSelected, initialSearch =
         }
       }
 
-      onImagesSelected(uploadedImages);
-      closeModal();
+      if (uploadedImages.length > 0) {
+        onImagesSelected(uploadedImages);
+        closeModal();
+      } else {
+        toast.error('Failed to import any images');
+      }
     } catch (error: any) {
       console.error('Import error:', error);
-      alert(error.message || 'Failed to import images');
+      toast.error(error.message || 'Failed to import images');
     } finally {
       setImporting(false);
     }
   };
+
+  if (checkingStatus) {
+    return (
+      <div className="p-6 flex items-center justify-center min-h-[400px]">
+        <Spinner className="w-8 h-8" />
+      </div>
+    );
+  }
+
+  if (!status?.authenticated) {
+    return (
+      <div className="p-6 max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <PiImage className="w-6 h-6 text-red-600" />
+            <Text className="font-semibold text-lg">Connect to Pinterest</Text>
+          </div>
+          <Button variant="text" onClick={closeModal} className="p-2">
+            <PiX className="w-5 h-5" />
+          </Button>
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-center py-12">
+          <PiWarning className="w-16 h-16 text-amber-500 mb-4" />
+          <Text className="text-lg font-medium mb-2">Pinterest Not Connected</Text>
+          <Text className="text-gray-500 text-center mb-6 max-w-md">
+            {status?.configured 
+              ? 'Click the button below to authorize access to your Pinterest account and search for images.'
+              : status?.message || 'Pinterest is not configured. Please contact the administrator.'}
+          </Text>
+          
+          {status?.configured && (
+            <Button
+              onClick={handleConnect}
+              className="flex items-center gap-2"
+            >
+              <PiImage className="w-4 h-4" />
+              Connect Pinterest Account
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-h-[80vh] flex flex-col">
@@ -88,6 +172,9 @@ export default function PinterestImagePicker({ onImagesSelected, initialSearch =
         <div className="flex items-center gap-2">
           <PiImage className="w-6 h-6 text-red-600" />
           <Text className="font-semibold text-lg">Search Pinterest Images</Text>
+          <Badge color="success" variant="flat" size="sm">
+            Connected
+          </Badge>
         </div>
         <Button variant="text" onClick={closeModal} className="p-2">
           <PiX className="w-5 h-5" />
@@ -157,7 +244,7 @@ export default function PinterestImagePicker({ onImagesSelected, initialSearch =
             disabled={importing}
             className="flex items-center gap-2"
           >
-            {importing ? <Spinner className="w-4 h-4" /> : <PiDownloadSimple className="w-4 h-4" />}
+            {importing ? <Spinner className="w-4 h-4" /> : <PiCheck className="w-4 h-4" />}
             Import Selected
           </Button>
         </div>
