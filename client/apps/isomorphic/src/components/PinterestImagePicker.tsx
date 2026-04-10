@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Input, Button, Text, Spinner, Badge, Modal } from 'rizzui';
+import { Input, Button, Text, Spinner, Badge } from 'rizzui';
+import { Modal } from '@core/modal-views/modal';
 import { PiMagnifyingGlass, PiX, PiCheckCircle, PiImage, PiCheck, PiWarning } from 'react-icons/pi';
 import { pinterestService, PinterestImage } from '@/services/pinterest.service';
 import { uploadService, UploadedImage } from '@/services/upload.service';
