@@ -95,8 +95,7 @@ const AnnouncementBanner: React.FC<AnnouncementBannerProps> = ({
           }
         }
       } catch (err) {
-        // Use default announcements on error
-        console.log('Using default announcements');
+        console.warn('Using default announcements');
       } finally {
         setLoading(false);
       }

@@ -177,9 +177,9 @@ async function buildSearchQuery(params) {
   } = params;
   
   // For super admin, include both approved and pending products
-  const baseQuery = includePending 
+  const baseQuery = includePending
     ? { status: { $in: ['approved', 'pending'] } }
-    : { status: 'approved' };
+    : { status: 'approved', isPublished: true };
   
   // Text search
   if (query && query.trim()) {
@@ -397,8 +397,17 @@ function buildAggregationPipeline(baseQuery, options) {
                 {
                   $match: {
                     status: 'active',
-                    availability: { $in: ['available', 'in_stock', 'low_stock'] },
-                    ...(inStock ? { stock: { $gt: 0 } } : {}),
+                    // When inStock is requested, trust stock > 0 as the source of truth.
+                    // The availability label can lag behind stock updates, so we use an OR
+                    // to catch sizes where stock is positive regardless of the label.
+                    ...(inStock
+                      ? {
+                          $or: [
+                            { stock: { $gt: 0 }, availability: { $in: ['available', 'in_stock', 'low_stock'] } },
+                            { stock: { $gt: 0 } },
+                          ],
+                        }
+                      : { availability: { $in: ['available', 'in_stock', 'low_stock', 'out_of_stock'] } }),
                   },
                 },
               ],

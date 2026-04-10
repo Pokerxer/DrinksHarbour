@@ -58,7 +58,7 @@ const ModalWishlist = () => {
     const imgUrl = getImageUrl(product.images?.[0]);
     if (imgUrl) return imgUrl;
     
-    return '/images/placeholder-product.png';
+    return '/images/images/product/1000x1000.png';
   };
 
   const handleRemove = async (productId: string) => {

@@ -258,15 +258,15 @@ const ModalSearch: React.FC = () => {
       const img = product.thumbImage[0] as string | { url: string };
       if (typeof img === 'string') return img;
       if (img && 'url' in img) return img.url;
-      return '/images/placeholder-product.png';
+      return '/images/images/product/1000x1000.png';
     }
     if (product.images && product.images.length > 0) {
       const img = product.images[0] as string | { url: string };
       if (typeof img === 'string') return img;
       if (img && 'url' in img) return img.url;
-      return '/images/placeholder-product.png';
+      return '/images/images/product/1000x1000.png';
     }
-    return '/images/placeholder-product.png';
+    return '/images/images/product/1000x1000.png';
   };
 
   const formatPrice = (price: number, currency: string = 'NGN'): string => {

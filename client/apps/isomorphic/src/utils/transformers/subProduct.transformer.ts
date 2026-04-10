@@ -534,7 +534,7 @@ export const transformBackendToForm = (backendData: any): SubProductFormInput =>
       vendorEmail: sp.vendorEmail || '',
       vendorWebsite: sp.vendorWebsite || '',
       vendorAddress: sp.vendorAddress || '',
-      status: sp.status || 'draft',
+      status: sp.status || 'active',
       isFeaturedByTenant: toBoolean(sp.isFeaturedByTenant) ?? false,
       isNewArrival: toBoolean(sp.isNewArrival) ?? false,
       isBestSeller: toBoolean(sp.isBestSeller) ?? false,

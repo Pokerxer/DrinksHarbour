@@ -258,6 +258,11 @@ const getMySubProducts = async (tenantId, options) => {
  * Core logic for creating SubProduct (works with or without session)
  */
 const createSubProductCore = async (data, tenantId, user, session = null) => {
+  // Normalize tenantId to string (may arrive as ObjectId or object)
+  if (tenantId && typeof tenantId !== 'string') {
+    tenantId = tenantId._id ? tenantId._id.toString() : tenantId.toString();
+  }
+
   // Handle both direct data and nested subProductData format from frontend
   const subProductData = data.subProductData || data;
 
@@ -280,7 +285,7 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
   // AUTO-USE SYSTEM TENANT FOR SUPER ADMIN
   // If user is super_admin and no tenant provided, automatically use the system tenant
   // ========================================================================
-  if (user && user.role === 'super_admin' && (!tenantId || tenantId.trim() === '')) {
+  if (user && ['super_admin', 'admin'].includes(user.role) && (!tenantId || tenantId.trim() === '')) {
     const systemTenant = await Tenant.findOne({ isSystemTenant: true }).select('_id').lean();
     if (systemTenant) {
       tenantId = systemTenant._id.toString();
@@ -4313,8 +4318,8 @@ const getSubProductsByProduct = async (productId) => {
  */
 const getSubProductById = async (id) => {
   const subProduct = await SubProduct.findById(id)
-    .populate('product', 'name slug images description')
-    .populate('tenant', 'name businessName')
+    .populate('product', 'name slug images type isAlcoholic abv volumeMl originCountry brand category subCategory description platformMarkup platformDiscount')
+    .populate('tenant', 'name businessName revenueModel markupPercentage commissionPercentage')
     .populate('sizes')
     .lean();
 
@@ -4325,7 +4330,14 @@ const getSubProductById = async (id) => {
   // Sanitize corrupt reference fields (shipping, warehouse)
   sanitizeSubProductReferences(subProduct, `ID ${id}`);
 
-  return subProduct;
+  // Compute pricing (same as getSubProductsByProduct)
+  const pricing = calculateSubProductPricing(subProduct, subProduct.product, subProduct.tenant);
+  const sizesWithPricing = (subProduct.sizes || []).map(size => ({
+    ...size,
+    pricing: calculateSizePricing(size, subProduct.product, subProduct.tenant, subProduct.costPrice, subProduct.baseSellingPrice),
+  }));
+
+  return { ...subProduct, pricing, sizes: sizesWithPricing };
 };
 
 /**

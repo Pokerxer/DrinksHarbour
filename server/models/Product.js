@@ -460,6 +460,8 @@ const productSchema = new Schema(
         // Spirit Styles
         'smooth', 'bold', 'complex', 'mellow',
         'peated', 'unpeated', 'smoky', 'non_smoky',
+        'single_malt', 'blended_malt', 'blended', 'single_grain', 'blended_grain',
+        'aged', 'unaged', 'cask_strength', 'barrel_proof',
         
         // General
         'classic', 'modern', 'traditional', 'innovative',
@@ -657,6 +659,11 @@ const productSchema = new Schema(
       index: true,
     },
     
+    isPublished: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     publishedAt: { type: Date },
     discontinuedAt: { type: Date },
     rejectedReason: String,
@@ -805,7 +812,7 @@ productSchema.virtual('priceCategory').get(function () {
 
 productSchema.index({ name: 'text', description: 'text', tastingNotes: 'text' });
 productSchema.index({ type: 1, subType: 1, originCountry: 1, abv: 1 });
-productSchema.index({ status: 1, publishedAt: -1 });
+productSchema.index({ status: 1, isPublished: 1, publishedAt: -1 });
 productSchema.index({ slug: 1, status: 1 });
 productSchema.index({ type: 1, flavorProfile: 1 });
 productSchema.index({ brand: 1, type: 1, status: 1 });

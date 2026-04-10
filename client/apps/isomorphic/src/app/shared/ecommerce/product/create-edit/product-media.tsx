@@ -300,6 +300,7 @@ export default function ProductMedia({
                           src={image.thumbnail || image.url}
                           alt={`Product image ${index + 1}`}
                           fill
+                          sizes="(max-width: 768px) 50vw, 200px"
                           className="object-cover transition-transform duration-300 group-hover:scale-110"
                         />
                         

@@ -931,27 +931,30 @@ function SizeVariantRow({
             name={`subProductData.sizes.${index}.size`}
             control={control}
             defaultValue=""
-            render={({ field }) => (
-              <select
-                {...field}
-                value={field.value || ''}
-                onChange={(e) => {
-                  field.onChange(e.target.value);
-                  handleSizeChange(e.target.value);
-                }}
-                className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              >
-                <option value="">Select size...</option>
-                {Object.entries(groupedOptions).map(([category, options]) => (
-                  <optgroup key={category} label={category}>
-                    {options.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
+            render={({ field, fieldState: { error } }) => (
+              <>
+                <select
+                  {...field}
+                  value={field.value || ''}
+                  onChange={(e) => {
+                    field.onChange(e.target.value);
+                    handleSizeChange(e.target.value);
+                  }}
+                  className={`block w-full rounded-lg border bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-1 ${error ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'}`}
+                >
+                  <option value="">Select size...</option>
+                  {Object.entries(groupedOptions).map(([category, options]) => (
+                    <optgroup key={category} label={category}>
+                      {options.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+                {error && <p className="mt-1 text-xs text-red-500">{error.message}</p>}
+              </>
             )}
           />
         </div>

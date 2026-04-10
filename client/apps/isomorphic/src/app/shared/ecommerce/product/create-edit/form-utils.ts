@@ -111,7 +111,7 @@ export function defaultValues(product?: CreateProductInput): CreateProductInput 
     distilleryName: product?.distilleryName ?? '',
     breweryName: product?.breweryName ?? '',
     wineryName: product?.wineryName ?? '',
-    productionMethod: product?.productionMethod ?? '',
+    productionMethod: product?.productionMethod || undefined,
     caskType: product?.caskType ?? '',
     finish: product?.finish ?? '',
 
@@ -120,7 +120,7 @@ export function defaultValues(product?: CreateProductInput): CreateProductInput 
     subCategory: product?.subCategory ?? '',
     tags: product?.tags ?? [],
     flavors: product?.flavors ?? [],
-    style: product?.style ?? '',
+    style: product?.style || undefined,
 
     // Descriptive Content
     shortDescription: product?.shortDescription ?? '',
@@ -174,7 +174,11 @@ export function defaultValues(product?: CreateProductInput): CreateProductInput 
     allowReviews: product?.allowReviews ?? true,
     requiresAgeVerification: product?.requiresAgeVerification ?? undefined,
     isPublished: product?.isPublished ?? false,
-    publishedAt: product?.publishedAt ?? undefined,
+    publishedAt: product?.publishedAt 
+      ? (product.publishedAt instanceof Date 
+          ? product.publishedAt 
+          : new Date(product.publishedAt))
+      : undefined,
     discontinuedAt: product?.discontinuedAt ?? undefined,
 
     // Analytics (read-only)
@@ -356,6 +360,15 @@ export const styles = [
   { value: 'non_peated', label: 'Non-Peated', category: 'Spirits' },
   { value: 'smoky', label: 'Smoky', category: 'Spirits' },
   { value: 'non_smoky', label: 'Non-Smoky', category: 'Spirits' },
+  { value: 'single_malt', label: 'Single Malt', category: 'Spirits' },
+  { value: 'blended_malt', label: 'Blended Malt', category: 'Spirits' },
+  { value: 'blended', label: 'Blended', category: 'Spirits' },
+  { value: 'single_grain', label: 'Single Grain', category: 'Spirits' },
+  { value: 'blended_grain', label: 'Blended Grain', category: 'Spirits' },
+  { value: 'aged', label: 'Aged', category: 'Spirits' },
+  { value: 'unaged', label: 'Unaged', category: 'Spirits' },
+  { value: 'cask_strength', label: 'Cask Strength', category: 'Spirits' },
+  { value: 'barrel_proof', label: 'Barrel Proof', category: 'Spirits' },
   
   // General
   { value: 'classic', label: 'Classic', category: 'General' },

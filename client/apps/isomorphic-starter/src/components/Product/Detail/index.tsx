@@ -129,15 +129,20 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     return vendorSizes.find((s) => s.size === activeSize) || null;
   }, [activeSize, vendorSizes]);
 
-  const displayPrice = selectedSizeData?.price || productData?.priceRange?.min || productData?.price || 0;
-  const displayOriginalPrice = selectedSizeData?.originalPrice || productData?.priceRange?.max || displayPrice;
-  const displayCurrencySymbol = selectedSizeData?.currencySymbol || productData?.currencySymbol || '₦';
-  
+  const displayPrice = selectedSizeData?.price ?? productData?.priceRange?.min ?? 0;
+  // Only use the pre-discount original price when there is a real discount on the
+  // selected size. Falling back to priceRange.max would show a fake strikethrough
+  // just because other sizes cost more.
+  const displayOriginalPrice = selectedSizeData?.discount
+    ? (selectedSizeData.originalPrice ?? displayPrice)
+    : displayPrice;
+  const displayCurrencySymbol = selectedSizeData?.currencySymbol || productData?.priceRange?.currencySymbol || '₦';
+
   const discountPercentage = useMemo(() => {
     if (selectedSizeData?.discount?.percentage) {
       return selectedSizeData.discount.percentage;
     }
-    if (displayOriginalPrice > displayPrice && displayOriginalPrice > 0) {
+    if (selectedSizeData?.discount && displayOriginalPrice > displayPrice && displayOriginalPrice > 0) {
       return Math.round(((displayOriginalPrice - displayPrice) / displayOriginalPrice) * 100);
     }
     return 0;
@@ -145,7 +150,8 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
 
   const inStock = (selectedSizeData?.stock || 0) > 0;
   const isLowStock = selectedSizeData?.stock && selectedSizeData.stock <= 5 && selectedSizeData.stock > 0;
-  const hasDiscount = selectedVendor?.isOnSale || discountPercentage > 0;
+  // hasDiscount is true only when the selected size has an actual discount object
+  const hasDiscount = !!(selectedSizeData?.discount) || discountPercentage > 0;
 
   useEffect(() => {
     if (productData?.availableAt?.length > 0 && !activeVendor) {

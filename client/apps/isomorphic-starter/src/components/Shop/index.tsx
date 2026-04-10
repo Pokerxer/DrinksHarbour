@@ -6,7 +6,6 @@ import { FilterState, FilterOptions, SortOption } from '@/types/filter.types';
 import BreadcrumbSection from './BreadcrumbSection';
 import FilterSidebar from './FilterSidebar';
 import FilterHeader from './FilterHeader';
-import ActiveFilters from './ActiveFilters';
 import ProductGrid from './ProductGrid';
 import PaginationSection from './PaginationSection';
 import OnSaleHighlight from './OnSaleHighlight';
@@ -120,7 +119,20 @@ const Shop: React.FC<Props> = ({
     setCurrentPage(0);
   }, [filters]);
 
-  // Don't use URL params here - the parent page.tsx handles URL changes via buildApiUrl
+  // Sync filters with initialFilters when URL params change (e.g., from direct links)
+  const initialFiltersRef = useRef(initialFilters);
+  useEffect(() => {
+    if (initialFilters && initialFilters !== initialFiltersRef.current) {
+      initialFiltersRef.current = initialFilters;
+      setFilters(prev => {
+        const merged = { ...prev, ...initialFilters };
+        if (!merged.priceRange || typeof merged.priceRange.min !== 'number') {
+          merged.priceRange = filterOptions.priceRange;
+        }
+        return merged;
+      });
+    }
+  }, [initialFilters, filterOptions.priceRange]);
   // Just use local state for multi-select filters
 
   const offset = currentPage * productPerPage;
@@ -379,6 +391,11 @@ const Shop: React.FC<Props> = ({
   }, [filters, pathname, router]);
 
   const handleClearAll = useCallback(() => {
+    // First, immediately clear the URL using window.history
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, '', pathname);
+    }
+    
     setFilters({
       size: null,
       color: null,
@@ -394,10 +411,7 @@ const Shop: React.FC<Props> = ({
       abvRange: null,
       volumeRange: null,
     });
-    
-    // Clear URL params
-    router.replace(pathname, { scroll: false });
-  }, [filterOptions.priceRange, pathname, router]);
+  }, [filterOptions.priceRange, pathname]);
 
   const handlePageChange = useCallback((selected: number) => {
     setCurrentPage(selected);
@@ -591,36 +605,32 @@ const Shop: React.FC<Props> = ({
         <div className="container">
           {isLoading ? (
             <div className="list-product-block relative animate-fade-in">
-              <FilterHeader 
-                onOpenSidebar={() => setOpenSidebar(true)} 
-                layoutCol={layoutCol} 
-                onLayoutChange={handleLayoutChange} 
-                filters={filters} 
-                updateFilter={updateFilter} 
-                sortOptions={SORT_OPTIONS} 
+              <FilterHeader
+                onOpenSidebar={() => setOpenSidebar(true)}
+                layoutCol={layoutCol}
+                onLayoutChange={handleLayoutChange}
+                filters={filters}
+                updateFilter={updateFilter}
+                sortOptions={SORT_OPTIONS}
+                totalProducts={0}
               />
-              <ProductGrid 
-                products={[]} 
-                layoutCol={layoutCol} 
+              <ProductGrid
+                products={[]}
+                layoutCol={layoutCol}
                 productStyle={productStyle}
                 isLoading={true}
               />
             </div>
           ) : hasProducts ? (
             <div className="list-product-block relative">
-              <FilterHeader 
-                onOpenSidebar={() => setOpenSidebar(true)} 
-                layoutCol={layoutCol} 
-                onLayoutChange={handleLayoutChange} 
-                filters={filters} 
-                updateFilter={updateFilter} 
-                sortOptions={SORT_OPTIONS} 
-              />
-              <ActiveFilters 
-                filters={filters} 
-                updateFilter={updateFilter} 
-                onClearAll={handleClearAll} 
-                totalProducts={sortedProducts.length} 
+              <FilterHeader
+                onOpenSidebar={() => setOpenSidebar(true)}
+                layoutCol={layoutCol}
+                onLayoutChange={handleLayoutChange}
+                filters={filters}
+                updateFilter={updateFilter}
+                sortOptions={SORT_OPTIONS}
+                totalProducts={sortedProducts.length}
               />
               {hasFilteredResults ? (
                 <>

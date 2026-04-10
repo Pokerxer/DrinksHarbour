@@ -92,18 +92,24 @@ function OrderConfirmationContent() {
           },
         });
 
+        if (response.status === 404) {
+          setError('Order not found. It may have been removed or the order ID is invalid.');
+          setLoading(false);
+          return;
+        }
+
         const data = await response.json();
 
         if (!response.ok) {
           throw new Error(data.message || 'Failed to fetch order');
         }
 
-        setOrder(data.data.order);
+        setOrder(data.data?.order || data.order || data);
         // Clean up stored email after successful fetch
         localStorage.removeItem('customerEmail');
         sessionStorage.removeItem('customerEmail');
       } catch (err: any) {
-        setError(err.message || 'Failed to load order details');
+        setError(err.message || 'Failed to load order details. Please check your order ID and try again.');
       } finally {
         setLoading(false);
       }

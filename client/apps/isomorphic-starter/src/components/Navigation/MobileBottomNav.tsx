@@ -70,6 +70,7 @@ const MobileBottomNav: React.FC = () => {
   const [activeCategorySubs, setActiveCategorySubs] = useState<Category[]>([]);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [loadingSubCategories, setLoadingSubCategories] = useState(false);
+  const [loadingCategories, setLoadingCategories] = useState(true);
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -81,14 +82,15 @@ const MobileBottomNav: React.FC = () => {
         if (data.success && data.data?.categories) {
           const allCats = data.data.categories;
           setAllCategories(allCats);
-          // Filter top-level categories (level 0 and no parent)
           const topLevel = allCats.filter(
             (c: Category) => !c.parent && c.level === 0,
           );
           setCategories(topLevel);
         }
       } catch (error) {
-        console.error("Error fetching categories:", error);
+        console.warn("Error fetching categories:", error);
+      } finally {
+        setLoadingCategories(false);
       }
     };
     fetchCategories();
@@ -217,22 +219,35 @@ const MobileBottomNav: React.FC = () => {
 
                 {/* Category List */}
                 <div className="flex-1 overflow-y-auto py-2">
-                  {categories.map((cat) => (
-                    <button
-                      key={cat._id}
-                      onClick={() => setActiveCategory(cat.slug)}
-                      className={`w-full flex items-center gap-2 px-4 py-2.5 transition-all text-left ${
-                        activeCategory === cat.slug
-                          ? "bg-white text-orange-600 border-l-2 border-orange-500"
-                          : "text-gray-700 hover:bg-gray-100"
-                      }`}
-                    >
-                      <span className="text-lg">{cat.icon || "🍷"}</span>
-                      <span className="text-sm font-medium truncate">
-                        {cat.name}
-                      </span>
-                    </button>
-                  ))}
+                  {loadingCategories ? (
+                    Array.from({ length: 8 }).map((_, i) => (
+                      <div key={i} className="flex items-center gap-2 px-4 py-2.5">
+                        <div className="w-6 h-6 rounded bg-gray-200 animate-pulse" />
+                        <div className="h-4 w-20 bg-gray-200 rounded animate-pulse" />
+                      </div>
+                    ))
+                  ) : categories.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-gray-500 text-sm">
+                      No categories found
+                    </div>
+                  ) : (
+                    categories.map((cat) => (
+                      <button
+                        key={cat._id}
+                        onClick={() => setActiveCategory(cat.slug)}
+                        className={`w-full flex items-center gap-2 px-4 py-2.5 transition-all text-left ${
+                          activeCategory === cat.slug
+                            ? "bg-white text-orange-600 border-l-2 border-orange-500"
+                            : "text-gray-700 hover:bg-gray-100"
+                        }`}
+                      >
+                        <span className="text-lg">{cat.icon || "🍷"}</span>
+                        <span className="text-sm font-medium truncate">
+                          {cat.name}
+                        </span>
+                      </button>
+                    ))
+                  )}
                 </div>
 
                 {/* View All */}

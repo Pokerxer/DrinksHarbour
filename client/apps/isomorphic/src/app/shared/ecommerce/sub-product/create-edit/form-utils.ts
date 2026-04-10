@@ -135,7 +135,7 @@ export const emptySubProductData = {
   vendorAddress: '',
   
   // Status fields
-  status: 'draft',
+  status: 'active',
   isFeaturedByTenant: false,
   isNewArrival: false,
   isBestSeller: false,
@@ -206,7 +206,7 @@ export function defaultValues(product?: Partial<SubProductInput>): Partial<SubPr
     subProductData: {
       ...emptySubProductData,
       ...product?.subProductData,
-      status: product?.subProductData?.status ?? 'draft',
+      status: product?.subProductData?.status ?? 'active',
       activatedAt: product?.subProductData?.activatedAt ?? '',
       discontinuedAt: product?.subProductData?.discontinuedAt ?? '',
       isOnSale: product?.subProductData?.isOnSale ?? false,

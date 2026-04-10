@@ -511,6 +511,29 @@ export const subproductService = {
     return response.json();
   },
 
+  async generateSubProductContent(
+    productId: string | null,
+    subProductId: string | null,
+    token: string,
+    inlineContext?: Record<string, any> | null
+  ) {
+    const response = await fetch(`${API_URL}/api/gemini/generate-subproduct-content`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ productId, subProductId, inlineContext }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to generate sub-product content');
+    }
+
+    return response.json();
+  },
+
   async adminSetSubProductStatus(
     id: string,
     status: string,

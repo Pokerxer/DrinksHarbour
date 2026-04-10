@@ -72,15 +72,51 @@ export default function ProductSeo({ className }: ProductSeoProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatingField, setGeneratingField] = useState<string | null>(null);
 
-  // Calculate SEO score
+  // Calculate SEO score — 100pt system across 6 criteria
   useEffect(() => {
-    const titleScore = metaTitle.length >= 30 && metaTitle.length <= 60 ? 25 : metaTitle.length > 0 ? 15 : 0;
-    const descScore = metaDescription.length >= 120 && metaDescription.length <= 160 ? 25 : metaDescription.length > 0 ? 15 : 0;
-    const keywordsScore = metaKeywords.length >= 5 ? 25 : metaKeywords.length > 0 ? 15 : 0;
-    const brandScore = brand ? 25 : 0;
-    const totalScore = titleScore + descScore + keywordsScore + brandScore;
-    setSeoScore(Math.min(totalScore, 100));
-  }, [metaTitle, metaDescription, metaKeywords, brand]);
+    const titleLen = metaTitle.length;
+    const descLen = metaDescription.length;
+    const kwCount = Array.isArray(metaKeywords) ? metaKeywords.length : 0;
+    const titleLower = metaTitle.toLowerCase();
+    const nameLower = productName.toLowerCase();
+    const brandLower = (typeof brand === 'string' ? brand : '').toLowerCase();
+
+    // 1. Meta title quality (25 pts)
+    let titleScore = 0;
+    if (titleLen >= 40 && titleLen <= 60) titleScore = 25;
+    else if (titleLen >= 30 && titleLen < 40) titleScore = 20;
+    else if (titleLen >= 20) titleScore = 15;
+    else if (titleLen > 0) titleScore = 8;
+    const titleHasName = nameLower && titleLower.includes(nameLower.split(' ')[0]);
+    if (titleLen > 0 && !titleHasName) titleScore = Math.max(titleScore - 3, 0);
+
+    // 2. Meta description quality (25 pts)
+    let descScore = 0;
+    if (descLen >= 130 && descLen <= 160) descScore = 25;
+    else if (descLen >= 100 && descLen < 130) descScore = 20;
+    else if (descLen >= 70) descScore = 15;
+    else if (descLen >= 40) descScore = 10;
+    else if (descLen > 0) descScore = 5;
+    const descHasCta = /order|shop|buy|discover|get yours|available|check|view/i.test(metaDescription);
+    if (descLen >= 70 && descHasCta && descScore < 25) descScore = Math.min(descScore + 3, 25);
+
+    // 3. Keywords (20 pts)
+    let kwScore = 0;
+    if (kwCount >= 6) kwScore = 20;
+    else if (kwCount >= 4) kwScore = 16;
+    else if (kwCount >= 3) kwScore = 12;
+    else if (kwCount >= 1) kwScore = 6;
+
+    // 4. Brand presence (15 pts)
+    const brandScore = brandLower ? 15 : 0;
+
+    // 5. Product description (15 pts)
+    const descPresent = (shortDesc && shortDesc.length > 20) || (fullDesc && shortDesc.length > 20);
+    const productDescScore = descPresent ? 15 : 0;
+
+    const total = Math.min(titleScore + descScore + kwScore + brandScore + productDescScore, 100);
+    setSeoScore(total);
+  }, [metaTitle, metaDescription, metaKeywords, brand, productName, shortDesc, fullDesc]);
 
   // Auto-enable age verification for alcoholic products
   useEffect(() => {
@@ -161,8 +197,14 @@ export default function ProductSeo({ className }: ProductSeoProps) {
 
     setGeneratingField('keywords');
     try {
-      const response = await geminiService.generateKeywords(productName, session.user.token, brand, type, region);
-      if (response.data.keywords) {
+      const response = await geminiService.generateKeywords(productName, session.user.token, {
+        brand,
+        type,
+        originCountry,
+        region,
+        shortDescription: shortDesc,
+      });
+      if (response.data.keywords?.length) {
         setValue('metaKeywords', response.data.keywords);
         toast.success('Keywords generated!');
       }
@@ -193,7 +235,7 @@ export default function ProductSeo({ className }: ProductSeoProps) {
       const [titleRes, descRes, keywordsRes] = await Promise.all([
         geminiService.generateMetaTitle(productName, session.user.token, brand, type),
         geminiService.generateMetaDescription(productName, session.user.token, brand, type, shortDesc),
-        geminiService.generateKeywords(productName, session.user.token, brand, type, region),
+        geminiService.generateKeywords(productName, session.user.token, { brand, type, originCountry, region, shortDescription: shortDesc }),
       ]);
 
       if (titleRes.data.metaTitle) setValue('metaTitle', titleRes.data.metaTitle);
@@ -266,13 +308,17 @@ export default function ProductSeo({ className }: ProductSeoProps) {
                   {seoScore}%
                 </div>
                 <div>
-                  <h4 className="text-lg font-semibold text-gray-900">SEO Score</h4>
+                  <h4 className="text-lg font-semibold text-gray-900">
+                    {seoScore >= 90 ? 'Excellent SEO' : seoScore >= 75 ? 'Almost There!' : seoScore >= 50 ? 'Needs Work' : 'Get Started'}
+                  </h4>
                   <p className="text-sm text-gray-600">
-                    {seoScore >= 75
-                      ? 'Excellent! Your product is well optimized for search engines.'
-                      : seoScore >= 50
-                        ? 'Good progress. Complete all fields for better visibility.'
-                        : 'Needs improvement. Fill in all SEO fields to boost rankings.'}
+                    {seoScore >= 90
+                      ? 'Your product is fully optimized for search engines.'
+                      : seoScore >= 75
+                        ? `${90 - seoScore} points to excellent! Fill remaining items.`
+                        : seoScore >= 50
+                          ? 'Fill all SEO fields and use AI to boost your score.'
+                          : 'Use "Generate All" to quickly optimize your product.'}
                   </p>
                 </div>
               </div>
@@ -447,7 +493,7 @@ export default function ProductSeo({ className }: ProductSeoProps) {
               <label className="flex items-center gap-2 text-sm font-semibold text-gray-900">
                 <Hash className="h-4 w-4 text-purple-500" />
                 Meta Keywords
-                <Tooltip content="Important keywords for search indexing (5-10 recommended)">
+                <Tooltip content="Important keywords for search indexing (6+ for full score)">
                   <Info className="h-4 w-4 cursor-help text-gray-400" />
                 </Tooltip>
               </label>
@@ -510,7 +556,7 @@ export default function ProductSeo({ className }: ProductSeoProps) {
             )}
 
             <Text className="mt-2 text-xs text-gray-500">
-              Include product type, brand, origin, key features, and related search terms.
+              Include product type, brand, origin, key features, and related search terms. Aim for 6+ keywords.
             </Text>
           </div>
         </motion.div>
@@ -657,14 +703,13 @@ export default function ProductSeo({ className }: ProductSeoProps) {
             <div className="flex items-start gap-3">
               <Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-500" />
               <div>
-                <h4 className="font-semibold text-blue-900">SEO Best Practices</h4>
+                <h4 className="font-semibold text-blue-900">Quick Tips for 90+ Score</h4>
                 <ul className="mt-2 space-y-1 text-sm text-blue-800">
-                  <li>• Include primary keyword in the title (within first 50 characters)</li>
-                  <li>• Keep title under 60 characters to prevent truncation</li>
-                  <li>• Write compelling descriptions (150-160 chars) that encourage clicks</li>
-                  <li>• Use 5-10 relevant keywords including brand, type, origin, and features</li>
-                  <li>• Include your brand name in the title for brand recognition</li>
-                  <li>• Update SEO when product details change</li>
+                  <li>• <strong>Title:</strong> 40-60 chars, include product name and brand</li>
+                  <li>• <strong>Description:</strong> 100-160 chars, add a call-to-action</li>
+                  <li>• <strong>Keywords:</strong> 6+ keywords covering brand, type, origin, features</li>
+                  <li>• <strong>Brand:</strong> Required — adds 15 points to your score</li>
+                  <li>• <strong>Tip:</strong> Use "Generate All" for instant optimization</li>
                 </ul>
               </div>
             </div>

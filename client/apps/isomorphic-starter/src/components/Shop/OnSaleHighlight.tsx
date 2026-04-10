@@ -8,11 +8,14 @@ import * as Icon from 'react-icons/pi';
 
 interface OnSaleProduct {
   _id: string;
+  slug?: string;
   name: string;
   type: string;
   images?: { url: string }[];
+  primaryImage?: { url: string };
   priceRange?: { min: number; max: number };
-  discount?: { value: number; type?: string };
+  discount?: { value: number; percentage?: number; type?: string };
+  availableAt?: Array<{ isOnSale?: boolean; priceRange?: { min: number; max: number } }>;
   brand?: { name: string };
   abv?: number;
 }
@@ -26,9 +29,12 @@ const OnSaleHighlight: React.FC<OnSaleHighlightProps> = ({ products }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
 
   const saleProducts = useMemo(() => {
-    return products.filter(p => 
+    return products.filter(p =>
+      // Explicit discount value
       (p.discount?.value && p.discount.value > 0) ||
-      (p.priceRange?.min !== undefined && p.priceRange?.max !== undefined && p.priceRange.min < p.priceRange.max)
+      (p.discount?.percentage && p.discount.percentage > 0) ||
+      // At least one vendor/availableAt entry is on sale
+      p.availableAt?.some((v) => v.isOnSale === true)
     ).slice(0, 8);
   }, [products]);
 
@@ -98,10 +104,13 @@ const OnSaleHighlight: React.FC<OnSaleHighlightProps> = ({ products }) => {
         {/* Products Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {displayedProducts.map((product, index) => {
+            // Prefer explicit discount %, then derive from price range if the gap is meaningful (>= 2%)
             const originalPrice = product.priceRange?.max ?? product.priceRange?.min ?? 0;
             const salePrice = product.priceRange?.min ?? originalPrice;
-            const discount = product.discount?.value || 
-              Math.round(((originalPrice - salePrice) / originalPrice) * 100);
+            const derivedDiscount = originalPrice > 0
+              ? Math.round(((originalPrice - salePrice) / originalPrice) * 100)
+              : 0;
+            const discount = product.discount?.percentage || product.discount?.value || (derivedDiscount >= 2 ? derivedDiscount : 0);
             const hasDiscount = discount > 0;
 
             return (
@@ -112,7 +121,7 @@ const OnSaleHighlight: React.FC<OnSaleHighlightProps> = ({ products }) => {
                 transition={{ delay: index * 0.05 }}
                 className="group"
               >
-                <Link href={`/product/${product._id}`}>
+                <Link href={`/product/${product.slug || product._id}`}>
                   <motion.div
                     whileHover={{ y: -4 }}
                     className="relative bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 border border-gray-100"
@@ -132,9 +141,9 @@ const OnSaleHighlight: React.FC<OnSaleHighlightProps> = ({ products }) => {
 
                     {/* Emoji Placeholder */}
                     <div className="relative aspect-square bg-gradient-to-br from-gray-100 to-gray-50">
-                      {product.images?.[0]?.url ? (
+                      {(product.primaryImage?.url || product.images?.[0]?.url) ? (
                         <Image
-                          src={product.images[0].url}
+                          src={product.primaryImage?.url || product.images![0].url}
                           alt={product.name}
                           fill
                           className="object-cover group-hover:scale-105 transition-transform duration-500"

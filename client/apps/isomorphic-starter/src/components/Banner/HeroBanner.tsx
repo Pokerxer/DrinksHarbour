@@ -163,7 +163,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
           }
         }
       } catch (err) {
-        console.log('Using default hero banners');
+        console.warn('Using default hero banners');
       } finally {
         setLoading(false);
       }
@@ -336,7 +336,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
           {/* Background Image */}
           <div className="absolute inset-0">
             <Image
-              src={imgError ? '/images/placeholder-product.png' : currentBanner.image.url}
+              src={imgError ? '/images/images/product/1000x1000.png' : currentBanner.image.url}
               alt={currentBanner.image.alt || currentBanner.title}
               fill
               className="object-cover"

@@ -110,7 +110,7 @@ const FeaturedPromotionalBanner = () => {
           }
         }
       } catch (err) {
-        console.log('Using default featured banner');
+        console.warn('Using default featured banner');
       } finally {
         setLoading(false);
       }
@@ -140,7 +140,7 @@ const FeaturedPromotionalBanner = () => {
           <Link href={banner.ctaLink || '#'} className="block w-full h-full">
             <div className="absolute inset-0">
               <Image
-                src={imgError ? '/images/placeholder-product.png' : banner.image.url}
+                src={imgError ? '/images/images/product/1000x1000.png' : banner.image.url}
                 alt={banner.image.alt || banner.title}
                 fill
                 className="object-cover transition-transform duration-1000 group-hover:scale-105"

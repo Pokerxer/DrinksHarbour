@@ -53,22 +53,21 @@ const getMySubProducts = asyncHandler(async (req, res) => {
  * @access  Private (Tenant admin)
  */
 const createSubProduct = asyncHandler(async (req, res) => {
-  // Get tenantId - either from req.tenant (for tenant admins) or from body (for superadmins)
-  let tenantId = req.tenant?._id;
-  
+  // Get tenantId - always normalize to string
+  let tenantId = req.tenant?._id?.toString() ?? null;
+
   // If no tenant in req, try to get from body (filter out empty strings)
   if (!tenantId) {
     const bodyTenant = req.body.tenant || req.body.subProductData?.tenant;
-    // Only use body tenant if it's a non-empty string
     if (bodyTenant && typeof bodyTenant === 'string' && bodyTenant.trim() !== '') {
       tenantId = bodyTenant.trim();
     }
   }
-  
-  // For super_admin users, allow the service to auto-assign system tenant
+
+  // For super_admin/admin users, allow the service to auto-assign system tenant
   // For other users, tenant is required
   const user = req.user;
-  if (!tenantId && user?.role !== 'super_admin') {
+  if (!tenantId && !['super_admin', 'admin'].includes(user?.role)) {
     throw new ValidationError('Tenant ID is required. Please provide a tenant ID.');
   }
 
@@ -631,11 +630,11 @@ const getSubProductsByTenant = asyncHandler(async (req, res) => {
 const getSubProductsByProduct = asyncHandler(async (req, res) => {
   const { productId } = req.params;
 
-  const result = await subProductService.getSubProductsByProduct(productId);
+  const subProducts = await subProductService.getSubProductsByProduct(productId);
 
   res.status(200).json({
     success: true,
-    data: result,
+    data: { subProducts },
   });
 });
 
@@ -651,7 +650,7 @@ const getSubProductById = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    data: subProduct,
+    data: { subProduct },
   });
 });
 
@@ -667,7 +666,7 @@ const getSubProductBySKU = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    data: subProduct,
+    data: { subProduct },
   });
 });
 

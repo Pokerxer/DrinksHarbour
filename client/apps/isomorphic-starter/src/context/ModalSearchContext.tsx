@@ -275,28 +275,22 @@ export const ModalSearchProvider: React.FC<ModalSearchProviderProps> = ({
       if (filters.inStock) params.append('inStock', 'true');
 
       const searchUrl = `${API_URL}/api/products/search?${params.toString()}`;
-      console.log('Fetching search:', searchUrl);
 
       const response = await fetch(searchUrl, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
       });
       
-      console.log('Search response status:', response.status);
-      
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
       const data = await response.json();
-      console.log('Search response data:', data);
 
       if (data.success) {
-        // Handle different response structures
         const responseData = data.data || data;
         const products = responseData.products || [];
         
-        // Handle both flat and nested pagination structures
         let total, page, totalPages;
         if (responseData.pagination) {
           total = responseData.pagination.totalResults || products.length;
@@ -307,8 +301,6 @@ export const ModalSearchProvider: React.FC<ModalSearchProviderProps> = ({
           page = responseData.page || 1;
           totalPages = responseData.totalPages || 1;
         }
-        
-        console.log('Setting search results:', { products: products.length, total, page, totalPages });
         
         setSearchResults({
           products,

@@ -182,10 +182,6 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open, onClose]);
 
-  const handleSizeClick = (size: string) => {
-    setPendingFilters(prev => ({ ...prev, size: prev.size === size ? null : size }));
-  };
-
   const handleBrandChange = (brand: string) => {
     const currentBrands = pendingFilters.brand;
     let newBrands: string[] | null;
@@ -312,16 +308,6 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
     setPendingFilters(prev => ({ ...prev, minRating: prev.minRating === rating ? null : rating }));
   };
 
-  const handleAbvRangeClick = (range: { min: number; max: number }) => {
-    const isSelected = pendingFilters.abvRange?.min === range.min && pendingFilters.abvRange?.max === range.max;
-    setPendingFilters(prev => ({ ...prev, abvRange: isSelected ? null : range }));
-  };
-
-  const handleVolumeClick = (volume: string) => {
-    const isSelected = pendingFilters.volumeRange === volume;
-    setPendingFilters(prev => ({ ...prev, volumeRange: isSelected ? null : volume, size: isSelected ? null : prev.size }));
-  };
-
   const handleClearPrice = () => {
     const defaultRange = {
       min: filterOptions.priceRange?.min ?? 0,
@@ -377,7 +363,7 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
   }, [pendingFilters, filters]);
 
   // Helper to check if a specific filter has pending changes
-  const isFilterPending = useCallback((filterKey: keyof FilterState, value: any) => {
+  const isFilterPending = useCallback((filterKey: keyof FilterState) => {
     return JSON.stringify(pendingFilters[filterKey]) !== JSON.stringify(filters[filterKey]);
   }, [pendingFilters, filters]);
 
@@ -400,24 +386,6 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
     }
   }, []);
   
-  // Helper function to get filter icons
-  const getFilterIcon = useCallback((filterKey: string) => {
-    switch (filterKey) {
-      case 'categoryType': return <Icon.PiGridFour size={16} />;
-      case 'subCategoryType': return <Icon.PiFolders size={16} />;
-      case 'brand': return <Icon.PiBuildingApartment size={16} />;
-      case 'originCountry': return <Icon.PiGlobe size={16} />;
-      case 'flavorCategory': return <Icon.PiAirplaneTilt size={16} />;
-      case 'minRating': return <Icon.PiStar size={16} />;
-      case 'priceRange': return <Icon.PiCurrencyDollar size={16} />;
-      case 'abvRange': return <Icon.PiWine size={16} />;
-      case 'volumeRange': return <Icon.PiDrop size={16} />;
-      case 'showOnlySale': return <Icon.PiTagSimple size={16} />;
-      case 'size': return <Icon.PiRuler size={16} />;
-      default: return null;
-    }
-  }, []);
-
   const filteredBrands = useMemo(() => {
     if (!debouncedBrandSearch) return filterOptions.brand;
     return filterOptions.brand.filter(b =>
@@ -905,7 +873,7 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                         {pendingFilters.abvRange?.max === 0 && (
                           <Icon.PiCheck size={18} className="text-emerald-500" />
                         )}
-                        {isFilterPending('abvRange', pendingFilters.abvRange?.max === 0 ? null : { min: 0, max: 0 }) && (
+                        {isFilterPending('abvRange') && (
                           <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full"></span>
                         )}
                       </button>

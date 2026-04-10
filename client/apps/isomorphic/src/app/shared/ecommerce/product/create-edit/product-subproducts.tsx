@@ -169,11 +169,34 @@ function ReviewDrawer({
   const [actioning, setActioning] = useState<'approving' | 'declining' | null>(null);
   const [declineReason, setDeclineReason] = useState('');
   const [showDeclineForm, setShowDeclineForm] = useState(false);
+  const [showApproveConfirm, setShowApproveConfirm] = useState(false);
+  const [showDeclineConfirm, setShowDeclineConfirm] = useState(false);
   const [sizeWebsitePrices, setSizeWebsitePrices] = useState<Record<string, string>>({});
   const [baseWebsitePrice, setBaseWebsitePrice] = useState<string>('');
+  const [showSuccess, setShowSuccess] = useState<string | null>(null);
+  const [currentSection, setCurrentSection] = useState(0);
 
   const fmt = (v?: number | null) =>
     v != null ? `₦${Number(v).toLocaleString('en-NG', { minimumFractionDigits: 2 })}` : null;
+
+  // Keyboard shortcut to close
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen && !showApproveConfirm && !showDeclineConfirm) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose, showApproveConfirm, showDeclineConfirm]);
+
+  // Section navigation
+  const reviewSections = [
+    { id: 0, label: 'Overview' },
+    { id: 1, label: 'Pricing' },
+    { id: 2, label: 'Product' },
+    { id: 3, label: 'Inventory' },
+  ];
 
   useEffect(() => {
     if (!isOpen || !subProductId) return;
@@ -181,8 +204,12 @@ function ReviewDrawer({
     setLoading(true);
     setDeclineReason('');
     setShowDeclineForm(false);
+    setShowApproveConfirm(false);
+    setShowDeclineConfirm(false);
     setSizeWebsitePrices({});
     setBaseWebsitePrice('');
+    setShowSuccess(null);
+    setCurrentSection(0);
 
     subproductService.getSubProduct(subProductId, token)
       .then((res: any) => {
@@ -190,12 +217,10 @@ function ReviewDrawer({
         setSp(data);
         if (!data) return;
 
-        // Initialize prices from server-provided pricing
         if (data.pricing?.platformSellingPrice > 0) {
           setBaseWebsitePrice(String(data.pricing.platformSellingPrice));
         }
 
-        // Initialize size website prices from server-provided pricing
         const initSizes: Record<string, string> = {};
         for (const s of (data.sizes ?? [])) {
           if (s.pricing?.platformSellingPrice > 0) {

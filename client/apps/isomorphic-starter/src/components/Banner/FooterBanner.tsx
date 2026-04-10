@@ -72,7 +72,7 @@ const FooterBanner: React.FC<FooterBannerProps> = ({
           }
         }
       } catch (err) {
-        console.log('Using default footer banner');
+        console.warn('Using default footer banner');
       } finally {
         setLoading(false);
       }

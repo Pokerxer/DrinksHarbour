@@ -1134,14 +1134,15 @@ export const geminiService = {
     name: string,
     token: string,
     brand?: string,
-    type?: string
+    type?: string,
+    options?: { subType?: string; originCountry?: string; region?: string }
   ): Promise<MetaTitleResponse> {
     const url = `${API_URL}/api/gemini/meta-title`;
     try {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name, brand, type }),
+        body: JSON.stringify({ name, brand, type, ...options }),
       });
       if (!response.ok) await handleFetchError(response);
       return response.json();
@@ -1158,14 +1159,15 @@ export const geminiService = {
     token: string,
     brand?: string,
     type?: string,
-    shortDescription?: string
+    shortDescription?: string,
+    options?: { subType?: string; originCountry?: string; region?: string; abv?: number | string }
   ): Promise<MetaDescriptionResponse> {
     const url = `${API_URL}/api/gemini/meta-description`;
     try {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name, brand, type, shortDescription }),
+        body: JSON.stringify({ name, brand, type, shortDescription, ...options }),
       });
       if (!response.ok) await handleFetchError(response);
       return response.json();
@@ -1180,16 +1182,23 @@ export const geminiService = {
   async generateKeywords(
     name: string,
     token: string,
-    brand?: string,
-    type?: string,
-    category?: string
+    options?: {
+      brand?: string;
+      type?: string;
+      subType?: string;
+      originCountry?: string;
+      region?: string;
+      abv?: number | string;
+      shortDescription?: string;
+      existingKeywords?: string[];
+    }
   ): Promise<KeywordsResponse> {
     const url = `${API_URL}/api/gemini/keywords`;
     try {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name, brand, type, category }),
+        body: JSON.stringify({ name, ...options }),
       });
       if (!response.ok) await handleFetchError(response);
       return response.json();

@@ -23,12 +23,14 @@ const optionalPositiveNumber = z.preprocess(
     }
     return val;
   },
-  z.number().optional()
+  z.number({ invalid_type_error: 'Please enter a valid number' })
+    .optional()
 );
 
 // Size option schema for sub-product variants
 export const sizeOptionSchema = z.object({
-  size: z.string().optional(),
+  size: z.string({ required_error: 'Size selection is required' })
+    .min(1, 'Please select a size from the dropdown'),
   displayName: z.string().optional(),
   sizeCategory: z.string().optional(),
   unitType: z.string().optional(),
@@ -112,8 +114,10 @@ const mediaItemSchema = z.object({
 
 // New product data schema (for creating product on-the-fly)
 const newProductDataSchema = z.object({
-  name: z.string().optional(),
-  type: z.string().optional(),
+  name: z.string({ required_error: 'Product name is required when creating a new product' })
+    .min(1, 'Please enter a product name'),
+  type: z.string({ required_error: 'Product type is required when creating a new product' })
+    .min(1, 'Please select a product type'),
   subType: z.string().optional(),
   brand: z.string().optional(),
   volumeMl: z.union([z.string(), z.number()]).nullable().optional(),
@@ -249,7 +253,7 @@ const subProductDataSchema = z.object({
   vendorAddress: z.string().optional(),
   
   // Status fields
-  status: z.string().default('draft'),
+  status: z.string().default('active'),
   isFeaturedByTenant: z.boolean().default(false),
   isNewArrival: z.boolean().default(false),
   isBestSeller: z.boolean().default(false),
@@ -318,6 +322,59 @@ const subProductDataSchema = z.object({
 // Main form schema - wraps subProductData to match component paths like 'subProductData.product'
 export const subProductFormSchema = z.object({
   subProductData: subProductDataSchema,
+}).superRefine((data, ctx) => {
+  const sp = data.subProductData;
+  const isCreatingNewProduct = sp.createNewProduct;
+
+  // Either a parent product must be selected, or createNewProduct must be true
+  if (!isCreatingNewProduct && (!sp.product || sp.product.trim() === '')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Please select a parent product or enable "Create New Product"',
+      path: ['subProductData', 'product'],
+    });
+  }
+
+  // When linking to an existing product, cost price is required
+  if (!isCreatingNewProduct) {
+    const cost = typeof sp.costPrice === 'number' ? sp.costPrice : Number(sp.costPrice);
+    if (!cost || cost <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Cost price must be greater than 0',
+        path: ['subProductData', 'costPrice'],
+      });
+    }
+  }
+
+  // When creating a new product, name and type are required
+  if (isCreatingNewProduct) {
+    if (!sp.newProductData?.name || sp.newProductData.name.trim() === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Product name is required',
+        path: ['subProductData', 'newProductData', 'name'],
+      });
+    }
+    if (!sp.newProductData?.type || sp.newProductData.type.trim() === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Product type is required',
+        path: ['subProductData', 'newProductData', 'type'],
+      });
+    }
+  }
+
+  // Each size variant must have a size selected
+  (sp.sizes || []).forEach((size, i) => {
+    if (!size.size || size.size.trim() === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Size is required',
+        path: ['subProductData', 'sizes', i, 'size'],
+      });
+    }
+  });
 });
 
 export type SubProductInput = z.infer<typeof subProductFormSchema>;

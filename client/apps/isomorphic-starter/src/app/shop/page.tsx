@@ -4,7 +4,6 @@ import React, { useEffect, useState, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import Shop from '@/components/Shop';
 import LoadingSpinner from '@/components/loader/LoadingSpinner';
-import CategoryBanner from '@/components/Banner/CategoryBanner';
 import * as Icon from 'react-icons/pi';
 import RecommendedForYou from '@/components/Shop/RecommendedForYou';
 
@@ -105,39 +104,6 @@ function ShopPageContent({ params }: PageProps) {
   const [totalProducts, setTotalProducts] = useState(0);
   const [layoutCol, setLayoutCol] = useState<number>(4);
 
-  const updateUrlFilters = useCallback((newFilters: FilterState) => {
-    const params = new URLSearchParams();
-
-    if (newFilters.brand) {
-      if (Array.isArray(newFilters.brand)) {
-        params.set('brand', newFilters.brand.join(','));
-      } else {
-        params.set('brand', newFilters.brand);
-      }
-    }
-    if (newFilters.categoryType) {
-      if (Array.isArray(newFilters.categoryType)) {
-        params.set('category', newFilters.categoryType.join(','));
-      } else {
-        params.set('category', newFilters.categoryType);
-      }
-    }
-    if (newFilters.subCategoryType) {
-      if (Array.isArray(newFilters.subCategoryType)) {
-        params.set('subcategory', newFilters.subCategoryType.join(','));
-      } else {
-        params.set('subcategory', newFilters.subCategoryType);
-      }
-    }
-    if (newFilters.sortOption) params.set('sort', newFilters.sortOption);
-    if (newFilters.showOnlySale) params.set('sale', 'true');
-
-    const queryString = params.toString();
-    const newUrl = queryString ? `${pathname}?${queryString}` : pathname;
-
-    router.replace(newUrl, { scroll: false });
-  }, [pathname, router]);
-
   const buildApiUrl = useCallback(() => {
     const baseUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/api/products/search`;
 
@@ -192,8 +158,6 @@ function ShopPageContent({ params }: PageProps) {
       setError(null);
 
       const url = buildApiUrl();
-      console.log('[ShopPage] Fetching products from:', url);
-
       const response = await fetch(url, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
@@ -205,7 +169,6 @@ function ShopPageContent({ params }: PageProps) {
       }
 
       const data = await response.json();
-      console.log('Products API response:', data);
 
       if (data.success && data.data?.products) {
         // If sale filter returns empty, retry without sale filter
@@ -258,12 +221,6 @@ function ShopPageContent({ params }: PageProps) {
     const newUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
     router.replace(newUrl, { scroll: false });
   };
-
-  const hasActiveFilters = searchParams.get('category') || searchParams.get('subcategory') || 
-    searchParams.get('brand') || searchParams.get('sale') || searchParams.get('search') ||
-    searchParams.get('origin') || searchParams.get('flavor') || searchParams.get('volume') ||
-    searchParams.get('size') || searchParams.get('minPrice') || searchParams.get('maxPrice') ||
-    searchParams.get('minABV') || searchParams.get('maxABV') || searchParams.get('minRating');
 
   if (loading) {
     return (

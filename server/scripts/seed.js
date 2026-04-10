@@ -1449,9 +1449,9 @@ const SUBCATEGORIES_DATA = {
       seasonal: { fall: true, winter: true },
     },
     {
-      name: 'Carignan',
-      type: 'carignan',
-      description: 'Traditional Mediterranean grape producing wines with deep color and firm tannins.',
+      name: 'Montepulciano',
+      type: 'montepulciano',
+      description: 'Italian grape variety producing full-bodied wines with deep color and soft tannins.',
       characteristics: {
         abvRange: { min: 12.5, max: 14 },
         colorProfile: 'Deep ruby to purple',
@@ -1463,8 +1463,8 @@ const SUBCATEGORIES_DATA = {
       seasonal: { fall: true, winter: true },
     },
     {
-      name: 'Mourvèdre',
-      type: 'mouvedre',
+      name: 'Shiraz',
+      type: 'shiraz',
       description: 'Bold, meaty red with dark fruit and gamey flavors, often blended in GSM (Grenache-Syrah-Mourvèdre).',
       characteristics: {
         abvRange: { min: 13.5, max: 15 },
@@ -1491,8 +1491,8 @@ const SUBCATEGORIES_DATA = {
       seasonal: { fall: true, winter: true },
     },
     {
-      name: 'Petite Sirah',
-      type: 'petite_sirah',
+      name: 'Petit Verdot',
+      type: 'petit_verdot',
       description: 'Inky, bold red with intense color and spicy, fruity flavors.',
       characteristics: {
         abvRange: { min: 13.5, max: 15 },
@@ -1505,8 +1505,8 @@ const SUBCATEGORIES_DATA = {
       seasonal: { fall: true, winter: true },
     },
     {
-      name: 'Touriga Nacional',
-      type: 'touriga_nacional',
+      name: 'Gamay',
+      type: 'gamay',
       description: 'Portugals flagship grape, producing deeply colored, aromatic reds with intense fruit and tannins.',
       characteristics: {
         abvRange: { min: 13, max: 15 },

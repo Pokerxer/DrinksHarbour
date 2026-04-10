@@ -1804,7 +1804,7 @@ const generateIngredients = asyncHandler(async (req, res) => {
  * POST /api/gemini/meta-title
  */
 const generateMetaTitle = asyncHandler(async (req, res) => {
-  const { name, brand, type } = req.body;
+  const { name, brand, type, subType, originCountry, region } = req.body;
   if (!name) { res.status(400); throw new Error('Product name is required'); }
 
   try {
@@ -1815,13 +1815,56 @@ const generateMetaTitle = asyncHandler(async (req, res) => {
         responseMimeType: 'application/json',
       }
     });
-    const prompt = `Create an SEO-friendly meta title (max 60 chars) for "${name}"${brand ? ` by ${brand}` : ''}${type ? ` - ${type}` : ''}. Return ONLY JSON: {"metaTitle": "title"}`;
+
+    const context = [
+      `Product name: "${name}"`,
+      brand ? `Brand: ${brand}` : null,
+      type ? `Type: ${type}` : null,
+      subType ? `Sub-type: ${subType}` : null,
+      originCountry ? `Origin: ${originCountry}` : null,
+      region ? `Region: ${region}` : null,
+    ].filter(Boolean).join(', ');
+
+    const prompt = `You are an SEO expert for a premium beverages e-commerce platform (DrinksHarbour).
+
+Create a meta title for this product:
+${context}
+
+STRICT REQUIREMENTS:
+- Length: MUST be between 40-60 characters (count carefully, this is critical)
+- Must include the product name "${name}"
+${brand ? `- Must include the brand name "${brand}"` : '- Include a quality descriptor (Premium, Authentic, etc.)'}
+- Should include the product type or key attribute
+- Use a separator like " | " or " - " between product and brand/category
+- Make it compelling for click-through rate
+
+GOOD EXAMPLES (count chars):
+- "Glenfiddich 12 Year Single Malt Scotch | 700ml" = 47 chars ✓
+- "Hennessy VS Cognac - Premium French Brandy" = 43 chars ✓
+- "Corona Extra Lager Beer | DrinksHarbour" = 40 chars ✓
+
+Return ONLY valid JSON: {"metaTitle": "your title here"}`;
+
     const result = await model.generateContent(prompt);
     let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     const data = parseJSONResponse(text);
+
+    // Ensure it's within bounds; trim if over 60
+    if (data.metaTitle && data.metaTitle.length > 60) {
+      data.metaTitle = data.metaTitle.substring(0, 57) + '...';
+    }
+    // If too short, append brand or type
+    if (data.metaTitle && data.metaTitle.length < 30) {
+      const suffix = brand ? ` | ${brand}` : type ? ` | ${type}` : ' | DrinksHarbour';
+      data.metaTitle = (data.metaTitle + suffix).substring(0, 60);
+    }
+
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { metaTitle: `${name} - Premium ${type || 'Beverage'}` }, note: 'Demo data' });
+    const fallback = brand
+      ? `${name} by ${brand} - Premium ${type || 'Beverage'}`.substring(0, 60)
+      : `${name} - Premium ${type || 'Beverage'} | DrinksHarbour`.substring(0, 60);
+    res.json({ success: true, data: { metaTitle: fallback }, note: 'Demo data' });
   }
 });
 
@@ -1830,24 +1873,68 @@ const generateMetaTitle = asyncHandler(async (req, res) => {
  * POST /api/gemini/meta-description
  */
 const generateMetaDescription = asyncHandler(async (req, res) => {
-  const { name, brand, type, shortDescription } = req.body;
+  const { name, brand, type, subType, originCountry, region, abv, shortDescription } = req.body;
   if (!name) { res.status(400); throw new Error('Product name is required'); }
 
   try {
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
       generationConfig: {
-        temperature: 0.3,
+        temperature: 0.4,
         responseMimeType: 'application/json',
       }
     });
-    const prompt = `Create an SEO meta description (max 160 chars) for "${name}"${brand ? ` by ${brand}` : ''}${type ? `, a ${type}` : ''}.${shortDescription ? ` Based on: ${shortDescription}` : ''}. Return ONLY JSON: {"metaDescription": "description"}`;
+
+    const context = [
+      `Product: "${name}"`,
+      brand ? `Brand: ${brand}` : null,
+      type ? `Type: ${type}` : null,
+      subType ? `Sub-type: ${subType}` : null,
+      originCountry ? `Origin: ${originCountry}` : null,
+      region ? `Region: ${region}` : null,
+      abv ? `ABV: ${abv}%` : null,
+      shortDescription ? `Description: ${shortDescription}` : null,
+    ].filter(Boolean).join('\n');
+
+    const prompt = `You are an SEO copywriter for a premium beverages e-commerce platform (DrinksHarbour).
+
+Write a meta description for this product:
+${context}
+
+STRICT REQUIREMENTS:
+- Length: MUST be between 130-155 characters (count carefully — this is critical for SEO)
+- Must mention the product name "${name}" naturally
+- Must include a benefit or quality descriptor (smooth, award-winning, premium, authentic, etc.)
+- Must end with a call-to-action (e.g. "Order online.", "Shop now.", "Available at DrinksHarbour.")
+- Write in second-person or descriptive style — no first-person "I/we"
+- Natural, compelling, not keyword-stuffed
+
+GOOD EXAMPLES (count chars):
+- "Discover Glenfiddich 12 Year Old, a smooth single malt Scotch with notes of pear and oak. A classic choice for whisky lovers. Order online." = 139 chars ✓
+- "Hennessy VS is a rich, fruity Cognac crafted in the heart of France. Perfect for sipping or mixing. Shop premium spirits at DrinksHarbour." = 140 chars ✓
+
+Return ONLY valid JSON: {"metaDescription": "your description here"}`;
+
     const result = await model.generateContent(prompt);
     let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     const data = parseJSONResponse(text);
+
+    // Trim if over 160
+    if (data.metaDescription && data.metaDescription.length > 160) {
+      data.metaDescription = data.metaDescription.substring(0, 157) + '...';
+    }
+    // Pad if too short (under 120) — append CTA
+    if (data.metaDescription && data.metaDescription.length < 120) {
+      const ctas = [' Order now at DrinksHarbour.', ' Shop online for fast delivery.', ' Available now at DrinksHarbour.'];
+      const cta = ctas[Math.floor(Math.random() * ctas.length)];
+      const padded = data.metaDescription.replace(/\.$/, '') + cta;
+      data.metaDescription = padded.substring(0, 160);
+    }
+
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { metaDescription: `Discover ${name}, a premium ${type || 'beverage'}.` }, note: 'Demo data' });
+    const fallback = `Discover ${name}${brand ? ` by ${brand}` : ''}, a premium ${type || 'beverage'}${originCountry ? ` from ${originCountry}` : ''}. Shop online for fast delivery at DrinksHarbour.`.substring(0, 160);
+    res.json({ success: true, data: { metaDescription: fallback }, note: 'Demo data' });
   }
 });
 
@@ -1856,24 +1943,67 @@ const generateMetaDescription = asyncHandler(async (req, res) => {
  * POST /api/gemini/keywords
  */
 const generateKeywords = asyncHandler(async (req, res) => {
-  const { name, brand, type, category } = req.body;
+  const { name, brand, type, subType, originCountry, region, abv, shortDescription, existingKeywords } = req.body;
   if (!name) { res.status(400); throw new Error('Product name is required'); }
 
   try {
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
       generationConfig: {
-        temperature: 0.3,
+        temperature: 0.4,
         responseMimeType: 'application/json',
       }
     });
-    const prompt = `Generate 5-8 SEO keywords for "${name}"${brand ? ` by ${brand}` : ''}${type ? ` (${type})` : ''}${category ? ` in ${category}` : ''}. Return ONLY JSON: {"keywords": ["keyword1", "keyword2"]}`;
+
+    const context = [
+      `Product: "${name}"`,
+      brand ? `Brand: ${brand}` : null,
+      type ? `Type: ${type}` : null,
+      subType ? `Sub-type: ${subType}` : null,
+      originCountry ? `Origin: ${originCountry}` : null,
+      region ? `Region: ${region}` : null,
+      abv ? `ABV: ${abv}%` : null,
+      shortDescription ? `Description: ${shortDescription}` : null,
+      existingKeywords?.length ? `Already has keywords: ${existingKeywords.join(', ')} — generate new ones that complement these` : null,
+    ].filter(Boolean).join('\n');
+
+    const prompt = `You are an SEO specialist for a premium beverages e-commerce platform (DrinksHarbour).
+
+Generate 8-12 highly relevant SEO keywords for this product:
+${context}
+
+Rules:
+- Include: product name variants, brand, type, origin/country, style descriptors, purchase-intent terms (e.g. "buy X online"), occasion terms (gift, celebration), flavour/tasting descriptors if applicable
+- Mix short-tail (1-2 words) and long-tail (3-5 words) keywords
+- Use lowercase
+- No duplicates, no generic filler like "best quality" alone
+- Each keyword should be something a real customer would search
+
+Return ONLY valid JSON:
+{"keywords": ["keyword1", "keyword2", "keyword3"]}`;
+
     const result = await model.generateContent(prompt);
     let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     const data = parseJSONResponse(text);
+
+    // Ensure it's an array
+    if (!Array.isArray(data.keywords)) {
+      data.keywords = [];
+    }
+
     res.json({ success: true, data });
   } catch (error) {
-    res.json({ success: true, data: { metaKeywords: [name.toLowerCase(), type?.toLowerCase() || 'beverage', 'premium', 'quality'] }, note: 'Demo data' });
+    // Fallback with sensible defaults using correct key
+    const fallback = [
+      name.toLowerCase(),
+      brand?.toLowerCase(),
+      type?.toLowerCase() || 'beverage',
+      originCountry ? `${type || 'drink'} from ${originCountry}`.toLowerCase() : null,
+      `buy ${name.toLowerCase()} online`,
+      'premium spirits',
+      'quality drinks',
+    ].filter(Boolean);
+    res.json({ success: true, data: { keywords: fallback }, note: 'Demo data' });
   }
 });
 
@@ -2364,6 +2494,125 @@ Return ONLY this JSON structure (no markdown, no extra text):
   });
 });
 
+/**
+ * Generate sub-product tenant content using parent product as context
+ * POST /api/gemini/generate-subproduct-content
+ */
+const generateSubProductContent = asyncHandler(async (req, res) => {
+  const { productId, subProductId, inlineContext } = req.body;
+
+  // Must have either a productId or inline context fields to work with
+  if (!productId && !inlineContext?.name) {
+    res.status(400);
+    throw new Error('Either productId or inlineContext.name is required');
+  }
+
+  // Build context lines — from DB product or from inline form data
+  let contextLines = [];
+  let resolvedProductName = inlineContext?.name || productId || 'unknown';
+
+  if (productId) {
+    const product = await Product.findById(productId)
+      .populate('brand', 'name description')
+      .populate('category', 'name')
+      .lean();
+
+    if (!product) {
+      res.status(404);
+      throw new Error('Product not found');
+    }
+
+    resolvedProductName = product.name;
+    contextLines = [
+      `Product Name: "${product.name}"`,
+      product.type ? `Type: ${product.type}` : '',
+      product.brand?.name ? `Brand: ${product.brand.name}` : '',
+      product.category?.name ? `Category: ${product.category.name}` : '',
+      product.originCountry ? `Origin: ${product.originCountry}` : '',
+      product.abv ? `ABV: ${product.abv}%` : '',
+      product.volumeMl ? `Volume: ${product.volumeMl}ml` : '',
+      product.shortDescription ? `Short Description: ${product.shortDescription}` : '',
+      product.description ? `Description: ${product.description.substring(0, 500)}` : '',
+      product.flavorProfile?.length ? `Flavor Profile: ${product.flavorProfile.join(', ')}` : '',
+      product.tags?.length ? `Tags: ${product.tags.join(', ')}` : '',
+    ];
+  } else {
+    // Use form data passed directly from the client
+    const c = inlineContext;
+    contextLines = [
+      c.name ? `Product Name: "${c.name}"` : '',
+      c.type ? `Type: ${c.type}` : '',
+      c.brand ? `Brand: ${c.brand}` : '',
+      c.category ? `Category: ${c.category}` : '',
+      c.originCountry ? `Origin: ${c.originCountry}` : '',
+      c.abv ? `ABV: ${c.abv}%` : '',
+      c.volumeMl ? `Volume: ${c.volumeMl}ml` : '',
+      c.shortDescription ? `Short Description: ${c.shortDescription}` : '',
+      c.description ? `Description: ${String(c.description).substring(0, 500)}` : '',
+      c.flavorProfile?.length ? `Flavor Profile: ${c.flavorProfile.join(', ')}` : '',
+      c.tags?.length ? `Tags: ${c.tags.join(', ')}` : '',
+    ];
+  }
+
+  const productContext = contextLines.filter(Boolean).join('\n');
+
+  // Optionally load the specific sub-product for additional context
+  let subProduct = null;
+  if (subProductId) {
+    subProduct = await SubProduct.findById(subProductId).select('sku baseSellingPrice currency sizes').lean();
+  }
+
+  const subProductContext = subProduct
+    ? `\nSUB-PRODUCT CONTEXT:\nSKU: ${subProduct.sku || 'N/A'}\nPrice: ${subProduct.currency || 'NGN'} ${subProduct.baseSellingPrice || 'N/A'}\n`
+    : '';
+
+  const prompt = `You are a creative beverage copywriter and SEO specialist. Generate compelling tenant-facing content for a sub-product listing based on the product context below.
+
+PRODUCT CONTEXT:
+${productContext}
+${subProductContext}
+Generate unique, compelling content for a tenant's sub-product listing. The content should:
+1. Be distinct from default descriptions — add retail personality and appeal
+2. Include a punchy short description (max 160 chars) highlighting the key selling point
+3. Include a longer description (2-3 paragraphs, ~150-250 words) covering brand story, taste/character, and occasions/pairing
+4. Suggest 5-8 targeted SEO keywords (single words or short phrases)
+5. Include a brief internal tenant note (1-2 sentences) about stocking/selling this product
+
+Return ONLY this JSON structure:
+{
+  "shortDescriptionOverride": "One punchy sentence max 160 chars",
+  "descriptionOverride": "Two to three paragraph description with line breaks using \\n\\n",
+  "customKeywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
+  "tenantNotes": "Internal note for the tenant about this product"
+}`;
+
+  const generated = await callOllama(prompt);
+
+  if (!generated || typeof generated !== 'object') {
+    res.status(500);
+    throw new Error('Failed to parse AI response');
+  }
+
+  // Sanitize
+  if (generated.shortDescriptionOverride && generated.shortDescriptionOverride.length > 200) {
+    generated.shortDescriptionOverride = generated.shortDescriptionOverride.substring(0, 197) + '...';
+  }
+  if (!Array.isArray(generated.customKeywords)) {
+    generated.customKeywords = [];
+  }
+  generated.customKeywords = generated.customKeywords.slice(0, 10).map(k => String(k).trim()).filter(Boolean);
+
+  res.json({
+    success: true,
+    data: generated,
+    metadata: {
+      productId: productId || null,
+      productName: resolvedProductName,
+      generatedAt: new Date().toISOString(),
+    },
+  });
+});
+
 module.exports = {
   generateProductDetails,
   generateDescription,
@@ -2407,4 +2656,5 @@ module.exports = {
   generateBrandFounded,
   generateBrandCategory,
   generateProductFromSubProducts,
+  generateSubProductContent,
 };

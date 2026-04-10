@@ -931,10 +931,12 @@ const getProductReviewSummary = asyncHandler(async (req, res) => {
 const getAllProducts = asyncHandler(async (req, res) => {
   const { page = 1, limit = 12, ...filters } = req.query;
   
-  const result = await productService.getAllProducts({
+  // getAllProducts function is broken - use searchProducts instead
+  const result = await productService.searchProducts({
     ...filters,
     page: parseInt(page, 10),
     limit: parseInt(limit, 10),
+    status: 'approved',
   });
 
   res.status(200).json({

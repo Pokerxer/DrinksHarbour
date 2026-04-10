@@ -186,9 +186,6 @@ const Checkout = () => {
   const validateForm = useCallback((): boolean => {
     const newErrors: FormErrors = {};
 
-    console.log('🔵 Validating form...');
-    console.log('   Form data:', formData);
-
     if (!formData.firstName || !formData.firstName.trim()) newErrors.firstName = 'First name is required';
     if (!formData.lastName || !formData.lastName.trim()) newErrors.lastName = 'Last name is required';
     if (!formData.email || !formData.email.trim()) {
@@ -203,18 +200,15 @@ const Checkout = () => {
     if (!formData.zipCode || !formData.zipCode.trim()) newErrors.zipCode = 'ZIP code is required';
     if (!formData.country || !formData.country.trim()) newErrors.country = 'Country is required';
 
-    console.log('   Validation errors:', newErrors);
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   }, [formData]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    console.log(`🔵 Input changed: ${name} = "${value}"`);
     
     setFormData(prev => {
       const newData = { ...prev, [name]: value };
-      console.log('   Updated formData:', newData);
       return newData;
     });
     
@@ -236,19 +230,13 @@ const Checkout = () => {
   }, [errors]);
 
   const handleAddressSelect = (address: string, placeDetails?: any) => {
-    console.log('🔵 Address selected:', address);
-    console.log('   Place details:', placeDetails);
-    
     setAddressDetails(placeDetails);
     
-    // Update form data with all fields at once
     const updates: Partial<FormData> = { address };
     
-    // Parse address_components array from Google Places API
     if (placeDetails?.address_components && Array.isArray(placeDetails.address_components)) {
       const components = placeDetails.address_components;
       
-      // Helper to extract value by type
       const getComponent = (types: string[]): string | undefined => {
         const comp = components.find((c: any) => 
           types.some(t => c.types.includes(t))
@@ -256,26 +244,14 @@ const Checkout = () => {
         return comp?.long_name;
       };
       
-      // Auto-fill city
       const city = getComponent(['locality', 'sublocality', 'administrative_area_level_2']) || getComponent(['postal_town']);
-      if (city) {
-        updates.city = city;
-        console.log('   Auto-filled city:', city);
-      }
+      if (city) updates.city = city;
       
-      // Auto-fill state
       const state = getComponent(['administrative_area_level_1']);
-      if (state) {
-        updates.state = state;
-        console.log('   Auto-filled state:', state);
-      }
+      if (state) updates.state = state;
       
-      // Auto-fill zip code
       const zipCode = getComponent(['postal_code']);
-      if (zipCode) {
-        updates.zipCode = zipCode;
-        console.log('   Auto-filled zipCode:', zipCode);
-      }
+      if (zipCode) updates.zipCode = zipCode;
     }
     
     setFormData(prev => ({ ...prev, ...updates }));
@@ -358,12 +334,7 @@ const Checkout = () => {
         });
         setShowPaymentModal(true);
       } else if (activePayment === 'bank') {
-        // Validate all required fields before redirecting to Paystack
-        console.log('🔵 Validating form data before Paystack redirect:');
-        console.log('   Form data:', formData);
-        
         if (!formData.address || !formData.city || !formData.state || !formData.zipCode || !formData.country) {
-          console.error('   ❌ Missing shipping information');
           setError('Please complete all shipping address fields');
           setIsLoading(false);
           return;
@@ -422,7 +393,6 @@ const Checkout = () => {
             couponCode: appliedCouponCode,
           };
           
-          console.log('🔵 Saving to sessionStorage:', paymentData);
           sessionStorage.setItem('pendingPayment', JSON.stringify(paymentData));
           window.location.href = data.data.authorizationUrl;
         } else {
@@ -439,11 +409,7 @@ const Checkout = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    console.log('🔵 Form submitted');
-    console.log('   Current form data:', formData);
-
     if (!validateForm()) {
-      console.log('   ❌ Validation failed');
       return;
     }
 
@@ -491,8 +457,6 @@ const Checkout = () => {
         couponCode: appliedCouponCode || undefined,
       };
       
-      console.log('🔵 Sending order data:', orderData);
-
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
 
       const response = await fetch(`${API_URL}/api/orders`, {

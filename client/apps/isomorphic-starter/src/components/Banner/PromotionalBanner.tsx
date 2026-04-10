@@ -300,7 +300,7 @@ const PromotionalBanner: React.FC<PromotionalBannerProps> = ({
           }
         }
       } catch {
-        console.log('Using default promotional banners');
+        console.warn('Using default promotional banners');
       } finally {
         setLoading(false);
       }
@@ -347,7 +347,7 @@ const PromotionalBanner: React.FC<PromotionalBannerProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
         <AnimatePresence mode="popLayout">
           {banners.map((banner, index) => {
-            const imageUrl = banner.mobileImage?.url || banner.image?.url || '/images/placeholder-product.png';
+            const imageUrl = banner.mobileImage?.url || banner.image?.url || '/images/images/product/1000x1000.png';
             const isHovered = hoveredBanner === (banner._id || `banner-${index}`);
 
             return (
@@ -388,7 +388,7 @@ const PromotionalBanner: React.FC<PromotionalBannerProps> = ({
                       sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                       onError={(e) => {
                         const target = e.target as HTMLImageElement;
-                        target.src = '/images/placeholder-product.png';
+                        target.src = '/images/images/product/1000x1000.png';
                       }}
                     />
                   </motion.div>

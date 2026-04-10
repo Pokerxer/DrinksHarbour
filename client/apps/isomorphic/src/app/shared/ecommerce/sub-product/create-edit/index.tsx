@@ -50,6 +50,7 @@ import {
   PiArrowLineRight,
   PiList,
   PiX,
+  PiSparkle,
 } from 'react-icons/pi';
 import SubProductBasicInfo from './basic-info';
 import SubProductPricing from './pricing';
@@ -72,6 +73,7 @@ import {
   transformBackendToForm,
 } from '@/utils/transformers/subProduct.transformer';
 import { defaultValues, formParts } from './form-utils';
+import { ValidationSummary } from '@/components/validation-summary';
 
 const STEPS = [
   {
@@ -239,7 +241,15 @@ export default function CreateEditSubProduct({
   const router = useRouter();
   const { data: session } = useSession();
   const [isLoading, setLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+  // Ref so callbacks (beforeunload, route-change) always see fresh values
+  const isDirtyRef = useRef(false);
+  const isLoadingRef = useRef(false);
+  const sessionRef = useRef<any>(null);
+  // Prevents the unmount auto-save from firing when a save just succeeded
+  const hasSavedRef = useRef(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [direction, setDirection] = useState(0);
@@ -288,6 +298,11 @@ export default function CreateEditSubProduct({
   const isValid = formState.isValid;
   const isDirty = formState.isDirty;
 
+  // Keep refs in sync so closures (event listeners) always see current values
+  useEffect(() => { isDirtyRef.current = isDirty; }, [isDirty]);
+  useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
+  useEffect(() => { sessionRef.current = session; }, [session]);
+
   // Helper function to flatten nested error objects
   const getFieldErrors = (errs: any): string[] => {
     const flatten = (obj: any, prefix = ''): string[] => {
@@ -307,11 +322,152 @@ export default function CreateEditSubProduct({
 
   const fieldErrors = getFieldErrors(errors);
 
-  // Get product name for header display
-  const productName = watch('name');
-  const newProductName = watch('newProductData.name');
+  const fieldToSection: Record<string, string> = {
+    subProductData: 'Basic Info',
+    product: 'Basic Info',
+    tenant: 'Basic Info',
+    createNewProduct: 'Basic Info',
+    newProductData: 'Basic Info',
+    baseSellingPrice: 'Pricing',
+    costPrice: 'Pricing',
+    currency: 'Pricing',
+    taxRate: 'Pricing',
+    marginPercentage: 'Pricing',
+    markupPercentage: 'Pricing',
+    salePrice: 'Pricing',
+    saleDiscountPercentage: 'Pricing',
+    sizes: 'Sizes',
+    sellWithoutSizeVariants: 'Sizes',
+    defaultSize: 'Sizes',
+    stockStatus: 'Inventory',
+    totalStock: 'Inventory',
+    reservedStock: 'Inventory',
+    availableStock: 'Inventory',
+    lowStockThreshold: 'Inventory',
+    reorderPoint: 'Inventory',
+    reorderQuantity: 'Inventory',
+    vendor: 'Vendor',
+    supplierSKU: 'Vendor',
+    supplierPrice: 'Vendor',
+    leadTimeDays: 'Vendor',
+    minimumOrderQuantity: 'Vendor',
+    status: 'Status',
+    isFeaturedByTenant: 'Status',
+    isNewArrival: 'Status',
+    isBestSeller: 'Status',
+    isPublished: 'Status',
+    visibleInPOS: 'Status',
+    visibleInOnlineStore: 'Status',
+    discount: 'Promotions',
+    discountType: 'Promotions',
+    flashSale: 'Promotions',
+    bundleDeals: 'Promotions',
+    shipping: 'Shipping',
+    warehouse: 'Shipping',
+  };
+
+  const fieldToLabel: Record<string, string> = {
+    subProductData: 'Sub-Product',
+    product: 'Product',
+    tenant: 'Tenant',
+    createNewProduct: 'Create New Product',
+    newProductData: 'New Product Data',
+    name: 'Product Name',
+    type: 'Product Type',
+    baseSellingPrice: 'Selling Price',
+    costPrice: 'Cost Price',
+    currency: 'Currency',
+    taxRate: 'Tax Rate',
+    marginPercentage: 'Margin %',
+    markupPercentage: 'Markup %',
+    salePrice: 'Sale Price',
+    saleDiscountPercentage: 'Sale Discount %',
+    sizes: 'Size Variants',
+    sellWithoutSizeVariants: 'Sell Without Sizes',
+    defaultSize: 'Default Size',
+    stockStatus: 'Stock Status',
+    totalStock: 'Total Stock',
+    reservedStock: 'Reserved Stock',
+    availableStock: 'Available Stock',
+    lowStockThreshold: 'Low Stock Threshold',
+    reorderPoint: 'Reorder Point',
+    reorderQuantity: 'Reorder Quantity',
+    vendor: 'Vendor',
+    supplierSKU: 'Supplier SKU',
+    supplierPrice: 'Supplier Price',
+    leadTimeDays: 'Lead Time',
+    minimumOrderQuantity: 'Min Order Qty',
+    status: 'Status',
+    isPublished: 'Published',
+    discount: 'Discount',
+    discountType: 'Discount Type',
+    flashSale: 'Flash Sale',
+    bundleDeals: 'Bundle Deals',
+    shipping: 'Shipping',
+    warehouse: 'Warehouse',
+  };
+
+  const formatSubProductErrorsForSummary = (
+    errs: any,
+    currentSection: string
+  ): Array<{ field: string; section: string; message: string }> => {
+    const result: Array<{ field: string; section: string; message: string }> = [];
+
+    const traverse = (obj: any, path: string[] = []) => {
+      for (const key in obj) {
+        const value = obj[key];
+        const currentPath = [...path, key];
+
+        if (value && typeof value === 'object') {
+          if (value.message) {
+            const fieldName = currentPath[currentPath.length - 1];
+            const label = fieldToLabel[fieldName] || fieldName
+              .replace(/([A-Z])/g, ' $1')
+              .replace(/^./, (str) => str.toUpperCase())
+              .trim();
+            const section = fieldToSection[fieldName] || currentSection;
+
+            result.push({
+              field: label,
+              section,
+              message: value.message,
+            });
+          } else if (value.type === 'array' && value.types) {
+            for (const typeKey in value.types) {
+              const typeValue = value.types[typeKey];
+              if (typeof typeValue === 'string') {
+                const fieldName = `${currentPath[currentPath.length - 1]}.${typeKey}`;
+                const label = fieldToLabel[typeKey] || typeKey
+                  .replace(/([A-Z])/g, ' $1')
+                  .replace(/^./, (str) => str.toUpperCase())
+                  .trim();
+                const section = fieldToSection[typeKey] || currentSection;
+
+                result.push({
+                  field: label,
+                  section,
+                  message: typeValue,
+                });
+              }
+            }
+          } else {
+            traverse(value, currentPath);
+          }
+        }
+      }
+    };
+
+    traverse(errs);
+    return result;
+  };
+
+  // Get display title from the linked product name or SKU
+  const subProductSku = watch('subProductData.sku');
+  const newProductName = watch('subProductData.newProductData.name');
+  const [linkedProductName, setLinkedProductName] = useState<string>('');
+
   const displayTitle = isEditMode
-    ? productName || 'Edit Sub Product'
+    ? linkedProductName || subProductSku || 'Edit Sub Product'
     : newProductName || 'Create Sub Product';
 
   useEffect(() => {
@@ -349,6 +505,9 @@ export default function CreateEditSubProduct({
             '📥 Edit mode - Extracted subProduct data:',
             subProductData
           );
+          // Capture linked product name for header display
+          const pName = subProductData?.product?.name || subProductData?.product?.title || '';
+          if (pName) setLinkedProductName(pName);
           const transformed = transformBackendToForm(subProductData);
           console.log('📥 Edit mode - Transformed form data:', transformed);
           methods.reset(transformed);
@@ -416,6 +575,100 @@ export default function CreateEditSubProduct({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const handleGenerate = async () => {
+    if (!session?.user?.token) {
+      toast.error('Authentication required. Please sign in again.');
+      return;
+    }
+
+    const formValues = methods.getValues();
+
+    // Prefer a linked parent product ID
+    const productId =
+      formValues.subProductData?.product ||
+      formValues.product ||
+      null;
+
+    const subProductId = isEditMode ? (id || null) : null;
+
+    // Build inline context from form fields for cases with no linked product
+    const inlineContext = !productId
+      ? {
+          name:
+            formValues.newProductData?.name ||
+            formValues.name ||
+            formValues.subProductData?.newProductData?.name ||
+            '',
+          type: formValues.type || formValues.newProductData?.type || '',
+          brand: formValues.brand || formValues.newProductData?.brand || '',
+          category: formValues.category || formValues.newProductData?.category || '',
+          originCountry:
+            formValues.originCountry ||
+            formValues.newProductData?.originCountry ||
+            '',
+          abv: formValues.abv || formValues.newProductData?.abv || null,
+          volumeMl: formValues.volumeMl || formValues.newProductData?.volumeMl || null,
+          shortDescription:
+            formValues.shortDescription ||
+            formValues.newProductData?.shortDescription ||
+            '',
+          description:
+            formValues.description ||
+            formValues.newProductData?.description ||
+            '',
+          flavorProfile: formValues.flavorProfile || [],
+          tags: formValues.tags || [],
+        }
+      : null;
+
+    if (!productId && !inlineContext?.name) {
+      toast.error('Add a product name in the Basic Info step before generating.');
+      return;
+    }
+
+    setIsGenerating(true);
+    const toastId = toast.loading('Generating content with AI...');
+
+    try {
+      const result = await subproductService.generateSubProductContent(
+        productId,
+        subProductId,
+        session.user.token,
+        inlineContext
+      );
+
+      const data = result?.data;
+      if (!data) throw new Error('No data returned from AI');
+
+      if (data.shortDescriptionOverride) {
+        methods.setValue('subProductData.shortDescriptionOverride', data.shortDescriptionOverride);
+      }
+      if (data.descriptionOverride) {
+        methods.setValue('subProductData.descriptionOverride', data.descriptionOverride);
+      }
+      if (Array.isArray(data.customKeywords) && data.customKeywords.length > 0) {
+        methods.setValue('subProductData.customKeywords', data.customKeywords);
+      }
+      if (data.tenantNotes) {
+        methods.setValue('subProductData.tenantNotes', data.tenantNotes);
+      }
+
+      toast.success('AI content generated! Check the Overrides step.', { id: toastId });
+
+      // Navigate to the Overrides step so user can review
+      const overridesIndex = STEPS.findIndex((s) => s.key === formParts.tenantOverrides);
+      if (overridesIndex !== -1) {
+        setDirection(1);
+        setCurrentStep(overridesIndex);
+      }
+    } catch (error: any) {
+      console.error('Generate error:', error);
+      toast.error(error.message || 'Failed to generate content', { id: toastId });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const handleNext = () => {
     setCompletedSteps((prev) => new Set([...prev, currentStep]));
     if (currentStep < STEPS.length - 1) {
@@ -436,53 +689,65 @@ export default function CreateEditSubProduct({
     setCurrentStep(stepIndex);
   };
 
-  const onSubmit: SubmitHandler<SubProductInput> = async (data) => {
-    console.log('=== FORM DATA SUBMITTED ===', JSON.stringify(data, null, 2));
+  /**
+   * Core save logic — shared by manual save, auto-save, and save-on-leave.
+   * `silent` = true suppresses toasts (used for auto-save).
+   */
+  const performSave = useCallback(async (data: SubProductInput, silent = false) => {
+    const sp = data.subProductData || (data as any);
+    const productId = sp.product || '';
+    const createNew = sp.createNewProduct ?? false;
+    const costPrice = Number(sp.costPrice ?? 0);
 
-    // Validate: either product must be selected OR createNewProduct must be true
-    // Check both flat (root) and nested (subProductData) paths
-    const productId = data.product || data.subProductData?.product;
-    const createNew =
-      data.createNewProduct || data.subProductData?.createNewProduct;
-
+    // Guard: must have a parent product or be creating a new one
     if (!productId && !createNew) {
-      toast.error('Please select a parent product or create a new product');
-      return;
+      if (!silent) toast.error('Please select a parent product or enable "Create New Product"');
+      return false;
     }
 
-    // Debug session state
-    console.log('=== SESSION DEBUG ===', {
-      hasSession: !!session,
-      hasUser: !!session?.user,
-      hasToken: !!session?.user?.token,
-      tokenLength: session?.user?.token?.length || 0,
-      userEmail: session?.user?.email || 'N/A',
-    });
-
-    if (!session?.user?.token) {
-      toast.error('Authentication required. Please sign in again.');
-      console.error('No auth token found. Session:', session);
-      return;
+    // Guard: when creating new product, name + type are required
+    if (createNew) {
+      const npName = sp.newProductData?.name?.trim() ?? '';
+      const npType = sp.newProductData?.type?.trim() ?? '';
+      if (!npName || !npType) {
+        if (!silent) toast.error('New product requires a name and type');
+        return false;
+      }
     }
 
-    setLoading(true);
-    setSaveStatus('saving');
+    // Guard: cost price required when linking to existing product
+    if (!createNew && costPrice <= 0) {
+      if (!silent) toast.error('Cost price must be greater than 0');
+      return false;
+    }
+
+    // Guard: each size variant must have a size value selected
+    const invalidSizes = (sp.sizes || []).filter((s: any) => !s.size || s.size.trim() === '');
+    if (invalidSizes.length > 0) {
+      if (!silent) toast.error(`${invalidSizes.length} size variant(s) are missing a size selection`);
+      return false;
+    }
+
+    const token = sessionRef.current?.user?.token;
+    if (!token) {
+      if (!silent) toast.error('Authentication required. Please sign in again.');
+      return false;
+    }
+
+    if (!silent) {
+      setLoading(true);
+      setSaveStatus('saving');
+    } else {
+      setIsAutoSaving(true);
+    }
 
     try {
-      console.log('=== RAW FORM DATA ===', JSON.stringify(data, null, 2));
-
       const transformedData = transformFormData(data);
-      console.log(
-        '=== TRANSFORMED DATA (SENDING TO SERVER) ===',
-        JSON.stringify(transformedData, null, 2)
-      );
+
+      let createdId: string | null = null;
 
       if (isEditMode && id) {
-        // Fetch current subproduct to compare stock changes made manually in the form
-        const currentSubProductResponse = await subproductService.getSubProduct(
-          id,
-          session.user.token
-        );
+        const currentSubProductResponse = await subproductService.getSubProduct(id, token);
         const currentSubProduct =
           currentSubProductResponse?.data?.subProduct ||
           currentSubProductResponse?.subProduct ||
@@ -492,136 +757,126 @@ export default function CreateEditSubProduct({
         const newStock = transformedData.totalStock || 0;
         const stockDelta = newStock - currentStock;
 
-        // Perform the update
-        await subproductService.updateSubProduct(
-          id,
-          transformedData,
-          session.user.token
-        );
+        await subproductService.updateSubProduct(id, transformedData, token);
 
-        // Handle inventory history adjustment based on the form changes
         if (stockDelta !== 0) {
           try {
             if (stockDelta > 0) {
-              await inventoryService.recordReceived(
-                id,
-                stockDelta,
-                session.user.token,
-                { reason: 'Form Update (Added)' }
-              );
+              await inventoryService.recordReceived(id, stockDelta, token, { reason: 'Form Update (Added)' });
             } else {
-              await inventoryService.adjustInventory(
-                id,
-                stockDelta, // AdjustInventory expects the delta (e.g. -5) or removed amount, assuming your backend adjusts by delta
-                'Form Update (Removed)',
-                session.user.token
-              );
+              await inventoryService.adjustInventory(id, stockDelta, 'Form Update (Removed)', token);
             }
-            console.log(
-              `Inventory successfully adjusted by ${stockDelta} via form save.`
-            );
           } catch (invError) {
-            console.error(
-              'Failed to record inventory movement on form save:',
-              invError
-            );
+            console.error('Failed to record inventory movement on form save:', invError);
           }
         }
 
-        toast.success('Sub Product updated successfully!');
+        if (!silent) toast.success('Sub Product updated successfully!');
       } else {
-        const response = await subproductService.createSubProduct(
-          transformedData,
-          session.user.token
-        );
-        const newSubProductId =
-          response?.data?.subProduct?._id || response?.data?.subProduct?.id;
-        if (newSubProductId) {
-          setCreatedSubProductId(newSubProductId);
+        const response = await subproductService.createSubProduct(transformedData, token);
+        createdId = response?.data?.subProduct?._id || response?.data?.subProduct?.id || null;
 
-          // Record initial stock if greater than 0
+        if (createdId) {
+          setCreatedSubProductId(createdId);
+
           if (transformedData.totalStock && transformedData.totalStock > 0) {
             try {
-              await inventoryService.recordReceived(
-                newSubProductId,
-                transformedData.totalStock,
-                session.user.token,
-                { reason: 'Initial Stock (Creation)' }
-              );
-              console.log('Initial stock movement recorded.');
+              await inventoryService.recordReceived(createdId, transformedData.totalStock, token, { reason: 'Initial Stock (Creation)' });
             } catch (invError) {
-              console.error(
-                'Failed to record initial stock movement:',
-                invError
-              );
+              console.error('Failed to record initial stock movement:', invError);
             }
           }
         }
-        toast.success('Sub Product created successfully!');
+
+        if (!silent) toast.success('Sub Product created successfully!');
       }
 
-      setSaveStatus('saved');
-      setIsSuccess(true);
+      // Mark as saved so unmount/beforeunload auto-save doesn't fire again
+      hasSavedRef.current = true;
       localStorage.removeItem('subproduct-draft');
+      setSaveStatus('saved');
 
-      setTimeout(() => setIsSuccess(false), 3000);
+      // After successful create, redirect to the edit page (Odoo-style)
+      if (!isEditMode && createdId) {
+        router.replace(`/ecommerce/sub-products/${createdId}/edit`);
+        return true;
+      }
+
+      setTimeout(() => setSaveStatus('idle'), 2000);
+
+      return true;
     } catch (error: any) {
       setSaveStatus('error');
       console.error('=== SAVE ERROR ===', error);
-
-      // Handle specific error types with better messages
-      const errorMessage = error.message || 'Failed to save sub product';
-
-      if (
-        errorMessage.includes('version') ||
-        errorMessage.includes('conflict')
-      ) {
-        toast.error(
-          'This record was modified by another user. Please refresh and try again.'
-        );
-      } else if (
-        errorMessage.includes('duplicate') ||
-        errorMessage.includes('already exists')
-      ) {
-        toast.error(
-          'This product already exists in your catalog. Try editing the existing entry instead.'
-        );
-      } else if (
-        errorMessage.includes('Product ID is required') ||
-        errorMessage.includes('product')
-      ) {
-        toast.error(
-          'Please select a product or create a new one before saving.'
-        );
-      } else if (
-        errorMessage.includes('cost price') ||
-        errorMessage.includes('costPrice')
-      ) {
-        toast.error('Please enter a valid cost price greater than 0.');
-      } else if (
-        errorMessage.includes('Tenant') ||
-        errorMessage.includes('tenant')
-      ) {
-        toast.error('Session error. Please sign out and sign back in.');
-      } else if (
-        errorMessage.includes('Unauthorized') ||
-        errorMessage.includes('401')
-      ) {
-        toast.error('Your session has expired. Please sign in again.');
-      } else if (
-        errorMessage.includes('network') ||
-        errorMessage.includes('fetch')
-      ) {
-        toast.error(
-          'Network error. Please check your internet connection and try again.'
-        );
-      } else {
-        toast.error(errorMessage);
+      if (!silent) {
+        const errorMessage = error.message || 'Failed to save sub product';
+        if (errorMessage.includes('version') || errorMessage.includes('conflict')) {
+          toast.error('This record was modified by another user. Please refresh and try again.');
+        } else if (errorMessage.includes('duplicate') || errorMessage.includes('already exists')) {
+          toast.error('This product already exists in your catalog. Try editing the existing entry instead.');
+        } else if (errorMessage.includes('Product ID is required') || errorMessage.includes('product')) {
+          toast.error('Please select a product or create a new one before saving.');
+        } else if (errorMessage.includes('cost price') || errorMessage.includes('costPrice')) {
+          toast.error('Please enter a valid cost price greater than 0.');
+        } else if (errorMessage.includes('Tenant') || errorMessage.includes('tenant')) {
+          toast.error('Session error. Please sign out and sign back in.');
+        } else if (errorMessage.includes('Unauthorized') || errorMessage.includes('401')) {
+          toast.error('Your session has expired. Please sign in again.');
+        } else if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+          toast.error('Network error. Please check your internet connection and try again.');
+        } else {
+          toast.error(errorMessage);
+        }
       }
+      return false;
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+      else setIsAutoSaving(false);
     }
+  }, [isEditMode, id]);
+
+  const onSubmit: SubmitHandler<SubProductInput> = async (data) => {
+    console.log('=== FORM DATA SUBMITTED ===', JSON.stringify(data, null, 2));
+    await performSave(data, false);
   };
+
+  // ── Auto-save on page leave (EDIT MODE ONLY — Odoo-style) ──────────────────
+  // In create mode: save only via explicit Save button. Navigate away = discard.
+  // In edit mode: auto-save unsaved changes when leaving the page.
+  const formValuesRef = useRef<SubProductInput>(methods.getValues());
+  useEffect(() => {
+    const sub = methods.watch((values) => {
+      formValuesRef.current = values as SubProductInput;
+      if (hasSavedRef.current) hasSavedRef.current = false;
+    });
+    return () => sub.unsubscribe();
+  }, [methods]);
+
+  // Unmount auto-save — ONLY for edit mode (updating existing record is safe)
+  useEffect(() => {
+    return () => {
+      if (!isEditMode || !id) return; // create mode: never auto-save on unmount
+      if (!isDirtyRef.current || isLoadingRef.current || hasSavedRef.current) return;
+      performSave(formValuesRef.current, true).catch(() => {});
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditMode, id]);
+
+  // Tab close / refresh — warn about unsaved changes; auto-save only in edit mode
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!isDirtyRef.current || isLoadingRef.current || hasSavedRef.current) return;
+      if (isEditMode && id) {
+        performSave(formValuesRef.current, true).catch(() => {});
+      }
+      // Always show native browser "unsaved changes" dialog
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [performSave, isEditMode, id]);
+
 
   const progress = ((currentStep + 1) / STEPS.length) * 100;
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
@@ -757,28 +1012,79 @@ export default function CreateEditSubProduct({
             <div className="flex items-center justify-between gap-2 lg:gap-4">
               {/* Left: Back + Title + Save + Settings + Mobile Toggle */}
               <div className="flex min-w-0 flex-1 items-center gap-2 lg:flex-none">
-                <Button
-                  variant="text"
-                  onClick={() => router.push(routes.eCommerce.subProducts)}
-                  className="flex-shrink-0"
+                <button
+                  type="button"
+                  onClick={async () => {
+                    // Edit mode: auto-save before leaving (Odoo-style)
+                    if (isEditMode && id && isDirty && !isLoading) {
+                      await performSave(methods.getValues(), true);
+                    }
+                    router.push(routes.eCommerce.subProducts);
+                  }}
+                  className="flex flex-shrink-0 items-center gap-1 rounded-lg px-1 py-1 text-gray-600 transition-all hover:bg-gray-100"
+                  title="Back to Sub Products"
                 >
                   <PiArrowLeft className="h-5 w-5" />
-                </Button>
+                </button>
 
                 <div className="min-w-0 flex-1 lg:flex-1">
                   <h1 className="truncate text-lg font-bold text-gray-900 sm:text-xl">
                     {displayTitle}
                   </h1>
-                  {lastSaved && (
-                    <Text className="flex hidden items-center gap-1 text-xs text-gray-400 sm:flex">
-                      <PiClock className="h-3 w-3" />
-                      {lastSaved.toLocaleTimeString()}
-                    </Text>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {lastSaved && (
+                      <Text className="hidden items-center gap-1 text-xs text-gray-400 sm:flex">
+                        <PiClock className="h-3 w-3" />
+                        {lastSaved.toLocaleTimeString()}
+                      </Text>
+                    )}
+                    {isAutoSaving && (
+                      <Text className="flex items-center gap-1 text-xs text-blue-500">
+                        <PiSpinner className="h-3 w-3 animate-spin" />
+                        Auto-saving…
+                      </Text>
+                    )}
+                  </div>
                 </div>
 
                 {/* Save & Settings */}
                 <div className="flex flex-shrink-0 items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleGenerate}
+                    disabled={isGenerating || isLoading}
+                    className="flex h-8 items-center gap-1.5 rounded-lg border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 px-2 text-purple-700 shadow-sm transition-all hover:border-purple-300 hover:from-purple-100 hover:to-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    title="Auto-generate content with AI"
+                  >
+                    {isGenerating ? (
+                      <PiSpinner className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <PiSparkle className="h-4 w-4" />
+                    )}
+                    <span className="hidden text-xs font-medium sm:inline">
+                      {isGenerating ? 'Generating...' : 'AI Generate'}
+                    </span>
+                  </button>
+
+                  {/* Create New Sub-product */}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      // Edit mode: auto-save before leaving
+                      if (isEditMode && id && isDirty && !isLoading) {
+                        await performSave(methods.getValues(), true);
+                      }
+                      localStorage.removeItem('subproduct-draft');
+                      router.push(routes.eCommerce.createSubProduct);
+                    }}
+                    className="flex h-8 items-center gap-1.5 rounded-lg border border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50 px-2 text-blue-700 shadow-sm transition-all hover:border-blue-300 hover:from-blue-100 hover:to-cyan-100"
+                    title="Create a new sub-product"
+                  >
+                    <PiPlus className="h-4 w-4" />
+                    <span className="hidden text-xs font-medium sm:inline">New Sub-product</span>
+                  </button>
+
+
                   <button
                     type="button"
                     onClick={methods.handleSubmit(onSubmit)}
@@ -1462,6 +1768,14 @@ export default function CreateEditSubProduct({
                 animate="visible"
                 className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-6"
               >
+                {/* Validation Summary */}
+                {errors && Object.keys(errors).length > 0 && (
+                  <ValidationSummary
+                    errors={formatSubProductErrorsForSummary(errors, STEPS[currentStep].label)}
+                    className="mb-4"
+                  />
+                )}
+
                 {/* Step Header */}
                 <div className="mb-6 flex items-center gap-3">
                   <div
@@ -1508,7 +1822,17 @@ export default function CreateEditSubProduct({
                   animate="visible"
                 >
                   {(() => {
-                    const Component = COMPONENTS[STEPS[currentStep].key];
+                    const key = STEPS[currentStep].key;
+                    if (key === formParts.basicInfo) {
+                      return (
+                        <SubProductBasicInfo
+                          onProductSelect={(_, name) => {
+                            if (name) setLinkedProductName(name);
+                          }}
+                        />
+                      );
+                    }
+                    const Component = COMPONENTS[key];
                     return Component ? <Component /> : null;
                   })()}
                 </motion.div>
@@ -1533,33 +1857,42 @@ export default function CreateEditSubProduct({
                 Previous
               </Button>
 
-              <div className="flex items-center gap-2 text-sm text-gray-500">
-                {fieldErrors.length > 0 && (
+              <div className="flex items-center gap-2 text-sm">
+                {fieldErrors.length > 0 ? (
                   <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2">
-                      <PiWarning className="h-4 w-4 text-amber-500" />
-                      <span className="font-medium text-amber-600">
-                        Please fix these fields:
+                    <div className="flex items-center gap-2 text-amber-600">
+                      <PiWarning className="h-4 w-4" />
+                      <span className="font-medium">
+                        {fieldErrors.length} validation error{fieldErrors.length !== 1 ? 's' : ''}
                       </span>
                     </div>
                     <div className="mt-1 flex flex-wrap gap-1">
-                      {fieldErrors.slice(0, 8).map((errorKey) => (
-                        <span
-                          key={errorKey}
-                          className="inline-flex items-center rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
-                        >
-                          {errorKey
-                            .replace('subProductData.', '')
-                            .replace(/([A-Z])/g, ' $1')
-                            .trim()}
-                        </span>
-                      ))}
-                      {fieldErrors.length > 8 && (
-                        <span className="text-xs text-amber-600">
-                          +{fieldErrors.length - 8} more
+                      {fieldErrors.slice(0, 6).map((errorKey) => {
+                        const displayName = errorKey
+                          .replace('subProductData.', '')
+                          .replace(/([A-Z])/g, ' $1')
+                          .replace(/\./g, ' ')
+                          .trim();
+                        return (
+                          <span
+                            key={errorKey}
+                            className="inline-flex items-center rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700"
+                          >
+                            {displayName}
+                          </span>
+                        );
+                      })}
+                      {fieldErrors.length > 6 && (
+                        <span className="text-xs text-red-500">
+                          +{fieldErrors.length - 6} more
                         </span>
                       )}
                     </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-green-600">
+                    <PiCheck className="h-4 w-4" />
+                    <span>All fields valid</span>
                   </div>
                 )}
               </div>

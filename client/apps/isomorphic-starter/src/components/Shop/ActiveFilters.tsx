@@ -1,5 +1,5 @@
 import React, { useMemo, useCallback } from 'react';
-import * as Icon from "react-icons/pi";
+import * as Icon from 'react-icons/pi';
 import { FilterState } from '@/types/filter.types';
 
 interface ActiveFiltersProps {
@@ -7,284 +7,230 @@ interface ActiveFiltersProps {
   updateFilter: (key: keyof FilterState, value: any) => void;
   onClearAll: () => void;
   totalProducts: number;
+  isLoading?: boolean;
 }
 
-interface FilterItem {
+interface FilterChip {
   key: keyof FilterState;
   value: string;
   label: string;
   displayLabel: string;
-  icon?: React.ReactNode;
-  isSpecial?: boolean;
-}
-
-interface FilterConfig {
-  key: keyof FilterState;
-  arrayKey?: keyof FilterState;
-  displayLabel: string;
   icon: React.ReactNode;
-  formatValue?: (val: any) => string;
-  formatLabel?: (val: any) => string;
-  isSpecial?: boolean;
-  defaultValue?: any;
+  color: 'default' | 'sale' | 'rating' | 'price' | 'alcohol';
 }
 
-const FILTER_CONFIGS: Record<string, Omit<FilterConfig, 'key'>> = {
-  size: { displayLabel: 'Size', icon: <Icon.PiRuler size={12} /> },
-  color: { displayLabel: 'Color', icon: <Icon.PiPalette size={12} /> },
-  brand: { displayLabel: 'Brand', icon: <Icon.PiBuildingApartment size={12} /> },
-  originCountry: { displayLabel: 'Origin', icon: <Icon.PiGlobe size={12} /> },
-  categoryType: { 
-    displayLabel: 'Category', 
-    icon: <Icon.PiGridFour size={12} />,
-    formatValue: (val: string) => val.replace(/-/g, ' ')
-  },
-  subCategoryType: { 
-    displayLabel: 'Subcategory', 
-    icon: <Icon.PiFolders size={12} />,
-    formatValue: (val: string) => val.replace(/-/g, ' ')
-  },
-  flavorCategory: { 
-    displayLabel: 'Flavor', 
-    icon: <Icon.PiAirplaneTilt size={12} />,
-    formatValue: (val: string) => val.replace(/-/g, ' ')
-  },
-  minRating: { 
-    displayLabel: 'Rating', 
-    icon: <Icon.PiStar size={12} />,
-    formatLabel: (val: number) => `${val}+ Stars`
-  },
-  priceRange: { 
-    displayLabel: 'Price Range', 
-    icon: <Icon.PiCurrencyDollar size={12} />,
-    isSpecial: true,
-    defaultValue: { min: 0, max: 100000 }
-  },
-  abvRange: { 
-    displayLabel: 'Alcohol', 
-    icon: <Icon.PiWine size={12} />,
-    isSpecial: true
-  },
-  volumeRange: { 
-    displayLabel: 'Volume', 
-    icon: <Icon.PiDrop size={12} />
-  },
-  showOnlySale: { 
-    displayLabel: 'Sale', 
-    icon: <Icon.PiTagSimple size={12} />,
-    isSpecial: true
-  }
+const CONFIGS: Partial<Record<keyof FilterState, {
+  label: string;
+  icon: React.ReactNode;
+  color?: FilterChip['color'];
+  formatValue?: (v: any) => string;
+}>> = {
+  size:            { label: 'Size',        icon: <Icon.PiRuler size={11} /> },
+  color:           { label: 'Color',       icon: <Icon.PiPalette size={11} /> },
+  brand:           { label: 'Brand',       icon: <Icon.PiBuildingApartment size={11} /> },
+  originCountry:    { label: 'Origin',      icon: <Icon.PiGlobe size={11} /> },
+  categoryType:    { label: 'Category',    icon: <Icon.PiGridFour size={11} />,    formatValue: (v: string) => v.replace(/-/g, ' ') },
+  subCategoryType: { label: 'Subcategory', icon: <Icon.PiFolders size={11} />,     formatValue: (v: string) => v.replace(/-/g, ' ') },
+  flavorCategory:  { label: 'Flavor',      icon: <Icon.PiAirplaneTilt size={11} />, formatValue: (v: string) => v.replace(/-/g, ' ') },
+  minRating:       { label: 'Rating',      icon: <Icon.PiStar size={11} />,        color: 'rating', formatValue: (v: number) => `${v}+ Stars` },
+  priceRange:      { label: 'Price',       icon: <Icon.PiCurrencyNgn size={11} />, color: 'price' },
+  abvRange:        { label: 'Alcohol',     icon: <Icon.PiWine size={11} />,        color: 'alcohol' },
+  volumeRange:     { label: 'Volume',      icon: <Icon.PiDrop size={11} /> },
+  showOnlySale:    { label: 'On Sale',   icon: <Icon.PiTagSimple size={11} />,   color: 'sale' },
 };
 
-const SPECIAL_FILTERS = ['priceRange', 'abvRange', 'volumeRange', 'showOnlySale', 'minRating'];
+const DEFAULT_PRICE = { min: 0, max: 100000 };
 
-const ActiveFilters: React.FC<ActiveFiltersProps> = ({ 
-  filters, 
-  updateFilter, 
-  onClearAll, 
-  totalProducts 
+const CHIP_STYLES: Record<FilterChip['color'], string> = {
+  default: 'bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-200 hover:border-gray-300',
+  sale:    'bg-red-50  hover:bg-red-100  text-red-700  border-red-200  hover:border-red-300',
+  rating:  'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200 hover:border-amber-300',
+  price:   'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200 hover:border-emerald-300',
+  alcohol: 'bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200 hover:border-purple-300',
+};
+
+const ActiveFilters: React.FC<ActiveFiltersProps> = ({
+  filters,
+  updateFilter,
+  onClearAll,
+  totalProducts,
+  isLoading = false,
 }) => {
-  const buildFilterItems = useCallback((): FilterItem[] => {
-    const items: FilterItem[] = [];
-    
-    // Process simple/scalar filters
-    const scalarFilters: (keyof FilterState)[] = ['size', 'color', 'minRating', 'showOnlySale'];
-    
-    scalarFilters.forEach(key => {
-      const value = filters[key];
-      if (value && value !== 0) {
-        const config = FILTER_CONFIGS[key];
-        if (config) {
-          const label = config.formatLabel ? config.formatLabel(value) : 
-                       config.formatValue ? config.formatValue(value) : 
-                       String(value);
-          items.push({
-            key,
-            value: String(value),
-            label,
-            displayLabel: config.displayLabel,
-            icon: config.icon,
-            isSpecial: config.isSpecial
-          });
-        }
-      }
-    });
+  const chips = useMemo(() => {
+    const result: FilterChip[] = [];
 
-    // Process array filters (brand, originCountry, categoryType, subCategoryType, flavorCategory)
+    const addChip = (key: keyof FilterState, value: any, label: string) => {
+      const cfg = CONFIGS[key];
+      if (!cfg) return;
+      result.push({
+        key,
+        value: String(value),
+        label,
+        displayLabel: cfg.label,
+        icon: cfg.icon,
+        color: cfg.color ?? 'default',
+      });
+    };
+
+    // Scalar filters
+    if (filters.size) {
+      addChip('size', filters.size, filters.size);
+    }
+    if (filters.color) {
+      addChip('color', filters.color, filters.color);
+    }
+    if (filters.minRating) {
+      addChip('minRating', String(filters.minRating), `${filters.minRating}+ Stars`);
+    }
+
+    // Boolean filter
+    if (filters.showOnlySale) {
+      addChip('showOnlySale', 'true', 'On Sale');
+    }
+
+    // Array filters
     const arrayFilters: (keyof FilterState)[] = ['brand', 'originCountry', 'categoryType', 'subCategoryType', 'flavorCategory'];
-    
     arrayFilters.forEach(key => {
       const value = filters[key];
-      if (value) {
-        const config = FILTER_CONFIGS[key];
-        if (!config) return;
-        
-        const values = Array.isArray(value) ? value : [value];
-        values.forEach(val => {
-          if (val) {
-            const label = config.formatValue ? config.formatValue(val) : String(val);
-            items.push({
-              key,
-              value: String(val),
-              label,
-              displayLabel: config.displayLabel,
-              icon: config.icon
-            });
-          }
-        });
-      }
+      if (!value) return;
+      const values = Array.isArray(value) ? value : [value];
+      values.forEach(v => {
+        if (!v) return;
+        const cfg = CONFIGS[key];
+        const strVal = String(v);
+        const label = cfg?.formatValue ? cfg.formatValue(strVal) : strVal;
+        addChip(key, strVal, label);
+      });
     });
 
-    // Process special filters
-    if (filters.priceRange) {
-      const { min, max } = filters.priceRange;
-      const defaultPrice = { min: 0, max: 100000 };
-      if (min !== defaultPrice.min || max !== defaultPrice.max) {
-        items.push({
-          key: 'priceRange',
-          value: `${min}-${max}`,
-          label: `₦${min.toLocaleString()} - ₦${max.toLocaleString()}`,
-          displayLabel: 'Price Range',
-          icon: <Icon.PiCurrencyDollar size={12} />,
-          isSpecial: true
-        });
+    // Price range
+    if (filters.priceRange && filters.priceRange.min != null && filters.priceRange.max != null) {
+      if (filters.priceRange.min !== DEFAULT_PRICE.min || filters.priceRange.max !== DEFAULT_PRICE.max) {
+        addChip('priceRange', `${filters.priceRange.min}-${filters.priceRange.max}`, 
+          `₦${filters.priceRange.min.toLocaleString()} – ₦${filters.priceRange.max.toLocaleString()}`);
       }
     }
 
+    // ABV range
     if (filters.abvRange) {
       const { min, max } = filters.abvRange;
-      if (max === 0) {
-        items.push({
-          key: 'abvRange',
-          value: 'non-alcoholic',
-          label: 'Non-Alcoholic',
-          displayLabel: 'Alcohol',
-          icon: <Icon.PiWine size={12} />,
-          isSpecial: true
-        });
-      } else if (min !== 0 || max !== 100) {
-        items.push({
-          key: 'abvRange',
-          value: `${min}-${max}`,
-          label: `${min}% - ${max}% ABV`,
-          displayLabel: 'Alcohol',
-          icon: <Icon.PiWine size={12} />,
-          isSpecial: true
-        });
-      }
+      const label = max === 0 ? 'Non-Alcoholic' : `${min}% – ${max}% ABV`;
+      addChip('abvRange', `${min}-${max}`, label);
     }
 
+    // Volume range
     if (filters.volumeRange) {
-      items.push({
-        key: 'volumeRange',
-        value: filters.volumeRange,
-        label: String(filters.volumeRange),
-        displayLabel: 'Volume',
-        icon: <Icon.PiDrop size={12} />,
-        isSpecial: true
-      });
+      addChip('volumeRange', filters.volumeRange, filters.volumeRange);
     }
 
-    return items;
+    return result;
   }, [filters]);
 
-  const handleRemoveFilter = useCallback((item: FilterItem) => {
-    if (item.isSpecial) {
-      // Handle special filter types
-      switch (item.key) {
-        case 'priceRange':
-          updateFilter('priceRange', { min: 0, max: 100000 });
-          break;
-        case 'abvRange':
-        case 'volumeRange':
-          updateFilter(item.key, null);
-          break;
-        case 'showOnlySale':
-          updateFilter('showOnlySale', false);
-          break;
-        case 'minRating':
-          updateFilter('minRating', null);
-          break;
-      }
-    } else {
-      // Handle array and simple filters
-      const currentValue = filters[item.key];
-      if (Array.isArray(currentValue)) {
-        updateFilter(item.key, currentValue.filter(v => String(v) !== item.value));
-      } else {
-        updateFilter(item.key, null);
+  const hasFilters = chips.length > 0;
+  const productWord = totalProducts === 1 ? 'Product' : 'Products';
+
+  const removeChip = useCallback((chip: FilterChip) => {
+    switch (chip.key) {
+      case 'priceRange':
+        updateFilter('priceRange', DEFAULT_PRICE);
+        break;
+      case 'abvRange':
+      case 'volumeRange':
+        updateFilter(chip.key, null);
+        break;
+      case 'showOnlySale':
+        updateFilter('showOnlySale', false);
+        break;
+      case 'minRating':
+        updateFilter('minRating', null);
+        break;
+      default: {
+        const current = filters[chip.key];
+        if (Array.isArray(current)) {
+          const next = current.filter(v => String(v) !== chip.value);
+          updateFilter(chip.key, next.length ? next : null);
+        } else {
+          updateFilter(chip.key, null);
+        }
       }
     }
   }, [filters, updateFilter]);
 
-  const handleKeyDown = useCallback((event: React.KeyboardEvent, item: FilterItem) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      handleRemoveFilter(item);
-    }
-  }, [handleRemoveFilter]);
-
-  const activeFilters = useMemo(() => buildFilterItems(), [buildFilterItems]);
-  const hasActiveFilters = activeFilters.length > 0;
-  const productText = totalProducts === 1 ? 'Product' : 'Products';
-
-  if (!hasActiveFilters) {
-    return (
-      <div className="flex items-center gap-3 mt-4">
-        <div className="total-product font-medium">
-          <span className="text-lg">{totalProducts}</span>
-          <span className="text-secondary pl-1">{productText} Found</span>
+  const resultBar = (
+    <div className="flex items-center gap-2 shrink-0">
+      {isLoading ? (
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+          <span className="text-sm text-gray-500">Filtering...</span>
         </div>
+      ) : totalProducts === 0 ? (
+        <span className="text-sm font-medium text-gray-400">No results</span>
+      ) : (
+        <>
+          <span className="text-base font-bold text-gray-900">{totalProducts.toLocaleString()}</span>
+          <span className="text-sm text-gray-500">{productWord}</span>
+        </>
+      )}
+    </div>
+  );
+
+  if (!hasFilters) {
+    return (
+      <div className="flex items-center justify-between gap-3 mt-4 min-h-[2.25rem]">
+        {resultBar}
       </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-3 mt-4 flex-wrap">
-      <div className="total-product font-medium">
-        <span className="text-lg">{totalProducts}</span>
-        <span className="text-secondary pl-1">{productText} Found</span>
-      </div>
-      
-      <div className="w-px h-4 bg-line hidden sm:block" />
-      
-      <div className="flex items-center gap-3 flex-wrap flex-1">
-        {activeFilters.map((item) => (
-          <button
-            key={`${item.key}-${item.value}`}
-            onClick={() => handleRemoveFilter(item)}
-            onKeyDown={(e) => handleKeyDown(e, item)}
-            className={`
-              inline-flex items-center gap-2 px-3 py-1.5 
-              rounded-full capitalize cursor-pointer 
-              transition-all shadow-sm text-left
-              focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400
-              ${item.key === 'showOnlySale' 
-                ? 'bg-red-50 hover:bg-red-100 text-red-700 border border-red-200' 
-                : item.key === 'minRating'
-                ? 'bg-yellow-50 hover:bg-yellow-100 text-yellow-700 border border-yellow-200'
-                : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200'
-              }
-            `}
-            aria-label={`Remove ${item.label} filter`}
-          >
-            <div className="flex items-center gap-1.5">
-              <span className="opacity-70">{item.icon}</span>
-              <span className="text-xs font-medium opacity-80">{item.displayLabel}:</span>
-              <span className="text-sm whitespace-nowrap">{item.label}</span>
-            </div>
-            <Icon.PiXBold className="flex-shrink-0 ml-1" size={12} />
-          </button>
-        ))}
+    <div className="mt-4 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        {resultBar}
         
         <button
           onClick={onClearAll}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-red-300 cursor-pointer hover:bg-red-500 hover:text-white transition-all shadow-sm text-red-600 hover:border-red-500 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-400"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
           aria-label="Clear all filters"
         >
-          <Icon.PiTrash size={12} />
-          <span className="whitespace-nowrap">Clear All</span>
+          <Icon.PiTrash size={13} />
+          <span className="hidden sm:inline">Clear all</span>
+          <span className="sm:hidden">Clear</span>
         </button>
+      </div>
+
+      <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:flex-wrap sm:overflow-visible scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+        {chips.map(chip => (
+          <button
+            key={`${chip.key}-${chip.value}`}
+            onClick={() => removeChip(chip)}
+            className={`
+              group inline-flex items-center gap-1.5 px-2.5 py-1.5 shrink-0
+              rounded-full border text-xs font-medium cursor-pointer select-none
+              transition-all duration-200
+              focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-400
+              active:scale-95
+              ${CHIP_STYLES[chip.color]}
+              hover:shadow-sm
+            `}
+            aria-label={`Remove ${chip.displayLabel}: ${chip.label} filter`}
+          >
+            <span className="opacity-60 shrink-0 group-hover:opacity-80 transition-opacity">
+              {chip.icon}
+            </span>
+            <span className="opacity-70 shrink-0 hidden xs:inline">{chip.displayLabel}:</span>
+            <span className="truncate max-w-[120px] sm:max-w-[150px] capitalize">
+              {chip.label}
+            </span>
+            <Icon.PiXBold 
+              size={10} 
+              className="ml-0.5 shrink-0 opacity-50 group-hover:opacity-80 transition-opacity" 
+            />
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-between text-xs text-gray-400">
+        <span>{chips.length} filter{chips.length !== 1 ? 's' : ''} active</span>
       </div>
     </div>
   );

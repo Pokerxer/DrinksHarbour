@@ -82,6 +82,7 @@ export default function ProductIdentification({
   const productName = watch('name');
   const productType = watch('type');
   const selectedCategory = watch('category');
+  const selectedSubCategory = watch('subCategory');
   const [slugFocused, setSlugFocused] = useState(false);
   const [nameFocused, setNameFocused] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -93,6 +94,7 @@ export default function ProductIdentification({
   const [isLoadingBrands, setIsLoadingBrands] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showBrandModal, setShowBrandModal] = useState(false);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
   // Fetch categories on mount
   useEffect(() => {
@@ -152,9 +154,15 @@ export default function ProductIdentification({
 
   // Fetch subcategories when category changes
   useEffect(() => {
-    const fetchSubCategories = async () => {
+    const fetchSubCategoriesIfNeeded = async () => {
       if (!session?.user?.token || !selectedCategory) {
-        setSubCategories([]);
+        return;
+      }
+
+      // Skip if already loaded for this category
+      const alreadyLoaded = subCategories.length > 0 && 
+        subCategories.some(sc => sc.parent === selectedCategory);
+      if (alreadyLoaded) {
         return;
       }
 
@@ -164,25 +172,22 @@ export default function ProductIdentification({
           session.user.token, 
           selectedCategory
         );
-        // Ensure we always set an array
-        setSubCategories(Array.isArray(subCats) ? subCats : []);
+        const newSubCats = Array.isArray(subCats) ? subCats : [];
+        // Only update if the category hasn't changed during fetch
+        if (watch('category') === selectedCategory) {
+          setSubCategories(newSubCats);
+        }
       } catch (error) {
         console.error('Failed to fetch subcategories:', error);
-        setSubCategories([]);
       } finally {
-        setIsLoadingSubCategories(false);
+        if (watch('category') === selectedCategory) {
+          setIsLoadingSubCategories(false);
+        }
       }
     };
 
-    fetchSubCategories();
-  }, [selectedCategory, session]);
-
-  // Reset subcategory when category changes
-  useEffect(() => {
-    if (selectedCategory) {
-      setValue('subCategory', '');
-    }
-  }, [selectedCategory, setValue]);
+    fetchSubCategoriesIfNeeded();
+  }, [selectedCategory, session?.user?.token, subCategories.length]);
 
   // Auto-generate slug when name changes
   useEffect(() => {
@@ -197,7 +202,10 @@ export default function ProductIdentification({
 
   const selectedType = productTypes.find((t) => t.value === productType);
   const selectedCategoryObj = categories.find((c) => c._id === selectedCategory);
-  const selectedSubCategoryObj = subCategories.find((s) => s._id === watch('subCategory'));
+  const selectedSubCategoryObj = subCategories.find((s) => s._id === selectedSubCategory);
+
+  // Check if we have a selected subcategory that's not in the list yet
+  const hasPendingSubCategory = selectedSubCategory && !selectedSubCategoryObj && !isLoadingSubCategories;
 
   // Helper function to find category ID by name (case-insensitive, fuzzy match)
   const findCategoryByName = (categoryName: string, categoriesList: Category[]): string | null => {
@@ -458,19 +466,30 @@ export default function ProductIdentification({
               value: cat._id,
               label: cat.name,
             }))}
-            value={categories.find((c) => c._id === watch('category')) ? {
-              value: watch('category'),
-              label: categories.find((c) => c._id === watch('category'))?.name,
-            } : ''}
+            value={
+              (() => {
+                const currentCatId = watch('category');
+                const found = categories.find((c) => c._id === currentCatId);
+                if (found) {
+                  return { value: found._id, label: found.name };
+                }
+                return '';
+              })()
+            }
             onChange={(option: SelectOption) => {
-              setValue('category', option.value as string);
+              setValue('category', option.value as string, { shouldDirty: true });
+              // Reset subcategory when category changes
+              setValue('subCategory', '');
+              setSubCategories([]);
             }}
             disabled={isLoadingCategories}
             error={errors.category?.message as string}
             className="w-full"
           />
           <Text className="mt-2 text-xs text-gray-500">
-            {categories.length > 0
+            {isLoadingCategories
+              ? 'Loading categories...'
+              : categories.length > 0
               ? `${categories.length} categories available`
               : 'No categories loaded'}
           </Text>
@@ -485,32 +504,63 @@ export default function ProductIdentification({
                 {selectedSubCategoryObj.name}
               </Badge>
             )}
+            {hasPendingSubCategory && selectedSubCategory && (
+              <Badge size="sm" color="warning" variant="flat">
+                Pending Load
+              </Badge>
+            )}
           </label>
           <Select
             placeholder={
               !selectedCategory
                 ? 'Select category first'
                 : isLoadingSubCategories
-                ? 'Loading...'
+                ? 'Loading sub-categories...'
+                : selectedSubCategory && !selectedSubCategoryObj
+                ? 'Subcategory selected (refreshing...)'
                 : subCategories.length === 0
-                ? 'No sub-categories available'
+                ? 'No sub-categories available for this category'
                 : 'Search and select sub-category'
             }
             options={subCategories.map((subCat) => ({
               value: subCat._id,
               label: subCat.name,
             }))}
-            value={subCategories.find((s) => s._id === watch('subCategory')) ? {
-              value: watch('subCategory'),
-              label: subCategories.find((s) => s._id === watch('subCategory'))?.name,
-            } : ''}
+            value={
+              (() => {
+                // First check if the subcategory is in our loaded list
+                if (selectedSubCategoryObj) {
+                  return { value: selectedSubCategoryObj._id, label: selectedSubCategoryObj.name };
+                }
+                // If we have a selected subcategory that's not in the list yet
+                // Keep displaying it even if subcategories haven't loaded
+                if (selectedSubCategory) {
+                  if (isLoadingSubCategories) {
+                    return { value: selectedSubCategory, label: 'Loading...' };
+                  }
+                  // Subcategories are loaded but this one isn't in the list
+                  // This could be because it belongs to a different category or was deleted
+                  return { value: selectedSubCategory, label: 'Unknown Subcategory' };
+                }
+                return '';
+              })()
+            }
             onChange={(option: SelectOption) => {
-              setValue('subCategory', option.value as string);
+              setValue('subCategory', option.value as string, { shouldDirty: true });
             }}
-            disabled={!selectedCategory || isLoadingSubCategories}
+            disabled={!selectedCategory}
             error={errors.subCategory?.message as string}
             className="w-full"
           />
+          <Text className="mt-2 text-xs text-gray-500">
+            {!selectedCategory
+              ? 'Select a category to see available sub-categories'
+              : isLoadingSubCategories
+              ? 'Loading...'
+              : subCategories.length > 0
+              ? `${subCategories.length} sub-categories available`
+              : 'No sub-categories found for this category'}
+          </Text>
         </div>
 
         {/* Brand - Searchable */}
@@ -536,18 +586,29 @@ export default function ProductIdentification({
               value: brand._id,
               label: `${brand.name}${brand.isPremium ? ' ⭐' : ''}${brand.verified ? ' ✓' : ''}`,
             }))}
-            value={brands.find((b) => b._id === watch('brand')) ? {
-              value: watch('brand'),
-              label: `${brands.find((b) => b._id === watch('brand'))?.name}${brands.find((b) => b._id === watch('brand'))?.isPremium ? ' ⭐' : ''}${brands.find((b) => b._id === watch('brand'))?.verified ? ' ✓' : ''}`,
-            } : ''}
+            value={
+              (() => {
+                const currentBrandId = watch('brand');
+                const found = brands.find((b) => b._id === currentBrandId);
+                if (found) {
+                  return { 
+                    value: found._id, 
+                    label: `${found.name}${found.isPremium ? ' ⭐' : ''}${found.verified ? ' ✓' : ''}` 
+                  };
+                }
+                return '';
+              })()
+            }
             onChange={(option: SelectOption) => {
-              setValue('brand', option.value as string);
+              setValue('brand', option.value as string, { shouldDirty: true });
             }}
             disabled={isLoadingBrands}
             className="w-full"
           />
           <Text className="mt-2 text-xs text-gray-500">
-            {brands.length > 0
+            {isLoadingBrands
+              ? 'Loading brands...'
+              : brands.length > 0
               ? `${brands.length} brands available`
               : 'No brands loaded'}
           </Text>
@@ -585,12 +646,21 @@ export default function ProductIdentification({
               value: type.value,
               label: `${type.label} (${type.category})`,
             }))}
-            value={productTypes.find((t) => t.value === watch('type')) ? {
-              value: watch('type'),
-              label: `${productTypes.find((t) => t.value === watch('type'))?.label} (${productTypes.find((t) => t.value === watch('type'))?.category})`,
-            } : ''}
+            value={
+              (() => {
+                const currentType = watch('type');
+                const found = productTypes.find((t) => t.value === currentType);
+                if (found) {
+                  return { 
+                    value: found.value, 
+                    label: `${found.label} (${found.category})` 
+                  };
+                }
+                return '';
+              })()
+            }
             onChange={(option: SelectOption) => {
-              setValue('type', option.value as string);
+              setValue('type', option.value as string, { shouldDirty: true });
             }}
             error={errors.type?.message as string}
             className="w-full"

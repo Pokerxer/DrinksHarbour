@@ -6,6 +6,9 @@ const User = require('../models/User');
 const Tenant = require('../models/Tenant');
 const { ForbiddenError, UnauthorizedError } = require('../utils/errors');
 
+// super_admin has all tenant_owner privileges
+const TENANT_OWNER_ROLES = ['super_admin', 'admin', 'tenant_owner'];
+
 /**
  * Protect routes - verifies JWT and attaches user to req
  * Alias: authenticate
@@ -177,16 +180,17 @@ const superAdminOnly = (req, res, next) => {
 };
 
 /**
- * Tenant admin / owner only
+ * Tenant admin / owner only (super_admin bypasses tenant check)
  */
 const tenantAdminOnly = (req, res, next) => {
-  if (!req.user || !['tenant_owner', 'tenant_admin'].includes(req.user.role)) {
+  if (!req.user || !['super_admin', 'admin', 'tenant_owner', 'tenant_admin'].includes(req.user.role)) {
     throw new ForbiddenError('Tenant admin access required');
   }
+  // super_admin/admin bypass tenant membership check
+  if (['super_admin', 'admin'].includes(req.user.role)) return next();
   if (!req.tenant) {
     throw new ForbiddenError('Tenant context required');
   }
-  // Verify user belongs to this tenant
   if (req.user.tenant?.toString() !== req.tenant._id.toString()) {
     throw new ForbiddenError('You do not belong to this tenant');
   }
@@ -199,13 +203,9 @@ const tenantAdminOnly = (req, res, next) => {
  * or with a tenant context (to assign to a specific tenant)
  */
 const tenantAdminOrSuperAdmin = (req, res, next) => {
-  // Allow superadmins without requiring tenant context
-  if (req.user?.role === 'super_admin') {
-    // For superadmins, we still try to get tenant if provided
-    // but don't block if no tenant - superadmin can create for themselves
-    return next();
-  }
-  
+  // Allow super_admin and admin without requiring tenant context
+  if (['super_admin', 'admin'].includes(req.user?.role)) return next();
+
   // Allow tenant owners and admins
   if (!req.user || !['tenant_owner', 'tenant_admin'].includes(req.user.role)) {
     throw new ForbiddenError('Tenant admin or super admin access required');
@@ -213,7 +213,6 @@ const tenantAdminOrSuperAdmin = (req, res, next) => {
   if (!req.tenant) {
     throw new ForbiddenError('Tenant context required');
   }
-  // Verify user belongs to this tenant
   if (req.user.tenant?.toString() !== req.tenant._id.toString()) {
     throw new ForbiddenError('You do not belong to this tenant');
   }
@@ -221,16 +220,16 @@ const tenantAdminOrSuperAdmin = (req, res, next) => {
 };
 
 /**
- * Any authenticated tenant user (owner, admin, staff)
+ * Any authenticated tenant user (owner, admin, staff) — super_admin bypasses
  */
 const tenantUserOnly = (req, res, next) => {
+  if (['super_admin', 'admin'].includes(req.user?.role)) return next();
   if (!req.user || !['tenant_owner', 'tenant_admin', 'tenant_staff'].includes(req.user.role)) {
     throw new ForbiddenError('Tenant user access required');
   }
   if (!req.tenant) {
     throw new ForbiddenError('Tenant context required');
   }
-  // Verify user belongs to this tenant
   if (req.user.tenant?.toString() !== req.tenant._id.toString()) {
     throw new ForbiddenError('You do not belong to this tenant');
   }

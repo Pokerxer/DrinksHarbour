@@ -224,7 +224,7 @@ const CategoryBanner: React.FC<CategoryBannerProps> = ({
             }
           }
         } catch (err) {
-          console.log('Using fallback data for category:', categorySlug);
+          console.warn('Using fallback data for category:', categorySlug);
         }
       }
       

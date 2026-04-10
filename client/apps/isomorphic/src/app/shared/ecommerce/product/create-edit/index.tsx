@@ -43,6 +43,7 @@ import { routes } from '@/config/routes';
 import { productService } from '@/services/product.service';
 import { defaultValues, formParts } from './form-utils';
 import ProductSubProductsPanel from './product-subproducts';
+import { ValidationSummary } from '@/components/validation-summary';
 
 const STEPS = [
   { key: formParts.identification, label: 'Identification', icon: PiTag, color: 'blue' as const, description: 'Basic details' },
@@ -137,6 +138,19 @@ const transformFormData = (data: CreateProductInput) => {
   const slug = data.slug || data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const proof = data.isAlcoholic && data.abv ? data.abv * 2 : undefined;
   const requiresAgeVerification = data.isAlcoholic === true ? true : data.requiresAgeVerification;
+  
+  let publishedAtValue: Date | null | undefined = undefined;
+  
+  if (data.isPublished) {
+    if (data.publishedAt) {
+      publishedAtValue = new Date(data.publishedAt);
+      if (isNaN(publishedAtValue.getTime())) {
+        publishedAtValue = new Date();
+      }
+    } else {
+      publishedAtValue = new Date();
+    }
+  }
 
   return {
     name: data.name,
@@ -165,14 +179,14 @@ const transformFormData = (data: CreateProductInput) => {
     distilleryName: data.distilleryName,
     breweryName: data.breweryName,
     wineryName: data.wineryName,
-    productionMethod: data.productionMethod,
+    productionMethod: data.productionMethod || undefined,
     caskType: data.caskType,
     finish: data.finish,
     category: data.category,
     subCategory: data.subCategory,
     tags: data.tags,
     flavors: data.flavors,
-    style: data.style,
+    style: data.style || undefined,
     shortDescription: data.shortDescription,
     description: data.description,
     tastingNotes: data.tastingNotes,
@@ -201,7 +215,7 @@ const transformFormData = (data: CreateProductInput) => {
     allowReviews: data.allowReviews,
     requiresAgeVerification,
     isPublished: data.isPublished ?? false,
-    publishedAt: data.isPublished ? new Date() : null,
+    publishedAt: publishedAtValue,
     discontinuedAt: data.discontinuedAt,
     subProductData: data.subProductData,
   };
@@ -369,6 +383,228 @@ export default function CreateEditProduct({
 
   const isEditMode = Boolean(slug || id);
 
+  const fieldToSection: Record<string, string> = {
+    name: 'Identification',
+    slug: 'Identification',
+    sku: 'Identification',
+    barcode: 'Identification',
+    gtin: 'Identification',
+    upc: 'Identification',
+    type: 'Identification',
+    subType: 'Identification',
+    category: 'Identification',
+    subCategory: 'Identification',
+    brand: 'Identification',
+    isAlcoholic: 'Beverage Info',
+    abv: 'Beverage Info',
+    proof: 'Beverage Info',
+    volumeMl: 'Beverage Info',
+    standardSizes: 'Beverage Info',
+    servingSize: 'Beverage Info',
+    servingsPerContainer: 'Beverage Info',
+    originCountry: 'Origin',
+    region: 'Origin',
+    appellation: 'Origin',
+    producer: 'Origin',
+    vintage: 'Origin',
+    age: 'Origin',
+    ageStatement: 'Origin',
+    distilleryName: 'Origin',
+    breweryName: 'Origin',
+    wineryName: 'Origin',
+    productionMethod: 'Origin',
+    caskType: 'Origin',
+    finish: 'Origin',
+    shortDescription: 'Description',
+    description: 'Description',
+    tagline: 'Description',
+    tastingNotes: 'Description',
+    flavorProfile: 'Description',
+    foodPairings: 'Description',
+    servingSuggestions: 'Description',
+    isDietary: 'Dietary',
+    allergens: 'Dietary',
+    ingredients: 'Dietary',
+    nutritionalInfo: 'Dietary',
+    certifications: 'Certifications',
+    awards: 'Awards',
+    averageRating: 'Ratings',
+    reviewCount: 'Ratings',
+    ratings: 'Ratings',
+    images: 'Media',
+    productImages: 'Media',
+    uploadedImages: 'Media',
+    videos: 'Media',
+    relatedProducts: 'Media',
+    externalLinks: 'Links',
+    metaTitle: 'SEO',
+    metaDescription: 'SEO',
+    metaKeywords: 'SEO',
+    canonicalUrl: 'SEO',
+    isFeatured: 'Settings',
+    allowReviews: 'Settings',
+    requiresAgeVerification: 'Settings',
+    isPublished: 'Settings',
+    publishedAt: 'Settings',
+    discontinuedAt: 'Settings',
+    subProductData: 'Pricing',
+    'subProductData.sku': 'Pricing',
+    'subProductData.baseSellingPrice': 'Pricing',
+    'subProductData.costPrice': 'Pricing',
+    'subProductData.currency': 'Pricing',
+    'subProductData.taxRate': 'Pricing',
+    'subProductData.marginPercentage': 'Pricing',
+    'subProductData.markupPercentage': 'Pricing',
+    'subProductData.roundUp': 'Pricing',
+    'subProductData.saleDiscountPercentage': 'Pricing',
+    'subProductData.salePrice': 'Pricing',
+    'subProductData.sizes': 'Pricing',
+    'subProductData.stockStatus': 'Pricing',
+    'subProductData.totalStock': 'Pricing',
+    'subProductData.lowStockThreshold': 'Pricing',
+    'subProductData.reorderPoint': 'Pricing',
+    'subProductData.reorderQuantity': 'Pricing',
+    'subProductData.shipping': 'Pricing',
+    'subProductData.shipping.weight': 'Pricing',
+    'subProductData.shipping.length': 'Pricing',
+    'subProductData.shipping.width': 'Pricing',
+    'subProductData.shipping.height': 'Pricing',
+    'subProductData.shipping.fragile': 'Pricing',
+    'subProductData.shipping.hazmat': 'Pricing',
+  };
+
+  const fieldToLabel: Record<string, string> = {
+    name: 'Product Name',
+    slug: 'URL Slug',
+    sku: 'SKU',
+    barcode: 'Barcode',
+    gtin: 'GTIN',
+    upc: 'UPC',
+    type: 'Product Type',
+    subType: 'Sub-Type',
+    category: 'Category',
+    subCategory: 'Sub-Category',
+    brand: 'Brand',
+    isAlcoholic: 'Alcoholic',
+    abv: 'ABV',
+    proof: 'Proof',
+    volumeMl: 'Volume (ml)',
+    standardSizes: 'Standard Sizes',
+    servingSize: 'Serving Size',
+    servingsPerContainer: 'Servings Per Container',
+    originCountry: 'Origin Country',
+    region: 'Region',
+    appellation: 'Appellation',
+    producer: 'Producer',
+    vintage: 'Vintage',
+    age: 'Age',
+    ageStatement: 'Age Statement',
+    distilleryName: 'Distillery Name',
+    breweryName: 'Brewery Name',
+    wineryName: 'Winery Name',
+    productionMethod: 'Production Method',
+    caskType: 'Cask Type',
+    finish: 'Finish',
+    shortDescription: 'Short Description',
+    description: 'Description',
+    tagline: 'Tagline',
+    tastingNotes: 'Tasting Notes',
+    flavorProfile: 'Flavor Profile',
+    foodPairings: 'Food Pairings',
+    servingSuggestions: 'Serving Suggestions',
+    isDietary: 'Dietary Info',
+    allergens: 'Allergens',
+    ingredients: 'Ingredients',
+    nutritionalInfo: 'Nutritional Info',
+    certifications: 'Certifications',
+    awards: 'Awards',
+    averageRating: 'Average Rating',
+    reviewCount: 'Review Count',
+    ratings: 'Ratings',
+    images: 'Images',
+    productImages: 'Product Images',
+    uploadedImages: 'Uploaded Images',
+    videos: 'Videos',
+    relatedProducts: 'Related Products',
+    externalLinks: 'External Links',
+    metaTitle: 'Meta Title',
+    metaDescription: 'Meta Description',
+    metaKeywords: 'Meta Keywords',
+    canonicalUrl: 'Canonical URL',
+    isFeatured: 'Featured',
+    allowReviews: 'Allow Reviews',
+    requiresAgeVerification: 'Age Verification',
+    isPublished: 'Published',
+    publishedAt: 'Published At',
+    discontinuedAt: 'Discontinued At',
+    subProductData: 'Sub-Product Data',
+    'subProductData.sku': 'Sub-Product SKU',
+    'subProductData.baseSellingPrice': 'Selling Price',
+    'subProductData.costPrice': 'Cost Price',
+    'subProductData.currency': 'Currency',
+    'subProductData.taxRate': 'Tax Rate',
+    'subProductData.marginPercentage': 'Margin %',
+    'subProductData.markupPercentage': 'Markup %',
+    'subProductData.saleDiscountPercentage': 'Sale Discount %',
+    'subProductData.salePrice': 'Sale Price',
+    'subProductData.sizes': 'Sizes',
+    'subProductData.stockStatus': 'Stock Status',
+    'subProductData.totalStock': 'Total Stock',
+    'subProductData.lowStockThreshold': 'Low Stock Threshold',
+    'subProductData.reorderPoint': 'Reorder Point',
+    'subProductData.reorderQuantity': 'Reorder Quantity',
+    'subProductData.shipping.weight': 'Shipping Weight',
+    'subProductData.shipping.length': 'Shipping Length',
+    'subProductData.shipping.width': 'Shipping Width',
+    'subProductData.shipping.height': 'Shipping Height',
+    'subProductData.shipping.fragile': 'Fragile',
+    'subProductData.shipping.hazmat': 'Hazmat',
+  };
+
+  const formatFormErrorsForSummary = (
+    errors: Record<string, any>,
+    currentSection: string
+  ): Array<{ field: string; section: string; message: string }> => {
+    const result: Array<{ field: string; section: string; message: string }> = [];
+
+    const traverse = (obj: any, path: string[] = []) => {
+      for (const key in obj) {
+        const value = obj[key];
+        const currentPath = [...path, key];
+
+        if (value && typeof value === 'object') {
+          if (value.message) {
+            const fullPath = currentPath.join('.');
+            let fieldName = currentPath[currentPath.length - 1];
+            const label = fieldToLabel[fullPath] || fieldToLabel[fieldName] || fieldName
+              .replace(/([A-Z])/g, ' $1')
+              .replace(/^./, (str) => str.toUpperCase())
+              .trim();
+            
+            let actualSection = currentSection;
+            for (const p of currentPath) {
+              if (fieldToSection[p]) {
+                actualSection = fieldToSection[p];
+                break;
+              }
+            }
+
+            result.push({
+              field: label,
+              section: actualSection,
+              message: value.message,
+            });
+          } else {
+            traverse(value, currentPath);
+          }
+        }
+      }
+    };
+
+    traverse(errors);
+    return result;
+  };
+
   const methods = useForm({
     defaultValues: defaultValues(product),
     resolver: zodResolver(productFormSchema),
@@ -402,6 +638,7 @@ export default function CreateEditProduct({
           subCategory: p.subCategory?._id?.toString() ?? p.subCategory ?? '',
           tags: (p.tags ?? []).map((t: any) => t?._id?.toString() ?? t),
           flavors: (p.flavors ?? []).map((f: any) => f?._id?.toString() ?? f),
+          publishedAt: p.publishedAt ? new Date(p.publishedAt) : undefined,
         };
         methods.reset(defaultValues(mapped));
       })
@@ -502,20 +739,34 @@ export default function CreateEditProduct({
 
     try {
       const transformedData = transformFormData(data);
-      
+
       if (isEditMode && id) {
-        await productService.updateProduct(id, transformedData, session.user.token);
+        const res = await productService.updateProduct(id, transformedData, session.user.token);
+        // Sync form with what the server actually saved
+        const saved = res?.data?.product;
+        if (saved) {
+          const mapped = {
+            ...saved,
+            brand: saved.brand?._id?.toString() ?? saved.brand ?? '',
+            category: saved.category?._id?.toString() ?? saved.category ?? '',
+            subCategory: saved.subCategory?._id?.toString() ?? saved.subCategory ?? '',
+            tags: (saved.tags ?? []).map((t: any) => t?._id?.toString() ?? t),
+            flavors: (saved.flavors ?? []).map((f: any) => f?._id?.toString() ?? f),
+            publishedAt: saved.publishedAt ? new Date(saved.publishedAt) : undefined,
+          };
+          methods.reset(defaultValues(mapped), { keepDirty: false });
+        }
         toast.success('Product updated successfully!');
       } else {
         await productService.createProduct(transformedData, session.user.token);
         toast.success('Product created successfully!');
       }
-      
+
       setSaveStatus('saved');
-      setIsSuccess(true);
+      if (!isEditMode) setIsSuccess(true); // Only show confetti on create, not edit
       localStorage.removeItem('product-draft');
-      
-      setTimeout(() => setIsSuccess(false), 3000);
+
+      setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (error: any) {
       setSaveStatus('error');
       if (error.message?.includes('version') || error.message?.includes('conflict')) {
@@ -1156,6 +1407,14 @@ export default function CreateEditProduct({
             animate="visible"
             className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-6"
           >
+            {/* Validation Summary */}
+            {errors && Object.keys(errors).length > 0 && (
+              <ValidationSummary
+                errors={formatFormErrorsForSummary(errors, STEPS[currentStep].label)}
+                className="mb-4"
+              />
+            )}
+
             {/* Step Header */}
             <div className="mb-6 flex items-center gap-3">
               <div className={cn(
@@ -1216,15 +1475,19 @@ export default function CreateEditProduct({
             </Button>
 
             <div className="flex items-center gap-2 text-sm text-gray-500">
-              {!isValid && (
+              {!isValid && Object.keys(errors).length > 0 && (
                 <>
                   <PiWarning className="h-4 w-4 text-amber-500" />
-                  <span>Please fill required fields</span>
-                  {Object.keys(errors).length > 0 && (
-                    <span className="text-xs text-red-500">
-                      ({Object.keys(errors).length} errors)
-                    </span>
-                  )}
+                  <span>Please fix validation errors</span>
+                  <span className="text-xs text-red-500 font-medium">
+                    ({Object.keys(errors).length} error{Object.keys(errors).length !== 1 ? 's' : ''})
+                  </span>
+                </>
+              )}
+              {isValid && (
+                <>
+                  <PiCheck className="h-4 w-4 text-green-500" />
+                  <span className="text-green-600">All fields valid</span>
                 </>
               )}
             </div>

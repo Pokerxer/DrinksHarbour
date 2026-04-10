@@ -57,6 +57,10 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'isomorphic-furyroad.vercel.app',
       },
+      {
+        protocol: 'https',
+        hostname: 'res.cloudinary.com',
+      },
     ],
   },
   reactStrictMode: true,

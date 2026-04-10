@@ -72,36 +72,12 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
     if (filters.minRating) count++;
     if (filters.showOnlySale) count++;
     if (filters.priceRange?.min !== 0 || filters.priceRange?.max !== 100000) count++;
+    if (filters.abvRange) count++;
+    if (filters.volumeRange) count++;
     return count;
   }, [filters]);
 
   const hasActiveFilters = activeFiltersCount > 0;
-
-  const getActiveFilterLabel = (key: string, value: any): string => {
-    switch (key) {
-      case 'categoryType':
-        return `Category: ${value}`;
-      case 'subCategoryType':
-        return `Subcategory: ${value}`;
-      case 'brand':
-        return `Brand: ${value}`;
-      case 'size':
-        return `Size: ${value}`;
-      case 'originCountry':
-        return `Origin: ${value}`;
-      case 'flavorCategory':
-        return `Flavor: ${value}`;
-      case 'minRating':
-        return `${value}+ Stars`;
-      case 'showOnlySale':
-        return 'On Sale';
-      case 'priceRange':
-        if (!value || value.min == null || value.max == null) return 'Price Range';
-        return `₦${value.min.toLocaleString()} - ₦${value.max.toLocaleString()}`;
-      default:
-        return `${key}: ${value}`;
-    }
-  };
 
   const activeFiltersList = React.useMemo(() => {
     const list: { key: keyof FilterState; value: any; label: string }[] = [];
@@ -168,10 +144,20 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
       list.push({ key: 'showOnlySale', value: true, label: 'On Sale' });
     }
     
-    if (filters.priceRange?.min !== 0 || filters.priceRange?.max !== 100000) {
+    if (filters.priceRange && (filters.priceRange.min !== 0 || filters.priceRange.max !== 100000)) {
       list.push({ key: 'priceRange', value: filters.priceRange, label: `₦${filters.priceRange.min.toLocaleString()} - ₦${filters.priceRange.max.toLocaleString()}` });
     }
-    
+
+    if (filters.abvRange) {
+      const { min, max } = filters.abvRange;
+      const label = max === 0 ? 'Non-Alcoholic' : `${min}% – ${max}% ABV`;
+      list.push({ key: 'abvRange', value: filters.abvRange, label });
+    }
+
+    if (filters.volumeRange) {
+      list.push({ key: 'volumeRange', value: filters.volumeRange, label: `Volume: ${filters.volumeRange}` });
+    }
+
     return list;
   }, [filters]);
 
@@ -180,6 +166,7 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
       onClearAllFilters();
     } else {
       updateFilter('size', null);
+      updateFilter('color', null);
       updateFilter('brand', null);
       updateFilter('originCountry', null);
       updateFilter('categoryType', null);
@@ -188,6 +175,8 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
       updateFilter('minRating', null);
       updateFilter('showOnlySale', false);
       updateFilter('priceRange', { min: 0, max: 100000 });
+      updateFilter('abvRange', null);
+      updateFilter('volumeRange', null);
     }
   }, [onClearAllFilters, updateFilter]);
 
@@ -369,17 +358,20 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
               <button
                 key={`${key}-${index}`}
                 onClick={() => {
-                  const currentValue = filters[key];
-                  if (Array.isArray(currentValue)) {
-                    if (key === 'priceRange') {
-                      updateFilter(key, { min: 0, max: 100000 });
-                    } else if (key === 'minRating') {
-                      updateFilter(key, null);
-                    } else {
-                      updateFilter(key, currentValue.filter((v: any) => v !== value));
-                    }
-                  } else {
+                  if (key === 'showOnlySale') {
+                    updateFilter('showOnlySale', false);
+                  } else if (key === 'priceRange') {
+                    updateFilter('priceRange', { min: 0, max: 100000 });
+                  } else if (key === 'abvRange' || key === 'volumeRange' || key === 'minRating' || key === 'size') {
                     updateFilter(key, null);
+                  } else {
+                    const currentValue = filters[key];
+                    if (Array.isArray(currentValue)) {
+                      const next = currentValue.filter((v: any) => v !== value);
+                      updateFilter(key, next.length ? next : null);
+                    } else {
+                      updateFilter(key, null);
+                    }
                   }
                 }}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${

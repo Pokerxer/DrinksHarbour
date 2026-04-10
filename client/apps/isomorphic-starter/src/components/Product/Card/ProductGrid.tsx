@@ -44,7 +44,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({ data, style = 'style-1' }) =>
     }
     if (data.thumbImage?.[0]) return String(data.thumbImage[0]);
     if (data.images?.[0]) return String(data.images[0]);
-    return '/images/placeholder-product.png';
+    return '/images/product/1000x1000.png';
   };
 
   return (
@@ -73,15 +73,15 @@ const ProductGrid: React.FC<ProductGridProps> = ({ data, style = 'style-1' }) =>
           </button>
 
           <Link href={`/product/${data.id}`} className="block w-full h-full">
-            <div className="product-img w-full h-[280px] relative overflow-hidden">
+            <div className="product-img w-full h-[280px] relative overflow-hidden bg-gray-50 flex items-center justify-center">
               <Image
                 src={getImage()}
                 width={500}
                 height={500}
                 alt={data.name}
                 priority={true}
-                className={`w-full h-full object-cover transition-transform duration-700 ${
-                  isHovered ? 'scale-110' : 'scale-100'
+                className={`w-full h-full object-contain transition-transform duration-700 ${
+                  isHovered ? 'scale-105' : 'scale-100'
                 }`}
               />
             </div>

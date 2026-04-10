@@ -1,15 +1,16 @@
 // @ts-nocheck
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
 import { Input, Textarea, Text, Switch, Button, Badge } from 'rizzui';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  PiSliders, PiTextAa, PiTextAlignLeft, PiTag, PiNote, PiPencil, 
+import {
+  PiSliders, PiTextAa, PiTextAlignLeft, PiTag, PiNote, PiPencil,
   PiPlus, PiXBold, PiEye, PiCopy, PiSparkle, PiTrash,
-  PiCheck, PiX, PiClock, PiFunnel, PiTrendUp, PiStar
+  PiCheck, PiX, PiClock, PiFunnel, PiTrendUp, PiStar, PiImages
 } from 'react-icons/pi';
+import SubProductImageOverrides from './product-media';
 import { fieldStaggerVariants, containerVariants, itemVariants } from './animations';
 
 const KEYWORD_PRESETS = [
@@ -34,12 +35,23 @@ export default function SubProductTenantOverrides() {
 
   const [keywordsInput, setKeywordsInput] = useState('');
   const [showPreview, setShowPreview] = useState(false);
+  const imagesOverride = watch?.('subProductData.imagesOverride') || [];
+
   const [activeOverrides, setActiveOverrides] = useState({
     shortDescription: !!shortDescOverride,
     description: !!descriptionOverride,
     keywords: customKeywords?.length > 0,
     notes: !!tenantNotes,
+    images: imagesOverride?.length > 0,
   });
+
+  // Auto-enable the images section when images are present (e.g. after upload or in edit mode)
+  const imagesCount = imagesOverride?.length ?? 0;
+  useEffect(() => {
+    if (imagesCount > 0) {
+      setActiveOverrides(prev => prev.images ? prev : { ...prev, images: true });
+    }
+  }, [imagesCount]);
 
   const overridesCount = useMemo(() => {
     return Object.values(activeOverrides).filter(Boolean).length;
@@ -171,7 +183,7 @@ export default function SubProductTenantOverrides() {
             </Button>
           </div>
           
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             <motion.div
               whileHover={{ scale: 1.02 }}
               className={`flex items-center justify-between rounded-lg p-3 transition-all ${
@@ -232,8 +244,8 @@ export default function SubProductTenantOverrides() {
             <motion.div
               whileHover={{ scale: 1.02 }}
               className={`flex items-center justify-between rounded-lg p-3 transition-all ${
-                activeOverrides.notes 
-                  ? 'bg-gray-100 border border-gray-300' 
+                activeOverrides.notes
+                  ? 'bg-gray-100 border border-gray-300'
                   : 'bg-white/60 border border-gray-100'
               }`}
             >
@@ -243,6 +255,25 @@ export default function SubProductTenantOverrides() {
               </div>
               {activeOverrides.notes ? (
                 <PiCheck className="h-4 w-4 text-gray-600" />
+              ) : (
+                <PiX className="h-4 w-4 text-gray-400" />
+              )}
+            </motion.div>
+
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              className={`flex items-center justify-between rounded-lg p-3 transition-all ${
+                activeOverrides.images
+                  ? 'bg-green-100 border border-green-300'
+                  : 'bg-white/60 border border-gray-100'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <PiImages className="h-4 w-4 text-green-500" />
+                <Text className="text-xs font-medium text-gray-700">Images</Text>
+              </div>
+              {activeOverrides.images ? (
+                <PiCheck className="h-4 w-4 text-green-600" />
               ) : (
                 <PiX className="h-4 w-4 text-gray-400" />
               )}
@@ -555,10 +586,68 @@ export default function SubProductTenantOverrides() {
         </AnimatePresence>
       </motion.div>
 
-      {/* Tenant Notes */}
-      <motion.div 
-        variants={fieldStaggerVariants} 
+      {/* Image Overrides */}
+      <motion.div
+        variants={fieldStaggerVariants}
         custom={4}
+        className={`relative overflow-hidden rounded-lg border bg-white p-4 transition-all ${
+          activeOverrides.images
+            ? 'border-green-300 shadow-md'
+            : 'border-gray-200'
+        }`}
+      >
+        <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-green-400 to-teal-600" />
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <PiImages className="h-5 w-5 text-green-500" />
+            <Text className="font-medium">Image Overrides</Text>
+            {imagesOverride?.length > 0 && (
+              <Badge color="success" variant="flat">{imagesOverride.length} image{imagesOverride.length !== 1 ? 's' : ''}</Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {imagesOverride?.length > 0 && (
+              <Button
+                type="button"
+                variant="text"
+                size="sm"
+                onClick={() => {
+                  setValue('subProductData.imagesOverride', []);
+                  setActiveOverrides(prev => ({ ...prev, images: false }));
+                }}
+                className="text-red-600 hover:bg-red-50"
+              >
+                <PiTrash className="mr-1 h-4 w-4" />
+                Clear All
+              </Button>
+            )}
+            <Switch
+              checked={activeOverrides.images}
+              onChange={() => setActiveOverrides(prev => ({ ...prev, images: !prev.images }))}
+            />
+          </div>
+        </div>
+
+        <AnimatePresence>
+          {activeOverrides.images && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+            >
+              <SubProductImageOverrides />
+              <Text className="mt-3 text-xs text-gray-500">
+                Upload custom images for your tenant listing. These replace the parent product images in your catalog.
+              </Text>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+
+      {/* Tenant Notes */}
+      <motion.div
+        variants={fieldStaggerVariants}
+        custom={5}
         className={`relative overflow-hidden rounded-lg border bg-white p-4 transition-all ${
           activeOverrides.notes 
             ? 'border-gray-300 shadow-md' 

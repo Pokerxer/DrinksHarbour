@@ -430,8 +430,9 @@ export default function CreatePurchasePage() {
           updated.uom = product?.defaultUom || 'Units';
           updated.packaging = '';
           updated.packagingQty = 1;
-          updated.packPrice = 0;
-          updated.unitCost = 0;
+          // Use the product's default costPrice as unit cost
+          updated.unitCost = product?.costPrice || 0;
+          updated.packPrice = product?.costPrice || 0;
           updated.taxRate = 0;
           updated.totalCost = 0;
           updated.quantity = 1;
@@ -445,6 +446,9 @@ export default function CreatePurchasePage() {
             updated.packagingQty = size.unitsPerPack || 1;
             updated.packaging = size.unitsPerPack <= 1 ? 'unit' : `pack-${size.unitsPerPack}`;
             updated.sku = size.sku || product.sku;
+            // Use the size's costPrice as unit cost
+            updated.unitCost = size.costPrice || 0;
+            updated.packPrice = (size.costPrice || 0) * (size.unitsPerPack || 1);
           } else {
             updated.sizeId = '';
             updated.sizeName = '';
@@ -459,9 +463,10 @@ export default function CreatePurchasePage() {
             updated.packagingQty = size.unitsPerPack || 1;
             updated.packaging = size.unitsPerPack <= 1 ? 'unit' : `pack-${size.unitsPerPack}`;
             updated.sku = size.sku || product?.sku || '';
-            updated.packPrice = size.costPrice || 0;
-            const unitsPerPack = updated.packagingQty || 1;
-            updated.unitCost = unitsPerPack > 0 ? updated.packPrice / unitsPerPack : updated.packPrice;
+            // Use the size's costPrice as the unit cost directly
+            updated.unitCost = size.costPrice || 0;
+            // Pack price is unit cost times units per pack
+            updated.packPrice = (size.costPrice || 0) * (size.unitsPerPack || 1);
             const subtotal = (updated.quantity || 0) * updated.unitCost;
             const tax = subtotal * ((updated.taxRate || 0) / 100);
             updated.totalCost = subtotal + tax;
@@ -473,15 +478,17 @@ export default function CreatePurchasePage() {
           if (match) {
             const qty = parseInt(match[1], 10);
             updated.packagingQty = qty;
-            if (updated.packPrice > 0) {
-              updated.unitCost = qty > 0 ? updated.packPrice / qty : updated.packPrice;
+            // Recalculate packPrice from unitCost when packaging changes
+            if (updated.unitCost > 0) {
+              updated.packPrice = updated.unitCost * qty;
               const subtotal = (updated.quantity || 0) * updated.unitCost;
               const tax = subtotal * ((updated.taxRate || 0) / 100);
               updated.totalCost = subtotal + tax;
             }
           } else if (value === 'unit') {
             updated.packagingQty = 1;
-            updated.unitCost = updated.packPrice;
+            // Pack price equals unit cost when packaging is 'unit'
+            updated.packPrice = updated.unitCost;
             const subtotal = (updated.quantity || 0) * updated.unitCost;
             const tax = subtotal * ((updated.taxRate || 0) / 100);
             updated.totalCost = subtotal + tax;
@@ -491,6 +498,7 @@ export default function CreatePurchasePage() {
         if (field === 'packPrice') {
           const packPrice = parseFloat(value) || 0;
           const unitsPerPack = updated.packagingQty || 1;
+          // Recalculate unit cost from pack price
           updated.unitCost = unitsPerPack > 0 ? packPrice / unitsPerPack : packPrice;
           const subtotal = (updated.quantity || 0) * updated.unitCost;
           const tax = subtotal * ((updated.taxRate || 0) / 100);
@@ -1297,33 +1305,36 @@ export default function CreatePurchasePage() {
               </div>
             </div>
 
-            <div className="mb-6 overflow-hidden rounded-2xl bg-white">
-              <div className="flex items-center justify-between px-4 py-4 md:px-6" style={{ backgroundColor: '#F3F2F2' }}>
-                <h2 className="flex items-center gap-2 font-semibold" style={{ color: '#1F2937' }}>
-                  <PiPackage className="h-5 w-5" style={{ color: '#5f636f' }} />
-                  Products <span className="ml-2 rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: '#e3dbe1', color: '#714B67' }}>
+              <div className="mb-6 overflow-hidden rounded-2xl bg-white shadow-lg border border-gray-100">
+              <div className="flex items-center justify-between px-4 py-4 md:px-6 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-100">
+                <h2 className="flex items-center gap-2 font-semibold text-gray-800">
+                  <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center">
+                    <PiPackage className="h-4 w-4 text-white" />
+                  </span>
+                  Products 
+                  <span className="ml-2 rounded-full px-2.5 py-0.5 text-xs font-medium bg-purple-100 text-purple-700">
                     {items.filter((i) => i.subProductId).length}
                   </span>
                 </h2>
               </div>
               <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 'calc(100vh - 350px)' }}>
                 <div className="min-w-[800px]">
-                  <div className="flex text-xs font-semibold uppercase" style={{ backgroundColor: '#F3F2F2', color: '#5f636f' }}>
+                  <div className="flex text-xs font-semibold uppercase bg-gradient-to-r from-gray-50 to-gray-100 text-gray-600">
                     {visibleColumns.map((col) => (
                       <div key={col.id} className={`flex-shrink-0 px-3 py-3 relative group ${getAlignClass(col.align)} ${col.id !== 'dragHandle' && col.id !== 'actions' ? 'cursor-col-resize' : ''}`}
                         style={{ width: col.width }} onMouseDown={(e) => col.id !== 'dragHandle' && col.id !== 'actions' && startResize(col.id, e)}>
                         {col.label}
                         {col.id !== 'dragHandle' && col.id !== 'actions' && (
-                          <div className="absolute right-0 top-0 h-full w-1 bg-transparent group-hover:bg-[#007bff]"></div>
+                          <div className="absolute right-0 top-0 h-full w-1 bg-transparent group-hover:bg-purple-500 transition-colors"></div>
                         )}
                       </div>
                     ))}
                   </div>
-                  <Reorder.Group axis="y" values={items} onReorder={handleReorder} className="divide-y divide-gray-200">
+                  <Reorder.Group axis="y" values={items} onReorder={handleReorder} className="divide-y divide-gray-100">
                     {items.map((item) => (
-                      <Reorder.Item key={item.id} value={item} className="flex transition-all duration-200"
-                        style={{ backgroundColor: item.type === 'section' ? '#F3F2F2' : item.type === 'note' ? '#F9FAFB' : '#FFFFFF',
-                          borderLeft: item.type === 'section' ? '3px solid #714B67' : item.type === 'note' ? '3px solid #17a2b8' : '3px solid transparent' }}>
+                      <Reorder.Item key={item.id} value={item} className="flex transition-all duration-200 hover:bg-gray-50"
+                        style={{ backgroundColor: item.type === 'section' ? '#F8F7F6' : item.type === 'note' ? '#F0F9FF' : '#FFFFFF',
+                          borderLeft: item.type === 'section' ? '3px solid #8B5CF6' : item.type === 'note' ? '3px solid #06B6D4' : '3px solid transparent' }}>
                         {visibleColumns.map((col) => (
                           <div key={col.id} className={`flex-shrink-0 px-3 py-3 ${getAlignClass(col.align)}`} style={{ width: col.width }}>
                             {col.id === 'dragHandle' && (
@@ -1473,7 +1484,7 @@ export default function CreatePurchasePage() {
                             )}
                             {col.id === 'actions' && (
                               <button type="button" onClick={() => removeItem(item.id)}
-                                className="flex h-11 w-10 items-center justify-center rounded-lg transition-colors" style={{ color: '#9a9ca5' }}>
+                                className="flex h-11 w-10 items-center justify-center rounded-lg transition-all text-gray-400 hover:text-red-500 hover:bg-red-50">
                                 <PiTrash className="h-4 w-4" />
                               </button>
                             )}
@@ -1494,26 +1505,41 @@ export default function CreatePurchasePage() {
                   </Reorder.Group>
                 </div>
               </div>
-              <div className="flex" style={{ backgroundColor: '#F3F2F2', borderTop: '1px solid #e7e9ed' }}>
+              <div className="flex bg-gradient-to-r from-gray-50 to-gray-100 border-t border-gray-200">
                 {visibleColumns.map((col) => (
                   <div key={col.id} className="flex-shrink-0 px-3 py-3" style={{ width: col.width }}>
                     {col.id === 'product' && (
-                      <div className="flex gap-3">
-                        <Button variant="text" onClick={() => addItem('product')} disabled={poStatus !== 'draft'}
-                          className={`h-8 gap-2 px-3 justify-start text-left ${poStatus !== 'draft' ? 'opacity-40' : ''}`}
-                          style={{ color: poStatus !== 'draft' ? undefined : '#714B67', backgroundColor: '#FFFFFF', border: '1px solid #d8dadd', borderRadius: '6px' }}>
-                          <PiPlusCircle className="h-4 w-4" /> Add Line
-                        </Button>
-                        <Button variant="text" onClick={() => addItem('section')} disabled={poStatus !== 'draft'}
-                          className={`h-8 gap-2 px-3 justify-start text-left ${poStatus !== 'draft' ? 'opacity-40' : ''}`}
-                          style={{ color: poStatus !== 'draft' ? undefined : '#5f636f', backgroundColor: '#F3F2F2', border: '1px solid #d8dadd', borderRadius: '6px' }}>
-                          <PiListDashes className="h-4 w-4" /> Add Section
-                        </Button>
-                        <Button variant="text" onClick={() => addItem('note')} disabled={poStatus !== 'draft'}
-                          className={`h-8 gap-2 px-3 justify-start text-left ${poStatus !== 'draft' ? 'opacity-40' : ''}`}
-                          style={{ color: poStatus !== 'draft' ? undefined : '#17a2b8', backgroundColor: '#F9FAFB', border: '1px solid #d8dadd', borderRadius: '6px' }}>
-                          Add Note
-                        </Button>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => addItem('product')} 
+                          disabled={poStatus !== 'draft'}
+                          className={`h-9 px-4 flex items-center gap-2 justify-start text-left text-sm font-medium rounded-xl transition-all shadow-sm ${
+                            poStatus !== 'draft' ? 'opacity-40 cursor-not-allowed' : 'bg-gradient-to-r from-purple-500 to-pink-600 text-white hover:from-purple-600 hover:to-pink-700 hover:shadow-md'
+                          }`}
+                        >
+                          <PiPlusCircle className="h-4 w-4" /> 
+                          <span className="hidden sm:inline">Add Line</span>
+                        </button>
+                        <button 
+                          onClick={() => addItem('section')} 
+                          disabled={poStatus !== 'draft'}
+                          className={`h-9 px-3 flex items-center gap-2 justify-start text-left text-sm font-medium rounded-xl transition-all ${
+                            poStatus !== 'draft' ? 'opacity-40 cursor-not-allowed' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 hover:shadow-sm'
+                          }`}
+                        >
+                          <PiListDashes className="h-4 w-4" /> 
+                          <span className="hidden sm:inline">Section</span>
+                        </button>
+                        <button 
+                          onClick={() => addItem('note')} 
+                          disabled={poStatus !== 'draft'}
+                          className={`h-9 px-3 flex items-center gap-2 justify-start text-left text-sm font-medium rounded-xl transition-all ${
+                            poStatus !== 'draft' ? 'opacity-40 cursor-not-allowed' : 'bg-white border border-cyan-200 text-cyan-600 hover:bg-cyan-50 hover:shadow-sm'
+                          }`}
+                        >
+                          <PiFileText className="h-4 w-4" />
+                          <span className="hidden sm:inline">Note</span>
+                        </button>
                       </div>
                     )}
                   </div>

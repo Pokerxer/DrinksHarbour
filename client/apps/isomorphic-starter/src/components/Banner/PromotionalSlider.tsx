@@ -153,7 +153,7 @@ const PromotionalSlider: React.FC<PromotionalSliderProps> = ({
           }
         }
       } catch (err) {
-        console.log('Using default promotional banners');
+        console.warn('Using default promotional banners');
       } finally {
         setLoading(false);
       }
@@ -233,7 +233,7 @@ const PromotionalSlider: React.FC<PromotionalSliderProps> = ({
   const currentBanner = banners[currentIndex];
   const discount = extractDiscount(currentBanner.title);
   const discountStyle = getDiscountStyle(discount);
-  const imageUrl = currentBanner.mobileImage?.url || currentBanner.image?.url || '/images/placeholder-product.png';
+  const imageUrl = currentBanner.mobileImage?.url || currentBanner.image?.url || '/images/images/product/1000x1000.png';
   const isTextLeft = currentBanner.contentPosition?.includes('left');
   const isTextRight = currentBanner.contentPosition?.includes('right');
 
@@ -251,7 +251,7 @@ const PromotionalSlider: React.FC<PromotionalSliderProps> = ({
           >
             <div className="absolute inset-0">
               <Image
-                src={imgError ? '/images/placeholder-product.png' : imageUrl}
+                src={imgError ? '/images/images/product/1000x1000.png' : imageUrl}
                 alt={currentBanner.image?.alt || currentBanner.title || 'Promotional banner'}
                 fill
                 className="object-cover"
@@ -417,14 +417,14 @@ const PromotionalSlider: React.FC<PromotionalSliderProps> = ({
             onClick={() => goToSlide(index)}
           >
             <Image
-              src={banner.image?.url || '/images/placeholder-product.png'}
+              src={banner.image?.url || '/images/images/product/1000x1000.png'}
               alt={banner.title || 'Banner'}
               fill
               className="object-cover"
               sizes="100px"
               onError={(e) => {
                 const target = e.target as HTMLImageElement;
-                target.src = '/images/placeholder-product.png';
+                target.src = '/images/images/product/1000x1000.png';
               }}
             />
           </motion.div>

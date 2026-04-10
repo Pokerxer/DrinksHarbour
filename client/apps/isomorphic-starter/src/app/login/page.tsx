@@ -65,18 +65,12 @@ const Login = () => {
 
       const data = await response.json();
 
-      console.log('🔵 Login response:', JSON.stringify(data).substring(0, 500));
-
       if (!response.ok) {
         throw new Error(data.message || 'Login failed');
       }
 
-      // Extract token from data (could be in data.token or data.data.token)
       const token = data.token || data.data?.token;
       const user = data.user || data.data?.user;
-
-      console.log('   Token from response:', !!token);
-      console.log('   User from response:', !!user);
 
       if (!token) {
         throw new Error('No token received from server');
@@ -90,10 +84,6 @@ const Login = () => {
 
       localStorage.setItem('user', JSON.stringify(user));
 
-      console.log('✅ Token saved to localStorage:', !!localStorage.getItem('token'));
-      console.log('   Token:', localStorage.getItem('token')?.substring(0, 50) + '...');
-
-      // Check for redirect param
       const redirectUrl = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('redirect') : null;
       
       if (redirectUrl) {

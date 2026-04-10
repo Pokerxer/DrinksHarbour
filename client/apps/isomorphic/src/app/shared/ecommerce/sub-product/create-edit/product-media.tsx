@@ -2,387 +2,240 @@
 'use client';
 
 import { useFormContext } from 'react-hook-form';
-import { Text, Button, Badge } from 'rizzui';
 import { motion, AnimatePresence } from 'framer-motion';
-import cn from '@core/utils/class-names';
-import { CreateProductInput } from '@/validators/create-product.schema';
-import FormGroup from '@/app/shared/form-group';
-import { useState, useCallback } from 'react';
-import { PiX, PiUpload, PiImage, PiVideo, PiSpinner, PiSparkle } from 'react-icons/pi';
+import { useState, useCallback, useRef } from 'react';
+import { PiX, PiUpload, PiImage, PiSpinner, PiStar, PiStarFill } from 'react-icons/pi';
 import Image from 'next/image';
 import { useSession } from 'next-auth/react';
 import { uploadService } from '@/services/upload.service';
 import toast from 'react-hot-toast';
+import cn from '@core/utils/class-names';
 
-interface ProductMediaProps {
-  className?: string;
-}
-
-interface UploadedImage {
+interface ImageItem {
   url: string;
-  publicId: string;
-  thumbnail: string;
-  isPrimary: boolean;
+  alt?: string;
+  isPrimary?: boolean;
+  order?: number;
+  // local state only — not sent to server
+  publicId?: string;
+  thumbnail?: string;
 }
-
-// Animation variants
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-    },
-  },
-};
 
 const itemVariants = {
-  hidden: { opacity: 0, scale: 0.8 },
-  visible: {
-    opacity: 1,
-    scale: 1,
-    transition: {
-      type: 'spring',
-      stiffness: 200,
-      damping: 20,
-    },
-  },
-  exit: {
-    opacity: 0,
-    scale: 0.8,
-    transition: { duration: 0.2 },
-  },
+  hidden: { opacity: 0, scale: 0.85 },
+  visible: { opacity: 1, scale: 1, transition: { type: 'spring', stiffness: 220, damping: 22 } },
+  exit: { opacity: 0, scale: 0.85, transition: { duration: 0.18 } },
 };
 
-export default function ProductMedia({
-  className,
-}: ProductMediaProps) {
+export default function SubProductImageOverrides() {
   const { data: session } = useSession();
-  const {
-    register,
-    setValue,
-    watch,
-    formState: { errors },
-  } = useFormContext<CreateProductInput>();
+  const { setValue, watch } = useFormContext();
 
-  const uploadedImages = watch('uploadedImages') || [];
+  // Form field
+  const images: ImageItem[] = watch('subProductData.imagesOverride') || [];
+
   const [isDragging, setIsDragging] = useState(false);
-  const [uploadingIndexes, setUploadingIndexes] = useState<number[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  // Keep publicIds in ref so we can delete from Cloudinary without polluting the form schema
+  const publicIdMap = useRef<Record<string, string>>({}); // url -> publicId
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
+  const updateImages = (next: ImageItem[]) => {
+    // Strip local-only fields before writing to form
+    const clean = next.map(({ publicId, thumbnail, ...rest }, i) => ({
+      ...rest,
+      order: rest.order ?? i,
+    }));
+    setValue('subProductData.imagesOverride', clean);
+  };
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    
-    const files = Array.from(e.dataTransfer.files).filter(file => 
-      file.type.startsWith('image/')
-    );
-    
-    if (files.length > 0) {
-      handleFiles(files);
-    }
-  }, []);
-
-  const uploadFilesToCloudinary = async (files: File[]) => {
+  const uploadFiles = async (files: File[]) => {
     if (!session?.user?.token) {
       toast.error('Please sign in to upload images');
       return;
     }
-
-    setIsUploading(true);
-    const startIndex = uploadedImages.length;
-    
-    // Mark files as uploading
-    files.forEach((_, idx) => {
-      setUploadingIndexes(prev => [...prev, startIndex + idx]);
-    });
-
-    try {
-      const response = await uploadService.uploadProductGallery(
-        files,
-        session.user.token
-      );
-
-      // Add uploaded images to form
-      const newImages: UploadedImage[] = response.data.map((img, index) => ({
-        url: img.url,
-        publicId: img.publicId,
-        thumbnail: img.thumbnail,
-        isPrimary: uploadedImages.length === 0 && index === 0, // First uploaded image is primary
-      }));
-
-      const currentImages = uploadedImages || [];
-      setValue('uploadedImages', [...currentImages, ...newImages]);
-      
-      toast.success(`${files.length} image(s) uploaded successfully`);
-    } catch (error: any) {
-      console.error('Upload error:', error);
-      toast.error(error.message || 'Failed to upload images');
-    } finally {
-      setIsUploading(false);
-      // Clear uploading state
-      files.forEach((_, idx) => {
-        setUploadingIndexes(prev => prev.filter(i => i !== startIndex + idx));
-      });
-    }
-  };
-
-  const handleFiles = async (files: File[]) => {
-    const currentImages = uploadedImages || [];
-    
-    // Check if adding these files would exceed the limit
-    if (currentImages.length + files.length > 10) {
+    if (images.length + files.length > 10) {
       toast.error('Maximum 10 images allowed');
       return;
     }
 
-    // Upload files to Cloudinary
-    await uploadFilesToCloudinary(files);
+    setIsUploading(true);
+    try {
+      const res = await uploadService.uploadProductGallery(files, session.user.token);
+      const uploaded: ImageItem[] = res.data.map((img: any, i: number) => {
+        publicIdMap.current[img.url] = img.publicId;
+        return {
+          url: img.url,
+          alt: '',
+          isPrimary: images.length === 0 && i === 0,
+          order: images.length + i,
+        };
+      });
+      updateImages([...images, ...uploaded]);
+      toast.success(`${files.length} image${files.length > 1 ? 's' : ''} uploaded`);
+    } catch (err: any) {
+      toast.error(err.message || 'Upload failed');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    if (files.length > 0) {
-      handleFiles(files);
-    }
+    if (files.length) uploadFiles(files);
+    e.target.value = '';
   };
+
+  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); }, []);
+  const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); }, []);
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+    if (files.length) uploadFiles(files);
+  }, [images, session]);
 
   const removeImage = async (index: number) => {
-    const imageToRemove = uploadedImages[index];
-    
-    if (!imageToRemove) return;
-
-    // Delete from Cloudinary if we have a publicId
-    if (imageToRemove.publicId && session?.user?.token) {
-      try {
-        await uploadService.deleteImage(imageToRemove.publicId, session.user.token);
-      } catch (error) {
-        console.error('Failed to delete image from Cloudinary:', error);
-        // Continue with removing from UI even if Cloudinary delete fails
-      }
+    const img = images[index];
+    if (!img) return;
+    const publicId = publicIdMap.current[img.url];
+    if (publicId && session?.user?.token) {
+      try { await uploadService.deleteImage(publicId, session.user.token); } catch {}
+      delete publicIdMap.current[img.url];
     }
-
-    const newImages = [...uploadedImages];
-    newImages.splice(index, 1);
-    
-    // If we removed the primary image, set the first remaining as primary
-    if (imageToRemove.isPrimary && newImages.length > 0) {
-      newImages[0].isPrimary = true;
-    }
-    
-    setValue('uploadedImages', newImages);
-    toast.success('Image removed');
+    const next = images.filter((_, i) => i !== index);
+    if (img.isPrimary && next.length > 0) next[0].isPrimary = true;
+    updateImages(next);
   };
 
-  const setAsPrimary = (index: number) => {
-    const newImages = uploadedImages.map((img: UploadedImage, idx: number) => ({
-      ...img,
-      isPrimary: idx === index,
-    }));
-    
-    setValue('uploadedImages', newImages);
-    toast.success('Primary image updated');
+  const setPrimary = (index: number) => {
+    updateImages(images.map((img, i) => ({ ...img, isPrimary: i === index })));
   };
 
   return (
-    <FormGroup
-      title="Media & Gallery"
-      description="Upload product images and video URLs"
-      className={cn(className)}
-    >
-      <motion.div 
-        className="grid gap-6"
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <PiImage className="h-4 w-4 text-blue-500" />
+          <span className="text-sm font-medium text-gray-700">Image Overrides</span>
+          {images.length > 0 && (
+            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
+              {images.length}/10
+            </span>
+          )}
+        </div>
+        {isUploading && (
+          <span className="flex items-center gap-1 text-xs text-blue-600">
+            <PiSpinner className="h-3 w-3 animate-spin" />
+            Uploading…
+          </span>
+        )}
+      </div>
+
+      {/* Drop zone */}
+      <motion.label
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        animate={{
+          borderColor: isDragging ? '#3B82F6' : '#D1D5DB',
+          backgroundColor: isDragging ? '#EFF6FF' : '#F9FAFB',
+        }}
+        transition={{ duration: 0.15 }}
+        className={cn(
+          'relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-6 text-center transition-all',
+          isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
+        )}
       >
-        {/* Product Images Upload */}
-        <motion.div variants={itemVariants}>
-          <label className="mb-3 flex items-center gap-2 text-sm font-medium text-gray-700">
-            <PiImage className="h-4 w-4" />
-            Product Images
-            {uploadedImages.length > 0 && (
-              <Badge size="sm" color="primary" variant="flat">
-                {uploadedImages.length}/10
-              </Badge>
-            )}
-            {isUploading && (
-              <span className="ml-2 flex items-center gap-1 text-xs text-blue-600">
-                <PiSpinner className="h-3 w-3 animate-spin" />
-                Uploading...
-              </span>
-            )}
-          </label>
-          
-          {/* Drop Zone */}
+        <input
+          type="file"
+          multiple
+          accept="image/*"
+          onChange={handleFileInput}
+          disabled={isUploading}
+          className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed"
+        />
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100">
+          {isUploading
+            ? <PiSpinner className="h-5 w-5 animate-spin text-blue-600" />
+            : <PiUpload className="h-5 w-5 text-blue-600" />
+          }
+        </div>
+        <div>
+          <p className="text-sm font-medium text-gray-800">
+            {isDragging ? 'Drop images here' : 'Drag & drop or click to upload'}
+          </p>
+          <p className="text-xs text-gray-500">JPG, PNG, WebP — up to 10 images, 10 MB each</p>
+        </div>
+      </motion.label>
+
+      {/* Preview grid */}
+      <AnimatePresence>
+        {images.length > 0 && (
           <motion.div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            animate={{
-              scale: isDragging ? 1.02 : 1,
-              borderColor: isDragging ? '#3B82F6' : '#E5E7EB',
-              backgroundColor: isDragging ? '#EFF6FF' : '#FFFFFF',
-            }}
-            transition={{ duration: 0.2 }}
-            className={cn(
-              'relative rounded-2xl border-2 border-dashed p-8 transition-all duration-200',
-              isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
-            )}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5"
           >
-            <input
-              type="file"
-              multiple
-              accept="image/*"
-              onChange={handleFileInput}
-              disabled={isUploading}
-              className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
-            />
-            <div className="flex flex-col items-center justify-center text-center">
+            {images.map((img, index) => (
               <motion.div
-                animate={{ y: isDragging ? -5 : 0 }}
-                className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100"
+                key={img.url + index}
+                variants={itemVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                layout
+                className="group relative aspect-square overflow-hidden rounded-xl border border-gray-200 bg-gray-100"
               >
-                {isUploading ? (
-                  <PiSpinner className="h-8 w-8 animate-spin text-blue-600" />
-                ) : (
-                  <PiUpload className="h-8 w-8 text-blue-600" />
+                <Image
+                  src={img.url}
+                  alt={img.alt || `Image ${index + 1}`}
+                  fill
+                  sizes="(max-width: 640px) 33vw, 160px"
+                  className="object-cover transition-transform duration-300 group-hover:scale-105"
+                />
+
+                {/* Primary badge */}
+                {img.isPrimary && (
+                  <div className="absolute left-1.5 top-1.5 flex items-center gap-0.5 rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white shadow">
+                    <PiStarFill className="h-2.5 w-2.5" />
+                    Primary
+                  </div>
                 )}
-              </motion.div>
-              <p className="mb-1 text-sm font-medium text-gray-900">
-                {isDragging ? 'Drop images here' : 'Drag & drop images here'}
-              </p>
-              <p className="text-xs text-gray-500">
-                or click to browse (max 10 images)
-              </p>
-              <p className="mt-2 text-xs text-gray-400">
-                JPG, PNG, WebP up to 10MB each
-              </p>
-            </div>
-          </motion.div>
 
-          {/* Image Preview Grid */}
-          <AnimatePresence>
-            {uploadedImages.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
-              >
-                {uploadedImages.map((image: UploadedImage, index: number) => (
-                  <motion.div
-                    key={image.publicId || index}
-                    variants={itemVariants}
-                    initial="hidden"
-                    animate="visible"
-                    exit="exit"
-                    layout
-                    className="group relative aspect-square overflow-hidden rounded-xl border border-gray-200 bg-gray-100"
+                {/* Hover overlay */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/55 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                  {!img.isPrimary && (
+                    <button
+                      type="button"
+                      onClick={() => setPrimary(index)}
+                      className="flex items-center gap-1 rounded-lg bg-amber-500 px-2 py-1 text-[11px] font-semibold text-white shadow hover:bg-amber-600"
+                    >
+                      <PiStar className="h-3 w-3" />
+                      Set Primary
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeImage(index)}
+                    className="flex items-center gap-1 rounded-lg bg-red-500 px-2 py-1 text-[11px] font-semibold text-white shadow hover:bg-red-600"
                   >
-                    {uploadingIndexes.includes(index) ? (
-                      <div className="flex h-full items-center justify-center">
-                        <PiSpinner className="h-8 w-8 animate-spin text-blue-500" />
-                      </div>
-                    ) : (
-                      <>
-                        <Image
-                          src={image.thumbnail || image.url}
-                          alt={`Product image ${index + 1}`}
-                          fill
-                          className="object-cover transition-transform duration-300 group-hover:scale-110"
-                        />
-                        
-                        {/* Overlay */}
-                        <motion.div
-                          initial={{ opacity: 0 }}
-                          whileHover={{ opacity: 1 }}
-                          className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/50"
-                        >
-                          {image.isPrimary ? (
-                            <Badge size="sm" color="warning" className="absolute left-2 top-2">
-                              Primary
-                            </Badge>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="flat"
-                              onClick={() => setAsPrimary(index)}
-                              className="text-xs"
-                            >
-                              Set as Primary
-                            </Button>
-                          )}
-                          
-                          <Button
-                            size="sm"
-                            variant="flat"
-                            color="danger"
-                            onClick={() => removeImage(index)}
-                            className="text-xs"
-                          >
-                            <PiX className="h-3 w-3" />
-                            Remove
-                          </Button>
-                        </motion.div>
-                      </>
-                    )}
-                  </motion.div>
-                ))}
+                    <PiX className="h-3 w-3" />
+                    Remove
+                  </button>
+                </div>
               </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-        {/* Videos */}
-        <motion.div 
-          variants={itemVariants}
-          className="rounded-xl border border-gray-200 bg-gray-50/50 p-6"
-        >
-          <label className="mb-3 flex items-center gap-2 text-sm font-medium text-gray-700">
-            <PiVideo className="h-4 w-4" />
-            Video URLs
-          </label>
-          <div className="space-y-3">
-            <motion.div
-              whileFocus={{ scale: 1.01 }}
-              className="relative"
-            >
-              <input
-                type="url"
-                placeholder="YouTube or Vimeo URL"
-                className="block w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm transition-all duration-200 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                {...register('videos.0.url')}
-              />
-            </motion.div>
-            <motion.div
-              whileFocus={{ scale: 1.01 }}
-              className="relative"
-            >
-              <input
-                type="url"
-                placeholder="Additional Video URL (optional)"
-                className="block w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm transition-all duration-200 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                {...register('videos.1.url')}
-              />
-            </motion.div>
-          </div>
-          <Text className="mt-3 flex items-center gap-1 text-xs text-gray-500">
-            <PiSparkle className="h-3 w-3" />
-            Add video URLs to showcase your product
-          </Text>
-        </motion.div>
-      </motion.div>
-    </FormGroup>
+      {images.length > 0 && (
+        <p className="text-xs text-gray-400">
+          Star icon = primary image shown first on listing. Hover an image to change it.
+        </p>
+      )}
+    </div>
   );
 }

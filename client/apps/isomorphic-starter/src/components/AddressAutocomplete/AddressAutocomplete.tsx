@@ -55,20 +55,10 @@ const loadGoogleMapsScript = (apiKey: string): Promise<void> => {
     
     // Check for Google Maps initialization errors
     (window as any).gm_authFailure = () => {
-      console.error('Google Maps authentication failed - Invalid API Key');
+      console.warn('Google Maps authentication failed - Invalid API Key');
       reject(new Error('Invalid API Key'));
     };
 
-    // Suppress ExpiredKeyMapError
-    const originalError = console.error;
-    console.error = (...args: any[]) => {
-      if (args[0]?.includes?.('ExpiredKeyMapError')) {
-        console.warn('Google Maps API key has expired. Please update the API key.');
-        return;
-      }
-      originalError.apply(console, args);
-    };
-    
     script.onload = () => {
       // Wait a bit to check if auth failed
       setTimeout(() => {

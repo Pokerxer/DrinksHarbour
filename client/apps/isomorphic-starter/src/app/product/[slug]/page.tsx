@@ -191,6 +191,11 @@ const Product = () => {
   //   productData?.type?.toLowerCase().includes("tequila") ||
   //   productData?.type?.toLowerCase().includes("brandy");
 
+  // Derive price fields from the API's priceRange + discount objects.
+  // productData.price / originPrice / sale are not top-level fields in the
+  // getProductBySlug response — pricing lives in priceRange and availableAt.
+  const hasActiveDiscount = !!(productData.discount?.savings > 0);
+
   const currentProductData = {
     _id: productData._id,
     name: productData.name,
@@ -198,13 +203,21 @@ const Product = () => {
     slug: productData.slug,
     images: productData.images,
     priceRange: productData.priceRange,
-    price: productData.price,
-    originPrice: productData.originPrice,
+    // Current selling price — lowest price across all vendor sizes
+    price: productData.priceRange?.min ?? 0,
+    // Original price before discount; only set when there is an actual discount
+    // so cards don't show a fake strikethrough for size-price variance
+    originPrice: hasActiveDiscount
+      ? (productData.discount.originalPrice ?? productData.priceRange?.min ?? 0)
+      : (productData.priceRange?.min ?? 0),
     discount: productData.discount,
     brand: productData.brand,
     abv: productData.abv,
-    sale: productData.sale,
+    sale: hasActiveDiscount,
     new: productData.new,
+    availableAt: productData.availableAt,
+    thumbImage: productData.thumbImage,
+    primaryImage: productData.primaryImage,
   };
 
   return (
@@ -230,7 +243,6 @@ const Product = () => {
       <RecentlyViewed
         productId={productData._id}
         currentProduct={currentProductData}
-        maxItems={6}
       />
     </>
   );

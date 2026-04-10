@@ -4065,6 +4065,12 @@ const searchProducts = async (searchParams = {}) => {
               availableStock: 1,
               totalSold: 1,
               isFeaturedByTenant: 1,
+              isOnSale: 1,
+              salePrice: 1,
+              saleStartDate: 1,
+              saleEndDate: 1,
+              saleType: 1,
+              saleDiscountValue: 1,
             },
           },
         ],
@@ -4366,20 +4372,55 @@ const searchProducts = async (searchParams = {}) => {
         // Tenant discounts are for the tenant's own store only — not used here.
         // ─────────────────────────────────────────────────────────────────────
         const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
-        const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
+        
+        // Calculate platform selling price with product discount first
+        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
+        
+        // Store original price before sale discount for display
+        const priceBeforeSale = platformSellingPrice;
+        
+        // Apply SubProduct sale discount if active (tenant-specific sale)
+        const saleActive = subProduct.isOnSale && subProduct.saleStartDate && subProduct.saleEndDate 
+          ? new Date() >= new Date(subProduct.saleStartDate) && new Date() <= new Date(subProduct.saleEndDate)
+          : subProduct.isOnSale && !subProduct.saleStartDate && !subProduct.saleEndDate;
+        
+        if (saleActive && subProduct.saleDiscountValue > 0) {
+          const discountType = subProduct.saleType || 'percentage';
+          if (discountType === 'percentage') {
+            platformSellingPrice = parseFloat((platformSellingPrice * (1 - subProduct.saleDiscountValue / 100)).toFixed(2));
+          } else if (discountType === 'fixed' && subProduct.salePrice > 0) {
+            platformSellingPrice = subProduct.salePrice;
+          }
+        }
+        
         const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
 
         const websitePrice = platformSellingPrice;
 
-        // Product-level discount display info (only platform discount is shown on marketplace)
+        // Product-level discount OR sale discount display info
         let discountInfo = null;
-        if (productDiscountActive && productDiscount) {
-          const undiscountedSelling = parseFloat((platformCostPrice * (1 + platformMarkupPct / 100)).toFixed(2));
+        const hasProductDiscount = productDiscountActive && productDiscount;
+        const hasSaleDiscount = saleActive && subProduct.saleDiscountValue > 0;
+        
+        if (hasSaleDiscount) {
+          // Sale discount takes precedence
+          const saleDiscountPct = subProduct.saleDiscountValue;
+          discountInfo = {
+            type: subProduct.saleType || 'percentage',
+            value: saleDiscountPct,
+            originalPrice: priceBeforeSale,
+            savings: priceBeforeSale - websitePrice,
+            source: 'sale',
+            label: subProduct.saleType === 'fixed'
+              ? `Save ${getCurrencySymbol(currency)}${subProduct.salePrice}`
+              : `${saleDiscountPct}% OFF`,
+          };
+        } else if (hasProductDiscount) {
           discountInfo = {
             type: productDiscount.type,
             value: productDiscount.value,
-            originalPrice: undiscountedSelling,
-            savings: undiscountedSelling - websitePrice,
+            originalPrice: priceBeforeSale,
+            savings: priceBeforeSale - websitePrice,
             source: 'product',
             label: productDiscount.type === 'percentage'
               ? `${productDiscount.value}% OFF`
@@ -5303,19 +5344,58 @@ const getTrendingProducts = async (limit = 10, dateRange = 7) => {
 
         // Platform Pricing Pipeline (same as getAllProducts)
         const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
-        const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
+        
+        // Calculate platform selling price with product discount first
+        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
+        
+        // Store original price before sale discount for display
+        const priceBeforeSale = platformSellingPrice;
+        
+        // Apply SubProduct sale discount if active (tenant-specific sale)
+        const saleStart = subProduct.saleStartDate ? new Date(subProduct.saleStartDate) : null;
+        const saleEnd = subProduct.saleEndDate ? new Date(subProduct.saleEndDate) : null;
+        const now = new Date();
+        
+        const saleActive = subProduct.isOnSale && saleStart && saleEnd 
+          ? now >= saleStart && now <= saleEnd
+          : subProduct.isOnSale && !saleStart && !saleEnd;
+        
+        if (saleActive && subProduct.saleDiscountValue > 0) {
+          const discountType = subProduct.saleType || 'percentage';
+          if (discountType === 'percentage') {
+            platformSellingPrice = parseFloat((platformSellingPrice * (1 - subProduct.saleDiscountValue / 100)).toFixed(2));
+          } else if (discountType === 'fixed' && subProduct.salePrice > 0) {
+            platformSellingPrice = subProduct.salePrice;
+          }
+        }
+        
         const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
+
         const websitePriceVal = platformSellingPrice;
 
-        // Product-level discount display info
+        // Product-level discount OR sale discount display info
         let discountInfo = null;
-        if (productDiscountActive && productDiscount) {
-          const undiscountedSelling = parseFloat((platformCostPrice * (1 + platformMarkupPct / 100)).toFixed(2));
+        const hasProductDiscount = productDiscountActive && productDiscount;
+        const hasSaleDiscount = saleActive && subProduct.saleDiscountValue > 0;
+        
+        if (hasSaleDiscount) {
+          const saleDiscountPct = subProduct.saleDiscountValue;
+          discountInfo = {
+            type: subProduct.saleType || 'percentage',
+            value: saleDiscountPct,
+            originalPrice: priceBeforeSale,
+            savings: priceBeforeSale - websitePriceVal,
+            source: 'sale',
+            label: subProduct.saleType === 'fixed'
+              ? `Save ${getCurrencySymbol(currency)}${subProduct.salePrice}`
+              : `${saleDiscountPct}% OFF`,
+          };
+        } else if (hasProductDiscount) {
           discountInfo = {
             type: productDiscount.type,
             value: productDiscount.value,
-            originalPrice: undiscountedSelling,
-            savings: undiscountedSelling - websitePriceVal,
+            originalPrice: priceBeforeSale,
+            savings: priceBeforeSale - websitePriceVal,
             source: 'product',
             label: productDiscount.type === 'percentage'
               ? `${productDiscount.value}% OFF`

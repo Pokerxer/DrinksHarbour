@@ -393,7 +393,7 @@ const ModalQuickview: React.FC = () => {
                         src={img.url}
                         alt={img.alt || `${selectedProduct.name} ${index + 1}`}
                         fill
-                        className="object-cover"
+                        className="object-contain"
                         priority={index === 0}
                         sizes="(max-width: 1024px) 100vw, 45vw"
                         onError={() => setImageError(true)}
@@ -432,7 +432,7 @@ const ModalQuickview: React.FC = () => {
                         src={mainImage}
                         alt={selectedProduct.name}
                         fill
-                        className="object-cover"
+                        className="object-contain"
                         priority
                         sizes="(max-width: 1024px) 100vw, 45vw"
                         onError={() => setImageError(true)}

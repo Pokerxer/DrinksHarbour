@@ -23,7 +23,7 @@ import { fieldStaggerVariants, containerVariants } from './animations';
 import { productService } from '@/services/product.service';
 
 interface SubProductBasicInfoProps {
-  onProductSelect?: (productId: string) => void;
+  onProductSelect?: (productId: string, productName?: string) => void;
   onNewProductCreate?: (productData: NewProductFormData) => void;
 }
 
@@ -330,7 +330,7 @@ export default function SubProductBasicInfo({
     // Allow search effect to run again after a short delay
     setTimeout(() => setIsSelectingProduct(false), 500);
     
-    onProductSelect?.(productId);
+    onProductSelect?.(productId, product.name);
   }, [setValue, clearErrors, onProductSelect, watch]);
 
   const handleCreateNewProduct = useCallback((query: string) => {
@@ -412,8 +412,8 @@ export default function SubProductBasicInfo({
 
   const selectedProduct = getSelectedProduct();
   
-  // Image upload functionality
-  const subProductImages = watch?.('subProductData.images') || [];
+  // Image upload functionality — writes to subProductData.imagesOverride
+  const subProductImages = watch?.('subProductData.imagesOverride') || [];
   const [isUploading, setIsUploading] = useState(false);
 
   const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -428,41 +428,39 @@ export default function SubProductBasicInfo({
     setIsUploading(true);
 
     try {
-      const uploadedFiles = await uploadService.uploadMultipleFiles(Array.from(files), session.user.token);
-      
-      const newImages = uploadedFiles.map((file: any, index: number) => ({
+      const response = await uploadService.uploadProductGallery(Array.from(files), session.user.token);
+
+      const currentImages: any[] = watch?.('subProductData.imagesOverride') || [];
+      const newImages = response.data.map((file: any, index: number) => ({
         url: file.url,
-        publicId: file.publicId,
-        thumbnail: file.thumbnail || file.url,
-        isPrimary: index === 0,
+        alt: '',
+        isPrimary: currentImages.length === 0 && index === 0,
+        order: currentImages.length + index,
       }));
 
-      setValue?.('subProductData.images', (currentImages: any[] = []) => {
-        const updatedImages = [...currentImages, ...newImages];
-        const hasPrimary = updatedImages.some((img: any) => img.isPrimary);
-        if (!hasPrimary && updatedImages.length > 0) {
-          updatedImages[0].isPrimary = true;
-        }
-        return updatedImages;
-      });
+      const updated = [...currentImages, ...newImages];
+      if (!updated.some((img: any) => img.isPrimary) && updated.length > 0) {
+        updated[0].isPrimary = true;
+      }
+      setValue?.('subProductData.imagesOverride', updated);
       toast.success('Images uploaded successfully');
-    } catch (error) {
-      toast.error('Failed to upload images');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to upload images');
     } finally {
       setIsUploading(false);
     }
-  }, [session, setValue]);
+  }, [session, setValue, watch]);
 
   const handleRemoveImage = (index: number) => {
     const newImages = [...subProductImages];
     const removedImage = newImages[index];
     newImages.splice(index, 1);
-    
+
     if (removedImage?.isPrimary && newImages.length > 0) {
       newImages[0].isPrimary = true;
     }
-    
-    setValue?.('subProductData.images', newImages);
+
+    setValue?.('subProductData.imagesOverride', newImages);
   };
 
   const handleSetPrimary = (index: number) => {
@@ -470,7 +468,7 @@ export default function SubProductBasicInfo({
       ...img,
       isPrimary: idx === index,
     }));
-    setValue?.('subProductData.images', newImages);
+    setValue?.('subProductData.imagesOverride', newImages);
   };
 
   const getSelectedCurrency = () => currencies.find(c => c.value === selectedCurrency) || currencies[0];
@@ -859,7 +857,7 @@ export default function SubProductBasicInfo({
             <button
               type="button"
               onClick={() => {
-                setValue?.('subProductData.images', []);
+                setValue?.('subProductData.imagesOverride', []);
                 toast.success('All images cleared');
               }}
               className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1"
@@ -1017,7 +1015,7 @@ export default function SubProductBasicInfo({
               className="flex items-center gap-1"
             >
               <PiWarning className="h-4 w-4 text-red-500" />
-              <Text className="text-xs text-red-500">{errors.subProductData.images.message}</Text>
+              <Text className="text-xs text-red-500">{errors.subProductData.imagesOverride?.message}</Text>
             </motion.div>
           )}
         </div>

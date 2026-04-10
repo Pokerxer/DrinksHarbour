@@ -160,15 +160,6 @@
 
                 .product-img img {
                     transform: scale(1.05);
-
-                    &:first-child {
-                        opacity: 0;
-                    }
-
-                    &:last-child {
-                        opacity: 1;
-                        visibility: visible;
-                    }
                 }
             }
         }
@@ -197,15 +188,6 @@
             &:hover {
                 .product-img img {
                     transform: scale(1.05);
-
-                    &:first-child {
-                        opacity: 0;
-                    }
-
-                    &:last-child {
-                        opacity: 1;
-                        visibility: visible;
-                    }
                 }
             }
         }

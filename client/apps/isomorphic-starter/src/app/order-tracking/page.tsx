@@ -109,13 +109,20 @@ function OrderTrackingContent() {
 
     try {
       const response = await fetch(`${API_URL}/api/orders/number/${orderNum}?email=${encodeURIComponent(orderEmail)}`);
+      
+      if (response.status === 404) {
+        setError('Order not found. Please check your order number and email.');
+        setLoading(false);
+        return;
+      }
+      
       const data = await response.json();
 
       if (!response.ok) {
         throw new Error(data.message || 'Failed to fetch order');
       }
 
-      setOrder(data.data.order);
+      setOrder(data.data?.order || data.order || data);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch order. Please check your order number and email.');
     } finally {

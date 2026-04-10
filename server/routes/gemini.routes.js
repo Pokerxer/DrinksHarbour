@@ -43,6 +43,7 @@ const {
   generateBrandFounded,
   generateBrandCategory,
   generateProductFromSubProducts,
+  generateSubProductContent,
 } = require('../controllers/gemini.controller');
 const { authenticate } = require('../middleware/auth.middleware');
 
@@ -335,5 +336,12 @@ router.post('/brand-founded', generateBrandFounded);
  * @access  Private
  */
 router.post('/brand-category', generateBrandCategory);
+
+/**
+ * @route   POST /api/gemini/generate-subproduct-content
+ * @desc    Generate sub-product tenant content (descriptions, keywords, notes) using parent product as context
+ * @access  Private
+ */
+router.post('/generate-subproduct-content', generateSubProductContent);
 
 module.exports = router;

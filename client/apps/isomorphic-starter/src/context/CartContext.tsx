@@ -130,14 +130,6 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
       const selectedVendor = vendor || "";
       const selectedVendorId = vendorId || "";
       
-      console.log('CartContext: Creating cart item', {
-        vendor,
-        vendorId,
-        selectedVendor,
-        selectedVendorId,
-        sizeId,
-        subProductId
-      });
       const selectedSizeId = sizeId || "";
       const selectedSubProductId = subProductId || "";
       const selectedProductId = product._id || product.id || "";
@@ -251,7 +243,6 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
             dispatch({ type: "LOAD_CART", payload: parsedCart.cartArray });
           } else {
             localStorage.removeItem(STORAGE_KEY);
-            console.log('Cart expired after ' + CART_EXPIRY_DAYS + ' days');
           }
         }
       } catch (e) {
@@ -453,23 +444,16 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
   const syncCartToServer = async (): Promise<boolean> => {
     console.log('🔵 syncCartToServer called');
 
-    // Check both localStorage and sessionStorage for token
     let token = localStorage.getItem('token');
     if (!token) {
       token = sessionStorage.getItem('token');
     }
 
-    console.log('   Token found:', !!token);
-    console.log('   Cart items:', cartState.cartArray.length);
-
     if (cartState.cartArray.length === 0) {
-      console.log('   Cart is empty, skipping sync');
       return true;
     }
 
-    // If no token, return false to trigger login redirect
     if (!token) {
-      console.log('❌ No auth token - user must login');
       return false;
     }
 
@@ -478,7 +462,6 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
         const productId = item._id || item.id;
         const quantity = item.quantity || 1;
         
-        // Use actual vendor/size IDs if available, otherwise fallback to productId
         const subProductId = item.selectedSubProductId || productId;
         const sizeId = item.selectedSizeId || productId;
         const tenantId = item.selectedVendorId || productId;
@@ -493,25 +476,14 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
         };
       });
 
-      console.log('   Sending', items.length, 'items to server...');
-      console.log('   Items data:', items.map(i => ({ 
-        productId: i.productId?.substring(0, 8), 
-        subProductId: i.subProductId?.substring(0, 8),
-        sizeId: i.sizeId?.substring(0, 8),
-        tenantId: i.tenantId?.substring(0, 8),
-        quantity: i.quantity 
-      })));
-
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       };
 
-      console.log('   Fetching...');
-
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
 
         const response = await fetch(`${API_URL}/api/cart/save`, {
           method: 'POST',
@@ -524,30 +496,21 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
 
         const data = await response.json();
 
-        console.log('   Response status:', response.status);
-        console.log('   Response data:', JSON.stringify(data).substring(0, 200));
-
         if (!response.ok) {
-          console.error('❌ Cart sync failed:', data.message);
           return false;
         }
 
-        console.log('✅ Cart saved successfully:', data.data?.results);
         return true;
       } catch (fetchError: any) {
-        console.error('❌ Fetch error:', fetchError.name, fetchError.message);
         return false;
       }
     } catch (error) {
-      console.error('❌ Cart sync error:', error);
       return false;
     }
   };
 
   const loadServerCart = async (): Promise<void> => {
     const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-    
-    console.log('🔵 loadServerCart called, token exists:', !!token);
 
     const headers: Record<string, string> = {};
 
@@ -556,10 +519,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
     } else {
       const guestId = localStorage.getItem('guestId');
       if (!guestId) {
-        console.log('   No token or guestId, skipping server cart load');
         return;
       }
-      console.log('   Using guestId:', guestId);
     }
 
     try {
@@ -571,22 +532,16 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (!response.ok) {
         if (response.status === 401) {
-          console.log('   User not authenticated, skipping server cart load');
           return;
         }
-        console.error('Failed to load server cart:', data?.message || 'Unknown error');
         return;
       }
 
       const serverCart = data.data?.cart;
       
       if (serverCart && serverCart.items && serverCart.items.length > 0) {
-        console.log('✅ Server cart loaded:', serverCart.items.length, 'items');
-      } else {
-        console.log('   Server cart is empty');
       }
     } catch (error) {
-      console.error('Error loading server cart:', error);
     }
   };
 

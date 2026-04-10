@@ -106,7 +106,11 @@ export const productFormSchema = z.object({
   // ═══════════════════════════════════════════════════════════════════
   // IDENTIFICATION
   // ═══════════════════════════════════════════════════════════════════
-  name: z.string().min(1, 'Product name is required').max(200).optional().or(z.literal('')),
+  name: z.string({ required_error: 'Product name is required' })
+    .min(1, 'Product name cannot be empty')
+    .max(200, 'Product name must be 200 characters or less')
+    .optional()
+    .or(z.literal('')),
   slug: z.string().optional(),
   sku: z.string().optional(),
   barcode: z.string().optional(),
@@ -120,7 +124,9 @@ export const productFormSchema = z.object({
     'beer', 'wine', 'sparkling_wine', 'fortified_wine', 'spirit', 'liqueur', 
     'cocktail_ready_to_drink', 'non_alcoholic', 'juice', 'tea', 'coffee', 
     'energy_drink', 'water', 'mixer', 'snack', 'accessory', 'gift', 'other'
-  ], { message: 'Product type is required' }).optional().or(z.literal('')),
+  ], { 
+    errorMap: () => ({ message: 'Please select a valid product type from the list' })
+  }).optional().or(z.literal('')),
   subType: z.string().optional(),
   isAlcoholic: z.boolean().default(false),
   abv: z.number().min(0).max(100).nullable().optional(),
@@ -138,8 +144,16 @@ export const productFormSchema = z.object({
   appellation: z.string().optional(),
   producer: z.string().optional(),
   brand: z.string().optional(),
-  vintage: z.number().min(1800).max(new Date().getFullYear() + 1).nullable().optional(),
-  age: z.number().min(0).nullable().optional(),
+  vintage: z.preprocess((v) => {
+    if (v === '' || v === null || v === undefined) return undefined;
+    const num = Number(v);
+    return isNaN(num) ? undefined : num;
+  }, z.number().min(1800).max(new Date().getFullYear() + 1).nullable().optional()),
+  age: z.preprocess((v) => {
+    if (v === '' || v === null || v === undefined) return undefined;
+    const num = Number(v);
+    return isNaN(num) ? undefined : num;
+  }, z.number().min(0).nullable().optional()),
   ageStatement: z.string().optional(),
   distilleryName: z.string().optional(),
   breweryName: z.string().optional(),
@@ -357,7 +371,7 @@ export const productFormSchema = z.object({
     minimumOrderQuantity: z.number().min(0).nullable().optional(),
     
     // Status fields
-    status: z.string().default('draft'),
+    status: z.string().default('active'),
     isFeaturedByTenant: z.boolean().default(false),
     isNewArrival: z.boolean().default(false),
     isBestSeller: z.boolean().default(false),
@@ -387,10 +401,26 @@ export const productFormSchema = z.object({
     
     // Shipping & Logistics
     shipping: z.object({
-      weight: z.number().nullable().optional(),
-      length: z.number().nullable().optional(),
-      width: z.number().nullable().optional(),
-      height: z.number().nullable().optional(),
+      weight: z.preprocess((v) => {
+        if (v === '' || v === null || v === undefined) return undefined;
+        const num = Number(v);
+        return isNaN(num) ? undefined : num;
+      }, z.number().nullable().optional()),
+      length: z.preprocess((v) => {
+        if (v === '' || v === null || v === undefined) return undefined;
+        const num = Number(v);
+        return isNaN(num) ? undefined : num;
+      }, z.number().nullable().optional()),
+      width: z.preprocess((v) => {
+        if (v === '' || v === null || v === undefined) return undefined;
+        const num = Number(v);
+        return isNaN(num) ? undefined : num;
+      }, z.number().nullable().optional()),
+      height: z.preprocess((v) => {
+        if (v === '' || v === null || v === undefined) return undefined;
+        const num = Number(v);
+        return isNaN(num) ? undefined : num;
+      }, z.number().nullable().optional()),
       fragile: z.boolean().default(true),
       requiresAgeVerification: z.boolean().default(true),
       hazmat: z.boolean().default(false),
