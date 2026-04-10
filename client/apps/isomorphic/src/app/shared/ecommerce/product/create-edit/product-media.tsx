@@ -7,12 +7,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import cn from '@core/utils/class-names';
 import { CreateProductInput } from '@/validators/create-product.schema';
 import FormGroup from '@/app/shared/form-group';
-import { useState, useCallback } from 'react';
-import { PiX, PiUpload, PiImage, PiVideo, PiSpinner, PiSparkle } from 'react-icons/pi';
+import { useState, useCallback, useEffect } from 'react';
+import { PiX, PiUpload, PiImage, PiVideo, PiSpinner, PiSparkle, PiBrandsLogo } from 'react-icons/pi';
 import Image from 'next/image';
 import { useSession } from 'next-auth/react';
 import { uploadService } from '@/services/upload.service';
 import toast from 'react-hot-toast';
+import { openPinterestPicker } from '@/components/PinterestImagePicker';
 
 interface ProductMediaProps {
   className?: string;
@@ -270,6 +271,30 @@ export default function ProductMedia({
               </p>
             </div>
           </motion.div>
+
+          {/* Pinterest Search Button */}
+          <div className="mt-4 flex justify-center">
+            <Button
+              variant="outline"
+              color="secondary"
+              onClick={() => {
+                const productName = watch('name') || '';
+                openPinterestPicker((images) => {
+                  const currentImages = uploadedImages || [];
+                  const newImages = images.map((img, idx) => ({
+                    ...img,
+                    isPrimary: currentImages.length === 0 && idx === 0,
+                  }));
+                  setValue('uploadedImages', [...currentImages, ...newImages]);
+                  toast.success(`${images.length} image(s) imported from Pinterest`);
+                }, productName);
+              }}
+              className="flex items-center gap-2"
+            >
+              <PiBrandsLogo className="h-4 w-4 text-red-600" />
+              Search Pinterest
+            </Button>
+          </div>
 
           {/* Image Preview Grid */}
           <AnimatePresence>
