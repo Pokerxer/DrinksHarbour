@@ -2586,14 +2586,22 @@ Return ONLY this JSON structure:
   "tenantNotes": "Internal note for the tenant about this product"
 }`;
 
-  const generated = await callOllama(prompt);
+  let generated;
+  try {
+    generated = await callOllama(prompt);
+  } catch (ollamaErr) {
+    console.warn('Ollama unavailable, falling back to Gemini:', ollamaErr.message);
+    const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+    const result = await model.generateContent(prompt);
+    const text = result?.response?.text() || '';
+    generated = parseJSONResponse(text, null);
+  }
 
   if (!generated || typeof generated !== 'object') {
     res.status(500);
     throw new Error('Failed to parse AI response');
   }
 
-  // Sanitize
   if (generated.shortDescriptionOverride && generated.shortDescriptionOverride.length > 200) {
     generated.shortDescriptionOverride = generated.shortDescriptionOverride.substring(0, 197) + '...';
   }
