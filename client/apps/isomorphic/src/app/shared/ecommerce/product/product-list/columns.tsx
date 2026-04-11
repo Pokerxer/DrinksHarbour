@@ -31,6 +31,7 @@ export interface ProductListItem {
   isPublished: boolean;
   totalStock?: number;
   subProductCount?: number;
+  variantCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -158,19 +159,23 @@ export const productsListColumns = [
 
   columnHelper.display({
     id: 'subProducts',
-    size: 120,
+    size: 130,
     header: 'Variants',
     cell: ({ row }) => {
-      const count = row.original.subProductCount ?? 0;
+      const variantCount = row.original.variantCount ?? row.original.subProductCount ?? 0;
+      const subProductCount = row.original.subProductCount ?? 0;
+      const hasSizes = variantCount > subProductCount;
       return (
         <Flex align="center" gap="2">
           <div className={cn(
             'w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold',
-            count > 0 ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-400'
+            variantCount > 0 ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-400'
           )}>
-            {count}
+            {variantCount}
           </div>
-          <Text className="text-xs text-gray-500">sub-products</Text>
+          <Text className="text-xs text-gray-500">
+            {hasSizes ? 'sizes' : 'variants'}
+          </Text>
         </Flex>
       );
     },

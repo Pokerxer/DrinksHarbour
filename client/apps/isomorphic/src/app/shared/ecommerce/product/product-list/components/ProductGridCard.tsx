@@ -40,7 +40,7 @@ export default function ProductGridCard({ product, isSelected, onSelect }: Produ
   const [isHovered, setIsHovered] = useState(false);
   const imageUrl = product.images?.find(i => i.isPrimary)?.url || product.images?.[0]?.url;
   const BeverageIcon = getBeverageIcon(product.type);
-  const subCount = product.subProductCount ?? 0;
+  const variantCount = product.variantCount ?? product.subProductCount ?? 0;
 
   const statusColor = !product.isPublished || product.status === 'draft' ? 'neutral'
     : product.status === 'discontinued' ? 'secondary'
@@ -163,13 +163,13 @@ export default function ProductGridCard({ product, isSelected, onSelect }: Produ
             )}
           </Flex>
 
-          {/* Sub-products count */}
+          {/* Variant count */}
           <Flex align="center" gap="1">
             <div className={cn(
               'w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold',
-              subCount > 0 ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-400'
+              variantCount > 0 ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-400'
             )}>
-              {subCount}
+              {variantCount}
             </div>
             <Text className="text-xs text-gray-400">variants</Text>
           </Flex>

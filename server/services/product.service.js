@@ -11562,22 +11562,43 @@ const getAdminProductList = async ({ page = 1, limit = 500, search, status } = {
     Product.countDocuments(query),
   ]);
 
-  // Count sub-products per product in one query
+  // Count variants per product: sum of size variants across all sub-products.
+  // If a sub-product has explicit sizes (each with their own SKU/barcode), those
+  // are the real sellable variants. Fall back to counting 1 per sub-product when
+  // no sizes are defined (e.g. sell-without-size-variants mode).
   const productIds = products.map(p => p._id);
   const subProductCounts = await SubProduct.aggregate([
     { $match: { product: { $in: productIds } } },
-    { $group: { _id: '$product', count: { $sum: 1 } } },
+    {
+      $group: {
+        _id: '$product',
+        subProductCount: { $sum: 1 },
+        variantCount: {
+          $sum: {
+            $cond: [
+              { $gt: [{ $size: { $ifNull: ['$sizes', []] } }, 0] },
+              { $size: { $ifNull: ['$sizes', []] } },
+              1,
+            ],
+          },
+        },
+      },
+    },
   ]);
-  const countMap = subProductCounts.reduce((acc, { _id, count }) => {
-    acc[_id.toString()] = count;
+  const countMap = subProductCounts.reduce((acc, { _id, subProductCount, variantCount }) => {
+    acc[_id.toString()] = { subProductCount, variantCount };
     return acc;
   }, {});
 
-  const items = products.map(p => ({
-    ...p,
-    isPublished: p.isPublished ?? (p.status === 'approved' && !!p.publishedAt),
-    subProductCount: countMap[p._id.toString()] || 0,
-  }));
+  const items = products.map(p => {
+    const counts = countMap[p._id.toString()] || { subProductCount: 0, variantCount: 0 };
+    return {
+      ...p,
+      isPublished: p.isPublished ?? (p.status === 'approved' && !!p.publishedAt),
+      subProductCount: counts.subProductCount,
+      variantCount: counts.variantCount,
+    };
+  });
 
   return {
     products: items,

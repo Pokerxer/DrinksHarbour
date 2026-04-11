@@ -245,21 +245,23 @@ export const subProductListColumns = [
     },
   }),
   
-  // SKU Column
+  // Variant Count Column
   columnHelper.display({
-    id: 'sku',
+    id: 'variantCount',
     size: 120,
-    header: 'SKU',
-    cell: ({ row }) => (
-      <motion.div
-        whileHover={{ scale: 1.02 }}
-        className="font-mono cursor-pointer"
-      >
-        <Text className="text-xs font-bold text-gray-700 bg-gradient-to-r from-gray-100 to-gray-50 px-2 py-1 rounded-lg border border-gray-200 hover:border-blue-300 transition-all">
-          {row.original.sku ? row.original.sku.slice(0, 12) + (row.original.sku.length > 12 ? '...' : '') : 'N/A'}
-        </Text>
-      </motion.div>
-    ),
+    header: 'Variants',
+    cell: ({ row }) => {
+      const sizes = row.original.sizes || [];
+      const count = sizes.length > 0 ? sizes.length : 1;
+      return (
+        <div className="flex items-center gap-2">
+          <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold ${count > 1 ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-400'}`}>
+            {count}
+          </div>
+          <Text className="text-xs text-gray-500">{sizes.length > 0 ? 'sizes' : 'variant'}</Text>
+        </div>
+      );
+    },
   }),
   
   // Sizes/Variants Column
