@@ -11,20 +11,12 @@ import { useState, useCallback, useEffect } from 'react';
 import { PiX, PiUpload, PiImage, PiVideo, PiSpinner, PiSparkle, PiPinterestLogo } from 'react-icons/pi';
 import Image from 'next/image';
 import { useSession } from 'next-auth/react';
-import { uploadService } from '@/services/upload.service';
+import { uploadService, UploadedImage } from '@/services/upload.service';
 import toast from 'react-hot-toast';
-import { openPinterestPicker } from '@/components/PinterestImagePicker';
 import PinterestImagePicker from '@/components/PinterestImagePicker';
 
 interface ProductMediaProps {
   className?: string;
-}
-
-interface UploadedImage {
-  url: string;
-  publicId: string;
-  thumbnail: string;
-  isPrimary: boolean;
 }
 
 // Animation variants
@@ -287,7 +279,7 @@ export default function ProductMedia({
             </Button>
           </div>
 
-          {/* Pinterest Image Picker Modal */}
+          {/* Image Search Picker Modal */}
           <PinterestImagePicker
             isOpen={showPinterestPicker}
             onClose={() => setShowPinterestPicker(false)}
@@ -299,7 +291,6 @@ export default function ProductMedia({
                 isPrimary: currentImages.length === 0 && idx === 0,
               }));
               setValue('uploadedImages', [...currentImages, ...newImages]);
-              toast.success(`${images.length} image(s) imported from Pinterest`);
             }}
           />
 

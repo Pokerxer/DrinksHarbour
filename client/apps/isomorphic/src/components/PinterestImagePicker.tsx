@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { Modal } from '@core/modal-views/modal';
-import { pinterestService } from '@/services/pinterest.service';
+import { pinterestService, ImageSearchResult } from '@/services/pinterest.service';
 import { uploadService, UploadedImage } from '@/services/upload.service';
+import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 
 interface PinterestImagePickerProps {
@@ -13,121 +14,98 @@ interface PinterestImagePickerProps {
   initialSearch?: string;
 }
 
-export default function PinterestImagePicker({ isOpen, onClose, onImagesSelected, initialSearch = '' }: PinterestImagePickerProps) {
+export default function PinterestImagePicker({
+  isOpen,
+  onClose,
+  onImagesSelected,
+  initialSearch = '',
+}: PinterestImagePickerProps) {
+  const { data: session } = useSession();
   const [query, setQuery] = useState(initialSearch);
-  const [images, setImages] = useState<any[]>([]);
+  const [images, setImages] = useState<ImageSearchResult[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [status, setStatus] = useState<{ authenticated: boolean; configured: boolean; message: string } | null>(null);
-  const [checkingStatus, setCheckingStatus] = useState(true);
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [configMessage, setConfigMessage] = useState('');
 
   useEffect(() => {
-    if (isOpen) {
-      checkStatus();
-    }
+    if (!isOpen) return;
+    pinterestService
+      .checkStatus()
+      .then((s) => {
+        setConfigured(s.configured);
+        setConfigMessage(s.message);
+        // Auto-search when modal opens with an initial query
+        if (s.configured && initialSearch.trim()) {
+          setQuery(initialSearch);
+          runSearch(initialSearch);
+        }
+      })
+      .catch(() => {
+        setConfigured(false);
+        setConfigMessage('Could not reach the server.');
+      });
   }, [isOpen]);
 
-  useEffect(() => {
-    if (isOpen && status?.authenticated && initialSearch) {
-      setQuery(initialSearch);
-      if (!searched) {
-        handleSearch(initialSearch);
-      }
-    }
-  }, [isOpen, status?.authenticated]);
-
-  const checkStatus = async () => {
-    try {
-      const statusData = await pinterestService.checkStatus();
-      setStatus(statusData);
-    } catch (error: any) {
-      setStatus({
-        authenticated: false,
-        configured: false,
-        message: error.message || 'Failed to check Pinterest status',
-      });
-    } finally {
-      setCheckingStatus(false);
-    }
-  };
-
-  const handleConnect = async () => {
-    try {
-      const { url } = await pinterestService.getOAuthUrl();
-      window.location.href = url;
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to get Pinterest OAuth URL');
-    }
-  };
-
-  const handleSearch = async (searchQuery?: string) => {
-    const q = searchQuery || query;
-    if (!q.trim()) return;
-    if (!status?.authenticated) {
-      toast.error('Please connect to Pinterest first');
-      return;
-    }
-
+  const runSearch = async (q: string) => {
     setLoading(true);
     setSearched(true);
     setSelectedIds(new Set());
     try {
       const result = await pinterestService.search(q.trim(), 30);
-      setImages(result.results.filter((img: any) => img.imageUrl));
+      setImages(result.results);
     } catch (error: any) {
-      console.error('Pinterest search error:', error);
-      toast.error(error.message || 'Failed to search Pinterest');
+      toast.error(error.message || 'Search failed');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleSearch = () => {
+    if (query.trim()) runSearch(query.trim());
+  };
+
   const toggleSelection = (id: string) => {
-    const newSet = new Set(selectedIds);
-    if (newSet.has(id)) {
-      newSet.delete(id);
-    } else {
-      newSet.add(id);
-    }
-    setSelectedIds(newSet);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   };
 
   const handleImport = async () => {
     if (selectedIds.size === 0) return;
+    const token = session?.user?.token;
+    if (!token) {
+      toast.error('Please sign in to import images');
+      return;
+    }
+
     setImporting(true);
-
     try {
-      const selectedImages = images.filter((img) => selectedIds.has(img.id));
-      const uploadedImages: UploadedImage[] = [];
+      const urls = images
+        .filter((img) => selectedIds.has(img.id))
+        .map((img) => img.imageUrl);
 
-      for (const img of selectedImages) {
-        try {
-          const blob = await fetch(img.imageUrl).then((r) => r.blob());
-          const file = new File([blob], `${img.id}.jpg`, { type: 'image/jpeg' });
-          const response = await uploadService.uploadProductGallery([file], '');
-          if (response.data?.[0]) {
-            uploadedImages.push({
-              url: response.data[0].url,
-              publicId: response.data[0].publicId,
-              isPrimary: uploadedImages.length === 0,
-            });
-          }
-        } catch (err) {
-          console.error('Failed to import image:', img.id, err);
-        }
-      }
+      const response = await uploadService.importFromUrls(urls, token);
 
-      if (uploadedImages.length > 0) {
+      if (response.data.length > 0) {
+        const uploadedImages: UploadedImage[] = response.data.map((img, idx) => ({
+          url: img.url,
+          publicId: img.publicId,
+          thumbnail: img.thumbnail,
+          isPrimary: idx === 0,
+        }));
         onImagesSelected(uploadedImages);
         handleClose();
+        toast.success(`${uploadedImages.length} image(s) imported`);
       } else {
         toast.error('Failed to import any images');
       }
     } catch (error: any) {
-      console.error('Import error:', error);
-      toast.error(error.message || 'Failed to import images');
+      toast.error(error.message || 'Import failed');
     } finally {
       setImporting(false);
     }
@@ -146,38 +124,34 @@ export default function PinterestImagePicker({ isOpen, onClose, onImagesSelected
   return (
     <Modal isOpen={isOpen} onClose={handleClose} size="xl">
       <div className="p-6">
-        {checkingStatus ? (
-          <div className="flex items-center justify-center min-h-[400px]">
-            <span>Loading...</span>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-lg font-semibold">Search Images</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Powered by Pinterest</p>
           </div>
-        ) : !status?.authenticated ? (
-          <div className="max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Connect to Pinterest</h2>
-              <button onClick={handleClose} className="p-2">✕</button>
-            </div>
-            <div className="flex-1 flex flex-col items-center justify-center py-12">
-              <p className="text-gray-500 text-center mb-6 max-w-md">
-                {status?.configured 
-                  ? 'Click the button below to authorize access to your Pinterest account.'
-                  : status?.message || 'Pinterest is not configured.'}
-              </p>
-              {status?.configured && (
-                <button
-                  onClick={handleConnect}
-                  className="px-4 py-2 bg-red-600 text-white rounded"
-                >
-                  Connect Pinterest Account
-                </button>
-              )}
-            </div>
+          <button onClick={handleClose} className="p-2 text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+
+        {/* Not configured */}
+        {configured === false && (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <p className="text-gray-500 max-w-sm">{configMessage}</p>
+            <a
+              href="https://developers.pinterest.com/apps/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 text-sm text-red-600 underline"
+            >
+              Get your Pinterest access token →
+            </a>
           </div>
-        ) : (
-          <div className="max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Search Pinterest Images</h2>
-              <button onClick={handleClose} className="p-2">✕</button>
-            </div>
+        )}
+
+        {/* Configured */}
+        {configured === true && (
+          <div className="flex flex-col" style={{ maxHeight: '75vh' }}>
+            {/* Search bar */}
             <div className="flex gap-2 mb-4">
               <input
                 type="text"
@@ -185,63 +159,88 @@ export default function PinterestImagePicker({ isOpen, onClose, onImagesSelected
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                className="flex-1 px-3 py-2 border rounded"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <button 
-                onClick={() => handleSearch()} 
+              <button
+                onClick={handleSearch}
                 disabled={loading || !query.trim()}
-                className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
+                className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-40"
               >
                 {loading ? '...' : 'Search'}
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto min-h-[300px] max-h-[400px]">
-              {!searched && (
-                <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                  <p>Enter a search term to find images</p>
+
+            {/* Results area */}
+            <div className="flex-1 overflow-y-auto min-h-[300px] max-h-[420px]">
+              {!searched && !loading && (
+                <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                  Enter a search term to find images
                 </div>
               )}
               {loading && (
-                <div className="flex items-center justify-center h-full">
-                  <span>Loading...</span>
+                <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                  Searching...
                 </div>
               )}
               {searched && !loading && images.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                  <p>No images found for "{query}"</p>
+                <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                  No images found for "{query}"
                 </div>
               )}
               {images.length > 0 && (
                 <div className="grid grid-cols-3 gap-2">
-                  {images.map((img) => (
-                    <div
-                      key={img.id}
-                      className={`relative aspect-square rounded-md overflow-hidden cursor-pointer border-2 ${
-                        selectedIds.has(img.id) ? 'border-red-600' : 'border-transparent'
-                      }`}
-                      onClick={() => toggleSelection(img.id)}
-                    >
-                      <img src={img.imageUrl} alt={img.title || 'Pinterest image'} className="w-full h-full object-cover" />
-                      {selectedIds.has(img.id) && (
-                        <div className="absolute top-1 right-1 bg-red-600 rounded-full p-1 text-white text-xs">✓</div>
-                      )}
-                    </div>
-                  ))}
+                  {images.map((img) => {
+                    const selected = selectedIds.has(img.id);
+                    return (
+                      <div
+                        key={img.id}
+                        onClick={() => toggleSelection(img.id)}
+                        className={`relative aspect-square rounded-lg overflow-hidden cursor-pointer border-2 transition-all ${
+                          selected ? 'border-blue-500 ring-2 ring-blue-300' : 'border-transparent hover:border-gray-300'
+                        }`}
+                      >
+                        <img
+                          src={img.thumbUrl}
+                          alt={img.title || 'Image'}
+                          className="w-full h-full object-cover"
+                        />
+                        {selected && (
+                          <div className="absolute top-1.5 right-1.5 bg-blue-500 rounded-full w-5 h-5 flex items-center justify-center text-white text-xs font-bold">
+                            ✓
+                          </div>
+                        )}
+                        {img.credit && (
+                          <div className="absolute bottom-0 inset-x-0 bg-black/40 text-white text-[9px] px-1 py-0.5 truncate">
+                            {img.credit}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
+
+            {/* Footer */}
             {selectedIds.size > 0 && (
               <div className="mt-4 pt-4 border-t flex items-center justify-between">
-                <span className="text-sm text-gray-600">{selectedIds.size} image(s) selected</span>
+                <span className="text-sm text-gray-500">{selectedIds.size} selected</span>
                 <button
                   onClick={handleImport}
                   disabled={importing}
-                  className="px-4 py-2 bg-green-600 text-white rounded"
+                  className="px-5 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-40"
                 >
-                  {importing ? '...' : 'Import Selected'}
+                  {importing ? 'Importing...' : `Import ${selectedIds.size} image${selectedIds.size > 1 ? 's' : ''}`}
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Loading status check */}
+        {configured === null && (
+          <div className="flex items-center justify-center min-h-[200px] text-gray-400 text-sm">
+            Loading...
           </div>
         )}
       </div>

@@ -170,10 +170,45 @@ const getImageDetails = async (publicId) => {
   }
 };
 
+/**
+ * Upload image from a remote URL (e.g., Pinterest CDN)
+ */
+const uploadFromUrl = async (url, options = {}) => {
+  const {
+    folder = 'products/gallery',
+    tags = [],
+    context = {},
+  } = options;
+
+  const result = await cloudinary.uploader.upload(url, {
+    folder: `drinksharbour/${folder}`,
+    resource_type: 'image',
+    tags: ['drinksharbour', ...tags],
+    context,
+  });
+
+  return {
+    url: result.secure_url,
+    publicId: result.public_id,
+    resourceType: result.resource_type,
+    format: result.format,
+    width: result.width,
+    height: result.height,
+    size: result.bytes,
+    thumbnail: cloudinary.url(result.public_id, {
+      transformation: [
+        { width: 200, height: 200, crop: 'fill' },
+        { quality: 'auto', fetch_format: 'auto' },
+      ],
+    }),
+  };
+};
+
 module.exports = {
   cloudinary,
   uploadImage,
   uploadMultipleImages,
+  uploadFromUrl,
   deleteImage,
   deleteMultipleImages,
   updateImageMetadata,

@@ -2,6 +2,13 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
+export interface UploadedImage {
+  url: string;
+  publicId: string;
+  thumbnail: string;
+  isPrimary: boolean;
+}
+
 interface UploadImageResponse {
   success: boolean;
   message: string;
@@ -107,6 +114,27 @@ export const uploadService = {
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.message || 'Failed to upload gallery images');
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Import images from remote URLs (e.g., Pinterest) via server-side Cloudinary upload
+   */
+  async importFromUrls(urls: string[], token: string): Promise<{ success: boolean; count: number; data: Array<{ url: string; publicId: string; thumbnail: string }> }> {
+    const response = await fetch(`${API_URL}/api/pinterest/import-images`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ urls }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to import images');
     }
 
     return response.json();

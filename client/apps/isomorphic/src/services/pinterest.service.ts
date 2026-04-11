@@ -1,112 +1,46 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
-export interface PinterestImage {
+export interface ImageSearchResult {
   id: string;
   title: string;
   description: string;
   imageUrl: string;
+  thumbUrl: string;
   link: string;
-  pinUrl: string;
-  boardId?: string;
+  credit: string;
+  creditUrl: string;
 }
 
-export interface PinterestSearchResponse {
+export interface ImageSearchResponse {
   success: boolean;
   count: number;
-  results: PinterestImage[];
+  results: ImageSearchResult[];
 }
 
-export interface PinterestStatusResponse {
+export interface ImageSearchStatus {
   success: boolean;
-  authenticated: boolean;
   configured: boolean;
   message: string;
 }
 
 export const pinterestService = {
-  async search(query: string, limit: number = 20): Promise<PinterestSearchResponse> {
-    const response = await fetch(
-      `${API_URL}/api/pinterest/search?q=${encodeURIComponent(query)}&limit=${limit}`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      }
-    );
+  async checkStatus(): Promise<ImageSearchStatus> {
+    const response = await fetch(`${API_URL}/api/pinterest/status`);
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to check status');
+    }
+    return response.json();
+  },
 
+  async search(query: string, limit: number = 30): Promise<ImageSearchResponse> {
+    const response = await fetch(
+      `${API_URL}/api/pinterest/search?q=${encodeURIComponent(query)}&limit=${limit}`
+    );
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.message || 'Failed to search Pinterest');
     }
-
-    return response.json();
-  },
-
-  async getPins(limit: number = 50): Promise<PinterestSearchResponse> {
-    const response = await fetch(
-      `${API_URL}/api/pinterest/pins?limit=${limit}`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to get Pinterest pins');
-    }
-
-    return response.json();
-  },
-
-  async getBoards() {
-    const response = await fetch(`${API_URL}/api/pinterest/boards`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to get Pinterest boards');
-    }
-
-    return response.json();
-  },
-
-  async getOAuthUrl(): Promise<{ url: string; state: string }> {
-    const response = await fetch(`${API_URL}/api/pinterest/oauth-url`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to get Pinterest OAuth URL');
-    }
-
-    return response.json();
-  },
-
-  async checkStatus(): Promise<PinterestStatusResponse> {
-    const response = await fetch(`${API_URL}/api/pinterest/status`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to check Pinterest status');
-    }
-
     return response.json();
   },
 };

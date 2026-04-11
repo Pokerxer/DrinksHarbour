@@ -19,6 +19,9 @@ export const metadata: Metadata = {
   title: "DrinksHarbour - Premium Beverages Delivered",
   description:
     "Shop premium spirits, wines, beers, and more. Free delivery on orders over ₦50,000.",
+  other: {
+    "p:domain_verify": "3d1678895d2b97b7042bdd2fc97753a6",
+  },
 };
 
 export default function RootLayout({

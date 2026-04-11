@@ -1,10 +1,19 @@
 const express = require('express');
 const router = express.Router();
-const { searchPinterestImages, getOauthUrl, exchangeCodeForToken, getUserPins, getUserBoards } = require('../services/pinterest.service');
+const { searchImages, checkStatus } = require('../services/pinterest.service');
+const { authenticate } = require('../middleware/auth.middleware');
+const cloudinaryService = require('../services/cloudinary.service');
 
 const asyncHandler = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 
+// Check if Pinterest token is configured
+router.get('/status', (req, res) => {
+  const status = checkStatus();
+  res.json({ success: true, ...status });
+});
+
+// Search Pinterest pins
 router.get('/search', asyncHandler(async (req, res) => {
   const { q, limit } = req.query;
 
@@ -12,96 +21,35 @@ router.get('/search', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Search query is required' });
   }
 
-  const searchLimit = Math.min(parseInt(limit) || 20, 50);
-  const results = await searchPinterestImages(q.trim(), searchLimit);
-
-  res.json({
-    success: true,
-    count: results.length,
-    results,
-  });
+  const results = await searchImages(q.trim(), parseInt(limit) || 30);
+  res.json({ success: true, count: results.length, results });
 }));
 
-router.get('/pins', asyncHandler(async (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit) || 50, 100);
-  const pins = await getUserPins(limit);
+// Import Pinterest image URLs into Cloudinary (authenticated)
+router.post('/import-images', authenticate, asyncHandler(async (req, res) => {
+  const { urls } = req.body;
 
-  const mapped = pins.map((pin) => ({
-    id: pin.id,
-    title: pin.title || '',
-    description: pin.description || '',
-    imageUrl: pin.media?.images?.original?.url || pin.media?.images?.['236x']?.url || '',
-    link: pin.link || '',
-    pinUrl: `https://www.pinterest.com/pin/${pin.id}/`,
-    boardId: pin.board_id || null,
-  }));
-
-  res.json({
-    success: true,
-    count: mapped.length,
-    results: mapped,
-  });
-}));
-
-router.get('/boards', asyncHandler(async (req, res) => {
-  const boards = await getUserBoards();
-
-  res.json({
-    success: true,
-    count: boards.length,
-    results: boards,
-  });
-}));
-
-router.get('/oauth-url', asyncHandler(async (req, res) => {
-  const { url, state } = getOauthUrl();
-  res.json({
-    success: true,
-    url,
-    state,
-  });
-}));
-
-router.get('/callback', asyncHandler(async (req, res) => {
-  const { code, state, error } = req.query;
-
-  if (error) {
-    return res.redirect(`${process.env.FRONTEND_URL}/ecommerce/products/create?pinterest_error=${encodeURIComponent(error)}`);
+  if (!Array.isArray(urls) || urls.length === 0) {
+    return res.status(400).json({ error: 'urls array is required' });
   }
 
-  if (!code) {
-    return res.redirect(`${process.env.FRONTEND_URL}/ecommerce/products/create?pinterest_error=no_code`);
-  }
-
-  try {
-    const tokens = await exchangeCodeForToken(code);
-    
-    process.env.PINTEREST_ACCESS_TOKEN = tokens.accessToken;
-    if (tokens.refreshToken) {
-      process.env.PINTEREST_REFRESH_TOKEN = tokens.refreshToken;
+  const results = [];
+  for (const url of urls) {
+    try {
+      const uploaded = await cloudinaryService.uploadFromUrl(url, {
+        folder: 'products/gallery',
+        tags: ['pinterest-import'],
+        context: { uploadedBy: req.user?._id?.toString() },
+      });
+      results.push({ success: true, ...uploaded });
+    } catch (err) {
+      console.error('Failed to import Pinterest image:', url, err.message);
+      results.push({ success: false, url, error: err.message });
     }
-
-    res.redirect(`${process.env.FRONTEND_URL}/ecommerce/products/create?pinterest_success=true`);
-  } catch (err) {
-    console.error('Pinterest OAuth callback error:', err);
-    res.redirect(`${process.env.FRONTEND_URL}/ecommerce/products/create?pinterest_error=${encodeURIComponent(err.message)}`);
   }
-}));
 
-router.get('/status', asyncHandler(async (req, res) => {
-  const hasToken = !!process.env.PINTEREST_ACCESS_TOKEN;
-  const hasAppCredentials = !!(process.env.PINTEREST_APP_ID && process.env.PINTEREST_APP_SECRET);
-  
-  res.json({
-    success: true,
-    authenticated: hasToken,
-    configured: hasAppCredentials,
-    message: hasToken 
-      ? 'Connected to Pinterest' 
-      : hasAppCredentials 
-        ? 'App configured but not authenticated. Click "Connect Pinterest" to authorize.'
-        : 'Pinterest app not configured. Add PINTEREST_APP_ID and PINTEREST_APP_SECRET to .env',
-  });
+  const successful = results.filter((r) => r.success);
+  res.json({ success: true, count: successful.length, data: successful });
 }));
 
 module.exports = router;
