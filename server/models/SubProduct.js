@@ -645,6 +645,31 @@ subProductSchema.virtual('displayPrice').get(function () {
   return this.baseSellingPrice;
 });
 
+subProductSchema.virtual('effectiveSalePrice').get(function () {
+  if (!this.isOnSale) return null;
+  if (this.salePrice) return this.salePrice;
+  
+  // Calculate from percentage discount
+  if (this.saleType === 'percentage' && this.saleDiscountValue > 0 && this.baseSellingPrice > 0) {
+    return this.baseSellingPrice * (1 - this.saleDiscountValue / 100);
+  }
+  
+  // Fixed discount
+  if (this.saleType === 'fixed' && this.saleDiscountValue > 0) {
+    return Math.max(0, this.baseSellingPrice - this.saleDiscountValue);
+  }
+  
+  return null;
+});
+
+subProductSchema.virtual('isSaleActive').get(function () {
+  if (!this.isOnSale || !this.salePrice) return false;
+  const now = new Date();
+  if (this.saleStartDate && now < this.saleStartDate) return false;
+  if (this.saleEndDate && now > this.saleEndDate) return false;
+  return true;
+});
+
 // Auto-update isOnSale before save
 subProductSchema.pre('save', function () {
   if (this.salePrice && this.saleStartDate && this.saleEndDate) {

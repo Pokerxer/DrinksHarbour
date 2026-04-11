@@ -4505,7 +4505,12 @@ const searchProducts = async (searchParams = {}) => {
         availableSizes: processedSizes.length,
         isFeatured: subProduct.isFeaturedByTenant || false,
         isOnSale: subProduct.isOnSale || false,
+        salePrice: subProduct.salePrice || null,
+        saleType: subProduct.saleType || null,
         saleDiscountValue: subProduct.saleDiscountValue || 0,
+        saleStartDate: subProduct.saleStartDate || null,
+        saleEndDate: subProduct.saleEndDate || null,
+        effectiveSalePrice: saleActive ? minSizePrice : null,
       };
     });
 
