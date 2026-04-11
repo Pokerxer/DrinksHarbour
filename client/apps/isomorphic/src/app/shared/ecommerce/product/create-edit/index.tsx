@@ -33,6 +33,7 @@ import ProductAwards from '@/app/shared/ecommerce/product/create-edit/product-aw
 import ProductRatings from '@/app/shared/ecommerce/product/create-edit/product-ratings';
 import ProductMedia from '@/app/shared/ecommerce/product/create-edit/product-media';
 import ProductPricing from '@/app/shared/ecommerce/product/create-edit/product-pricing';
+import ProductSale from '@/app/shared/ecommerce/product/create-edit/product-sale';
 import ProductSeo from '@/app/shared/ecommerce/product/create-edit/product-seo';
 import ProductExternalLinks from '@/app/shared/ecommerce/product/create-edit/product-external-links';
 import {
@@ -52,6 +53,7 @@ const STEPS = [
   { key: formParts.description, label: 'Description', icon: PiTextAa, color: 'purple' as const, description: 'Details & tasting' },
   { key: formParts.media, label: 'Media', icon: PiImages, color: 'cyan' as const, description: 'Images & videos' },
   { key: formParts.pricing, label: 'Pricing', icon: PiCurrencyNgn, color: 'yellow' as const, description: 'Price settings' },
+  { key: formParts.sale, label: 'Sale', icon: PiTag, color: 'red' as const, description: 'Sale pricing' },
   { key: formParts.ratings, label: 'Ratings', icon: PiStar, color: 'pink' as const, description: 'Expert scores' },
   { key: formParts.seo, label: 'SEO', icon: PiMagnifyingGlass, color: 'rose' as const, description: 'Search optimization' },
   { key: formParts.externalLinks, label: 'Links', icon: PiLink, color: 'indigo' as const, description: 'External URLs' },
@@ -68,6 +70,7 @@ const COMPONENTS: Record<string, React.FC> = {
   [formParts.ratings]: ProductRatings,
   [formParts.media]: ProductMedia,
   [formParts.pricing]: ProductPricing,
+  [formParts.sale]: ProductSale,
   [formParts.seo]: ProductSeo,
   [formParts.externalLinks]: ProductExternalLinks,
 };
@@ -471,6 +474,11 @@ export default function CreateEditProduct({
     'subProductData.shipping.height': 'Pricing',
     'subProductData.shipping.fragile': 'Pricing',
     'subProductData.shipping.hazmat': 'Pricing',
+    'subProductData.isOnSale': 'Sale',
+    'subProductData.saleType': 'Sale',
+    'subProductData.saleDiscountValue': 'Sale',
+    'subProductData.saleStartDate': 'Sale',
+    'subProductData.saleEndDate': 'Sale',
   };
 
   const fieldToLabel: Record<string, string> = {
@@ -559,6 +567,11 @@ export default function CreateEditProduct({
     'subProductData.shipping.height': 'Shipping Height',
     'subProductData.shipping.fragile': 'Fragile',
     'subProductData.shipping.hazmat': 'Hazmat',
+    'subProductData.isOnSale': 'On Sale',
+    'subProductData.saleType': 'Sale Type',
+    'subProductData.saleDiscountValue': 'Discount Value',
+    'subProductData.saleStartDate': 'Sale Start Date',
+    'subProductData.saleEndDate': 'Sale End Date',
   };
 
   const formatFormErrorsForSummary = (

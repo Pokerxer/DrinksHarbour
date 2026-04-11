@@ -614,6 +614,7 @@ export const formParts = {
   ratings: 'ratings',
   media: 'media',
   pricing: 'pricing',
+  sale: 'sale',
   seo: 'seo',
   externalLinks: 'external-links',
 } as const;
