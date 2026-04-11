@@ -319,6 +319,8 @@ export const productFormSchema = z.object({
     // Commercial Data
     sku: z.string().optional(),
     baseSellingPrice: z.number().min(0).nullable().optional(),
+    platformMarkup: z.number().min(0).max(500).default(15),
+    platformSellingPrice: z.number().min(0).nullable().optional(),
     costPrice: z.number().min(0).nullable().optional(),
     currency: z.string().default('NGN'),
     taxRate: z.number().min(0).max(100).default(0),
