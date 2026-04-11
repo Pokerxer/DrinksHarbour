@@ -253,7 +253,16 @@ const Shop: React.FC<Props> = ({
       // Show only sale products - check both discount field AND availableAt.isOnSale
       if (filters.showOnlySale) {
         const hasDiscount = product.discount?.value > 0 || 
-          product.availableAt?.some((sp: any) => sp.isOnSale === true);
+          product.availableAt?.some((sp: any) => {
+            // Check if sale is active based on dates
+            if (sp.isOnSale !== true) return false;
+            const now = new Date();
+            const startDate = sp.saleStartDate ? new Date(sp.saleStartDate) : null;
+            const endDate = sp.saleEndDate ? new Date(sp.saleEndDate) : null;
+            if (startDate && now < startDate) return false;
+            if (endDate && now > endDate) return false;
+            return true;
+          });
         if (!hasDiscount) return false;
       }
       
@@ -297,7 +306,10 @@ const Shop: React.FC<Props> = ({
         return sorted.sort((a, b) => {
           const discountA = a.discount?.value || 0;
           const discountB = b.discount?.value || 0;
-          return discountB - discountA;
+          // Also check vendor sale discounts
+          const vendorDiscountA = Math.max(...(a.availableAt?.map((sp: any) => sp.saleDiscountValue || 0) || [0]));
+          const vendorDiscountB = Math.max(...(b.availableAt?.map((sp: any) => sp.saleDiscountValue || 0) || [0]));
+          return Math.max(discountB, vendorDiscountB) - Math.max(discountA, vendorDiscountA);
         });
       case 'popularity':
       case 'bestselling':
