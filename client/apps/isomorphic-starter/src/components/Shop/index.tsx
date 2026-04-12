@@ -23,6 +23,15 @@ const SORT_OPTIONS: SortOption[] = [
   { value: 'rating', label: 'Highest Rated' },
 ];
 
+// Helper to check if discount is active based on dates
+function isDiscountActive(discount: any): boolean {
+  if (!discount || !discount.value) return false;
+  const now = new Date();
+  if (discount.startDate && now < new Date(discount.startDate)) return false;
+  if (discount.endDate && now > new Date(discount.endDate)) return false;
+  return true;
+}
+
 interface Props {
   productPerPage: number;
   slug?: string;
@@ -250,20 +259,33 @@ const Shop: React.FC<Props> = ({
       
       if (filters.minRating && (product.averageRating || 0) < filters.minRating) return false;
       
-      // Show only sale products - check both discount field AND availableAt.isOnSale
+      // Show only sale products — check that a real price reduction exists
       if (filters.showOnlySale) {
-        const hasDiscount = product.discount?.value > 0 || 
-          product.availableAt?.some((sp: any) => {
-            // Check if sale is active based on dates
-            if (sp.isOnSale !== true) return false;
-            const now = new Date();
-            const startDate = sp.saleStartDate ? new Date(sp.saleStartDate) : null;
-            const endDate = sp.saleEndDate ? new Date(sp.saleEndDate) : null;
-            if (startDate && now < startDate) return false;
-            if (endDate && now > endDate) return false;
-            return true;
+        const hasActiveSale = product.availableAt?.some((sp: any) => {
+          // Must be flagged on-sale with a non-zero discount
+          if (!sp.isOnSale) return false;
+          // Check if there's a sale discount value or an active discount
+          const hasDiscountValue = sp.saleDiscountValue > 0;
+          const hasActiveDiscount = sp.discount?.value > 0 && isDiscountActive(sp.discount);
+          
+          if (!hasDiscountValue && !hasActiveDiscount) return false;
+          
+          // Verify sale dates are valid right now
+          const now = new Date();
+          if (hasDiscountValue) {
+            const start = sp.saleStartDate ? new Date(sp.saleStartDate) : null;
+            const end = sp.saleEndDate ? new Date(sp.saleEndDate) : null;
+            if (start && now < start) return false;
+            if (end && now > end) return false;
+          }
+          // Confirm a real price difference exists in the computed pricing
+          return sp.sizes?.some((s: any) => {
+            const original = s.pricing?.originalWebsitePrice ?? 0;
+            const current = s.pricing?.websitePrice ?? 0;
+            return original > current;
           });
-        if (!hasDiscount) return false;
+        });
+        if (!hasActiveSale) return false;
       }
       
       // ABV Filter
@@ -304,12 +326,18 @@ const Shop: React.FC<Props> = ({
         return sorted.sort((a, b) => (b.priceRange?.min || 0) - (a.priceRange?.min || 0));
       case 'discountHighToLow':
         return sorted.sort((a, b) => {
-          const discountA = a.discount?.value || 0;
-          const discountB = b.discount?.value || 0;
-          // Also check vendor sale discounts
-          const vendorDiscountA = Math.max(...(a.availableAt?.map((sp: any) => sp.saleDiscountValue || 0) || [0]));
-          const vendorDiscountB = Math.max(...(b.availableAt?.map((sp: any) => sp.saleDiscountValue || 0) || [0]));
-          return Math.max(discountB, vendorDiscountB) - Math.max(discountA, vendorDiscountA);
+          // Use actual savings (₦) from server-computed pricing — works for both % and fixed discounts
+          const getSavings = (product: any) => {
+            const savings = (product.availableAt || []).flatMap((sp: any) =>
+              (sp.sizes || []).map((s: any) => {
+                const orig = s.pricing?.originalWebsitePrice || 0;
+                const current = s.pricing?.websitePrice || orig;
+                return orig > current ? orig - current : 0;
+              })
+            );
+            return savings.length > 0 ? Math.max(...savings) : 0;
+          };
+          return getSavings(b) - getSavings(a);
         });
       case 'popularity':
       case 'bestselling':

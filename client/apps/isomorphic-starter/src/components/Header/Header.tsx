@@ -178,7 +178,20 @@ const Header: React.FC<HeaderProps> = ({
               </div>
 
               {/* Right Actions - Desktop */}
-              <div className="hidden lg:flex items-center gap-2">
+              <div className="hidden lg:flex items-center gap-1">
+                {/* Cart */}
+                <button
+                  onClick={openModalCart}
+                  className={`relative p-2.5 rounded-xl transition-all hover:bg-gray-100 ${getTextColor()}`}
+                >
+                  <Icon.PiShoppingCart size={22} />
+                  {cartCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 w-5 h-5 rounded-full bg-green-500 text-white text-xs font-bold flex items-center justify-center shadow-lg">
+                      {cartCount > 99 ? '99+' : cartCount}
+                    </span>
+                  )}
+                </button>
+
                 {/* Wishlist */}
                 <Link
                   href="/wishlist"
@@ -288,8 +301,34 @@ const Header: React.FC<HeaderProps> = ({
                 </div>
               </div>
 
-              {/* Mobile Actions - Hidden (search moved to separate row) */}
-              <div className="flex lg:hidden items-center gap-1" />
+              {/* Mobile Actions */}
+              <div className="flex lg:hidden items-center gap-1">
+                {/* Cart - Mobile */}
+                <button
+                  onClick={openModalCart}
+                  className={`relative p-2 rounded-lg transition-all hover:bg-gray-100 ${getTextColor()}`}
+                >
+                  <Icon.PiShoppingCart size={22} />
+                  {cartCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 w-5 h-5 rounded-full bg-green-500 text-white text-xs font-bold flex items-center justify-center shadow-lg">
+                      {cartCount > 99 ? '99+' : cartCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* Wishlist - Mobile */}
+                <Link
+                  href="/wishlist"
+                  className={`relative p-2 rounded-lg transition-all hover:bg-gray-100 ${getTextColor()}`}
+                >
+                  <Icon.PiHeart size={22} />
+                  {wishlistState.wishlistArray.length > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 w-5 h-5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center shadow-lg">
+                      {wishlistState.wishlistArray.length}
+                    </span>
+                  )}
+                </Link>
+              </div>
             </div>
           </div>
         </div>

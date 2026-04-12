@@ -40,6 +40,9 @@ interface SaleProduct {
     sizes?: ProductSize[];
     salePrice?: number;
     saleDiscountValue?: number;
+    saleType?: string;
+    isOnSale?: boolean;
+    saleEndDate?: string;
     pricing?: { websitePrice?: number; originalWebsitePrice?: number };
   }>;
 }
@@ -115,36 +118,22 @@ const FlashSaleCard = ({
 
   const allAvailableAt = product.availableAt || [];
 
-  // Get price from first availableAt entry
+  // Get price from first availableAt entry — use server-computed pricing directly
   const firstAvailableAt = allAvailableAt[0];
   const firstSize = firstAvailableAt?.sizes?.[0];
-  const sizePricing = firstSize?.pricing || firstAvailableAt?.pricing || {};
+  const sizeDiscount = firstSize?.discount || firstAvailableAt?.discount || {};
+  const sizePricing = firstSize?.pricing || {};
 
-  let originalPrice =
-    sizePricing.originalWebsitePrice ||
-    sizePricing.websitePrice ||
-    firstSize?.price ||
-    product.priceRange?.min ||
-    0;
+  // Use server-computed values directly
+  const currentPrice = sizePricing.websitePrice || product.priceRange?.min || 0;
+  const originalPrice = sizePricing.originalWebsitePrice || currentPrice;
 
-  let salePrice =
-    sizePricing.websitePrice ||
-    firstSize?.price ||
-    product.salePrice ||
-    originalPrice;
-
-  // Apply sale discount
-  if (
-    firstAvailableAt?.salePrice &&
-    firstAvailableAt.salePrice < originalPrice
-  ) {
-    salePrice = firstAvailableAt.salePrice;
-  }
-
-  const hasDiscount = salePrice < originalPrice && salePrice > 0;
-  const discountPercent = hasDiscount
-    ? Math.round((1 - salePrice / originalPrice) * 100)
-    : product.discount || 0;
+  const hasDiscount = sizeDiscount.hasDiscount || (originalPrice > currentPrice && currentPrice > 0);
+  const saleType = firstAvailableAt?.saleType || sizeDiscount.type || 'percentage';
+  const isFlashSale = saleType === 'flash_sale';
+  const isFixed = saleType === 'fixed';
+  const fixedAmountOff = sizeDiscount.savings || (hasDiscount ? Math.round(originalPrice - currentPrice) : 0);
+  const discountPercent = sizeDiscount.percentage || (hasDiscount ? Math.round((1 - currentPrice / originalPrice) * 100) : 0);
 
   return (
     <div className="relative bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100">
@@ -165,10 +154,19 @@ const FlashSaleCard = ({
           )}
 
           {/* Discount Badge */}
-          {discountPercent > 0 && (
+          {hasDiscount && (
             <div className="absolute top-0 left-0">
-              <div className="bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded-br-lg">
-                -{discountPercent}%
+              <div className={`text-white text-[10px] font-bold px-2 py-1 rounded-br-lg flex items-center gap-1 ${
+                isFlashSale 
+                  ? 'bg-gradient-to-r from-orange-500 to-red-500' 
+                  : isFixed 
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500' 
+                    : 'bg-gradient-to-r from-red-500 to-pink-500'
+              }`}>
+                {isFlashSale && <Icon.PiLightningFill size={8} />}
+                {isFixed
+                  ? `₦${fixedAmountOff.toLocaleString()}`
+                  : `${discountPercent}% OFF`}
               </div>
             </div>
           )}
@@ -190,7 +188,7 @@ const FlashSaleCard = ({
             <div className="flex flex-col">
               <div className="flex items-baseline gap-1 flex-wrap">
                 <span className="text-sm font-bold text-red-500">
-                  ₦{salePrice.toLocaleString()}
+                  ₦{currentPrice.toLocaleString()}
                 </span>
                 {hasDiscount && (
                   <span className="text-[10px] text-gray-400 line-through">
@@ -221,7 +219,16 @@ const FlashSale = () => {
   const [loading, setLoading] = useState(true);
   const { openQuickview } = useModalQuickviewContext() || {};
 
-  const saleEndTime = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  // Use actual saleEndDate from flash_sale products if available
+  const flashSaleEndDate = products
+    .flatMap((p) => p.availableAt || [])
+    .filter((at) => at.saleType === 'flash_sale' && at.saleEndDate)
+    .map((at) => new Date(at.saleEndDate!).getTime())
+    .filter((t) => t > Date.now())
+    .sort()[0];
+  const saleEndTime = flashSaleEndDate
+    ? new Date(flashSaleEndDate)
+    : new Date(Date.now() + 8 * 60 * 60 * 1000);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -272,22 +279,16 @@ const FlashSale = () => {
     );
   }
 
-  // Filter to only show products that actually have sale prices
+  // Filter to only show products with a real discount (originalWebsitePrice > websitePrice)
   const saleProducts = products.filter((product) => {
-    const originalPrice = product.priceRange?.min || 0;
-    const salePrice = product.salePrice || 0;
-    // Check if there's a valid discount
-    const hasDiscount = salePrice > 0 && salePrice < originalPrice;
-    // Also check availableAt for sale prices
-    const hasAvailableAtSale = product.availableAt?.some(
-      (at) =>
-        at.salePrice &&
-        at.salePrice <
-          (at.pricing?.originalWebsitePrice ||
-            at.pricing?.websitePrice ||
-            Infinity),
-    );
-    return hasDiscount || hasAvailableAtSale;
+    return product.availableAt?.some((at) => {
+      const sizes = at.sizes || [];
+      const firstSize = sizes[0];
+      const pricing = firstSize?.pricing || at.pricing || {};
+      const current = pricing.websitePrice || 0;
+      const original = pricing.originalWebsitePrice || 0;
+      return original > current && current > 0;
+    });
   });
 
   if (saleProducts.length === 0) {

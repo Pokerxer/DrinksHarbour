@@ -64,13 +64,6 @@ const ProductGallery: React.FC<ProductGalleryProps> = React.memo(({
           </div>
         )}
 
-        {/* Discount Badge */}
-        {badge?.type === 'discount' && (
-          <div className="absolute top-4 right-4 z-10 px-3 py-1.5 bg-red-500 text-white rounded-full text-xs font-bold shadow-lg">
-            SALE
-          </div>
-        )}
-
         <Swiper
           modules={[Navigation, Thumbs, Zoom]}
           spaceBetween={0}

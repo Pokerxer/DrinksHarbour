@@ -552,52 +552,151 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
       displayName: s.size,
       stock: s.stock,
       price: s.pricing.websitePrice,
+      originalPrice: s.pricing.originalWebsitePrice,
       currencySymbol: s.pricing.currencySymbol,
     }));
   }, [selectedVendor]);
+  
+  /** Get the full size data from selected vendor including pricing */
+  const getSelectedSizeData = useCallback(() => {
+    if (!selectedVendor || !activeSize) return null;
+    return selectedVendor.sizes.find((s: any) => s.size === activeSize);
+  }, [selectedVendor, activeSize]);
 
   // Reset size pick whenever the vendor switches
   useEffect(() => {
     setActiveSize('');
   }, [activeVendor]);
 
-  const platformDisc = productData.discount;
-  const hasPlatformDiscount = !!(platformDisc?.savings > 0);
+  // Use server-computed values directly
+  const productLevelIsOnSale = productData.isOnSale || false;
+  const productLevelSaleType = productData.saleType || null;
+  const productLevelDiscount = productData.discount;
 
-  // True when any vendor is on a dedicated sale OR the product has a platform discount
-  const hasActiveSale = vendors.some((v: any) => v.isOnSale === true) || hasPlatformDiscount;
+  // Find vendor with sale
+  const firstSaleVendor = vendors.find((v: any) => v.isOnSale === true);
+  const vendorWithSale = vendors.find((v: any) => v.isOnSale === true || v.saleDiscountValue > 0);
+  const firstVendor = vendors[0];
 
-  // Discount percentage for the badge — vendor sale takes priority over platform discount
-  const calculatedDiscount = (() => {
-    const saleVend = vendors.find((v: any) => v.isOnSale === true);
-    if (saleVend?.saleDiscountValue > 0) return saleVend.saleDiscountValue;
-    if (hasPlatformDiscount) {
-      if (platformDisc.type === 'percentage') return platformDisc.value;
-      if (platformDisc.originalPrice > 0) return Math.round((platformDisc.savings / platformDisc.originalPrice) * 100);
+  // discount lives inside sizes[0].discount (server puts it at size level, not vendor level)
+  const vendorDiscount = firstSaleVendor?.sizes?.[0]?.discount || firstSaleVendor?.discount;
+  const vendorIsOnSale = firstSaleVendor?.isOnSale || false;
+  const vendorHasDiscount = vendorDiscount?.hasDiscount || false;
+
+  // Get size data for calculations
+  const vendorForCalc = vendorWithSale || firstVendor;
+  const sizeForCalc = vendorForCalc?.sizes?.[0] || {};
+  const pricingForCalc = sizeForCalc?.pricing || {};
+  const priceFromCalc = pricingForCalc?.websitePrice || 0;
+  const origFromCalc = pricingForCalc?.originalWebsitePrice || priceFromCalc;
+  const calculatedSavings = (origFromCalc > priceFromCalc) ? Math.round(origFromCalc - priceFromCalc) : 0;
+  const calculatedPercent = (origFromCalc > priceFromCalc && origFromCalc > 0)
+    ? Math.round((1 - priceFromCalc / origFromCalc) * 100)
+    : 0;
+
+  // True when any vendor is on a dedicated sale OR has a discount OR product is on sale OR has calculated savings
+  const hasActiveSale = vendorIsOnSale || productLevelIsOnSale || vendorHasDiscount ||
+    (firstSaleVendor?.saleDiscountValue > 0) ||
+    (productLevelDiscount?.hasDiscount) ||
+    calculatedSavings > 0;
+
+  const saleInfo = useMemo(() => {
+    const discount = vendorDiscount || productLevelDiscount;
+
+    if (!discount && !vendorIsOnSale && !productLevelIsOnSale && !calculatedSavings) {
+      return null;
     }
-    return 0;
-  })();
 
-  // Used in the quickshop price row to decide whether to show a strikethrough
-  const percentSale = hasActiveSale && (mappedProduct.originPrice || 0) > (mappedProduct.price || 0) ? calculatedDiscount : 0;
+    const saleType = firstSaleVendor?.saleType || productLevelSaleType || discount?.type || 'percentage';
+    const saleValue = firstSaleVendor?.saleDiscountValue || discount?.value || discount?.savings || calculatedSavings;
+    // For fixed type use real calculated percent; for percentage/flash_sale use the raw % value
+    const percentage = discount?.percentage || calculatedPercent || (saleType !== 'fixed' ? saleValue : 0);
 
-  // Unified price display values — derived once, used in both image overlay and info section
-  const selectedSizeData = activeSize ? vendorSizes.find((s: any) => s.size === activeSize) : null;
+    return {
+      type: saleType,
+      value: saleValue,
+      percentage: percentage,
+      saleType: saleType,
+      hasDiscount: discount?.hasDiscount || vendorIsOnSale || productLevelIsOnSale || calculatedSavings > 0,
+      savings: discount?.savings || calculatedSavings || saleValue,
+      saleEndDate: firstSaleVendor?.saleEndDate || null,
+      saleStartDate: firstSaleVendor?.saleStartDate || null,
+    };
+  }, [vendors, firstSaleVendor, productLevelDiscount, productLevelIsOnSale, productLevelSaleType, calculatedSavings]);
+
+  // For backward compatibility
+  const calculatedDiscount = saleInfo?.percentage || 0;
   
-  // Extract price - all endpoints now return consistent availableAt structure
-  const productPrice = mappedProduct.price || 0;
-  const dataPrice = (data as any)?.price ?? 0;
-  const dataPriceRangeMin = (data as any)?.priceRange?.min ?? 0;
+  // Check if this is a flash sale
+  const isFlashSale = saleInfo?.saleType === 'flash_sale';
   
-  // Priority: selected size price > mappedProduct.price > priceRange.min > data.price
-  const displayPrice = selectedSizeData?.price 
-    ?? (productPrice > 0 ? productPrice : null)
-    ?? (dataPriceRangeMin > 0 ? dataPriceRangeMin : null)
-    ?? (dataPrice > 0 ? dataPrice : null)
-    ?? 0;
+  // Check if this is a fixed discount
+  const isFixedDiscount = saleInfo?.type === 'fixed';
   
-  const currencySymbol = selectedSizeData?.currencySymbol || '₦';
-  const showStrikethrough = hasActiveSale && (mappedProduct.originPrice || 0) > displayPrice;
+  // Badge ranking: Flash Sale > Fixed > Percentage > Product Badge
+  // Only show the highest priority badge (except ABV)
+  const rankedBadge = useMemo(() => {
+    if (saleInfo && hasActiveSale) {
+      if (isFlashSale) return 'flash_sale';
+      if (isFixedDiscount) return 'fixed';
+      return 'percentage';
+    }
+    if (isBeverageProduct(data) && data.badge && data.badge.name) return 'product_badge';
+    return null;
+  }, [saleInfo, isFlashSale, isFixedDiscount, data, hasActiveSale]);
+
+  // Use the same vendorWithSale from above
+  const vendorToUse = vendorWithSale || firstVendor;
+  
+  // Get size data from the vendor with sale or first vendor
+  const firstSizeData = vendorToUse?.sizes?.[0] || {};
+  const firstSizePricing = firstSizeData?.pricing || {};
+  
+  // Get selected size data if available
+  const selectedSizeFull = activeSize ? (selectedVendor?.sizes?.find((s: any) => s.size === activeSize) || {}) : {};
+  const selectedPricing = selectedSizeFull?.pricing || {};
+  
+  // Use server-computed prices from pricing object
+  // websitePrice = sale price, originalWebsitePrice = original price (before discount)
+  const currentPrice = selectedPricing.websitePrice || firstSizePricing.websitePrice || (data as any)?.price || (data as any)?.priceRange?.min || 0;
+  const origPrice = selectedPricing.originalWebsitePrice || firstSizePricing.originalWebsitePrice || (data as any)?.priceRange?.originalMin || (data as any)?.priceRange?.max || currentPrice;
+  
+  // Server sets originalWebsitePrice > websitePrice only when a discount is active.
+  const serverHasDiscount = origPrice > currentPrice && currentPrice > 0;
+
+  // Client-side fallback: if server didn't compute the discount, derive it from raw sale fields
+  let displayPrice = currentPrice;
+  let displayOriginalPrice = 0;
+  let showStrikethrough = false;
+
+  if (serverHasDiscount) {
+    displayPrice = currentPrice;
+    displayOriginalPrice = origPrice;
+    showStrikethrough = true;
+  } else if (hasActiveSale && saleInfo && saleInfo.value > 0 && currentPrice > 0) {
+    const now = new Date();
+    const saleStart = saleInfo.saleStartDate ? new Date(saleInfo.saleStartDate) : null;
+    const saleEnd = saleInfo.saleEndDate ? new Date(saleInfo.saleEndDate) : null;
+    const clientSaleActive = (!saleStart || now >= saleStart) && (!saleEnd || now <= saleEnd);
+
+    if (clientSaleActive) {
+      const computedPrice = saleInfo.type === 'fixed'
+        ? Math.max(0, currentPrice - saleInfo.value)
+        : parseFloat((currentPrice * (1 - saleInfo.value / 100)).toFixed(2));
+
+      if (computedPrice < currentPrice) {
+        displayPrice = computedPrice;
+        displayOriginalPrice = currentPrice;
+        showStrikethrough = true;
+      }
+    }
+  }
+
+  const showDiscount = showStrikethrough;
+  
+  // Get currency from server — map ISO code to symbol
+  const rawCurrency = selectedPricing.currency || firstSizePricing.currency || (data as any)?.priceRange?.currency || 'NGN';
+  const currencySymbol = rawCurrency === 'NGN' ? '₦' : rawCurrency;
 
   const handleActiveColor = (item: string) => {
     setActiveColor(item);
@@ -769,43 +868,38 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
             onClick={handleCardClick}
           >
             <div className="product-thumb bg-gray-50 relative overflow-hidden rounded-2xl transition-all duration-500 ease-out group-hover:shadow-2xl group-hover:shadow-black/10 group-hover:scale-[1.02]">
-              {/* Badges - Responsive positioning */}
-              <div className="absolute top-2 left-2 right-2 z-10 flex flex-wrap gap-1.5">
-                {/* Sale Badge */}
-                <AnimatePresence>
-                  {hasActiveSale && calculatedDiscount > 0 && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.8 }}
-                      className="px-2 py-1 md:px-3 md:py-1.5 bg-gradient-to-r from-red-500 to-pink-500 text-white text-[10px] md:text-xs font-bold rounded-full shadow-lg"
-                    >
-                      <span className="hidden sm:inline">SALE {calculatedDiscount}% OFF</span>
-                      <span className="sm:hidden">-{calculatedDiscount}%</span>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Product Badge */}
-                {isBeverageProduct(data) && data.badge && data.badge.name && (
+              {/* Badges - Responsive positioning (ranked: Flash > Fixed > Percentage > Product) */}
+              <div className="absolute top-2 left-2 right-2 z-10 flex flex-wrap gap-1">
+                {/* Sale Badge - Hidden when marquee is visible (marquee already communicates the deal) */}
+                {rankedBadge && rankedBadge !== 'product_badge' && !(hasActiveSale && (calculatedDiscount > 0 || (isFixedDiscount && saleInfo && saleInfo.value > 0))) && (
                   <motion.div
+                    key="sale-badge"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    className={`px-1 py-0.5 text-white text-[8px] font-bold rounded shadow flex items-center gap-0.5 ${
+                      isFlashSale 
+                        ? 'bg-gradient-to-r from-orange-500 to-red-500 animate-pulse' 
+                        : isFixedDiscount 
+                          ? 'bg-gradient-to-r from-emerald-500 to-teal-500' 
+                          : 'bg-gradient-to-r from-red-500 to-pink-500'
+                    }`}
+                  >
+                    {isFlashSale && <Icon.PiLightningFill size={7} className="inline" />}
+                    {isFixedDiscount ? `-₦${saleInfo.value.toLocaleString()}` : `-${saleInfo.value}%`}
+                  </motion.div>
+                )}
+
+                {/* Product Badge - Only show if no sale badge */}
+                {rankedBadge === 'product_badge' && isBeverageProduct(data) && data.badge && data.badge.name && (
+                  <motion.div
+                    key="product-badge"
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
                     className={`px-2 py-1 md:px-2.5 md:py-1 rounded-full text-[10px] font-bold text-white shadow-md`}
                     style={{ backgroundColor: data.badge?.color || '#10B981' }}
                   >
                     {data.badge.name.toUpperCase()}
-                  </motion.div>
-                )}
-
-                {/* ABV Badge - Below other badges */}
-                {isBeverageProduct(data) && data.abv && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="px-2 py-1 md:px-2.5 md:py-1 bg-gray-900/80 backdrop-blur-sm text-white text-[10px] font-bold rounded-full shadow-lg"
-                  >
-                    {data.abv}% ABV
                   </motion.div>
                 )}
               </div>
@@ -893,19 +987,19 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
               </div>
 
               {/* Sale Marquee - Only show when there's an actual sale */}
-              {(hasActiveSale && calculatedDiscount > 0) && (
+              {(hasActiveSale && (calculatedDiscount > 0 || (isFixedDiscount && saleInfo && saleInfo.value > 0))) && (
                 <div className="hidden md:block">
                   <Marquee className="banner-sale-auto bg-red-500 absolute bottom-0 left-0 w-full py-1.5">
                     <div className="caption2 font-semibold uppercase text-white px-2.5">
-                      Hot Sale {calculatedDiscount}% OFF
+                      {isFixedDiscount ? `Hot Sale ₦${saleInfo!.value.toLocaleString()} OFF` : `Hot Sale ${calculatedDiscount}% OFF`}
                     </div>
                     <Icon.PiLightningFill className="text-yellow-300" />
                     <div className="caption2 font-semibold uppercase text-white px-2.5">
-                      Hot Sale {calculatedDiscount}% OFF
+                      {isFixedDiscount ? `Hot Sale ₦${saleInfo!.value.toLocaleString()} OFF` : `Hot Sale ${calculatedDiscount}% OFF`}
                     </div>
                     <Icon.PiLightningFill className="text-yellow-300" />
                     <div className="caption2 font-semibold uppercase text-white px-2.5">
-                      Hot Sale {calculatedDiscount}% OFF
+                      {isFixedDiscount ? `Hot Sale ₦${saleInfo!.value.toLocaleString()} OFF` : `Hot Sale ${calculatedDiscount}% OFF`}
                     </div>
                     <Icon.PiLightningFill className="text-yellow-300" />
                   </Marquee>
@@ -1120,6 +1214,13 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
                 </h3>
               </Link>
 
+              {/* ABV Badge - Below product name */}
+              {isBeverageProduct(data) && data.abv && (
+                <span className="text-[10px] text-gray-500 mt-0.5">
+                  {data.abv}% ABV
+                </span>
+              )}
+
               {/* Origin/Region for beverages - Show on tablet+ */}
               {isBeverageProduct(data) && data.originCountry && (
                 <p className="hidden md:block text-xs text-gray-500 mt-0.5">
@@ -1130,19 +1231,13 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
               {/* Enhanced Price Section */}
               <div className="flex items-center justify-between mt-2 md:mt-3 gap-2">
                 <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
-                  {/* Discount Badge */}
-                  {hasActiveSale && calculatedDiscount > 0 && (
-                    <span className="px-1.5 py-0.5 md:px-2 md:py-0.5 bg-gradient-to-r from-red-500 to-pink-500 text-white text-[10px] md:text-xs font-bold rounded-md shadow-sm">
-                      -{calculatedDiscount}%
-                    </span>
-                  )}
-                  <div className="flex items-center gap-1">
-                    <span className="text-sm md:text-lg font-bold text-gray-900 transition-transform duration-300 group-hover:scale-105">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-sm md:text-lg font-bold transition-transform duration-300 group-hover:scale-105 ${showStrikethrough ? 'text-red-600' : 'text-gray-900'}`}>
                       {currencySymbol}{formatPrice(displayPrice)}
                     </span>
                     {showStrikethrough && (
                       <span className="text-[10px] md:text-xs text-gray-400 line-through decoration-gray-400 decoration-2">
-                        {currencySymbol}{formatPrice(mappedProduct.originPrice || 0)}
+                        {currencySymbol}{formatPrice(displayOriginalPrice)}
                       </span>
                     )}
                   </div>
@@ -1238,15 +1333,33 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
               onClick={handleCardClick}
               className="product-thumb bg-gray-50 relative overflow-hidden rounded-xl sm:rounded-2xl block w-24 sm:w-auto flex-shrink-0 cursor-pointer"
             >
-              {/* Badge */}
-              {isBeverageProduct(data) && data.badge && data.badge.name && (
-                <div
-                  className="absolute top-1.5 left-1.5 z-10 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-gray-50"
-                  style={{ backgroundColor: data.badge?.color || '#10B981' }}
-                >
-                  {data.badge.name || data.badge.type?.toUpperCase()}
-                </div>
-              )}
+              {/* Badges - Ranked (Flash > Fixed > Percentage > Product) */}
+              <div className="absolute top-1 left-1.5 z-10 flex flex-col gap-0.5">
+                {/* Sale Badge - Only highest priority sale badge */}
+                {rankedBadge && rankedBadge !== 'product_badge' && (
+                  <div className={`px-1 py-0.5 text-[9px] font-bold text-white rounded flex items-center gap-0.5 ${
+                    isFlashSale 
+                      ? 'bg-gradient-to-r from-orange-500 to-red-500 animate-pulse' 
+                      : isFixedDiscount 
+                        ? 'bg-gradient-to-r from-emerald-500 to-teal-500' 
+                        : 'bg-gradient-to-r from-red-500 to-pink-500'
+                  }`}>
+                    {isFlashSale && <Icon.PiLightningFill size={7} className="inline" />}
+                    {isFixedDiscount 
+                      ? `₦${saleInfo.value}` 
+                      : `-${saleInfo.value}%`}
+                  </div>
+                )}
+                {/* Product Badge - Only if no sale badge */}
+                {rankedBadge === 'product_badge' && isBeverageProduct(data) && data.badge && data.badge.name && (
+                  <div
+                    className="px-1 py-0.5 rounded text-[9px] font-bold text-gray-50"
+                    style={{ backgroundColor: data.badge?.color || '#10B981' }}
+                  >
+                    {data.badge.name || data.badge.type?.toUpperCase()}
+                  </div>
+                )}
+              </div>
 
               <div className="product-img w-24 sm:w-32 aspect-square rounded-xl sm:rounded-2xl overflow-hidden flex items-center justify-center bg-gray-50">
                 {imageError ? (
@@ -1274,13 +1387,20 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
                 </h3>
               </Link>
 
-              <div className="flex items-center gap-2 mt-1.5 sm:mt-2">
-                <span className="text-sm sm:text-base font-bold text-gray-900">
+              {/* ABV Badge - Below product name */}
+              {isBeverageProduct(data) && data.abv && (
+                <span className="text-[10px] text-gray-500 mt-0.5">
+                  {data.abv}% ABV
+                </span>
+              )}
+
+              <div className="flex items-center gap-2 mt-1.5 sm:mt-2 flex-wrap">
+                <span className={`text-sm sm:text-base font-bold ${showStrikethrough ? 'text-red-600' : 'text-gray-900'}`}>
                   {currencySymbol}{formatPrice(displayPrice)}
                 </span>
                 {showStrikethrough && (
                   <span className="text-xs text-gray-400 line-through">
-                    {currencySymbol}{formatPrice(mappedProduct.originPrice || 0)}
+                    {currencySymbol}{formatPrice(displayOriginalPrice)}
                   </span>
                 )}
               </div>

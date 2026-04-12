@@ -15,7 +15,18 @@ interface OnSaleProduct {
   primaryImage?: { url: string };
   priceRange?: { min: number; max: number };
   discount?: { value: number; percentage?: number; type?: string };
-  availableAt?: Array<{ isOnSale?: boolean; priceRange?: { min: number; max: number } }>;
+  availableAt?: Array<{
+    isOnSale?: boolean;
+    saleType?: string;
+    saleDiscountValue?: number;
+    saleStartDate?: string;
+    saleEndDate?: string;
+    discount?: { value: number; type?: string; startDate?: string; endDate?: string };
+    priceRange?: { min: number; max: number };
+    sizes?: Array<{
+      pricing?: { websitePrice?: number; originalWebsitePrice?: number };
+    }>;
+  }>;
   brand?: { name: string };
   abv?: number;
 }
@@ -28,13 +39,32 @@ const OnSaleHighlight: React.FC<OnSaleHighlightProps> = ({ products }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
 
+  const isDiscountActive = (discount: any): boolean => {
+    if (!discount || !discount.value) return false;
+    const now = new Date();
+    if (discount.startDate && now < new Date(discount.startDate)) return false;
+    if (discount.endDate && now > new Date(discount.endDate)) return false;
+    return true;
+  };
+
   const saleProducts = useMemo(() => {
     return products.filter(p =>
-      // Explicit discount value
-      (p.discount?.value && p.discount.value > 0) ||
-      (p.discount?.percentage && p.discount.percentage > 0) ||
-      // At least one vendor/availableAt entry is on sale
-      p.availableAt?.some((v) => v.isOnSale === true)
+      p.availableAt?.some((v) => {
+        if (!v.isOnSale) return false;
+        const hasDiscountValue = v.saleDiscountValue > 0;
+        const hasActiveDiscount = v.discount?.value > 0 && isDiscountActive(v.discount);
+        if (!hasDiscountValue && !hasActiveDiscount) return false;
+        // Check if sale dates are valid
+        const now = new Date();
+        if (v.saleStartDate && now < new Date(v.saleStartDate)) return false;
+        if (v.saleEndDate && now > new Date(v.saleEndDate)) return false;
+        // Confirm real price reduction in computed sizing
+        return v.sizes?.some(s => {
+          const original = s.pricing?.originalWebsitePrice ?? 0;
+          const current = s.pricing?.websitePrice ?? 0;
+          return original > current;
+        });
+      })
     ).slice(0, 8);
   }, [products]);
 
@@ -104,14 +134,23 @@ const OnSaleHighlight: React.FC<OnSaleHighlightProps> = ({ products }) => {
         {/* Products Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {displayedProducts.map((product, index) => {
-            // Prefer explicit discount %, then derive from price range if the gap is meaningful (>= 2%)
-            const originalPrice = product.priceRange?.max ?? product.priceRange?.min ?? 0;
-            const salePrice = product.priceRange?.min ?? originalPrice;
-            const derivedDiscount = originalPrice > 0
-              ? Math.round(((originalPrice - salePrice) / originalPrice) * 100)
-              : 0;
-            const discount = product.discount?.percentage || product.discount?.value || (derivedDiscount >= 2 ? derivedDiscount : 0);
-            const hasDiscount = discount > 0;
+            // Use server-computed pricing from first on-sale availableAt entry
+            const saleEntry = product.availableAt?.find(v => v.isOnSale);
+            const firstSize = saleEntry?.sizes?.[0];
+            const sizeDiscount = firstSize?.discount || saleEntry?.discount || {};
+            
+            // Use server-computed values directly
+            const currentPrice = firstSize?.pricing?.websitePrice ?? product.priceRange?.min ?? 0;
+            const originalPrice = firstSize?.pricing?.originalWebsitePrice ?? currentPrice;
+            const saleType = saleEntry?.saleType || sizeDiscount.type || 'percentage';
+            const hasDiscount = sizeDiscount.hasDiscount || (originalPrice > currentPrice && currentPrice > 0);
+            const fixedAmountOff = sizeDiscount.savings || (hasDiscount ? Math.round(originalPrice - currentPrice) : 0);
+            const discountPct = sizeDiscount.percentage || (hasDiscount ? Math.round((1 - currentPrice / originalPrice) * 100) : 0);
+            const salePrice = currentPrice;
+            
+            // Determine badge style based on sale type
+            const isFlashSale = saleType === 'flash_sale';
+            const isFixed = saleType === 'fixed';
 
             return (
               <motion.div
@@ -126,15 +165,26 @@ const OnSaleHighlight: React.FC<OnSaleHighlightProps> = ({ products }) => {
                     whileHover={{ y: -4 }}
                     className="relative bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 border border-gray-100"
                   >
-                    {/* Sale Badge */}
+                    {/* Sale Badge - Different styles for percentage, fixed, and flash sale */}
                     {hasDiscount && (
-                      <div className="absolute top-3 left-3 z-10">
+                      <div className="absolute top-2 left-2 z-10">
                         <motion.div
                           initial={{ scale: 0 }}
                           animate={{ scale: 1 }}
-                          className="px-3 py-1.5 bg-gradient-to-r from-red-500 to-orange-500 text-white text-xs font-bold rounded-full shadow-lg"
+                          className={`px-2 py-1 text-white text-[10px] font-bold rounded-full shadow flex items-center gap-0.5 ${
+                            isFlashSale 
+                              ? 'bg-gradient-to-r from-orange-500 to-red-500 animate-pulse' 
+                              : isFixed 
+                                ? 'bg-gradient-to-r from-emerald-500 to-teal-500' 
+                                : 'bg-gradient-to-r from-red-500 to-pink-500'
+                          }`}
                         >
-                          -{discount}%
+                          {isFlashSale && <Icon.PiLightningFill size={9} className="inline" />}
+                          {isFixed ? (
+                            <>₦{fixedAmountOff.toLocaleString()}</>
+                          ) : (
+                            <>{discountPct}% OFF</>
+                          )}
                         </motion.div>
                       </div>
                     )}
@@ -146,7 +196,7 @@ const OnSaleHighlight: React.FC<OnSaleHighlightProps> = ({ products }) => {
                           src={product.primaryImage?.url || product.images![0].url}
                           alt={product.name}
                           fill
-                          className="object-cover group-hover:scale-105 transition-transform duration-500"
+                          className="object-contain group-hover:scale-105 transition-transform duration-500"
                           sizes="(max-width: 768px) 50vw, 25vw"
                         />
                       ) : (
@@ -181,11 +231,11 @@ const OnSaleHighlight: React.FC<OnSaleHighlightProps> = ({ products }) => {
                       )}
 
                       {/* Price */}
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-lg font-bold text-red-600">
                           {formatPrice(salePrice)}
                         </span>
-                        {hasDiscount && originalPrice > salePrice && (
+                        {hasDiscount && (
                           <span className="text-sm text-gray-400 line-through">
                             {formatPrice(originalPrice)}
                           </span>

@@ -38,6 +38,9 @@ interface DealProduct {
     sizes?: ProductSize[];
     salePrice?: number;
     saleDiscountValue?: number;
+    saleType?: string;
+    isOnSale?: boolean;
+    saleEndDate?: string;
     pricing?: { websitePrice?: number; originalWebsitePrice?: number };
   }>;
 }
@@ -63,32 +66,19 @@ const TemuProductCard = ({
   const allAvailableAt = product.availableAt || [];
   const firstAvailableAt = allAvailableAt[0];
   const firstSize = firstAvailableAt?.sizes?.[0];
-  const sizePricing = firstSize?.pricing || firstAvailableAt?.pricing || {};
+  const sizeDiscount = firstSize?.discount || firstAvailableAt?.discount || {};
+  const sizePricing = firstSize?.pricing || {};
 
-  let originalPrice =
-    sizePricing.originalWebsitePrice ||
-    sizePricing.websitePrice ||
-    firstSize?.price ||
-    product.priceRange?.min ||
-    0;
+  // Use server-computed values directly
+  const currentPrice = sizePricing.websitePrice || product.priceRange?.min || 0;
+  const originalPrice = sizePricing.originalWebsitePrice || currentPrice;
 
-  let salePrice =
-    sizePricing.websitePrice ||
-    firstSize?.price ||
-    product.salePrice ||
-    originalPrice;
-
-  if (
-    firstAvailableAt?.salePrice &&
-    firstAvailableAt.salePrice < originalPrice
-  ) {
-    salePrice = firstAvailableAt.salePrice;
-  }
-
-  const hasDiscount = salePrice < originalPrice && salePrice > 0;
-  const discountPercent = hasDiscount
-    ? Math.round((1 - salePrice / originalPrice) * 100)
-    : product.discount || 0;
+  const hasDiscount = sizeDiscount.hasDiscount || (originalPrice > currentPrice && currentPrice > 0);
+  const saleType = firstAvailableAt?.saleType || sizeDiscount.type || 'percentage';
+  const isFlashSale = saleType === 'flash_sale';
+  const isFixed = saleType === 'fixed';
+  const fixedAmountOff = sizeDiscount.savings || (hasDiscount ? Math.round(originalPrice - currentPrice) : 0);
+  const discountPercent = sizeDiscount.percentage || (hasDiscount ? Math.round((1 - currentPrice / originalPrice) * 100) : 0);
 
   return (
     <motion.div
@@ -115,10 +105,19 @@ const TemuProductCard = ({
           )}
 
           {/* Discount Badge */}
-          {discountPercent > 0 && (
+          {hasDiscount && (
             <div className="absolute top-0 left-0">
-              <div className="bg-gradient-to-r from-red-500 to-pink-500 text-white text-[10px] font-bold px-2 py-1 rounded-br-lg">
-                -{discountPercent}%
+              <div className={`text-white text-[10px] font-bold px-2 py-1 rounded-br-lg flex items-center gap-1 ${
+                isFlashSale 
+                  ? 'bg-gradient-to-r from-orange-500 to-red-500' 
+                  : isFixed 
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500' 
+                    : 'bg-gradient-to-r from-red-500 to-pink-500'
+              }`}>
+                {isFlashSale && <Icon.PiLightningFill size={8} />}
+                {isFixed
+                  ? `₦${fixedAmountOff.toLocaleString()}`
+                  : `${discountPercent}% OFF`}
               </div>
             </div>
           )}
@@ -161,7 +160,7 @@ const TemuProductCard = ({
             <div className="flex flex-col">
               <div className="flex items-baseline gap-1 flex-wrap">
                 <span className="text-sm font-bold text-red-500">
-                  ₦{salePrice.toLocaleString()}
+                  ₦{currentPrice.toLocaleString()}
                 </span>
                 {hasDiscount && (
                   <span className="text-[10px] text-gray-400 line-through">

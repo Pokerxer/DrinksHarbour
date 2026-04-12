@@ -644,6 +644,25 @@ export default function CreateEditProduct({
         const p = res?.data?.product;
         if (!p) return;
         // Extract IDs from populated references
+        // Convert ISO date → datetime-local format (YYYY-MM-DDTHH:mm)
+        const toDatetimeLocal = (v: any): string | null => {
+          if (!v) return null;
+          const d = new Date(v);
+          if (isNaN(d.getTime())) return null;
+          return d.toISOString().slice(0, 16);
+        };
+
+        // Extract sale data from first SubProduct so the sale form is populated
+        const firstSp = p.subProducts?.[0];
+        const spSaleData = firstSp ? {
+          isOnSale: firstSp.isOnSale || false,
+          saleType: firstSp.saleType || 'percentage',
+          saleDiscountValue: firstSp.saleDiscountValue || 0,
+          salePrice: firstSp.salePrice || 0,
+          saleStartDate: toDatetimeLocal(firstSp.saleStartDate),
+          saleEndDate: toDatetimeLocal(firstSp.saleEndDate),
+        } : {};
+
         const mapped = {
           ...p,
           brand: p.brand?._id?.toString() ?? p.brand ?? '',
@@ -652,6 +671,10 @@ export default function CreateEditProduct({
           tags: (p.tags ?? []).map((t: any) => t?._id?.toString() ?? t),
           flavors: (p.flavors ?? []).map((f: any) => f?._id?.toString() ?? f),
           publishedAt: p.publishedAt ? new Date(p.publishedAt) : undefined,
+          subProductData: {
+            ...p.subProductData,
+            ...spSaleData,
+          },
         };
         methods.reset(defaultValues(mapped));
       })
@@ -758,6 +781,21 @@ export default function CreateEditProduct({
         // Sync form with what the server actually saved
         const saved = res?.data?.product;
         if (saved) {
+          const toDatetimeLocal = (v: any): string | null => {
+            if (!v) return null;
+            const d = new Date(v);
+            if (isNaN(d.getTime())) return null;
+            return d.toISOString().slice(0, 16);
+          };
+          const firstSp = saved.subProducts?.[0];
+          const spSaleData = firstSp ? {
+            isOnSale: firstSp.isOnSale || false,
+            saleType: firstSp.saleType || 'percentage',
+            saleDiscountValue: firstSp.saleDiscountValue || 0,
+            salePrice: firstSp.salePrice || 0,
+            saleStartDate: toDatetimeLocal(firstSp.saleStartDate),
+            saleEndDate: toDatetimeLocal(firstSp.saleEndDate),
+          } : {};
           const mapped = {
             ...saved,
             brand: saved.brand?._id?.toString() ?? saved.brand ?? '',
@@ -766,6 +804,10 @@ export default function CreateEditProduct({
             tags: (saved.tags ?? []).map((t: any) => t?._id?.toString() ?? t),
             flavors: (saved.flavors ?? []).map((f: any) => f?._id?.toString() ?? f),
             publishedAt: saved.publishedAt ? new Date(saved.publishedAt) : undefined,
+            subProductData: {
+              ...saved.subProductData,
+              ...spSaleData,
+            },
           };
           methods.reset(defaultValues(mapped), { keepDirty: false });
         }

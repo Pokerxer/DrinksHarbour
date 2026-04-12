@@ -784,11 +784,14 @@ function processProduct(product) {
     const revenueModel = tenant?.revenueModel || 'markup';
     const commissionPercentage = tenant?.commissionPercentage || 10;
     
+    // Check if subProduct has an active sale
+    const subProductSaleActive = isSubProductSaleActive(subProduct);
+    
     const processedSizes = (subProduct.sizes || []).map(size => {
       const sellingPrice = size.sellingPrice || 0;
       const costPrice = size.costPrice || subProduct.costPrice || 0;
       
-      // Calculate discount
+      // Calculate discount - check size-level discount first, then subProduct-level
       let discount = null;
       if (size.discount && isDiscountActive(size.discount)) {
         discount = calculateDiscount(sellingPrice, size.discount, commissionPercentage);
@@ -796,11 +799,41 @@ function processProduct(product) {
         discount = calculateDiscount(sellingPrice, subProduct.discount, commissionPercentage);
       }
       
-      // Calculate website price
-      let websitePrice = discount ? discount.discountedPrice : sellingPrice;
-      if (revenueModel === 'commission') {
-        websitePrice = websitePrice * (1 + commissionPercentage / 100);
+      // Calculate website price based on sale type
+      let websitePrice = sellingPrice;
+      let originalWebsitePrice = sellingPrice;
+      
+      // Calculate prices with commission markup (for revenue model 'commission')
+      const sellingPriceWithCommission = revenueModel === 'commission' 
+        ? sellingPrice * (1 + commissionPercentage / 100) 
+        : sellingPrice;
+      
+      // Apply subProduct-level sale pricing if active
+      if (subProductSaleActive && subProduct.saleDiscountValue > 0) {
+        originalWebsitePrice = Math.round(sellingPriceWithCommission * 100) / 100;
+        
+        if (subProduct.saleType === 'percentage' || subProduct.saleType === 'flash_sale') {
+          // Percentage discount
+          websitePrice = sellingPriceWithCommission * (1 - subProduct.saleDiscountValue / 100);
+        } else if (subProduct.saleType === 'fixed') {
+          // Fixed discount - subtract from selling price with commission
+          websitePrice = Math.max(0, sellingPriceWithCommission - subProduct.saleDiscountValue);
+        }
+      } else if (discount) {
+        // Use discount object prices (from size-level or subProduct-level discount)
+        websitePrice = discount.discountedPrice * (1 + commissionPercentage / 100);
+        originalWebsitePrice = discount.originalPrice * (1 + commissionPercentage / 100);
       }
+      
+      const finalWebsitePrice = Math.round(websitePrice * 100) / 100;
+      const finalOriginalPrice = Math.round(originalWebsitePrice * 100) / 100;
+      
+      // Calculate savings info for frontend display
+      const hasDiscount = finalOriginalPrice > finalWebsitePrice;
+      const savingsAmount = hasDiscount ? Math.round((finalOriginalPrice - finalWebsitePrice) * 100) / 100 : 0;
+      const discountPercentage = hasDiscount && finalOriginalPrice > 0 
+        ? Math.round((1 - finalWebsitePrice / finalOriginalPrice) * 100) 
+        : 0;
       
       return {
         _id: size._id,
@@ -809,17 +842,30 @@ function processProduct(product) {
         sku: size.sku,
         stock: size.availableStock || size.stock || 0,
         availability: size.availability,
-        price: {
-          cost: costPrice,
-          selling: sellingPrice,
-          website: Math.round(websitePrice * 100) / 100,
+        pricing: {
+          costPrice: costPrice,
+          sellingPrice: sellingPrice,
+          websitePrice: finalWebsitePrice,
+          originalWebsitePrice: finalOriginalPrice,
           currency: size.currency || tenant?.defaultCurrency || 'NGN',
         },
-        discount,
+        // Computed discount info for frontend
+        discount: {
+          ...discount,
+          hasDiscount,
+          savings: savingsAmount,
+          percentage: discountPercentage,
+          type: subProduct.saleType || discount?.type || null,
+          value: subProduct.saleDiscountValue || discount?.value || 0,
+        },
       };
     });
     
-    const prices = processedSizes.map(s => s.price.website);
+    const prices = processedSizes.map(s => s.pricing.websitePrice);
+    
+    // Calculate subProduct-level discount info from first size
+    const firstSizeDiscount = processedSizes[0]?.discount;
+    const hasSubProductDiscount = firstSizeDiscount?.hasDiscount || subProductSaleActive;
     
     return {
       _id: subProduct._id,
@@ -832,10 +878,30 @@ function processProduct(product) {
         state: tenant?.state,
         country: tenant?.country,
       },
+      // Sale fields
+      isOnSale: subProduct.isOnSale || false,
+      saleType: subProduct.saleType || null,
+      saleDiscountValue: subProduct.saleDiscountValue || 0,
+      saleStartDate: subProduct.saleStartDate || null,
+      saleEndDate: subProduct.saleEndDate || null,
+      salePrice: subProduct.salePrice || null,
+      // Also include flashSale info if present
+      flashSale: subProduct.flashSale || null,
+      // Computed discount info for frontend
+      discount: {
+        hasDiscount: hasSubProductDiscount,
+        type: subProduct.saleType || null,
+        value: subProduct.saleDiscountValue || firstSizeDiscount?.value || 0,
+        percentage: firstSizeDiscount?.percentage || 0,
+        savings: firstSizeDiscount?.savings || 0,
+      },
+      // End sale fields
       sizes: processedSizes,
       priceRange: {
         min: Math.min(...prices),
         max: Math.max(...prices),
+        originalMin: processedSizes[0]?.pricing?.originalWebsitePrice || Math.min(...prices),
+        originalMax: processedSizes[0]?.pricing?.originalWebsitePrice || Math.max(...prices),
       },
       totalStock: processedSizes.reduce((sum, s) => sum + s.stock, 0),
     };
@@ -843,14 +909,19 @@ function processProduct(product) {
   
   // Calculate global price range
   const allPrices = processedSubProducts.flatMap(sp => 
-    sp.sizes.map(s => s.price.website)
+    sp.sizes.map(s => s.pricing.websitePrice)
+  );
+  const allOriginalPrices = processedSubProducts.flatMap(sp => 
+    sp.sizes.map(s => s.pricing.originalWebsitePrice)
   );
   
   const globalPriceRange = allPrices.length > 0 ? {
     min: Math.min(...allPrices),
     max: Math.max(...allPrices),
-    currency: processedSubProducts[0]?.sizes[0]?.price.currency || 'NGN',
-  } : { min: 0, max: 0, currency: 'NGN' };
+    originalMin: Math.min(...allOriginalPrices),
+    originalMax: Math.max(...allOriginalPrices),
+    currency: processedSubProducts[0]?.sizes[0]?.pricing.currency || 'NGN',
+  } : { min: 0, max: 0, originalMin: 0, originalMax: 0, currency: 'NGN' };
   
   // Calculate stock info
   const totalStock = processedSubProducts.reduce((sum, sp) => sum + sp.totalStock, 0);
@@ -859,7 +930,12 @@ function processProduct(product) {
   const highestDiscount = processedSubProducts
     .flatMap(sp => sp.sizes.map(s => s.discount))
     .filter(Boolean)
-    .sort((a, b) => (b?.value || 0) - (a?.value || 0))[0] || null;
+    .sort((a, b) => (b?.percentage || 0) - (a?.percentage || 0))[0] || null;
+  
+  const hasAnySale = processedSubProducts.some(sp => sp.isOnSale);
+  const primarySaleType = hasAnySale 
+    ? processedSubProducts.find(sp => sp.isOnSale)?.saleType || 'percentage'
+    : null;
   
   return {
     _id: product._id,
@@ -879,16 +955,23 @@ function processProduct(product) {
     flavors: product.flavors || [],
     images: product.images || [],
     primaryImage: product.images?.find(img => img.isPrimary) || product.images?.[0],
-    status: product.status, // Include status for pending indication
+    status: product.status,
     
+    // Price info
     priceRange: globalPriceRange,
+    
+    // Sale info at product level
+    isOnSale: hasAnySale,
+    saleType: primarySaleType,
+    discount: highestDiscount,
+    
+    // Availability
     availability: {
       status: totalStock > 0 ? 'in_stock' : 'out_of_stock',
       stockLevel: totalStock > 50 ? 'high' : totalStock > 10 ? 'medium' : totalStock > 0 ? 'low' : 'out',
       totalStock,
       tenantCount: processedSubProducts.length,
     },
-    discount: highestDiscount,
     averageRating: product.averageRating || 0,
     reviewCount: product.reviewCount || 0,
     isFeatured: product.isFeatured || false,
@@ -906,6 +989,30 @@ function isDiscountActive(discount) {
   const now = new Date();
   if (discount.startDate && now < new Date(discount.startDate)) return false;
   if (discount.endDate && now > new Date(discount.endDate)) return false;
+  return true;
+}
+
+/**
+ * Check if subProduct sale is active (based on isOnSale flag and dates)
+ */
+function isSubProductSaleActive(subProduct) {
+  if (!subProduct.isOnSale) return false;
+  if (!subProduct.saleDiscountValue || subProduct.saleDiscountValue <= 0) return false;
+  
+  const now = new Date();
+  
+  // Check start date
+  if (subProduct.saleStartDate) {
+    const startDate = new Date(subProduct.saleStartDate);
+    if (now < startDate) return false;
+  }
+  
+  // Check end date
+  if (subProduct.saleEndDate) {
+    const endDate = new Date(subProduct.saleEndDate);
+    if (now > endDate) return false;
+  }
+  
   return true;
 }
 

@@ -319,8 +319,6 @@ export const productFormSchema = z.object({
     // Commercial Data
     sku: z.string().optional(),
     baseSellingPrice: z.number().min(0).nullable().optional(),
-    platformMarkup: z.number().min(0).max(500).default(15),
-    platformSellingPrice: z.number().min(0).nullable().optional(),
     costPrice: z.number().min(0).nullable().optional(),
     currency: z.string().default('NGN'),
     taxRate: z.number().min(0).max(100).default(0),
@@ -331,8 +329,14 @@ export const productFormSchema = z.object({
     
     // Sale / Discount Pricing
     salePrice: z.number().min(0).nullable().optional(),
-    saleStartDate: z.date().nullable().optional(),
-    saleEndDate: z.date().nullable().optional(),
+    saleStartDate: z.preprocess((v) => {
+      if (v === '' || v === null || v === undefined) return null;
+      return v; // keep as string; server converts to Date
+    }, z.string().nullable().optional()),
+    saleEndDate: z.preprocess((v) => {
+      if (v === '' || v === null || v === undefined) return null;
+      return v;
+    }, z.string().nullable().optional()),
     saleType: z.enum(['percentage', 'fixed', 'flash_sale', 'bundle', 'bogo']).nullable().optional(),
     saleDiscountValue: z.number().min(0).nullable().optional(),
     saleBanner: z.object({

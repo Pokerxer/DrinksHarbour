@@ -623,7 +623,13 @@ subProductSchema.virtual('needsReorder').get(function () {
 // ════════════════════════════════════════════════════════════
 
 subProductSchema.virtual('saleActive').get(function () {
-  if (!this.salePrice || !this.isOnSale) return false;
+  if (!this.isOnSale) return false;
+  // Check for active sale: either salePrice is set, or saleDiscountValue > 0
+  const hasSalePrice = this.salePrice > 0;
+  const hasDiscountValue = this.saleDiscountValue > 0 && ['percentage', 'fixed', 'flash_sale'].includes(this.saleType);
+  
+  if (!hasSalePrice && !hasDiscountValue) return false;
+  
   const now = new Date();
   if (this.saleStartDate && now < this.saleStartDate) return false;
   if (this.saleEndDate && now > this.saleEndDate) return false;
@@ -663,7 +669,13 @@ subProductSchema.virtual('effectiveSalePrice').get(function () {
 });
 
 subProductSchema.virtual('isSaleActive').get(function () {
-  if (!this.isOnSale || !this.salePrice) return false;
+  if (!this.isOnSale) return false;
+  // Check for active sale: either salePrice is set, or saleDiscountValue > 0
+  const hasSalePrice = this.salePrice > 0;
+  const hasDiscountValue = this.saleDiscountValue > 0 && ['percentage', 'fixed', 'flash_sale'].includes(this.saleType);
+  
+  if (!hasSalePrice && !hasDiscountValue) return false;
+  
   const now = new Date();
   if (this.saleStartDate && now < this.saleStartDate) return false;
   if (this.saleEndDate && now > this.saleEndDate) return false;
@@ -672,13 +684,24 @@ subProductSchema.virtual('isSaleActive').get(function () {
 
 // Auto-update isOnSale before save
 subProductSchema.pre('save', function () {
-  if (this.salePrice && this.saleStartDate && this.saleEndDate) {
+  // A sale is valid when there's either a salePrice or a saleDiscountValue > 0
+  const hasSaleValue = (this.salePrice > 0) || (this.saleDiscountValue > 0);
+
+  if (!hasSaleValue) {
+    this.isOnSale = false;
+    return;
+  }
+
+  // If date range set, check if currently within range
+  if (this.saleStartDate && this.saleEndDate) {
     const now = new Date();
     this.isOnSale = now >= this.saleStartDate && now <= this.saleEndDate;
-  } else if (this.salePrice && !this.saleStartDate && !this.saleEndDate) {
-    this.isOnSale = true;
+  } else if (this.saleStartDate && !this.saleEndDate) {
+    // Start date but no end — active from start date onwards
+    this.isOnSale = new Date() >= this.saleStartDate;
   } else {
-    this.isOnSale = false;
+    // No date range — immediately active
+    this.isOnSale = true;
   }
 });
 

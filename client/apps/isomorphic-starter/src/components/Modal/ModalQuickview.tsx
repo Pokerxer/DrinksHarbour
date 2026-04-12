@@ -30,7 +30,7 @@ interface VendorSize {
   originalPrice?: number;
   displayPrice?: string;
   currencySymbol?: string;
-  discount?: { label?: string; percentage?: number } | null;
+  discount?: { label?: string; percentage?: number; type?: string; value?: number; hasDiscount?: boolean } | null;
   volumeMl?: number;
   minOrderQuantity?: number;
   maxOrderQuantity?: number;
@@ -306,22 +306,50 @@ const ModalQuickview: React.FC = () => {
   );
 
   // Computed display values
-  const displayPrice =
-    selectedSizeData?.price || selectedProduct?.priceRange?.min || 0;
-  const displayOriginalPrice =
-    selectedSizeData?.originalPrice || selectedProduct?.priceRange?.max || 0;
+  const displayPrice = (() => {
+    const basePrice = selectedSizeData?.price || selectedProduct?.priceRange?.min || 0;
+    const origPrice = selectedSizeData?.originalPrice ?? 0;
+    if (origPrice > basePrice && basePrice > 0) return basePrice;
+    // Client-side fallback: compute from raw sale fields on the selected vendor
+    const vendor = selectedVendor as any;
+    if (vendor?.isOnSale && vendor?.saleDiscountValue > 0 && basePrice > 0) {
+      const now = new Date();
+      const saleStart = vendor.saleStartDate ? new Date(vendor.saleStartDate) : null;
+      const saleEnd = vendor.saleEndDate ? new Date(vendor.saleEndDate) : null;
+      const clientSaleActive = (!saleStart || now >= saleStart) && (!saleEnd || now <= saleEnd);
+      if (clientSaleActive) {
+        const saleType = vendor.saleType || 'percentage';
+        const computed = saleType === 'fixed'
+          ? Math.max(0, basePrice - vendor.saleDiscountValue)
+          : parseFloat((basePrice * (1 - vendor.saleDiscountValue / 100)).toFixed(2));
+        if (computed < basePrice) return computed;
+      }
+    }
+    return basePrice;
+  })();
+
+  const displayOriginalPrice = (() => {
+    const basePrice = selectedSizeData?.price || selectedProduct?.priceRange?.min || 0;
+    const origPrice = selectedSizeData?.originalPrice ?? 0;
+    if (origPrice > basePrice && basePrice > 0) return origPrice;
+    if (displayPrice < basePrice) return basePrice;
+    return 0;
+  })();
+
+  const showQuickviewDiscount = displayOriginalPrice > displayPrice && displayPrice > 0;
   const displayCurrencySymbol = selectedSizeData?.currencySymbol || "₦";
+  const isFixedDiscount = selectedSizeData?.discount?.type === 'fixed';
   const discountPercentage = useMemo(() => {
     if (selectedSizeData?.discount?.percentage) {
       return selectedSizeData.discount.percentage;
     }
-    if (displayOriginalPrice > displayPrice && displayOriginalPrice > 0) {
+    if (showQuickviewDiscount && displayOriginalPrice > 0) {
       return Math.floor(
         ((displayOriginalPrice - displayPrice) / displayOriginalPrice) * 100,
       );
     }
     return 0;
-  }, [selectedSizeData, displayOriginalPrice, displayPrice]);
+  }, [selectedSizeData, displayOriginalPrice, displayPrice, showQuickviewDiscount]);
   const inStock = (selectedSizeData?.stock || 0) > 0;
 
   if (!selectedProduct) return null;
@@ -400,9 +428,18 @@ const ModalQuickview: React.FC = () => {
                       />
 
                       {/* Discount Badge */}
-                      {index === 0 && discountPercentage > 0 && (
-                        <div className="absolute top-3 left-3 px-2.5 py-1 lg:px-3 lg:py-1.5 bg-red-500 text-white text-xs lg:text-sm font-bold rounded-full shadow-lg">
-                          -{discountPercentage}%
+                      {index === 0 && showQuickviewDiscount && (
+                        <div className={`absolute top-3 left-3 px-2.5 py-1 lg:px-3 lg:py-1.5 text-white text-xs lg:text-sm font-bold rounded-full shadow-lg flex items-center gap-1 ${
+                          selectedSizeData?.discount?.type === 'flash_sale'
+                            ? 'bg-gradient-to-r from-orange-500 to-red-500 animate-pulse'
+                            : isFixedDiscount
+                              ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
+                              : 'bg-red-500'
+                        }`}>
+                          {selectedSizeData?.discount?.type === 'flash_sale' && <Icon.PiLightningFill size={10} />}
+                          {isFixedDiscount
+                            ? `₦${(selectedSizeData?.discount?.value ?? (displayOriginalPrice - displayPrice)).toLocaleString()} OFF`
+                            : `-${discountPercentage}%`}
                         </div>
                       )}
 
@@ -674,19 +711,19 @@ const ModalQuickview: React.FC = () => {
 
             {/* Price */}
             <div className="flex flex-wrap items-baseline gap-2 lg:gap-3 mb-4 pb-3 lg:pb-4 border-b border-gray-100">
-              <span className="text-2xl lg:text-3xl font-bold text-gray-900">
+              <span className={`text-2xl lg:text-3xl font-bold ${showQuickviewDiscount ? 'text-red-600' : 'text-gray-900'}`}>
                 {displayCurrencySymbol}
                 {displayPrice.toLocaleString()}
               </span>
-              {displayOriginalPrice > displayPrice && (
+              {showQuickviewDiscount && (
                 <span className="text-lg lg:text-xl text-gray-400 line-through">
                   {displayCurrencySymbol}
                   {displayOriginalPrice.toLocaleString()}
                 </span>
               )}
-              {discountPercentage > 0 && (
+              {showQuickviewDiscount && (
                 <span className="px-2 lg:px-3 py-0.5 lg:py-1 bg-green-100 text-green-700 text-xs lg:text-sm font-bold rounded-full">
-                  Save {discountPercentage}%
+                  Save {displayCurrencySymbol}{(displayOriginalPrice - displayPrice).toLocaleString()}
                 </span>
               )}
             </div>

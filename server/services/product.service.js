@@ -1284,6 +1284,7 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
     requiresAgeVerification,
     isPublished: isPublishedInput,
     status, // Only super-admin can change status
+    subProductData,
   } = updateData;
 
   // Track if we need to regenerate embedding
@@ -1873,7 +1874,55 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
   }
 
   // ============================================================
-  // STEP 20: Save & Return
+  // STEP 20: Sync Sale Data to All SubProducts
+  // ============================================================
+  if (subProductData && typeof subProductData === 'object' && subProductData.isOnSale !== undefined) {
+    let saleFields;
+
+    if (subProductData.isOnSale === false) {
+      // Disable sale — clear everything
+      saleFields = {
+        isOnSale: false,
+        saleType: null,
+        saleDiscountValue: 0,
+        inputSaleDiscountPercentage: 0,
+        salePrice: 0,
+        saleStartDate: null,
+        saleEndDate: null,
+      };
+    } else {
+      // Enable sale — set all provided values
+      const discountValue = Number(subProductData.saleDiscountValue) || 0;
+      const startDate = subProductData.saleStartDate ? new Date(subProductData.saleStartDate) : null;
+      const endDate = subProductData.saleEndDate ? new Date(subProductData.saleEndDate) : null;
+
+      // Validate dates parsed correctly
+      if (startDate && isNaN(startDate.getTime())) throw new Error('Invalid saleStartDate');
+      if (endDate && isNaN(endDate.getTime())) throw new Error('Invalid saleEndDate');
+
+      const resolvedSaleType = subProductData.saleType || 'percentage';
+      // inputSaleDiscountPercentage is only valid for percentage-based types (max 100)
+      const inputPct = resolvedSaleType === 'fixed' ? 0 : discountValue;
+
+      saleFields = {
+        isOnSale: true,
+        saleType: resolvedSaleType,
+        saleDiscountValue: discountValue,
+        inputSaleDiscountPercentage: inputPct,
+        salePrice: Number(subProductData.salePrice) || 0,
+        saleStartDate: startDate,
+        saleEndDate: endDate,
+      };
+    }
+
+    await SubProduct.updateMany(
+      { product: product._id },
+      { $set: saleFields }
+    );
+  }
+
+  // ============================================================
+  // STEP 21: Save & Return
   // ============================================================
   product.updatedAt = new Date();
   await product.save();
@@ -1887,7 +1936,12 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
     .populate('flavors', 'name value color category')
     .lean();
 
-  return updatedProduct;
+  // Include SubProducts so the client can restore sale fields after form reset
+  const updatedSubProducts = await SubProduct.find({ product: product._id })
+    .select('isOnSale saleType saleDiscountValue salePrice saleStartDate saleEndDate')
+    .lean();
+
+  return { ...updatedProduct, subProducts: updatedSubProducts };
 };
 
 /**
@@ -4357,6 +4411,14 @@ const searchProducts = async (searchParams = {}) => {
         : null;
       const productDiscountActive = isDiscountActive(productDiscount);
 
+      // Determine if subProduct sale is active — only constrain by dates that are actually set
+      const _saleNow = new Date();
+      const _saleStart = subProduct.saleStartDate ? new Date(subProduct.saleStartDate) : null;
+      const _saleEnd = subProduct.saleEndDate ? new Date(subProduct.saleEndDate) : null;
+      const saleActive = subProduct.isOnSale &&
+        (!_saleStart || _saleNow >= _saleStart) &&
+        (!_saleEnd || _saleNow <= _saleEnd);
+
       // Process each size with website pricing
       const processedSizes = (subProduct.sizes || []).map((size) => {
         const sellingPrice = size.sellingPrice || 0;
@@ -4372,27 +4434,22 @@ const searchProducts = async (searchParams = {}) => {
         // Tenant discounts are for the tenant's own store only — not used here.
         // ─────────────────────────────────────────────────────────────────────
         const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
-        
+
         // Calculate platform selling price with product discount first
         let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
-        
+
         // Store original price before sale discount for display
         const priceBeforeSale = platformSellingPrice;
-        
-        // Apply SubProduct sale discount if active (tenant-specific sale)
-        const saleActive = subProduct.isOnSale && subProduct.saleStartDate && subProduct.saleEndDate 
-          ? new Date() >= new Date(subProduct.saleStartDate) && new Date() <= new Date(subProduct.saleEndDate)
-          : subProduct.isOnSale && !subProduct.saleStartDate && !subProduct.saleEndDate;
-        
+
         if (saleActive && subProduct.saleDiscountValue > 0) {
           const discountType = subProduct.saleType || 'percentage';
-          if (discountType === 'percentage') {
+          if (discountType === 'percentage' || discountType === 'flash_sale') {
             platformSellingPrice = parseFloat((platformSellingPrice * (1 - subProduct.saleDiscountValue / 100)).toFixed(2));
-          } else if (discountType === 'fixed' && subProduct.salePrice > 0) {
-            platformSellingPrice = subProduct.salePrice;
+          } else if (discountType === 'fixed') {
+            platformSellingPrice = Math.max(0, parseFloat((platformSellingPrice - subProduct.saleDiscountValue).toFixed(2)));
           }
         }
-        
+
         const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
 
         const websitePrice = platformSellingPrice;
@@ -4405,22 +4462,34 @@ const searchProducts = async (searchParams = {}) => {
         if (hasSaleDiscount) {
           // Sale discount takes precedence
           const saleDiscountPct = subProduct.saleDiscountValue;
+          const saleSavings = priceBeforeSale - websitePrice;
+          const salePct = subProduct.saleType === 'fixed'
+            ? (priceBeforeSale > 0 ? Math.round((saleSavings / priceBeforeSale) * 100) : 0)
+            : saleDiscountPct;
           discountInfo = {
             type: subProduct.saleType || 'percentage',
             value: saleDiscountPct,
+            percentage: salePct,
+            hasDiscount: true,
             originalPrice: priceBeforeSale,
-            savings: priceBeforeSale - websitePrice,
+            savings: saleSavings,
             source: 'sale',
             label: subProduct.saleType === 'fixed'
-              ? `Save ${getCurrencySymbol(currency)}${subProduct.salePrice}`
+              ? `Save ${getCurrencySymbol(currency)}${saleDiscountPct.toLocaleString()}`
               : `${saleDiscountPct}% OFF`,
           };
         } else if (hasProductDiscount) {
+          const prodSavings = priceBeforeSale - websitePrice;
+          const prodPct = productDiscount.type === 'fixed'
+            ? (priceBeforeSale > 0 ? Math.round((prodSavings / priceBeforeSale) * 100) : 0)
+            : productDiscount.value;
           discountInfo = {
             type: productDiscount.type,
             value: productDiscount.value,
+            percentage: prodPct,
+            hasDiscount: true,
             originalPrice: priceBeforeSale,
-            savings: priceBeforeSale - websitePrice,
+            savings: prodSavings,
             source: 'product',
             label: productDiscount.type === 'percentage'
               ? `${productDiscount.value}% OFF`
@@ -5361,19 +5430,20 @@ const getTrendingProducts = async (limit = 10, dateRange = 7) => {
         const saleEnd = subProduct.saleEndDate ? new Date(subProduct.saleEndDate) : null;
         const now = new Date();
         
-        const saleActive = subProduct.isOnSale && saleStart && saleEnd 
-          ? now >= saleStart && now <= saleEnd
-          : subProduct.isOnSale && !saleStart && !saleEnd;
-        
+        // Only constrain by dates that are actually set
+        const saleActive = subProduct.isOnSale &&
+          (!saleStart || now >= saleStart) &&
+          (!saleEnd || now <= saleEnd);
+
         if (saleActive && subProduct.saleDiscountValue > 0) {
           const discountType = subProduct.saleType || 'percentage';
-          if (discountType === 'percentage') {
+          if (discountType === 'percentage' || discountType === 'flash_sale') {
             platformSellingPrice = parseFloat((platformSellingPrice * (1 - subProduct.saleDiscountValue / 100)).toFixed(2));
-          } else if (discountType === 'fixed' && subProduct.salePrice > 0) {
-            platformSellingPrice = subProduct.salePrice;
+          } else if (discountType === 'fixed') {
+            platformSellingPrice = Math.max(0, parseFloat((platformSellingPrice - subProduct.saleDiscountValue).toFixed(2)));
           }
         }
-        
+
         const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
 
         const websitePriceVal = platformSellingPrice;
@@ -5382,25 +5452,37 @@ const getTrendingProducts = async (limit = 10, dateRange = 7) => {
         let discountInfo = null;
         const hasProductDiscount = productDiscountActive && productDiscount;
         const hasSaleDiscount = saleActive && subProduct.saleDiscountValue > 0;
-        
+
         if (hasSaleDiscount) {
           const saleDiscountPct = subProduct.saleDiscountValue;
+          const saleSavings2 = priceBeforeSale - websitePriceVal;
+          const salePct2 = subProduct.saleType === 'fixed'
+            ? (priceBeforeSale > 0 ? Math.round((saleSavings2 / priceBeforeSale) * 100) : 0)
+            : saleDiscountPct;
           discountInfo = {
             type: subProduct.saleType || 'percentage',
             value: saleDiscountPct,
+            percentage: salePct2,
+            hasDiscount: true,
             originalPrice: priceBeforeSale,
-            savings: priceBeforeSale - websitePriceVal,
+            savings: saleSavings2,
             source: 'sale',
             label: subProduct.saleType === 'fixed'
-              ? `Save ${getCurrencySymbol(currency)}${subProduct.salePrice}`
+              ? `Save ${getCurrencySymbol(currency)}${saleDiscountPct.toLocaleString()}`
               : `${saleDiscountPct}% OFF`,
           };
         } else if (hasProductDiscount) {
+          const prodSavings2 = priceBeforeSale - websitePriceVal;
+          const prodPct2 = productDiscount.type === 'fixed'
+            ? (priceBeforeSale > 0 ? Math.round((prodSavings2 / priceBeforeSale) * 100) : 0)
+            : productDiscount.value;
           discountInfo = {
             type: productDiscount.type,
             value: productDiscount.value,
+            percentage: prodPct2,
+            hasDiscount: true,
             originalPrice: priceBeforeSale,
-            savings: priceBeforeSale - websitePriceVal,
+            savings: prodSavings2,
             source: 'product',
             label: productDiscount.type === 'percentage'
               ? `${productDiscount.value}% OFF`
@@ -7577,26 +7659,68 @@ const getAllProducts = async (queryParams) => {
         const currency = size.currency || tenant.defaultCurrency || 'NGN';
 
         // ── Platform Pricing Pipeline ────────────────────────────────────────
-        // Markup:     platformCostPrice = costPrice × (1 + markupPct/100)
-        // Commission: platformCostPrice = sellingPrice × (1 − commissionPct/100)
-        // platformSellingPrice = platformCostPrice × (1 + platformMarkupPct/100) [− productDiscount]
-        // Tenant discounts are for the tenant's own store only — not applied here.
-        // ─────────────────────────────────────────────────────────────────────
         const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
-        const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
-        const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
+        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
 
+        // Store original price before sale discount
+        const priceBeforeSale = platformSellingPrice;
+
+        // Apply SubProduct sale discount if active — only constrain by dates that are set
+        const _relNow = new Date();
+        const _relSaleStart = subProduct.saleStartDate ? new Date(subProduct.saleStartDate) : null;
+        const _relSaleEnd = subProduct.saleEndDate ? new Date(subProduct.saleEndDate) : null;
+        const saleActive = subProduct.isOnSale &&
+          (!_relSaleStart || _relNow >= _relSaleStart) &&
+          (!_relSaleEnd || _relNow <= _relSaleEnd);
+
+        if (saleActive && subProduct.saleDiscountValue > 0) {
+          const discountType = subProduct.saleType || 'percentage';
+          if (discountType === 'percentage' || discountType === 'flash_sale') {
+            platformSellingPrice = parseFloat((platformSellingPrice * (1 - subProduct.saleDiscountValue / 100)).toFixed(2));
+          } else if (discountType === 'fixed') {
+            platformSellingPrice = Math.max(0, parseFloat((platformSellingPrice - subProduct.saleDiscountValue).toFixed(2)));
+          }
+        }
+
+        const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
         const websitePrice = platformSellingPrice;
 
-        // Product-level discount display info
+        // Sale discount takes precedence over product-level discount for display
         let discountInfo = null;
-        if (productDiscountActive && productDiscount) {
+        const hasSaleDiscount = saleActive && subProduct.saleDiscountValue > 0;
+        const hasProductDiscount = productDiscountActive && productDiscount;
+
+        if (hasSaleDiscount) {
+          const saleDiscountPct = subProduct.saleDiscountValue;
+          const saleSavings = priceBeforeSale - websitePrice;
+          const salePct = subProduct.saleType === 'fixed'
+            ? (priceBeforeSale > 0 ? Math.round((saleSavings / priceBeforeSale) * 100) : 0)
+            : saleDiscountPct;
+          discountInfo = {
+            type: subProduct.saleType || 'percentage',
+            value: saleDiscountPct,
+            percentage: salePct,
+            hasDiscount: true,
+            originalPrice: priceBeforeSale,
+            savings: saleSavings,
+            source: 'sale',
+            label: subProduct.saleType === 'fixed'
+              ? `Save ${getCurrencySymbol(currency)}${saleDiscountPct.toLocaleString()}`
+              : `${saleDiscountPct}% OFF`,
+          };
+        } else if (hasProductDiscount) {
           const undiscountedSelling = parseFloat((platformCostPrice * (1 + platformMarkupPct / 100)).toFixed(2));
+          const prodSavings = undiscountedSelling - websitePrice;
+          const prodPct = productDiscount.type === 'fixed'
+            ? (undiscountedSelling > 0 ? Math.round((prodSavings / undiscountedSelling) * 100) : 0)
+            : productDiscount.value;
           discountInfo = {
             type: productDiscount.type,
             value: productDiscount.value,
+            percentage: prodPct,
+            hasDiscount: true,
             originalPrice: undiscountedSelling,
-            savings: undiscountedSelling - websitePrice,
+            savings: prodSavings,
             source: 'product',
             label: productDiscount.type === 'percentage'
               ? `${productDiscount.value}% OFF`
@@ -9329,23 +9453,70 @@ const getProductBySlug = async (slug) => {
       // Markup:     platformCostPrice = costPrice × (1 + markupPct/100)
       // Commission: platformCostPrice = sellingPrice × (1 − commissionPct/100)
       // platformSellingPrice = platformCostPrice × (1 + platformMarkupPct/100) [− productDiscount]
-      // Tenant discounts are for the tenant's own store only — not applied here.
+      // SubProduct sale discount applied after platform selling price is computed.
       // ─────────────────────────────────────────────────────────────────────
       const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
-      const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
-      const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
+      let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
 
+      // Store original price before sale discount for display
+      const priceBeforeSale = platformSellingPrice;
+
+      // Apply SubProduct sale discount if active — only constrain by dates that are set
+      const _slugSaleNow = new Date();
+      const _slugSaleStart = subProduct.saleStartDate ? new Date(subProduct.saleStartDate) : null;
+      const _slugSaleEnd = subProduct.saleEndDate ? new Date(subProduct.saleEndDate) : null;
+      const saleActive = subProduct.isOnSale &&
+        (!_slugSaleStart || _slugSaleNow >= _slugSaleStart) &&
+        (!_slugSaleEnd || _slugSaleNow <= _slugSaleEnd);
+
+      if (saleActive && subProduct.saleDiscountValue > 0) {
+        const discountType = subProduct.saleType || 'percentage';
+        if (discountType === 'percentage' || discountType === 'flash_sale') {
+          platformSellingPrice = parseFloat((platformSellingPrice * (1 - subProduct.saleDiscountValue / 100)).toFixed(2));
+        } else if (discountType === 'fixed') {
+          platformSellingPrice = Math.max(0, parseFloat((platformSellingPrice - subProduct.saleDiscountValue).toFixed(2)));
+        }
+      }
+
+      const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
       const websitePrice = platformSellingPrice;
 
-      // Product-level discount display info
+      // Sale discount takes precedence over product-level discount for display
       let discountInfo = null;
-      if (productDiscountActive && productDiscount) {
+      const hasSaleDiscount = saleActive && subProduct.saleDiscountValue > 0;
+      const hasProductDiscount = productDiscountActive && productDiscount;
+
+      if (hasSaleDiscount) {
+        const saleDiscountPct = subProduct.saleDiscountValue;
+        const saleSavings = priceBeforeSale - websitePrice;
+        const salePct = subProduct.saleType === 'fixed'
+          ? (priceBeforeSale > 0 ? Math.round((saleSavings / priceBeforeSale) * 100) : 0)
+          : saleDiscountPct;
+        discountInfo = {
+          type: subProduct.saleType || 'percentage',
+          value: saleDiscountPct,
+          percentage: salePct,
+          hasDiscount: true,
+          originalPrice: priceBeforeSale,
+          savings: saleSavings,
+          source: 'sale',
+          label: subProduct.saleType === 'fixed'
+            ? `Save ${getCurrencySymbol(currency)}${saleDiscountPct.toLocaleString()}`
+            : `${saleDiscountPct}% OFF`,
+        };
+      } else if (hasProductDiscount) {
         const undiscountedSelling = parseFloat((platformCostPrice * (1 + platformMarkupPct / 100)).toFixed(2));
+        const prodSavings = undiscountedSelling - websitePrice;
+        const prodPct = productDiscount.type === 'fixed'
+          ? (undiscountedSelling > 0 ? Math.round((prodSavings / undiscountedSelling) * 100) : 0)
+          : productDiscount.value;
         discountInfo = {
           type: productDiscount.type,
           value: productDiscount.value,
+          percentage: prodPct,
+          hasDiscount: true,
           originalPrice: undiscountedSelling,
-          savings: undiscountedSelling - websitePrice,
+          savings: prodSavings,
           source: 'product',
           label: productDiscount.type === 'percentage'
             ? `${productDiscount.value}% OFF`
@@ -9813,7 +9984,7 @@ const getProductById = async (id, includePending = false) => {
         'size displayName sellingPrice costPrice stock availability currency discountValue discountType discountStart discountEnd lowStockThreshold sku barcode weightGrams volumeMl minOrderQuantity maxOrderQuantity',
     })
     .select(
-      'tenant sku baseSellingPrice costPrice currency discount discountType discountStart discountEnd sizes shortDescriptionOverride imagesOverride status totalSold totalRevenue'
+      'tenant sku baseSellingPrice costPrice currency discount discountType discountStart discountEnd sizes shortDescriptionOverride imagesOverride status totalSold totalRevenue isOnSale saleType saleDiscountValue salePrice saleStartDate saleEndDate'
     )
     .lean();
 
@@ -10818,26 +10989,68 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
         const currency = size.currency || tenant.defaultCurrency || 'NGN';
 
         // ── Platform Pricing Pipeline ────────────────────────────────────────
-        // Markup:     platformCostPrice = costPrice × (1 + markupPct/100)
-        // Commission: platformCostPrice = sellingPrice × (1 − commissionPct/100)
-        // platformSellingPrice = platformCostPrice × (1 + platformMarkupPct/100) [− productDiscount]
-        // Tenant discounts are for the tenant's own store only — not applied here.
-        // ─────────────────────────────────────────────────────────────────────
         const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
-        const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
-        const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
+        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
 
+        // Store original price before sale discount
+        const priceBeforeSale = platformSellingPrice;
+
+        // Apply SubProduct sale discount if active — only constrain by dates that are set
+        const _relNow = new Date();
+        const _relSaleStart = subProduct.saleStartDate ? new Date(subProduct.saleStartDate) : null;
+        const _relSaleEnd = subProduct.saleEndDate ? new Date(subProduct.saleEndDate) : null;
+        const saleActive = subProduct.isOnSale &&
+          (!_relSaleStart || _relNow >= _relSaleStart) &&
+          (!_relSaleEnd || _relNow <= _relSaleEnd);
+
+        if (saleActive && subProduct.saleDiscountValue > 0) {
+          const discountType = subProduct.saleType || 'percentage';
+          if (discountType === 'percentage' || discountType === 'flash_sale') {
+            platformSellingPrice = parseFloat((platformSellingPrice * (1 - subProduct.saleDiscountValue / 100)).toFixed(2));
+          } else if (discountType === 'fixed') {
+            platformSellingPrice = Math.max(0, parseFloat((platformSellingPrice - subProduct.saleDiscountValue).toFixed(2)));
+          }
+        }
+
+        const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
         const websitePrice = platformSellingPrice;
 
-        // Product-level discount display info
+        // Sale discount takes precedence over product-level discount for display
         let discountInfo = null;
-        if (productDiscountActive && productDiscount) {
+        const hasSaleDiscount = saleActive && subProduct.saleDiscountValue > 0;
+        const hasProductDiscount = productDiscountActive && productDiscount;
+
+        if (hasSaleDiscount) {
+          const saleDiscountPct = subProduct.saleDiscountValue;
+          const saleSavings = priceBeforeSale - websitePrice;
+          const salePct = subProduct.saleType === 'fixed'
+            ? (priceBeforeSale > 0 ? Math.round((saleSavings / priceBeforeSale) * 100) : 0)
+            : saleDiscountPct;
+          discountInfo = {
+            type: subProduct.saleType || 'percentage',
+            value: saleDiscountPct,
+            percentage: salePct,
+            hasDiscount: true,
+            originalPrice: priceBeforeSale,
+            savings: saleSavings,
+            source: 'sale',
+            label: subProduct.saleType === 'fixed'
+              ? `Save ${getCurrencySymbol(currency)}${saleDiscountPct.toLocaleString()}`
+              : `${saleDiscountPct}% OFF`,
+          };
+        } else if (hasProductDiscount) {
           const undiscountedSelling = parseFloat((platformCostPrice * (1 + platformMarkupPct / 100)).toFixed(2));
+          const prodSavings = undiscountedSelling - websitePrice;
+          const prodPct = productDiscount.type === 'fixed'
+            ? (undiscountedSelling > 0 ? Math.round((prodSavings / undiscountedSelling) * 100) : 0)
+            : productDiscount.value;
           discountInfo = {
             type: productDiscount.type,
             value: productDiscount.value,
+            percentage: prodPct,
+            hasDiscount: true,
             originalPrice: undiscountedSelling,
-            savings: undiscountedSelling - websitePrice,
+            savings: prodSavings,
             source: 'product',
             label: productDiscount.type === 'percentage'
               ? `${productDiscount.value}% OFF`

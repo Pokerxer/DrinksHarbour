@@ -144,7 +144,7 @@ const ProductSpecifications: React.FC<ProductSpecificationsProps> = ({
           },
           {
             label: "Sub-Category",
-            value: productData?.subCategory,
+            value: productData?.subCategory?.name || productData?.subCategory || productData?.category?.subCategory?.name,
             icon: Icon.PiFolders,
           },
         ],

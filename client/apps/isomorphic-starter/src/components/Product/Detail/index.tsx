@@ -60,7 +60,7 @@ interface VendorSize {
   originalPrice: number;
   displayPrice: string;
   currencySymbol: string;
-  discount?: { label?: string; percentage?: number } | null;
+  discount?: { label?: string; percentage?: number; type?: string; value?: number; hasDiscount?: boolean } | null;
   volumeMl?: number;
   minOrderQuantity: number;
   maxOrderQuantity?: number;
@@ -129,29 +129,55 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     return vendorSizes.find((s) => s.size === activeSize) || null;
   }, [activeSize, vendorSizes]);
 
-  const displayPrice = selectedSizeData?.price ?? productData?.priceRange?.min ?? 0;
-  // Only use the pre-discount original price when there is a real discount on the
-  // selected size. Falling back to priceRange.max would show a fake strikethrough
-  // just because other sizes cost more.
-  const displayOriginalPrice = selectedSizeData?.discount
-    ? (selectedSizeData.originalPrice ?? displayPrice)
-    : displayPrice;
+  const displayPrice = (() => {
+    const basePrice = selectedSizeData?.price ?? productData?.priceRange?.min ?? 0;
+    const origPrice = selectedSizeData?.originalPrice ?? basePrice;
+    // If server already computed a discount, use base price as-is
+    if (origPrice > basePrice && basePrice > 0) return basePrice;
+    // Client-side fallback: compute from raw sale fields on the selected vendor
+    const vendor = selectedVendor as any;
+    if (vendor?.isOnSale && vendor?.saleDiscountValue > 0 && basePrice > 0) {
+      const now = new Date();
+      const saleStart = vendor.saleStartDate ? new Date(vendor.saleStartDate) : null;
+      const saleEnd = vendor.saleEndDate ? new Date(vendor.saleEndDate) : null;
+      const clientSaleActive = (!saleStart || now >= saleStart) && (!saleEnd || now <= saleEnd);
+      if (clientSaleActive) {
+        const saleType = vendor.saleType || 'percentage';
+        const computed = saleType === 'fixed'
+          ? Math.max(0, basePrice - vendor.saleDiscountValue)
+          : parseFloat((basePrice * (1 - vendor.saleDiscountValue / 100)).toFixed(2));
+        if (computed < basePrice) return computed;
+      }
+    }
+    return basePrice;
+  })();
+
+  const displayOriginalPrice = (() => {
+    const basePrice = selectedSizeData?.price ?? productData?.priceRange?.min ?? 0;
+    const origPrice = selectedSizeData?.originalPrice ?? basePrice;
+    if (origPrice > basePrice && basePrice > 0) return origPrice;
+    // If client-side computed a lower price, original = base
+    if (displayPrice < basePrice) return basePrice;
+    return displayPrice;
+  })();
+
+  const showDetailDiscount = displayOriginalPrice > displayPrice && displayPrice > 0;
   const displayCurrencySymbol = selectedSizeData?.currencySymbol || productData?.priceRange?.currencySymbol || '₦';
 
   const discountPercentage = useMemo(() => {
     if (selectedSizeData?.discount?.percentage) {
       return selectedSizeData.discount.percentage;
     }
-    if (selectedSizeData?.discount && displayOriginalPrice > displayPrice && displayOriginalPrice > 0) {
+    if (showDetailDiscount && displayOriginalPrice > 0) {
       return Math.round(((displayOriginalPrice - displayPrice) / displayOriginalPrice) * 100);
     }
     return 0;
-  }, [selectedSizeData, displayOriginalPrice, displayPrice]);
+  }, [selectedSizeData, displayOriginalPrice, displayPrice, showDetailDiscount]);
 
   const inStock = (selectedSizeData?.stock || 0) > 0;
   const isLowStock = selectedSizeData?.stock && selectedSizeData.stock <= 5 && selectedSizeData.stock > 0;
-  // hasDiscount is true only when the selected size has an actual discount object
-  const hasDiscount = !!(selectedSizeData?.discount) || discountPercentage > 0;
+  const hasDiscount = showDetailDiscount;
+  const isFixedDiscount = selectedSizeData?.discount?.type === 'fixed';
 
   useEffect(() => {
     if (productData?.availableAt?.length > 0 && !activeVendor) {
@@ -198,13 +224,12 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     try {
       await addToCart(productData, activeSize, '', selectedVendor.tenant.name, selectedVendor.tenant._id, localQuantity, selectedSizeData?._id, selectedVendor._id);
       setToast({ show: true, message: 'Added to cart successfully!', type: 'success' });
-      setTimeout(() => openModalCart(), 500);
     } catch (error) {
       setToast({ show: true, message: 'Failed to add to cart', type: 'error' });
     } finally {
       setIsAddingToCart(false);
     }
-  }, [productData, selectedSizeData, selectedVendor, activeSize, localQuantity, addToCart, openModalCart, inStock]);
+  }, [productData, selectedSizeData, selectedVendor, activeSize, localQuantity, addToCart, inStock]);
 
   const handleAddToWishlist = useCallback(() => {
     if (!productData) return;
@@ -330,9 +355,18 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
 
                     {/* Badges */}
                   <div className="absolute top-4 left-4 flex flex-col gap-2 z-10">
-                    {discountPercentage > 0 && (
-                      <div className="px-3 py-1.5 bg-red-500 text-white text-sm font-bold rounded-full">
-                        -{discountPercentage}% OFF
+                    {showDetailDiscount && (
+                      <div className={`px-3 py-1.5 text-white text-sm font-bold rounded-full flex items-center gap-1 ${
+                        selectedSizeData?.discount?.type === 'flash_sale'
+                          ? 'bg-gradient-to-r from-orange-500 to-red-500 animate-pulse'
+                          : isFixedDiscount
+                            ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
+                            : 'bg-red-500'
+                      }`}>
+                        {selectedSizeData?.discount?.type === 'flash_sale' && <Icon.PiLightningFill size={12} />}
+                        {isFixedDiscount
+                          ? `₦${(selectedSizeData?.discount?.value ?? (displayOriginalPrice - displayPrice)).toLocaleString()} OFF`
+                          : `-${discountPercentage}% OFF`}
                       </div>
                     )}
                     {productData.badge && productData.badge.name && (
@@ -414,10 +448,10 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
 
               {/* Price */}
               <div className="flex items-baseline gap-3 py-4 border-y border-gray-100">
-                <span className="text-4xl font-bold text-gray-900">
+                <span className={`text-4xl font-bold ${showDetailDiscount ? 'text-red-600' : 'text-gray-900'}`}>
                   {displayCurrencySymbol}{displayPrice.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                 </span>
-                {hasDiscount && displayOriginalPrice > displayPrice && (
+                {showDetailDiscount && (
                   <>
                     <span className="text-xl text-gray-400 line-through">
                       {displayCurrencySymbol}{displayOriginalPrice.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
@@ -512,7 +546,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                       </span>
                     )}
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3">
                     {vendorSizes.map((size: VendorSize) => {
                       const isSelected = activeSize === size.size;
                       const isOutOfStock = size.stock === 0;
@@ -522,7 +556,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                           key={size._id || size.size}
                           onClick={() => !isOutOfStock && setActiveSize(size.size)}
                           disabled={isOutOfStock}
-                          className={`relative p-3 rounded-xl border-2 text-left transition-all ${
+                          className={`relative p-2 sm:p-3 rounded-xl border-2 text-center transition-all ${
                             isSelected
                               ? 'border-black bg-gray-900 text-white shadow-lg'
                               : isOutOfStock
@@ -530,22 +564,23 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                                 : 'border-gray-200 hover:border-gray-400 bg-white'
                           }`}
                         >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="font-bold text-sm">{size.displayName}</div>
-                              {size.volumeMl && (
-                                <div className={`text-xs ${isSelected ? 'text-gray-400' : 'text-gray-500'}`}>
-                                  {size.volumeMl}ml
-                                </div>
-                              )}
+                          <div className="font-bold text-sm sm:text-base">{size.displayName}</div>
+                          {size.volumeMl && (
+                            <div className={`text-[10px] sm:text-xs ${isSelected ? 'text-gray-400' : 'text-gray-500'}`}>
+                              {size.volumeMl}ml
                             </div>
-                            <div className={`text-sm font-bold ${isSelected ? 'text-white' : 'text-gray-900'}`}>
-                              {size.currencySymbol}{size.price.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                            </div>
+                          )}
+                          <div className={`text-xs sm:text-sm font-bold mt-1 ${isSelected ? 'text-white' : 'text-gray-900'}`}>
+                            {size.currencySymbol}{size.price.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                           </div>
                           {size.discount && !isOutOfStock && (
-                            <div className="absolute -top-2 -right-2 px-2 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full">
-                              {size.discount.label || `-${size.discount.percentage}%`}
+                            <div className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 bg-red-500 text-white text-[9px] sm:text-[10px] font-bold rounded-full">
+                              -{size.discount.percentage}%
+                            </div>
+                          )}
+                          {isSelected && (
+                            <div className="absolute -top-1.5 -left-1.5 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                              <Icon.PiCheck size={12} className="text-white" />
                             </div>
                           )}
                         </button>
@@ -556,44 +591,46 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
               )}
 
               {/* Quantity & Add to Cart */}
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex items-center border-2 border-gray-200 rounded-xl p-1 bg-white">
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+                {/* Quantity Selector */}
+                <div className="flex items-center justify-center sm:justify-start border-2 border-gray-200 rounded-xl py-1 px-2 bg-white">
                   <button
                     onClick={() => handleQuantityChange(-1)}
                     disabled={localQuantity <= (selectedSizeData?.minOrderQuantity || 1)}
-                    className="w-12 h-12 flex items-center justify-center rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-white transition-colors"
+                    className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-white transition-colors"
                   >
-                    <Icon.PiMinus size={18} />
+                    <Icon.PiMinus size={20} />
                   </button>
-                  <div className="w-20 text-center">
-                    <span className="block font-bold text-lg">{localQuantity}</span>
-                    <span className="block text-xs text-gray-400">items</span>
+                  <div className="w-16 sm:w-20 text-center">
+                    <span className="block font-bold text-lg sm:text-xl">{localQuantity}</span>
+                    <span className="block text-[10px] sm:text-xs text-gray-400">items</span>
                   </div>
                   <button
                     onClick={() => handleQuantityChange(1)}
                     disabled={selectedSizeData?.maxOrderQuantity ? localQuantity >= selectedSizeData.maxOrderQuantity : false}
-                    className="w-12 h-12 flex items-center justify-center rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-white transition-colors"
+                    className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-white transition-colors"
                   >
-                    <Icon.PiPlus size={18} />
+                    <Icon.PiPlus size={20} />
                   </button>
                 </div>
 
+                {/* Add to Cart Button */}
                 <div className="flex-1 flex flex-col gap-2">
                   <button
                     onClick={handleAddToCart}
                     disabled={!inStock || !activeSize || isAddingToCart}
-                    className={`w-full py-4 px-8 rounded-xl font-bold text-base transition-all flex items-center justify-center gap-3 ${
+                    className={`w-full py-4 px-6 rounded-xl font-bold text-base transition-all flex items-center justify-center gap-2 sm:gap-3 ${
                       !activeSize
                         ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
                         : !inStock
                           ? 'bg-red-100 text-red-600 cursor-not-allowed'
-                          : 'bg-gradient-to-r from-gray-900 to-gray-800 text-white hover:from-black hover:to-gray-900 shadow-lg hover:shadow-xl'
+                          : 'bg-gray-900 text-white hover:bg-black shadow-lg hover:shadow-xl'
                     }`}
                   >
                     {isAddingToCart ? (
                       <>
                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        <span>Adding to Cart...</span>
+                        <span>Adding...</span>
                       </>
                     ) : !activeSize ? (
                       <>
@@ -609,15 +646,20 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                       <>
                         <Icon.PiShoppingCart size={20} />
                         <span>Add to Cart</span>
-                        <span className="text-sm font-normal opacity-80 bg-white/20 px-2 py-1 rounded-lg">
-                          {displayCurrencySymbol}{(displayPrice * localQuantity).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                        </span>
                       </>
                     )}
                   </button>
-                  {selectedSizeData && inStock && localQuantity > 1 && (
-                    <div className="text-center text-sm text-gray-500">
-                      Total: <span className="font-bold text-gray-900">{displayCurrencySymbol}{(displayPrice * localQuantity).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</span>
+                  {/* Price display on mobile */}
+                  {activeSize && inStock && (
+                    <div className="text-center sm:text-right">
+                      <span className="text-lg sm:text-xl font-bold text-gray-900">
+                        {displayCurrencySymbol}{(displayPrice * localQuantity).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                      </span>
+                      {localQuantity > 1 && (
+                        <span className="text-xs sm:text-sm text-gray-500 ml-2">
+                          ({displayCurrencySymbol}{displayPrice.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} each)
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
