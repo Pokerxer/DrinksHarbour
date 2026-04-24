@@ -107,12 +107,13 @@ exports.archiveBanner = asyncHandler(async (req, res) => {
  */
 exports.getActiveBannersForPlacement = asyncHandler(async (req, res) => {
   const { placement } = req.params;
-  const { tenant, visibleTo, device } = req.query;
+  const { tenant, visibleTo, device, limit } = req.query;
 
   const banners = await bannerService.getActiveBannersForPlacement(placement, {
     tenant,
     visibleTo,
     device,
+    limit: limit ? parseInt(limit) : undefined,
   });
 
   successResponse(res, banners, 'Active banners retrieved successfully');

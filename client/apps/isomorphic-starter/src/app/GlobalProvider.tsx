@@ -7,10 +7,12 @@ import { CompareProvider } from "@/context/CompareContext";
 import { ModalCompareProvider } from "@/context/ModalCompareContext";
 import { ModalSearchProvider } from "@/context/ModalSearchContext";
 import { ModalQuickviewProvider } from "@/context/ModalQuickviewContext";
+import { TenantProvider } from "@/context/TenantContext";
 const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
 return (
+<TenantProvider>
 <CartProvider>
       {" "}
       <ModalCartProvider>
@@ -36,6 +38,7 @@ return (
         </WishlistProvider>{" "}
       </ModalCartProvider>{" "}
     </CartProvider>
+</TenantProvider>
   );
 };
 export default GlobalProvider;

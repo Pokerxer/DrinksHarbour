@@ -11,7 +11,7 @@ interface FeaturedBannerData {
   title: string;
   subtitle?: string;
   description?: string;
-  type: 'featured';
+  type: string;
   placement: string;
   ctaText?: string;
   ctaLink?: string;
@@ -32,7 +32,7 @@ const defaultFeaturedBanner: FeaturedBannerData = {
   subtitle: 'Limited Time Offer',
   description: 'Get the ultimate whiskey experience with our specially curated bundle. Includes Glenfiddich 18, Macallan 12, and more!',
   type: 'featured',
-  placement: 'home_featured',
+  placement: 'home_secondary',
   ctaText: 'Shop the Bundle - Save ₦15,000',
   ctaLink: '/shop?bundle=whiskey-premium',
   ctaStyle: 'primary',
@@ -101,7 +101,7 @@ const FeaturedPromotionalBanner = () => {
     const fetchBanner = async () => {
       try {
         setLoading(true);
-        const response = await fetch('/api/banners/placement/home_featured?limit=1');
+        const response = await fetch('/api/banners/placement/home_secondary?limit=1');
         
         if (response.ok) {
           const data = await response.json();

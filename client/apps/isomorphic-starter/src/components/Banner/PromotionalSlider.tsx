@@ -127,7 +127,7 @@ const CountdownTimer = ({ endDate }: { endDate?: string }) => {
 };
 
 const PromotionalSlider: React.FC<PromotionalSliderProps> = ({
-  placement = 'home_promo',
+  placement = 'home_secondary',
   autoPlay = true,
   autoPlayInterval = 5000,
   showControls = true,

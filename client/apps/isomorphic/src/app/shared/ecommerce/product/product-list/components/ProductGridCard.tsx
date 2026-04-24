@@ -42,7 +42,7 @@ export default function ProductGridCard({ product, isSelected, onSelect }: Produ
   const BeverageIcon = getBeverageIcon(product.type);
   const variantCount = product.variantCount ?? product.subProductCount ?? 0;
 
-  const statusColor = !product.isPublished || product.status === 'draft' ? 'neutral'
+  const statusColor = !product.isPublished || product.status === 'draft' ? 'secondary'
     : product.status === 'discontinued' ? 'secondary'
     : 'success';
   const statusLabel = !product.isPublished || product.status === 'draft' ? 'Draft'

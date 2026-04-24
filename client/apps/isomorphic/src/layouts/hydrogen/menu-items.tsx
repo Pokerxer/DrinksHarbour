@@ -194,6 +194,10 @@ export const menuItems = [
         href: routes.eCommerce.promotions,
       },
       {
+        name: 'Banners',
+        href: routes.eCommerce.banners,
+      },
+      {
         name: 'Shop',
         href: routes.eCommerce.shop,
       },

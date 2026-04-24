@@ -45,97 +45,6 @@ interface BannerData {
   };
 }
 
-const defaultHeroBanners: BannerData[] = [
-  {
-    _id: 'hero-1',
-    title: 'Premium Spirits Collection',
-    subtitle: 'Discover the finest whiskeys, cognacs, and champagnes',
-    description: 'Indulge in our curated selection of premium spirits from world-renowned distilleries.',
-    type: 'hero',
-    placement: 'home_hero',
-    ctaText: 'Explore Premium Collection',
-    ctaLink: '/shop?category=premium',
-    ctaStyle: 'primary',
-    backgroundColor: '#1A1A2E',
-    textColor: '#FFFFFF',
-    overlayOpacity: 0.5,
-    textAlignment: 'left',
-    contentPosition: 'center-left',
-    animation: { type: 'fade', duration: 1000, delay: 0 },
-    autoplay: { enabled: true, interval: 6000 },
-    image: {
-      url: 'https://images.unsplash.com/photo-1572575626618-6a0b5d6fb858?w=1920',
-      alt: 'Premium spirits collection'
-    }
-  },
-  {
-    _id: 'hero-2',
-    title: 'Craft Beer Revolution',
-    subtitle: 'Fresh From Local Breweries',
-    description: 'Explore bold IPAs, smooth lagers, and unique seasonal brews from the best craft breweries.',
-    type: 'hero',
-    placement: 'home_hero',
-    ctaText: 'Discover Craft Beers',
-    ctaLink: '/shop?category=beer',
-    ctaStyle: 'primary',
-    backgroundColor: '#F4A460',
-    textColor: '#FFFFFF',
-    overlayOpacity: 0.4,
-    textAlignment: 'center',
-    contentPosition: 'center',
-    animation: { type: 'slide', duration: 800, delay: 0 },
-    autoplay: { enabled: true, interval: 6000 },
-    image: {
-      url: 'https://images.unsplash.com/photo-1608270586620-248524c67de9?w=1920',
-      alt: 'Craft beer collection'
-    }
-  },
-  {
-    _id: 'hero-3',
-    title: 'Wine Lovers Paradise',
-    subtitle: 'Red, White, Rosé & Sparkling Wines',
-    description: 'Curated wines from renowned vineyards across France, Italy, Spain, and more.',
-    type: 'hero',
-    placement: 'home_hero',
-    ctaText: 'Browse Wine Collection',
-    ctaLink: '/shop?category=wine',
-    ctaStyle: 'primary',
-    backgroundColor: '#722F37',
-    textColor: '#FFFFFF',
-    overlayOpacity: 0.5,
-    textAlignment: 'right',
-    contentPosition: 'center-right',
-    animation: { type: 'fade', duration: 1200, delay: 0 },
-    autoplay: { enabled: true, interval: 6000 },
-    image: {
-      url: 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=1920',
-      alt: 'Wine cellar'
-    }
-  },
-  {
-    _id: 'hero-4',
-    title: 'Summer Cocktail Essentials',
-    subtitle: 'Mix Like a Pro',
-    description: 'Everything you need for the perfect summer cocktails - spirits, mixers, and bar tools.',
-    type: 'hero',
-    placement: 'home_hero',
-    ctaText: 'Shop Cocktail Collection',
-    ctaLink: '/shop?tag=summer',
-    ctaStyle: 'primary',
-    backgroundColor: '#2D5A27',
-    textColor: '#FFFFFF',
-    overlayOpacity: 0.45,
-    textAlignment: 'center',
-    contentPosition: 'center',
-    animation: { type: 'zoom', duration: 1500, delay: 0 },
-    autoplay: { enabled: true, interval: 6000 },
-    image: {
-      url: 'https://images.unsplash.com/photo-1608879493122-e3876d490a0c?w=1920',
-      alt: 'Cocktail essentials'
-    }
-  }
-];
-
 const HeroBanner: React.FC<HeroBannerProps> = ({
   placement = 'home_hero',
   limit = 5,
@@ -143,27 +52,35 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   showControls = true,
   showIndicators = true
 }) => {
-  const [banners, setBanners] = useState<BannerData[]>(defaultHeroBanners);
+  const [banners, setBanners] = useState<BannerData[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [direction, setDirection] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
-  const [imgError, setImgError] = useState(false);
+  const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const fetchBanners = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`/api/banners/placement/${placement}?limit=${limit}`);
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.data?.length > 0) {
-            setBanners(data.data);
-          }
+        setFetchError(null);
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+        const response = await fetch(`${apiUrl}/api/banners/placement/${placement}?limit=${limit}`);
+
+        if (!response.ok) {
+          setFetchError(`Server returned ${response.status}`);
+          return;
         }
-      } catch (err) {
-        console.warn('Using default hero banners');
+
+        const data = await response.json();
+        if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+          setBanners(data.data);
+        } else {
+          setFetchError(data.message || 'No banners found for this placement');
+        }
+      } catch (err: any) {
+        setFetchError(err.message || 'Failed to fetch banners');
       } finally {
         setLoading(false);
       }
@@ -259,8 +176,9 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   const handleBannerClick = async (bannerId: string) => {
     if (!bannerId) return;
     try {
-      await fetch(`/api/banners/${bannerId}/click`, { method: 'POST' });
-    } catch (err) {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+      await fetch(`${apiUrl}/api/banners/${bannerId}/click`, { method: 'POST' });
+    } catch {
       // Ignore click tracking errors
     }
   };
@@ -304,13 +222,21 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   }
 
   if (banners.length === 0) {
+    if (process.env.NODE_ENV === 'development' && fetchError) {
+      return (
+        <div className="relative w-full h-[200px] bg-gray-800 flex items-center justify-center rounded-xl border border-red-500/30">
+          <p className="text-red-400 text-sm font-mono px-4 text-center">
+            HeroBanner: {fetchError}
+          </p>
+        </div>
+      );
+    }
     return null;
   }
 
   const currentBanner = banners[currentIndex];
-  const isDarkBg = currentBanner.backgroundColor === '#1A1A2E' || 
-                  currentBanner.backgroundColor === '#722F37' ||
-                  currentBanner.backgroundColor === '#2D5A27';
+  // Consider background dark if it has an overlay or a dark color is set
+  const isDarkBg = (currentBanner.overlayOpacity ?? 0) > 20 || !currentBanner.backgroundColor || currentBanner.backgroundColor === '#ffffff';
 
   return (
     <div 
@@ -336,18 +262,26 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
           {/* Background Image */}
           <div className="absolute inset-0">
             <Image
-              src={imgError ? '/images/images/product/1000x1000.png' : currentBanner.image.url}
+              src={imgErrors[currentBanner._id] ? '/images/images/product/1000x1000.png' : currentBanner.image.url}
               alt={currentBanner.image.alt || currentBanner.title}
               fill
               className="object-cover"
               priority
               sizes="100vw"
-              onError={() => setImgError(true)}
+              onError={() => setImgErrors(prev => ({ ...prev, [currentBanner._id]: true }))}
             />
-            <div 
+            {/* Dark overlay for text readability */}
+            {(currentBanner.overlayOpacity ?? 0) > 0 && (
+              <div
+                className="absolute inset-0"
+                style={{ backgroundColor: `rgba(0,0,0,${(currentBanner.overlayOpacity ?? 0) / 100})` }}
+              />
+            )}
+            {/* Edge fade gradient for content contrast */}
+            <div
               className="absolute inset-0"
-              style={{ 
-                background: `linear-gradient(to right, ${currentBanner.backgroundColor || '#1A1A2E'} ${currentBanner.overlayOpacity || 0.5}%, transparent 50%), linear-gradient(to top, ${currentBanner.backgroundColor || '#1A1A2E'} ${currentBanner.overlayOpacity || 0.5}%, transparent 30%)`
+              style={{
+                background: `linear-gradient(to right, ${currentBanner.backgroundColor || '#1A1A2E'}cc 0%, transparent 55%), linear-gradient(to top, ${currentBanner.backgroundColor || '#1A1A2E'}88 0%, transparent 35%)`
               }}
             />
           </div>

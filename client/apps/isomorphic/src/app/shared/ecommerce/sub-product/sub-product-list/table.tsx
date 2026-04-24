@@ -1497,7 +1497,7 @@ export default function SubProductsTable({
                           </div>
                           <div>
                             <Text className="text-xs text-gray-400">Status</Text>
-                            <Badge color={subProduct.status === 'active' ? 'success' : 'neutral'} variant="flat">
+                            <Badge color={subProduct.status === 'active' ? 'success' : 'secondary'} variant="flat">
                               {subProduct.status}
                             </Badge>
                           </div>

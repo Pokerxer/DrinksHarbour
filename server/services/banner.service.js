@@ -376,7 +376,7 @@ const archiveBanner = async (bannerId, userId) => {
  * Get active banners for placement
  */
 const getActiveBannersForPlacement = async (placement, options = {}) => {
-  const { tenant, visibleTo, device } = options;
+  const { tenant, visibleTo, device, limit = 10 } = options;
 
   const query = {
     placement,
@@ -384,22 +384,25 @@ const getActiveBannersForPlacement = async (placement, options = {}) => {
     status: 'active',
   };
 
-  // Tenant filter
+  const andConditions = [];
+
+  // Tenant filter — show tenant-specific OR global banners
   if (tenant) {
-    query.$or = [
-      { tenant: mongoose.Types.ObjectId(tenant) },
-      { isGlobal: true },
-    ];
-  } else {
-    query.isGlobal = true;
+    andConditions.push({
+      $or: [
+        { tenant: mongoose.Types.ObjectId(tenant) },
+        { isGlobal: true },
+        { tenant: { $exists: false } },
+      ],
+    });
   }
+  // No tenant restriction: show all banners regardless of isGlobal
 
   // Visibility filter
   if (visibleTo) {
-    query.$or = [
-      { visibleTo: 'all' },
-      { visibleTo },
-    ];
+    andConditions.push({
+      $or: [{ visibleTo: 'all' }, { visibleTo }],
+    });
   }
 
   // Device filter
@@ -409,32 +412,34 @@ const getActiveBannersForPlacement = async (placement, options = {}) => {
 
   // Schedule filter
   const now = new Date();
-  query.$and = [
-    {
-      $or: [
-        { isScheduled: false },
-        {
-          isScheduled: true,
-          $and: [
-            {
-              $or: [
-                { startDate: { $exists: false } },
-                { startDate: null },
-                { startDate: { $lte: now } },
-              ],
-            },
-            {
-              $or: [
-                { endDate: { $exists: false } },
-                { endDate: null },
-                { endDate: { $gte: now } },
-              ],
-            },
-          ],
-        },
-      ],
-    },
-  ];
+  andConditions.push({
+    $or: [
+      { isScheduled: false },
+      {
+        isScheduled: true,
+        $and: [
+          {
+            $or: [
+              { startDate: { $exists: false } },
+              { startDate: null },
+              { startDate: { $lte: now } },
+            ],
+          },
+          {
+            $or: [
+              { endDate: { $exists: false } },
+              { endDate: null },
+              { endDate: { $gte: now } },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  if (andConditions.length > 0) {
+    query.$and = andConditions;
+  }
 
   const banners = await Banner.find(query)
     .populate('targetProduct', 'name slug images priceRange')
@@ -443,6 +448,7 @@ const getActiveBannersForPlacement = async (placement, options = {}) => {
     .populate('targetCollection', 'name slug')
     .populate('tenant', 'name slug logo')
     .sort({ displayOrder: 1, priority: -1, createdAt: -1 })
+    .limit(limit)
     .lean();
 
   return banners.map(banner => enrichBannerData(banner));

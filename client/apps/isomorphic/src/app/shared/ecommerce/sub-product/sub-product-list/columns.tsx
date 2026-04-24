@@ -30,7 +30,7 @@ const getSizeAvailabilityColor = (availability?: string, stock?: number) => {
     case 'low_stock': return 'warning';
     case 'out_of_stock': return 'danger';
     case 'pre_order': return 'info';
-    default: return 'neutral';
+    default: return 'secondary';
   }
 };
 
@@ -49,7 +49,7 @@ const getStatusBadge = (isPublished: boolean, status: string) => {
     return <Badge color="secondary" variant="flat" className="font-semibold">Discontinued</Badge>;
   }
   if (status === 'draft') {
-    return <Badge color="neutral" variant="flat" className="font-semibold">Draft</Badge>;
+    return <Badge color="secondary" variant="flat" className="font-semibold">Draft</Badge>;
   }
   if (isPublished) {
     return <Badge color="success" variant="flat" className="font-semibold">Published</Badge>;
@@ -466,7 +466,7 @@ export const subProductListColumns = [
         {row.original.isPublished ? (
           <Badge color="success" variant="flat" size="sm" className="font-semibold">Live</Badge>
         ) : (
-          <Badge color="neutral" variant="flat" size="sm" className="font-semibold">Draft</Badge>
+          <Badge color="secondary" variant="flat" size="sm" className="font-semibold">Draft</Badge>
         )}
       </motion.div>
     ),

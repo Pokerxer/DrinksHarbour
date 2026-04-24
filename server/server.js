@@ -40,6 +40,7 @@ const vendorPricelistRoutes = require('./routes/vendorPricelist.routes');
 const uomConversionRoutes = require('./routes/uomConversion.routes');
 const exchangeRateRoutes = require('./routes/exchangeRate.routes');
 const chatbotRoutes = require('./routes/chatbot.routes');
+const bannerGeminiRoutes = require('./routes/banner-gemini.routes');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -168,6 +169,7 @@ app.use('/api/uom-conversions', uomConversionRoutes);
 app.use('/api/exchange-rates', exchangeRateRoutes);
 app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/pinterest', require('./routes/pinterest.routes'));
+app.use('/api/banner-ai', bannerGeminiRoutes);
 
 // ────────────────────────────────────────────────
  // Health Check Endpoint

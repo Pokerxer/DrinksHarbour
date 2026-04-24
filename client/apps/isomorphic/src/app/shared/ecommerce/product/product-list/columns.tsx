@@ -40,7 +40,7 @@ const columnHelper = createColumnHelper<ProductListItem>();
 
 function StatusBadge({ status, isPublished }: { status: string; isPublished: boolean }) {
   if (status === 'discontinued') return <Badge color="secondary" variant="flat" className="font-semibold capitalize">Discontinued</Badge>;
-  if (!isPublished || status === 'draft') return <Badge color="neutral" variant="flat" className="font-semibold">Draft</Badge>;
+  if (!isPublished || status === 'draft') return <Badge color="secondary" variant="flat" className="font-semibold">Draft</Badge>;
   if (isPublished) return <Badge color="success" variant="flat" className="font-semibold">Published</Badge>;
   return <Badge color="warning" variant="flat" className="font-semibold capitalize">{status}</Badge>;
 }
