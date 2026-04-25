@@ -3751,8 +3751,9 @@ const searchProducts = async (searchParams = {}) => {
     // Features
     isFeatured,
     onSale,
+    saleType,
     minRating,
-    
+
     // Search mode - using semantic search with local embeddings
     searchMode = 'semantic', // 'text', 'semantic', 'hybrid'
     useEmbeddings = true, // Enabled - using local transformers.js model
@@ -4642,12 +4643,19 @@ const searchProducts = async (searchParams = {}) => {
   // Filter products on sale
   if (onSale === true || onSale === 'true') {
     filteredProducts = filteredProducts.filter(({ processedSubProducts }) => {
-      return processedSubProducts.some(sp => 
+      return processedSubProducts.some(sp =>
         // Check for discount on sizes OR sale pricing on subProduct
         sp.sizes.some(size => size.discount && size.discount.value > 0) ||
         sp.sizes.some(size => size.pricing.discount && size.pricing.discount.source === 'sale') ||
         (sp.isOnSale === true && sp.salePrice > 0)
       );
+    });
+  }
+
+  // Filter by specific saleType (e.g. 'flash_sale', 'percentage', 'fixed')
+  if (saleType) {
+    filteredProducts = filteredProducts.filter(({ processedSubProducts }) => {
+      return processedSubProducts.some(sp => sp.isOnSale === true && sp.saleType === saleType);
     });
   }
 

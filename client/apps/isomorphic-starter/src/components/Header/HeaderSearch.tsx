@@ -6,36 +6,43 @@ import { useModalSearchContext } from "@/context/ModalSearchContext";
 
 interface HeaderSearchProps {
   variant: "default" | "transparent" | "dark";
+  mobile?: boolean;
 }
 
-export const HeaderSearch: React.FC<HeaderSearchProps> = ({ variant }) => {
+export const HeaderSearch: React.FC<HeaderSearchProps> = ({ variant, mobile = false }) => {
   const { openModalSearch } = useModalSearchContext();
+  const isDark = variant === "dark";
+
+  if (mobile) {
+    return (
+      <button
+        onClick={openModalSearch}
+        className="w-full flex items-center gap-3 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl hover:border-red-300 transition-colors"
+      >
+        <Icon.PiMagnifyingGlass size={18} className="text-gray-400 flex-shrink-0" />
+        <span className="text-sm text-gray-400">Search products...</span>
+      </button>
+    );
+  }
 
   return (
-    <div className="hidden md:flex flex-1 max-w-md mx-4">
-      <div
-        className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl border transition-all duration-200 hover:border-green-500 hover:shadow-md ${
-          variant === "dark"
-            ? "bg-white/10 border-white/20"
-            : "bg-gray-50 border-gray-200"
+    <div className="hidden md:flex flex-1 max-w-sm mx-4">
+      <button
+        onClick={openModalSearch}
+        className={`w-full flex items-center gap-2.5 px-4 py-2.5 rounded-full border transition-all duration-200 ${
+          isDark
+            ? "bg-white/10 border-white/20 hover:bg-white/15 hover:border-white/35"
+            : "bg-gray-50 border-gray-200 hover:border-red-300 hover:shadow-sm hover:bg-white"
         }`}
       >
         <Icon.PiMagnifyingGlass
-          size={18}
-          className={variant === "dark" ? "text-white/50" : "text-gray-400"}
+          size={16}
+          className={isDark ? "text-white/50" : "text-gray-400"}
         />
-        <input
-          type="text"
-          placeholder="Search products..."
-          onClick={openModalSearch}
-          readOnly
-          className={`flex-1 bg-transparent text-sm focus:outline-none cursor-pointer ${
-            variant === "dark"
-              ? "text-white/70 placeholder-white/50"
-              : "text-gray-500 placeholder-gray-400"
-          }`}
-        />
-      </div>
+        <span className={`flex-1 text-sm text-left ${isDark ? "text-white/50" : "text-gray-400"}`}>
+          Search products...
+        </span>
+      </button>
     </div>
   );
 };

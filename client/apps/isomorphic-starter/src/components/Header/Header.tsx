@@ -27,37 +27,31 @@ export const Header: React.FC<HeaderProps> = ({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 10);
-    };
-    window.addEventListener("scroll", handleScroll);
+    const handleScroll = () => setIsScrolled(window.scrollY > 20);
+    window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   const getHeaderBg = () => {
     if (variant === "transparent") {
       return isScrolled
-        ? "bg-white/95 backdrop-blur-md shadow-sm"
+        ? "bg-white/95 backdrop-blur-lg shadow-md"
         : "bg-transparent";
     }
-    if (variant === "dark") {
-      return "bg-[#1A1A2E]";
-    }
-    return "bg-white";
+    if (variant === "dark") return "bg-[#1A1A2E]";
+    return isScrolled ? "bg-white shadow-md" : "bg-white shadow-sm";
   };
 
-  const getTextColor = () => {
-    if (variant === "dark" || variant === "transparent") {
-      return "text-white";
-    }
-    return "text-gray-900";
-  };
+  const getTextColor = () =>
+    variant === "dark" || (variant === "transparent" && !isScrolled)
+      ? "text-white"
+      : "text-gray-800";
 
   const navLinks = isMainSite
     ? [
         { name: "Shop", href: "/shop" },
         { name: "New Arrivals", href: "/shop?tag=new-arrival" },
-        { name: "Sale", href: "/shop?sale=true" },
+        { name: "Sale", href: "/shop?sale=true", sale: true },
         { name: "Vendors", href: "/vendors" },
       ]
     : [
@@ -70,24 +64,24 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <>
       <header
-        className={`header relative z-50 transition-all duration-300 ${getHeaderBg()} ${
-          isScrolled ? "shadow-sm" : ""
-        }`}
+        className={`sticky top-0 z-50 transition-all duration-300 ${getHeaderBg()}`}
       >
-        <div
-          className={`main-header transition-all duration-300 ${
-            isScrolled ? "py-2" : "py-3"
-          }`}
-        >
+        {/* Red accent line at top */}
+        <div className="h-0.5 bg-gradient-to-r from-red-600 via-orange-400 to-red-600" />
+
+        <div className={`transition-all duration-300 ${isScrolled ? "py-2" : "py-3"}`}>
           <div className="container mx-auto px-4">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+
+              {/* Mobile hamburger */}
               <button
                 onClick={() => setMobileMenuOpen(true)}
-                className={`lg:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors ${getTextColor()}`}
+                className={`lg:hidden p-2 rounded-lg transition-colors hover:bg-gray-100 ${getTextColor()}`}
               >
-                <Icon.PiList size={20} />
+                <Icon.PiList size={22} />
               </button>
 
+              {/* Logo */}
               <HeaderLogo
                 tenant={tenant}
                 isMainSite={isMainSite}
@@ -95,21 +89,26 @@ export const Header: React.FC<HeaderProps> = ({
                 isScrolled={isScrolled}
               />
 
+              {/* Nav — desktop */}
               <HeaderNav
                 navLinks={navLinks}
                 variant={variant}
                 getTextColor={getTextColor}
+                pathname={pathname}
               />
 
+              {/* Search — grows to fill space */}
               <HeaderSearch variant={variant} />
 
+              {/* Actions — desktop */}
               <HeaderActions
                 variant={variant}
                 getTextColor={getTextColor}
                 tenant={tenant}
               />
 
-              <div className="flex lg:hidden items-center gap-1">
+              {/* Actions — mobile */}
+              <div className="flex lg:hidden items-center gap-1 ml-auto">
                 <HeaderActions
                   variant={variant}
                   getTextColor={getTextColor}
@@ -117,26 +116,22 @@ export const Header: React.FC<HeaderProps> = ({
                   mobile
                 />
               </div>
+
             </div>
           </div>
         </div>
 
-        <div className="md:hidden px-4 pb-3 bg-white">
-          <button className="w-full flex items-center gap-3 px-4 py-3 bg-gray-50 rounded-xl border border-gray-200 hover:border-green-500 transition-colors">
-            <Icon.PiMagnifyingGlass size={20} className="text-gray-400" />
-            <span className="text-gray-500">Search products...</span>
-          </button>
+        {/* Mobile search bar */}
+        <div className={`md:hidden px-4 pb-3 ${variant === "dark" ? "bg-[#1A1A2E]" : "bg-white"}`}>
+          <HeaderSearch variant={variant} mobile />
         </div>
+
+        {/* Bottom border */}
+        <div className={`h-px ${variant === "dark" ? "bg-white/10" : "bg-gray-100"}`} />
       </header>
 
       {showAnnouncement && (
-        <div className="border-b border-gray-100">
-          <AnnouncementBanner
-            placement="header"
-            layout="static"
-            variant="promo"
-          />
-        </div>
+        <AnnouncementBanner placement="header" layout="static" variant="promo" />
       )}
 
       <MobileMenu

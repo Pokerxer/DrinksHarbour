@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import * as Icon from "react-icons/pi";
-import { useModalSearchContext } from "@/context/ModalSearchContext";
 import { useModalCartContext } from "@/context/ModalCartContext";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
@@ -18,7 +17,7 @@ interface Tenant {
 interface HeaderActionsProps {
   variant: "default" | "transparent" | "dark";
   getTextColor: () => string;
-  tenant?: Tenant;
+  tenant?: Tenant | null;
   mobile?: boolean;
 }
 
@@ -28,26 +27,22 @@ export const HeaderActions: React.FC<HeaderActionsProps> = ({
   tenant,
   mobile = false,
 }) => {
-  const { openModalSearch } = useModalSearchContext();
   const { openModalCart } = useModalCartContext();
   const { cartCount } = useCart();
   const { wishlistState } = useWishlist();
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const userDropdownRef = useRef<HTMLDivElement>(null);
+  const isDark = variant === "dark";
 
   useEffect(() => {
-    const token =
-      localStorage.getItem("token") || sessionStorage.getItem("token");
+    const token = localStorage.getItem("token") || sessionStorage.getItem("token");
     setIsLoggedIn(!!token);
   }, []);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        userDropdownRef.current &&
-        !userDropdownRef.current.contains(event.target as Node)
-      ) {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (userDropdownRef.current && !userDropdownRef.current.contains(e.target as Node)) {
         setUserDropdownOpen(false);
       }
     };
@@ -64,43 +59,92 @@ export const HeaderActions: React.FC<HeaderActionsProps> = ({
     setUserDropdownOpen(false);
   };
 
-  const buttonClass = mobile
-    ? `relative p-2 rounded-lg transition-all hover:bg-gray-100 ${getTextColor()}`
-    : `relative p-2.5 rounded-xl transition-all hover:bg-gray-100 ${getTextColor()}`;
+  const iconBtn = `relative p-2.5 rounded-xl transition-all duration-200 ${
+    isDark
+      ? "text-white/80 hover:text-white hover:bg-white/10"
+      : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+  }`;
+
+  if (mobile) {
+    return (
+      <>
+        <button onClick={openModalCart} className={iconBtn}>
+          <Icon.PiShoppingCart size={22} />
+          {cartCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white">
+              {cartCount > 99 ? "99+" : cartCount}
+            </span>
+          )}
+        </button>
+        <div className="relative" ref={userDropdownRef}>
+          <button
+            onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+            className={iconBtn}
+          >
+            <Icon.PiUser size={22} />
+          </button>
+          <UserDropdown
+            isOpen={userDropdownOpen}
+            isLoggedIn={isLoggedIn}
+            tenant={tenant}
+            onLogout={handleLogout}
+            onClose={() => setUserDropdownOpen(false)}
+          />
+        </div>
+      </>
+    );
+  }
 
   return (
-    <div className="hidden lg:flex items-center gap-1">
-      <button
-        onClick={openModalSearch}
-        className={buttonClass}
-      >
-        <Icon.PiMagnifyingGlass size={22} />
-      </button>
-
-      <button onClick={openModalCart} className={buttonClass}>
-        <Icon.PiShoppingCart size={22} />
-        {cartCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 w-5 h-5 rounded-full bg-green-500 text-white text-xs font-bold flex items-center justify-center shadow-lg">
-            {cartCount > 99 ? "99+" : cartCount}
-          </span>
-        )}
-      </button>
-
-      <Link href="/wishlist" className={buttonClass}>
+    <div className="hidden lg:flex items-center gap-1 flex-shrink-0">
+      {/* Wishlist */}
+      <Link href="/wishlist" className={iconBtn}>
         <Icon.PiHeart size={22} />
         {wishlistState.wishlistArray.length > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 w-5 h-5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center shadow-lg">
+          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white">
             {wishlistState.wishlistArray.length}
           </span>
         )}
       </Link>
 
-      <div className="relative" ref={userDropdownRef}>
+      {/* Cart — accented */}
+      <button
+        onClick={openModalCart}
+        className={`relative flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-sm transition-all duration-200 ${
+          isDark
+            ? "bg-white/10 text-white hover:bg-white/20"
+            : "bg-red-500 text-white hover:bg-red-600 shadow-sm hover:shadow-md"
+        }`}
+      >
+        <Icon.PiShoppingCart size={18} />
+        <span>Cart</span>
+        {cartCount > 0 && (
+          <span className={`min-w-[20px] h-5 px-1 rounded-full text-xs font-bold flex items-center justify-center ${
+            isDark ? "bg-white text-red-600" : "bg-white/25 text-white"
+          }`}>
+            {cartCount > 99 ? "99+" : cartCount}
+          </span>
+        )}
+      </button>
+
+      {/* Account */}
+      <div className="relative ml-1" ref={userDropdownRef}>
         <button
           onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-          className={buttonClass}
+          className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all duration-200 ${
+            isDark
+              ? "text-white/80 hover:text-white hover:bg-white/10"
+              : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+          }`}
         >
-          <Icon.PiUser size={22} />
+          <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
+            isLoggedIn ? "bg-red-100 text-red-600" : isDark ? "bg-white/15 text-white" : "bg-gray-200 text-gray-500"
+          }`}>
+            <Icon.PiUser size={15} />
+          </div>
+          <span className="text-sm font-medium hidden xl:block">
+            {isLoggedIn ? "Account" : "Sign in"}
+          </span>
         </button>
 
         <UserDropdown

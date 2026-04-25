@@ -46,13 +46,11 @@ export const HeaderLogo: React.FC<HeaderLogoProps> = ({
         />
       ) : (
         <Image
-          src="/images/logo.png"
+          src="/images/logo.svg"
           alt="DrinksHarbour"
-          width={180}
-          height={54}
-          className={`h-10 md:h-12 w-auto object-contain transition-all duration-300 ${
-            variant === "transparent" && !isScrolled ? "brightness-0 invert" : ""
-          }`}
+          width={440}
+          height={63}
+          className="h-10 md:h-12 w-auto object-contain"
           priority
         />
       )}
