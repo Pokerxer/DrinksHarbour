@@ -364,7 +364,7 @@ const extractIntent = (query, conversationHistory = []) => {
 // ── Full catalog loader — mirrors exactly what /shop shows ──────────────────
 let _catalogCache = null;
 let _catalogCacheTime = 0;
-const CATALOG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CATALOG_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
 
 const buildFullCatalogContext = async (tenantId = null) => {
   const now = Date.now();
@@ -887,10 +887,10 @@ const generateProductContext = (products) => {
       ? p.totalStock <= 5 ? ` [Only ${p.totalStock} left]` : ' [In Stock]'
       : ' [Out of Stock]';
 
-    // Include size variants if available
+    // Include size variants — use minPrice as the size price to avoid platform markup
     const sizes = (p.sizes || []).slice(0, 3)
-      .filter(s => s.price > 0)
-      .map(s => `${s.size || s.name}: ₦${s.price.toLocaleString()}`)
+      .filter(s => (s.price > 0 || p.minPrice > 0))
+      .map(s => `${s.size || s.name}: ₦${(p.minPrice || s.price).toLocaleString()}`)
       .join(', ');
 
     let line = `• ${p.name} — from ${price}${discount}${stock}`;
