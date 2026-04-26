@@ -140,11 +140,35 @@ export default function ChatbotWidget() {
   const [retryFn, setRetryFn]   = useState<(() => void) | null>(null);
   const [quickReplies, setQuickReplies] = useState<Array<{ label: string; query: string } | string>>([]);
   const [unread, setUnread]     = useState(0);
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef       = useRef<HTMLInputElement>(null);
   const imageInputRef  = useRef<HTMLInputElement>(null);
   const docInputRef    = useRef<HTMLInputElement>(null);
+
+  // ── Focus helper: works on iOS (requires a tiny delay after async ops) ──────
+  const refocusInput = useCallback((delay = 0) => {
+    if (delay) {
+      setTimeout(() => inputRef.current?.focus(), delay);
+    } else {
+      inputRef.current?.focus();
+    }
+  }, []);
+
+  // ── Visual Viewport: keeps panel above keyboard on mobile ───────────────────
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => setViewportHeight(vv.height);
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, []);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -173,7 +197,7 @@ export default function ChatbotWidget() {
   useEffect(() => {
     if (isOpen && messages.length === 0) {
       getGreeting();
-      setTimeout(() => inputRef.current?.focus(), 300);
+      refocusInput(350);
     }
   }, [isOpen]);
 
@@ -261,7 +285,10 @@ export default function ChatbotWidget() {
     const doc  = selectedDoc;
     clearAttachments();
 
+    // Keep keyboard open on mobile by re-focusing before the async call
+    refocusInput();
     await doSend(queryText, imgs, doc, history);
+    refocusInput(100);
   };
 
   const handleQuickReply = async (qr: { label: string; query: string } | string) => {
@@ -272,7 +299,9 @@ export default function ChatbotWidget() {
     const history = messages.slice(-10).map(m => ({ role: m.role, content: m.content }));
     setMessages(prev => [...prev, userMsg]);
 
+    refocusInput();
     await doSend(text, [], null, history);
+    refocusInput(100);
   };
 
   const clearChat = () => {
@@ -312,13 +341,19 @@ export default function ChatbotWidget() {
       <div
         className={`
           fixed z-[9998] transition-all duration-300 ease-out
-          inset-0 sm:inset-auto sm:bottom-24 sm:right-5
+          left-0 right-0 top-0 sm:inset-auto sm:bottom-24 sm:right-5
           sm:w-[390px] sm:h-[600px] sm:max-h-[calc(100vh-120px)]
           ${isOpen
             ? 'opacity-100 pointer-events-auto sm:translate-y-0 sm:scale-100'
             : 'opacity-0 pointer-events-none sm:translate-y-4 sm:scale-95'}
         `}
-        style={{ transformOrigin: 'bottom right' }}
+        style={{
+          transformOrigin: 'bottom right',
+          // On mobile: track visual viewport so panel shrinks above keyboard
+          height: viewportHeight && typeof window !== 'undefined' && window.innerWidth < 640
+            ? `${viewportHeight}px`
+            : undefined,
+        }}
       >
         <div className="flex flex-col h-full sm:rounded-3xl overflow-hidden shadow-2xl bg-white ring-1 ring-slate-200">
 
@@ -521,12 +556,18 @@ export default function ChatbotWidget() {
               <input
                 ref={inputRef}
                 type="text"
+                inputMode="text"
+                enterKeyHint="send"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="sentences"
+                spellCheck={false}
                 value={input}
                 onChange={e => { setInput(e.target.value); if (quickReplies.length > 0) setQuickReplies([]); }}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
                 placeholder="Ask about drinks…"
                 className="flex-1 bg-transparent text-sm outline-none text-slate-700 placeholder:text-red-300 min-w-0 py-1"
-                style={{ outline: 'none', boxShadow: 'none' }}
+                style={{ outline: 'none', boxShadow: 'none', fontSize: '16px' }}
               />
 
               <button
