@@ -440,13 +440,13 @@ const buildFullCatalogContext = async (tenantId = null) => {
       const hasDiscount = sps.some(sp => (sp.discount || 0) > 0);
       const stockLabel = totalStock === 0 ? '[Out of Stock]' : totalStock <= 5 ? `[Only ${totalStock} left]` : '[In Stock]';
 
-      // Size variants
+      // Size variants — always use baseSellingPrice to match what the shop displays
       const sizeLines = [];
       for (const sp of sps) {
         for (const sizeId of (sp.sizes || [])) {
           const sz = sizeById[sizeId.toString()];
           if (sz) {
-            const szPrice = sz.websitePrice || sz.sellingPrice || sp.baseSellingPrice;
+            const szPrice = sp.baseSellingPrice;
             sizeLines.push(`    • ${sz.size || sz.volumeMl + 'ml'}: ₦${szPrice.toLocaleString()} (stock: ${sz.stock || sp.availableStock || 0})`);
           }
         }
