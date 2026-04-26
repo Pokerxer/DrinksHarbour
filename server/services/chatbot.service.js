@@ -372,25 +372,27 @@ const buildFullCatalogContext = async (tenantId = null) => {
     return _catalogCache;
   }
 
+  const { calculateSizePricing, calculateSubProductPricing, isDiscountActive } = require('../utils/pricing');
+
   try {
     const ProductModel = mongoose.models.Product || mongoose.model('Product');
     const SubProductModel = mongoose.models.SubProduct || mongoose.model('SubProduct');
     const SizeModel = mongoose.models.Size || mongoose.model('Size');
-    const CategoryModel = mongoose.models.Category || mongoose.model('Category');
-    const SubCategoryModel = mongoose.models.SubCategory || mongoose.model('SubCategory');
     const TenantModel = mongoose.models.Tenant || mongoose.model('Tenant');
 
-    // Step 1: Active tenants (same rule as shop)
+    // Step 1: Active tenants (same rule as shop) — fetch pricing fields
     const activeTenants = await TenantModel.find({
       status: 'approved',
       subscriptionStatus: { $in: ['active', 'trialing'] },
-    }).select('_id name').lean();
+    }).select('_id name revenueModel markupPercentage commissionPercentage').lean();
     const activeTenantIds = activeTenants.map(t => t._id);
+    const tenantById = {};
+    activeTenants.forEach(t => { tenantById[t._id.toString()] = t; });
     const tenantFilter = tenantId ? [tenantId] : activeTenantIds;
 
-    // Step 2: All approved products
+    // Step 2: All approved products — include platformMarkup & platformDiscount
     const products = await ProductModel.find({ status: 'approved' })
-      .select('name slug type subType category subCategory images')
+      .select('name slug type subType category subCategory images platformMarkup platformDiscount')
       .populate('category', 'name slug')
       .populate('subCategory', 'name slug')
       .lean();
@@ -398,24 +400,29 @@ const buildFullCatalogContext = async (tenantId = null) => {
     if (products.length === 0) return null;
 
     const productIds = products.map(p => p._id);
+    const productById = {};
+    products.forEach(p => { productById[p._id.toString()] = p; });
 
-    // Step 3: Active subproducts (same status rules as shop)
+    // Step 3: Active subproducts — include costPrice and sale fields for pricing pipeline
     const subProducts = await SubProductModel.find({
       product: { $in: productIds },
       status: { $in: ['active', 'low_stock', 'out_of_stock'] },
       tenant: { $in: tenantFilter },
       baseSellingPrice: { $gt: 0 },
-    }).select('product baseSellingPrice availableStock discount sizes tenant').lean();
+    }).select('product baseSellingPrice costPrice availableStock discount discountType discountStart discountEnd isOnSale saleType saleDiscountValue saleStartDate saleEndDate sizes tenant').lean();
 
-    // Step 4: Sizes for those subproducts
+    // Step 4: Sizes for those subproducts — match shop's exact filter
     const allSizeIds = subProducts.flatMap(sp => sp.sizes || []);
-    const sizes = await SizeModel.find({ _id: { $in: allSizeIds }, status: 'active' })
-      .select('_id size volumeMl stock sellingPrice websitePrice availability subproduct')
+    const sizes = await SizeModel.find({
+      _id: { $in: allSizeIds },
+      status: 'active',
+      availability: { $in: ['available', 'in_stock', 'low_stock'] },
+    }).select('_id size volumeMl stock sellingPrice costPrice discountValue discountType discountStart discountEnd availability')
       .lean();
     const sizeById = {};
     sizes.forEach(s => { sizeById[s._id.toString()] = s; });
 
-    // Step 5: Build product map
+    // Step 5: Build product → subProducts map
     const spByProduct = {};
     subProducts.forEach(sp => {
       const pid = sp.product.toString();
@@ -431,29 +438,70 @@ const buildFullCatalogContext = async (tenantId = null) => {
       const sps = spByProduct[p._id.toString()] || [];
       if (sps.length === 0) continue;
 
-      const prices = sps.map(sp => sp.baseSellingPrice).filter(pr => pr > 0);
-      if (prices.length === 0) continue;
+      // Compute final prices using same pipeline as /shop
+      const computedPrices = [];
+      const sizeMap = new Map(); // key → { label, price, originalPrice, onSale, stock }
+      let anyOnSale = false;
 
-      const minPrice = Math.min(...prices);
-      const maxPrice = Math.max(...prices);
-      const totalStock = sps.reduce((sum, sp) => sum + (sp.availableStock || 0), 0);
-      const hasDiscount = sps.some(sp => (sp.discount || 0) > 0);
-      const stockLabel = totalStock === 0 ? '[Out of Stock]' : totalStock <= 5 ? `[Only ${totalStock} left]` : '[In Stock]';
+      // Helper: apply SubProduct sale discount to a platform price (mirrors product.service.js)
+      const applySaleDiscount = (platformPrice, sp) => {
+        const now = new Date();
+        const start = sp.saleStartDate ? new Date(sp.saleStartDate) : null;
+        const end = sp.saleEndDate ? new Date(sp.saleEndDate) : null;
+        const saleActive = sp.isOnSale && sp.saleDiscountValue > 0 &&
+          (!start || now >= start) && (!end || now <= end);
+        if (!saleActive) return { price: platformPrice, onSale: false };
+        let salePrice = platformPrice;
+        if (sp.saleType === 'percentage' || sp.saleType === 'flash_sale') {
+          salePrice = parseFloat((platformPrice * (1 - sp.saleDiscountValue / 100)).toFixed(2));
+        } else if (sp.saleType === 'fixed') {
+          salePrice = Math.max(0, parseFloat((platformPrice - sp.saleDiscountValue).toFixed(2)));
+        }
+        return { price: salePrice, originalPrice: platformPrice, onSale: true };
+      };
 
-      // Size variants — always use baseSellingPrice to match what the shop displays
-      const sizeLines = [];
       for (const sp of sps) {
-        for (const sizeId of (sp.sizes || [])) {
-          const sz = sizeById[sizeId.toString()];
-          if (sz) {
-            const szPrice = sp.baseSellingPrice;
-            sizeLines.push(`    • ${sz.size || sz.volumeMl + 'ml'}: ₦${szPrice.toLocaleString()} (stock: ${sz.stock || sp.availableStock || 0})`);
+        const tenant = tenantById[sp.tenant?.toString()];
+        if (!tenant) continue;
+
+        if (sp.sizes && sp.sizes.length > 0) {
+          for (const sizeId of sp.sizes) {
+            const sz = sizeById[sizeId.toString()];
+            if (!sz) continue;
+            const pricing = calculateSizePricing(sz, p, tenant, sp.costPrice, sp.baseSellingPrice);
+            if (!pricing.finalPrice || pricing.finalPrice <= 0) continue;
+            const { price: finalPrice, originalPrice, onSale } = applySaleDiscount(pricing.finalPrice, sp);
+            if (onSale) anyOnSale = true;
+            computedPrices.push(finalPrice);
+            const key = sz.size || (sz.volumeMl + 'ml');
+            const stock = sz.stock || sp.availableStock || 0;
+            if (!sizeMap.has(key) || finalPrice < sizeMap.get(key).price) {
+              sizeMap.set(key, { label: key, price: finalPrice, originalPrice, onSale, stock });
+            }
           }
+        } else {
+          const pricing = calculateSubProductPricing(sp, p, tenant);
+          if (!pricing.finalPrice || pricing.finalPrice <= 0) continue;
+          const { price: finalPrice, onSale } = applySaleDiscount(pricing.finalPrice, sp);
+          if (onSale) anyOnSale = true;
+          computedPrices.push(finalPrice);
         }
       }
-      if (sizeLines.length === 0) {
-        sizeLines.push(`    • Standard: ₦${minPrice.toLocaleString()} (stock: ${totalStock})`);
-      }
+
+      if (computedPrices.length === 0) continue;
+
+      const minPrice = Math.min(...computedPrices);
+      const maxPrice = Math.max(...computedPrices);
+      const totalStock = sps.reduce((sum, sp) => sum + (sp.availableStock || 0), 0);
+      const stockLabel = totalStock === 0 ? '[Out of Stock]' : totalStock <= 5 ? `[Only ${totalStock} left]` : '[In Stock]';
+
+      const sizeLines = sizeMap.size > 0
+        ? [...sizeMap.values()].map(s => {
+            let l = `    • ${s.label}: ₦${Math.round(s.price).toLocaleString()} (stock: ${s.stock})`;
+            if (s.onSale && s.originalPrice) l += ` [was ₦${Math.round(s.originalPrice).toLocaleString()}]`;
+            return l;
+          })
+        : [`    • Standard: ₦${Math.round(minPrice).toLocaleString()} (stock: ${totalStock})`];
 
       const catName = p.category?.name || p.type || '';
       const subCatName = p.subCategory?.name || p.subType || '';
@@ -461,8 +509,8 @@ const buildFullCatalogContext = async (tenantId = null) => {
 
       let line = `• ${p.name}`;
       if (catName) line += ` [${catName}${subCatName ? ' > ' + subCatName : ''}]`;
-      line += ` — from ₦${minPrice.toLocaleString()}`;
-      if (minPrice !== maxPrice) line += ` to ₦${maxPrice.toLocaleString()}`;
+      line += ` — from ₦${Math.round(minPrice).toLocaleString()}`;
+      if (minPrice !== maxPrice) line += ` to ₦${Math.round(maxPrice).toLocaleString()}`;
       if (hasDiscount) line += ' [ON SALE]';
       line += ` ${stockLabel}`;
       line += '\n' + sizeLines.join('\n');
@@ -628,7 +676,7 @@ const queryProducts = async (filters, searchQuery, limit = 10, brand = null, ten
             sizes: []
           };
         }
-        // Add sizes - use fetched Size docs, fallback to generic names
+        // Add sizes - use fetched Size docs with their individual pricing
         if (sp.sizes && sp.sizes.length > 0) {
           sp.sizes.forEach((sizeId, idx) => {
             const sizeDoc = sizeMap[sizeId.toString()];
@@ -639,16 +687,18 @@ const queryProducts = async (filters, searchQuery, limit = 10, brand = null, ten
               const sizeNames = ['Standard', 'Large', 'Small', 'XL', '30cl', '50cl', '75cl', '1L'];
               sizeName = sizeNames[idx % sizeNames.length] || `Size ${idx + 1}`;
             }
+            // Use Size's individual sellingPrice, fallback to baseSellingPrice
+            const sizePrice = sizeDoc?.sellingPrice ?? sp.baseSellingPrice;
             availableAtMap[productId].sizes.push({
               _id: sizeId,
               size: sizeName,
               volumeMl: sizeDoc?.volumeMl,
-              stock: 0,
+              stock: sizeDoc?.availableStock ?? 0,
               pricing: {
-                websitePrice: sp.baseSellingPrice,
-                originalWebsitePrice: sp.baseSellingPrice
+                websitePrice: sizePrice,
+                originalWebsitePrice: sizeDoc?.compareAtPrice ?? sizePrice
               },
-              discount: sp.discount
+              discount: sizeDoc?.discount ?? sp.discount
             });
           });
         }
@@ -663,7 +713,16 @@ const queryProducts = async (filters, searchQuery, limit = 10, brand = null, ten
       return validProducts.map(p => {
         const pid = p._id.toString();
         const sps = subProductMap[pid] || [];
-        const minPrice = sps.length > 0 ? Math.min(...sps.map(sp => sp.baseSellingPrice || 0)) : 0;
+        
+        // Calculate minPrice from individual Size documents, not just SubProduct baseSellingPrice
+        const allSizePrices = sps.flatMap(sp => {
+          return (sp.sizes || []).map(sizeId => {
+            const sizeDoc = sizeMap[sizeId.toString()];
+            return sizeDoc?.sellingPrice ?? sp.baseSellingPrice;
+          }).filter(price => price > 0);
+        });
+        const minPrice = allSizePrices.length > 0 ? Math.min(...allSizePrices) : (sps.length > 0 ? Math.min(...sps.map(sp => sp.baseSellingPrice || 0).filter(price => price > 0)) : 0);
+        
         const totalStock = sps.reduce((sum, sp) => sum + (sp.availableStock || 0), 0);
         
         return {

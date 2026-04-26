@@ -104,7 +104,7 @@ const BotAvatar = () => (
 function ProductCardItem({ p }: { p: ProductCard }) {
   return (
     <Link
-      href={`/shop/${p.slug}`}
+      href={`/product/${p.slug}`}
       className="flex-shrink-0 w-36 rounded-2xl border border-slate-100 bg-white overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all group snap-start"
     >
       <div className="h-24 bg-slate-50 overflow-hidden">
