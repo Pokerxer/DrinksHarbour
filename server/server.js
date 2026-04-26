@@ -160,6 +160,7 @@ app.use('/api/warehouses', warehouseRoutes);
 app.use('/api/reorder', reorderRoutes);
 app.use('/api/promotions', promotionRoutes);
 app.use('/api/vendors', vendorRoutes);
+app.use('/api/stores', require('./routes/store.routes'));
 app.use('/api/purchase-orders', purchaseOrderRoutes);
 app.use('/api/vendor-bills', vendorBillRoutes);
 app.use('/api/vendor-returns', require('./routes/vendorReturn.routes'));
