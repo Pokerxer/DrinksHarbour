@@ -20,9 +20,9 @@ export const metadata: Metadata = {
   description:
     "Shop premium spirits, wines, beers, and more. Free delivery on orders over ₦50,000.",
   icons: {
-    icon: "/images/favicon.png",
-    shortcut: "/images/favicon.png",
-    apple: "/images/favicon.png",
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/favicon.ico",
   },
   other: {
     "p:domain_verify": "3d1678895d2b97b7042bdd2fc97753a6",
