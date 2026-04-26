@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -13,6 +14,19 @@ import CouponComponent from '@/components/Coupon/Coupon';
 import PaymentHandler from '@/components/Payment/PaymentHandler';
 import { API_URL } from '@/lib/api';
 import AddressAutocomplete from '@/components/AddressAutocomplete/AddressAutocomplete';
+
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
+
+export const metadata: Metadata = {
+  title: 'Checkout — DrinksHarbour',
+  description: 'Complete your order. Secure checkout with multiple payment options.',
+  openGraph: {
+    title: 'Checkout — DrinksHarbour',
+    description: 'Complete your order',
+    url: `${BASE_URL}/checkout`,
+  },
+  alternates: { canonical: `${BASE_URL}/checkout` },
+};
 
 interface FormData {
   firstName: string;

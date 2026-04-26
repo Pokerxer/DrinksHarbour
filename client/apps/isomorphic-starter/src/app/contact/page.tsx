@@ -1,9 +1,23 @@
 'use client';
 
 import React from 'react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import Image from 'next/image';
 import * as Icon from 'react-icons/pi';
+
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
+
+export const metadata: Metadata = {
+  title: 'Contact Us — DrinksHarbour',
+  description: 'Get in touch with DrinksHarbour. Contact our customer support for orders, delivery inquiries, or general questions. We are available in Lagos and Abuja.',
+  openGraph: {
+    title: 'Contact Us — DrinksHarbour',
+    description: 'Contact our customer support team',
+    url: `${BASE_URL}/contact`,
+  },
+  alternates: { canonical: `${BASE_URL}/contact` },
+};
 
 export default function ContactPage() {
   return (

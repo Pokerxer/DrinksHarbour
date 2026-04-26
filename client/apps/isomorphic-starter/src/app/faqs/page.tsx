@@ -1,8 +1,22 @@
 'use client';
 
 import React from 'react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
+
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
+
+export const metadata: Metadata = {
+  title: 'FAQs — DrinksHarbour',
+  description: 'Frequently asked questions about DrinksHarbour. Learn about ordering, delivery, payment methods, returns, and more.',
+  openGraph: {
+    title: 'FAQs — DrinksHarbour',
+    description: 'Frequently asked questions',
+    url: `${BASE_URL}/faqs`,
+  },
+  alternates: { canonical: `${BASE_URL}/faqs` },
+};
 
 export default function FAQPage() {
   const faqs = [

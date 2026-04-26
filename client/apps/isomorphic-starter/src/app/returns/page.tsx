@@ -1,8 +1,22 @@
 'use client';
 
 import React from 'react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
+
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
+
+export const metadata: Metadata = {
+  title: 'Returns & Refunds — DrinksHarbour',
+  description: 'DrinksHarbour\'s returns and refunds policy. We aim to provide the best shopping experience. Contact us if you have any issues with your order.',
+  openGraph: {
+    title: 'Returns & Refunds — DrinksHarbour',
+    description: 'Our returns and refunds policy',
+    url: `${BASE_URL}/returns`,
+  },
+  alternates: { canonical: `${BASE_URL}/returns` },
+};
 
 export default function ReturnsPage() {
   return (

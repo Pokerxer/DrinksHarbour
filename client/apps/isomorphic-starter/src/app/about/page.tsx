@@ -1,8 +1,22 @@
 'use client';
 
 import React from 'react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
+
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
+
+export const metadata: Metadata = {
+  title: 'About Us — DrinksHarbour',
+  description: 'Learn about DrinksHarbour, Nigeria\'s premier online beverage store. We offer premium spirits, wines, beers and more with authentic products and fast delivery.',
+  openGraph: {
+    title: 'About Us — DrinksHarbour',
+    description: 'Nigeria\'s premier online beverage store',
+    url: `${BASE_URL}/about`,
+  },
+  alternates: { canonical: `${BASE_URL}/about` },
+};
 
 export default function AboutPage() {
   return (

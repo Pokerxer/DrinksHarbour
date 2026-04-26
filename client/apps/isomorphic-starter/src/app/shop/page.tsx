@@ -2,10 +2,26 @@
 
 import React, { useEffect, useState, useCallback, Suspense, useMemo } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
+import type { Metadata } from 'next';
 import Shop from '@/components/Shop';
 import LoadingSpinner from '@/components/loader/LoadingSpinner';
 import * as Icon from 'react-icons/pi';
 import RecommendedForYou from '@/components/Shop/RecommendedForYou';
+
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
+
+export const metadata: Metadata = {
+  title: 'Shop Beverages Online — Premium Spirits, Wines & Beers | DrinksHarbour',
+  description: 'Browse our full collection of premium spirits, wines, beers, and non-alcoholic drinks. Shop online for authentic beverages with fast delivery across Nigeria.',
+  keywords: ['shop beverages Nigeria', 'buy wine online', 'buy whiskey online', 'liquor store Nigeria', 'alcohol delivery Nigeria'],
+  openGraph: {
+    title: 'Shop Beverages — Premium Spirits, Wines & Beers | DrinksHarbour',
+    description: 'Browse our full collection of premium beverages. Fast delivery across Nigeria.',
+    url: `${BASE_URL}/shop`,
+    type: 'website',
+  },
+  alternates: { canonical: `${BASE_URL}/shop` },
+};
 
 interface PageProps {
   params?: { slug?: string };
@@ -291,17 +307,20 @@ function ShopPageContent({ params }: PageProps) {
   // ── Loading / error ──────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <LoadingSpinner variant="bounce" color="emerald" size="lg" text="Finding the best drinks..." />
+      <div className="min-h-[60vh] flex items-center justify-center bg-gradient-to-b from-red-50 to-white">
+        <LoadingSpinner variant="bounce" color="rose" size="lg" text="Finding the best drinks..." />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
-        <div className="text-red-500 text-lg">{error}</div>
-        <button onClick={() => router.refresh()} className="px-4 py-2 bg-gray-900 text-white rounded-lg">
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-red-50 to-white">
+        <div className="text-red-700 text-lg font-medium">{error}</div>
+        <button
+          onClick={() => router.refresh()}
+          className="px-5 py-2.5 bg-gradient-to-br from-red-700 to-red-900 text-white rounded-xl font-semibold hover:from-red-800 hover:to-red-950 transition-all shadow-md"
+        >
           Retry
         </button>
       </div>
@@ -316,34 +335,34 @@ function ShopPageContent({ params }: PageProps) {
       key: 'all',
       label: `All Deals`,
       icon: <Icon.PiTagFill size={14} />,
-      color: 'from-red-500 to-orange-500',
+      color: 'from-red-700 to-red-900',
     },
     {
       key: 'percentage',
       label: `% Off${byType.percentage.length ? ` (${byType.percentage.length})` : ''}`,
       icon: <Icon.PiPercent size={14} />,
-      color: 'from-blue-500 to-indigo-500',
+      color: 'from-red-600 to-red-800',
     },
     {
       key: 'fixed',
       label: `₦ Fixed Off${byType.fixed.length ? ` (${byType.fixed.length})` : ''}`,
       icon: <Icon.PiCurrencyNgn size={14} />,
-      color: 'from-green-500 to-emerald-500',
+      color: 'from-red-500 to-red-700',
     },
     {
       key: 'flash_sale',
       label: `⚡ Flash Sale${byType.flash_sale.length ? ` (${byType.flash_sale.length})` : ''}`,
       icon: <Icon.PiLightningFill size={14} />,
-      color: 'from-yellow-400 to-orange-500',
+      color: 'from-red-800 to-red-950',
     },
   ];
 
   return (
-    <div className="bg-gray-50 min-h-screen">
+    <div className="bg-white min-h-screen">
 
       {/* ── Sale banner ─────────────────────────────────────────────────── */}
       {isSalePage && !searchQuery && (
-        <div className="bg-gradient-to-r from-red-600 via-orange-500 to-red-600 shadow-lg">
+        <div className="bg-gradient-to-r from-red-900 via-red-700 to-red-900 shadow-lg">
           {/* Top row */}
           <div className="container mx-auto px-4 pt-4 pb-2 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -397,8 +416,8 @@ function ShopPageContent({ params }: PageProps) {
                     onClick={() => setSaleType(tab.key)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
                       active
-                        ? 'bg-white text-gray-900 shadow-md'
-                        : 'bg-white/20 text-white hover:bg-white/30'
+                        ? 'bg-white text-red-800 shadow-md font-bold'
+                        : 'bg-white/15 text-white hover:bg-white/25'
                     }`}
                   >
                     {tab.icon}
@@ -462,8 +481,10 @@ function ShopPageContent({ params }: PageProps) {
       {/* ── No sale results ──────────────────────────────────────────────── */}
       {isSalePage && !loading && visibleProducts.length === 0 && (
         <div className="container mx-auto px-4 py-16 text-center">
-          <Icon.PiTagFill size={48} className="text-gray-300 mx-auto mb-4" />
-          <h3 className="text-xl font-bold text-gray-700 mb-2">No sale products found</h3>
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Icon.PiTagFill size={32} className="text-red-700" />
+          </div>
+          <h3 className="text-xl font-bold text-gray-800 mb-2">No sale products found</h3>
           <p className="text-gray-500 mb-6 text-sm">
             {saleTypeParam !== 'all'
               ? 'No products match this discount type right now.'
@@ -472,14 +493,14 @@ function ShopPageContent({ params }: PageProps) {
           {saleTypeParam !== 'all' ? (
             <button
               onClick={() => setSaleType('all')}
-              className="px-5 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-semibold hover:bg-gray-800 transition-colors"
+              className="px-5 py-2.5 bg-gradient-to-br from-red-700 to-red-900 text-white rounded-xl text-sm font-semibold hover:from-red-800 hover:to-red-950 transition-all shadow-md"
             >
               View all deals
             </button>
           ) : (
             <button
               onClick={clearSale}
-              className="px-5 py-2.5 bg-gray-900 text-white rounded-xl text-sm font-semibold hover:bg-gray-800 transition-colors"
+              className="px-5 py-2.5 bg-gradient-to-br from-red-700 to-red-900 text-white rounded-xl text-sm font-semibold hover:from-red-800 hover:to-red-950 transition-all shadow-md"
             >
               Browse all products
             </button>
@@ -513,8 +534,8 @@ function ShopPageContent({ params }: PageProps) {
 export default function ShopPage(props: PageProps) {
   return (
     <Suspense fallback={
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <div className="animate-spin w-12 h-12 border-4 border-gray-200 border-t-gray-900 rounded-full" />
+      <div className="min-h-[60vh] flex items-center justify-center bg-gradient-to-b from-red-50 to-white">
+        <div className="animate-spin w-12 h-12 border-4 border-red-100 border-t-red-700 rounded-full" />
       </div>
     }>
       <ShopPageContent {...props} />
