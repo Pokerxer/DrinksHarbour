@@ -4574,7 +4574,7 @@ const searchProducts = async (searchParams = {}) => {
         totalStock: processedSizes.reduce((sum, s) => sum + s.stock, 0),
         availableSizes: processedSizes.length,
         isFeatured: subProduct.isFeaturedByTenant || false,
-        isOnSale: subProduct.isOnSale || false,
+        isOnSale: saleActive,  // date-validated — false when sale has expired
         salePrice: subProduct.salePrice || null,
         saleType: subProduct.saleType || null,
         saleDiscountValue: subProduct.saleDiscountValue || 0,
@@ -4641,14 +4641,12 @@ const searchProducts = async (searchParams = {}) => {
     });
   }
 
-  // Filter products on sale
+  // Filter products on sale — sp.isOnSale is now date-validated (saleActive)
   if (onSale === true || onSale === 'true') {
     filteredProducts = filteredProducts.filter(({ processedSubProducts }) => {
       return processedSubProducts.some(sp =>
-        // Check for discount on sizes OR sale pricing on subProduct
-        sp.sizes.some(size => size.discount && size.discount.value > 0) ||
-        sp.sizes.some(size => size.pricing.discount && size.pricing.discount.source === 'sale') ||
-        (sp.isOnSale === true && sp.salePrice > 0)
+        sp.sizes.some(size => size.discount && size.discount.hasDiscount) ||
+        sp.isOnSale === true
       );
     });
   }
