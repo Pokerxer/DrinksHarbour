@@ -22,10 +22,11 @@ export const metadata: Metadata = {
   icons: {
     icon: "/favicon.ico",
     shortcut: "/favicon.ico",
-    apple: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
   },
   other: {
     "p:domain_verify": "3d1678895d2b97b7042bdd2fc97753a6",
+    manifest: "/site.webmanifest",
   },
 };
 
