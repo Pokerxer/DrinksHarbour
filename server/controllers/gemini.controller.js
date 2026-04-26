@@ -1,5 +1,5 @@
 // controllers/gemini.controller.js
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Groq = require('groq-sdk');
 const asyncHandler = require('express-async-handler');
 const Category = require('../models/Category');
 const SubCategory = require('../models/SubCategory');
@@ -7,11 +7,44 @@ const Product = require('../models/Product');
 const SubProduct = require('../models/SubProduct');
 const Brand = require('../models/Brand');
 
-// Access your API key as an environment variable
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' });
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
-// Use model from env (defaults to gemini-2.0-flash)
-const MODEL_NAME = process.env.GOOGLE_MODEL || 'gemini-2.0-flash';
+// Groq-backed drop-in for the Gemini SDK API surface.
+// All handlers call genAI.getGenerativeModel() + model.generateContent() + result.response.text()
+// unchanged — only this shim replaces the underlying AI provider.
+const genAI = {
+  getGenerativeModel: ({ generationConfig = {} } = {}) => {
+    const temperature = generationConfig.temperature ?? 0.7;
+    const maxTokens = generationConfig.maxOutputTokens ?? 2048;
+    return {
+      generateContent: async (promptOrObj) => {
+        let content = '';
+        if (typeof promptOrObj === 'string') {
+          content = promptOrObj;
+        } else if (promptOrObj?.contents) {
+          content = promptOrObj.contents
+            .flatMap(c => c.parts || [])
+            .map(p => p.text || '')
+            .join('\n');
+        } else {
+          content = String(promptOrObj);
+        }
+        const completion = await groq.chat.completions.create({
+          model: GROQ_MODEL,
+          messages: [{ role: 'user', content }],
+          temperature,
+          max_tokens: maxTokens,
+        });
+        const text = completion.choices[0]?.message?.content || '';
+        return { response: { text: () => text } };
+      },
+    };
+  },
+};
+
+// MODEL_NAME kept for log messages only — actual model is controlled by GROQ_MODEL env var
+const MODEL_NAME = GROQ_MODEL;
 
 // Helper function for robust JSON parsing
 function parseJSONResponse(text, defaultValue = {}) {
@@ -2590,7 +2623,7 @@ Return ONLY this JSON structure:
   try {
     generated = await callOllama(prompt);
   } catch (ollamaErr) {
-    console.warn('Ollama unavailable, falling back to Gemini:', ollamaErr.message);
+    console.warn('Ollama unavailable, falling back to Groq:', ollamaErr.message);
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
     const result = await model.generateContent(prompt);
     const text = result?.response?.text() || '';

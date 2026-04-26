@@ -4633,7 +4633,8 @@ const searchProducts = async (searchParams = {}) => {
       if (minPrice !== undefined && globalPriceRange.min < parseFloat(minPrice)) {
         return false;
       }
-      if (maxPrice !== undefined && globalPriceRange.max > parseFloat(maxPrice)) {
+      // Include products that have at least one size within budget (min price <= maxPrice)
+      if (maxPrice !== undefined && globalPriceRange.min > parseFloat(maxPrice)) {
         return false;
       }
       return true;
@@ -8082,7 +8083,7 @@ const getAllProducts = async (queryParams) => {
     const max = maxPrice ? parseFloat(maxPrice) : Infinity;
 
     filteredProducts = filteredProducts.filter(
-      (p) => p.priceRange.min >= min && p.priceRange.max <= max
+      (p) => p.priceRange.min >= min && p.priceRange.min <= max
     );
   }
 

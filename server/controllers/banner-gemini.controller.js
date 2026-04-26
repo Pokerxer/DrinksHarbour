@@ -1,12 +1,45 @@
 // controllers/banner-gemini.controller.js
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Groq = require('groq-sdk');
 const asyncHandler = require('express-async-handler');
 const Category = require('../models/Category');
 const Product = require('../models/Product');
 const Brand = require('../models/Brand');
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const MODEL_NAME = process.env.GOOGLE_MODEL || 'gemini-2.0-flash';
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' });
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+
+// Groq-backed drop-in for the Gemini SDK API surface
+const genAI = {
+  getGenerativeModel: ({ generationConfig = {} } = {}) => {
+    const temperature = generationConfig.temperature ?? 0.7;
+    const maxTokens = generationConfig.maxOutputTokens ?? 2048;
+    return {
+      generateContent: async (promptOrObj) => {
+        let content = '';
+        if (typeof promptOrObj === 'string') {
+          content = promptOrObj;
+        } else if (promptOrObj?.contents) {
+          content = promptOrObj.contents
+            .flatMap(c => c.parts || [])
+            .map(p => p.text || '')
+            .join('\n');
+        } else {
+          content = String(promptOrObj);
+        }
+        const completion = await groq.chat.completions.create({
+          model: GROQ_MODEL,
+          messages: [{ role: 'user', content }],
+          temperature,
+          max_tokens: maxTokens,
+        });
+        const text = completion.choices[0]?.message?.content || '';
+        return { response: { text: () => text } };
+      },
+    };
+  },
+};
+
+const MODEL_NAME = GROQ_MODEL;
 
 function parseJSONResponse(text, defaultValue = {}) {
   if (!text || typeof text !== 'string') {

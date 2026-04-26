@@ -1,10 +1,11 @@
 // server/services/chatbot.service.js
-// Enhanced Chatbot Service using Google Generative AI for DrinksHarbour Multi-tenant Platform
+// Chatbot Service using Groq AI for DrinksHarbour Multi-tenant Platform
 // Supports: Text queries, Image analysis, Database products, General beverage knowledge
 
 const mongoose = require('mongoose');
+const https = require('https');
 const productService = require('./product.service');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Groq = require('groq-sdk');
 
 const Product = mongoose.models.Product || mongoose.model('Product');
 const SubProduct = mongoose.models.SubProduct || mongoose.model('SubProduct');
@@ -12,246 +13,517 @@ const Size = mongoose.models.Size || mongoose.model('Size');
 const Category = mongoose.models.Category || mongoose.model('Category');
 const Tenant = mongoose.models.Tenant || mongoose.model('Tenant');
 
-// Google AI Configuration
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-const GOOGLE_MODEL = process.env.GOOGLE_MODEL || 'gemini-2.0-flash';
-const GOOGLE_VISION_MODEL = process.env.GOOGLE_VISION_MODEL || 'gemini-1.5-flash';
+// Groq AI Configuration
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' });
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
-// Call Google Generative AI
-const callGoogleAI = async (prompt, systemPrompt = null) => {
-  const defaultSystemPrompt = `You are DrinksHarbour AI - the friendly, expert beverage assistant for DrinksHarbour.com, Nigeria's premier multi-tenant drinks marketplace.
-Your goal is to help customers find drinks, check prices, plan events, and get beverage recommendations.
+// ── Web Search via Serper.dev ────────────────────────────────────────────────
+const searchWeb = async (query) => {
+  const apiKey = process.env.SERPER_API_KEY;
+  if (!apiKey) return null;
 
-### YOUR PERSONA & STYLE:
-- **Tone:** Friendly, helpful, knowledgeable, and distinctly human.
-- **Length:** Keep responses concise, direct, and conversational (typically 1-3 short paragraphs).
-- **Emojis:** Use relevant emojis naturally to make the conversation lively (e.g., 🍷, 🍻, 🎉).
-- **Format:** Use bullet points or bold text to highlight key information (like names and prices).
+  return new Promise((resolve) => {
+    const body = JSON.stringify({ q: query, num: 5 });
+    const req = https.request({
+      hostname: 'google.serper.dev',
+      path: '/search',
+      method: 'POST',
+      headers: {
+        'X-API-KEY': apiKey,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          const results = [];
 
-### CORE RULES:
-1. **Pricing & Currency:** Always display prices in Nigerian Naira (₦). Format with commas (e.g., ₦12,500).
-2. **Product Suggestions:** If a user asks for a drink that isn't in the provided context, gracefully suggest 1-2 available alternatives.
-   - *Example:* "I couldn't find Heineken right now, but **Star Lager (₦11,500)** is a fantastic, popular alternative! 🍻"
-3. **Event Planning:** If a user is planning an event (party, wedding, etc.), proactively ask helpful questions (guest count, budget, preferences) and offer a quick estimate (e.g., "A standard bottle of spirits typically serves 15-20 shots").
-4. **No Hallucinations:** Only recommend products and prices that are explicitly provided in the context. If the context is empty, rely on your general beverage knowledge.
+          // Knowledge Graph (best for brand/product info)
+          if (json.knowledgeGraph) {
+            const kg = json.knowledgeGraph;
+            results.push(`**${kg.title}** — ${kg.description || ''}`);
+            if (kg.attributes) {
+              Object.entries(kg.attributes).slice(0, 5).forEach(([k, v]) => results.push(`${k}: ${v}`));
+            }
+          }
 
-Remember: Be helpful, quick, and human-like!`;
+          // Organic results
+          if (json.organic) {
+            json.organic.slice(0, 4).forEach(r => {
+              results.push(`• ${r.title}: ${r.snippet}`);
+            });
+          }
 
-  const finalSystemPrompt = systemPrompt || defaultSystemPrompt;
+          resolve(results.length > 0 ? results.join('\n') : null);
+        } catch (e) {
+          resolve(null);
+        }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.setTimeout(5000, () => { req.destroy(); resolve(null); });
+    req.write(body);
+    req.end();
+  });
+};
 
+// Call Groq AI — supports multi-turn conversation history
+const callGoogleAI = async (prompt, systemPrompt = null, conversationHistory = []) => {
+  const finalSystemPrompt = systemPrompt || BASE_SYSTEM_PROMPT;
   try {
-    const model = genAI.getGenerativeModel({ model: GOOGLE_MODEL });
-    
-    const result = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      systemInstruction: { parts: [{ text: finalSystemPrompt }] },
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 2048,
-      }
+    // Build messages: system + history (last 10 turns) + current user message
+    const messages = [
+      { role: 'system', content: finalSystemPrompt },
+      ...conversationHistory.slice(-10).map(m => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.content,
+      })),
+      { role: 'user', content: prompt },
+    ];
+
+    const completion = await groq.chat.completions.create({
+      model: GROQ_MODEL,
+      messages,
+      temperature: 0.65,
+      max_tokens: 1024,
     });
 
-    const response = await result.response;
-    return response.text() || null;
+    return completion.choices[0]?.message?.content || null;
   } catch (error) {
-    console.error('Google AI Error:', error.message);
+    console.error('Groq AI Error:', error.message);
     return null;
   }
 };
 
-// Analyze image using Google Vision AI
-const analyzeImage = async (imageUrl, contextPrompt = '') => {
-  try {
-    if (!imageUrl) {
-      console.error('No image URL provided');
-      return null;
-    }
+// Base system prompt (used when no product context is available)
+const BASE_SYSTEM_PROMPT = `You are DrinksHarbour AI — the friendly, expert beverage assistant for DrinksHarbour.com, Nigeria's premier drinks marketplace.
 
-    let imageData = imageUrl;
-    
-    // If it's a data URL, extract the base64 part
-    if (imageUrl.startsWith('data:')) {
-      const matches = imageUrl.match(/^data:([^;]+);base64,(.+)$/);
-      if (matches) {
-        imageData = matches[2];
-      } else {
-        console.error('Invalid data URL format');
-        return null;
-      }
-    } 
-    // If it's an HTTP URL, fetch and convert
-    else if (imageUrl.startsWith('http')) {
-      try {
-        const imageRes = await fetch(imageUrl);
-        if (!imageRes.ok) {
-          throw new Error(`Failed to fetch: ${imageRes.status}`);
-        }
-        const imageBuffer = await imageRes.arrayBuffer();
-        imageData = Buffer.from(imageBuffer).toString('base64');
-      } catch (e) {
-        console.error('Failed to fetch image:', e.message);
-        return null;
-      }
-    }
+PERSONA:
+- You are a world-class beverage expert — sommelier-level knowledge of wines, spirits, beers, and cocktails.
+- Warm, passionate, and detailed when explaining drinks. Sound like a knowledgeable Nigerian drinks connoisseur.
+- Use emojis naturally (🍷🍺🥃🎉) but don't overdo it.
 
-    if (!imageData || imageData.length < 100) {
-      console.error('Invalid image data');
-      return null;
-    }
+FORMAT RULES:
+- Use **bold** for product names and prices.
+- Use bullet points (•) when listing 3+ items.
+- Always show prices in ₦ with commas e.g. ₦12,500.
+- For product deep-dives: use sections like **About**, **Tasting Notes**, **Food Pairings**, **Serving Tips**.
 
-    const prompt = contextPrompt || `You are an expert bartender and beverage analyst.
-Examine this image and identify the drink(s). Provide your findings in a structured, easy-to-read format.
+STRICT PRICING RULES (ALWAYS ENFORCED):
+1. ❌ NEVER invent or guess prices or availability. All prices MUST come from the CATALOG DATA only.
+2. ❌ NEVER suggest a product is in stock if it's not in the catalog.
+3. ✅ ONLY quote prices that appear in the CATALOG DATA provided in this prompt.
+4. If CATALOG DATA is empty: say you couldn't find it in stock right now and suggest browsing /shop.
 
-1. **Brand & Name:** What is the specific drink?
-2. **Type:** Is it wine, beer, spirits, etc.?
-3. **Volume:** Can you see the size (e.g., 75cl, 33cl)?
-4. **Extra Details:** Note any special edition markers, flavor profiles listed, or serving suggestions.
+KNOWLEDGE RULES:
+5. ✅ For product descriptions, history, tasting notes, food pairings, cocktail recipes, and beverage education — use your full expert knowledge freely. This is what you excel at.
+6. ✅ When a customer asks "tell me more" about a product in the catalog — give a rich, expert-level breakdown: origin story, production method, flavor profile, food pairings, best serving temperature, glassware, and any fun facts.
+7. ✅ You may reference general beverage knowledge (e.g. "Chardonnay grapes originated in Burgundy, France") even if not explicitly in the catalog.
+8. For event planning: ask for guest count + budget first, then recommend from catalog only.`;
 
-Keep it concise, and if you're very confident in the brand, explicitly state it so I can search our catalog for exact matches.`;
+// Analyze image using Groq Vision
+const GROQ_VISION_MODELS = [
+  'llama-3.2-11b-vision-preview',
+  'llama-3.2-90b-vision-preview',
+  'meta-llama/llama-4-scout-17b-16e-instruct',
+];
 
-    const visionModel = genAI.getGenerativeModel({ model: GOOGLE_VISION_MODEL });
-    
-    const result = await visionModel.generateContent({
-      contents: [{
-        role: 'user',
-        parts: [
-          { text: prompt },
-          { inlineData: { mimeType: 'image/jpeg', data: imageData } }
-        ]
-      }]
-    });
+const analyzeImage = async (imageUrl, userContext = '') => {
+  if (!imageUrl) return null;
 
-    const response = await result.response;
-    const text = response.text();
-    
-    if (!text) {
-      console.error('Empty response from vision API');
-      return null;
-    }
+  // Normalize to base64 data URL
+  let mimeType = 'image/jpeg';
+  let base64Data = null;
 
-    return text;
-  } catch (error) {
-    console.error('Vision AI Error:', error.message);
-    return null;
+  if (imageUrl.startsWith('data:')) {
+    const matches = imageUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!matches) return null;
+    mimeType = matches[1];
+    base64Data = matches[2];
+  } else if (imageUrl.startsWith('http')) {
+    try {
+      const imageRes = await fetch(imageUrl);
+      if (!imageRes.ok) return null;
+      const buf = await imageRes.arrayBuffer();
+      base64Data = Buffer.from(buf).toString('base64');
+      mimeType = imageRes.headers.get('content-type') || 'image/jpeg';
+    } catch { return null; }
+  } else {
+    base64Data = imageUrl; // assume raw base64
   }
+
+  if (!base64Data || base64Data.length < 100) return null;
+
+  // Warn if image is very large (Groq has ~4MB limit for base64)
+  if (base64Data.length > 4_000_000) {
+    console.warn(`analyzeImage: large image (${Math.round(base64Data.length / 1024)}KB base64), may fail`);
+  }
+
+  // Always use the structured analysis prompt; append user context as a follow-up note
+  const analysisPrompt = `You are an expert beverage analyst for DrinksHarbour, a Nigerian drinks marketplace. Carefully examine this image and identify the drink(s) shown.
+
+1. **Brand & Name:** What is the exact brand and product name? Read the label carefully.
+2. **Type:** Wine, beer, whiskey, vodka, gin, rum, tequila, champagne, cognac, etc.?
+3. **Volume/Size:** Can you see a bottle size on the label (e.g., 70cl, 75cl, 1L)?
+4. **Appearance:** Describe the bottle, label color, any age statement or edition visible.
+5. **Your Assessment:** What do you know about this product — origin, taste profile, typical price range?
+
+Be as precise as possible with the brand name so it can be searched in our catalog.${userContext ? `\n\nCustomer's question: "${userContext}"` : ''}`;
+
+  // Try vision models in order, return first successful result
+  for (const model of GROQ_VISION_MODELS) {
+    try {
+      const completion = await groq.chat.completions.create({
+        model,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: analysisPrompt },
+            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Data}` } }
+          ]
+        }],
+        temperature: 0.3,
+        max_tokens: 700,
+      });
+      const result = completion.choices[0]?.message?.content;
+      if (result) {
+        console.log(`analyzeImage: success with model ${model}`);
+        return result;
+      }
+    } catch (err) {
+      console.error(`analyzeImage: model ${model} failed — ${err.message}`);
+      // Continue to next model
+    }
+  }
+
+  console.error('analyzeImage: all vision models failed');
+  return null;
 };
 
 // Extract intent and filters from query
-const extractIntent = (query) => {
-  const lowerQuery = query.toLowerCase();
-  const intent = { type: 'general', keywords: [], filters: {}, brand: null };
+const extractIntent = (query, conversationHistory = []) => {
+  const lowerQuery = query.toLowerCase().trim();
+  const intent = { type: 'general', keywords: [], filters: {}, brand: null, isGreeting: false, isEvent: false, isOnSale: false, isFollowUp: false };
 
-  // Brand detection - common beverage brands
-  const brandPatterns = [
-    'heineken', 'guinness', 'budweiser', 'carling', 'bud light', 'stella artois', 'crown royal',
-    'johnnie walker', 'jack daniels', 'jameson', 'glenfiddich', 'glenlivet', 'macallan',
-    'grey goose', 'absolute', 'smirnoff', 'belvedere', 'ketel one',
-    'bacardi', 'captain morgan', 'havana club', 'don julio', 'patron',
-    'moet & chandon', 'veuve clicquot', 'dom perignon', 'mumm',
-    'carlos', 'cava', 'freixenet',
-    'red square', 'skyy', 'finlandia',
-    'tullamore', 'j&b', 'chivas', 'ballantines', 'famous grouse',
-    'corona', 'modelo', 'amstel', 'tuborg', 'foster', 'castle', 'lagers'
+  // ── Greeting detection ───────────────────────────────────────────────────
+  const greetingWords = ['hello', 'hi', 'hey', 'howdy', 'good morning', 'good afternoon', 'good evening', "what's up", 'sup', 'hiya', 'yo', 'oya', 'how far'];
+  if (greetingWords.some(g => lowerQuery === g || lowerQuery.startsWith(g + ' ') || lowerQuery.startsWith(g + ','))) {
+    intent.isGreeting = true;
+    intent.type = 'greeting';
+    return intent;
+  }
+
+  // ── Short follow-up reaction detection (needs conversation context) ────────
+  const isShortReaction = lowerQuery.length < 50 && conversationHistory.length > 0;
+  const followUpPatterns = [
+    /^(wow|nice|great|cool|ok|okay|i see|understood|noted|thanks|thank you|perfect|amazing|lovely|good|lol)/,
+    /tell me more|more details|more info|elaborate|explain more/,
+    /add to cart|i('ll| will) take|i want (it|that|this|one)|buy (it|that)/,
+    /what about|how about|any other/,
   ];
-  
-  for (const brand of brandPatterns) {
-    if (lowerQuery.includes(brand)) {
-      intent.brand = brand;
-      intent.keywords.push(brand);
-      break;
-    }
+  if (isShortReaction && followUpPatterns.some(p => p.test(lowerQuery))) {
+    intent.isFollowUp = true;
+    // Don't return early — let downstream use history context
   }
 
-  // Query type detection
-  if (lowerQuery.includes('price') || lowerQuery.includes('cost') || lowerQuery.includes('how much') || lowerQuery.includes('cheap') || lowerQuery.includes('affordable')) {
-    intent.type = 'price';
+  // ── Event / party detection ──────────────────────────────────────────────
+  const eventWords = ['party', 'wedding', 'birthday', 'event', 'celebration', 'owambe', 'get together', 'hangout', 'function', 'dinner', 'reception', 'anniversary', 'guests', 'people'];
+  if (eventWords.some(w => lowerQuery.includes(w))) {
+    intent.isEvent = true;
+    intent.type = 'event_planning';
   }
-  if (lowerQuery.includes('available') || lowerQuery.includes('in stock') || lowerQuery.includes('stock')) {
-    intent.type = 'availability';
-  }
-  if (lowerQuery.includes('discount') || lowerQuery.includes('sale') || lowerQuery.includes('offer') || lowerQuery.includes('deal') || lowerQuery.includes('promo')) {
+
+  // ── Sale / deals detection ───────────────────────────────────────────────
+  if (/discount|sale|offer|deal|promo|cheap|affordable|budget|flash sale|on sale/.test(lowerQuery)) {
+    intent.isOnSale = true;
     intent.type = 'discount';
-  }
-  if (lowerQuery.includes('recommend') || lowerQuery.includes('suggest') || lowerQuery.includes('best') || lowerQuery.includes('top') || lowerQuery.includes('popular')) {
-    intent.type = 'recommendation';
-  }
-  if (lowerQuery.includes('tell me about') || lowerQuery.includes('details') || lowerQuery.includes('information') || lowerQuery.includes('what is') || lowerQuery.includes('describe')) {
-    intent.type = 'product_info';
-  }
-  if (lowerQuery.includes('image') || lowerQuery.includes('photo') || lowerQuery.includes('picture') || lowerQuery.includes('this drink')) {
-    intent.type = 'image_query';
-  }
-  if (lowerQuery.includes('brand') || lowerQuery.includes('origin') || lowerQuery.includes('country') || lowerQuery.includes('where from')) {
-    intent.type = 'origin';
-  }
-  if (lowerQuery.includes('difference') || lowerQuery.includes('vs') || lowerQuery.includes('compared')) {
-    intent.type = 'comparison';
+    intent.filters.onSale = true;
   }
 
-  // Beverage type detection
-  const beverageTypes = [
-    'wine', 'wines', 'red wine', 'white wine', 'rose wine', 'champagne', 'prosecco', 'sparkling',
-    'beer', 'beers', 'lager', 'lagers', 'ale', 'ales', 'stout', 'porter', 'ipa', 'craft beer',
-    'whiskey', 'whisky', 'bourbon', 'scotch', 'rye',
-    'vodka', 'gin', 'rum', 'tequila', 'mezcal', 'cognac', 'brandy',
-    'cider', 'ciders', 'sake', 'sherry', 'port', 'vermouth',
-    'soft drink', 'water', 'juice', 'energy drink', 'soda', 'tonic'
+  // ── Query type detection ─────────────────────────────────────────────────
+  if (/price|cost|how much|naira|₦/.test(lowerQuery) && intent.type === 'general') intent.type = 'price';
+  if (/available|in stock|stock|do you have|do you sell|carry/.test(lowerQuery) && intent.type === 'general') intent.type = 'availability';
+  if (/recommend|suggest|best|top|popular|what should|which one|favourite|what.*good/.test(lowerQuery) && intent.type === 'general') intent.type = 'recommendation';
+  if (/tell me (more )?about|more details|what is|describe|info about|more about|history of|background|tasting notes|food pair|what.*taste|how.*taste|flavor|flavour|what.*like/.test(lowerQuery) && intent.type === 'general') intent.type = 'product_info';
+  if (/difference|vs\.?|versus|compare|better|compared to/.test(lowerQuery) && intent.type === 'general') intent.type = 'comparison';
+  if (/cocktail|mix|recipe|how to make|ingredients/.test(lowerQuery) && intent.type === 'general') intent.type = 'cocktail';
+  if (/gift|present|for him|for her|for them/.test(lowerQuery) && intent.type === 'general') intent.type = 'gift';
+
+  // ── Price reaction / complaint detection ────────────────────────────────
+  const priceComplaintPatterns = [
+    /too (high|expensive|much|pricey|steep)/,
+    /can'?t afford|cannot afford/,
+    /that'?s (expensive|costly|steep|pricey)/,
+    /wow.*(price|expensive|costly)/,
+    /\b(cheaper|less expensive|budget|affordable)\b/,
+    /any.*(cheaper|less|affordable|budget)/,
+    /something.*(cheaper|less|affordable)/,
+    /price.*high|high.*price/,
+    /out of (my )?budget/,
+    /do you have (something|anything|one).*cheaper/,
   ];
-  
-  for (const type of beverageTypes) {
-    if (lowerQuery.includes(type)) {
-      // Normalize plural to singular
-      let normalizedType = type.replace(/s$/, '');
-      if (normalizedType === 'whisky') normalizedType = 'whiskey';
-      if (normalizedType === 'lager') normalizedType = 'lager';
-      if (normalizedType === ' cider') normalizedType = 'cider';
-      intent.filters.type = normalizedType.replace(/ /g, '_');
-      intent.keywords.push(type);
+  if (priceComplaintPatterns.some(p => p.test(lowerQuery)) && intent.type === 'general') {
+    intent.type = 'price_complaint';
+    intent.isPriceComplaint = true;
+  }
+
+  // ── Brand detection ──────────────────────────────────────────────────────
+  const brandAliases = {
+    'glen': 'glenfiddich', 'henny': 'hennessy', 'henn': 'hennessy',
+    'jw': 'johnnie walker', 'johnny walker': 'johnnie walker', 'johnny': 'johnnie walker',
+    'jd': 'jack daniels', 'jack': 'jack daniels',
+    'remy': 'remy martin', 'the macallan': 'macallan',
+    'grey': 'grey goose', 'bombay sapphire': 'bombay',
+    'don': 'don julio', 'cuervo': 'jose cuervo',
+    'veuve': 'veuve clicquot', 'dom p': 'dom perignon',
+    'captain': 'captain morgan', 'havana': 'havana club',
+    'tullamore dew': 'tullamore', 'the glenlivet': 'glenlivet',
+  };
+  // Apply alias substitution before brand matching
+  let resolvedQuery = lowerQuery;
+  for (const [alias, canonical] of Object.entries(brandAliases)) {
+    if (lowerQuery.includes(alias)) {
+      resolvedQuery = resolvedQuery.replace(alias, canonical);
       break;
     }
   }
 
-  // ABV preferences
-  if (lowerQuery.includes('strong') || lowerQuery.includes('high alcohol')) intent.filters.minAbv = 30;
-  else if (lowerQuery.includes('mild') || lowerQuery.includes('low alcohol') || lowerQuery.includes('light')) intent.filters.maxAbv = 10;
-
-  // Price range
-  const priceMatch = lowerQuery.match(/(?:under|below|less than|₦|naira)\s*(\d+[,.\d]*)/i);
-  if (priceMatch) intent.filters.maxPrice = parseFloat(priceMatch[1].replace(/,/g, ''));
-
-  // Size detection
-  const sizes = ['70cl', '75cl', '1l', '1.5l', '1.75l', '330ml', '500ml', '750ml', '1L', '1.5L'];
-  for (const size of sizes) {
-    if (lowerQuery.includes(size)) {
-      intent.filters.size = size;
+  const brands = [
+    'heineken', 'guinness', 'budweiser', 'bud light', 'stella artois', 'star lager', 'star beer',
+    'johnnie walker', 'jack daniels', 'jameson', 'glenfiddich', 'glenlivet', 'macallan', 'chivas',
+    'crown royal', 'ballantines', 'famous grouse', 'j&b', 'tullamore', 'bushmills',
+    'grey goose', 'absolut', 'smirnoff', 'belvedere', 'ketel one', 'ciroc', 'skyy', 'finlandia',
+    'bacardi', 'captain morgan', 'havana club', 'malibu', 'don julio', 'patron', 'jose cuervo',
+    'moet', 'veuve clicquot', 'dom perignon', 'mumm', 'prosecco', 'freixenet',
+    'corona', 'amstel', 'tuborg', 'carlsberg', 'trophy', 'life beer', 'hero beer',
+    'gordon', 'beefeater', 'tanqueray', 'hendricks', 'bombay',
+    'hennessy', 'remy martin', 'courvoisier', 'martell',
+    'red wine', 'white wine', 'rose wine', 'champagne'
+  ];
+  for (const brand of brands) {
+    if (resolvedQuery.includes(brand)) {
+      intent.brand = brand;
+      if (!intent.keywords.includes(brand)) intent.keywords.push(brand);
       break;
     }
+  }
+
+  // ── Beverage type detection ──────────────────────────────────────────────
+  const typeMap = [
+    { patterns: ['red wine', 'white wine', 'rose wine', 'rosé'], type: 'wine' },
+    { patterns: ['champagne', 'prosecco', 'sparkling'], type: 'champagne' },
+    { patterns: ['whiskey', 'whisky', 'bourbon', 'scotch', 'rye'], type: 'whiskey' },
+    { patterns: ['vodka'], type: 'vodka' },
+    { patterns: ['gin'], type: 'gin' },
+    { patterns: ['rum'], type: 'rum' },
+    { patterns: ['tequila', 'mezcal'], type: 'tequila' },
+    { patterns: ['cognac', 'brandy', 'hennessy', 'remy'], type: 'cognac' },
+    { patterns: ['beer', 'lager', 'ale', 'stout', 'porter', 'ipa', 'craft beer'], type: 'beer' },
+    { patterns: ['wine'], type: 'wine' },
+    { patterns: ['spirit', 'spirits'], type: 'spirit' },
+    { patterns: ['cider'], type: 'cider' },
+    { patterns: ['juice', 'soft drink', 'soda', 'water', 'non-alcoholic', 'mocktail'], type: 'non_alcoholic' },
+  ];
+
+  for (const { patterns, type } of typeMap) {
+    if (patterns.some(p => lowerQuery.includes(p))) {
+      intent.filters.type = type;
+      if (!intent.keywords.includes(type)) intent.keywords.push(type);
+      break;
+    }
+  }
+
+  // ── Strength preference ──────────────────────────────────────────────────
+  if (/\bstrong\b|high alcohol|high abv/.test(lowerQuery)) intent.filters.minAbv = 30;
+  else if (/\blight\b|low alcohol|mild|easy/.test(lowerQuery)) intent.filters.maxAbv = 10;
+
+  // ── Price ceiling ────────────────────────────────────────────────────────
+  // Matches: "under 10000", "below ₦15,000", "less than 20k", "5k budget"
+  const priceMatch = lowerQuery.match(/(?:under|below|less than|within|budget of?|max)\s*[₦#]?\s*(\d[\d,]*)\s*(k|thousand)?/i)
+    || lowerQuery.match(/[₦#]\s*(\d[\d,]*)\s*(k|thousand)?/i);
+  if (priceMatch) {
+    let price = parseFloat(priceMatch[1].replace(/,/g, ''));
+    if (priceMatch[2]) price *= 1000; // "10k" → 10000
+    intent.filters.maxPrice = price;
+  }
+
+  // Use entire query as a keyword if no specific keywords found
+  if (intent.keywords.length === 0 && intent.type !== 'greeting' && query.trim().length > 2) {
+    // Strip common stop words and use remainder as search term
+    const stopWords = /\b(what|which|do you|have|show|me|some|the|a|an|and|or|is|are|can|could|please|i|want|need|looking for|any|give)\b/gi;
+    const cleaned = query.replace(stopWords, '').replace(/\s+/g, ' ').trim();
+    if (cleaned.length > 1) intent.keywords.push(cleaned);
   }
 
   return intent;
 };
 
-// Query products from database (Mirroring exact /shop logic via productService.searchProducts)
+// ── Full catalog loader — mirrors exactly what /shop shows ──────────────────
+let _catalogCache = null;
+let _catalogCacheTime = 0;
+const CATALOG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+const buildFullCatalogContext = async (tenantId = null) => {
+  const now = Date.now();
+  if (_catalogCache && (now - _catalogCacheTime) < CATALOG_CACHE_TTL) {
+    return _catalogCache;
+  }
+
+  try {
+    const ProductModel = mongoose.models.Product || mongoose.model('Product');
+    const SubProductModel = mongoose.models.SubProduct || mongoose.model('SubProduct');
+    const SizeModel = mongoose.models.Size || mongoose.model('Size');
+    const CategoryModel = mongoose.models.Category || mongoose.model('Category');
+    const SubCategoryModel = mongoose.models.SubCategory || mongoose.model('SubCategory');
+    const TenantModel = mongoose.models.Tenant || mongoose.model('Tenant');
+
+    // Step 1: Active tenants (same rule as shop)
+    const activeTenants = await TenantModel.find({
+      status: 'approved',
+      subscriptionStatus: { $in: ['active', 'trialing'] },
+    }).select('_id name').lean();
+    const activeTenantIds = activeTenants.map(t => t._id);
+    const tenantFilter = tenantId ? [tenantId] : activeTenantIds;
+
+    // Step 2: All approved products
+    const products = await ProductModel.find({ status: 'approved' })
+      .select('name slug type subType category subCategory images')
+      .populate('category', 'name slug')
+      .populate('subCategory', 'name slug')
+      .lean();
+
+    if (products.length === 0) return null;
+
+    const productIds = products.map(p => p._id);
+
+    // Step 3: Active subproducts (same status rules as shop)
+    const subProducts = await SubProductModel.find({
+      product: { $in: productIds },
+      status: { $in: ['active', 'low_stock', 'out_of_stock'] },
+      tenant: { $in: tenantFilter },
+      baseSellingPrice: { $gt: 0 },
+    }).select('product baseSellingPrice availableStock discount sizes tenant').lean();
+
+    // Step 4: Sizes for those subproducts
+    const allSizeIds = subProducts.flatMap(sp => sp.sizes || []);
+    const sizes = await SizeModel.find({ _id: { $in: allSizeIds }, status: 'active' })
+      .select('_id size volumeMl stock sellingPrice websitePrice availability subproduct')
+      .lean();
+    const sizeById = {};
+    sizes.forEach(s => { sizeById[s._id.toString()] = s; });
+
+    // Step 5: Build product map
+    const spByProduct = {};
+    subProducts.forEach(sp => {
+      const pid = sp.product.toString();
+      if (!spByProduct[pid]) spByProduct[pid] = [];
+      spByProduct[pid].push(sp);
+    });
+
+    // Step 6: Build catalog lines
+    const catalogLines = [];
+    const categorySet = new Set();
+
+    for (const p of products) {
+      const sps = spByProduct[p._id.toString()] || [];
+      if (sps.length === 0) continue;
+
+      const prices = sps.map(sp => sp.baseSellingPrice).filter(pr => pr > 0);
+      if (prices.length === 0) continue;
+
+      const minPrice = Math.min(...prices);
+      const maxPrice = Math.max(...prices);
+      const totalStock = sps.reduce((sum, sp) => sum + (sp.availableStock || 0), 0);
+      const hasDiscount = sps.some(sp => (sp.discount || 0) > 0);
+      const stockLabel = totalStock === 0 ? '[Out of Stock]' : totalStock <= 5 ? `[Only ${totalStock} left]` : '[In Stock]';
+
+      // Size variants
+      const sizeLines = [];
+      for (const sp of sps) {
+        for (const sizeId of (sp.sizes || [])) {
+          const sz = sizeById[sizeId.toString()];
+          if (sz) {
+            const szPrice = sz.websitePrice || sz.sellingPrice || sp.baseSellingPrice;
+            sizeLines.push(`    • ${sz.size || sz.volumeMl + 'ml'}: ₦${szPrice.toLocaleString()} (stock: ${sz.stock || sp.availableStock || 0})`);
+          }
+        }
+      }
+      if (sizeLines.length === 0) {
+        sizeLines.push(`    • Standard: ₦${minPrice.toLocaleString()} (stock: ${totalStock})`);
+      }
+
+      const catName = p.category?.name || p.type || '';
+      const subCatName = p.subCategory?.name || p.subType || '';
+      if (catName) categorySet.add(catName);
+
+      let line = `• ${p.name}`;
+      if (catName) line += ` [${catName}${subCatName ? ' > ' + subCatName : ''}]`;
+      line += ` — from ₦${minPrice.toLocaleString()}`;
+      if (minPrice !== maxPrice) line += ` to ₦${maxPrice.toLocaleString()}`;
+      if (hasDiscount) line += ' [ON SALE]';
+      line += ` ${stockLabel}`;
+      line += '\n' + sizeLines.join('\n');
+
+      catalogLines.push(line);
+    }
+
+    if (catalogLines.length === 0) return null;
+
+    const categoriesLine = categorySet.size > 0 ? `CATEGORIES IN CATALOG: ${[...categorySet].join(', ')}\n\n` : '';
+    const result = `${categoriesLine}PRODUCTS:\n${catalogLines.join('\n')}`;
+
+    _catalogCache = result;
+    _catalogCacheTime = now;
+    return result;
+  } catch (err) {
+    console.error('buildFullCatalogContext error:', err.message);
+    return null;
+  }
+};
+
+// Query products from database
 const queryProducts = async (filters, searchQuery, limit = 10, brand = null, tenantId = null) => {
   try {
-    // Build query params compatible with productService.searchProducts (used by /shop page)
     const queryParams = {
       page: 1,
-      limit: limit,
+      limit,
       inStock: true,
       status: 'approved',
-      searchMode: 'text', // Use text search for chatbot (faster, more reliable)
-      useEmbeddings: false // Disable semantic search for chatbot
+      searchMode: 'text',
+      useEmbeddings: false,
+    };
+
+    // Map chatbot intent types to actual DB types (all spirits are stored as 'spirit')
+    const intentTypeToDbType = {
+      'whiskey': 'spirit', 'vodka': 'spirit', 'gin': 'spirit', 'rum': 'spirit',
+      'tequila': 'spirit', 'cognac': 'spirit', 'brandy': 'spirit', 'spirit': 'spirit',
+      'wine': 'wine', 'champagne': 'wine', 'beer': 'beer', 'cider': 'cider',
+      'non_alcoholic': 'non_alcoholic',
+    };
+    // Specific spirit subtypes to add as search keywords for narrowing within 'spirit'
+    const spiritKeywords = {
+      'whiskey': 'whiskey scotch whisky bourbon', 'vodka': 'vodka', 'gin': 'gin',
+      'rum': 'rum', 'tequila': 'tequila mezcal', 'cognac': 'cognac brandy',
     };
 
     if (searchQuery) queryParams.query = searchQuery;
     if (brand) queryParams.brand = brand;
     if (tenantId) queryParams.tenantId = tenantId;
-    if (filters.type) queryParams.type = filters.type;
+    if (filters.type) {
+      queryParams.type = intentTypeToDbType[filters.type] || filters.type;
+      // If narrowing within spirits with no other search term, add subtype keyword
+      if (!searchQuery && !brand && spiritKeywords[filters.type]) {
+        queryParams.query = spiritKeywords[filters.type];
+      }
+    }
     if (filters.minPrice) queryParams.minPrice = filters.minPrice;
     if (filters.maxPrice) queryParams.maxPrice = filters.maxPrice;
     if (filters.minAbv) queryParams.minAbv = filters.minAbv;
     if (filters.maxAbv) queryParams.maxAbv = filters.maxAbv;
+    if (filters.onSale) queryParams.onSale = true;
 
     let result;
     try {
@@ -269,27 +541,32 @@ const queryProducts = async (filters, searchQuery, limit = 10, brand = null, ten
       const Tenant = mongoose.models.Tenant || mongoose.model('Tenant');
       
       const baseQuery = { status: 'approved' };
-      if (searchQuery) {
-        baseQuery.$or = [
-          { name: { $regex: searchQuery, $options: 'i' } },
-          { description: { $regex: searchQuery, $options: 'i' } }
-        ];
+
+      // Spirit subtypes searched via name/subType since DB stores all spirits as type:'spirit'
+      const spiritSubtypeKeywords = {
+        'whiskey': ['whiskey', 'whisky', 'scotch', 'bourbon', 'malt', 'rye'],
+        'vodka': ['vodka'], 'gin': ['gin'], 'rum': ['rum'],
+        'tequila': ['tequila', 'mezcal'], 'cognac': ['cognac', 'brandy'],
+      };
+      const dbTypeMap = {
+        'whiskey': 'spirit', 'vodka': 'spirit', 'gin': 'spirit', 'rum': 'spirit',
+        'tequila': 'spirit', 'cognac': 'spirit', 'brandy': 'spirit', 'spirit': 'spirit',
+        'wine': 'wine', 'champagne': 'wine', 'beer': 'beer', 'cider': 'cider',
+      };
+
+      const effectiveSearchQuery = searchQuery || (filters.type && spiritSubtypeKeywords[filters.type]
+        ? spiritSubtypeKeywords[filters.type].join(' ')
+        : null);
+
+      if (effectiveSearchQuery) {
+        const keywords = spiritSubtypeKeywords[filters.type] || [effectiveSearchQuery];
+        const regexPatterns = keywords.map(k => ({ name: { $regex: k, $options: 'i' } }))
+          .concat(keywords.map(k => ({ subType: { $regex: k, $options: 'i' } })));
+        baseQuery.$or = regexPatterns;
       }
+
       if (filters.type) {
-        const typeMap = {
-          'wine': ['wine', 'red_wine', 'white_wine', 'rose_wine', 'sparkling_wine', 'champagne'],
-          'beer': ['beer', 'lager', 'ale', 'stout', 'porter', 'ipa', 'pilsner'],
-          'whiskey': ['whiskey', 'whisky', 'bourbon', 'rye', 'scotch'],
-          'vodka': ['vodka'],
-          'gin': ['gin'],
-          'rum': ['rum'],
-          'champagne': ['champagne', 'sparkling_wine', 'prosecco'],
-          'tequila': ['tequila', 'mezcal'],
-          'cider': ['cider', 'apple_cider'],
-          'spirit': ['spirit', 'whiskey', 'vodka', 'gin', 'rum', 'tequila', 'brandy'],
-        };
-        const types = typeMap[filters.type] || [filters.type];
-        baseQuery.type = { $in: types };
+        baseQuery.type = dbTypeMap[filters.type] || filters.type;
       }
       
       let products = await Product.find(baseQuery).limit(limit * 2).lean();
@@ -305,14 +582,21 @@ const queryProducts = async (filters, searchQuery, limit = 10, brand = null, ten
         products = products.filter(p => validProductIds.includes(p._id.toString()));
       }
       
-      // Get pricing from SubProducts (only active ones with stock and valid prices)
+      // Get pricing from SubProducts — same visibility rules as /shop page
       const productIds = products.map(p => p._id);
-      
+
+      // First get active tenants (approved + active/trialing subscription)
+      const activeTenantsRaw = await Tenant.find({
+        status: 'approved',
+        subscriptionStatus: { $in: ['active', 'trialing'] },
+      }).select('_id').lean();
+      const activeTenantIds = activeTenantsRaw.map(t => t._id);
+
       const subProducts = await SubProduct.find({
         product: { $in: productIds },
-        status: 'active',
-        availableStock: { $gt: 0 },
-        baseSellingPrice: { $gt: 0 }
+        status: { $in: ['active', 'low_stock', 'out_of_stock'] },
+        tenant: { $in: activeTenantIds },
+        baseSellingPrice: { $gt: 0 },
       }).populate('tenant', 'name').lean();
       
       // Get size IDs and try to fetch Size documents
@@ -553,46 +837,92 @@ const beverageKnowledgeBase = {
   }
 };
 
-// Generate contextual response using knowledge base
-const generateKnowledgeResponse = async (query, intent) => {
-  const lowerQuery = query.toLowerCase();
-  let context = '';
+// Synchronous knowledge snippet (no DB, no async needed)
+const getKnowledgeSnippet = (query, intent) => {
+  const q = query.toLowerCase();
+  const snippets = [];
 
-  // Wine knowledge - keep short
-  if (lowerQuery.includes('wine')) {
-    context += `\nWine info: Red (Cabernet, Merlot), White (Chardonnay, Sauvignon Blanc). Best served at 12-14°C. Pairs well with red meat, pasta, cheese.`;
+  if (q.includes('wine') || intent.filters.type === 'wine') {
+    snippets.push('Wine: Red wines (Cabernet, Merlot, Shiraz) suit red meat & cheese. White wines (Chardonnay, Sauvignon Blanc) go with seafood & light dishes. Serve reds at 16-18°C, whites chilled at 8-12°C.');
+  }
+  if (q.includes('beer') || q.includes('lager') || intent.filters.type === 'beer') {
+    snippets.push('Beer: Lagers (Heineken, Star, Trophy) are crisp and best served ice cold. Stouts (Guinness) are rich with coffee/chocolate notes. Serve lagers at 4-6°C, stouts at 8-10°C.');
+  }
+  if (q.includes('whiskey') || q.includes('whisky') || q.includes('bourbon') || q.includes('scotch')) {
+    snippets.push('Whiskey: Scotch is smoky & peaty; Irish is smooth; Bourbon (USA) is sweet & vanilla-forward. Drink neat, with a splash of water, or on the rocks. 1 bottle = ~25 shots.');
+  }
+  if (q.includes('vodka')) {
+    snippets.push('Vodka: Best served chilled or in cocktails. Grey Goose & Belvedere are premium; Smirnoff is popular everyday choice. 1 bottle = ~25 shots.');
+  }
+  if (q.includes('cognac') || q.includes('hennessy') || q.includes('brandy')) {
+    snippets.push('Cognac/Brandy: Distilled wine aged in oak. Hennessy VS is entry-level; VSOP is smoother; XO is the premium top tier. Serve neat or with ice.');
+  }
+  if (q.includes('gin')) {
+    snippets.push('Gin: Juniper-forward spirit. Best in G&T (1 part gin : 2 parts tonic, lime wedge). Tanqueray, Hendricks, Bombay Sapphire are popular choices.');
+  }
+  if (q.includes('rum')) {
+    snippets.push('Rum: White rum is light (cocktails); dark rum is aged and rich (sipping, mojitos). Bacardi & Captain Morgan are the most popular.');
+  }
+  if (q.includes('cocktail') || q.includes('recipe') || q.includes('mix')) {
+    snippets.push('Popular cocktails: Mojito (rum + mint + lime + soda), Old Fashioned (whiskey + sugar + bitters), Gin & Tonic (gin + tonic + lime), Cosmopolitan (vodka + cranberry + lime + triple sec).');
+  }
+  if (intent.isEvent || q.includes('party') || q.includes('guests')) {
+    snippets.push('Event planning guide: For 10 guests expect ~2 bottles of wine, 2 cases of beer, and 1 bottle of spirits. For 50 guests: 8 bottles wine, 6 cases beer, 3 bottles spirits. Always round up by 20%.');
   }
 
-  // Beer knowledge - keep short
-  if (lowerQuery.includes('beer')) {
-    context += `\nBeer info: Lager, Stout, Ale. Serve cold (4-8°C). Nigerian favorites: Star, Heineken, Guinness.`;
-  }
-
-  // Spirit knowledge - keep short
-  if (lowerQuery.includes('spirit') || lowerQuery.includes('whiskey') || lowerQuery.includes('vodka')) {
-    context += `\nSpirits info: Best served neat or on rocks. Mixers: tonic, juice, soda. Popular: Whiskey, Vodka, Rum.`;
-  }
-
-  // Cocktails
-  if (lowerQuery.includes('cocktail') || lowerQuery.includes('recipe')) {
-    context += `\nPopular cocktails: Old Fashioned (whiskey), Mojito (rum), Martini (gin/vodka), Cosmopolitan (vodka).`;
-  }
-
-  return context;
+  return snippets.join('\n');
 };
 
 // Generate product context for AI
 const generateProductContext = (products) => {
   if (!products || products.length === 0) return '';
-  
-  // Only include products with valid prices
+
   const validProducts = products.filter(p => p.minPrice > 0);
   if (validProducts.length === 0) return '';
-  
-  return `Available: ` + 
-    validProducts.slice(0, 5).map((p) => {
-      return `${p.name} - ₦${(p.minPrice || 0).toLocaleString()}`;
-    }).join(', ');
+
+  const lines = validProducts.slice(0, 6).map((p) => {
+    const price = `₦${(p.minPrice || 0).toLocaleString()}`;
+    const discount = p.hasDiscount ? ' [ON SALE]' : '';
+    const stock = p.totalStock > 0
+      ? p.totalStock <= 5 ? ` [Only ${p.totalStock} left]` : ' [In Stock]'
+      : ' [Out of Stock]';
+
+    // Include size variants if available
+    const sizes = (p.sizes || []).slice(0, 3)
+      .filter(s => s.price > 0)
+      .map(s => `${s.size || s.name}: ₦${s.price.toLocaleString()}`)
+      .join(', ');
+
+    let line = `• ${p.name} — from ${price}${discount}${stock}`;
+    if (sizes) line += `\n  Sizes: ${sizes}`;
+    return line;
+  });
+
+  return `PRODUCTS IN OUR CATALOG:\n${lines.join('\n')}`;
+};
+
+// Extract the last product name/brand mentioned in conversation history
+const extractLastProductFromHistory = (conversationHistory) => {
+  if (!conversationHistory || conversationHistory.length === 0) return null;
+  // Look at the last few assistant messages for a product name
+  const assistantMessages = conversationHistory.filter(m => m.role === 'assistant').slice(-3).reverse();
+  const productPattern = /•\s+([A-Z][^–—\-\n₦]+?)(?:\s*[–—\-]|₦|\n|$)/g;
+  for (const msg of assistantMessages) {
+    const matches = [...msg.content.matchAll(productPattern)];
+    if (matches.length > 0) return matches[0][1].trim();
+    // Also try bold product name pattern
+    const boldMatch = msg.content.match(/\*\*([^*]+)\*\*\s+is available/);
+    if (boldMatch) return boldMatch[1].trim();
+  }
+  // Fall back to last user message that had a brand/product keyword
+  const userMessages = conversationHistory.filter(m => m.role === 'user').slice(-5).reverse();
+  for (const msg of userMessages) {
+    const words = msg.content.trim();
+    if (words.length > 2 && words.length < 80 && !/too high|expensive|cheaper|afford|price/.test(words.toLowerCase())) {
+      return words;
+    }
+  }
+  return null;
 };
 
 // Main chatbot query handler
@@ -617,59 +947,144 @@ const handleChatbotQuery = async (options) => {
       return await handleFileQuery(fileContent, fileName, query, tenantId);
     }
 
-    const intent = extractIntent(query);
-    console.log('[Chatbot] extractIntent result:', JSON.stringify(intent));
-    console.log('[Chatbot] query:', query);
-    
-    // For cart actions, search using the actual query (extract product name)
-    let searchTerm = intent.keywords.length > 0 ? intent.keywords.join(' ') : null;
-    
-    // Don't use brand filter for cart actions - it might be too restrictive
-    const searchBrand = intent.brand;
-    console.log(`[Chatbot] searchTerm: "${searchTerm}", searchBrand: "${searchBrand}", filters:`, intent.filters);
-    let products = await queryProducts(intent.filters, searchTerm, 10, searchBrand, tenantId);
-    console.log(`[Chatbot] queryProducts returned ${products.length} products`);
-    
+    const intent = extractIntent(query, conversationHistory);
+
+    // Short-circuit greetings without a DB query
+    if (intent.isGreeting) return getGreetingResponse();
+
+    // ── Price complaint / budget query: resolve context from conversation history
+    let priceComplaintContext = null;
+    if (intent.isPriceComplaint || intent.filters.maxPrice) {
+      const lastProduct = extractLastProductFromHistory(conversationHistory);
+      if (lastProduct) {
+        if (intent.isPriceComplaint) priceComplaintContext = lastProduct;
+        const lastIntent = extractIntent(lastProduct);
+        if (lastIntent.filters.type && !intent.filters.type) {
+          intent.filters.type = lastIntent.filters.type;
+        }
+      }
+    }
+
+    // ── Product info follow-up: resolve product from conversation history ────
+    // e.g. "tell me more about the wine" with no explicit product name
+    let productInfoContext = null;
+    if (intent.type === 'product_info' && !intent.brand && intent.keywords.length === 0) {
+      const lastProduct = extractLastProductFromHistory(conversationHistory);
+      if (lastProduct) {
+        productInfoContext = lastProduct;
+        intent.keywords.push(lastProduct);
+      }
+    }
+
+    // Build search term: brand > keywords > raw query
+    const searchTerm = intent.brand
+      || (intent.keywords.length > 0 ? intent.keywords.join(' ') : null)
+      || (intent.type === 'product_info' ? query : null)
+      || (intent.type === 'general' ? query : null);
+
+    // Load the full catalog (cached, mirrors /shop visibility rules)
+    const fullCatalog = await buildFullCatalogContext(tenantId);
+
+    let products = await queryProducts(intent.filters, searchTerm, 10, intent.brand, tenantId);
+
+    // For price complaints with no results, retry keeping only the price ceiling
+    if ((intent.isPriceComplaint || intent.filters.maxPrice) && products.length === 0) {
+      const priceOnlyFilter = intent.filters.maxPrice ? { maxPrice: intent.filters.maxPrice } : {};
+      products = await queryProducts(priceOnlyFilter, null, 10, null, tenantId);
+    }
+
+    // Broaden search: drop type filter if no results
+    if (products.length === 0 && intent.filters.type) {
+      const broadFilters = { ...intent.filters };
+      delete broadFilters.type;
+      products = await queryProducts(broadFilters, searchTerm, 8, null, tenantId);
+    }
+
+    // Last resort: search with the raw query, no filters
+    if (products.length === 0 && query.trim().length > 2) {
+      products = await queryProducts({}, query, 6, null, tenantId);
+    }
+
     const productContext = generateProductContext(products);
 
-    // Get general knowledge if no products found
-    const knowledgeContext = products.length === 0 ? await generateKnowledgeResponse(query, intent) : '';
+    // Use full catalog as context — gives AI visibility of everything on the shop
+    const catalogContext = fullCatalog || productContext;
 
-    let systemPrompt = `You are DrinksHarbour AI - the friendly, expert beverage assistant for DrinksHarbour.com, Nigeria's premier multi-tenant drinks marketplace.
-Your goal is to help customers find drinks, check prices, plan events, and get beverage recommendations.
+    // ── Web search for product info, recommendations, and comparisons ─────────
+    let webSearchResults = null;
+    const needsWebSearch = ['product_info', 'recommendation', 'comparison', 'cocktail'].includes(intent.type);
+    if (needsWebSearch && process.env.SERPER_API_KEY) {
+      // Build a focused search query
+      const productName = productInfoContext
+        || intent.brand
+        || (intent.keywords.length > 0 ? intent.keywords[0] : null);
 
-### CONTEXT:
-${productContext}
-${knowledgeContext}
+      let webQuery = null;
+      if (intent.type === 'product_info' && productName) {
+        webQuery = `${productName} beverage history tasting notes food pairing`;
+      } else if (intent.type === 'recommendation') {
+        const typeLabel = intent.filters.type || 'drink';
+        webQuery = `best ${typeLabel} recommendations Nigeria 2024`;
+      } else if (intent.type === 'comparison' && intent.keywords.length >= 1) {
+        webQuery = `${intent.keywords.join(' vs ')} difference comparison beverage`;
+      } else if (intent.type === 'cocktail' && intent.keywords.length > 0) {
+        webQuery = `${intent.keywords[0]} cocktail recipe`;
+      } else if (productName) {
+        webQuery = `${productName} beverage review`;
+      }
 
-### YOUR PERSONA & STYLE:
-- **Tone:** Friendly, helpful, knowledgeable, and distinctly human.
-- **Length:** Keep responses concise, direct, and conversational (typically 1-3 short paragraphs).
-- **Emojis:** Use relevant emojis naturally to make the conversation lively (e.g., 🍷, 🍻, 🎉).
-- **Format:** Use bullet points or bold text to highlight key information (like names and prices).
+      if (webQuery) {
+        webSearchResults = await searchWeb(webQuery);
+      }
+    }
 
-### CORE RULES:
-1. **Pricing & Currency:** Always display prices in Nigerian Naira (₦). Format with commas (e.g., ₦12,500).
-2. **Product Suggestions:** If a user asks for a drink that isn't in the provided context, gracefully suggest 1-2 available alternatives.
-   - *Example:* "I couldn't find Heineken right now, but **Star Lager (₦11,500)** is a fantastic, popular alternative! 🍻"
-3. **Event Planning:** If a user is planning an event (party, wedding, etc.), proactively ask helpful questions (guest count, budget, preferences) and offer a quick estimate (e.g., "A standard bottle of spirits typically serves 15-20 shots").
-4. **No Hallucinations:** Only recommend products and prices that are explicitly listed in the CONTEXT above. If the context is empty, rely on your general beverage knowledge but clarify that they should search the catalog for exact availability.
-
-Remember: Be helpful, quick, and human-like!`;
-
-    // Build conversation
-    const recentMessages = conversationHistory.slice(-6).map(m => 
-      `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`
+    // Build conversation history block (last 8 turns)
+    const historyBlock = conversationHistory.slice(-8).map(m =>
+      `${m.role === 'user' ? 'Customer' : 'Assistant'}: ${m.content}`
     ).join('\n');
 
-    const fullPrompt = recentMessages ? `${recentMessages}\n\nUser: ${query}` : query;
+    // Rich system prompt with catalog + conversation context
+    const systemPrompt = `${BASE_SYSTEM_PROMPT}
 
-    let response = await callGoogleAI(fullPrompt, systemPrompt);
+${catalogContext ? `FULL SHOP CATALOG — ONLY use these products, categories, and prices. Do not invent anything outside this list:\n${catalogContext}` : '⚠️ CATALOG: No products available right now. Do NOT invent products or prices. Tell the customer to browse /shop.'}
+${webSearchResults ? `\nWEB SEARCH RESULTS (use for history, descriptions, food pairings, expert knowledge — NOT for prices):\n${webSearchResults}` : ''}
+${historyBlock ? `\nCONVERSATION SO FAR:\n${historyBlock}` : ''}
+${priceComplaintContext ? `\nCONTEXT: The customer is reacting to the price of "${priceComplaintContext}" which was just shown. They want something more affordable in the same category.` : ''}
+${productInfoContext ? `\nCONTEXT: The customer is asking for more information about "${productInfoContext}" which was mentioned earlier in the conversation.` : ''}
+${intent.isFollowUp ? '\nCONTEXT: This is a short follow-up reaction to the previous message. Respond naturally in context — acknowledge their reaction warmly, then offer next steps.' : ''}
+
+INTENT DETECTED: ${intent.type}${intent.isEvent ? ' (event planning)' : ''}${intent.isOnSale ? ' (looking for deals)' : ''}${intent.isPriceComplaint ? ' (price complaint)' : ''}${intent.isFollowUp ? ' (follow-up)' : ''}
+
+RESPONSE INSTRUCTIONS FOR THIS QUERY:
+${intent.type === 'price' ? '- Lead with the price clearly from the catalog. List all available sizes and their prices.' : ''}
+${intent.type === 'price_complaint' ? '- Acknowledge the price empathetically (1 short sentence). Then list ONLY cheaper products from the CATALOG DATA. Show exact catalog prices. If none cheaper, say so and suggest browsing /shop.' : ''}
+${intent.type === 'recommendation' ? '- Give a confident recommendation from the catalog. Briefly explain why it suits them using your expert knowledge.' : ''}
+${intent.type === 'comparison' ? '- Compare key differences using your expert knowledge: taste, ABV, origin, style. For prices, use catalog only.' : ''}
+${intent.type === 'event_planning' ? '- Ask about guest count and budget if not mentioned. Recommend quantities and products from the catalog.' : ''}
+${intent.type === 'discount' ? '- Highlight on-sale items from the catalog first. Show original vs sale price.' : ''}
+${intent.type === 'cocktail' ? '- Give a full cocktail recipe using your expert knowledge. Mention if the base spirit is in our catalog.' : ''}
+${intent.type === 'gift' ? '- Recommend premium gifting options from the catalog. Suggest presentation ideas.' : ''}
+${intent.type === 'availability' ? '- Confirm clearly if in stock from the catalog. Direct yes/no first, then details.' : ''}
+${intent.type === 'product_info' ? `- Give a RICH, EXPERT-LEVEL breakdown. Use your full beverage knowledge plus the catalog entry. Structure your response with:
+  **About**: Origin, producer history, what makes this product special
+  **Tasting Notes**: Color, aroma, palate, finish — be evocative and specific
+  **Food Pairings**: 3-4 specific dishes that complement this drink
+  **Serving Tips**: Temperature, glassware, whether to decant, ice or neat
+  **Fun Fact**: One surprising or memorable detail about this product
+  End with the catalog price and availability.` : ''}`.trim();
+
+    let response = await callGoogleAI(query, systemPrompt, conversationHistory);
 
     // Filter out products with invalid/zero prices for display
     const validProducts = products.filter(p => p.minPrice > 0);
     
-    // Fallback responses
+    // If Gemini returned nothing, retry with a minimal conversational prompt (no product context)
+    if (!response && conversationHistory.length > 0) {
+      const minimalPrompt = `${BASE_SYSTEM_PROMPT}\n\nRespond naturally to the customer's message. Be warm and helpful. If they're reacting to a price or product, acknowledge it and offer next steps.`;
+      response = await callGoogleAI(query, minimalPrompt, conversationHistory);
+    }
+
+    // Rule-based fallback only if Gemini is completely unavailable
     if (!response) {
       const isGreeting = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening', 'howdy', 'what\'s up', 'sup']
         .some(g => query.toLowerCase().trim() === g || query.toLowerCase().trim().startsWith(g + ' '));
@@ -707,7 +1122,7 @@ Remember: Be helpful, quick, and human-like!`;
           ).join('\n');
         }
       } else {
-        response = await generateFallbackResponse(query, intent, knowledgeContext);
+        response = generateFallbackResponse(query, intent, validProducts);
       }
     }
 
@@ -758,77 +1173,111 @@ const shouldShowProducts = (intent, productCount, products = [], query = '') => 
 
 // Handle image-based queries (single or multiple)
 const handleImageQuery = async (imageUrls, userQuery = '', tenantId = null) => {
-  // Ensure it's an array
   const images = Array.isArray(imageUrls) ? imageUrls : [imageUrls];
   try {
-    // Analyze first image or all images
+    // Step 1: Analyze each image (pass user context, not as replacement prompt)
     const analyses = [];
-    
-    for (const imageUrl of imageUrls) {
-      const analysis = await analyzeImage(imageUrl, userQuery || 'What drink is this? Be brief.');
-      if (analysis) {
-        analyses.push(analysis);
-      }
+    for (const imageUrl of images) {
+      const analysis = await analyzeImage(imageUrl, userQuery || '');
+      if (analysis) analyses.push(analysis);
     }
 
+    // If vision failed entirely, still try to help via the user's text query
     if (analyses.length === 0) {
+      const fallbackProducts = userQuery && userQuery.length > 3
+        ? await queryProducts({}, userQuery, 5, null, tenantId)
+        : [];
+
+      if (fallbackProducts.length > 0) {
+        const fullCatalog = await buildFullCatalogContext(tenantId);
+        const systemPrompt = `${BASE_SYSTEM_PROMPT}\n\n${fullCatalog ? `FULL SHOP CATALOG:\n${fullCatalog}` : ''}`;
+        const response = await callGoogleAI(
+          userQuery || 'What drinks do you have?',
+          systemPrompt
+        ) || `I had trouble reading the image, but here's what I found matching your query:`;
+        return {
+          response,
+          products: fallbackProducts.slice(0, 4).map(p => ({
+            id: p._id, name: p.name, slug: p.slug, type: p.type,
+            minPrice: p.minPrice, hasDiscount: p.hasDiscount,
+            image: p.images?.[0]?.url || p.images?.[0] || null
+          })),
+          quickReplies: [{ label: '🔍 Search by name', query: 'Search drinks' }, { label: '📸 Try another photo', query: 'I want to search by image' }],
+          intent: 'image_query'
+        };
+      }
+
       return {
-        response: "Couldn't analyze the images. Try describing what you're looking for!",
+        response: "I had trouble reading the image. Try sending a clearer photo with the label visible, or just tell me the name of the drink!",
         products: [],
-        quickReplies: ['Search by name', 'Browse wines', 'Browse beers'],
+        quickReplies: [{ label: '🔍 Search by name', query: 'Search drinks' }, { label: '🍷 Browse all', query: 'What do you have?' }],
         intent: 'image_query'
       };
     }
 
-    // Combine analyses
-    const combinedAnalysis = analyses.length === 1 
-      ? analyses[0] 
-      : `Here are the ${analyses.length} drinks I identified:\n\n${analyses.map((a, i) => `**Drink ${i + 1}:**\n${a}`).join('\n\n')}`;
-
-    // Extract product names and search for all
+    // Step 2: Extract product names from analyses and search catalog
     const allProducts = [];
-    
     for (const analysis of analyses) {
       const productName = extractProductNameFromAnalysis(analysis);
       if (productName) {
         const intent = extractIntent(productName);
-        const products = await queryProducts(intent.filters, productName, 3, null, tenantId);
-        allProducts.push(...products);
+        const found = await queryProducts(intent.filters, productName, 4, null, tenantId);
+        allProducts.push(...found);
       }
     }
-
-    // Remove duplicates
-    const uniqueProducts = allProducts.filter((p, i, arr) => 
+    const uniqueProducts = allProducts.filter((p, i, arr) =>
       arr.findIndex(x => x._id.toString() === p._id.toString()) === i
     );
 
-    let response = combinedAnalysis;
-    
-    if (uniqueProducts.length > 0) {
-      response += `\n\n🛒 **Available at DrinksHarbour:**\n\n`;
-      response += uniqueProducts.slice(0, 3).map((p, i) => 
-        `• **${p.name}** - ₦${(p.minPrice || 0).toLocaleString()}`
-      ).join('\n');
-    }
+    // Step 3: Load full catalog for context
+    const fullCatalog = await buildFullCatalogContext(tenantId);
+
+    // Step 4: Build a rich AI response using vision analysis + catalog + expert knowledge
+    const imageContext = analyses.length === 1
+      ? analyses[0]
+      : analyses.map((a, i) => `**Image ${i + 1}:**\n${a}`).join('\n\n');
+
+    const catalogMatches = uniqueProducts.length > 0
+      ? `\nCATALOG MATCHES FOUND:\n${uniqueProducts.map(p => `• ${p.name} — ₦${(p.minPrice || 0).toLocaleString()} [In Stock: ${p.totalStock > 0}]`).join('\n')}`
+      : '\nNo exact catalog matches found for this product.';
+
+    const systemPrompt = `${BASE_SYSTEM_PROMPT}
+
+${fullCatalog ? `FULL SHOP CATALOG:\n${fullCatalog}` : ''}
+
+IMAGE ANALYSIS RESULT:
+${imageContext}
+${catalogMatches}
+
+INSTRUCTIONS:
+- The customer sent a photo of a drink. Use the image analysis above to identify it.
+- If the drink is in our catalog (see CATALOG MATCHES), tell them the price and availability from the catalog.
+- Give a brief but expert description of the drink: what it is, origin, taste profile.
+- If it's NOT in our catalog, say so honestly but still describe the drink expertly and suggest the closest catalog alternatives.
+- Keep response warm, concise, and expert-sounding.`;
+
+    const userPrompt = userQuery || 'What drink is this? Tell me about it and check if you have it available.';
+    const response = await callGoogleAI(userPrompt, systemPrompt) || imageContext;
 
     return {
       response,
       products: uniqueProducts.slice(0, 4).map(p => ({
         id: p._id, name: p.name, slug: p.slug, type: p.type,
-        minPrice: p.minPrice, image: p.images?.[0]?.url
+        minPrice: p.minPrice, hasDiscount: p.hasDiscount,
+        image: (p.images && p.images[0]) ? (p.images[0].url || p.images[0]) : null
       })),
-      quickReplies: ['View products', 'Search similar', 'Browse catalog'],
+      quickReplies: uniqueProducts.length > 0
+        ? [{ label: '🛒 View product', query: `Tell me more about ${uniqueProducts[0].name}` }, { label: '💰 Price details', query: `Price of ${uniqueProducts[0].name}` }]
+        : [{ label: '🔍 Search similar', query: analyses[0]?.split('\n')[0] || 'Search drinks' }, { label: '🍷 Browse catalog', query: 'What do you have?' }],
       intent: 'image_analysis',
       imageAnalyzed: true
     };
 
   } catch (error) {
-    console.error('Image Query Error:', error);
+    console.error('Image Query Error:', error.message);
     return {
-      response: "I couldn't analyze the image. Could you describe what drink you're looking for?",
-      products: [],
-      quickReplies: ['Search by name', 'Browse wines', 'Browse beers', 'Contact support'],
-      intent: 'image_query'
+      response: "I couldn't analyze the image. Could you describe the drink you're looking for?",
+      products: [], quickReplies: [{ label: '🔍 Search by name', query: 'Search drinks' }], intent: 'image_query'
     };
   }
 };
@@ -937,9 +1386,20 @@ const handleFileQuery = async (fileContent, fileName, userQuery, tenantId = null
     }
     
     if (notFound.length > 0) {
-      const notFoundNames = notFound.map(n => n.name).join(', ');
-      response += `\n\n❌ Not found: ${notFoundNames}`;
-      response += `\nWant me to find alternatives?`;
+      response += `\n\n❌ **Not in catalog:** ${notFound.map(n => n.name).join(', ')}`;
+      // Suggest catalog alternatives for not-found items
+      const fullCatalog = await buildFullCatalogContext(tenantId);
+      if (fullCatalog) {
+        const altSystemPrompt = `${BASE_SYSTEM_PROMPT}\n\nFULL SHOP CATALOG:\n${fullCatalog}`;
+        const notFoundList = notFound.map(n => n.name).join(', ');
+        const altResponse = await callGoogleAI(
+          `These items were not found in our catalog: ${notFoundList}. Suggest the closest available alternatives from the catalog above. Be brief — one line per item.`,
+          altSystemPrompt
+        );
+        if (altResponse) response += `\n\n**Alternatives from our catalog:**\n${altResponse}`;
+      } else {
+        response += `\nBrowse /shop for alternatives.`;
+      }
     }
 
     return {
@@ -992,22 +1452,37 @@ const extractProductNameFromAnalysis = (analysis) => {
   return null;
 };
 
-// Generate fallback response using knowledge base
-const generateFallbackResponse = async (query, intent, knowledgeContext) => {
-  const lowerQuery = query.toLowerCase().trim();
-  const greetings = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening', 'howdy', 'what\'s up', 'sup'];
-  
-  if (greetings.some(g => lowerQuery === g || lowerQuery.startsWith(g + ' '))) {
-    return getGreeting();
+// Rule-based fallback (when AI call fails)
+const generateFallbackResponse = (query, intent, products) => {
+  const validProducts = (products || []).filter(p => p.minPrice > 0);
+
+  if (validProducts.length > 0) {
+    const top = validProducts.slice(0, 3);
+    const lines = top.map(p => {
+      const saleTag = p.hasDiscount ? ' 🔖 On Sale!' : '';
+      const stockTag = p.totalStock > 0 && p.totalStock <= 5 ? ` (Only ${p.totalStock} left!)` : '';
+      return `• **${p.name}** — ₦${(p.minPrice || 0).toLocaleString()}${saleTag}${stockTag}`;
+    }).join('\n');
+
+    if (intent.type === 'price') {
+      return `Here are the prices for what I found:\n\n${lines}\n\nWant more details on any of these? 😊`;
+    }
+    if (intent.type === 'availability') {
+      return `Good news — these are available right now:\n\n${lines}\n\nWould you like to see more options?`;
+    }
+    if (intent.type === 'discount') {
+      return `Here are some great deals right now:\n\n${lines}\n\nPrices won't stay this low for long! 🔥`;
+    }
+    return `Here's what I found for you:\n\n${lines}\n\nAny of these interest you?`;
   }
 
-  const knowledge = knowledgeContext || await generateKnowledgeResponse(query, intent);
-  
+  // No products
+  const knowledge = getKnowledgeSnippet(query, intent);
   if (knowledge) {
-    return `I'd love to help you find the perfect drink! While I don't have exact matches for "${query}" in our catalog right now, here's some helpful information:\n\n${knowledge}\n\nWould you like me to search for something specific, or browse our categories?`;
+    return `I couldn't find an exact match in our catalog right now, but here's what I know:\n\n${knowledge}\n\nTry browsing the shop or refine your search!`;
   }
 
-  return "I'm here to help you find the perfect drink! Browse our categories or let me know what type of beverage you're looking for. We have wines, beers, spirits, and more!";
+  return `I'm not sure about that one! Try asking me about a specific drink (e.g. "Do you have Hennessy?") or browse our shop categories 🛒`;
 };
 
 // Get greeting response
@@ -1034,14 +1509,67 @@ const getGreeting = () => {
   return greetings[Math.floor(Math.random() * greetings.length)];
 };
 
-// Build quick replies
+// Build contextual quick replies
 const buildQuickReplies = (intent, products) => {
-  const replies = [];
+  const defaults = [
+    { label: '🍷 Wines', query: 'Show me wines' },
+    { label: '🍺 Beers', query: 'Best beers' },
+    { label: '🥃 Whiskey', query: 'Best whiskeys' },
+    { label: '🔥 On Sale', query: "What's on sale today?" },
+  ];
+
+  const byType = {
+    recommendation: [
+      { label: '🍷 Red Wine', query: 'Best red wines' },
+      { label: '🥃 Whiskey', query: 'Top whiskeys under ₦50,000' },
+      { label: '🍾 Champagne', query: 'Champagne options' },
+      { label: '🎉 Event', query: 'Help me plan a party' },
+    ],
+    discount: [
+      { label: '🔥 Flash Sale', query: 'Flash sale deals' },
+      { label: '💰 Under ₦10k', query: 'Drinks under ₦10000' },
+      { label: '🥃 Spirits deals', query: 'Whiskey on sale' },
+      { label: '🍷 Wine deals', query: 'Wine on sale' },
+    ],
+    event_planning: [
+      { label: '👥 10 guests', query: 'Drinks for 10 people party' },
+      { label: '👥 50 guests', query: 'Drinks for 50 people event' },
+      { label: '💒 Wedding', query: 'Drinks for a wedding' },
+      { label: '🎂 Birthday', query: 'Drinks for a birthday party' },
+    ],
+    cocktail: [
+      { label: '🍹 Mojito', query: 'How to make a Mojito' },
+      { label: '🥃 Old Fashioned', query: 'How to make an Old Fashioned' },
+      { label: '🍸 Martini', query: 'How to make a Martini' },
+    ],
+    gift: [
+      { label: '🎁 Premium spirits', query: 'Premium gift spirits' },
+      { label: '🍷 Gift wine', query: 'Best wine for a gift' },
+      { label: '🍾 Champagne gift', query: 'Champagne for gifting' },
+    ],
+    comparison: [
+      { label: '🥃 Whiskey vs Cognac', query: 'Whiskey vs Cognac differences' },
+      { label: '🍷 Red vs White', query: 'Red wine vs white wine' },
+    ],
+    price_complaint: [
+      { label: '💰 Budget options', query: 'Show me affordable drinks' },
+      { label: '🔥 On Sale', query: "What's on sale today?" },
+      { label: '🥃 Cheap whiskey', query: 'Whiskey under ₦20000' },
+      { label: '🍷 Cheap wine', query: 'Wine under ₦10000' },
+    ],
+  };
+
+  if (byType[intent.type]) return byType[intent.type];
+
   if (products.length > 0) {
-    replies.push(`Show ${products[0]?.name}`);
+    const first = products[0];
+    return [
+      { label: `🔍 More like ${first.name?.split(' ')[0]}`, query: `Similar to ${first.name}` },
+      ...defaults.slice(0, 3),
+    ];
   }
-  replies.push('View all wines', 'Current discounts', 'Help me choose');
-  return replies;
+
+  return defaults;
 };
 
 // Generate product details
@@ -1089,5 +1617,6 @@ module.exports = {
   analyzeImage,
   extractIntent,
   queryProducts,
+  buildFullCatalogContext,
   beverageKnowledgeBase
 };

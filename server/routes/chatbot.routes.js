@@ -24,10 +24,10 @@ const chatbotUpload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const imageTypes = /jpeg|jpg|png|webp|gif/;
-    const docTypes = /txt|csv|json|pdf|doc|docx/;
+    const docTypes = /txt|csv|json|pdf|doc|docx|xlsx|xls/;
     const ext = path.extname(file.originalname).toLowerCase().slice(1);
     const isImage = imageTypes.test(ext) || file.mimetype.startsWith('image/');
-    const isDoc = docTypes.test(ext) || file.mimetype.includes('text') || file.mimetype.includes('pdf');
+    const isDoc = docTypes.test(ext) || file.mimetype.includes('text') || file.mimetype.includes('pdf') || file.mimetype.includes('spreadsheet') || file.mimetype.includes('excel');
     if (isImage || isDoc) return cb(null, true);
     cb(new Error('Invalid file type'));
   }

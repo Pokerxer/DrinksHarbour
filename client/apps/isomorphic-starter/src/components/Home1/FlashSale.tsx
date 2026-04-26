@@ -406,14 +406,10 @@ const FlashSale = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Try flash_sale first; fall back to any on-sale products
-      let items = await fetchSaleProducts("flash_sale");
-      if (items.length === 0) {
-        items = await fetchSaleProducts();
-        setIsFlashSaleSection(false);
-      } else {
-        setIsFlashSaleSection(true);
-      }
+      const items = await fetchSaleProducts();
+      setIsFlashSaleSection(items.some((p) =>
+        (p.availableAt || []).some((at) => at.saleType === "flash_sale")
+      ));
 
       // Keep only products with an actual price discount
       const withDiscount = items.filter((p) =>
