@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import type { Metadata } from "next";
 import CategorySidebar from "@/components/Home1/TemuCategories";
 import FlashSale from "@/components/Home1/FlashSale";
 import Benefit from "@/components/Home1/Benefit";
@@ -11,24 +10,6 @@ import HeroBanner from "@/components/Banner/HeroBanner";
 import { motion, AnimatePresence } from "framer-motion";
 import * as Icon from "react-icons/pi";
 import RecommendedForYou from '@/components/Shop/RecommendedForYou';
-
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
-
-export const metadata: Metadata = {
-  title: "DrinksHarbour — Premium Beverages Delivered in Nigeria",
-  description: "Shop Nigeria's widest selection of premium spirits, wines, beers, and non-alcoholic drinks. Authentic products, fast delivery, and the best prices in Lagos and Abuja.",
-  keywords: ["buy wine Nigeria", "buy whiskey Nigeria", "online liquor store", "buy alcohol online Lagos", "premium beverages Nigeria", "DrinksHarbour"],
-  openGraph: {
-    title: "DrinksHarbour — Premium Beverages Delivered in Nigeria",
-    description: "Nigeria's premier online beverage store. Shop wines, spirits, beers and more with fast delivery across Nigeria.",
-    url: BASE_URL,
-    siteName: "DrinksHarbour",
-    type: "website",
-    images: [{ url: `${BASE_URL}/og-default.jpg`, width: 1200, height: 630, alt: "DrinksHarbour" }],
-  },
-  twitter: { card: "summary_large_image", title: "DrinksHarbour", description: "Nigeria's premier online beverage store" },
-  alternates: { canonical: BASE_URL },
-};
 
 export default function Home() {
   const [showCategories, setShowCategories] = useState(false);
