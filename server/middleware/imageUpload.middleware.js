@@ -100,8 +100,8 @@ const diskStorage = multer.diskStorage({
   },
 });
 
-// Use memory storage for production (Cloudinary), disk for development
-const storage = process.env.NODE_ENV === 'production' ? memoryStorage : diskStorage;
+// Always use memory storage — Cloudinary handles persistence, disk is unreliable on serverless
+const storage = memoryStorage;
 
 // ============================================================
 // FILE FILTERS
