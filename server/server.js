@@ -65,11 +65,15 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin) || isProduction) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
+    // Allow no-origin requests (mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
+    // Allow exact matches
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    // Allow any *.drinksharbour.com subdomain
+    if (/^https:\/\/([a-z0-9-]+\.)*drinksharbour\.com$/.test(origin)) return callback(null, true);
+    // Allow Vercel preview deployments for this project
+    if (/^https:\/\/drinks-harbour[a-z0-9-]*\.vercel\.app$/.test(origin)) return callback(null, true);
+    callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -128,6 +132,9 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Too many requests, please try again later.' },
+  keyGenerator: (req) => {
+    return req.headers['x-forwarded-for']?.split(',')[0].trim() || req.ip;
+  },
   skip: (req) => {
     return req.path === '/health' || req.path === '/api/ping';
   },
