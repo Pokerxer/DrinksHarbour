@@ -1,5 +1,6 @@
 // controllers/payment.controller.js
 
+const crypto = require('crypto');
 const asyncHandler = require('../utils/asyncHandler');
 const { successResponse } = require('../utils/response');
 const paymentService = require('../services/payment.service');
@@ -125,7 +126,7 @@ const verifyPaystackPayment = asyncHandler(async (req, res) => {
   const result = await paymentService.verifyPaystackTransaction(reference);
 
   if (result.success) {
-    successResponse(res, result, 'Payment verified successfully');
+    successResponse(res, result.data, 'Payment verified successfully');
   } else {
     res.status(400).json({
       success: false,
@@ -181,33 +182,33 @@ const createRefund = asyncHandler(async (req, res) => {
  * @access  Public
  */
 const handleStripeWebhook = asyncHandler(async (req, res) => {
+  let stripe;
+  try {
+    stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+  } catch {
+    return res.status(500).json({ success: false, message: 'Stripe not configured' });
+  }
+
   const sig = req.headers['stripe-signature'];
   const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
   let event;
 
   try {
     event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
   } catch (err) {
-    console.log(`Webhook Error: ${err.message}`);
+    console.error(`Stripe webhook error: ${err.message}`);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // Handle the event
   switch (event.type) {
     case 'payment_intent.succeeded':
-      const paymentIntent = event.data.object;
-      console.log('PaymentIntent was successful!');
-      // Payment succeeded - order will be created on frontend after confirmation
+      console.log('[Stripe] payment_intent.succeeded:', event.data.object.id);
       break;
-
     case 'payment_intent.payment_failed':
-      const failedPayment = event.data.object;
-      console.log('Payment failed:', failedPayment.last_payment_error?.message);
+      console.error('[Stripe] payment_intent.payment_failed:', event.data.object.last_payment_error?.message);
       break;
-
     default:
-      console.log(`Unhandled event type ${event.type}`);
+      console.log(`[Stripe] Unhandled event: ${event.type}`);
   }
 
   res.json({ received: true });
@@ -219,31 +220,38 @@ const handleStripeWebhook = asyncHandler(async (req, res) => {
  * @access  Public
  */
 const handlePaystackWebhook = asyncHandler(async (req, res) => {
+  // Always respond 200 immediately so Paystack doesn't retry
+  res.sendStatus(200);
+
+  if (!process.env.PAYSTACK_SECRET_KEY) return;
+
   const hash = crypto
     .createHmac('sha512', process.env.PAYSTACK_SECRET_KEY)
     .update(JSON.stringify(req.body))
     .digest('hex');
 
-  if (hash === req.headers['x-paystack-signature']) {
-    const event = req.body;
-
-    // Handle the event
-    switch (event.event) {
-      case 'charge.success':
-        console.log('Paystack payment successful!');
-        // Payment succeeded - order will be created on frontend after redirect
-        break;
-
-      case 'charge.failed':
-        console.log('Paystack payment failed:', event.data);
-        break;
-
-      default:
-        console.log(`Unhandled Paystack event type ${event.event}`);
-    }
+  if (hash !== req.headers['x-paystack-signature']) {
+    console.warn('[Paystack] Webhook signature mismatch — ignoring');
+    return;
   }
 
-  res.sendStatus(200);
+  const event = req.body;
+
+  switch (event.event) {
+    case 'charge.success': {
+      const data = event.data || {};
+      console.log(`[Paystack] charge.success — ref: ${data.reference}, amount: ₦${(data.amount || 0) / 100}`);
+      // Order creation is handled by the /payment/verify page after redirect.
+      // This webhook is a safety net — if the redirect failed, an admin can
+      // manually look up the reference and create the order.
+      break;
+    }
+    case 'charge.failed':
+      console.error('[Paystack] charge.failed:', event.data?.reference, event.data?.gateway_response);
+      break;
+    default:
+      console.log(`[Paystack] Unhandled event: ${event.event}`);
+  }
 });
 
 module.exports = {

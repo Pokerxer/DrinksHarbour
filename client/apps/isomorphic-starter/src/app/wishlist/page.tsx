@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import type { Metadata } from 'next';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -9,19 +8,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 import { useWishlist } from '@/context/WishlistContext';
 import { useCart } from '@/context/CartContext';
-
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
-
-export const metadata: Metadata = {
-  title: 'Wishlist — DrinksHarbour',
-  description: 'Your saved items. Keep track of your favorite beverages for later.',
-  openGraph: {
-    title: 'Wishlist — DrinksHarbour',
-    description: 'Your saved items',
-    url: `${BASE_URL}/wishlist`,
-  },
-  alternates: { canonical: `${BASE_URL}/wishlist` },
-};
 
 export default function WishlistPage() {
   const router = useRouter();

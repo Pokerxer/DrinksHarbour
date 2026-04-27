@@ -79,11 +79,10 @@ const ProductInfo: React.FC<ProductInfoProps> = ({
   }, [data.price, vendorSaleInfo]);
 
   const renderColorVariations = () => {
-const renderColorVariations = () => {
-  if (!data.variation || data.variation.length === 0) return null;
+    if (!data.variation || data.variation.length === 0) return null;
 
     return (
-<div className="list-color py-2 max-md:hidden flex items-center gap-2 flex-wrap">
+      <div className="list-color py-2 max-md:hidden flex items-center gap-2 flex-wrap">
         {data.variation.map((item, index) => (
           <div
             key={index}
@@ -112,7 +111,7 @@ const renderColorVariations = () => {
     const available = (data.quantity || 0) - (data.sold || 0);
 
     return (
-<div className="product-sold sm:pb-4 pb-2">
+      <div className="product-sold sm:pb-4 pb-2">
         <div className="progress bg-gray-200 h-1.5 w-full rounded-full overflow-hidden relative">
           <div
             className="progress-sold bg-red-500 absolute left-0 top-0 h-full transition-all duration-500"
@@ -159,7 +158,7 @@ const renderColorVariations = () => {
   };
 
   return (
-<div className="product-info">
+    <div className="product-info">
       {renderProgressBar()}
       <h3 className="product-name text-base font-medium line-clamp-2 hover:text-green transition-colors mb-1">
         {data.name}

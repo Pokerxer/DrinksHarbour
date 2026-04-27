@@ -4,11 +4,118 @@ const express = require('express');
 const router = express.Router();
 const asyncHandler = require('../utils/asyncHandler');
 const Tenant = require('../models/Tenant');
-const Product = require('../models/Product');
 const SubProduct = require('../models/SubProduct');
 const Size = require('../models/Size');
+const {
+  calcPlatformCostPrice,
+  calcPlatformSellingPrice,
+  isDiscountActive,
+  DEFAULT_PLATFORM_MARKUP,
+} = require('../utils/pricing');
 
-const { calculateSizePricing, calculateSubProductPricing, isDiscountActive } = require('../utils/pricing');
+/**
+ * Compute the websitePrice for one SubProduct + its sizes,
+ * matching the exact pipeline used in product.service.js:
+ *   Step 1: platformCostPrice  = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct)
+ *   Step 2: platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount)
+ *   Step 3: apply subProduct-level sale discount (if active)
+ *
+ * Returns { minWebsitePrice, maxWebsitePrice, originalMinPrice, isOnSale }
+ */
+function computeStorePricing(subProduct, sizeDocs, tenant, product) {
+  const revenueModel    = tenant.revenueModel       ?? 'markup';
+  const markupPct       = tenant.markupPercentage   ?? 25;
+  const commissionPct   = tenant.commissionPercentage ?? 12;
+  const platformMarkupPct = product.platformMarkup  ?? DEFAULT_PLATFORM_MARKUP;
+
+  // Product-level discount (applied before sale)
+  const productDiscount = product.platformDiscount?.value > 0 && product.platformDiscount?.type
+    ? {
+        value : product.platformDiscount.value,
+        type  : product.platformDiscount.type,
+        start : product.platformDiscount.start,
+        end   : product.platformDiscount.end,
+      }
+    : null;
+
+  // SubProduct sale validity
+  const now        = new Date();
+  const saleStart  = subProduct.saleStartDate ? new Date(subProduct.saleStartDate) : null;
+  const saleEnd    = subProduct.saleEndDate   ? new Date(subProduct.saleEndDate)   : null;
+  const saleActive = subProduct.isOnSale &&
+    (!saleStart || now >= saleStart) &&
+    (!saleEnd   || now <= saleEnd);
+
+  /**
+   * Compute websitePrice for a single (costPrice, sellingPrice) pair,
+   * then apply sale discount if active.
+   */
+  function priceForVariant(costPrice, sellingPrice) {
+    const platformCostPrice    = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
+    let   platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
+    const priceBeforeSale      = platformSellingPrice;
+
+    if (saleActive && subProduct.saleDiscountValue > 0) {
+      const discountType = subProduct.saleType || 'percentage';
+      if (discountType === 'percentage' || discountType === 'flash_sale') {
+        platformSellingPrice = parseFloat((platformSellingPrice * (1 - subProduct.saleDiscountValue / 100)).toFixed(2));
+      } else if (discountType === 'fixed') {
+        platformSellingPrice = Math.max(0, parseFloat((platformSellingPrice - subProduct.saleDiscountValue).toFixed(2)));
+      }
+    }
+
+    return { websitePrice: platformSellingPrice, originalPrice: priceBeforeSale };
+  }
+
+  const websitePrices    = [];
+  const originalPrices   = [];
+
+  if (sizeDocs && sizeDocs.length > 0) {
+    // Size-variant path
+    for (const size of sizeDocs) {
+      const costPrice    = size.costPrice    ?? subProduct.costPrice        ?? 0;
+      const sellingPrice = size.sellingPrice ?? subProduct.baseSellingPrice ?? 0;
+      if (sellingPrice <= 0 && costPrice <= 0) continue;
+      const { websitePrice, originalPrice } = priceForVariant(costPrice, sellingPrice);
+      if (websitePrice > 0) {
+        websitePrices.push(websitePrice);
+        originalPrices.push(originalPrice);
+      }
+    }
+  }
+
+  // Fallback to subProduct-level price (no size variants)
+  if (websitePrices.length === 0) {
+    const costPrice    = subProduct.costPrice        ?? 0;
+    const sellingPrice = subProduct.baseSellingPrice ?? 0;
+    if (sellingPrice > 0 || costPrice > 0) {
+      const { websitePrice, originalPrice } = priceForVariant(costPrice, sellingPrice);
+      if (websitePrice > 0) {
+        websitePrices.push(websitePrice);
+        originalPrices.push(originalPrice);
+      }
+    }
+  }
+
+  if (websitePrices.length === 0) return null;
+
+  const minWebsitePrice  = Math.min(...websitePrices);
+  const maxWebsitePrice  = Math.max(...websitePrices);
+  const originalMinPrice = Math.min(...originalPrices);
+
+  return {
+    minWebsitePrice,
+    maxWebsitePrice,
+    // Show original only when there's an actual discount (sale or product discount)
+    originalMinPrice : (saleActive && subProduct.saleDiscountValue > 0) || isDiscountActive(productDiscount)
+      ? originalMinPrice
+      : null,
+    isOnSale : saleActive && subProduct.saleDiscountValue > 0,
+    hasProductDiscount : isDiscountActive(productDiscount),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * @desc    List all approved stores (public)
@@ -18,18 +125,15 @@ router.get('/', asyncHandler(async (req, res) => {
   const { search, city, state, page = 1, limit = 20 } = req.query;
 
   const query = { status: 'approved' };
-
-  if (search) {
-    query.name = { $regex: search, $options: 'i' };
-  }
-  if (city) query.city = { $regex: city, $options: 'i' };
-  if (state) query.state = { $regex: state, $options: 'i' };
+  if (search) query.name = { $regex: search, $options: 'i' };
+  if (city)   query.city  = { $regex: city,  $options: 'i' };
+  if (state)  query.state = { $regex: state, $options: 'i' };
 
   const skip = (parseInt(page) - 1) * parseInt(limit);
 
   const [stores, total] = await Promise.all([
     Tenant.find(query)
-      .select('name slug logo primaryColor city state plan productCount totalOrders description email address')
+      .select('name slug logo primaryColor city state plan productCount description')
       .sort({ productCount: -1, name: 1 })
       .skip(skip)
       .limit(parseInt(limit))
@@ -41,105 +145,80 @@ router.get('/', asyncHandler(async (req, res) => {
     success: true,
     data: {
       stores,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / parseInt(limit)),
-      },
+      pagination: { page: parseInt(page), limit: parseInt(limit), total, pages: Math.ceil(total / parseInt(limit)) },
     },
   });
 }));
 
 /**
- * @desc    Get single store with its products (public)
+ * @desc    Get single store + its products with correct websitePrice (public)
  * @route   GET /api/stores/:slug
  */
 router.get('/:slug', asyncHandler(async (req, res) => {
   const store = await Tenant.findOne({ slug: req.params.slug, status: 'approved' })
-    .select('name slug logo primaryColor city state plan productCount description email address revenueModel markupPercentage commissionPercentage platformMarkupPercentage')
+    .select('name slug logo primaryColor city state plan productCount description email address revenueModel markupPercentage commissionPercentage')
     .lean();
 
   if (!store) {
     return res.status(404).json({ success: false, message: 'Store not found' });
   }
 
-  // Fetch active subproducts with sizes
-  const subProducts = await SubProduct.find({ tenant: store._id, status: { $in: ['active', 'low_stock'] } })
-    .select('product baseSellingPrice costPrice salePrice isOnSale saleType saleDiscountValue saleStartDate saleEndDate sizes availableStock discount discountType discountStart discountEnd')
-    .populate('product', 'name slug images primaryImage status')
+  // Fetch active subProducts, including the fields needed for pricing
+  const subProducts = await SubProduct.find({
+    tenant: store._id,
+    status: { $in: ['active', 'low_stock'] },
+  })
+    .select('product costPrice baseSellingPrice salePrice isOnSale saleType saleDiscountValue saleStartDate saleEndDate sizes')
+    .populate({
+      path   : 'product',
+      select : 'name slug images primaryImage status platformMarkup platformDiscount',
+    })
+    .limit(40) // fetch more than we display so we can deduplicate
     .lean();
 
-  // Get all Size IDs
+  // Collect all Size IDs referenced by these subProducts
   const allSizeIds = [...new Set(subProducts.flatMap(sp => (sp.sizes || []).map(s => s.toString())))];
-  const sizeDocs = allSizeIds.length > 0 
-    ? await Size.find({ _id: { $in: allSizeIds }, status: 'active' }).lean()
+  const sizeDocs   = allSizeIds.length > 0
+    ? await Size.find({ _id: { $in: allSizeIds } })
+        .select('costPrice sellingPrice discountValue discountType discountStart discountEnd')
+        .lean()
     : [];
-  const sizeMap = {};
-  sizeDocs.forEach(s => { sizeMap[s._id.toString()] = s; });
+  const sizeMap = Object.fromEntries(sizeDocs.map(s => [s._id.toString(), s]));
 
-  // Deduplicate & filter to approved products
-  const seen = new Set();
-  const productMap = {};
+  // Deduplicate by product, compute correct websitePrice per the platform pricing pipeline
+  const seen       = new Set();
+  const products   = [];
 
-  subProducts.forEach(sp => {
-    if (!sp.product || sp.product.status !== 'approved') return;
+  for (const sp of subProducts) {
+    if (!sp.product || sp.product.status !== 'approved') continue;
     const pid = sp.product._id.toString();
-    if (seen.has(pid)) return;
+    if (seen.has(pid)) continue;
     seen.add(pid);
 
-    // Calculate min price from sizes (same logic as shop page)
-    let minPrice = sp.baseSellingPrice || 0;
-    let maxPrice = sp.baseSellingPrice || 0;
-    let hasDiscount = false;
-    let saleActive = false;
+    const variantSizes = (sp.sizes || [])
+      .map(id => sizeMap[id.toString()])
+      .filter(Boolean);
 
-    // Check size-level pricing
-    if (sp.sizes && sp.sizes.length > 0) {
-      const prices = [];
-      sp.sizes.forEach(sizeId => {
-        const sz = sizeMap[sizeId.toString()];
-        if (sz) {
-          const sizePrice = sz.sellingPrice || sp.baseSellingPrice;
-          if (sizePrice > 0) prices.push(sizePrice);
-          // Check for discounts
-          if (sz.discount && isDiscountActive(sz.discount)) hasDiscount = true;
-        }
-      });
-      if (prices.length > 0) {
-        minPrice = Math.min(...prices);
-        maxPrice = Math.max(...prices);
-      }
-    }
+    const pricing = computeStorePricing(sp, variantSizes, store, sp.product);
+    if (!pricing) continue;
 
-    // Check subproduct-level sale (date validated)
-    if (sp.isOnSale && sp.saleStartDate && sp.saleEndDate) {
-      const now = new Date();
-      saleActive = now >= new Date(sp.saleStartDate) && now <= new Date(sp.saleEndDate);
-    }
-    if (saleActive && sp.salePrice) hasDiscount = true;
+    products.push({
+      _id          : sp.product._id,
+      name         : sp.product.name,
+      slug         : sp.product.slug,
+      primaryImage : sp.product.primaryImage || sp.product.images?.[0] || null,
+      minWebsitePrice  : pricing.minWebsitePrice,
+      maxWebsitePrice  : pricing.maxWebsitePrice,
+      originalMinPrice : pricing.originalMinPrice,
+      isOnSale         : pricing.isOnSale || pricing.hasProductDiscount,
+    });
 
-    // Check subproduct discount (date validated)
-    if (sp.discount && isDiscountActive(sp.discount)) hasDiscount = true;
-
-    productMap[pid] = {
-      _id: sp.product._id,
-      name: sp.product.name,
-      slug: sp.product.slug,
-      primaryImage: sp.product.primaryImage || sp.product.images?.[0] || null,
-      minPrice,
-      maxPrice,
-      hasDiscount,
-      saleActive,
-      salePrice: saleActive ? sp.salePrice : null,
-    };
-  });
-
-  const products = Object.values(productMap);
+    if (products.length >= 8) break;
+  }
 
   res.json({
-    success: true,
-    data: { store, products },
+    success : true,
+    data    : { store, products },
   });
 }));
 

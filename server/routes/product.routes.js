@@ -131,6 +131,25 @@ router.get(
 );
 
 /**
+ * Get all approved product slugs (for sitemap generation)
+ * @route GET /api/products/slugs
+ * @access Public
+ */
+router.get(
+  '/slugs',
+  asyncHandler(async (req, res) => {
+    const ProductModel = require('../models/product.model');
+    const slugs = await ProductModel
+      .find({ status: 'approved' }, 'slug -_id')
+      .lean();
+    res.status(200).json({
+      success: true,
+      data: { slugs: slugs.map((p) => p.slug).filter(Boolean) },
+    });
+  })
+);
+
+/**
  * Get single product by ID
  * @route GET /api/products/:id
  * @access Public

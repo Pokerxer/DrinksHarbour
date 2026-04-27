@@ -1,9 +1,6 @@
 'use client';
 
-export const dynamic = 'force-dynamic';
-
 import React, { useState, useEffect, useCallback } from 'react';
-import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -13,20 +10,35 @@ import { useCart } from '@/context/CartContext';
 import CouponComponent from '@/components/Coupon/Coupon';
 import PaymentHandler from '@/components/Payment/PaymentHandler';
 import { API_URL } from '@/lib/api';
-import AddressAutocomplete from '@/components/AddressAutocomplete/AddressAutocomplete';
+import AddressAutocomplete, { type AddressDetails } from '@/components/AddressAutocomplete/AddressAutocomplete';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
+const NIGERIAN_STATES = [
+  'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue', 'Borno',
+  'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu', 'FCT - Abuja', 'Gombe',
+  'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina', 'Kebbi', 'Kogi', 'Kwara', 'Lagos',
+  'Nasarawa', 'Niger', 'Ogun', 'Ondo', 'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto',
+  'Taraba', 'Yobe', 'Zamfara',
+];
 
-export const metadata: Metadata = {
-  title: 'Checkout — DrinksHarbour',
-  description: 'Complete your order. Secure checkout with multiple payment options.',
-  openGraph: {
-    title: 'Checkout — DrinksHarbour',
-    description: 'Complete your order',
-    url: `${BASE_URL}/checkout`,
-  },
-  alternates: { canonical: `${BASE_URL}/checkout` },
-};
+/** Map a Nominatim state string to a canonical NIGERIAN_STATES entry. */
+function matchNigerianState(raw: string): string {
+  const s = raw.trim();
+  // Direct match
+  const exact = NIGERIAN_STATES.find(n => n.toLowerCase() === s.toLowerCase());
+  if (exact) return exact;
+  // FCT aliases
+  if (/federal capital territory|abuja/i.test(s)) return 'FCT - Abuja';
+  // Strip common suffixes and retry: "Lagos State" → "Lagos"
+  const stripped = s.replace(/\s+state$/i, '').trim();
+  const byStripped = NIGERIAN_STATES.find(n => n.toLowerCase() === stripped.toLowerCase());
+  if (byStripped) return byStripped;
+  // Partial containment
+  const partial = NIGERIAN_STATES.find(
+    n => n.toLowerCase().includes(stripped.toLowerCase()) ||
+         stripped.toLowerCase().includes(n.toLowerCase()),
+  );
+  return partial || s;
+}
 
 interface FormData {
   firstName: string;
@@ -150,7 +162,7 @@ const Checkout = () => {
   const [mounted, setMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [activePayment, setActivePayment] = useState<string>('cod');
+  const [activePayment, setActivePayment] = useState<string>('cash_on_delivery');
   const [couponDiscount, setCouponDiscount] = useState(0);
   const [appliedCouponCode, setAppliedCouponCode] = useState('');
   const [createdOrderId, setCreatedOrderId] = useState<string | null>(null);
@@ -188,7 +200,7 @@ const Checkout = () => {
   // Ensure all form values are strings (not undefined)
   const getSafeValue = (value: string | undefined): string => value ?? '';
   const [errors, setErrors] = useState<FormErrors>({});
-  const [addressDetails, setAddressDetails] = useState<any>(null);
+  const [addressDetails, setAddressDetails] = useState<AddressDetails | null>(null);
 
   const subtotal = cartState.cartArray.reduce((sum, item) => {
     return sum + (item.price * (item.quantity || 1));
@@ -211,7 +223,7 @@ const Checkout = () => {
     if (!formData.address || !formData.address.trim()) newErrors.address = 'Address is required';
     if (!formData.city || !formData.city.trim()) newErrors.city = 'City is required';
     if (!formData.state || !formData.state.trim()) newErrors.state = 'State is required';
-    if (!formData.zipCode || !formData.zipCode.trim()) newErrors.zipCode = 'ZIP code is required';
+    // Postal code is optional in Nigeria
     if (!formData.country || !formData.country.trim()) newErrors.country = 'Country is required';
 
     setErrors(newErrors);
@@ -243,39 +255,20 @@ const Checkout = () => {
     }
   }, [errors]);
 
-  const handleAddressSelect = (address: string, placeDetails?: any) => {
-    setAddressDetails(placeDetails);
-    
+  const handleAddressSelect = (address: string, details?: AddressDetails) => {
+    setAddressDetails(details ?? null);
+
     const updates: Partial<FormData> = { address };
-    
-    if (placeDetails?.address_components && Array.isArray(placeDetails.address_components)) {
-      const components = placeDetails.address_components;
-      
-      const getComponent = (types: string[]): string | undefined => {
-        const comp = components.find((c: any) => 
-          types.some(t => c.types.includes(t))
-        );
-        return comp?.long_name;
-      };
-      
-      const city = getComponent(['locality', 'sublocality', 'administrative_area_level_2']) || getComponent(['postal_town']);
-      if (city) updates.city = city;
-      
-      const state = getComponent(['administrative_area_level_1']);
-      if (state) updates.state = state;
-      
-      const zipCode = getComponent(['postal_code']);
-      if (zipCode) updates.zipCode = zipCode;
+    if (details?.city) updates.city = details.city;
+    if (details?.postcode) updates.zipCode = details.postcode;
+    if (details?.state) {
+      updates.state = matchNigerianState(details.state);
     }
-    
+
     setFormData(prev => ({ ...prev, ...updates }));
-    
-    // Clear errors for updated fields
     setErrors(prev => {
       const newErrors = { ...prev };
-      Object.keys(updates).forEach(key => {
-        delete newErrors[key as keyof FormErrors];
-      });
+      Object.keys(updates).forEach(key => delete newErrors[key as keyof FormErrors]);
       return newErrors;
     });
   };
@@ -284,9 +277,9 @@ const Checkout = () => {
     setActivePayment(item);
     let method: 'card' | 'bank_transfer' | 'cash_on_delivery' = 'cash_on_delivery';
     if (item === 'card') method = 'card';
-    else if (item === 'bank') method = 'bank_transfer';
+    else if (item === 'bank_transfer') method = 'bank_transfer';
     else method = 'cash_on_delivery';
-    
+
     setFormData(prev => ({ ...prev, paymentMethod: method }));
     setShowPaymentModal(false);
   };
@@ -347,8 +340,8 @@ const Checkout = () => {
           paymentIntentId: data.data.paymentIntentId,
         });
         setShowPaymentModal(true);
-      } else if (activePayment === 'bank') {
-        if (!formData.address || !formData.city || !formData.state || !formData.zipCode || !formData.country) {
+      } else if (activePayment === 'bank_transfer') {
+        if (!formData.address || !formData.city || !formData.state || !formData.country) {
           setError('Please complete all shipping address fields');
           setIsLoading(false);
           return;
@@ -394,9 +387,8 @@ const Checkout = () => {
                 zipCode: formData.zipCode,
                 country: formData.country,
                 coordinates: addressDetails ? {
-                  latitude: addressDetails.latitude,
-                  longitude: addressDetails.longitude,
-                  placeId: addressDetails.placeId,
+                  latitude: addressDetails.lat,
+                  longitude: addressDetails.lon,
                 } : undefined,
               },
             },
@@ -407,7 +399,8 @@ const Checkout = () => {
             couponCode: appliedCouponCode,
           };
           
-          sessionStorage.setItem('pendingPayment', JSON.stringify(paymentData));
+          // localStorage survives cross-domain redirects better than sessionStorage
+          localStorage.setItem('pendingPayment', JSON.stringify(paymentData));
           window.location.href = data.data.authorizationUrl;
         } else {
           throw new Error('No authorization URL received');
@@ -432,7 +425,7 @@ const Checkout = () => {
       return;
     }
 
-    if (activePayment === 'card' || activePayment === 'bank') {
+    if (activePayment === 'card' || activePayment === 'bank_transfer') {
       await initializeOnlinePayment();
       return;
     }
@@ -521,9 +514,8 @@ const Checkout = () => {
           zipCode: formData.zipCode,
           country: formData.country,
           coordinates: addressDetails ? {
-            latitude: addressDetails.latitude,
-            longitude: addressDetails.longitude,
-            placeId: addressDetails.placeId,
+            latitude: addressDetails.lat,
+            longitude: addressDetails.lon,
           } : undefined,
         },
         paymentMethod: activePayment,
@@ -546,7 +538,7 @@ const Checkout = () => {
         shippingFee: shippingDisplay.cost,
         total: finalTotal,
         couponCode: appliedCouponCode || undefined,
-        status: 'confirmed',
+        status: 'processing',
         paymentStatus: 'paid',
       };
 
@@ -722,27 +714,56 @@ const Checkout = () => {
                     placeholder="Start typing your address..."
                   />
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <InputField 
-                      label="City" 
-                      name="city" 
+                    <InputField
+                      label="City / LGA"
+                      name="city"
                       icon={Icon.PiBuildings}
                       value={formData.city}
                       error={errors.city}
                       onChange={handleInputChange}
                       onClearError={handleClearError}
                     />
-                    <InputField 
-                      label="State" 
-                      name="state" 
-                      icon={Icon.PiMapTrifold}
-                      value={formData.state}
-                      error={errors.state}
-                      onChange={handleInputChange}
-                      onClearError={handleClearError}
-                    />
-                    <InputField 
-                      label="ZIP Code" 
-                      name="zipCode" 
+
+                    {/* State — Nigerian states dropdown */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        State <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                          <Icon.PiMapTrifold size={18} />
+                        </div>
+                        <select
+                          name="state"
+                          value={formData.state}
+                          onChange={handleInputChange}
+                          className={`w-full pl-10 pr-8 py-2.5 rounded-lg border text-sm appearance-none bg-white outline-none transition-colors
+                            ${errors.state
+                              ? 'border-red-400 bg-red-50 focus:border-red-500 focus:ring-1 focus:ring-red-200'
+                              : 'border-gray-300 focus:border-gray-900 focus:ring-1 focus:ring-gray-200'
+                            }`}
+                        >
+                          <option value="">Select state…</option>
+                          {NIGERIAN_STATES.map(s => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                        </select>
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                          <Icon.PiCaretDown size={14} />
+                        </div>
+                      </div>
+                      {errors.state && (
+                        <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
+                          <Icon.PiWarningCircle size={12} />
+                          {errors.state}
+                        </p>
+                      )}
+                    </div>
+
+                    <InputField
+                      label="Postal Code"
+                      name="zipCode"
+                      required={false}
                       icon={Icon.PiMailbox}
                       value={formData.zipCode}
                       error={errors.zipCode}
@@ -985,7 +1006,7 @@ const Checkout = () => {
                       ) : (
                         <>
                           <Icon.PiLockKey size={18} />
-                          {activePayment === 'cod' ? 'Place Order' : `Pay ₦${finalTotal.toLocaleString()}`}
+                          {activePayment === 'cash_on_delivery' ? 'Place Order' : `Pay ₦${finalTotal.toLocaleString()}`}
                         </>
                       )}
                     </button>

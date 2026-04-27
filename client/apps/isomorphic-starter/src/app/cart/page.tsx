@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import type { Metadata } from 'next';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -11,19 +10,6 @@ import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useModalWishlistContext } from '@/context/ModalWishlistContext';
 import RecommendedForYou from '@/components/Shop/RecommendedForYou';
-
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
-
-export const metadata: Metadata = {
-  title: 'Shopping Cart — DrinksHarbour',
-  description: 'View your shopping cart. Check your selected beverages and proceed to checkout.',
-  openGraph: {
-    title: 'Shopping Cart — DrinksHarbour',
-    description: 'Your selected beverages',
-    url: `${BASE_URL}/cart`,
-  },
-  alternates: { canonical: `${BASE_URL}/cart` },
-};
 
 const CartPage = () => {
   const router = useRouter();

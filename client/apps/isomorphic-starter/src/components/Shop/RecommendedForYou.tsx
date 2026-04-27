@@ -69,7 +69,7 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12, la
   const [hasError, setHasError] = useState(false);
   const [currentSection, setCurrentSection] = useState<SectionKey>('recommended');
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const authCheckedRef = useRef(false);
+  const initDoneRef = useRef(false);
 
   const sectionConfig = SECTION_MAP[currentSection];
 
@@ -83,11 +83,7 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12, la
     return [];
   };
 
-  // Normalize individual product shape to what ProductCard (BeverageProduct path) needs.
-  // Supports multiple API response shapes:
-  //   1. getAllProducts / getTrendingProducts — has _id, images, priceRange, discount, availableAt
-  //   2. processProductForDisplay (bestsellers/new-arrivals) — has `id` (not _id), flavors, rating
-  //   3. getPersonalizedRecommendations — raw Product docs, minimal pricing
+  // Normalize individual product shape to what ProductCard needs.
   const normalizeProduct = (p: any): any => {
     const id = p._id ?? p.id;
 
@@ -97,7 +93,7 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12, la
       p.images?.[0] ??
       null;
 
-    // Get lowest website price from availableAt structure (same as getAllProducts)
+    // Get lowest website price from availableAt structure
     const allPrices = (p.availableAt || []).flatMap((store: any) =>
       (store.sizes || []).map((size: any) => size.pricing?.websitePrice).filter(Boolean)
     );
@@ -109,23 +105,18 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12, la
       : (p.priceRange?.max ?? minPrice);
     const currency = p.priceRange?.currency ?? 'NGN';
 
-    // Handle discount from getAllProducts structure:
-    // discount: { value, type, label, savings } - highest discount across all subProducts/sizes
+    // discount field from the server — only populated when saleActive=true (date-validated)
     const disc = p.discount;
     const hasRealDiscount = disc?.savings > 0;
-    // originPrice is the pre-discount price - never use maxPrice (would show fake strikethrough)
     const originPrice = hasRealDiscount ? (disc.originalPrice ?? minPrice) : minPrice;
-
-    // Calculate discount percentage for display
     const discountPct = hasRealDiscount
       ? (disc.type === 'percentage' ? disc.value : (disc.originalPrice > 0 ? Math.round((disc.savings / disc.originalPrice) * 100) : 0))
       : undefined;
 
-    // Check vendor-level sale (isOnSale on subproduct)
+    // isOnSale reads server's date-validated saleActive flag — expired sales are false
     const vendorOnSale = (p.availableAt || []).some((v: any) => v.isOnSale === true);
     const isOnSale = vendorOnSale || hasRealDiscount;
 
-    // Determine if product is new (within 7 days)
     const isProductNew = (createdAt: string): boolean => {
       try {
         const createdDate = new Date(createdAt);
@@ -158,11 +149,9 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12, la
     return {
       ...p,
       _id: id,
-      // `flavors` must exist for isBeverageProduct() to return true
       flavors: p.flavors ?? [],
       images: p.images ?? [],
       primaryImage,
-      // Price range - ensure proper structure for ProductCard
       priceRange: {
         min: minPrice,
         max: maxPrice,
@@ -170,26 +159,21 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12, la
         formatted: p.priceRange?.formatted,
         display: p.priceRange?.display ?? `₦${minPrice.toLocaleString()}`,
       },
-      // Price fields for ProductCard
       price: minPrice,
       originPrice,
       discount: discountPct,
       sale: isOnSale,
       new: isNew,
-      // Rating fields
       averageRating: rating,
       reviewCount,
       totalSold,
-      // trending uses `country`, BeverageProduct expects `originCountry`
       originCountry: p.originCountry ?? p.country ?? '',
-      // Stock info
       stockInfo: {
         totalStock,
         availableStock: totalStock,
         tenants: tenantCount,
         totalSizes: p.sizeCount ?? p.sizes?.length ?? 0,
       },
-      // Availability
       availability: {
         status:
           p.availability?.status ??
@@ -207,7 +191,7 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12, la
     };
   };
 
-  const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 8000): Promise<Response> => {
+  const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 6000): Promise<Response> => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     try {
@@ -220,13 +204,8 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12, la
     }
   };
 
-  const fetchSection = useCallback(async (section: SectionKey, auth: boolean) => {
-    setHasError(false);
-
-    // Build endpoint list with appropriate fallbacks:
-    // - recommended + auth: try personalized, fall back to trending
-    // - recommended + no auth: skip the auth-required endpoint, go straight to trending
-    // - other sections: use their dedicated endpoint only
+  // Fetch a section and return the products (does NOT call setProducts itself)
+  const loadSection = useCallback(async (section: SectionKey, auth: boolean): Promise<any[]> => {
     let endpoints: string[];
     if (section === 'recommended') {
       endpoints = auth
@@ -242,18 +221,24 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12, la
         if (response.ok) {
           const data = await response.json();
           const prods = normalizeProducts(data).map(normalizeProduct);
-          if (data.success !== false && prods.length > 0) {
-            setProducts(prods);
-            return;
-          }
+          if (data.success !== false && prods.length > 0) return prods;
         }
       } catch {
         continue;
       }
     }
-
-    setHasError(true);
+    return [];
   }, [maxItems]);
+
+  const fetchSection = useCallback(async (section: SectionKey, auth: boolean) => {
+    setHasError(false);
+    const prods = await loadSection(section, auth);
+    if (prods.length > 0) {
+      setProducts(prods);
+    } else {
+      setHasError(true);
+    }
+  }, [loadSection]);
 
   const handleSectionChange = useCallback((section: SectionKey) => {
     setCurrentSection(section);
@@ -267,26 +252,44 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12, la
   }, [fetchSection, currentSection, isAuthenticated]);
 
   useEffect(() => {
-    if (authCheckedRef.current) return;
-    authCheckedRef.current = true;
+    if (initDoneRef.current) return;
+    initDoneRef.current = true;
 
     const init = async () => {
-      try {
-        const response = await fetchWithTimeout('/api/auth/me', {}, 5000);
-        const data = response.ok ? await response.json() : null;
-        const auth = !!data?.user;
-        setIsAuthenticated(auth);
-        await fetchSection('recommended', auth);
-      } catch {
-        setIsAuthenticated(false);
-        await fetchSection('recommended', false);
-      } finally {
+      // Fire trending fetch immediately — no auth required, fastest path to showing content
+      const trendingPromise = loadSection('recommended', false);
+
+      // Check auth in parallel (shorter timeout — auth shouldn't block the UI)
+      const authPromise = fetchWithTimeout('/api/auth/me', {}, 3000)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => !!data?.user)
+        .catch(() => false);
+
+      // Show trending as soon as it arrives
+      const [trendingProducts, isAuth] = await Promise.all([trendingPromise, authPromise]);
+
+      setIsAuthenticated(isAuth);
+
+      if (trendingProducts.length > 0) {
+        // Show trending immediately, unblock the UI
+        setProducts(trendingProducts);
+        setLoading(false);
+
+        // If authenticated, silently swap in personalized recommendations
+        if (isAuth) {
+          const personalizedProducts = await loadSection('recommended', true);
+          if (personalizedProducts.length > 0) {
+            setProducts(personalizedProducts);
+          }
+        }
+      } else {
+        setHasError(true);
         setLoading(false);
       }
     };
 
     init();
-  }, [fetchSection]);
+  }, [loadSection]);
 
   if (loading) {
     return (

@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -9,14 +8,6 @@ import * as Icon from 'react-icons/pi';
 import { useCompare } from '@/context/CompareContext';
 import { ProductType } from '@/types/product.types';
 import Rate from '@/components/Other/Rate';
-
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
-
-export const metadata: Metadata = {
-  title: 'Compare Products — DrinksHarbour',
-  description: 'Compare beverages side by side. Compare prices, sizes, ABV, and more.',
-  alternates: { canonical: `${BASE_URL}/compare` },
-};
 
 const ComparePage = () => {
   const { compareState, removeFromCompare, clearCompare, compareCount } = useCompare();

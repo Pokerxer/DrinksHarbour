@@ -5,7 +5,16 @@ import Link from 'next/link';
 import Image from 'next/image';
 import * as Icon from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
-import ProductCard from '@/components/Product/ProductCard';
+interface StoreProduct {
+  _id: string;
+  name: string;
+  slug: string;
+  primaryImage?: { url: string; alt?: string } | null;
+  minWebsitePrice: number;
+  maxWebsitePrice: number;
+  originalMinPrice: number | null;
+  isOnSale: boolean;
+}
 
 interface Store {
   _id: string;
@@ -45,7 +54,7 @@ function initials(name: string) {
 export default function VendorStorePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
   const [store, setStore] = useState<Store | null>(null);
-  const [products, setProducts] = useState<any[]>([]);
+  const [products, setProducts] = useState<StoreProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -194,24 +203,26 @@ export default function VendorStorePage({ params }: { params: Promise<{ slug: st
                         <Icon.PiImage size={32} className="text-gray-300" />
                       </div>
                     )}
-                    {product.saleActive && (
+                    {product.isOnSale && (
                       <span className="absolute top-2 left-2 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">SALE</span>
                     )}
                   </div>
                   <div className="p-3">
                     <p className="text-xs font-semibold text-gray-900 truncate group-hover:text-red-700 transition-colors">{product.name}</p>
-                    {product.minPrice > 0 && (
-                      <p className="text-sm font-bold text-gray-900 mt-1">
-                        {product.maxPrice && product.maxPrice !== product.minPrice
-                          ? `₦${product.minPrice.toLocaleString()} - ₦${product.maxPrice.toLocaleString()}`
-                          : `₦${product.minPrice.toLocaleString()}`
-                        }
-                        {product.saleActive && product.salePrice && (
-                          <span className="ml-1 text-xs text-red-600 line-through">
-                            ₦{product.salePrice.toLocaleString()}
-                          </span>
+                    {product.minWebsitePrice > 0 && (
+                      <div className="mt-1">
+                        <p className="text-sm font-bold text-gray-900">
+                          {product.maxWebsitePrice && product.maxWebsitePrice !== product.minWebsitePrice
+                            ? `₦${product.minWebsitePrice.toLocaleString()} – ₦${product.maxWebsitePrice.toLocaleString()}`
+                            : `₦${product.minWebsitePrice.toLocaleString()}`
+                          }
+                        </p>
+                        {product.originalMinPrice && product.originalMinPrice > product.minWebsitePrice && (
+                          <p className="text-[11px] text-gray-400 line-through">
+                            ₦{product.originalMinPrice.toLocaleString()}
+                          </p>
                         )}
-                      </p>
+                      </div>
                     )}
                   </div>
                 </Link>

@@ -124,7 +124,7 @@ const createPaystackTransaction = async (amount, email, metadata = {}) => {
           ...metadata,
           createdAt: new Date().toISOString(),
         },
-        callback_url: `${process.env.FRONTEND_URL}/payment/verify`,
+        callback_url: `${process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3002'}/payment/verify`,
       },
       {
         headers: {

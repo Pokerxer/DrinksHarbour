@@ -247,7 +247,8 @@ exports.getOrder = asyncHandler(async (req, res) => {
     .populate('items.product', 'name slug images')
     .populate('items.subproduct', 'name sku images')
     .populate('items.size', 'name')
-    .populate('items.tenant', 'name');
+    .populate('items.tenant', 'name')
+    .populate('coupon', 'code discountType discountValue');
 
   if (!order) {
     return res.status(404).json({

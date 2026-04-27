@@ -1,23 +1,9 @@
 'use client';
 
 import React from 'react';
-import type { Metadata } from 'next';
 import Link from 'next/link';
 import Image from 'next/image';
 import * as Icon from 'react-icons/pi';
-
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
-
-export const metadata: Metadata = {
-  title: 'Blog — DrinksHarbour',
-  description: 'DrinksHarbour blog. Read about beverage guides, wine recommendations, cocktail recipes, and more.',
-  openGraph: {
-    title: 'Blog — DrinksHarbour',
-    description: 'Beverage guides and recommendations',
-    url: `${BASE_URL}/blog`,
-  },
-  alternates: { canonical: `${BASE_URL}/blog` },
-};
 
 export default function BlogPage() {
   const posts = [

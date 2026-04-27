@@ -411,7 +411,7 @@ const FlashSale = () => {
         (p.availableAt || []).some((at) => at.saleType === "flash_sale")
       ));
 
-      // Keep only products with an actual price discount
+      // Keep only products with an active price discount
       const withDiscount = items.filter((p) =>
         (p.availableAt || []).some((at) =>
           (at.sizes || []).some((s) => s.discount?.hasDiscount)

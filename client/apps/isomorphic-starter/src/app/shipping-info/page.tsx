@@ -1,22 +1,8 @@
 'use client';
 
 import React from 'react';
-import type { Metadata } from 'next';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
-
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
-
-export const metadata: Metadata = {
-  title: 'Shipping Information — DrinksHarbour',
-  description: 'Learn about DrinksHarbour\'s delivery services. Fast shipping across Lagos, Abuja, and throughout Nigeria. Free delivery on orders over ₦50,000.',
-  openGraph: {
-    title: 'Shipping Information — DrinksHarbour',
-    description: 'Fast delivery across Nigeria',
-    url: `${BASE_URL}/shipping-info`,
-  },
-  alternates: { canonical: `${BASE_URL}/shipping-info` },
-};
 
 export default function ShippingInfo() {
   return (
