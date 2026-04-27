@@ -8,7 +8,7 @@ const SubProduct = require('../models/SubProduct');
 const Brand = require('../models/Brand');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' });
-const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 
 // Groq-backed drop-in for the Gemini SDK API surface.
 // All handlers call genAI.getGenerativeModel() + model.generateContent() + result.response.text()
@@ -266,13 +266,13 @@ ${subCategories.length > 0 ? subCategories.map(s => `- "${s.name}" (ID: ${s.id},
 IMPORTANT: You MUST return EXACT category and subcategory names from the lists above. Do NOT invent new names. The categoryName and subCategoryName must match exactly one of the names listed above.
 
 VALID PRODUCT TYPES (choose most specific):
-${PRODUCT_ENUMS.type.slice(0, 50).join(', ')}
+${PRODUCT_ENUMS.type.slice(0, 25).join(', ')}
 
 VALID STANDARD SIZES (select 2-4 appropriate ones):
-${PRODUCT_ENUMS.standardSizes.slice(0, 30).join(', ')}
+${PRODUCT_ENUMS.standardSizes.slice(0, 12).join(', ')}
 
 VALID FLAVOR PROFILES (select 4-8 accurate ones):
-${PRODUCT_ENUMS.flavorProfile.slice(0, 40).join(', ')}
+${PRODUCT_ENUMS.flavorProfile.slice(0, 20).join(', ')}
 
 Generate comprehensive JSON with these EXACT fields:
 
@@ -2377,10 +2377,10 @@ ${categories.length > 0 ? categories.map(c => `- "${c.name}" (ID: ${c.id})`).joi
 DATABASE SUB-CATEGORIES:
 ${subCategories.length > 0 ? subCategories.map(s => `- "${s.name}" (ID: ${s.id}, Parent: ${s.parent})`).join('\n') : 'None'}
 
-VALID PRODUCT TYPES: ${PRODUCT_ENUMS.type.slice(0, 60).join(', ')}
-VALID FLAVOR PROFILES (pick 4-8): ${PRODUCT_ENUMS.flavorProfile.slice(0, 50).join(', ')}
-VALID STANDARD SIZES (pick 2-4): ${PRODUCT_ENUMS.standardSizes.slice(0, 30).join(', ')}
-VALID PRODUCTION METHODS: ${PRODUCT_ENUMS.productionMethod.join(', ')}
+VALID PRODUCT TYPES: ${PRODUCT_ENUMS.type.slice(0, 25).join(', ')}
+VALID FLAVOR PROFILES (pick 4-8): ${PRODUCT_ENUMS.flavorProfile.slice(0, 20).join(', ')}
+VALID STANDARD SIZES (pick 2-4): ${PRODUCT_ENUMS.standardSizes.slice(0, 12).join(', ')}
+VALID PRODUCTION METHODS: ${PRODUCT_ENUMS.productionMethod.slice(0, 15).join(', ')}
 
 Return ONLY this JSON structure (no markdown, no extra text):
 {
