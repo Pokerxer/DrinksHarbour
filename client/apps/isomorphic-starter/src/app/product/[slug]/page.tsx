@@ -1,251 +1,201 @@
-"use client";
+import type { Metadata } from "next";
+import ProductClient from "./ProductClient";
 
-import React, { useEffect, useState, useCallback } from "react";
-import { useParams } from "next/navigation";
-import BreadcrumbProduct from "@/components/Breadcrumb/BreadcrumbProduct";
-import ProductDetail from "@/components/Product/Detail";
-import RecentlyViewed from "@/components/Shop/RecentlyViewed";
-import LoadingSpinner from "@/components/loader/LoadingSpinner";
-// import AgeGate from '@/components/AgeGate/AgeGate';
-import type { ProductType } from "@/types/product.types";
-import * as Icon from "react-icons/pi";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 
-import { AnnouncementBanner } from "@/components/Banner";
-
-interface ApiResponse {
-  success: boolean;
-  data?: {
-    product: any;
-    relatedProducts?: ProductType[];
-  };
-  products?: any[];
-  message?: string;
+async function fetchProductMeta(slug: string) {
+  try {
+    const res = await fetch(`${API_URL}/api/products/slug/${slug}`, {
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.data?.product ?? data?.data ?? null;
+  } catch {
+    return null;
+  }
 }
 
-interface RelatedApiResponse {
-  success: boolean;
-  data?: {
-    products?: ProductType[];
-  };
-  message?: string;
-}
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const p = await fetchProductMeta(slug);
 
-const Product = () => {
-  const params = useParams();
-  const slug = params.slug as string;
-  const [productData, setProductData] = useState<any>(null);
-  const [relatedProducts, setRelatedProducts] = useState<ProductType[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  if (!p) {
+    return {
+      title: "Product Not Found",
+      description: "This product could not be found on DrinksHarbour.",
+      robots: { index: false, follow: false },
+    };
+  }
 
-  const fetchProduct = useCallback(async () => {
-    if (!slug) return;
+  const brandName: string = p.brand?.name ?? "";
+  const minPrice: number | undefined = p.priceRange?.min;
+  const productUrl = p.seo?.canonicalUrl || `${BASE_URL}/product/${slug}`;
 
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+  // ── Title: prefer stored metaTitle, fallback to "Name by Brand"
+  const title: string =
+    p.seo?.metaTitle ||
+    `${p.name}${brandName ? ` by ${brandName}` : ""}`;
 
-    try {
-      setLoading(true);
-      setError(null);
+  // ── Description: prefer stored metaDescription, build a rich fallback
+  const description: string =
+    p.seo?.metaDescription ||
+    p.shortDescription ||
+    buildDescription(p, brandName, minPrice);
 
-      const response = await fetch(`${API_URL}/api/products/slug/${slug}`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        cache: "no-store",
-      });
+  // ── Keywords: stored keywords + derived terms
+  const keywords: string[] = [
+    ...(p.seo?.metaKeywords ?? []),
+    p.name,
+    brandName,
+    p.type,
+    p.originCountry,
+    "buy online Nigeria",
+    "DrinksHarbour",
+  ].filter(Boolean) as string[];
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+  // ── OG image: primary image → first image → fallback
+  const ogImage: string =
+    p.primaryImage?.url ||
+    p.images?.[0]?.url ||
+    `${BASE_URL}/og-default.jpg`;
 
-      const data: ApiResponse = await response.json();
-
-      if (data.success && data.data?.product) {
-        setProductData(data.data.product);
-        setRelatedProducts(data.data.relatedProducts || []);
-      } else if (data.success && data.data) {
-        setProductData(data.data);
-      } else if (Array.isArray(data.products) && data.products.length > 0) {
-        setProductData(data.products[0]);
-      } else if (Array.isArray(data) && data.length > 0) {
-        setProductData(data[0]);
-      } else {
-        console.warn("Unexpected API response structure:", data);
-        setError("Product data format not recognized");
-        setProductData(null);
-      }
-    } catch (err) {
-      console.error("Error fetching product:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to load product. Please try again later.",
-      );
-      setProductData(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [slug]);
-
-  const fetchRelatedProducts = useCallback(async (productId: string) => {
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-    try {
-      const response = await fetch(
-        `${API_URL}/api/products/${productId}/related?limit=8`,
+  return {
+    title,
+    description,
+    keywords,
+    openGraph: {
+      type: "website",
+      url: productUrl,
+      title: `${title} | DrinksHarbour`,
+      description,
+      images: [
         {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          cache: "no-store",
+          url: ogImage,
+          width: 800,
+          height: 800,
+          alt: p.name,
         },
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data: any = await response.json();
-
-      if (data.success && data.data?.products?.products) {
-        setRelatedProducts(data.data.products.products);
-      } else if (data.success && data.data?.products) {
-        setRelatedProducts(data.data.products);
-      }
-    } catch (err) {
-      console.error("Error fetching related products:", err);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchProduct();
-  }, [fetchProduct]);
-
-  useEffect(() => {
-    if (productData?._id) {
-      fetchRelatedProducts(productData._id);
-    }
-  }, [productData, fetchRelatedProducts]);
-
-  if (loading) {
-    return (
-      <>
-        <AnnouncementBanner placement="header" layout="static" variant="info" />
-        <div className="min-h-screen flex items-center justify-center bg-gray-50">
-          <LoadingSpinner variant="pulse" color="amber" size="xl" text="Loading product details..." />
-        </div>
-      </>
-    );
-  }
-
-  if (error || !productData) {
-    return (
-      <>
-        <AnnouncementBanner placement="header" layout="static" variant="info" />
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-          <div className="text-center max-w-md">
-            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <Icon.PiWarningCircle size={40} className="text-red-500" />
-            </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-3">
-              {error ? "Something went wrong" : "Product Not Found"}
-            </h2>
-            <p className="text-gray-600 mb-6">
-              {error ||
-                "The product you're looking for doesn't exist or has been removed."}
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <button
-                onClick={() => window.location.reload()}
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-black text-white rounded-lg font-semibold hover:bg-gray-800 transition-colors"
-              >
-                <Icon.PiArrowClockwise size={20} />
-                Try Again
-              </button>
-              <a
-                href="/shop"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg font-semibold hover:border-black hover:text-black transition-colors"
-              >
-                <Icon.PiArrowLeft size={20} />
-                Continue Shopping
-              </a>
-            </div>
-          </div>
-        </div>
-      </>
-    );
-  }
-
-  // const isAlcoholic =
-  //   productData?.isAlcoholic ||
-  //   productData?.abv > 0 ||
-  //   productData?.alcoholCategory === "alcoholic" ||
-  //   productData?.type?.toLowerCase().includes("wine") ||
-  //   productData?.type?.toLowerCase().includes("beer") ||
-  //   productData?.type?.toLowerCase().includes("spirit") ||
-  //   productData?.type?.toLowerCase().includes("whiskey") ||
-  //   productData?.type?.toLowerCase().includes("vodka") ||
-  //   productData?.type?.toLowerCase().includes("gin") ||
-  //   productData?.type?.toLowerCase().includes("rum") ||
-  //   productData?.type?.toLowerCase().includes("tequila") ||
-  //   productData?.type?.toLowerCase().includes("brandy");
-
-  // Derive price fields from the API's priceRange + discount objects.
-  // productData.price / originPrice / sale are not top-level fields in the
-  // getProductBySlug response — pricing lives in priceRange and availableAt.
-  const hasActiveDiscount = !!(productData.discount?.savings > 0);
-
-  const currentProductData = {
-    _id: productData._id,
-    name: productData.name,
-    type: productData.type,
-    slug: productData.slug,
-    images: productData.images,
-    priceRange: productData.priceRange,
-    // Current selling price — lowest price across all vendor sizes
-    price: productData.priceRange?.min ?? 0,
-    // Original price before discount; only set when there is an actual discount
-    // so cards don't show a fake strikethrough for size-price variance
-    originPrice: hasActiveDiscount
-      ? (productData.discount.originalPrice ?? productData.priceRange?.min ?? 0)
-      : (productData.priceRange?.min ?? 0),
-    discount: productData.discount,
-    brand: productData.brand,
-    abv: productData.abv,
-    sale: hasActiveDiscount,
-    new: productData.new,
-    availableAt: productData.availableAt,
-    thumbImage: productData.thumbImage,
-    primaryImage: productData.primaryImage,
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${title} | DrinksHarbour`,
+      description,
+      images: [ogImage],
+    },
+    alternates: { canonical: productUrl },
   };
+}
+
+/** Build a rich description when no metaDescription is stored. */
+function buildDescription(p: any, brandName: string, minPrice?: number): string {
+  const parts: string[] = [`Buy ${p.name}`];
+  if (brandName) parts.push(`by ${brandName}`);
+  if (p.vintage) parts.push(`(${p.vintage})`);
+  if (p.abv) parts.push(`– ${p.abv}% ABV`);
+  if (p.originCountry) parts.push(`from ${p.originCountry}`);
+  if (minPrice) parts.push(`from ₦${Math.round(minPrice).toLocaleString()}`);
+  parts.push("with fast delivery across Nigeria on DrinksHarbour.");
+  return parts.join(" ").slice(0, 160);
+}
+
+export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const p = await fetchProductMeta(slug);
+
+  // ── Build JSON-LD Product schema from stored SEO + product data
+  const jsonLd = p ? buildJsonLd(p, slug) : null;
 
   return (
     <>
-      <AnnouncementBanner placement="header" layout="static" variant="info" />
-
-      {/* Breadcrumb */}
-      <div className="container mx-auto px-4 pt-6">
-        <BreadcrumbProduct
-          data={productData}
-          productPage="default"
-          productId={slug}
+      {jsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
-      </div>
-
-      {/* Product Details */}
-      <ProductDetail
-        productData={productData}
-        relatedProducts={relatedProducts}
-      />
-
-      {/* Recently Viewed Section */}
-      <RecentlyViewed
-        productId={productData._id}
-        currentProduct={currentProductData}
-      />
+      )}
+      <ProductClient slug={slug} />
     </>
   );
-};
+}
 
-export default Product;
+function buildJsonLd(p: any, slug: string) {
+  const brandName: string = p.brand?.name ?? "";
+  const minPrice: number | undefined = p.priceRange?.min;
+  const productUrl = p.seo?.canonicalUrl || `${BASE_URL}/product/${slug}`;
+  const ogImage: string =
+    p.primaryImage?.url || p.images?.[0]?.url || `${BASE_URL}/og-default.jpg`;
+
+  const allImages: string[] = (p.images ?? [])
+    .map((img: any) => img.url)
+    .filter(Boolean);
+
+  const schema: Record<string, any> = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: p.name,
+    description:
+      p.seo?.metaDescription || p.shortDescription || p.description || undefined,
+    image: allImages.length > 0 ? allImages : ogImage,
+    url: productUrl,
+    sku: p._id,
+  };
+
+  if (brandName) {
+    schema.brand = { "@type": "Brand", name: brandName };
+  }
+
+  if (p.originCountry) {
+    schema.countryOfOrigin = p.originCountry;
+  }
+
+  if (p.category?.name) {
+    schema.category = p.category.name;
+  }
+
+  if (minPrice) {
+    schema.offers = {
+      "@type": "Offer",
+      priceCurrency: "NGN",
+      price: minPrice,
+      availability:
+        p.availability === "out_of_stock"
+          ? "https://schema.org/OutOfStock"
+          : "https://schema.org/InStock",
+      url: productUrl,
+      seller: { "@type": "Organization", name: "DrinksHarbour" },
+    };
+  }
+
+  if (p.averageRating > 0 && p.reviewCount > 0) {
+    schema.aggregateRating = {
+      "@type": "AggregateRating",
+      ratingValue: p.averageRating.toFixed(1),
+      reviewCount: p.reviewCount,
+      bestRating: "5",
+      worstRating: "1",
+    };
+  }
+
+  // Additional product-specific attributes
+  const additionalProps: { name: string; value: string }[] = [];
+  if (p.abv) additionalProps.push({ name: "ABV", value: `${p.abv}%` });
+  if (p.vintage) additionalProps.push({ name: "Vintage", value: String(p.vintage) });
+  if (p.age) additionalProps.push({ name: "Age", value: String(p.age) });
+  if (p.region) additionalProps.push({ name: "Region", value: p.region });
+  if (additionalProps.length > 0) {
+    schema.additionalProperty = additionalProps.map((prop) => ({
+      "@type": "PropertyValue",
+      name: prop.name,
+      value: prop.value,
+    }));
+  }
+
+  return schema;
+}
