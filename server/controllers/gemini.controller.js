@@ -242,136 +242,18 @@ const generateProductDetails = asyncHandler(async (req, res) => {
       }
     });
 
-    const prompt = `You are an expert sommelier, master distiller, and beverage industry specialist with 25+ years of experience. Analyze the beverage "${name}"${inputCategory ? ` in the "${inputCategory}" category` : ''} and generate comprehensive product information.
+    const catList = categories.map(c => c.name).join(', ');
+    const subCatList = subCategories.map(s => s.name).join(', ');
+    const prompt = `You are a beverage expert. Generate product details for "${name}"${inputCategory ? ` (category: ${inputCategory})` : ''} as compact JSON. Use only values from the lists below. Return ONLY valid JSON, no markdown.
 
-CRITICAL REQUIREMENTS:
-1. Generate REALISTIC, ACCURATE information based on actual beverage knowledge
-2. Use ONLY values from the provided enums - never invent new values
-3. Be SPECIFIC and DETAILED in descriptions
-4. Return ONLY valid JSON with NO markdown formatting
-5. ALL fields must be present and properly formatted
+CATEGORIES: ${catList}
+SUBCATEGORIES: ${subCatList}
+TYPES: ${PRODUCT_ENUMS.type.slice(0, 25).join(', ')}
+SIZES: ${PRODUCT_ENUMS.standardSizes.slice(0, 12).join(', ')}
+FLAVORS: ${PRODUCT_ENUMS.flavorProfile.slice(0, 20).join(', ')}
 
-PRODUCT CONTEXT ANALYSIS:
-- Identify the exact beverage type, brand heritage, and production style
-- Consider typical ABV ranges, bottle sizes, and pricing for this product category
-- Research actual flavor profiles and production methods for similar products
-- Account for regional characteristics and traditional production methods
-
-DATABASE CATEGORIES (select by EXACT name match - these are the only valid category names):
-${categories.length > 0 ? categories.map(c => `- "${c.name}" (ID: ${c.id}, Type: ${c.type})`).join('\n') : 'No categories available'}
-
-DATABASE SUB-CATEGORIES (select by EXACT name match - must match both name AND belong to correct parent category):
-${subCategories.length > 0 ? subCategories.map(s => `- "${s.name}" (ID: ${s.id}, Type: ${s.type}, Parent Category ID: ${s.parent})`).join('\n') : 'No sub-categories available'}
-
-IMPORTANT: You MUST return EXACT category and subcategory names from the lists above. Do NOT invent new names. The categoryName and subCategoryName must match exactly one of the names listed above.
-
-VALID PRODUCT TYPES (choose most specific):
-${PRODUCT_ENUMS.type.slice(0, 25).join(', ')}
-
-VALID STANDARD SIZES (select 2-4 appropriate ones):
-${PRODUCT_ENUMS.standardSizes.slice(0, 12).join(', ')}
-
-VALID FLAVOR PROFILES (select 4-8 accurate ones):
-${PRODUCT_ENUMS.flavorProfile.slice(0, 20).join(', ')}
-
-Generate comprehensive JSON with these EXACT fields:
-
-IMPORTANT: categoryName and subCategoryName MUST be EXACT matches from the database lists above.
-
-{
-  "name": "${name}",
-  "slug": "kebab-case-url-slug",
-  "type": "EXACT_match_from_type_enum",
-  "subType": "Specific style like 'Single Malt Scotch', 'Cabernet Sauvignon', 'Imperial Stout'",
-  "categoryName": "EXACT_database_category_name_from_list_above",
-  "subCategoryName": "EXACT_database_subcategory_name_from_list_above",
-  
-  "isAlcoholic": true_or_false_based_on_product,
-  "abv": realistic_number_for_this_product_type,
-  "proof": abv_times_2_or_null,
-  "volumeMl": standard_bottle_size_for_category,
-  "standardSizes": ["2-4_appropriate_sizes_from_enum"],
-  "servingSize": "Realistic serving like '1.5 oz (44ml)' or '5 oz (148ml)'",
-  "servingsPerContainer": calculated_number,
-  
-  "originCountry": "Actual_country_for_this_brand_or_style",
-  "region": "Specific_region_like_Speyside_or_Napa_Valley",
-  "appellation": "Protected_designation_if_applicable_or_null",
-  "producer": "Actual_or_realistic_distillery_brewery_winery_name",
-  "brand": "Brand_name_extracted_from_product_name",
-  "vintage": realistic_year_or_null,
-  "age": age_in_years_if_aged_spirit_or_null,
-  "ageStatement": "12_Year_Old_or_NAS_or_similar",
-  "distilleryName": "For_spirits_only",
-  "breweryName": "For_beer_only", 
-  "wineryName": "For_wine_only",
-  "productionMethod": "Valid_enum_value_or_null",
-  "caskType": "Bourbon_Barrel_or_Sherry_Cask_or_null",
-  "finish": "Additional_cask_finish_or_null",
-  
-  "shortDescription": "Compelling 1-sentence description under 280 chars highlighting key selling points",
-  "description": "Detailed 4-paragraph description covering: 1) Brand heritage and style, 2) Production process and ingredients, 3) Flavor profile and characteristics, 4) Serving suggestions and occasions. Rich, engaging, and informative.",
-  
-  "tastingNotes": {
-    "nose": ["4-5_specific_aroma_descriptors"],
-    "aroma": ["2-3_additional_aroma_terms"],
-    "palate": ["4-5_specific_flavor_descriptors"], 
-    "taste": ["2-3_additional_taste_terms"],
-    "finish": ["3-4_finish_descriptors"],
-    "mouthfeel": ["2-3_texture_descriptors"],
-    "appearance": "Detailed visual description",
-    "color": "Specific color description"
-  },
-  
-  "flavorProfile": ["4-8_accurate_flavors_from_enum"],
-  "foodPairings": ["4-6_specific_pairing_suggestions"],
-  "servingSuggestions": {
-    "temperature": "Optimal_serving_temperature",
-    "glassware": "Recommended_glass_type",
-    "garnish": ["appropriate_garnishes"],
-    "mixers": ["compatible_mixers_if_applicable"]
-  },
-  
-  "isDietary": {
-    "vegan": accurate_boolean,
-    "vegetarian": accurate_boolean, 
-    "glutenFree": accurate_boolean,
-    "dairyFree": accurate_boolean,
-    "organic": accurate_boolean,
-    "kosher": accurate_boolean,
-    "halal": accurate_boolean,
-    "sugarFree": accurate_boolean,
-    "lowCalorie": accurate_boolean,
-    "lowCarb": accurate_boolean
-  },
-  
-  "allergens": ["accurate_allergens_from_enum_or_empty_array"],
-  "ingredients": ["primary_ingredients_list"],
-  
-  "nutritionalInfo": {
-    "calories": realistic_number_per_serving_or_null,
-    "carbohydrates": number_or_null,
-    "sugar": number_or_null, 
-    "protein": number_or_null,
-    "fat": number_or_null,
-    "sodium": number_or_null,
-    "caffeine": number_or_null
-  },
-  
-  "metaTitle": "SEO-optimized title under 60 chars",
-  "metaDescription": "SEO description under 160 chars",
-  "keywords": ["5-8_relevant_SEO_keywords"],
-  "status": "draft"
-}
-
-QUALITY CHECKS:
-- ABV must be realistic for the product type (e.g., 40-50% for whiskey, 12-15% for wine)
-- Flavor profiles must be authentic to the actual product category
-- Production methods must match the beverage type
-- Serving sizes must be appropriate (1.5oz for spirits, 5oz for wine, 12oz for beer)
-- All enum values must be exact matches from the provided lists
-
-Respond with valid JSON only. Do not include any explanations, markdown formatting, or code blocks.`;
+Return this JSON (fill all fields accurately):
+{"name":"${name}","slug":"","type":"","subType":"","categoryName":"","subCategoryName":"","isAlcoholic":true,"abv":0,"proof":0,"volumeMl":750,"standardSizes":[],"servingSize":"","servingsPerContainer":0,"originCountry":"","region":"","appellation":null,"producer":"","brand":"","vintage":null,"age":null,"ageStatement":null,"distilleryName":null,"breweryName":null,"wineryName":null,"productionMethod":null,"caskType":null,"finish":null,"shortDescription":"","description":"","tastingNotes":{"nose":[],"aroma":[],"palate":[],"taste":[],"finish":[],"mouthfeel":[],"appearance":"","color":""},"flavorProfile":[],"foodPairings":[],"servingSuggestions":{"temperature":"","glassware":"","garnish":[],"mixers":[]},"isDietary":{"vegan":false,"vegetarian":false,"glutenFree":false,"dairyFree":false,"organic":false,"kosher":false,"halal":false,"sugarFree":false,"lowCalorie":false,"lowCarb":false},"allergens":[],"ingredients":[],"nutritionalInfo":{"calories":null,"carbohydrates":null,"sugar":null,"protein":null,"fat":null,"sodium":null,"caffeine":null},"metaTitle":"","metaDescription":"","keywords":[],"status":"draft"}`;
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
@@ -2357,95 +2239,22 @@ const generateProductFromSubProducts = asyncHandler(async (req, res) => {
   const { categories, subCategories } = await fetchCategories();
 
   // ── Build prompt ──────────────────────────────────────────────────────────
-  const prompt = `You are an expert sommelier and beverage industry specialist. Generate comprehensive product details for the beverage below.
+  const catList = categories.map(c => c.name).join(', ');
+  const subCatList = subCategories.map(s => s.name).join(', ');
+  const prompt = `You are a beverage expert. Generate product details for "${product.name}" as compact JSON. Return ONLY valid JSON, no markdown.
 
-PRODUCT:
-Name: "${product.name}"
-Type: "${product.type || 'unknown'}"
-${product.brand?.name ? `Brand: "${product.brand.name}"` : ''}
-${product.category?.name ? `Category: "${product.category.name}"` : ''}
-${product.originCountry ? `Origin: "${product.originCountry}"` : ''}
-${product.abv ? `ABV: ${product.abv}%` : ''}
-${product.volumeMl ? `Volume: ${product.volumeMl}ml` : ''}
+PRODUCT INFO: type=${product.type || '?'}, brand=${product.brand?.name || '?'}, category=${product.category?.name || '?'}, origin=${product.originCountry || '?'}, abv=${product.abv || '?'}%, volume=${product.volumeMl || '?'}ml
+CONTEXT: ${subProductContext.substring(0, 500)}
 
-LINKED SUB-PRODUCTS (tenant listings - use as context):
-${subProductContext}
+CATEGORIES: ${catList}
+SUBCATEGORIES: ${subCatList}
+TYPES: ${PRODUCT_ENUMS.type.slice(0, 25).join(', ')}
+SIZES: ${PRODUCT_ENUMS.standardSizes.slice(0, 12).join(', ')}
+FLAVORS: ${PRODUCT_ENUMS.flavorProfile.slice(0, 20).join(', ')}
+METHODS: ${PRODUCT_ENUMS.productionMethod.slice(0, 15).join(', ')}
 
-DATABASE CATEGORIES (use EXACT name):
-${categories.length > 0 ? categories.map(c => `- "${c.name}" (ID: ${c.id})`).join('\n') : 'None'}
-
-DATABASE SUB-CATEGORIES:
-${subCategories.length > 0 ? subCategories.map(s => `- "${s.name}" (ID: ${s.id}, Parent: ${s.parent})`).join('\n') : 'None'}
-
-VALID PRODUCT TYPES: ${PRODUCT_ENUMS.type.slice(0, 25).join(', ')}
-VALID FLAVOR PROFILES (pick 4-8): ${PRODUCT_ENUMS.flavorProfile.slice(0, 20).join(', ')}
-VALID STANDARD SIZES (pick 2-4): ${PRODUCT_ENUMS.standardSizes.slice(0, 12).join(', ')}
-VALID PRODUCTION METHODS: ${PRODUCT_ENUMS.productionMethod.slice(0, 15).join(', ')}
-
-Return ONLY this JSON structure (no markdown, no extra text):
-{
-  "name": "${product.name}",
-  "slug": "kebab-case-slug",
-  "type": "exact_type_enum_value",
-  "subType": "specific style",
-  "categoryName": "EXACT category name from list above",
-  "subCategoryName": "EXACT subcategory name from list above",
-  "isAlcoholic": true,
-  "abv": 40.0,
-  "proof": 80.0,
-  "volumeMl": 750,
-  "standardSizes": ["75cl"],
-  "servingSize": "1.5 oz (44ml)",
-  "servingsPerContainer": 17,
-  "originCountry": "Scotland",
-  "region": "Speyside",
-  "appellation": null,
-  "producer": "Producer name",
-  "brand": "Brand name",
-  "vintage": null,
-  "age": null,
-  "ageStatement": "12 Year Old",
-  "distilleryName": null,
-  "breweryName": null,
-  "wineryName": null,
-  "productionMethod": "pot_still",
-  "caskType": "Bourbon barrel",
-  "finish": null,
-  "shortDescription": "One compelling sentence under 280 characters.",
-  "description": "Four detailed paragraphs covering heritage, production, flavor, and serving.",
-  "tastingNotes": {
-    "nose": ["honey", "vanilla", "citrus"],
-    "aroma": ["oak", "dried fruit"],
-    "palate": ["rich", "spicy", "warm"],
-    "taste": ["caramel", "pepper"],
-    "finish": ["long", "smooth", "warming"],
-    "mouthfeel": ["full-bodied", "creamy"],
-    "appearance": "Deep amber with golden hues",
-    "color": "Amber"
-  },
-  "flavorProfile": ["vanilla", "caramel", "oak", "spicy"],
-  "foodPairings": ["Dark chocolate", "Smoked salmon", "Aged cheddar"],
-  "servingSuggestions": {
-    "temperature": "Room temperature (18-20°C)",
-    "glassware": "Glencairn whisky glass",
-    "garnish": [],
-    "mixers": []
-  },
-  "isDietary": {
-    "vegan": false, "vegetarian": true, "glutenFree": true,
-    "dairyFree": true, "organic": false, "kosher": false,
-    "halal": false, "sugarFree": false, "lowCalorie": false, "lowCarb": false
-  },
-  "allergens": ["sulfites"],
-  "ingredients": ["malted barley", "water", "yeast"],
-  "nutritionalInfo": {
-    "calories": 220, "carbohydrates": 0, "sugar": 0,
-    "protein": 0, "fat": 0, "sodium": 0, "caffeine": null
-  },
-  "metaTitle": "SEO title under 60 chars",
-  "metaDescription": "SEO description under 160 chars",
-  "keywords": ["whisky", "scotch", "single malt"]
-}`;
+Return this JSON (fill all fields accurately):
+{"name":"${product.name}","slug":"","type":"","subType":"","categoryName":"","subCategoryName":"","isAlcoholic":true,"abv":0,"proof":0,"volumeMl":750,"standardSizes":[],"servingSize":"","servingsPerContainer":0,"originCountry":"","region":"","appellation":null,"producer":"","brand":"","vintage":null,"age":null,"ageStatement":null,"distilleryName":null,"breweryName":null,"wineryName":null,"productionMethod":null,"caskType":null,"finish":null,"shortDescription":"","description":"","tastingNotes":{"nose":[],"aroma":[],"palate":[],"taste":[],"finish":[],"mouthfeel":[],"appearance":"","color":""},"flavorProfile":[],"foodPairings":[],"servingSuggestions":{"temperature":"","glassware":"","garnish":[],"mixers":[]},"isDietary":{"vegan":false,"vegetarian":false,"glutenFree":false,"dairyFree":false,"organic":false,"kosher":false,"halal":false,"sugarFree":false,"lowCalorie":false,"lowCarb":false},"allergens":[],"ingredients":[],"nutritionalInfo":{"calories":null,"carbohydrates":null,"sugar":null,"protein":null,"fat":null,"sodium":null,"caffeine":null},"metaTitle":"","metaDescription":"","keywords":[]}`;
 
   // ── Call Ollama ───────────────────────────────────────────────────────────
   let productData;
