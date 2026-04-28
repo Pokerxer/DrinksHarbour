@@ -706,59 +706,26 @@ Return as JSON:
 
     text = text.trim();
 
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (parseError) {
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          data = JSON.parse(jsonMatch[0]);
-        } catch {
-          data = { isAlcoholic: true, abv: 40, volumeMl: 750, standardSizes: [], servingSize: "1 shot (44ml)", servingsPerContainer: 17 };
-        }
-      } else {
-        data = { isAlcoholic: true, abv: 40, volumeMl: 750, standardSizes: [], servingSize: "1 shot (44ml)", servingsPerContainer: 17 };
-      }
-    }
-
-    // Sanitize production method
-    if (data.productionMethod && !PRODUCT_ENUMS.productionMethod.includes(data.productionMethod)) {
-      data.productionMethod = null;
-    }
-
-    res.json({
-      success: true,
-      data,
+    const data = parseJSONResponse(text, {
+      shortDescription: `Premium ${name} - an exceptional ${type || 'beverage'}.`,
+      description: `${name} represents the finest in ${type || 'beverage'} craftsmanship.`,
+      flavorProfile: ['smooth', 'rich', 'balanced'],
+      foodPairings: ['Grilled meats', 'Aged cheese'],
     });
+
+    res.json({ success: true, data });
   } catch (error) {
     console.error('Gemini API error:', error.message);
-
-    if (error.message && (error.message.includes('429') || error.message.includes('quota'))) {
-      return res.json({
-        success: true,
-        data: {
-          originCountry: 'Ireland',
-          region: 'Dublin',
-          appellation: '',
-          producer: name.split(' ')[0] + ' Distillery',
-          brand: name.split(' ')[0],
-          vintage: null,
-          age: 12,
-          ageStatement: '12 Year Old',
-          distilleryName: name.split(' ')[0] + ' Distillery',
-          breweryName: '',
-          wineryName: '',
-          productionMethod: 'triple_distilled',
-          caskType: 'Oak Barrels',
-          finish: ''
-        },
-        note: 'Using demo data - API quota exceeded'
-      });
-    }
-
-    res.status(500);
-    throw new Error(`Failed to generate origin details: ${error.message}`);
+    res.json({
+      success: true,
+      data: {
+        shortDescription: `Premium ${name} - an exceptional ${type || 'beverage'} with outstanding quality.`,
+        description: `${name} is a distinguished ${type || 'beverage'} crafted with care and expertise.`,
+        flavorProfile: ['smooth', 'rich', 'balanced'],
+        foodPairings: ['Grilled meats', 'Aged cheese', 'Dark chocolate'],
+      },
+      note: 'Demo data',
+    });
   }
 });
 
@@ -2151,6 +2118,172 @@ const generateBrandCategory = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Generate complete origin info in one call (batch convenience endpoint)
+ * POST /api/gemini/generate-origin
+ */
+const generateOrigin = asyncHandler(async (req, res) => {
+  const { name, type } = req.body;
+  if (!name) { res.status(400); throw new Error('Product name is required'); }
+
+  try {
+    const model = genAI.getGenerativeModel({
+      model: MODEL_NAME,
+      generationConfig: { temperature: 0.3, responseMimeType: 'application/json' },
+    });
+    const prompt = `Provide complete origin and production details for "${name}"${type ? ` (${type})` : ''}. Return ONLY JSON:
+{"originCountry":"","region":"","appellation":"","producer":"","brand":"","vintage":null,"age":null,"ageStatement":"","distilleryName":"","breweryName":"","wineryName":"","productionMethod":"","caskType":"","finish":""}`;
+    const result = await model.generateContent(prompt);
+    let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const data = parseJSONResponse(text);
+    if (data.productionMethod && !PRODUCT_ENUMS.productionMethod.includes(data.productionMethod)) {
+      data.productionMethod = null;
+    }
+    res.json({ success: true, data });
+  } catch (error) {
+    res.json({
+      success: true,
+      data: {
+        originCountry: '', region: '', appellation: '',
+        producer: `${name.split(' ')[0]} Distillery`, brand: name.split(' ')[0],
+        vintage: null, age: null, ageStatement: '',
+        distilleryName: '', breweryName: '', wineryName: '',
+        productionMethod: 'traditional', caskType: '', finish: '',
+      },
+      note: 'Demo data',
+    });
+  }
+});
+
+/**
+ * Generate category suggestion based on product name and type
+ * POST /api/gemini/category-suggestion
+ */
+const generateCategorySuggestion = asyncHandler(async (req, res) => {
+  const { name, type, availableCategories } = req.body;
+  if (!name) { res.status(400); throw new Error('Product name is required'); }
+
+  try {
+    // Fetch from DB if no categories passed in
+    const { categories: dbCategories, subCategories: dbSubCategories } = await fetchCategories();
+    const catList = availableCategories?.length
+      ? availableCategories.join(', ')
+      : dbCategories.map(c => c.name).join(', ');
+    const subCatList = dbSubCategories.map(s => s.name).join(', ');
+
+    const model = genAI.getGenerativeModel({
+      model: MODEL_NAME,
+      generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
+    });
+    const prompt = `You are a beverage product cataloguer. Given the product "${name}"${type ? ` (type: ${type})` : ''}, choose the most appropriate category and subcategory from the lists below.
+
+AVAILABLE CATEGORIES: ${catList}
+AVAILABLE SUBCATEGORIES: ${subCatList}
+
+Return ONLY JSON: {"category": "exact category name from the list", "subCategory": "exact subcategory name from the list or empty string", "confidence": 0.95}`;
+
+    const result = await model.generateContent(prompt);
+    let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const data = parseJSONResponse(text);
+
+    // Try to resolve to IDs
+    const matchedCat = dbCategories.find(c =>
+      c.name.toLowerCase() === (data.category || '').toLowerCase() ||
+      c.name.toLowerCase().includes((data.category || '').toLowerCase())
+    );
+    const matchedSub = dbSubCategories.find(s =>
+      s.name.toLowerCase() === (data.subCategory || '').toLowerCase() ||
+      s.name.toLowerCase().includes((data.subCategory || '').toLowerCase())
+    );
+
+    res.json({
+      success: true,
+      data: {
+        category: data.category || '',
+        categoryId: matchedCat?.id || null,
+        subCategory: data.subCategory || '',
+        subCategoryId: matchedSub?.id || null,
+        confidence: data.confidence || 0.8,
+      },
+    });
+  } catch (error) {
+    res.json({ success: true, data: { category: '', categoryId: null, subCategory: '', subCategoryId: null, confidence: 0 }, note: 'Demo data' });
+  }
+});
+
+/**
+ * Generate subcategory suggestion
+ * POST /api/gemini/subcategory-suggestion
+ */
+const generateSubCategorySuggestion = asyncHandler(async (req, res) => {
+  const { name, type, category, availableSubCategories } = req.body;
+  if (!name) { res.status(400); throw new Error('Product name is required'); }
+
+  try {
+    const { categories: dbCategories, subCategories: dbSubCategories } = await fetchCategories();
+    const subCatList = availableSubCategories?.length
+      ? availableSubCategories.join(', ')
+      : dbSubCategories.map(s => s.name).join(', ');
+
+    const model = genAI.getGenerativeModel({
+      model: MODEL_NAME,
+      generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
+    });
+    const prompt = `You are a beverage product cataloguer. Given the product "${name}"${type ? ` (type: ${type})` : ''}${category ? ` in the "${category}" category` : ''}, choose the most appropriate subcategory from the list below.
+
+AVAILABLE SUBCATEGORIES: ${subCatList}
+
+Return ONLY JSON: {"subCategory": "exact subcategory name from the list or empty string", "confidence": 0.9}`;
+
+    const result = await model.generateContent(prompt);
+    let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const data = parseJSONResponse(text);
+
+    const matchedSub = dbSubCategories.find(s =>
+      s.name.toLowerCase() === (data.subCategory || '').toLowerCase() ||
+      s.name.toLowerCase().includes((data.subCategory || '').toLowerCase())
+    );
+
+    res.json({
+      success: true,
+      data: {
+        category: category || '',
+        subCategory: data.subCategory || '',
+        subCategoryId: matchedSub?.id || null,
+        confidence: data.confidence || 0.8,
+      },
+    });
+  } catch (error) {
+    res.json({ success: true, data: { category: category || '', subCategory: '', subCategoryId: null, confidence: 0 }, note: 'Demo data' });
+  }
+});
+
+/**
+ * Get beverage recommendations
+ * POST /api/gemini/recommendations
+ */
+const getRecommendations = asyncHandler(async (req, res) => {
+  const { query, category } = req.body;
+  if (!query) { res.status(400); throw new Error('Query is required'); }
+
+  try {
+    const model = genAI.getGenerativeModel({
+      model: MODEL_NAME,
+      generationConfig: { temperature: 0.5, responseMimeType: 'application/json' },
+    });
+    const prompt = `Recommend 5 beverages matching this request: "${query}"${category ? ` in the ${category} category` : ''}. For each, provide name, type, reason, and approximate price range.
+Return ONLY JSON: {"recommendations": [{"name": "...", "type": "...", "reason": "...", "priceRange": "..."}]}`;
+
+    const result = await model.generateContent(prompt);
+    let text = result.response.text().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const data = parseJSONResponse(text);
+
+    res.json({ success: true, data: Array.isArray(data.recommendations) ? data.recommendations : [] });
+  } catch (error) {
+    res.json({ success: true, data: [], note: 'Demo data' });
+  }
+});
+
+/**
  * Call Ollama and return the parsed JSON response.
  * Uses the chat API with format:"json" for guaranteed JSON output.
  */
@@ -2466,6 +2599,7 @@ Return ONLY this JSON structure:
 module.exports = {
   generateProductDetails,
   generateDescription,
+  generateOrigin,
   generateBeverageInfo,
   generateSeo,
   generateTags,
@@ -2479,7 +2613,6 @@ module.exports = {
   generateTastingFinish,
   generateTastingColor,
   generateOriginCountry,
-  generateRegion,
   generateRegion,
   generateAppellation,
   generateProducer,
@@ -2505,6 +2638,9 @@ module.exports = {
   generateBrandCountry,
   generateBrandFounded,
   generateBrandCategory,
+  generateCategorySuggestion,
+  generateSubCategorySuggestion,
+  getRecommendations,
   generateProductFromSubProducts,
   generateSubProductContent,
 };

@@ -4,6 +4,7 @@ const router = express.Router();
 const {
   generateProductDetails,
   generateDescription,
+  generateOrigin,
   generateBeverageInfo,
   generateSeo,
   generateTags,
@@ -42,6 +43,9 @@ const {
   generateBrandCountry,
   generateBrandFounded,
   generateBrandCategory,
+  generateCategorySuggestion,
+  generateSubCategorySuggestion,
+  getRecommendations,
   generateProductFromSubProducts,
   generateSubProductContent,
 } = require('../controllers/gemini.controller');
@@ -70,6 +74,13 @@ router.post('/generate-from-subproduct', generateProductFromSubProducts);
  * @access  Private
  */
 router.post('/generate-description', generateDescription);
+
+/**
+ * @route   POST /api/gemini/generate-origin
+ * @desc    Generate complete origin & production details (batch)
+ * @access  Private
+ */
+router.post('/generate-origin', generateOrigin);
 
 /**
  * @route   POST /api/gemini/generate-beverage-info
@@ -343,5 +354,26 @@ router.post('/brand-category', generateBrandCategory);
  * @access  Private
  */
 router.post('/generate-subproduct-content', generateSubProductContent);
+
+/**
+ * @route   POST /api/gemini/category-suggestion
+ * @desc    Suggest category and subcategory for a product
+ * @access  Private
+ */
+router.post('/category-suggestion', generateCategorySuggestion);
+
+/**
+ * @route   POST /api/gemini/subcategory-suggestion
+ * @desc    Suggest subcategory given a product and its category
+ * @access  Private
+ */
+router.post('/subcategory-suggestion', generateSubCategorySuggestion);
+
+/**
+ * @route   POST /api/gemini/recommendations
+ * @desc    Get beverage recommendations based on a query
+ * @access  Private
+ */
+router.post('/recommendations', getRecommendations);
 
 module.exports = router;
