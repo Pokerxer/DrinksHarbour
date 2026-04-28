@@ -1216,8 +1216,23 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
 
               {/* ABV Badge - Below product name */}
               {isBeverageProduct(data) && data.abv && (
-                <span className="text-[10px] text-gray-500 mt-0.5">
+                <span className="text-[10px] text-gray-500 mt-0.5 inline-flex items-center gap-1">
                   {data.abv}% ABV
+                  <button
+                    onClick={handleAddToWishlist}
+                    className={`ml-1 transition-colors ${
+                      wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id)
+                        ? 'text-red-500'
+                        : 'text-gray-400 hover:text-red-500'
+                    }`}
+                    aria-label="Toggle wishlist"
+                  >
+                    {wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id) ? (
+                      <Icon.PiHeartFill size={12} />
+                    ) : (
+                      <Icon.PiHeart size={12} />
+                    )}
+                  </button>
                 </span>
               )}
 
@@ -1389,8 +1404,23 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
 
               {/* ABV Badge - Below product name */}
               {isBeverageProduct(data) && data.abv && (
-                <span className="text-[10px] text-gray-500 mt-0.5">
+                <span className="text-[10px] text-gray-500 mt-0.5 inline-flex items-center gap-1">
                   {data.abv}% ABV
+                  <button
+                    onClick={handleAddToWishlist}
+                    className={`ml-1 transition-colors ${
+                      wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id)
+                        ? 'text-red-500'
+                        : 'text-gray-400 hover:text-red-500'
+                    }`}
+                    aria-label="Toggle wishlist"
+                  >
+                    {wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id) ? (
+                      <Icon.PiHeartFill size={12} />
+                    ) : (
+                      <Icon.PiHeart size={12} />
+                    )}
+                  </button>
                 </span>
               )}
 
