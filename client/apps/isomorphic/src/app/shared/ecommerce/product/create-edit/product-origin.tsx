@@ -103,6 +103,35 @@ const productionMethods = [
   { value: 'limited_edition', label: 'Limited Edition', icon: Award },
 ];
 
+function AiBtn({
+  field,
+  generating,
+  onClick,
+  disabled,
+}: {
+  field: string;
+  generating: string | null;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  const isLoading = generating === field;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={isLoading || disabled}
+      className="ml-1 inline-flex items-center rounded p-0.5 text-blue-500 hover:bg-blue-50 disabled:opacity-40"
+      title="Generate with AI"
+    >
+      {isLoading ? (
+        <PiSpinner className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <PiSparkle className="h-3.5 w-3.5" />
+      )}
+    </button>
+  );
+}
+
 export default function ProductOrigin({
   className,
 }: ProductOriginProps) {
@@ -115,6 +144,7 @@ export default function ProductOrigin({
   } = useFormContext<CreateProductInput>();
 
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generating, setGenerating] = useState<string | null>(null);
   const [brands, setBrands] = useState<any[]>([]);
   const [isLoadingBrands, setIsLoadingBrands] = useState(false);
   const selectedCountry = watch('originCountry');
@@ -122,6 +152,9 @@ export default function ProductOrigin({
   const productionMethod = watch('productionMethod');
   const productName = watch('name') || '';
   const currentYear = new Date().getFullYear();
+
+  const hasName = productName.length >= 3;
+  const token = session?.user?.token;
 
   // Fetch brands on mount
   useEffect(() => {
@@ -152,17 +185,94 @@ export default function ProductOrigin({
 
   const estimatedAge = calculateAge(vintage);
 
-  // Auto-fill origin with AI - calls individual endpoints for each field
-  const handleAutoFill = async () => {
-    if (!productName || productName.length < 3) {
-      toast.error('Please enter a product name first');
-      return;
+  // Shared AI runner
+  const withAi = async (field: string, fn: () => Promise<void>) => {
+    if (!hasName) return toast.error('Please enter a product name first');
+    if (!token) return toast.error('Please sign in to use AI features');
+    setGenerating(field);
+    try {
+      await fn();
+    } catch (err: any) {
+      toast.error(err.message || `Failed to generate ${field}`);
+    } finally {
+      setGenerating(null);
     }
+  };
 
-    if (!session?.user?.token) {
-      toast.error('Please sign in to use AI features');
-      return;
-    }
+  // Per-field handlers
+  const genOriginCountry = () =>
+    withAi('originCountry', async () => {
+      const res = await geminiService.generateOriginCountry(productName, token, watch('type'), watch('brand'));
+      if (res.data.originCountry) setValue('originCountry', res.data.originCountry);
+      toast.success('Origin country generated!');
+    });
+
+  const genRegion = () =>
+    withAi('region', async () => {
+      const res = await geminiService.generateRegion(productName, token, watch('type'), watch('originCountry'));
+      if (res.data.region) setValue('region', res.data.region);
+      toast.success('Region generated!');
+    });
+
+  const genAppellation = () =>
+    withAi('appellation', async () => {
+      const res = await geminiService.generateAppellation(productName, token, watch('type'), watch('originCountry'), watch('region'));
+      if (res.data.appellation) setValue('appellation', res.data.appellation);
+      toast.success('Appellation generated!');
+    });
+
+  const genProducer = () =>
+    withAi('producer', async () => {
+      const res = await geminiService.generateProducer(productName, token, watch('brand'), watch('type'));
+      if (res.data.producer) setValue('producer', res.data.producer);
+      toast.success('Producer generated!');
+    });
+
+  const genVintage = () =>
+    withAi('vintage', async () => {
+      const res = await geminiService.generateVintage(productName, token, watch('type'));
+      if (res.data.vintage) {
+        setValue('vintage', res.data.vintage);
+        setValue('age', currentYear - res.data.vintage);
+      }
+      toast.success('Vintage generated!');
+    });
+
+  const genAgeStatement = () =>
+    withAi('ageStatement', async () => {
+      const res = await geminiService.generateAgeStatement(productName, token, watch('type'), watch('vintage'));
+      if (res.data.ageStatement) setValue('ageStatement', res.data.ageStatement);
+      toast.success('Age statement generated!');
+    });
+
+  const genProductionMethod = () =>
+    withAi('productionMethod', async () => {
+      const res = await geminiService.generateProductionMethod(productName, token, watch('type'));
+      if (res.data.productionMethod) setValue('productionMethod', res.data.productionMethod);
+      toast.success('Production method generated!');
+    });
+
+  const genCaskType = () =>
+    withAi('caskType', async () => {
+      const res = await geminiService.generateCaskType(productName, token, watch('type'), watch('productionMethod'));
+      if (res.data.caskType) {
+        setValue('caskType', res.data.caskType);
+        setValue('finish', `Cask finished in ${res.data.caskType}`);
+      }
+      toast.success('Cask type generated!');
+    });
+
+  const genFinish = () =>
+    withAi('finish', async () => {
+      const res = await geminiService.generateCaskType(productName, token, watch('type'), watch('productionMethod'));
+      if (res.data.caskType) setValue('finish', `Cask finished in ${res.data.caskType}`);
+      toast.success('Finish generated!');
+    });
+
+  // Auto-fill all origin fields with AI - calls individual endpoints for each field
+  const handleAutoFill = async () => {
+    if (!hasName) return toast.error('Please enter a product name first');
+    if (!token) return toast.error('Please sign in to use AI features');
 
     setIsGenerating(true);
     toast.loading('Generating origin details with AI...', { id: 'ai-origin' });
@@ -171,7 +281,7 @@ export default function ProductOrigin({
       // Generate origin country
       const countryRes = await geminiService.generateOriginCountry(
         productName,
-        session.user.token,
+        token,
         watch('type'),
         watch('brand')
       );
@@ -180,7 +290,7 @@ export default function ProductOrigin({
       // Generate region
       const regionRes = await geminiService.generateRegion(
         productName,
-        session.user.token,
+        token,
         watch('type'),
         countryRes.data.originCountry
       );
@@ -189,7 +299,7 @@ export default function ProductOrigin({
       // Generate appellation (e.g., Champagne, Cognac, Scotch Whisky)
       const appellationRes = await geminiService.generateAppellation(
         productName,
-        session.user.token,
+        token,
         watch('type'),
         countryRes.data.originCountry,
         regionRes.data.region
@@ -199,7 +309,7 @@ export default function ProductOrigin({
       // Generate producer
       const producerRes = await geminiService.generateProducer(
         productName,
-        session.user.token,
+        token,
         watch('brand'),
         watch('type')
       );
@@ -208,7 +318,7 @@ export default function ProductOrigin({
       // Generate vintage
       const vintageRes = await geminiService.generateVintage(
         productName,
-        session.user.token,
+        token,
         watch('type')
       );
       setValue('vintage', vintageRes.data.vintage);
@@ -216,17 +326,17 @@ export default function ProductOrigin({
       // Generate age statement
       const ageRes = await geminiService.generateAgeStatement(
         productName,
-        session.user.token,
+        token,
         watch('type'),
         vintageRes.data.vintage
       );
       setValue('ageStatement', ageRes.data.ageStatement || '');
-      setValue('age', vintageRes.data.vintage ? new Date().getFullYear() - vintageRes.data.vintage : undefined);
+      setValue('age', vintageRes.data.vintage ? currentYear - vintageRes.data.vintage : undefined);
 
       // Generate production method
       const methodRes = await geminiService.generateProductionMethod(
         productName,
-        session.user.token,
+        token,
         watch('type')
       );
       setValue('productionMethod', methodRes.data.productionMethod || '');
@@ -234,7 +344,7 @@ export default function ProductOrigin({
       // Generate cask type
       const caskRes = await geminiService.generateCaskType(
         productName,
-        session.user.token,
+        token,
         watch('type'),
         methodRes.data.productionMethod
       );
@@ -272,7 +382,7 @@ export default function ProductOrigin({
           size="sm"
           variant="outline"
           color="primary"
-          disabled={!productName || productName.length < 3 || isGenerating}
+          disabled={!hasName || isGenerating}
           onClick={handleAutoFill}
           className="gap-1"
         >
@@ -305,6 +415,7 @@ export default function ProductOrigin({
               {selectedCountry && (
                 <span className="text-lg">{getCountryFlag(selectedCountry)}</span>
               )}
+              <AiBtn field="originCountry" generating={generating} onClick={genOriginCountry} disabled={!hasName} />
             </label>
 
             <div className="relative">
@@ -359,6 +470,7 @@ export default function ProductOrigin({
             <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
               <MapPin className="h-4 w-4 text-red-500" />
               Region
+              <AiBtn field="region" generating={generating} onClick={genRegion} disabled={!hasName} />
             </label>
 
             <Input
@@ -381,6 +493,7 @@ export default function ProductOrigin({
               <Tooltip content="Protected Designation of Origin - official certification of origin">
                 <Info className="h-4 w-4 cursor-help text-gray-400" />
               </Tooltip>
+              <AiBtn field="appellation" generating={generating} onClick={genAppellation} disabled={!hasName} />
             </label>
 
             <Input
@@ -400,6 +513,7 @@ export default function ProductOrigin({
             <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
               <Building className="h-4 w-4 text-purple-500" />
               Producer
+              <AiBtn field="producer" generating={generating} onClick={genProducer} disabled={!hasName} />
             </label>
 
             <Input
@@ -450,6 +564,7 @@ export default function ProductOrigin({
             <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
               <Calendar className="h-4 w-4 text-green-500" />
               Vintage (Year)
+              <AiBtn field="vintage" generating={generating} onClick={genVintage} disabled={!hasName} />
             </label>
 
             <Input
@@ -488,6 +603,7 @@ export default function ProductOrigin({
             <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
               <Clock className="h-4 w-4 text-teal-500" />
               Age Statement
+              <AiBtn field="ageStatement" generating={generating} onClick={genAgeStatement} disabled={!hasName} />
             </label>
 
             <Input
@@ -583,6 +699,7 @@ export default function ProductOrigin({
                   {productionMethod.replace(/_/g, ' ')}
                 </Badge>
               )}
+              <AiBtn field="productionMethod" generating={generating} onClick={genProductionMethod} disabled={!hasName} />
             </label>
 
             <div className="grid grid-cols-2 gap-3 @sm:grid-cols-3 @lg:grid-cols-4">
@@ -630,6 +747,7 @@ export default function ProductOrigin({
             <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
               <Wine className="h-4 w-4 text-amber-700" />
               Cask / Barrel Type
+              <AiBtn field="caskType" generating={generating} onClick={genCaskType} disabled={!hasName} />
             </label>
 
             <Input
@@ -648,6 +766,7 @@ export default function ProductOrigin({
             <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
               <Wine className="h-4 w-4 text-rose-600" />
               Cask Finish
+              <AiBtn field="finish" generating={generating} onClick={genFinish} disabled={!hasName} />
             </label>
 
             <Input

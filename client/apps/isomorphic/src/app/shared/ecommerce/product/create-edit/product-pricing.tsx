@@ -18,7 +18,13 @@ import {
   PiWarning,
   PiTrendUp,
   PiCalculator,
+  PiSparkle,
+  PiSpinner,
+  PiX,
 } from 'react-icons/pi';
+import { useSession } from 'next-auth/react';
+import { geminiService } from '@/services/gemini.service';
+import toast from 'react-hot-toast';
 
 interface ProductPricingProps {
   className?: string;
@@ -49,6 +55,7 @@ const currencySymbols: Record<string, string> = {
 export default function ProductPricing({
   className,
 }: ProductPricingProps) {
+  const { data: session } = useSession();
   const {
     register,
     watch,
@@ -64,6 +71,56 @@ export default function ProductPricing({
 
   const currency = watch('subProductData.currency') || 'NGN';
   const currencySymbol = currencySymbols[currency] || '₦';
+  const productName = watch('name') || '';
+  const [isLoadingPricing, setIsLoadingPricing] = useState(false);
+  const [pricingSuggestion, setPricingSuggestion] = useState<null | {
+    retail: number;
+    cost: number;
+    margin: number;
+    tier: string;
+    reasoning: string;
+  }>(null);
+
+  const hasName = productName.length >= 3;
+  const token = session?.user?.token;
+
+  const genPricing = async () => {
+    if (!hasName) return toast.error('Please enter a product name first');
+    if (!token) return toast.error('Please sign in to use AI features');
+    setIsLoadingPricing(true);
+    try {
+      const res = await geminiService.generatePricing(
+        productName,
+        token,
+        watch('type'),
+        watch('abv'),
+        watch('volumeMl'),
+        watch('originCountry')
+      );
+      const d = res.data;
+      const retail = d.suggestedRetailPrice[currency as keyof typeof d.suggestedRetailPrice] ?? d.suggestedRetailPrice.NGN;
+      const cost = d.costPrice[currency as keyof typeof d.costPrice] ?? d.costPrice.NGN;
+      setPricingSuggestion({
+        retail,
+        cost,
+        margin: d.profitMargin,
+        tier: d.pricingTier,
+        reasoning: d.reasoning,
+      });
+      toast.success('Pricing suggestion ready!');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to generate pricing');
+    } finally {
+      setIsLoadingPricing(false);
+    }
+  };
+
+  const applyPricingToVariant = (index: number) => {
+    if (!pricingSuggestion) return;
+    setValue(`subProductData.sizes.${index}.basePrice`, pricingSuggestion.retail);
+    setValue(`subProductData.sizes.${index}.costPrice`, pricingSuggestion.cost);
+    toast.success(`Applied to variant #${index + 1}`);
+  };
 
   const addSize = () => {
     append({
@@ -291,6 +348,78 @@ export default function ProductPricing({
               </motion.div>
             </motion.div>
           </div>
+        </motion.div>
+
+        {/* AI Pricing Suggestion */}
+        <motion.div variants={itemVariants} className="@2xl:col-span-2">
+          <div className="flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50 px-5 py-4">
+            <div className="flex items-center gap-2 text-sm text-blue-700">
+              <PiSparkle className="h-4 w-4" />
+              <span className="font-medium">AI Pricing Suggestion</span>
+              <span className="text-blue-500 text-xs">· for {currency}</span>
+            </div>
+            <button
+              type="button"
+              onClick={genPricing}
+              disabled={isLoadingPricing || !hasName}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {isLoadingPricing ? (
+                <PiSpinner className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <PiSparkle className="h-3.5 w-3.5" />
+              )}
+              {isLoadingPricing ? 'Analyzing...' : 'Get AI Pricing'}
+            </button>
+          </div>
+
+          {pricingSuggestion && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-2 rounded-xl border border-blue-200 bg-white p-4"
+            >
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Badge color="info" className="text-xs capitalize">{pricingSuggestion.tier}</Badge>
+                  <Badge color="success" className="text-xs">{pricingSuggestion.margin}% margin</Badge>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPricingSuggestion(null)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <PiX className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="mb-3 grid grid-cols-2 gap-3">
+                <div className="rounded-lg bg-gray-50 p-3">
+                  <p className="text-xs text-gray-500">Suggested Retail</p>
+                  <p className="text-lg font-bold text-gray-900">{currencySymbol}{pricingSuggestion.retail.toLocaleString()}</p>
+                </div>
+                <div className="rounded-lg bg-gray-50 p-3">
+                  <p className="text-xs text-gray-500">Est. Cost Price</p>
+                  <p className="text-lg font-bold text-gray-900">{currencySymbol}{pricingSuggestion.cost.toLocaleString()}</p>
+                </div>
+              </div>
+              <p className="mb-3 text-xs text-gray-500">{pricingSuggestion.reasoning}</p>
+              {fields.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  <span className="text-xs text-gray-500">Apply to variant:</span>
+                  {fields.map((_, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => applyPricingToVariant(i)}
+                      className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-200"
+                    >
+                      #{i + 1}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          )}
         </motion.div>
 
         {/* Size Variants */}

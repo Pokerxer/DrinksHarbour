@@ -99,7 +99,6 @@ function AutoGenerateTags({ isGenerating, setIsGenerating }: { isGenerating: boo
 function ItemCrud({ name }: { name: string }) {
   const { register, setValue, watch } = useFormContext();
   const [itemText, setItemText] = useState<string>('');
-  const [items, setItems] = useState<string[]>([]);
   const [items, setItems] = useState<string[]>(watch('tags') || []);
 
   function handleItemAdd(): void {

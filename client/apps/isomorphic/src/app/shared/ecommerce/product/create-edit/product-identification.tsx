@@ -3,7 +3,7 @@
 
 import { useFormContext } from 'react-hook-form';
 import { Input, Text, Badge, Button, Select, type SelectOption } from 'rizzui';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import cn from '@core/utils/class-names';
 import { CreateProductInput } from '@/validators/create-product.schema';
 import { productTypes } from './form-utils';
@@ -48,29 +48,43 @@ interface Brand {
   verified?: boolean;
 }
 
-// Animation variants
-const inputVariants = {
-  focus: { scale: 1.01, boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.1)' },
-  blur: { scale: 1, boxShadow: '0 0 0 0px rgba(59, 130, 246, 0)' },
-};
+// ── Small inline AI sparkle button ───────────────────────────────────────────
+function AiBtn({
+  field,
+  generating,
+  onClick,
+  label = 'AI',
+}: {
+  field: string;
+  generating: string | null;
+  onClick: () => void;
+  label?: string;
+}) {
+  const isLoading = generating === field;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!!generating}
+      title="Generate with AI"
+      className={cn(
+        'ml-auto flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium transition-colors',
+        isLoading
+          ? 'cursor-not-allowed text-gray-400'
+          : 'text-violet-600 hover:bg-violet-50 hover:text-violet-700'
+      )}
+    >
+      {isLoading ? (
+        <PiSpinner className="h-3 w-3 animate-spin" />
+      ) : (
+        <PiSparkle className="h-3 w-3" />
+      )}
+      {isLoading ? 'Generating…' : label}
+    </button>
+  );
+}
 
-const fieldVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: {
-      delay: i * 0.05,
-      type: 'spring',
-      stiffness: 100,
-      damping: 20,
-    },
-  }),
-};
-
-export default function ProductIdentification({
-  className,
-}: ProductIdentificationProps) {
+export default function ProductIdentification({ className }: ProductIdentificationProps) {
   const { data: session } = useSession();
   const {
     register,
@@ -79,244 +93,219 @@ export default function ProductIdentification({
     formState: { errors },
   } = useFormContext<CreateProductInput>();
 
-  const productName = watch('name');
-  const productType = watch('type');
+  const productName      = watch('name');
+  const productType      = watch('type');
   const selectedCategory = watch('category');
   const selectedSubCategory = watch('subCategory');
-  const [slugFocused, setSlugFocused] = useState(false);
-  const [nameFocused, setNameFocused] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [subCategories, setSubCategories] = useState<SubCategory[]>([]);
-  const [brands, setBrands] = useState<Brand[]>([]);
-  const [isLoadingCategories, setIsLoadingCategories] = useState(false);
+
+  const [slugFocused, setSlugFocused]       = useState(false);
+  const [isGeneratingAll, setIsGeneratingAll] = useState(false);
+  const [generating, setGenerating]           = useState<string | null>(null);
+
+  const [categories, setCategories]         = useState<Category[]>([]);
+  const [subCategories, setSubCategories]   = useState<SubCategory[]>([]);
+  const [brands, setBrands]                 = useState<Brand[]>([]);
+  const [isLoadingCategories, setIsLoadingCategories]       = useState(false);
   const [isLoadingSubCategories, setIsLoadingSubCategories] = useState(false);
-  const [isLoadingBrands, setIsLoadingBrands] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoadingBrands, setIsLoadingBrands]               = useState(false);
   const [showBrandModal, setShowBrandModal] = useState(false);
-  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
-  // Fetch categories on mount
+  const token = session?.user?.token;
+
+  // ── Data fetching ───────────────────────────────────────────────────────────
   useEffect(() => {
-    const fetchCategories = async () => {
-      if (!session?.user?.token) {
-        console.log('No session token available');
-        return;
-      }
-      
-      console.log('Fetching categories...');
-      setIsLoadingCategories(true);
-      setLoadError(null);
-      try {
-        const cats = await categoryService.getCategories(session.user.token);
-        console.log('Categories fetched:', cats);
-        // Ensure we always set an array, even if the API returns something unexpected
-        const categoriesArray = Array.isArray(cats) ? cats : [];
-        setCategories(categoriesArray);
-        console.log('Categories set:', categoriesArray.length);
-      } catch (error) {
-        console.error('Failed to fetch categories:', error);
-        setLoadError('Failed to load categories');
-        setCategories([]);
-      } finally {
-        setIsLoadingCategories(false);
-      }
-    };
+    if (!token) return;
+    setIsLoadingCategories(true);
+    categoryService.getCategories(token)
+      .then((cats) => setCategories(Array.isArray(cats) ? cats : []))
+      .catch(() => setCategories([]))
+      .finally(() => setIsLoadingCategories(false));
+  }, [token]);
 
-    fetchCategories();
-  }, [session]);
-
-  // Fetch brands function - extracted for reuse
   const fetchBrands = async () => {
-    if (!session?.user?.token) {
-      console.log('No session token available for brands');
-      return;
-    }
-
-    console.log('Fetching brands...');
+    if (!token) return;
     setIsLoadingBrands(true);
     try {
-      const fetchedBrands = await brandService.getBrands(session.user.token, { limit: 100 });
-      console.log('Brands fetched:', fetchedBrands.length);
-      setBrands(fetchedBrands);
-    } catch (error) {
-      console.error('Failed to fetch brands:', error);
+      const fetched = await brandService.getBrands(token, { limit: 100 });
+      setBrands(fetched);
+    } catch {
       setBrands([]);
     } finally {
       setIsLoadingBrands(false);
     }
   };
 
-  // Fetch brands on mount
+  useEffect(() => { fetchBrands(); }, [token]);
+
   useEffect(() => {
-    fetchBrands();
-  }, [session]);
+    if (!token || !selectedCategory) return;
+    const alreadyLoaded = subCategories.length > 0 && subCategories.some((sc) => sc.parent === selectedCategory);
+    if (alreadyLoaded) return;
+    setIsLoadingSubCategories(true);
+    categoryService.getSubCategories(token, selectedCategory)
+      .then((subs) => { if (watch('category') === selectedCategory) setSubCategories(Array.isArray(subs) ? subs : []); })
+      .catch(() => {})
+      .finally(() => { if (watch('category') === selectedCategory) setIsLoadingSubCategories(false); });
+  }, [selectedCategory, token, subCategories.length]);
 
-  // Fetch subcategories when category changes
-  useEffect(() => {
-    const fetchSubCategoriesIfNeeded = async () => {
-      if (!session?.user?.token || !selectedCategory) {
-        return;
-      }
-
-      // Skip if already loaded for this category
-      const alreadyLoaded = subCategories.length > 0 && 
-        subCategories.some(sc => sc.parent === selectedCategory);
-      if (alreadyLoaded) {
-        return;
-      }
-
-      setIsLoadingSubCategories(true);
-      try {
-        const subCats = await categoryService.getSubCategories(
-          session.user.token, 
-          selectedCategory
-        );
-        const newSubCats = Array.isArray(subCats) ? subCats : [];
-        // Only update if the category hasn't changed during fetch
-        if (watch('category') === selectedCategory) {
-          setSubCategories(newSubCats);
-        }
-      } catch (error) {
-        console.error('Failed to fetch subcategories:', error);
-      } finally {
-        if (watch('category') === selectedCategory) {
-          setIsLoadingSubCategories(false);
-        }
-      }
-    };
-
-    fetchSubCategoriesIfNeeded();
-  }, [selectedCategory, session?.user?.token, subCategories.length]);
-
-  // Auto-generate slug when name changes
+  // Auto-generate slug from name
   useEffect(() => {
     if (productName && !slugFocused) {
-      const slug = productName
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '');
-      setValue('slug', slug, { shouldValidate: false });
+      setValue(
+        'slug',
+        productName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        { shouldValidate: false }
+      );
     }
   }, [productName, slugFocused, setValue]);
 
-  const selectedType = productTypes.find((t) => t.value === productType);
-  const selectedCategoryObj = categories.find((c) => c._id === selectedCategory);
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+  const selectedType           = productTypes.find((t) => t.value === productType);
+  const selectedCategoryObj    = categories.find((c) => c._id === selectedCategory);
   const selectedSubCategoryObj = subCategories.find((s) => s._id === selectedSubCategory);
+  const hasPendingSubCategory  = selectedSubCategory && !selectedSubCategoryObj && !isLoadingSubCategories;
 
-  // Check if we have a selected subcategory that's not in the list yet
-  const hasPendingSubCategory = selectedSubCategory && !selectedSubCategoryObj && !isLoadingSubCategories;
-
-  // Helper function to find category ID by name (case-insensitive, fuzzy match)
-  const findCategoryByName = (categoryName: string, categoriesList: Category[]): string | null => {
-    if (!categoryName || categoriesList.length === 0) return null;
-    
-    const normalizedName = categoryName.toLowerCase().trim();
-    
-    // Exact match first
-    const exactMatch = categoriesList.find(
-      cat => cat.name.toLowerCase().trim() === normalizedName
+  const findCategoryByName = (name: string, list: Category[]): string | null => {
+    if (!name || !list.length) return null;
+    const n = name.toLowerCase().trim();
+    return (
+      list.find((c) => c.name.toLowerCase() === n)?._id ||
+      list.find((c) => c.name.toLowerCase().includes(n) || n.includes(c.name.toLowerCase()))?._id ||
+      null
     );
-    if (exactMatch) return exactMatch._id;
-    
-    // Partial match (contains)
-    const partialMatch = categoriesList.find(
-      cat => cat.name.toLowerCase().includes(normalizedName) || 
-             normalizedName.includes(cat.name.toLowerCase())
-    );
-    if (partialMatch) return partialMatch._id;
-    
-    // Fuzzy match by words
-    const words = normalizedName.split(/\s+/);
-    const fuzzyMatch = categoriesList.find(cat => {
-      const catWords = cat.name.toLowerCase().split(/\s+/);
-      return words.some(word => catWords.some(catWord => 
-        catWord.includes(word) || word.includes(catWord)
-      ));
-    });
-    
-    return fuzzyMatch?._id || null;
   };
 
-  // Helper function to find subcategory ID by name
-  const findSubCategoryByName = (subCategoryName: string, subCategoriesList: SubCategory[]): string | null => {
-    if (!subCategoryName || subCategoriesList.length === 0) return null;
-    
-    const normalizedName = subCategoryName.toLowerCase().trim();
-    
-    // Exact match first
-    const exactMatch = subCategoriesList.find(
-      sub => sub.name.toLowerCase().trim() === normalizedName
+  const findSubCategoryByName = (name: string, list: SubCategory[]): string | null => {
+    if (!name || !list.length) return null;
+    const n = name.toLowerCase().trim();
+    return (
+      list.find((s) => s.name.toLowerCase() === n)?._id ||
+      list.find((s) => s.name.toLowerCase().includes(n) || n.includes(s.name.toLowerCase()))?._id ||
+      null
     );
-    if (exactMatch) return exactMatch._id;
-    
-    // Partial match
-    const partialMatch = subCategoriesList.find(
-      sub => sub.name.toLowerCase().includes(normalizedName) || 
-             normalizedName.includes(sub.name.toLowerCase())
-    );
-    
-    return partialMatch?._id || null;
   };
 
-  // Auto-fill form with AI-generated data
-  const handleAutoFill = async () => {
+  const requireName = () => {
     if (!productName || productName.length < 3) {
-      toast.error('Please enter a product name first (at least 3 characters)');
-      return;
+      toast.error('Please enter a product name first');
+      return false;
     }
-
-    if (!session?.user?.token) {
+    if (!token) {
       toast.error('Please sign in to use AI features');
-      return;
+      return false;
     }
+    return true;
+  };
 
-    setIsGenerating(true);
-    toast.loading('Generating product details with AI...', { id: 'ai-generate' });
-
+  const gen = async (field: string, fn: () => Promise<void>) => {
+    if (!requireName()) return;
+    setGenerating(field);
     try {
-      const response = await geminiService.generateProductDetails(
+      await fn();
+      toast.success('Generated!');
+    } catch (err: any) {
+      toast.error(err.message || 'AI generation failed');
+    } finally {
+      setGenerating(null);
+    }
+  };
+
+  // ── Per-field AI handlers ───────────────────────────────────────────────────
+  const genSlug = () =>
+    gen('slug', async () => {
+      const res = await geminiService.generateSlug(productName, token);
+      setValue('slug', res.data.slug || '');
+    });
+
+  const genType = () =>
+    gen('type', async () => {
+      // Use full product details and extract just type + subType
+      const res = await geminiService.generateProductDetails(productName, token, productType);
+      if (res.data.type) setValue('type', res.data.type);
+      if (res.data.subType) setValue('subType', res.data.subType);
+    });
+
+  const genCategory = () =>
+    gen('category', async () => {
+      const res = await geminiService.generateCategorySuggestion(
         productName,
-        session.user.token,
-        productType
+        token,
+        productType,
+        categories
       );
+      const { category: catName, subCategory: subCatName } = res.data;
 
-      const data = response.data;
+      const catId = findCategoryByName(catName, categories);
+      if (catId) {
+        setValue('category', catId, { shouldDirty: true });
+        setValue('subCategory', '');
+        setSubCategories([]);
 
-      // Fill in all form fields
+        // Also try to match subcategory
+        if (subCatName) {
+          const subs = await categoryService.getSubCategories(token, catId).catch(() => []);
+          const subList = Array.isArray(subs) ? subs : [];
+          setSubCategories(subList);
+          const subId = findSubCategoryByName(subCatName, subList);
+          if (subId) setValue('subCategory', subId, { shouldDirty: true });
+        }
+      } else {
+        toast.error(`No matching category found for "${catName}"`);
+        throw new Error('skip-success-toast');
+      }
+    });
+
+  const genSubCategory = () =>
+    gen('subCategory', async () => {
+      if (!selectedCategory) {
+        toast.error('Select a category first');
+        throw new Error('skip-success-toast');
+      }
+      const res = await geminiService.generateSubCategorySuggestion(
+        productName,
+        token,
+        productType,
+        selectedCategoryObj?.name,
+        subCategories
+      );
+      const subId = findSubCategoryByName(res.data.subCategory, subCategories);
+      if (subId) {
+        setValue('subCategory', subId, { shouldDirty: true });
+      } else {
+        toast.error(`No matching sub-category found for "${res.data.subCategory}"`);
+        throw new Error('skip-success-toast');
+      }
+    });
+
+  // ── Fill ALL fields ─────────────────────────────────────────────────────────
+  const handleFillAll = async () => {
+    if (!requireName()) return;
+    setIsGeneratingAll(true);
+    toast.loading('Generating product details with AI…', { id: 'ai-all' });
+    try {
+      const res  = await geminiService.generateProductDetails(productName, token, productType);
+      const data = res.data;
+
       setValue('type', data.type || '');
       setValue('subType', data.subType || '');
-      
-      // Handle category - match AI-generated name to available category IDs
-      let matchedCategoryId: string | null = null;
+
+      let matchedCatId: string | null = null;
       if (data.category) {
-        matchedCategoryId = findCategoryByName(data.category, categories);
-        if (matchedCategoryId) {
-          setValue('category', matchedCategoryId);
-          console.log('Category matched:', data.category, '->', matchedCategoryId);
-        } else {
-          console.log('Category not matched:', data.category, 'Available:', categories.map(c => c.name));
+        matchedCatId = findCategoryByName(data.category, categories);
+        if (matchedCatId) {
+          setValue('category', matchedCatId, { shouldDirty: true });
+          setValue('subCategory', '');
+          setSubCategories([]);
         }
       }
-      
-      // Handle subcategory - need to wait for subcategories to load if category changed
-      if (data.subCategory && matchedCategoryId) {
-        // Fetch subcategories for the matched category first
-        try {
-          const subCats = await categoryService.getSubCategories(session.user.token, matchedCategoryId);
-          const subCategoriesList = Array.isArray(subCats) ? subCats : [];
-          const matchedSubCategoryId = findSubCategoryByName(data.subCategory, subCategoriesList);
-          if (matchedSubCategoryId) {
-            setValue('subCategory', matchedSubCategoryId);
-            console.log('SubCategory matched:', data.subCategory, '->', matchedSubCategoryId);
-          } else {
-            console.log('SubCategory not matched:', data.subCategory, 'Available:', subCategoriesList.map(s => s.name));
-          }
-        } catch (err) {
-          console.error('Failed to fetch subcategories for matching:', err);
-        }
+      if (data.subCategory && matchedCatId) {
+        const subs = await categoryService.getSubCategories(token, matchedCatId).catch(() => []);
+        const subList = Array.isArray(subs) ? subs : [];
+        setSubCategories(subList);
+        const subId = findSubCategoryByName(data.subCategory, subList);
+        if (subId) setValue('subCategory', subId, { shouldDirty: true });
       }
-      
+
       setValue('isAlcoholic', data.isAlcoholic ?? false);
       setValue('abv', data.abv);
       setValue('volumeMl', data.volumeMl);
@@ -351,24 +340,21 @@ export default function ProductIdentification({
       setValue('metaDescription', data.metaDescription || '');
       setValue('keywords', data.keywords || []);
 
-      toast.success('Product details auto-filled successfully!', { id: 'ai-generate' });
-    } catch (error: any) {
-      console.error('AI generation error:', error);
-      const errorMessage = error.message || 'Failed to generate product details';
-      
-      // Show more user-friendly error messages
-      if (errorMessage.includes('Failed to fetch') || errorMessage.includes('connect')) {
-        toast.error('Cannot connect to server. Please make sure the backend is running on port 5001.', { 
-          id: 'ai-generate',
-          duration: 5000 
-        });
-      } else {
-        toast.error(errorMessage, { id: 'ai-generate' });
-      }
+      toast.success('Product details auto-filled!', { id: 'ai-all' });
+    } catch (err: any) {
+      const msg = err.message || 'Failed to generate product details';
+      toast.error(
+        msg.includes('fetch') || msg.includes('connect')
+          ? 'Cannot connect to server.'
+          : msg,
+        { id: 'ai-all' }
+      );
     } finally {
-      setIsGenerating(false);
+      setIsGeneratingAll(false);
     }
   };
+
+  const anyGenerating = isGeneratingAll || !!generating;
 
   return (
     <Fragment>
@@ -378,356 +364,261 @@ export default function ProductIdentification({
         className={cn(className)}
       >
         <div className="grid w-full gap-6 @2xl:grid-cols-2">
-        {/* Product Name with AI Button */}
-        <div className="@2xl:col-span-2">
-          <div className="mb-2 flex items-center justify-between">
-            <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
-              Product Name
+
+          {/* Product Name + Fill-all button */}
+          <div className="@2xl:col-span-2">
+            <div className="mb-2 flex items-center justify-between">
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                Product Name
+                <span className="text-red-500">*</span>
+                {productName && productName.length >= 3 && (
+                  <Badge size="sm" color="success" variant="flat">
+                    <PiCheck className="h-3 w-3" />
+                  </Badge>
+                )}
+              </label>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                color="primary"
+                disabled={!productName || productName.length < 3 || anyGenerating}
+                onClick={handleFillAll}
+                className="gap-1"
+              >
+                {isGeneratingAll ? (
+                  <><PiSpinner className="h-3 w-3 animate-spin" /> Generating…</>
+                ) : (
+                  <><PiSparkle className="h-3 w-3" /> Auto-fill with AI</>
+                )}
+              </Button>
+            </div>
+            <Input
+              placeholder="e.g., Jameson Irish Whiskey"
+              {...register('name')}
+              error={errors.name?.message}
+            />
+            <Text className="mt-2 flex items-center gap-1 text-xs text-gray-500">
+              <PiSparkle className="h-3 w-3 text-purple-500" />
+              Enter a product name then use &quot;Auto-fill with AI&quot; to generate all details, or use the individual AI buttons per field.
+            </Text>
+          </div>
+
+          {/* URL Slug */}
+          <div>
+            <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
+              URL Slug
+              {watch('slug') && (
+                <span className="text-xs text-gray-400">(auto-generated)</span>
+              )}
+              <AiBtn field="slug" generating={generating} onClick={genSlug} />
+            </label>
+            <Input
+              placeholder="auto-generated-from-name"
+              {...register('slug')}
+              error={errors.slug?.message}
+              className="font-mono text-sm"
+              onFocus={() => setSlugFocused(true)}
+              onBlur={() => setSlugFocused(false)}
+            />
+            <Text className="mt-1 text-xs text-gray-500">Used in the product URL</Text>
+          </div>
+
+          {/* Product Type */}
+          <div>
+            <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
+              Product Type
               <span className="text-red-500">*</span>
-              {productName && productName.length >= 3 && (
-                <Badge size="sm" color="success" variant="flat">
-                  <PiCheck className="h-3 w-3" />
+              {selectedType && (
+                <Badge size="sm" color="primary" variant="flat">
+                  {selectedType.category}
                 </Badge>
               )}
+              <AiBtn field="type" generating={generating} onClick={genType} />
             </label>
-            
-            {/* AI Auto-fill Button */}
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              color="primary"
-              disabled={!productName || productName.length < 3 || isGenerating}
-              onClick={handleAutoFill}
-              className="gap-1"
-            >
-              {isGenerating ? (
-                <>
-                  <PiSpinner className="h-3 w-3 animate-spin" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <PiSparkle className="h-3 w-3" />
-                  Auto-fill with AI
-                </>
+            <Select
+              placeholder="Search and select product type"
+              options={productTypes.map((t) => ({
+                value: t.value,
+                label: `${t.label} (${t.category})`,
+              }))}
+              value={(() => {
+                const found = productTypes.find((t) => t.value === productType);
+                return found ? { value: found.value, label: `${found.label} (${found.category})` } : '';
+              })()}
+              onChange={(opt: SelectOption) => setValue('type', opt.value as string, { shouldDirty: true })}
+              error={errors.type?.message as string}
+              className="w-full"
+            />
+          </div>
+
+          {/* Category */}
+          <div>
+            <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
+              Category
+              {selectedCategoryObj && (
+                <Badge size="sm" color="primary" variant="flat">{selectedCategoryObj.name}</Badge>
               )}
-            </Button>
-          </div>
-          
-          <Input
-            placeholder="e.g., Jameson Irish Whiskey"
-            {...register('name')}
-            error={errors.name?.message}
-            className="transition-all duration-200"
-          />
-          
-          {/* AI Feature Info */}
-          <Text className="mt-2 flex items-center gap-1 text-xs text-gray-500">
-            <PiSparkle className="h-3 w-3 text-purple-500" />
-            Enter a product name and click &quot;Auto-fill with AI&quot; to automatically generate all product details
-          </Text>
-        </div>
-
-        {/* Slug */}
-        <div>
-          <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
-            URL Slug
-            {watch('slug') && (
-              <span className="text-xs text-gray-400">
-                (auto-generated)
-              </span>
-            )}
-          </label>
-          <Input
-            placeholder="auto-generated-from-name"
-            {...register('slug')}
-            error={errors.slug?.message}
-            className="font-mono text-sm"
-          />
-          <Text className="mt-1 text-xs text-gray-500">
-            This will be used in the product URL
-          </Text>
-        </div>
-
-        {/* Category - Searchable */}
-        <div>
-          <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
-            Category
-            {selectedCategoryObj && (
-              <Badge size="sm" color="primary" variant="flat">
-                {selectedCategoryObj.name}
-              </Badge>
-            )}
-          </label>
-          <Select
-            placeholder={isLoadingCategories ? 'Loading categories...' : 'Search and select category'}
-            options={categories.map((cat) => ({
-              value: cat._id,
-              label: cat.name,
-            }))}
-            value={
-              (() => {
-                const currentCatId = watch('category');
-                const found = categories.find((c) => c._id === currentCatId);
-                if (found) {
-                  return { value: found._id, label: found.name };
-                }
-                return '';
-              })()
-            }
-            onChange={(option: SelectOption) => {
-              setValue('category', option.value as string, { shouldDirty: true });
-              // Reset subcategory when category changes
-              setValue('subCategory', '');
-              setSubCategories([]);
-            }}
-            disabled={isLoadingCategories}
-            error={errors.category?.message as string}
-            className="w-full"
-          />
-          <Text className="mt-2 text-xs text-gray-500">
-            {isLoadingCategories
-              ? 'Loading categories...'
-              : categories.length > 0
-              ? `${categories.length} categories available`
-              : 'No categories loaded'}
-          </Text>
-        </div>
-
-        {/* SubCategory - Searchable */}
-        <div>
-          <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
-            Sub-Category
-            {selectedSubCategoryObj && (
-              <Badge size="sm" color="secondary" variant="flat">
-                {selectedSubCategoryObj.name}
-              </Badge>
-            )}
-            {hasPendingSubCategory && selectedSubCategory && (
-              <Badge size="sm" color="warning" variant="flat">
-                Pending Load
-              </Badge>
-            )}
-          </label>
-          <Select
-            placeholder={
-              !selectedCategory
-                ? 'Select category first'
-                : isLoadingSubCategories
-                ? 'Loading sub-categories...'
-                : selectedSubCategory && !selectedSubCategoryObj
-                ? 'Subcategory selected (refreshing...)'
-                : subCategories.length === 0
-                ? 'No sub-categories available for this category'
-                : 'Search and select sub-category'
-            }
-            options={subCategories.map((subCat) => ({
-              value: subCat._id,
-              label: subCat.name,
-            }))}
-            value={
-              (() => {
-                // First check if the subcategory is in our loaded list
-                if (selectedSubCategoryObj) {
-                  return { value: selectedSubCategoryObj._id, label: selectedSubCategoryObj.name };
-                }
-                // If we have a selected subcategory that's not in the list yet
-                // Keep displaying it even if subcategories haven't loaded
-                if (selectedSubCategory) {
-                  if (isLoadingSubCategories) {
-                    return { value: selectedSubCategory, label: 'Loading...' };
-                  }
-                  // Subcategories are loaded but this one isn't in the list
-                  // This could be because it belongs to a different category or was deleted
-                  return { value: selectedSubCategory, label: 'Unknown Subcategory' };
-                }
-                return '';
-              })()
-            }
-            onChange={(option: SelectOption) => {
-              setValue('subCategory', option.value as string, { shouldDirty: true });
-            }}
-            disabled={!selectedCategory}
-            error={errors.subCategory?.message as string}
-            className="w-full"
-          />
-          <Text className="mt-2 text-xs text-gray-500">
-            {!selectedCategory
-              ? 'Select a category to see available sub-categories'
-              : isLoadingSubCategories
-              ? 'Loading...'
-              : subCategories.length > 0
-              ? `${subCategories.length} sub-categories available`
-              : 'No sub-categories found for this category'}
-          </Text>
-        </div>
-
-        {/* Brand - Searchable */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm font-medium text-gray-700">
-              Brand
+              <AiBtn field="category" generating={generating} onClick={genCategory} />
             </label>
-            <Button
-              type="button"
-              variant="text"
-              size="xs"
-              onClick={() => setShowBrandModal(true)}
-              className="text-blue-600 hover:text-blue-700 flex items-center gap-1"
-            >
-              <PiPlus className="h-3 w-3" />
-              Create New Brand
-            </Button>
+            <Select
+              placeholder={isLoadingCategories ? 'Loading categories…' : 'Search and select category'}
+              options={categories.map((c) => ({ value: c._id, label: c.name }))}
+              value={(() => {
+                const found = categories.find((c) => c._id === selectedCategory);
+                return found ? { value: found._id, label: found.name } : '';
+              })()}
+              onChange={(opt: SelectOption) => {
+                setValue('category', opt.value as string, { shouldDirty: true });
+                setValue('subCategory', '');
+                setSubCategories([]);
+              }}
+              disabled={isLoadingCategories}
+              error={errors.category?.message as string}
+              className="w-full"
+            />
+            <Text className="mt-1 text-xs text-gray-500">
+              {isLoadingCategories
+                ? 'Loading…'
+                : `${categories.length} categories available`}
+            </Text>
           </div>
-          <Select
-            placeholder={isLoadingBrands ? 'Loading brands...' : 'Search and select brand'}
-            options={brands.map((brand) => ({
-              value: brand._id,
-              label: `${brand.name}${brand.isPremium ? ' ⭐' : ''}${brand.verified ? ' ✓' : ''}`,
-            }))}
-            value={
-              (() => {
-                const currentBrandId = watch('brand');
-                const found = brands.find((b) => b._id === currentBrandId);
-                if (found) {
-                  return { 
-                    value: found._id, 
-                    label: `${found.name}${found.isPremium ? ' ⭐' : ''}${found.verified ? ' ✓' : ''}` 
-                  };
+
+          {/* Sub-Category */}
+          <div>
+            <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
+              Sub-Category
+              {selectedSubCategoryObj && (
+                <Badge size="sm" color="secondary" variant="flat">{selectedSubCategoryObj.name}</Badge>
+              )}
+              {hasPendingSubCategory && selectedSubCategory && (
+                <Badge size="sm" color="warning" variant="flat">Pending</Badge>
+              )}
+              <AiBtn field="subCategory" generating={generating} onClick={genSubCategory} />
+            </label>
+            <Select
+              placeholder={
+                !selectedCategory
+                  ? 'Select category first'
+                  : isLoadingSubCategories
+                  ? 'Loading sub-categories…'
+                  : subCategories.length === 0
+                  ? 'No sub-categories for this category'
+                  : 'Search and select sub-category'
+              }
+              options={subCategories.map((s) => ({ value: s._id, label: s.name }))}
+              value={(() => {
+                if (selectedSubCategoryObj) return { value: selectedSubCategoryObj._id, label: selectedSubCategoryObj.name };
+                if (selectedSubCategory) {
+                  if (isLoadingSubCategories) return { value: selectedSubCategory, label: 'Loading…' };
+                  return { value: selectedSubCategory, label: 'Unknown' };
                 }
                 return '';
-              })()
-            }
-            onChange={(option: SelectOption) => {
-              setValue('brand', option.value as string, { shouldDirty: true });
-            }}
-            disabled={isLoadingBrands}
-            className="w-full"
-          />
-          <Text className="mt-2 text-xs text-gray-500">
-            {isLoadingBrands
-              ? 'Loading brands...'
-              : brands.length > 0
-              ? `${brands.length} brands available`
-              : 'No brands loaded'}
-          </Text>
+              })()}
+              onChange={(opt: SelectOption) => setValue('subCategory', opt.value as string, { shouldDirty: true })}
+              disabled={!selectedCategory || isLoadingSubCategories}
+              error={errors.subCategory?.message as string}
+              className="w-full"
+            />
+            <Text className="mt-1 text-xs text-gray-500">
+              {!selectedCategory
+                ? 'Select a category first'
+                : isLoadingSubCategories
+                ? 'Loading…'
+                : `${subCategories.length} sub-categories available`}
+            </Text>
+          </div>
+
+          {/* Brand */}
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <label className="text-sm font-medium text-gray-700">Brand</label>
+              <Button
+                type="button"
+                variant="text"
+                size="xs"
+                onClick={() => setShowBrandModal(true)}
+                className="flex items-center gap-1 text-blue-600 hover:text-blue-700"
+              >
+                <PiPlus className="h-3 w-3" />
+                Create New Brand
+              </Button>
+            </div>
+            <Select
+              placeholder={isLoadingBrands ? 'Loading brands…' : 'Search and select brand'}
+              options={brands.map((b) => ({
+                value: b._id,
+                label: `${b.name}${b.isPremium ? ' ⭐' : ''}${b.verified ? ' ✓' : ''}`,
+              }))}
+              value={(() => {
+                const found = brands.find((b) => b._id === watch('brand'));
+                return found
+                  ? { value: found._id, label: `${found.name}${found.isPremium ? ' ⭐' : ''}${found.verified ? ' ✓' : ''}` }
+                  : '';
+              })()}
+              onChange={(opt: SelectOption) => setValue('brand', opt.value as string, { shouldDirty: true })}
+              disabled={isLoadingBrands}
+              className="w-full"
+            />
+            <Text className="mt-1 text-xs text-gray-500">
+              {isLoadingBrands ? 'Loading…' : `${brands.length} brands available`}
+            </Text>
+          </div>
+
+          {/* SKU */}
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">SKU</label>
+            <Input
+              placeholder="e.g., WHISKY-001"
+              {...register('sku')}
+              error={errors.sku?.message}
+            />
+          </div>
+
+          {/* Barcode */}
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Barcode</label>
+            <Input
+              placeholder="e.g., 123456789012"
+              {...register('barcode')}
+              error={errors.barcode?.message}
+            />
+          </div>
+
+          {/* GTIN */}
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">GTIN</label>
+            <Input
+              placeholder="e.g., 12345678901234"
+              {...register('gtin')}
+              error={errors.gtin?.message}
+            />
+          </div>
+
+          {/* UPC */}
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">UPC</label>
+            <Input
+              placeholder="e.g., 123456789012"
+              {...register('upc')}
+              error={errors.upc?.message}
+            />
+          </div>
         </div>
+      </FormGroup>
 
-        {/* Create Brand Modal */}
-        <CreateBrandModal
-          isOpen={showBrandModal}
-          onClose={() => setShowBrandModal(false)}
-          onBrandCreated={(newBrandId) => {
-            // Refresh brands list
-            fetchBrands();
-            // Select the new brand
-            setValue('brand', newBrandId);
-            setShowBrandModal(false);
-          }}
-          token={session?.user?.token || ''}
-          productName={productName}
-        />
-
-        {/* Product Type */}
-        <div>
-          <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
-            Product Type
-            <span className="text-red-500">*</span>
-            {selectedType && (
-              <Badge size="sm" color="primary" variant="flat">
-                {selectedType.category}
-              </Badge>
-            )}
-          </label>
-          <Select
-            placeholder="Search and select product type"
-            options={productTypes.map((type) => ({
-              value: type.value,
-              label: `${type.label} (${type.category})`,
-            }))}
-            value={
-              (() => {
-                const currentType = watch('type');
-                const found = productTypes.find((t) => t.value === currentType);
-                if (found) {
-                  return { 
-                    value: found.value, 
-                    label: `${found.label} (${found.category})` 
-                  };
-                }
-                return '';
-              })()
-            }
-            onChange={(option: SelectOption) => {
-              setValue('type', option.value as string, { shouldDirty: true });
-            }}
-            error={errors.type?.message as string}
-            className="w-full"
-          />
-        </div>
-
-        {/* SKU */}
-        <div>
-          <label className="mb-2 text-sm font-medium text-gray-700">
-            SKU
-          </label>
-          <Input
-            placeholder="e.g., WHISKY-001"
-            {...register('sku')}
-            error={errors.sku?.message}
-          />
-        </div>
-
-        {/* Barcode */}
-        <div>
-          <label className="mb-2 text-sm font-medium text-gray-700">
-            Barcode
-          </label>
-          <Input
-            placeholder="e.g., 123456789012"
-            {...register('barcode')}
-            error={errors.barcode?.message}
-          />
-        </div>
-
-        {/* GTIN */}
-        <div>
-          <label className="mb-2 text-sm font-medium text-gray-700">
-            GTIN
-          </label>
-          <Input
-            placeholder="e.g., 12345678901234"
-            {...register('gtin')}
-            error={errors.gtin?.message}
-          />
-        </div>
-
-        {/* UPC */}
-        <div>
-          <label className="mb-2 text-sm font-medium text-gray-700">
-            UPC
-          </label>
-          <Input
-            placeholder="e.g., 123456789012"
-            {...register('upc')}
-            error={errors.upc?.message}
-          />
-        </div>
-      </div>
-    </FormGroup>
-
-    <CreateBrandModal
-      isOpen={showBrandModal}
-      onClose={() => setShowBrandModal(false)}
-      onBrandCreated={(newBrandId) => {
-        fetchBrands();
-        setValue('brand', newBrandId);
-        setShowBrandModal(false);
-        toast.success('Brand created and selected!');
-      }}
-      token={session?.user?.token || ''}
-    />
+      <CreateBrandModal
+        isOpen={showBrandModal}
+        onClose={() => setShowBrandModal(false)}
+        onBrandCreated={(newBrandId) => {
+          fetchBrands();
+          setValue('brand', newBrandId);
+          setShowBrandModal(false);
+          toast.success('Brand created and selected!');
+        }}
+        token={token || ''}
+        productName={productName}
+      />
     </Fragment>
   );
 }

@@ -19,6 +19,10 @@ import {
   Info,
   Check,
 } from 'lucide-react';
+import { PiSparkle, PiSpinner } from 'react-icons/pi';
+import { useSession } from 'next-auth/react';
+import { geminiService } from '@/services/gemini.service';
+import toast from 'react-hot-toast';
 
 interface ProductDietaryProps {
   className?: string;
@@ -71,9 +75,39 @@ const allergenIcons: Record<string, string> = {
   sulphites: '🍷',
 };
 
+function AiBtn({
+  field,
+  generating,
+  onClick,
+  disabled,
+}: {
+  field: string;
+  generating: string | null;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  const isLoading = generating === field;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={isLoading || disabled}
+      className="ml-1 inline-flex items-center rounded p-0.5 text-blue-500 hover:bg-blue-50 disabled:opacity-40"
+      title="Generate with AI"
+    >
+      {isLoading ? (
+        <PiSpinner className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <PiSparkle className="h-3.5 w-3.5" />
+      )}
+    </button>
+  );
+}
+
 export default function ProductDietary({
   className,
 }: ProductDietaryProps) {
+  const { data: session } = useSession();
   const {
     register,
     watch,
@@ -83,6 +117,11 @@ export default function ProductDietary({
 
   const [selectedDietary, setSelectedDietary] = useState<Record<string, boolean>>({});
   const [selectedAllergens, setSelectedAllergens] = useState<string[]>([]);
+  const [generating, setGenerating] = useState<string | null>(null);
+
+  const productName = watch('name') || '';
+  const hasName = productName.length >= 3;
+  const token = session?.user?.token;
 
   // Watch dietary values
   const watchedDietary = watch('isDietary') || {};
@@ -110,6 +149,58 @@ export default function ProductDietary({
     }
   };
 
+  // Shared AI runner
+  const withAi = async (field: string, fn: () => Promise<void>) => {
+    if (!hasName) return toast.error('Please enter a product name first');
+    if (!token) return toast.error('Please sign in to use AI features');
+    setGenerating(field);
+    try {
+      await fn();
+    } catch (err: any) {
+      toast.error(err.message || `Failed to generate ${field}`);
+    } finally {
+      setGenerating(null);
+    }
+  };
+
+  const genDietary = () =>
+    withAi('dietary', async () => {
+      const res = await geminiService.generateDietary(productName, token, watch('type'));
+      if (res.data.isDietary) {
+        Object.entries(res.data.isDietary).forEach(([key, val]) => {
+          setValue(`isDietary.${key}`, val);
+        });
+      }
+      toast.success('Dietary info generated!');
+    });
+
+  const genAllergens = () =>
+    withAi('allergens', async () => {
+      const res = await geminiService.generateAllergens(productName, token, watch('type'));
+      if (res.data.allergens) setValue('allergens', res.data.allergens);
+      toast.success('Allergens generated!');
+    });
+
+  const genNutritional = () =>
+    withAi('nutritionalInfo', async () => {
+      const res = await geminiService.generateNutritionalInfo(
+        productName,
+        token,
+        watch('type'),
+        watch('abv'),
+        watch('volumeMl')
+      );
+      if (res.data.nutritionalInfo) {
+        const n = res.data.nutritionalInfo;
+        if (n.calories !== undefined) setValue('nutritionalInfo.calories', n.calories);
+        if (n.carbohydrates !== undefined) setValue('nutritionalInfo.carbohydrates', n.carbohydrates);
+        if (n.sugar !== undefined) setValue('nutritionalInfo.sugar', n.sugar);
+        if (n.protein !== undefined) setValue('nutritionalInfo.protein', n.protein);
+        if (n.fat !== undefined) setValue('nutritionalInfo.fat', n.fat);
+      }
+      toast.success('Nutritional info generated!');
+    });
+
   const selectedCount = Object.values(selectedDietary).filter(Boolean).length;
 
   return (
@@ -135,6 +226,7 @@ export default function ProductDietary({
                   {selectedCount} selected
                 </Badge>
               )}
+              <AiBtn field="dietary" generating={generating} onClick={genDietary} disabled={!hasName} />
             </label>
 
             <motion.div
@@ -197,6 +289,7 @@ export default function ProductDietary({
                   {selectedAllergens.length} allergens
                 </Badge>
               )}
+              <AiBtn field="allergens" generating={generating} onClick={genAllergens} disabled={!hasName} />
             </label>
 
             <motion.div className="flex flex-wrap gap-2" variants={staggerContainer}>
@@ -246,7 +339,7 @@ export default function ProductDietary({
                   <span className="font-medium">Allergen Warning:</span>
                 </div>
                 <p className="mt-1 text-sm text-red-600">
-                  This product contains: {selectedAllergens.map(a => 
+                  This product contains: {selectedAllergens.map(a =>
                     allergensList.find(al => al.value === a)?.label
                   ).join(', ')}
                 </p>
@@ -262,6 +355,7 @@ export default function ProductDietary({
               <Scale className="h-4 w-4 text-blue-500" />
               Nutritional Information
               <span className="text-xs font-normal text-gray-500">(per serving)</span>
+              <AiBtn field="nutritionalInfo" generating={generating} onClick={genNutritional} disabled={!hasName} />
             </label>
 
             <motion.div
