@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 import { FilterState, SortOption } from '@/types/filter.types';
+import ActiveFilters from './ActiveFilters';
 
 interface FilterHeaderProps {
   onOpenSidebar: () => void;
@@ -78,88 +79,6 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
   }, [filters]);
 
   const hasActiveFilters = activeFiltersCount > 0;
-
-  const activeFiltersList = React.useMemo(() => {
-    const list: { key: keyof FilterState; value: any; label: string }[] = [];
-    
-    if (filters.categoryType) {
-      if (Array.isArray(filters.categoryType)) {
-        filters.categoryType.forEach(c => {
-          list.push({ key: 'categoryType', value: c, label: `Category: ${c.replace(/-/g, ' ')}` });
-        });
-      } else {
-        list.push({ key: 'categoryType', value: filters.categoryType, label: `Category: ${filters.categoryType.replace(/-/g, ' ')}` });
-      }
-    }
-    
-    if (filters.subCategoryType) {
-      if (Array.isArray(filters.subCategoryType)) {
-        filters.subCategoryType.forEach(s => {
-          list.push({ key: 'subCategoryType', value: s, label: `Subcategory: ${s.replace(/-/g, ' ')}` });
-        });
-      } else {
-        list.push({ key: 'subCategoryType', value: filters.subCategoryType, label: `Subcategory: ${filters.subCategoryType.replace(/-/g, ' ')}` });
-      }
-    }
-    
-    if (filters.brand) {
-      if (Array.isArray(filters.brand)) {
-        filters.brand.forEach(b => {
-          list.push({ key: 'brand', value: b, label: `Brand: ${b}` });
-        });
-      } else {
-        list.push({ key: 'brand', value: filters.brand, label: `Brand: ${filters.brand}` });
-      }
-    }
-    
-    if (filters.size) {
-      list.push({ key: 'size', value: filters.size, label: `Size: ${filters.size}` });
-    }
-    
-    if (filters.originCountry) {
-      if (Array.isArray(filters.originCountry)) {
-        filters.originCountry.forEach(c => {
-          list.push({ key: 'originCountry', value: c, label: `Origin: ${c}` });
-        });
-      } else {
-        list.push({ key: 'originCountry', value: filters.originCountry, label: `Origin: ${filters.originCountry}` });
-      }
-    }
-    
-    if (filters.flavorCategory) {
-      if (Array.isArray(filters.flavorCategory)) {
-        filters.flavorCategory.forEach(f => {
-          list.push({ key: 'flavorCategory', value: f, label: `Flavor: ${f.replace(/-/g, ' ')}` });
-        });
-      } else {
-        list.push({ key: 'flavorCategory', value: filters.flavorCategory, label: `Flavor: ${filters.flavorCategory.replace(/-/g, ' ')}` });
-      }
-    }
-    
-    if (filters.minRating) {
-      list.push({ key: 'minRating', value: filters.minRating, label: `${filters.minRating}+ Stars` });
-    }
-    
-    if (filters.showOnlySale) {
-      list.push({ key: 'showOnlySale', value: true, label: 'On Sale' });
-    }
-    
-    if (filters.priceRange && (filters.priceRange.min !== 0 || filters.priceRange.max !== 100000)) {
-      list.push({ key: 'priceRange', value: filters.priceRange, label: `₦${filters.priceRange.min.toLocaleString()} - ₦${filters.priceRange.max.toLocaleString()}` });
-    }
-
-    if (filters.abvRange) {
-      const { min, max } = filters.abvRange;
-      const label = max === 0 ? 'Non-Alcoholic' : `${min}% – ${max}% ABV`;
-      list.push({ key: 'abvRange', value: filters.abvRange, label });
-    }
-
-    if (filters.volumeRange) {
-      list.push({ key: 'volumeRange', value: filters.volumeRange, label: `Volume: ${filters.volumeRange}` });
-    }
-
-    return list;
-  }, [filters]);
 
   const handleClearAll = useCallback(() => {
     if (onClearAllFilters) {
@@ -348,56 +267,14 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
 
       {/* Active Filters Bar */}
       {hasActiveFilters && (
-        <div className="overflow-hidden">
-          <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-gray-100">
-            <span className="text-xs text-gray-500 uppercase font-medium tracking-wide">
-              Active filters:
-            </span>
-            
-            {activeFiltersList.map(({ key, value, label }, index) => (
-              <button
-                key={`${key}-${index}`}
-                onClick={() => {
-                  if (key === 'showOnlySale') {
-                    updateFilter('showOnlySale', false);
-                  } else if (key === 'priceRange') {
-                    updateFilter('priceRange', { min: 0, max: 100000 });
-                  } else if (key === 'abvRange' || key === 'volumeRange' || key === 'minRating' || key === 'size') {
-                    updateFilter(key, null);
-                  } else {
-                    const currentValue = filters[key];
-                    if (Array.isArray(currentValue)) {
-                      const next = currentValue.filter((v: any) => v !== value);
-                      updateFilter(key, next.length ? next : null);
-                    } else {
-                      updateFilter(key, null);
-                    }
-                  }
-                }}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                  key === 'showOnlySale'
-                    ? 'bg-red-100 hover:bg-red-200 text-red-700'
-                    : key === 'minRating'
-                    ? 'bg-yellow-100 hover:bg-yellow-200 text-yellow-700'
-                    : key === 'priceRange'
-                    ? 'bg-green-100 hover:bg-green-200 text-green-700'
-                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                }`}
-              >
-                {label}
-                <Icon.PiX size={12} />
-              </button>
-            ))}
-            
-            {/* Clear All Button */}
-            <button
-              onClick={handleClearAll}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-white rounded-full text-xs font-medium transition-colors ml-2"
-            >
-              <Icon.PiTrash size={12} />
-              Clear All
-            </button>
-          </div>
+        <div className="border-t border-gray-100 mt-4 pt-1">
+          <ActiveFilters
+            filters={filters}
+            updateFilter={updateFilter}
+            onClearAll={handleClearAll}
+            totalProducts={totalProducts ?? 0}
+            isLoading={isLoading}
+          />
         </div>
       )}
     </div>

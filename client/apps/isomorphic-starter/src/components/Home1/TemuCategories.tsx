@@ -152,7 +152,7 @@ const CategorySidebar: React.FC<CategorySidebarProps> = ({ onClose }) => {
                     {subcategories.map((sub) => (
                       <Link
                         key={sub._id}
-                        href={`/shop?category=${activeCategory.slug}&subCategory=${sub.slug}`}
+                        href={`/shop?category=${activeCategory.slug}&subcategory=${sub.slug}`}
                         onClick={onClose}
                         className="flex flex-col items-center px-3 py-2.5 bg-gray-50 hover:bg-orange-50 border border-gray-100 hover:border-orange-200 rounded-xl transition-all text-center group"
                       >

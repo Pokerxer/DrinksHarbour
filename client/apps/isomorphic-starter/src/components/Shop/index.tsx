@@ -431,16 +431,11 @@ const Shop: React.FC<Props> = ({
   }, [filters, pathname, router]);
 
   const handleClearAll = useCallback(() => {
-    // First, immediately clear the URL using window.history
-    if (typeof window !== 'undefined') {
-      window.history.replaceState({}, '', pathname);
-    }
-    
     setFilters({
       size: null,
       color: null,
       brand: null,
-      priceRange: filterOptions.priceRange,
+      priceRange: { min: 0, max: 100000 },
       showOnlySale: false,
       sortOption: '',
       originCountry: null,
@@ -451,7 +446,9 @@ const Shop: React.FC<Props> = ({
       abvRange: null,
       volumeRange: null,
     });
-  }, [filterOptions.priceRange, pathname]);
+    // Clear URL params via router so searchParams hook updates correctly
+    router.replace(pathname, { scroll: false });
+  }, [pathname, router]);
 
   const handlePageChange = useCallback((selected: number) => {
     setCurrentPage(selected);
@@ -653,6 +650,7 @@ const Shop: React.FC<Props> = ({
                 updateFilter={updateFilter}
                 sortOptions={SORT_OPTIONS}
                 totalProducts={0}
+                onClearAllFilters={handleClearAll}
               />
               <ProductGrid
                 products={[]}
@@ -671,6 +669,7 @@ const Shop: React.FC<Props> = ({
                 updateFilter={updateFilter}
                 sortOptions={SORT_OPTIONS}
                 totalProducts={sortedProducts.length}
+                onClearAllFilters={handleClearAll}
               />
               {hasFilteredResults ? (
                 <>

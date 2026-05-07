@@ -196,7 +196,7 @@ const MobileBottomNav: React.FC = () => {
                           {subcategories.map((sub) => (
                             <Link
                               key={sub._id}
-                              href={`/shop?category=${activeCategory.slug}&subCategory=${sub.slug}`}
+                              href={`/shop?category=${activeCategory.slug}&subcategory=${sub.slug}`}
                               onClick={handleClose}
                               className="flex flex-col items-center px-3 py-2.5 bg-gray-50 hover:bg-orange-50 rounded-xl text-sm text-gray-700 hover:text-orange-600 font-medium text-center transition-colors"
                             >
