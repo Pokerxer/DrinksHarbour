@@ -311,30 +311,7 @@ function ShopPageContent({ params }: PageProps) {
     router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
   };
 
-  // ── Loading / error ──────────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <div className="min-h-[60vh] flex items-center justify-center bg-gradient-to-b from-red-50 to-white">
-        <LoadingSpinner variant="bounce" color="rose" size="lg" text="Finding the best drinks..." />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-red-50 to-white">
-        <div className="text-red-700 text-lg font-medium">{error}</div>
-        <button
-          onClick={() => router.refresh()}
-          className="px-5 py-2.5 bg-gradient-to-br from-red-700 to-red-900 text-white rounded-xl font-semibold hover:from-red-800 hover:to-red-950 transition-all shadow-md"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
-
-  // ── Render ───────────────────────────────────────────────────────────────
+  // ── TABS must be defined before any early returns (Rules of Hooks) ─────────
   const isSalePage = sale === 'true';
 
   const TABS = useMemo(() => [
@@ -364,6 +341,30 @@ function ShopPageContent({ params }: PageProps) {
     },
   ], [byType.percentage.length, byType.fixed.length, byType.flash_sale.length]);
 
+  // ── Loading / error ──────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center bg-gradient-to-b from-red-50 to-white">
+        <LoadingSpinner variant="bounce" color="rose" size="lg" text="Finding the best drinks..." />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-red-50 to-white">
+        <div className="text-red-700 text-lg font-medium">{error}</div>
+        <button
+          onClick={() => router.refresh()}
+          className="px-5 py-2.5 bg-gradient-to-br from-red-700 to-red-900 text-white rounded-xl font-semibold hover:from-red-800 hover:to-red-950 transition-all shadow-md"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="bg-white min-h-screen">
 
