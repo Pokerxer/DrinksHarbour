@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { FilterState, FilterOptions, SortOption } from '@/types/filter.types';
 import BreadcrumbSection from './BreadcrumbSection';
 import FilterSidebar from './FilterSidebar';
@@ -58,7 +58,8 @@ const Shop: React.FC<Props> = ({
 }) => {
   const router = useRouter();
   const pathname = usePathname();
-  
+  const searchParams = useSearchParams();
+
   // State
   const [internalLayoutCol, setInternalLayoutCol] = useState<number>(4);
   const [openSidebar, setOpenSidebar] = useState(false);
@@ -142,7 +143,28 @@ const Shop: React.FC<Props> = ({
       });
     }
   }, [initialFilters, filterOptions.priceRange]);
-  // Just use local state for multi-select filters
+
+  // Sync category + subcategory filter state from URL when navigation happens
+  // (e.g., clicking a subcategory link in the sidebar). The initialFilters prop
+  // is frozen after mount, so we read searchParams directly.
+  useEffect(() => {
+    const catParam = searchParams.get('category');
+    const subParam = searchParams.get('subcategory');
+
+    const newCat = catParam
+      ? (catParam.includes(',') ? catParam.split(',') : catParam)
+      : null;
+    const newSub = subParam
+      ? (subParam.includes(',') ? subParam.split(',') : subParam)
+      : null;
+
+    setFilters(prev => {
+      const catChanged = JSON.stringify(prev.categoryType) !== JSON.stringify(newCat);
+      const subChanged = JSON.stringify(prev.subCategoryType) !== JSON.stringify(newSub);
+      if (!catChanged && !subChanged) return prev; // nothing to do
+      return { ...prev, categoryType: newCat, subCategoryType: newSub };
+    });
+  }, [searchParams]);
 
   const offset = currentPage * productPerPage;
   
