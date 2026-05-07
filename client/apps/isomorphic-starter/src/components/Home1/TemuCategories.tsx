@@ -3,109 +3,34 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import * as Icon from "react-icons/pi";
-
-interface Category {
-  _id: string;
-  name: string;
-  slug: string;
-  icon?: string;
-  color?: string;
-  tagline?: string;
-  description?: string;
-  productCount?: number;
-  isFeatured?: boolean;
-  isTrending?: boolean;
-  subCategories?: string[];
-  children?: Category[];
-  parent?: string | null;
-  level?: number;
-}
+import { fetchAllCategories, getRootCategories, getSubcategories, type Category } from "@/lib/categories";
 
 interface CategorySidebarProps {
   onClose?: () => void;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
-
-// Module-level cache — re-opening the sidebar doesn't re-fetch
-let _cachedCategories: Category[] | null = null;
-let _cacheTs = 0;
-const CACHE_TTL = 5 * 60_000; // 5 minutes
-
 const CategorySidebar: React.FC<CategorySidebarProps> = ({ onClose }) => {
-  const [allCategories, setAllCategories] = useState<Category[]>(_cachedCategories ?? []);
-  const [loading, setLoading] = useState(!_cachedCategories || Date.now() - _cacheTs > CACHE_TTL);
+  const [allCategories, setAllCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
 
   useEffect(() => {
-    // Serve from cache if fresh
-    if (_cachedCategories && Date.now() - _cacheTs < CACHE_TTL) {
-      setAllCategories(_cachedCategories);
-      setLoading(false);
-      return;
-    }
-
     let cancelled = false;
-    const fetchCategories = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/categories`);
-        const data = await res.json();
-        if (!cancelled && data.success && data.data?.categories) {
-          _cachedCategories = data.data.categories;
-          _cacheTs = Date.now();
-          setAllCategories(data.data.categories);
-        }
-      } catch (error) {
-        console.error("Error fetching categories:", error);
-      } finally {
-        if (!cancelled) setLoading(false);
+    fetchAllCategories().then(cats => {
+      if (!cancelled) {
+        setAllCategories(cats);
+        setLoading(false);
       }
-    };
-
-    fetchCategories();
+    });
     return () => { cancelled = true; };
   }, []);
 
-  // Build a Set of category IDs that have ≥1 approved product (direct count from API)
-  const populatedIds = useMemo(() => {
-    const set = new Set<string>();
-    for (const c of allCategories) {
-      if ((c.productCount ?? 0) > 0) set.add(c._id);
-    }
-    return set;
-  }, [allCategories]);
+  const rootCategories = useMemo(() => getRootCategories(allCategories), [allCategories]);
 
-  // Root categories: level=0, no parent — shown only if they or any of their
-  // subcategories have products
-  const rootCategories = useMemo(() => {
-    return allCategories.filter((c) => {
-      if (c.parent || (c.level ?? 0) !== 0) return false;
-
-      // Direct products under this root category
-      if (populatedIds.has(c._id)) return true;
-
-      // Products in subcategories
-      const hasPopulatedChild = allCategories.some(
-        (child) =>
-          child.parent === c._id &&
-          (child.level ?? 0) === 1 &&
-          populatedIds.has(child._id)
-      );
-      return hasPopulatedChild;
-    });
-  }, [allCategories, populatedIds]);
-
-  // Subcategories of the active category — only those with products
-  const subcategories = useMemo(() => {
-    if (!activeCategory) return [];
-
-    // Check subCategories array first (explicit links), then parent relationship
-    const subs = activeCategory.subCategories?.length
-      ? allCategories.filter((c) => activeCategory.subCategories!.includes(c._id))
-      : allCategories.filter((c) => c.parent === activeCategory._id && (c.level ?? 0) === 1);
-
-    return subs.filter((c) => populatedIds.has(c._id));
-  }, [activeCategory, allCategories, populatedIds]);
+  const subcategories = useMemo(
+    () => activeCategory ? getSubcategories(activeCategory, allCategories) : [],
+    [activeCategory, allCategories]
+  );
 
   if (loading) {
     return (
@@ -169,11 +94,9 @@ const CategorySidebar: React.FC<CategorySidebarProps> = ({ onClose }) => {
                 >
                   <span className="text-xl">{cat.icon || "🍷"}</span>
                   <div className="min-w-0 flex-1">
-                    <span
-                      className={`text-sm font-medium truncate block ${
-                        activeCategory?._id === cat._id ? "text-orange-600" : "text-gray-700"
-                      }`}
-                    >
+                    <span className={`text-sm font-medium truncate block ${
+                      activeCategory?._id === cat._id ? "text-orange-600" : "text-gray-700"
+                    }`}>
                       {cat.name}
                     </span>
                     {(cat.productCount ?? 0) > 0 && (
