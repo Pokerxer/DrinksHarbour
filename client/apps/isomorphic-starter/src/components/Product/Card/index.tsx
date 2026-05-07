@@ -1145,7 +1145,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                 )}
               </div>
 
-              {/* Mobile Action Buttons - Icon only, positioned to not block image */}
+              {/* Mobile Action Buttons - stacked column on image */}
               <div className="lg:hidden absolute top-2 right-2 flex flex-col gap-2 z-20">
                 <button
                   onClick={handleMobileAddToCart}
@@ -1160,6 +1160,21 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                     </svg>
                   ) : (
                     <Icon.PiShoppingCart size={18} />
+                  )}
+                </button>
+                <button
+                  onClick={handleAddToWishlist}
+                  className={`w-9 h-9 bg-white/95 backdrop-blur-sm rounded-full shadow-lg flex items-center justify-center active:scale-95 transition-all ${
+                    wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id)
+                      ? 'text-red-500'
+                      : 'text-gray-500 hover:text-red-500'
+                  }`}
+                  aria-label="Toggle wishlist"
+                >
+                  {wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id) ? (
+                    <Icon.PiHeartFill size={18} />
+                  ) : (
+                    <Icon.PiHeart size={18} />
                   )}
                 </button>
                 <button
@@ -1247,22 +1262,6 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                   </div>
                 </div>
                 
-                {/* Mobile wishlist button with animation */}
-                <button
-                  onClick={handleAddToWishlist}
-                  className={`lg:hidden w-8 h-8 flex items-center justify-center rounded-full transition-all duration-300 active:scale-90 ${
-                    wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id)
-                      ? 'text-red-500 bg-red-50'
-                      : 'text-gray-400 hover:text-red-500 hover:bg-red-50'
-                  }`}
-                  aria-label="Toggle wishlist"
-                >
-                  {wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id) ? (
-                    <Icon.PiHeartFill size={18} className="animate-pulse" />
-                  ) : (
-                    <Icon.PiHeart size={18} />
-                  )}
-                </button>
               </div>
 
               {/* Vendor Avatars - Desktop only */}
