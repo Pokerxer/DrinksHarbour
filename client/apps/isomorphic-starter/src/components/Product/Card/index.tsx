@@ -195,6 +195,7 @@ type ProductData = ProductType | BeverageProduct;
 interface ProductProps {
   data: ProductData;
   type: 'grid' | 'list';
+  priority?: boolean;
 }
 
 // Tooltip Button Component
@@ -292,7 +293,7 @@ const VendorAvatar: React.FC<VendorAvatarProps> = ({ vendor, isActive, onClick, 
 
 
 
-const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
+const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = false }) => {
   const router = useRouter();
   const [activeColor, setActiveColor] = useState<string>('');
   const [activeSize, setActiveSize] = useState<string>('');
@@ -975,7 +976,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
                     }
                     width={500}
                     height={500}
-                    priority={true}
+                    priority={priority}
                     alt={mappedProduct.name}
                     className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
                     onError={() => setImageError(true)}
@@ -1388,7 +1389,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
                     src={mappedProduct.thumbImage?.[0] || '/images/product/1000x1000.png'}
                     width={500}
                     height={500}
-                    priority={true}
+                    priority={priority}
                     alt={mappedProduct.name}
                     className="w-full h-full object-contain duration-500 sm:duration-700 hover:scale-105"
                     onError={() => setImageError(true)}
@@ -1510,4 +1511,4 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
   );
 };
 
-export default ProductCard;
+export default React.memo(ProductCard);

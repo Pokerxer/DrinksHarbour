@@ -64,13 +64,13 @@ const ProductGrid: React.FC<ProductGridProps> = ({ products, layoutCol, productS
       aria-label="Product list"
     >
       {products.map((item, index) => (
-        <div 
-          key={`${item.id || item._id || index}-${index}`} 
+        <div
+          key={`${item.id || item._id || index}-${index}`}
           role="listitem"
           className="animate-fade-in-up"
-          style={{ animationDelay: `${index * 50}ms` }}
+          style={{ animationDelay: `${Math.min(index, 7) * 30}ms` }}
         >
-          <ProductCard data={item as any} type="grid" />
+          <ProductCard data={item as any} type="grid" priority={index < 4} />
         </div>
       ))}
     </div>

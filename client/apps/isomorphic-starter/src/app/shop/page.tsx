@@ -1,7 +1,11 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, Suspense, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, Suspense, useMemo, useRef } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
+
+// In-memory cache: keyed by API URL, TTL 30 seconds
+const _shopCache = new Map<string, { data: any[]; total: number; ts: number }>();
+const SHOP_CACHE_TTL = 30_000;
 import Shop from '@/components/Shop';
 import LoadingSpinner from '@/components/loader/LoadingSpinner';
 import * as Icon from 'react-icons/pi';
@@ -180,6 +184,7 @@ function ShopPageContent({ params }: PageProps) {
   const [error,          setError]          = useState<string | null>(null);
   const [totalProducts,  setTotalProducts]  = useState(0);
   const [layoutCol,      setLayoutCol]      = useState(4);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── API URL ──────────────────────────────────────────────────────────────
   const buildApiUrl = useCallback(() => {
@@ -206,29 +211,42 @@ function ShopPageContent({ params }: PageProps) {
 
   // ── Fetch ────────────────────────────────────────────────────────────────
   const fetchProducts = useCallback(async () => {
+    const url = buildApiUrl();
+
+    // Serve from cache if fresh
+    const cached = _shopCache.get(url);
+    if (cached && Date.now() - cached.ts < SHOP_CACHE_TTL) {
+      setProducts(cached.data);
+      setTotalProducts(cached.total);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
-      const res  = await fetch(buildApiUrl(), { cache: 'no-store' });
+      const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      let prods: any[] = [];
+      let total = 0;
       if (data.success && data.data?.products) {
-        setProducts(data.data.products);
-        setTotalProducts(data.data.pagination?.total ?? data.data.products.length);
+        prods = data.data.products;
+        total = data.data.pagination?.total ?? prods.length;
       } else if (data.success && data.data?.data) {
-        setProducts(data.data.data);
-        setTotalProducts(data.data.pagination?.total ?? data.data.data.length);
+        prods = data.data.data;
+        total = data.data.pagination?.total ?? prods.length;
       } else if (Array.isArray(data.products)) {
-        setProducts(data.products);
-        setTotalProducts(data.products.length);
+        prods = data.products;
+        total = prods.length;
       } else if (Array.isArray(data)) {
-        setProducts(data);
-        setTotalProducts(data.length);
-      } else {
-        setProducts([]);
-        setTotalProducts(0);
+        prods = data;
+        total = prods.length;
       }
-    } catch (err) {
+      _shopCache.set(url, { data: prods, total, ts: Date.now() });
+      setProducts(prods);
+      setTotalProducts(total);
+    } catch {
       setError('Failed to load products. Please try again later.');
       setProducts([]);
       setTotalProducts(0);
@@ -237,7 +255,12 @@ function ShopPageContent({ params }: PageProps) {
     }
   }, [buildApiUrl]);
 
-  useEffect(() => { fetchProducts(); }, [fetchProducts]);
+  // Debounce rapid URL-param changes (e.g. slider dragging) by 200ms
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => { fetchProducts(); }, 200);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [fetchProducts]);
 
   // ── Sale-type filtering (client-side) ────────────────────────────────────
   // Split products into buckets: only products with a real price drop
@@ -314,32 +337,32 @@ function ShopPageContent({ params }: PageProps) {
   // ── Render ───────────────────────────────────────────────────────────────
   const isSalePage = sale === 'true';
 
-  const TABS: { key: SaleTab; label: string; icon: React.ReactNode; color: string }[] = [
+  const TABS = useMemo(() => [
     {
-      key: 'all',
-      label: `All Deals`,
+      key: 'all' as SaleTab,
+      label: 'All Deals',
       icon: <Icon.PiTagFill size={14} />,
       color: 'from-red-700 to-red-900',
     },
     {
-      key: 'percentage',
+      key: 'percentage' as SaleTab,
       label: `% Off${byType.percentage.length ? ` (${byType.percentage.length})` : ''}`,
       icon: <Icon.PiPercent size={14} />,
       color: 'from-red-600 to-red-800',
     },
     {
-      key: 'fixed',
+      key: 'fixed' as SaleTab,
       label: `₦ Fixed Off${byType.fixed.length ? ` (${byType.fixed.length})` : ''}`,
       icon: <Icon.PiCurrencyNgn size={14} />,
       color: 'from-red-500 to-red-700',
     },
     {
-      key: 'flash_sale',
+      key: 'flash_sale' as SaleTab,
       label: `⚡ Flash Sale${byType.flash_sale.length ? ` (${byType.flash_sale.length})` : ''}`,
       icon: <Icon.PiLightningFill size={14} />,
       color: 'from-red-800 to-red-950',
     },
-  ];
+  ], [byType.percentage.length, byType.fixed.length, byType.flash_sale.length]);
 
   return (
     <div className="bg-white min-h-screen">

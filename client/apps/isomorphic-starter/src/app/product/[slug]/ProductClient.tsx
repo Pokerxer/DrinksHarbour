@@ -1,20 +1,40 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
+import dynamic from "next/dynamic";
 import BreadcrumbProduct from "@/components/Breadcrumb/BreadcrumbProduct";
-import ProductDetail from "@/components/Product/Detail";
-import RecentlyViewed from "@/components/Shop/RecentlyViewed";
 import LoadingSpinner from "@/components/loader/LoadingSpinner";
 import type { ProductType } from "@/types/product.types";
 import * as Icon from "react-icons/pi";
 import { AnnouncementBanner } from "@/components/Banner";
 
+// Defer heavy components — ProductDetail pulls in Swiper + all modules
+const ProductDetail = dynamic(() => import("@/components/Product/Detail"), {
+  loading: () => (
+    <div className="container mx-auto px-4 py-10 animate-pulse">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="aspect-square bg-gray-100 rounded-2xl" />
+        <div className="space-y-4">
+          <div className="h-8 bg-gray-100 rounded w-3/4" />
+          <div className="h-5 bg-gray-100 rounded w-1/2" />
+          <div className="h-12 bg-gray-100 rounded" />
+          <div className="h-12 bg-gray-100 rounded w-2/3" />
+        </div>
+      </div>
+    </div>
+  ),
+});
+const RecentlyViewed = dynamic(() => import("@/components/Shop/RecentlyViewed"));
+
+// ─── In-memory cache: product data keyed by slug, 5 min TTL ─────────────────
+const _productCache = new Map<string, { product: any; related: ProductType[]; ts: number }>();
+const PRODUCT_CACHE_TTL = 5 * 60_000;
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
 interface ApiResponse {
   success: boolean;
-  data?: {
-    product: any;
-    relatedProducts?: ProductType[];
-  };
+  data?: { product: any; relatedProducts?: ProductType[] };
   products?: any[];
   message?: string;
 }
@@ -25,66 +45,78 @@ export default function ProductClient({ slug }: { slug: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchProduct = useCallback(async () => {
+  const loadProduct = useCallback(async () => {
     if (!slug) return;
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
+    // Serve from cache if fresh
+    const cached = _productCache.get(slug);
+    if (cached && Date.now() - cached.ts < PRODUCT_CACHE_TTL) {
+      setProductData(cached.product);
+      setRelatedProducts(cached.related);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
       const response = await fetch(`${API_URL}/api/products/slug/${slug}`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
+        next: { revalidate: 300 },
       });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data: ApiResponse = await response.json();
+
+      let product: any = null;
+      let related: ProductType[] = [];
+
       if (data.success && data.data?.product) {
-        setProductData(data.data.product);
-        setRelatedProducts(data.data.relatedProducts || []);
+        product = data.data.product;
+        related = data.data.relatedProducts || [];
       } else if (data.success && data.data) {
-        setProductData(data.data);
+        product = data.data;
       } else if (Array.isArray(data.products) && data.products.length > 0) {
-        setProductData(data.products[0]);
+        product = data.products[0];
       } else if (Array.isArray(data) && (data as any).length > 0) {
-        setProductData((data as any)[0]);
+        product = (data as any)[0];
       } else {
         setError("Product data format not recognized");
-        setProductData(null);
+        setLoading(false);
+        return;
+      }
+
+      setProductData(product);
+      setRelatedProducts(related);
+      setLoading(false);
+
+      // Cache with what we have so far
+      _productCache.set(slug, { product, related, ts: Date.now() });
+
+      // If the main response didn't include related products, fetch them in the background
+      // without blocking the UI
+      if (related.length === 0 && product?._id) {
+        fetch(`${API_URL}/api/products/${product._id}/related?limit=8`)
+          .then(r => r.ok ? r.json() : null)
+          .then(d => {
+            if (!d) return;
+            let fetchedRelated: ProductType[] = [];
+            if (d.success && d.data?.products?.products) fetchedRelated = d.data.products.products;
+            else if (d.success && d.data?.products) fetchedRelated = d.data.products;
+            if (fetchedRelated.length > 0) {
+              setRelatedProducts(fetchedRelated);
+              // Update cache with related products
+              _productCache.set(slug, { product, related: fetchedRelated, ts: Date.now() });
+            }
+          })
+          .catch(() => {/* non-critical */});
       }
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to load product. Please try again later.",
-      );
+      setError(err instanceof Error ? err.message : "Failed to load product. Please try again later.");
       setProductData(null);
-    } finally {
       setLoading(false);
     }
   }, [slug]);
 
-  const fetchRelatedProducts = useCallback(async (productId: string) => {
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-    try {
-      const response = await fetch(`${API_URL}/api/products/${productId}/related?limit=8`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-      });
-      if (!response.ok) return;
-      const data: any = await response.json();
-      if (data.success && data.data?.products?.products) {
-        setRelatedProducts(data.data.products.products);
-      } else if (data.success && data.data?.products) {
-        setRelatedProducts(data.data.products);
-      }
-    } catch {
-      // non-critical
-    }
-  }, []);
-
-  useEffect(() => { fetchProduct(); }, [fetchProduct]);
-  useEffect(() => {
-    if (productData?._id) fetchRelatedProducts(productData._id);
-  }, [productData, fetchRelatedProducts]);
+  useEffect(() => { loadProduct(); }, [loadProduct]);
 
   if (loading) {
     return (
