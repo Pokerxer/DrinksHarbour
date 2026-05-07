@@ -62,6 +62,10 @@ const API_ENDPOINTS: Record<SectionKey, string> = {
   newArrivals: '/api/products/new-arrivals',
 };
 
+// Module-level cache: 60 seconds TTL per section
+const _recCache = new Map<string, { data: any[]; ts: number }>();
+const REC_CACHE_TTL = 60_000;
+
 const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12, layoutCol = 4 }) => {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -206,6 +210,10 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12, la
 
   // Fetch a section and return the products (does NOT call setProducts itself)
   const loadSection = useCallback(async (section: SectionKey, auth: boolean): Promise<any[]> => {
+    const cacheKey = `${section}:${auth ? 'auth' : 'anon'}:${maxItems}`;
+    const cached = _recCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < REC_CACHE_TTL) return cached.data;
+
     let endpoints: string[];
     if (section === 'recommended') {
       endpoints = auth
@@ -221,7 +229,10 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({ maxItems = 12, la
         if (response.ok) {
           const data = await response.json();
           const prods = normalizeProducts(data).map(normalizeProduct);
-          if (data.success !== false && prods.length > 0) return prods;
+          if (data.success !== false && prods.length > 0) {
+            _recCache.set(cacheKey, { data: prods, ts: Date.now() });
+            return prods;
+          }
         }
       } catch {
         continue;

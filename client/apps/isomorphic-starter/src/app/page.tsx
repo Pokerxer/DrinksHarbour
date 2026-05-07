@@ -1,23 +1,63 @@
 "use client";
 
 import React, { useState } from "react";
-import CategorySidebar from "@/components/Home1/TemuCategories";
-import FlashSale from "@/components/Home1/FlashSale";
-import Benefit from "@/components/Home1/Benefit";
-import FeaturedDeals from "@/components/Home1/FeaturedDeals";
-import AnnouncementBanner from "@/components/Banner/AnnouncementBanner";
-import HeroBanner from "@/components/Banner/HeroBanner";
+import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import * as Icon from "react-icons/pi";
-import RecommendedForYou from '@/components/Shop/RecommendedForYou';
+import LazySection from "@/components/UI/LazySection";
+
+// HeroBanner is above the fold — load it eagerly
+import HeroBanner from "@/components/Banner/HeroBanner";
+
+// Below-fold sections: dynamically imported to reduce initial JS bundle
+const CategorySidebar = dynamic(() => import("@/components/Home1/TemuCategories"));
+const FlashSale = dynamic(() => import("@/components/Home1/FlashSale"), {
+  loading: () => <FlashSaleSkeleton />,
+});
+const FeaturedDeals = dynamic(() => import("@/components/Home1/FeaturedDeals"), {
+  loading: () => <SectionSkeleton />,
+});
+const Benefit = dynamic(() => import("@/components/Home1/Benefit"));
+const RecommendedForYou = dynamic(
+  () => import("@/components/Shop/RecommendedForYou"),
+  { loading: () => <SectionSkeleton /> }
+);
+
+function FlashSaleSkeleton() {
+  return (
+    <div className="py-4 bg-white animate-pulse">
+      <div className="container mx-auto px-3">
+        <div className="h-6 w-40 bg-gray-200 rounded mb-4" />
+        <div className="flex gap-3 overflow-hidden">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="min-w-[150px] h-48 bg-gray-100 rounded-lg" />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SectionSkeleton() {
+  return (
+    <div className="py-4 bg-white animate-pulse">
+      <div className="container mx-auto px-3">
+        <div className="h-6 w-48 bg-gray-200 rounded mb-4" />
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="h-56 bg-gray-100 rounded-lg" />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Home() {
   const [showCategories, setShowCategories] = useState(false);
 
   return (
     <div className="bg-gray-100 min-h-screen">
-      {/* <AnnouncementBanner placement="header" layout="static" variant="promo" /> */}
-
       {/* Mobile Category Sidebar Overlay */}
       <AnimatePresence>
         {showCategories && (
@@ -52,7 +92,7 @@ export default function Home() {
 
       {/* Main Content Area */}
       <div className="min-w-0">
-        {/* Hero Banner */}
+        {/* Hero Banner — above the fold, loads immediately */}
         <div className="bg-gradient-to-r from-orange-500 to-pink-500">
           <HeroBanner
             placement="home_hero"
@@ -63,25 +103,33 @@ export default function Home() {
           />
         </div>
 
-        {/* Flash Sale */}
-        <FlashSale />
+        {/* Flash Sale — just below the fold, preload with small margin */}
+        <LazySection rootMargin="400px">
+          <FlashSale />
+        </LazySection>
 
+        {/* Hot Deals */}
+        <LazySection rootMargin="200px">
+          <section className="py-4 bg-white">
+            <div className="container mx-auto px-3">
+              <FeaturedDeals
+                title="Hot Deals"
+                subtitle="Limited time offers - Grab them fast!"
+                limit={12}
+              />
+            </div>
+          </section>
+        </LazySection>
 
-        {/* More Deals Section */}
-        <section className="py-4 bg-white">
-          <div className="container mx-auto px-3">
-            <FeaturedDeals
-              title="Hot Deals"
-              subtitle="Limited time offers - Grab them fast!"
-              limit={12}
-            />
-          </div>
-        </section>
+        {/* Benefits */}
+        <LazySection rootMargin="200px">
+          <Benefit className="py-8" />
+        </LazySection>
 
-        {/* Benefits/Value Propositions */}
-        <Benefit className="py-8" />
         {/* Personalized Recommendations */}
-        <RecommendedForYou maxItems={12} />
+        <LazySection rootMargin="200px">
+          <RecommendedForYou maxItems={12} />
+        </LazySection>
       </div>
 
       {/* Bottom padding for mobile category button */}

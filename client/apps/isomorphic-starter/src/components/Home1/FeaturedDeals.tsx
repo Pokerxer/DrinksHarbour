@@ -186,6 +186,10 @@ const TemuProductCard = ({
   );
 };
 
+// In-memory cache: 60 seconds TTL
+const _dealsCache = new Map<number, { data: DealProduct[]; ts: number }>();
+const DEALS_CACHE_TTL = 60_000;
+
 const FeaturedDeals: React.FC<FeaturedDealsProps> = ({
   title = "Just For You",
   subtitle = "",
@@ -197,18 +201,27 @@ const FeaturedDeals: React.FC<FeaturedDealsProps> = ({
 
   useEffect(() => {
     const fetchProducts = async () => {
+      const cached = _dealsCache.get(limit);
+      if (cached && Date.now() - cached.ts < DEALS_CACHE_TTL) {
+        setProducts(cached.data);
+        setLoading(false);
+        return;
+      }
       try {
         const API_URL =
           process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
         const res = await fetch(`${API_URL}/api/products?limit=${limit}`);
         const data = await res.json();
+        let prods: DealProduct[] = [];
         if (data.success && data.data?.products) {
-          setProducts(data.data.products);
+          prods = data.data.products;
         } else if (Array.isArray(data.products)) {
-          setProducts(data.products);
+          prods = data.products;
         } else if (Array.isArray(data)) {
-          setProducts(data);
+          prods = data;
         }
+        _dealsCache.set(limit, { data: prods, ts: Date.now() });
+        setProducts(prods);
       } catch (error) {
         console.error("Error fetching products:", error);
       } finally {

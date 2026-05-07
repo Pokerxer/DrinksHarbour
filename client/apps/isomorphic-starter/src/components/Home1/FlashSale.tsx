@@ -378,6 +378,10 @@ const SkeletonCard = () => (
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
 
+// In-memory cache: 60 seconds TTL to avoid repeated fetches on navigation
+const _saleCache = new Map<string, { data: SaleProduct[]; ts: number }>();
+const SALE_CACHE_TTL = 60_000;
+
 async function fetchSaleProducts(saleType?: string): Promise<SaleProduct[]> {
   const params = new URLSearchParams({
     onSale: "true",
@@ -386,15 +390,20 @@ async function fetchSaleProducts(saleType?: string): Promise<SaleProduct[]> {
   });
   if (saleType) params.set("saleType", saleType);
 
-  const res = await fetch(`${API_URL}/api/products?${params}`, {
-    cache: "no-store",
-  });
+  const cacheKey = params.toString();
+  const cached = _saleCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < SALE_CACHE_TTL) return cached.data;
+
+  const res = await fetch(`${API_URL}/api/products?${params}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
-  if (data.success && data.data?.products) return data.data.products;
-  if (Array.isArray(data.products)) return data.products;
-  if (Array.isArray(data)) return data;
-  return [];
+  let products: SaleProduct[] = [];
+  if (data.success && data.data?.products) products = data.data.products;
+  else if (Array.isArray(data.products)) products = data.products;
+  else if (Array.isArray(data)) products = data;
+
+  _saleCache.set(cacheKey, { data: products, ts: Date.now() });
+  return products;
 }
 
 const FlashSale = () => {

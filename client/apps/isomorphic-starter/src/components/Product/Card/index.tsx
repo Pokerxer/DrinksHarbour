@@ -864,7 +864,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
           className="product-item grid-type style-1 group h-full"
         >
           <motion.div 
-            className="product-main cursor-pointer block h-full flex flex-col"
+            className="product-main cursor-pointer h-full flex flex-col"
             onClick={handleCardClick}
           >
             <div className="product-thumb bg-gray-50 relative overflow-hidden rounded-2xl transition-all duration-500 ease-out group-hover:shadow-2xl group-hover:shadow-black/10 group-hover:scale-[1.02]">
@@ -886,7 +886,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
                     }`}
                   >
                     {isFlashSale && <Icon.PiLightningFill size={7} className="inline" />}
-                    {isFixedDiscount ? `-₦${saleInfo.value.toLocaleString()}` : `-${saleInfo.value}%`}
+                    {isFixedDiscount ? `-₦${saleInfo!.value.toLocaleString()}` : `-${saleInfo!.value}%`}
                   </motion.div>
                 )}
 
@@ -1217,7 +1217,9 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
               {/* ABV Badge - Below product name */}
               {isBeverageProduct(data) && data.abv && (
                 <span className="text-[10px] text-gray-500 mt-0.5 inline-flex items-center gap-1">
-                  {data.abv}% ABV
+                  <div>
+                     {data.abv}% ABV
+                  </div>
                   <button
                     onClick={handleAddToWishlist}
                     className={`ml-1 transition-colors ${
@@ -1228,9 +1230,9 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
                     aria-label="Toggle wishlist"
                   >
                     {wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id) ? (
-                      <Icon.PiHeartFill size={12} />
+                      <Icon.PiHeartFill size={14} />
                     ) : (
-                      <Icon.PiHeart size={12} />
+                      <Icon.PiHeart size={14} />
                     )}
                   </button>
                 </span>
@@ -1360,9 +1362,9 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid' }) => {
                         : 'bg-gradient-to-r from-red-500 to-pink-500'
                   }`}>
                     {isFlashSale && <Icon.PiLightningFill size={7} className="inline" />}
-                    {isFixedDiscount 
-                      ? `₦${saleInfo.value}` 
-                      : `-${saleInfo.value}%`}
+                    {isFixedDiscount
+                      ? `₦${saleInfo!.value}`
+                      : `-${saleInfo!.value}%`}
                   </div>
                 )}
                 {/* Product Badge - Only if no sale badge */}
