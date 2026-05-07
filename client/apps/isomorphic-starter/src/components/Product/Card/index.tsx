@@ -1215,36 +1215,22 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                 </h3>
               </Link>
 
-              {/* ABV Badge - Below product name */}
-              {isBeverageProduct(data) && data.abv && (
-                <span className="text-[10px] text-gray-500 mt-0.5 inline-flex items-center gap-1">
-                  <div>
-                     {data.abv}% ABV
-                  </div>
-                  <button
-                    onClick={handleAddToWishlist}
-                    className={`ml-1 transition-colors ${
-                      wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id)
-                        ? 'text-red-500'
-                        : 'text-gray-400 hover:text-red-500'
-                    }`}
-                    aria-label="Toggle wishlist"
-                  >
-                    {wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id) ? (
-                      <Icon.PiHeartFill size={14} />
-                    ) : (
-                      <Icon.PiHeart size={14} />
-                    )}
-                  </button>
-                </span>
+              {/* ABV + Origin row */}
+              {isBeverageProduct(data) && (data.abv || data.originCountry) && (
+                <div className="flex items-center gap-2 mt-0.5">
+                  {data.abv && (
+                    <span className="text-[10px] text-gray-400 font-medium">{data.abv}% ABV</span>
+                  )}
+                  {data.abv && data.originCountry && (
+                    <span className="text-[10px] text-gray-300">·</span>
+                  )}
+                  {data.originCountry && (
+                    <span className="text-[10px] text-gray-400 truncate">{data.region || data.originCountry}</span>
+                  )}
+                </div>
               )}
 
-              {/* Origin/Region for beverages - Show on tablet+ */}
-              {isBeverageProduct(data) && data.originCountry && (
-                <p className="hidden md:block text-xs text-gray-500 mt-0.5">
-                  {data.region || data.originCountry}
-                </p>
-              )}
+
 
               {/* Enhanced Price Section */}
               <div className="flex items-center justify-between mt-2 md:mt-3 gap-2">
@@ -1400,31 +1386,24 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
 
             <div className="flex-1 min-w-0 py-1">
               <Link href={`/product/${mappedProduct.slug}`}>
-                <h3 className="product-name text-sm sm:text-base font-medium text-gray-900 duration-300 hover:text-green line-clamp-2">
+                <h3 className="product-name text-sm sm:text-base font-medium text-gray-900 duration-300 hover:text-emerald-600 line-clamp-2">
                   {mappedProduct.name}
                 </h3>
               </Link>
 
-              {/* ABV Badge - Below product name */}
-              {isBeverageProduct(data) && data.abv && (
-                <span className="text-[10px] text-gray-500 mt-0.5 inline-flex items-center gap-1">
-                  {data.abv}% ABV
-                  <button
-                    onClick={handleAddToWishlist}
-                    className={`ml-1 transition-colors ${
-                      wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id)
-                        ? 'text-red-500'
-                        : 'text-gray-400 hover:text-red-500'
-                    }`}
-                    aria-label="Toggle wishlist"
-                  >
-                    {wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id) ? (
-                      <Icon.PiHeartFill size={12} />
-                    ) : (
-                      <Icon.PiHeart size={12} />
-                    )}
-                  </button>
-                </span>
+              {/* ABV + Origin row */}
+              {isBeverageProduct(data) && (data.abv || data.originCountry) && (
+                <div className="flex items-center gap-2 mt-0.5">
+                  {data.abv && (
+                    <span className="text-[10px] text-gray-400 font-medium">{data.abv}% ABV</span>
+                  )}
+                  {data.abv && data.originCountry && (
+                    <span className="text-[10px] text-gray-300">·</span>
+                  )}
+                  {data.originCountry && (
+                    <span className="text-[10px] text-gray-400">{data.region || data.originCountry}</span>
+                  )}
+                </div>
               )}
 
               <div className="flex items-center gap-2 mt-1.5 sm:mt-2 flex-wrap">
@@ -1469,6 +1448,22 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                   className="sm:hidden py-2 px-3 bg-gray-100 text-gray-900 rounded-lg active:bg-gray-200 transition-colors"
                 >
                   <Icon.PiShoppingCart size={16} />
+                </button>
+                {/* Wishlist — mobile only (desktop uses right-column TooltipButton) */}
+                <button
+                  onClick={handleAddToWishlist}
+                  className={`sm:hidden w-9 h-9 flex items-center justify-center rounded-lg transition-all active:scale-90 ${
+                    wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id)
+                      ? 'bg-red-50 text-red-500'
+                      : 'bg-gray-100 text-gray-500 hover:text-red-500 hover:bg-red-50'
+                  }`}
+                  aria-label="Toggle wishlist"
+                >
+                  {wishlistState.wishlistArray.some((item) => item.id === mappedProduct.id) ? (
+                    <Icon.PiHeartFill size={16} />
+                  ) : (
+                    <Icon.PiHeart size={16} />
+                  )}
                 </button>
               </div>
             </div>
