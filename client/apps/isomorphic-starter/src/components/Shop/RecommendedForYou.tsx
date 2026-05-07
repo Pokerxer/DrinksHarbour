@@ -54,11 +54,13 @@ const SECTION_MAP: Record<SectionKey, SectionConfig> = {
 
 const SECTION_KEYS: SectionKey[] = ['recommended', 'trending', 'bestsellers', 'newArrivals'];
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+
 const API_ENDPOINTS: Record<SectionKey, string> = {
-  recommended: '/api/user/recommendations',
-  trending: '/api/products/trending',
-  bestsellers: '/api/products/bestsellers',
-  newArrivals: '/api/products/new-arrivals',
+  recommended: `${API_BASE}/api/user/recommendations`,
+  trending:    `${API_BASE}/api/products/trending`,
+  bestsellers: `${API_BASE}/api/products/bestsellers`,
+  newArrivals: `${API_BASE}/api/products/new-arrivals`,
 };
 
 // ─── Module-level utilities (stable references, no per-render cost) ───────────
@@ -213,12 +215,19 @@ async function loadSectionData(
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+function getInitialCache(maxItems: number) {
+  const key = `recommended:anon:${maxItems}`;
+  const c = _recCache.get(key);
+  return c && Date.now() - c.ts < REC_CACHE_TTL ? c.data : null;
+}
+
 const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
   maxItems = 12,
   layoutCol = 4,
 }) => {
-  const [products, setProducts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Seed from cache synchronously so remounts never flash a skeleton
+  const [products, setProducts] = useState<any[]>(() => getInitialCache(maxItems) ?? []);
+  const [loading, setLoading] = useState(() => !getInitialCache(maxItems));
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [currentSection, setCurrentSection] = useState<SectionKey>('recommended');
@@ -266,11 +275,14 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
     if (initDoneRef.current) return;
     initDoneRef.current = true;
 
+    // Already have fresh cached data from a previous visit — skip the fetch
+    if (getInitialCache(maxItems)) return;
+
     const init = async () => {
       // Fire trending + auth check in parallel
       const [trendingProducts, isAuth] = await Promise.all([
         loadSectionData('recommended', false, maxItems),
-        fetchWithTimeout('/api/auth/me', {}, 3000)
+        fetchWithTimeout(`${API_BASE}/api/auth/me`, {}, 3000)
           .then(r => (r.ok ? r.json() : null))
           .then(data => !!data?.user)
           .catch(() => false),
