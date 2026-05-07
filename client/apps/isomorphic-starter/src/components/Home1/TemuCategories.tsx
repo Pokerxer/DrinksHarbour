@@ -3,7 +3,14 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import * as Icon from "react-icons/pi";
-import { fetchAllCategories, getRootCategories, getSubcategories, type Category } from "@/lib/categories";
+import {
+  fetchAllCategories,
+  fetchAllSubCategories,
+  getRootCategories,
+  getSubcategories,
+  type Category,
+  type SubCategory,
+} from "@/lib/categories";
 
 interface CategorySidebarProps {
   onClose?: () => void;
@@ -11,25 +18,30 @@ interface CategorySidebarProps {
 
 const CategorySidebar: React.FC<CategorySidebarProps> = ({ onClose }) => {
   const [allCategories, setAllCategories] = useState<Category[]>([]);
+  const [allSubCategories, setAllSubCategories] = useState<SubCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    fetchAllCategories().then(cats => {
+    Promise.all([fetchAllCategories(), fetchAllSubCategories()]).then(([cats, subs]) => {
       if (!cancelled) {
         setAllCategories(cats);
+        setAllSubCategories(subs);
         setLoading(false);
       }
     });
     return () => { cancelled = true; };
   }, []);
 
-  const rootCategories = useMemo(() => getRootCategories(allCategories), [allCategories]);
+  const rootCategories = useMemo(
+    () => getRootCategories(allCategories, allSubCategories),
+    [allCategories, allSubCategories]
+  );
 
   const subcategories = useMemo(
-    () => activeCategory ? getSubcategories(activeCategory, allCategories) : [],
-    [activeCategory, allCategories]
+    () => activeCategory ? getSubcategories(activeCategory, allSubCategories) : [],
+    [activeCategory, allSubCategories]
   );
 
   if (loading) {

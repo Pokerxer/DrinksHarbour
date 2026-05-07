@@ -10,9 +10,11 @@ import { useModalSearchContext } from "@/context/ModalSearchContext";
 import { useModalCartContext } from "@/context/ModalCartContext";
 import {
   fetchAllCategories,
+  fetchAllSubCategories,
   getRootCategories,
   getSubcategories,
   type Category,
+  type SubCategory,
 } from "@/lib/categories";
 
 const navItems = [
@@ -31,27 +33,33 @@ const MobileBottomNav: React.FC = () => {
 
   const [showCategories, setShowCategories] = useState(false);
   const [allCategories, setAllCategories] = useState<Category[]>([]);
+  const [allSubCategories, setAllSubCategories] = useState<SubCategory[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
 
-  // Use shared fetch — hits the network once, then serves from cache
+  // Lazy: only fetch when the panel opens; both caches are shared so
+  // parallel mounts share the same in-flight promise.
   useEffect(() => {
-    if (!showCategories) return; // lazy: only fetch when the panel opens
+    if (!showCategories) return;
     let cancelled = false;
-    fetchAllCategories().then(cats => {
+    Promise.all([fetchAllCategories(), fetchAllSubCategories()]).then(([cats, subs]) => {
       if (!cancelled) {
         setAllCategories(cats);
+        setAllSubCategories(subs);
         setLoadingCategories(false);
       }
     });
     return () => { cancelled = true; };
   }, [showCategories]);
 
-  const rootCategories = useMemo(() => getRootCategories(allCategories), [allCategories]);
+  const rootCategories = useMemo(
+    () => getRootCategories(allCategories, allSubCategories),
+    [allCategories, allSubCategories]
+  );
 
   const subcategories = useMemo(
-    () => activeCategory ? getSubcategories(activeCategory, allCategories) : [],
-    [activeCategory, allCategories]
+    () => activeCategory ? getSubcategories(activeCategory, allSubCategories) : [],
+    [activeCategory, allSubCategories]
   );
 
   const handleAction = (id: string) => {
