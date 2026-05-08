@@ -593,9 +593,12 @@ const searchProducts = asyncHandler(async (req, res) => {
     limit: parseInt(req.query.limit) || 20,
     sort: req.query.sort || 'relevance',
     order: req.query.order || 'desc',
-    includePending: isSuperAdmin, // Include pending products for super admin
-    // Allow passing status parameter - if empty, won't filter by status
+    includePending: isSuperAdmin,
     status: statusParam === '' ? undefined : (statusParam || 'approved'),
+    // Sale / discount filters
+    onSale: req.query.onSale === 'true' ? true : undefined,
+    saleType: req.query.saleType || undefined,
+    minRating: req.query.minRating ? parseFloat(req.query.minRating) : undefined,
   };
 
   const result = await productService.searchProducts(searchParams);
