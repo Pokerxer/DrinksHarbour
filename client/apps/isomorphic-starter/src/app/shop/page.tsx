@@ -85,6 +85,18 @@ function getProductSaleType(product: any): string | null {
   return entry?.saleType || entry?.discount?.type || null;
 }
 
+function getProductDiscountPct(product: any): number {
+  const vendor = product.availableAt?.find((at: any) => isSaleActive(at));
+  if (!vendor) return 0;
+  if (vendor.saleDiscountValue > 0 && vendor.saleType === 'percentage') return vendor.saleDiscountValue;
+  const size = vendor.sizes?.[0];
+  const orig = size?.pricing?.originalWebsitePrice ?? 0;
+  const curr = size?.pricing?.websitePrice ?? 0;
+  if (orig > curr && orig > 0) return Math.round((1 - curr / orig) * 100);
+  if (vendor.discount?.value > 0 && vendor.discount?.type === 'percentage') return vendor.discount.value;
+  return 0;
+}
+
 function isSaleActive(at: any): boolean {
   if (!at.isOnSale) return false;
   if (at.discount?.value > 0 && !at.saleDiscountValue) {
@@ -204,8 +216,8 @@ function ShopPageContent({ params }: PageProps) {
     if (searchParams.get('sort'))           p.set('sort',        searchParams.get('sort')!);
     if (sale === 'true') {
       p.set('onSale', 'true');
-      // Pass saleType so backend can pre-filter by discount type
-      if (saleTypeParam && saleTypeParam !== 'all') p.set('saleType', saleTypeParam);
+      // Do NOT pass saleType — we fetch ALL sale products once and
+      // filter client-side so tab switching never triggers a refetch.
     }
     if (searchParams.get('minPrice'))       p.set('minPrice',    searchParams.get('minPrice')!);
     if (searchParams.get('maxPrice'))       p.set('maxPrice',    searchParams.get('maxPrice')!);
@@ -271,17 +283,20 @@ function ShopPageContent({ params }: PageProps) {
   }, [fetchProducts]);
 
   // ── Sale-type filtering (client-side) ────────────────────────────────────
-  // Split products into buckets: only products with a real price drop
-  const saleProducts = useMemo(
-    () => products.filter(hasRealPriceDrop),
-    [products],
-  );
+  // Filter, then sort biggest discount first
+  const saleProducts = useMemo(() => {
+    const filtered = products.filter(hasRealPriceDrop);
+    return [...filtered].sort((a, b) => getProductDiscountPct(b) - getProductDiscountPct(a));
+  }, [products]);
 
   const byType = useMemo(() => ({
     percentage: saleProducts.filter(p => getProductSaleType(p) === 'percentage'),
     fixed:      saleProducts.filter(p => getProductSaleType(p) === 'fixed'),
     flash_sale: saleProducts.filter(p => getProductSaleType(p) === 'flash_sale'),
   }), [saleProducts]);
+
+  // Top deals for the highlight row (top 4 by discount %)
+  const hotDeals = useMemo(() => saleProducts.slice(0, 4), [saleProducts]);
 
   // Products shown to the Shop grid — all when no sale, filtered subset when sale active
   const visibleProducts = useMemo(() => {
@@ -398,129 +413,195 @@ function ShopPageContent({ params }: PageProps) {
 
       {/* ── Sale hero banner ─────────────────────────────────────────────── */}
       {isSalePage && !searchQuery && (
-        <div className="relative overflow-hidden bg-gradient-to-br from-red-950 via-red-800 to-rose-700">
-          {/* Decorative rings */}
-          <div className="pointer-events-none absolute -top-20 -right-20 w-72 h-72 rounded-full bg-white/5" />
-          <div className="pointer-events-none absolute -bottom-12 -left-12 w-52 h-52 rounded-full bg-white/5" />
-          <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[200px] bg-red-600/20 blur-3xl rounded-full" />
+        <>
+          {/* Main banner */}
+          <div className="relative overflow-hidden bg-gradient-to-br from-red-950 via-red-800 to-rose-700">
+            {/* Background texture */}
+            <div className="pointer-events-none absolute inset-0 opacity-10"
+              style={{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 20px, rgba(255,255,255,.05) 20px, rgba(255,255,255,.05) 40px)' }} />
+            <div className="pointer-events-none absolute -top-24 -right-24 w-80 h-80 rounded-full bg-rose-500/20 blur-2xl" />
+            <div className="pointer-events-none absolute -bottom-16 -left-16 w-64 h-64 rounded-full bg-red-900/40 blur-2xl" />
 
-          <div className="relative container mx-auto px-4 pt-6 pb-4">
-            {/* Top: headline + close */}
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <div className="flex items-center gap-3">
-                {/* Animated badge */}
-                <div className="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/20 shadow-lg ring-2 ring-white/30">
-                  {saleTypeParam === 'flash_sale'
-                    ? <Icon.PiLightningFill size={24} className="text-yellow-300" />
-                    : saleTypeParam === 'percentage'
-                    ? <Icon.PiPercent size={24} className="text-white" />
-                    : saleTypeParam === 'fixed'
-                    ? <Icon.PiCurrencyNgn size={24} className="text-white" />
-                    : <Icon.PiTagFill size={24} className="text-white" />
-                  }
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="bg-yellow-400 text-yellow-900 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
-                      LIVE DEALS
-                    </span>
-                    {bestDiscountPct > 0 && (
-                      <span className="bg-white/20 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                        Up to {bestDiscountPct}% off
-                      </span>
-                    )}
+            <div className="relative container mx-auto px-4 pt-5 pb-4">
+              {/* Two-column: headline left, big stat right */}
+              <div className="flex items-center justify-between gap-4 mb-4">
+                {/* Left */}
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex-shrink-0 w-11 h-11 rounded-2xl bg-white/15 ring-2 ring-white/25 flex items-center justify-center shadow-lg">
+                    {saleTypeParam === 'flash_sale' ? <Icon.PiLightningFill size={22} className="text-yellow-300" />
+                     : saleTypeParam === 'percentage' ? <Icon.PiPercent size={22} className="text-white" />
+                     : saleTypeParam === 'fixed'      ? <Icon.PiCurrencyNgn size={22} className="text-white" />
+                     : <Icon.PiTagFill size={22} className="text-white" />}
                   </div>
-                  <h1 className="text-white font-black text-xl sm:text-2xl leading-tight">
-                    {saleTypeParam === 'flash_sale' ? '⚡ Flash Sale'
-                     : saleTypeParam === 'percentage' ? 'Percentage Discounts'
-                     : saleTypeParam === 'fixed'      ? 'Fixed Price Cuts'
-                     :                                  'All Deals & Discounts'}
-                  </h1>
-                  <p className="text-white/70 text-xs mt-0.5">
-                    {visibleProducts.length > 0
-                      ? `${visibleProducts.length} deal${visibleProducts.length !== 1 ? 's' : ''} available`
-                      : 'Loading deals…'}
-                    {saleProducts.length > 0 && saleTypeParam !== 'all' &&
-                      ` · ${saleProducts.length} total across all types`}
-                  </p>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                      <span className="bg-yellow-400 text-yellow-900 text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-widest">
+                        LIVE
+                      </span>
+                      {byType.flash_sale.length > 0 && (
+                        <span className="bg-yellow-400/20 border border-yellow-400/40 text-yellow-200 text-[9px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+                          <Icon.PiLightningFill size={9} /> {byType.flash_sale.length} Flash
+                        </span>
+                      )}
+                    </div>
+                    <h1 className="text-white font-black text-lg sm:text-xl leading-tight truncate">
+                      {saleTypeParam === 'flash_sale' ? '⚡ Flash Sale'
+                       : saleTypeParam === 'percentage' ? '% Off Deals'
+                       : saleTypeParam === 'fixed'      ? 'Fixed Discounts'
+                       : 'Deals & Discounts'}
+                    </h1>
+                    <p className="text-white/60 text-[11px] mt-0.5">
+                      {saleProducts.length > 0
+                        ? `${visibleProducts.length} deal${visibleProducts.length !== 1 ? 's' : ''} available`
+                        : 'Checking for deals…'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Right — big discount stat */}
+                <div className="flex-shrink-0 flex flex-col items-center">
+                  {bestDiscountPct > 0 ? (
+                    <div className="text-center">
+                      <div className="text-white font-black leading-none" style={{ fontSize: 'clamp(28px, 6vw, 44px)' }}>
+                        {bestDiscountPct}%
+                      </div>
+                      <div className="text-white/60 text-[10px] font-semibold uppercase tracking-widest">
+                        MAX OFF
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={clearSale} className="text-white/60 hover:text-white transition-colors">
+                      <Icon.PiX size={18} />
+                    </button>
+                  )}
+                  {bestDiscountPct > 0 && (
+                    <button onClick={clearSale} className="mt-1.5 text-white/50 hover:text-white/80 text-[10px] flex items-center gap-0.5 transition-colors">
+                      <Icon.PiX size={10} /> Exit
+                    </button>
+                  )}
                 </div>
               </div>
 
-              <button
-                onClick={clearSale}
-                className="flex-shrink-0 flex items-center gap-1.5 text-white/70 hover:text-white text-xs font-medium transition-colors mt-1"
-              >
-                <Icon.PiX size={15} />
-                <span className="hidden sm:inline">Exit sale</span>
-              </button>
-            </div>
-
-            {/* Stats strip */}
-            {saleProducts.length > 0 && (
-              <div className="flex items-center gap-3 mb-4 overflow-x-auto no-scrollbar">
-                <div className="flex items-center gap-1.5 bg-white/10 rounded-xl px-3 py-1.5 flex-shrink-0">
-                  <Icon.PiTagFill size={13} className="text-white/80" />
-                  <span className="text-white text-xs font-semibold">{saleProducts.length} deals</span>
+              {/* Stats pills row */}
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar mb-3.5">
+                <div className="flex-shrink-0 flex items-center gap-1 bg-white/10 rounded-lg px-2.5 py-1.5 text-white text-xs font-semibold">
+                  <Icon.PiTagFill size={11} className="text-white/70" />
+                  {saleProducts.length} deals
                 </div>
-                {bestDiscountPct > 0 && (
-                  <div className="flex items-center gap-1.5 bg-white/10 rounded-xl px-3 py-1.5 flex-shrink-0">
-                    <Icon.PiTrendDown size={13} className="text-green-300" />
-                    <span className="text-white text-xs font-semibold">Up to {bestDiscountPct}% off</span>
+                {byType.percentage.length > 0 && (
+                  <div className="flex-shrink-0 flex items-center gap-1 bg-white/10 rounded-lg px-2.5 py-1.5 text-white text-xs font-medium">
+                    <Icon.PiPercent size={11} className="text-orange-300" />
+                    {byType.percentage.length} % off
                   </div>
                 )}
-                {byType.flash_sale.length > 0 && (
-                  <div className="flex items-center gap-1.5 bg-yellow-400/20 border border-yellow-400/30 rounded-xl px-3 py-1.5 flex-shrink-0">
-                    <Icon.PiLightningFill size={13} className="text-yellow-300" />
-                    <span className="text-yellow-200 text-xs font-semibold">{byType.flash_sale.length} flash</span>
+                {byType.fixed.length > 0 && (
+                  <div className="flex-shrink-0 flex items-center gap-1 bg-white/10 rounded-lg px-2.5 py-1.5 text-white text-xs font-medium">
+                    <Icon.PiCurrencyNgn size={11} className="text-green-300" />
+                    {byType.fixed.length} fixed
                   </div>
                 )}
-                {flashEndTime && saleTypeParam === 'flash_sale' && (
-                  <div className="flex items-center gap-2 bg-white/10 rounded-xl px-3 py-1.5 flex-shrink-0">
-                    <Icon.PiClock size={13} className="text-white/80" />
-                    <span className="text-white/80 text-xs">Ends in</span>
+                {byType.flash_sale.length > 0 && flashEndTime && (
+                  <div className="flex-shrink-0 flex items-center gap-1.5 bg-yellow-400/15 border border-yellow-400/30 rounded-lg px-2.5 py-1.5">
+                    <Icon.PiClock size={11} className="text-yellow-300" />
+                    <span className="text-yellow-200 text-xs font-medium">Ends in</span>
                     <FlashCountdown endTime={flashEndTime} />
                   </div>
                 )}
               </div>
-            )}
 
-            {/* Discount-type tabs */}
-            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-              {TABS.map(tab => {
-                const count = tab.key === 'all' ? saleProducts.length : byType[tab.key as keyof typeof byType]?.length ?? 0;
-                if (tab.key !== 'all' && count === 0) return null;
-                const active = saleTypeParam === tab.key;
-                return (
-                  <button
-                    key={tab.key}
-                    onClick={() => setSaleType(tab.key)}
-                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
-                      active
-                        ? 'bg-white text-red-800 shadow-md scale-105'
-                        : 'bg-white/15 text-white hover:bg-white/25'
-                    }`}
-                  >
-                    {tab.icon}
-                    {tab.key === 'all' ? 'All Deals' : tab.label.split('(')[0].trim()}
-                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                      active ? 'bg-red-100 text-red-700' : 'bg-white/20 text-white'
-                    }`}>
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Flash sale mobile countdown */}
-            {saleTypeParam === 'flash_sale' && flashEndTime && (
-              <div className="flex sm:hidden items-center gap-2 mt-3">
-                <span className="text-white/70 text-xs">Sale ends in</span>
-                <FlashCountdown endTime={flashEndTime} />
+              {/* Tabs */}
+              <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+                {TABS.map(tab => {
+                  const count = tab.key === 'all' ? saleProducts.length : byType[tab.key as keyof typeof byType]?.length ?? 0;
+                  if (tab.key !== 'all' && count === 0) return null;
+                  const active = saleTypeParam === tab.key;
+                  return (
+                    <button
+                      key={tab.key}
+                      onClick={() => setSaleType(tab.key)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
+                        active ? 'bg-white text-red-800 shadow-sm' : 'bg-white/12 text-white/90 hover:bg-white/20'
+                      }`}
+                    >
+                      {tab.icon}
+                      <span>{tab.key === 'all' ? 'All' : tab.key === 'flash_sale' ? 'Flash' : tab.key === 'percentage' ? '% Off' : 'Fixed'}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${active ? 'bg-red-100 text-red-700' : 'bg-white/15 text-white'}`}>
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-            )}
+            </div>
           </div>
-        </div>
+
+          {/* Flash sale urgency strip */}
+          {byType.flash_sale.length > 0 && flashEndTime && saleTypeParam !== 'flash_sale' && (
+            <button
+              onClick={() => setSaleType('flash_sale')}
+              className="w-full bg-yellow-400 hover:bg-yellow-300 transition-colors flex items-center justify-center gap-2 py-2 px-4"
+            >
+              <Icon.PiLightningFill size={14} className="text-yellow-900" />
+              <span className="text-yellow-900 text-xs font-black uppercase tracking-wide">
+                {byType.flash_sale.length} Flash Sale item{byType.flash_sale.length !== 1 ? 's' : ''} — Ending Soon
+              </span>
+              <FlashCountdown endTime={flashEndTime} />
+              <Icon.PiArrowRight size={13} className="text-yellow-900 ml-1" />
+            </button>
+          )}
+
+          {/* Hot Deals highlight row */}
+          {hotDeals.length >= 2 && saleTypeParam === 'all' && (
+            <div className="bg-gradient-to-b from-red-50 to-white border-b border-red-100">
+              <div className="container mx-auto px-4 py-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Icon.PiFireFill size={16} className="text-red-600" />
+                  <span className="text-sm font-black text-gray-900">Biggest Savings</span>
+                  <span className="text-xs text-gray-400 ml-1">— sorted by discount</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {hotDeals.map((p: any) => {
+                    const pct = getProductDiscountPct(p);
+                    const vendor = p.availableAt?.find((at: any) => isSaleActive(at));
+                    const size = vendor?.sizes?.[0];
+                    const price = size?.pricing?.websitePrice ?? p.priceRange?.min ?? 0;
+                    const orig  = size?.pricing?.originalWebsitePrice ?? 0;
+                    const image = p.images?.[0]?.url || p.thumbnail || p.featuredImage;
+                    return (
+                      <a
+                        key={p._id}
+                        href={`/product/${p.slug}`}
+                        className="group flex items-center gap-2 bg-white rounded-xl p-2 border border-red-100 hover:border-red-300 hover:shadow-md transition-all"
+                      >
+                        {image && (
+                          <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-gray-50">
+                            <img src={image} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold text-gray-800 truncate leading-tight">{p.name}</p>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            {pct > 0 && (
+                              <span className="bg-red-600 text-white text-[9px] font-black px-1 py-0.5 rounded">
+                                -{pct}%
+                              </span>
+                            )}
+                            {price > 0 && (
+                              <span className="text-[10px] font-bold text-gray-900">₦{price.toLocaleString()}</span>
+                            )}
+                          </div>
+                          {orig > price && (
+                            <span className="text-[9px] text-gray-400 line-through">₦{orig.toLocaleString()}</span>
+                          )}
+                        </div>
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* ── Search results header ────────────────────────────────────────── */}
