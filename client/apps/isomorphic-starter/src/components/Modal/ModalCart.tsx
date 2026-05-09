@@ -410,7 +410,8 @@ const ModalCart = () => {
                                   </span>
                                   <button
                                     onClick={() => handleQuantityChange(item.cartItemId, (item.quantity || 1) + 1)}
-                                    disabled={(item.quantity || 1) >= (isQtyReduced ? maxQty : 99)}
+                                    disabled={(item.quantity || 1) >= maxQty}
+                                    title={maxQty < 99 ? `Max ${maxQty} available` : undefined}
                                     className="w-8 h-8 flex items-center justify-center hover:bg-red-50 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                                   >
                                     <Icon.PiPlusBold size={11} />
