@@ -56,6 +56,20 @@ interface AddToCartResult {
   previousQuantity: number;
 }
 
+export type CartValidationStatus = 'ok' | 'price_changed' | 'out_of_stock' | 'quantity_reduced' | 'unavailable';
+
+export interface CartItemValidation {
+  subProductId: string;
+  sizeId: string | null;
+  status: CartValidationStatus;
+  available: boolean;
+  currentPrice: number;
+  oldPrice: number;
+  priceDiff: number;
+  stockStatus: string;
+  maxQuantity: number | null;
+}
+
 interface CartContextProps {
   cartState: CartState;
   addToCart: (product: ProductType, size?: string, color?: string, vendor?: string, vendorId?: string, quantity?: number, sizeId?: string, subProductId?: string) => AddToCartResult;
@@ -76,6 +90,11 @@ interface CartContextProps {
   syncCartToServer: () => Promise<boolean>;
   loadServerCart: () => Promise<void>;
   refreshCart: () => void;
+  // Validation
+  validationMap: Record<string, CartItemValidation>;
+  validating: boolean;
+  validateCartItems: () => Promise<void>;
+  applyValidationUpdates: () => void;
 }
 
 const CART_EXPIRY_DAYS = 7;
@@ -418,6 +437,66 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  // ── Cart Validation ──────────────────────────────────────────────────────────
+  const [validationMap, setValidationMap] = useState<Record<string, CartItemValidation>>({});
+  const [validating, setValidating] = useState(false);
+
+  const validateCartItems = useCallback(async () => {
+    const items = cartState.cartArray;
+    if (items.length === 0) return;
+
+    setValidating(true);
+    try {
+      const payload = items
+        .filter(item => item.selectedSubProductId)
+        .map(item => ({
+          subProductId: item.selectedSubProductId,
+          sizeId:       item.selectedSizeId       || null,
+          tenantId:     item.selectedVendorId     || null,
+          quantity:     item.quantity || 1,
+          price:        item.price || 0,
+        }));
+
+      if (payload.length === 0) return;
+
+      const res  = await fetch(`${API_URL}/api/cart/validate`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ items: payload }),
+      });
+      const data = await res.json();
+      if (!data.success) return;
+
+      // Build map keyed by subProductId (+ sizeId for uniqueness)
+      const map: Record<string, CartItemValidation> = {};
+      for (const v of data.data.items as CartItemValidation[]) {
+        const key = `${v.subProductId}-${v.sizeId ?? ''}`;
+        map[key] = v;
+      }
+      setValidationMap(map);
+    } catch {
+      // Silent fail — don't block the user
+    } finally {
+      setValidating(false);
+    }
+  }, [cartState.cartArray]);
+
+  /** Apply all validation-suggested updates in one dispatch */
+  const applyValidationUpdates = useCallback(() => {
+    const updated = cartState.cartArray.map(item => {
+      const key = `${item.selectedSubProductId}-${item.selectedSizeId ?? ''}`;
+      const v   = validationMap[key];
+      if (!v) return item;
+      if (!v.available) return item; // caller should remove these
+      // Apply updated price and capped quantity
+      const newQty   = v.maxQuantity != null ? Math.min(item.quantity || 1, v.maxQuantity) : (item.quantity || 1);
+      const newPrice = v.currentPrice > 0 ? v.currentPrice : item.price;
+      return { ...item, price: newPrice, quantity: newQty };
+    });
+    dispatch({ type: "LOAD_CART", payload: updated });
+    setValidationMap({});
+  }, [cartState.cartArray, validationMap]);
+
   const getCartItemId = (productId: string, size: string, vendor: string, color: string): string => {
     return generateCartItemId(productId, size, vendor, color);
   };
@@ -560,6 +639,10 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
         syncCartToServer,
         loadServerCart,
         refreshCart,
+        validationMap,
+        validating,
+        validateCartItems,
+        applyValidationUpdates,
       }}
     >
       {children}

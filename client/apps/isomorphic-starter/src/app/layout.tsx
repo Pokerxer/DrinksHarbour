@@ -12,6 +12,7 @@ import { MobileBottomNav } from "@/components/Navigation";
 import ModalNewsletter from "@/components/Modal/ModalNewsletter";
 import Footer from "@/components/Footer/Footer";
 import ChatbotWidget from "@/components/Chatbot/ChatbotWidget";
+import WhatsAppButton from "@/components/WhatsApp/WhatsAppButton";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -119,6 +120,7 @@ export default function RootLayout({
           <Footer />
           <ModalNewsletter />
           <MobileBottomNav />
+          <WhatsAppButton />
           <ChatbotWidget />
         </body>
       </html>

@@ -104,4 +104,15 @@ router.post(
   orderController.cancelOrder
 );
 
+router.put(
+  '/:id/status',
+  param('id').isMongoId(),
+  body('status')
+    .isIn(['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'])
+    .withMessage('Invalid status'),
+  body('reason').optional().trim(),
+  validate,
+  orderController.updateOrderStatus
+);
+
 module.exports = router;

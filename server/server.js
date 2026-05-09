@@ -176,6 +176,8 @@ app.use('/api/vendor-pricelists', vendorPricelistRoutes);
 app.use('/api/uom-conversions', uomConversionRoutes);
 app.use('/api/exchange-rates', exchangeRateRoutes);
 app.use('/api/chatbot', chatbotRoutes);
+app.use('/api/whatsapp', require('./routes/whatsapp.routes'));
+app.use('/api/contact', require('./routes/contact.routes'));
 app.use('/api/pinterest', require('./routes/pinterest.routes'));
 app.use('/api/banner-ai', bannerGeminiRoutes);
 

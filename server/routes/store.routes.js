@@ -5,6 +5,7 @@ const router = express.Router();
 const asyncHandler = require('../utils/asyncHandler');
 const Tenant = require('../models/Tenant');
 const SubProduct = require('../models/SubProduct');
+require('../models/Product'); // ensure 'products' collection is registered for $lookup
 const Size = require('../models/Size');
 const {
   calcPlatformCostPrice,
@@ -133,18 +134,34 @@ router.get('/', asyncHandler(async (req, res) => {
 
   const [stores, total] = await Promise.all([
     Tenant.find(query)
-      .select('name slug logo primaryColor city state plan productCount description')
-      .sort({ productCount: -1, name: 1 })
+      .select('name slug logo primaryColor city state plan description')
+      .sort({ name: 1 })
       .skip(skip)
       .limit(parseInt(limit))
       .lean(),
     Tenant.countDocuments(query),
   ]);
 
+  // Count distinct approved products that have at least one active/low_stock subProduct per tenant
+  const tenantIds = stores.map(s => s._id);
+  const availableCounts = await SubProduct.aggregate([
+    { $match: { tenant: { $in: tenantIds }, status: { $in: ['active', 'low_stock'] } } },
+    { $lookup: { from: 'products', localField: 'product', foreignField: '_id', as: '_prod' } },
+    { $unwind: '$_prod' },
+    { $match: { '_prod.status': 'approved' } },
+    { $group: { _id: { tenant: '$tenant', product: '$product' } } },
+    { $group: { _id: '$_id.tenant', count: { $sum: 1 } } },
+  ]);
+  const countMap = Object.fromEntries(availableCounts.map(r => [r._id.toString(), r.count]));
+
+  const storesWithCount = stores
+    .map(s => ({ ...s, productCount: countMap[s._id.toString()] ?? 0 }))
+    .sort((a, b) => b.productCount - a.productCount); // sort by real count
+
   res.json({
     success: true,
     data: {
-      stores,
+      stores: storesWithCount,
       pagination: { page: parseInt(page), limit: parseInt(limit), total, pages: Math.ceil(total / parseInt(limit)) },
     },
   });
@@ -156,12 +173,23 @@ router.get('/', asyncHandler(async (req, res) => {
  */
 router.get('/:slug', asyncHandler(async (req, res) => {
   const store = await Tenant.findOne({ slug: req.params.slug, status: 'approved' })
-    .select('name slug logo primaryColor city state plan productCount description email address revenueModel markupPercentage commissionPercentage')
+    .select('name slug logo primaryColor city state plan description email address revenueModel markupPercentage commissionPercentage')
     .lean();
 
   if (!store) {
     return res.status(404).json({ success: false, message: 'Store not found' });
   }
+
+  // Count the real number of distinct approved products available from this store
+  const availableCountAgg = await SubProduct.aggregate([
+    { $match: { tenant: store._id, status: { $in: ['active', 'low_stock'] } } },
+    { $lookup: { from: 'products', localField: 'product', foreignField: '_id', as: '_prod' } },
+    { $unwind: '$_prod' },
+    { $match: { '_prod.status': 'approved' } },
+    { $group: { _id: '$product' } },
+    { $count: 'total' },
+  ]);
+  store.productCount = availableCountAgg[0]?.total ?? 0;
 
   // Fetch active subProducts, including the fields needed for pricing
   const subProducts = await SubProduct.find({
@@ -171,7 +199,7 @@ router.get('/:slug', asyncHandler(async (req, res) => {
     .select('product costPrice baseSellingPrice salePrice isOnSale saleType saleDiscountValue saleStartDate saleEndDate sizes')
     .populate({
       path   : 'product',
-      select : 'name slug images primaryImage status platformMarkup platformDiscount',
+      select : 'name slug images primaryImage status platformMarkup platformDiscount abv originCountry',
     })
     .limit(40) // fetch more than we display so we can deduplicate
     .lean();
@@ -180,7 +208,7 @@ router.get('/:slug', asyncHandler(async (req, res) => {
   const allSizeIds = [...new Set(subProducts.flatMap(sp => (sp.sizes || []).map(s => s.toString())))];
   const sizeDocs   = allSizeIds.length > 0
     ? await Size.find({ _id: { $in: allSizeIds } })
-        .select('costPrice sellingPrice discountValue discountType discountStart discountEnd')
+        .select('costPrice sellingPrice discountValue discountType discountStart discountEnd size subproduct')
         .lean()
     : [];
   const sizeMap = Object.fromEntries(sizeDocs.map(s => [s._id.toString(), s]));
@@ -202,11 +230,17 @@ router.get('/:slug', asyncHandler(async (req, res) => {
     const pricing = computeStorePricing(sp, variantSizes, store, sp.product);
     if (!pricing) continue;
 
+    // Collect unique size labels for this product
+    const sizeLabels = [...new Set(variantSizes.map(s => s.size).filter(Boolean))];
+
     products.push({
       _id          : sp.product._id,
       name         : sp.product.name,
       slug         : sp.product.slug,
       primaryImage : sp.product.primaryImage || sp.product.images?.[0] || null,
+      abv          : sp.product.abv ?? null,
+      originCountry: sp.product.originCountry ?? null,
+      sizes        : sizeLabels,
       minWebsitePrice  : pricing.minWebsitePrice,
       maxWebsitePrice  : pricing.maxWebsitePrice,
       originalMinPrice : pricing.originalMinPrice,

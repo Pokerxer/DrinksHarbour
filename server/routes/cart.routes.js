@@ -7,6 +7,7 @@ const { protect } = require('../middleware/auth.middleware');
 const { validateCartItem } = require('../middleware/validation.middleware');
 
 // Save cart requires authentication
+router.post('/validate', cartController.validateCart);
 router.post('/save', protect, cartController.saveCart);
 
 // Other routes use optional authentication

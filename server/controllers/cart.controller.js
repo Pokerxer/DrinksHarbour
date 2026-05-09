@@ -2,8 +2,61 @@
 
 const Cart = require('../models/Cart');
 const User = require('../models/User');
+const SubProduct = require('../models/SubProduct');
+const Size = require('../models/Size');
+const Tenant = require('../models/Tenant');
 const asyncHandler = require('../utils/asyncHandler');
 const cartService = require('../services/cart.service');
+const {
+  calcPlatformCostPrice,
+  calcPlatformSellingPrice,
+  isDiscountActive,
+  DEFAULT_PLATFORM_MARKUP,
+} = require('../utils/pricing');
+
+/**
+ * Compute the live websitePrice for one SubProduct + optional Size,
+ * using the same pipeline as store.routes.js:
+ *   platformCostPrice → platformSellingPrice → apply sale discount
+ */
+function computeLivePrice(subProduct, sizeDoc, tenant, product) {
+  const revenueModel    = tenant?.revenueModel         ?? 'markup';
+  const markupPct       = tenant?.markupPercentage     ?? 25;
+  const commissionPct   = tenant?.commissionPercentage ?? 12;
+  const platformMarkupPct = product?.platformMarkup    ?? DEFAULT_PLATFORM_MARKUP;
+
+  const productDiscount = product?.platformDiscount?.value > 0 && product?.platformDiscount?.type
+    ? { value: product.platformDiscount.value, type: product.platformDiscount.type,
+        start: product.platformDiscount.start,  end: product.platformDiscount.end }
+    : null;
+
+  const costPrice    = sizeDoc?.costPrice    ?? subProduct.costPrice        ?? 0;
+  const sellingPrice = sizeDoc?.sellingPrice ?? subProduct.baseSellingPrice ?? 0;
+
+  if (costPrice <= 0 && sellingPrice <= 0) return 0;
+
+  const platformCostPrice    = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
+  let   platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
+
+  // Apply SubProduct-level sale discount
+  const now        = new Date();
+  const saleStart  = subProduct.saleStartDate ? new Date(subProduct.saleStartDate) : null;
+  const saleEnd    = subProduct.saleEndDate   ? new Date(subProduct.saleEndDate)   : null;
+  const saleActive = subProduct.isOnSale &&
+    (!saleStart || now >= saleStart) &&
+    (!saleEnd   || now <= saleEnd);
+
+  if (saleActive && subProduct.saleDiscountValue > 0) {
+    const dtype = subProduct.saleType || 'percentage';
+    if (dtype === 'percentage' || dtype === 'flash_sale') {
+      platformSellingPrice = parseFloat((platformSellingPrice * (1 - subProduct.saleDiscountValue / 100)).toFixed(2));
+    } else if (dtype === 'fixed') {
+      platformSellingPrice = Math.max(0, parseFloat((platformSellingPrice - subProduct.saleDiscountValue).toFixed(2)));
+    }
+  }
+
+  return platformSellingPrice;
+}
 
 /**
  * @desc    Add item to cart
@@ -295,6 +348,116 @@ const saveCart = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Validate cart items: check live stock + recompute current prices
+ * @route   POST /api/cart/validate
+ * @access  Public (works for both guests and logged-in users)
+ *
+ * Request body:
+ *   { items: [{ subProductId, sizeId?, tenantId?, quantity, price }] }
+ *
+ * Response per item:
+ *   status: 'ok' | 'price_changed' | 'out_of_stock' | 'quantity_reduced' | 'unavailable'
+ */
+const validateCart = asyncHandler(async (req, res) => {
+  const { items } = req.body;
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ success: false, message: 'items array is required' });
+  }
+
+  // Batch-fetch all SubProducts + their Products in one go
+  const subProductIds = [...new Set(items.map(i => i.subProductId).filter(Boolean))];
+  const sizeIds       = [...new Set(items.map(i => i.sizeId).filter(Boolean))];
+  const tenantIds     = [...new Set(items.map(i => i.tenantId).filter(Boolean))];
+
+  const [subProducts, sizes, tenants] = await Promise.all([
+    SubProduct.find({ _id: { $in: subProductIds } })
+      .select('product costPrice baseSellingPrice status stockQuantity isOnSale saleType saleDiscountValue saleStartDate saleEndDate')
+      .populate({ path: 'product', select: 'name slug status platformMarkup platformDiscount' })
+      .lean(),
+    sizeIds.length > 0
+      ? Size.find({ _id: { $in: sizeIds } })
+          .select('costPrice sellingPrice stockQuantity subproduct')
+          .lean()
+      : [],
+    tenantIds.length > 0
+      ? Tenant.find({ _id: { $in: tenantIds } })
+          .select('revenueModel markupPercentage commissionPercentage')
+          .lean()
+      : [],
+  ]);
+
+  const spMap     = Object.fromEntries(subProducts.map(sp => [sp._id.toString(), sp]));
+  const sizeMap   = Object.fromEntries(sizes.map(s => [s._id.toString(), s]));
+  const tenantMap = Object.fromEntries(tenants.map(t => [t._id.toString(), t]));
+
+  const results  = [];
+  let hasChanges = false;
+
+  for (const item of items) {
+    const { subProductId, sizeId, tenantId, quantity = 1, price: clientPrice = 0 } = item;
+
+    // ── 1. SubProduct must exist and its product must be approved ─────────────
+    const sp = subProductId ? spMap[subProductId] : null;
+    if (!sp || !sp.product || sp.product.status !== 'approved') {
+      results.push({ subProductId, sizeId, status: 'unavailable', available: false,
+        currentPrice: 0, oldPrice: clientPrice });
+      hasChanges = true;
+      continue;
+    }
+
+    // ── 2. Stock status ───────────────────────────────────────────────────────
+    const inStock = ['active', 'low_stock'].includes(sp.status);
+    if (!inStock) {
+      results.push({ subProductId, sizeId, status: 'out_of_stock', available: false,
+        currentPrice: 0, oldPrice: clientPrice, stockStatus: sp.status });
+      hasChanges = true;
+      continue;
+    }
+
+    // ── 3. Quantity cap ───────────────────────────────────────────────────────
+    const sizeDoc   = sizeId ? sizeMap[sizeId] : null;
+    const stockQty  = sizeDoc?.stockQuantity ?? sp.stockQuantity ?? null; // null = unlimited
+    const maxQty    = stockQty != null ? stockQty : Infinity;
+
+    // ── 4. Live price ─────────────────────────────────────────────────────────
+    const tenant       = tenantId ? tenantMap[tenantId] : null;
+    const currentPrice = computeLivePrice(sp, sizeDoc, tenant, sp.product);
+
+    // ── 5. Decide status ──────────────────────────────────────────────────────
+    // Allow 1% tolerance for floating-point drift (rounds to nearest naira)
+    const priceDiff    = Math.abs(currentPrice - clientPrice);
+    const priceChanged = currentPrice > 0 && priceDiff > Math.max(1, clientPrice * 0.01);
+
+    let status = 'ok';
+    if (maxQty === 0) {
+      status = 'out_of_stock';
+      hasChanges = true;
+    } else if (maxQty !== Infinity && quantity > maxQty) {
+      status = 'quantity_reduced';
+      hasChanges = true;
+    } else if (priceChanged) {
+      status = 'price_changed';
+      hasChanges = true;
+    }
+
+    results.push({
+      subProductId,
+      sizeId: sizeId || null,
+      status,
+      available : status !== 'out_of_stock',
+      currentPrice,
+      oldPrice   : clientPrice,
+      priceDiff  : priceChanged ? Math.round(currentPrice - clientPrice) : 0,
+      stockStatus: sp.status,
+      maxQuantity: stockQty,
+    });
+  }
+
+  res.json({ success: true, data: { items: results, hasChanges } });
+});
+
 module.exports = {
   addToCart,
   getCart,
@@ -304,4 +467,5 @@ module.exports = {
   syncCart,
   replaceCart,
   saveCart,
+  validateCart,
 };

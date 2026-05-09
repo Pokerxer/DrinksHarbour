@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import AccountShell from "./AccountShell";
 
 export const metadata: Metadata = {
   title: "My Account",
@@ -7,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function MyAccountLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return <AccountShell>{children}</AccountShell>;
 }
