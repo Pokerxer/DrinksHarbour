@@ -13,7 +13,10 @@ import RecommendedForYou from '@/components/Shop/RecommendedForYou';
 
 const CartPage = () => {
   const router = useRouter();
-  const { cartState, updateQuantity, removeFromCart, cartTotal, cartCount, clearCart } = useCart();
+  const {
+    cartState, updateQuantity, removeFromCart, cartTotal, cartCount, clearCart,
+    validationMap, validating, validateCartItems, applyValidationUpdates,
+  } = useCart();
   const { addToWishlist } = useWishlist();
   const { openModalWishlist } = useModalWishlistContext();
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -23,6 +26,33 @@ const CartPage = () => {
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  // Auto-validate cart stock & prices on load
+  useEffect(() => {
+    if (isClient && cartState.cartArray.length > 0) {
+      validateCartItems();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isClient]);
+
+  // Helper: get validation result for a cart item
+  const getValidation = (item: any) => {
+    const key = `${item.selectedSubProductId}-${item.selectedSizeId ?? ''}`;
+    return validationMap[key] ?? null;
+  };
+
+  // Count items with issues
+  const issueItems = useMemo(() => {
+    return cartState.cartArray.filter(item => {
+      const v = getValidation(item);
+      return v && v.status !== 'ok';
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartState.cartArray, validationMap]);
+
+  const handleApplyUpdates = () => {
+    applyValidationUpdates();
+  };
 
   const shipping = useMemo(() => cartTotal > 50000 ? 0 : 2500, [cartTotal]);
   const remainingForFree = useMemo(() => Math.max(0, 50000 - cartTotal), [cartTotal]);
@@ -146,6 +176,50 @@ const CartPage = () => {
           </button>
         </div>
 
+        {/* Validation Banner */}
+        <AnimatePresence>
+          {!validating && issueItems.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3"
+            >
+              <div className="flex items-start gap-3 flex-1">
+                <Icon.PiWarningCircleBold size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-amber-900 text-sm">
+                    {issueItems.some(i => !getValidation(i)?.available)
+                      ? 'Some items are no longer available'
+                      : 'Some items have been updated'}
+                  </p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    Prices or stock levels have changed since you added these items.
+                    Review the details below and apply updates to your cart.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleApplyUpdates}
+                className="flex-shrink-0 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+              >
+                Apply Updates
+              </button>
+            </motion.div>
+          )}
+          {validating && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="mb-4 flex items-center gap-2 text-sm text-gray-500 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3"
+            >
+              <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin flex-shrink-0" />
+              Checking stock and prices…
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Free Shipping Progress */}
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl sm:rounded-2xl p-4 mb-6 border border-green-100">
           {remainingForFree > 0 ? (
@@ -187,6 +261,12 @@ const CartPage = () => {
                   const isRemoving = removingId === item.cartItemId;
                   const imageUrl = getItemImage(item);
 
+                  const validation = getValidation(item);
+                  const isOutOfStock = validation && !validation.available;
+                  const isPriceChanged = validation?.status === 'price_changed';
+                  const isQtyReduced = validation?.status === 'quantity_reduced';
+                  const maxQty = validation?.maxQuantity ?? 99;
+
                   return (
                     <motion.div
                       key={item.cartItemId}
@@ -199,7 +279,7 @@ const CartPage = () => {
                       }}
                       exit={{ opacity: 0, scale: 0.95 }}
                       transition={{ delay: index * 0.05 }}
-                      className={`p-3 sm:p-4 ${index > 0 ? 'border-t border-gray-100' : ''}`}
+                      className={`p-3 sm:p-4 ${index > 0 ? 'border-t border-gray-100' : ''} ${isOutOfStock ? 'opacity-60' : ''}`}
                     >
                       <div className="flex gap-3 sm:gap-4">
                         {/* Product Image */}
@@ -255,30 +335,53 @@ const CartPage = () => {
                                 {item.selectedSize}
                               </span>
                             )}
+                            {/* Validation status badges */}
+                            {isOutOfStock && (
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-50 border border-red-100 px-2 py-0.5 rounded">
+                                <Icon.PiWarningCircleBold size={10} /> Out of Stock
+                              </span>
+                            )}
+                            {isPriceChanged && validation && (
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded">
+                                <Icon.PiArrowUpBold size={10} />
+                                Price updated: {formatPrice(validation.currentPrice)}
+                              </span>
+                            )}
+                            {isQtyReduced && validation?.maxQuantity != null && (
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded">
+                                <Icon.PiInfoBold size={10} />
+                                Only {validation.maxQuantity} left
+                              </span>
+                            )}
                           </div>
 
                           {/* Price & Quantity */}
                           <div className="flex items-center justify-between mt-2 sm:mt-3">
-                            {/* Quantity Controls */}
-                            <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
-                              <button
-                                onClick={() => handleQuantityChange(item.cartItemId, (item.quantity || 1) - 1)}
-                                disabled={(item.quantity || 1) <= 1}
-                                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm"
-                              >
-                                <Icon.PiMinusBold size={12} />
-                              </button>
-                              <span className="w-10 text-center text-sm font-semibold">
-                                {item.quantity || 1}
-                              </span>
-                              <button
-                                onClick={() => handleQuantityChange(item.cartItemId, (item.quantity || 1) + 1)}
-                                disabled={(item.quantity || 1) >= 99}
-                                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm"
-                              >
-                                <Icon.PiPlusBold size={12} />
-                              </button>
-                            </div>
+                            {/* Quantity Controls — disabled if out of stock */}
+                            {isOutOfStock ? (
+                              <span className="text-xs text-red-500 font-medium">Remove this item to continue</span>
+                            ) : (
+                              <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+                                <button
+                                  onClick={() => handleQuantityChange(item.cartItemId, (item.quantity || 1) - 1)}
+                                  disabled={(item.quantity || 1) <= 1}
+                                  className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm"
+                                >
+                                  <Icon.PiMinusBold size={12} />
+                                </button>
+                                <span className="w-10 text-center text-sm font-semibold">
+                                  {item.quantity || 1}
+                                </span>
+                                <button
+                                  onClick={() => handleQuantityChange(item.cartItemId, (item.quantity || 1) + 1)}
+                                  disabled={(item.quantity || 1) >= maxQty}
+                                  title={maxQty < 99 ? `Max ${maxQty} available` : undefined}
+                                  className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm"
+                                >
+                                  <Icon.PiPlusBold size={12} />
+                                </button>
+                              </div>
+                            )}
 
                             {/* Price */}
                             <span className="font-bold text-gray-900 text-sm sm:text-base">

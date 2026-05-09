@@ -93,7 +93,7 @@ function Field({ label, name, type = 'text', placeholder, required = true, icon:
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { cartState, clearCart, syncCartToServer, loadServerCart } = useCart();
+  const { cartState, clearCart, syncCartToServer, loadServerCart, validateCartItems, applyValidationUpdates, validationMap } = useCart();
 
   const [mounted,         setMounted]         = useState(false);
   const [isLoading,       setIsLoading]       = useState(false);
@@ -105,6 +105,10 @@ export default function CheckoutPage() {
   const [stripeData,      setStripeData]      = useState<{ clientSecret: string; paymentIntentId: string } | null>(null);
   const [paystackReady,   setPaystackReady]   = useState(false);
   const [addressDetails,  setAddressDetails]  = useState<AddressDetails | null>(null);
+  // Validation modal state
+  const [validationIssues, setValidationIssues] = useState<Array<{ name: string; status: string; currentPrice?: number; oldPrice?: number; maxQuantity?: number | null }>>([]);
+  const [showValidationModal, setShowValidationModal] = useState(false);
+  const [pendingPayment, setPendingPayment] = useState<null | (() => Promise<void>)>(null);
 
   const [form, setForm] = useState<FormData>({
     firstName: '', lastName: '', email: '', phone: '',
@@ -384,15 +388,107 @@ export default function CheckoutPage() {
     }
   };
 
+  // ── Pre-checkout cart validation ─────────────────────────────────────────
+  /**
+   * Validates stock & prices before allowing payment to proceed.
+   * If issues exist, shows a modal. If clean (or after user accepts), runs `proceed`.
+   */
+  const validateBeforeCheckout = async (proceed: () => Promise<void>) => {
+    setIsLoading(true);
+    setError('');
+    try {
+      await validateCartItems();
+      // validateCartItems populates validationMap — read it directly from state after awaiting
+      // But since state updates are async, re-fetch from the API inline here to be sure
+      const payload = cartState.cartArray
+        .filter(item => item.selectedSubProductId)
+        .map(item => ({
+          subProductId: item.selectedSubProductId,
+          sizeId:       item.selectedSizeId       || null,
+          tenantId:     item.selectedVendorId     || null,
+          quantity:     item.quantity || 1,
+          price:        item.price || 0,
+        }));
+
+      if (payload.length === 0) {
+        setIsLoading(false);
+        await proceed();
+        return;
+      }
+
+      const res  = await fetch(`${API_URL}/api/cart/validate`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ items: payload }),
+      });
+      const data = await res.json();
+
+      if (!data.success) {
+        // Can't validate — proceed with a warning
+        setIsLoading(false);
+        await proceed();
+        return;
+      }
+
+      const issues = (data.data.items as any[]).filter(v => v.status !== 'ok');
+      if (issues.length === 0) {
+        setIsLoading(false);
+        await proceed();
+        return;
+      }
+
+      // Build human-readable issue list
+      const issueDetails = issues.map(v => {
+        const cartItem = cartState.cartArray.find(
+          i => i.selectedSubProductId === v.subProductId && (i.selectedSizeId || null) === (v.sizeId || null)
+        );
+        return {
+          name: cartItem?.name || 'Item',
+          status: v.status,
+          currentPrice: v.currentPrice,
+          oldPrice: v.oldPrice,
+          maxQuantity: v.maxQuantity,
+        };
+      });
+
+      setValidationIssues(issueDetails);
+      setPendingPayment(() => proceed);
+      setIsLoading(false);
+      setShowValidationModal(true);
+    } catch {
+      setIsLoading(false);
+      // On validation error, let them proceed — server will catch real issues
+      await proceed();
+    }
+  };
+
+  // User accepts the validation changes and continues
+  const handleAcceptAndContinue = async () => {
+    setShowValidationModal(false);
+    applyValidationUpdates();
+    const proceed = pendingPayment;
+    setPendingPayment(null);
+    if (proceed) {
+      // Small delay for state to settle after applyValidationUpdates
+      setTimeout(async () => { await proceed(); }, 50);
+    }
+  };
+
   // ── Main submit ───────────────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate())                     return;
     if (cartState.cartArray.length === 0) { setError('Your cart is empty'); return; }
 
-    if (activePayment === 'card')         { await initStripe();   return; }
-    if (activePayment === 'bank_transfer') { await initPaystack(); return; }
-    await submitCOD();
+    if (activePayment === 'card') {
+      await validateBeforeCheckout(initStripe);
+      return;
+    }
+    if (activePayment === 'bank_transfer') {
+      await validateBeforeCheckout(initPaystack);
+      return;
+    }
+    await validateBeforeCheckout(submitCOD);
   };
 
   // ── Loading / empty states ────────────────────────────────────────────────
@@ -449,6 +545,80 @@ export default function CheckoutPage() {
           <div className="w-28" />
         </div>
       </div>
+
+      {/* ── Validation Modal ───────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showValidationModal && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 16 }}
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 z-50 overflow-hidden"
+            >
+              <div className="bg-gradient-to-r from-gray-900 to-red-950 px-6 py-4 flex items-center gap-3">
+                <Icon.PiWarningCircleBold size={20} className="text-amber-400 flex-shrink-0" />
+                <h3 className="text-white font-black text-sm">Cart Updated</h3>
+              </div>
+              <div className="p-6">
+                <p className="text-sm text-gray-600 mb-4">
+                  Some items in your cart have changed since you added them. Please review before continuing:
+                </p>
+                <div className="space-y-2.5 max-h-60 overflow-y-auto mb-5">
+                  {validationIssues.map((issue, i) => (
+                    <div key={i} className={`flex items-start gap-3 p-3 rounded-xl border text-sm ${
+                      issue.status === 'out_of_stock' || issue.status === 'unavailable'
+                        ? 'bg-red-50 border-red-100'
+                        : 'bg-amber-50 border-amber-100'
+                    }`}>
+                      {(issue.status === 'out_of_stock' || issue.status === 'unavailable')
+                        ? <Icon.PiXCircleBold size={18} className="text-red-500 flex-shrink-0 mt-0.5" />
+                        : <Icon.PiWarningBold  size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                      }
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-gray-900 truncate">{issue.name}</p>
+                        {(issue.status === 'out_of_stock' || issue.status === 'unavailable') && (
+                          <p className="text-xs text-red-600 mt-0.5">Out of stock — will be removed from your cart</p>
+                        )}
+                        {issue.status === 'price_changed' && issue.currentPrice != null && (
+                          <p className="text-xs text-amber-700 mt-0.5">
+                            Price changed: {fmt(issue.oldPrice ?? 0)} → <strong>{fmt(issue.currentPrice)}</strong>
+                          </p>
+                        )}
+                        {issue.status === 'quantity_reduced' && issue.maxQuantity != null && (
+                          <p className="text-xs text-amber-700 mt-0.5">
+                            Only <strong>{issue.maxQuantity}</strong> unit{issue.maxQuantity !== 1 ? 's' : ''} available — quantity will be adjusted
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { setShowValidationModal(false); setPendingPayment(null); router.push('/cart'); }}
+                    className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 font-semibold rounded-xl text-sm hover:bg-gray-50 transition-colors"
+                  >
+                    Back to Cart
+                  </button>
+                  <button
+                    onClick={handleAcceptAndContinue}
+                    className="flex-1 px-4 py-2.5 bg-gradient-to-br from-red-700 to-red-900 text-white font-bold rounded-xl text-sm hover:from-red-800 hover:to-red-950 transition-all"
+                  >
+                    Accept &amp; Continue
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <div className="bg-gray-50 min-h-screen">
         <div className="container mx-auto max-w-6xl px-4 py-8">

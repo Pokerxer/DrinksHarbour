@@ -481,18 +481,24 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [cartState.cartArray]);
 
-  /** Apply all validation-suggested updates in one dispatch */
+  /** Apply all validation-suggested updates: removes unavailable items, caps quantities, syncs prices */
   const applyValidationUpdates = useCallback(() => {
-    const updated = cartState.cartArray.map(item => {
-      const key = `${item.selectedSubProductId}-${item.selectedSizeId ?? ''}`;
-      const v   = validationMap[key];
-      if (!v) return item;
-      if (!v.available) return item; // caller should remove these
-      // Apply updated price and capped quantity
-      const newQty   = v.maxQuantity != null ? Math.min(item.quantity || 1, v.maxQuantity) : (item.quantity || 1);
-      const newPrice = v.currentPrice > 0 ? v.currentPrice : item.price;
-      return { ...item, price: newPrice, quantity: newQty };
-    });
+    const updated = cartState.cartArray
+      .filter(item => {
+        const key = `${item.selectedSubProductId}-${item.selectedSizeId ?? ''}`;
+        const v   = validationMap[key];
+        // Drop items the server says are out of stock or unavailable
+        if (v && !v.available) return false;
+        return true;
+      })
+      .map(item => {
+        const key = `${item.selectedSubProductId}-${item.selectedSizeId ?? ''}`;
+        const v   = validationMap[key];
+        if (!v) return item;
+        const newQty   = v.maxQuantity != null ? Math.min(item.quantity || 1, v.maxQuantity) : (item.quantity || 1);
+        const newPrice = v.currentPrice > 0 ? v.currentPrice : item.price;
+        return { ...item, price: newPrice, quantity: newQty };
+      });
     dispatch({ type: "LOAD_CART", payload: updated });
     setValidationMap({});
   }, [cartState.cartArray, validationMap]);
