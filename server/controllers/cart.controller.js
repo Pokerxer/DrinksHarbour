@@ -373,12 +373,12 @@ const validateCart = asyncHandler(async (req, res) => {
 
   const [subProducts, sizes, tenants] = await Promise.all([
     SubProduct.find({ _id: { $in: subProductIds } })
-      .select('product costPrice baseSellingPrice status stockQuantity isOnSale saleType saleDiscountValue saleStartDate saleEndDate')
+      .select('product costPrice baseSellingPrice status availableStock isOnSale saleType saleDiscountValue saleStartDate saleEndDate')
       .populate({ path: 'product', select: 'name slug status platformMarkup platformDiscount' })
       .lean(),
     sizeIds.length > 0
       ? Size.find({ _id: { $in: sizeIds } })
-          .select('costPrice sellingPrice stockQuantity subproduct')
+          .select('costPrice sellingPrice stock subproduct')
           .lean()
       : [],
     tenantIds.length > 0
@@ -418,7 +418,7 @@ const validateCart = asyncHandler(async (req, res) => {
 
     // ── 3. Quantity cap ───────────────────────────────────────────────────────
     const sizeDoc   = sizeId ? sizeMap[sizeId] : null;
-    const stockQty  = sizeDoc?.stockQuantity ?? sp.stockQuantity ?? null; // null = unlimited
+    const stockQty  = sizeDoc?.stock ?? sp.availableStock ?? null; // null = unlimited
     const maxQty    = stockQty != null ? stockQty : Infinity;
 
     // ── 4. Live price ─────────────────────────────────────────────────────────
