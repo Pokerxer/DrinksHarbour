@@ -277,6 +277,10 @@ exports.createOrder = asyncHandler(async (req, res) => {
     orderData.paymentDetails = paymentDetails;
     if (paymentDetails.transactionId) {
       orderData.paymentIntentId = paymentDetails.transactionId;
+      // Also store in the dedicated Stripe field for webhook lookups
+      if (paymentDetails.method === 'stripe') {
+        orderData.stripePaymentIntentId = paymentDetails.transactionId;
+      }
     }
     if (paymentDetails.reference) {
       orderData.paymentReference = paymentDetails.reference;

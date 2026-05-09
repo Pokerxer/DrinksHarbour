@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const asyncHandler = require('../utils/asyncHandler');
 const { successResponse } = require('../utils/response');
 const paymentService = require('../services/payment.service');
+const Order = require('../models/Order');
 
 /**
  * @desc    Initialize Stripe payment (without order)
@@ -201,12 +202,50 @@ const handleStripeWebhook = asyncHandler(async (req, res) => {
   }
 
   switch (event.type) {
-    case 'payment_intent.succeeded':
-      console.log('[Stripe] payment_intent.succeeded:', event.data.object.id);
+    case 'payment_intent.succeeded': {
+      const pi = event.data.object;
+      console.log('[Stripe] payment_intent.succeeded:', pi.id);
+      try {
+        // Find order by stripePaymentIntentId or paymentIntentId
+        const order = await Order.findOne({
+          $or: [{ stripePaymentIntentId: pi.id }, { paymentIntentId: pi.id }],
+        });
+        if (order) {
+          if (order.paymentStatus !== 'paid') {
+            await paymentService.attachPaymentToOrder(order._id.toString(), {
+              method: 'stripe',
+              transactionId: pi.id,
+              amount: pi.amount / 100,
+              currency: pi.currency,
+              paidAt: new Date(),
+            });
+            console.log(`[Stripe] Order ${order.orderNumber} marked as paid via webhook`);
+          }
+        } else {
+          console.warn(`[Stripe] No order found for paymentIntent ${pi.id}`);
+        }
+      } catch (err) {
+        console.error('[Stripe] Failed to process payment_intent.succeeded webhook:', err.message);
+      }
       break;
-    case 'payment_intent.payment_failed':
-      console.error('[Stripe] payment_intent.payment_failed:', event.data.object.last_payment_error?.message);
+    }
+    case 'payment_intent.payment_failed': {
+      const pi = event.data.object;
+      console.error('[Stripe] payment_intent.payment_failed:', pi.last_payment_error?.message);
+      try {
+        const order = await Order.findOne({
+          $or: [{ stripePaymentIntentId: pi.id }, { paymentIntentId: pi.id }],
+        });
+        if (order && order.paymentStatus === 'pending') {
+          order.paymentStatus = 'failed';
+          await order.save();
+          console.log(`[Stripe] Order ${order.orderNumber} payment marked failed via webhook`);
+        }
+      } catch (err) {
+        console.error('[Stripe] Failed to process payment_intent.payment_failed webhook:', err.message);
+      }
       break;
+    }
     default:
       console.log(`[Stripe] Unhandled event: ${event.type}`);
   }
@@ -240,10 +279,33 @@ const handlePaystackWebhook = asyncHandler(async (req, res) => {
   switch (event.event) {
     case 'charge.success': {
       const data = event.data || {};
-      console.log(`[Paystack] charge.success — ref: ${data.reference}, amount: ₦${(data.amount || 0) / 100}`);
-      // Order creation is handled by the /payment/verify page after redirect.
-      // This webhook is a safety net — if the redirect failed, an admin can
-      // manually look up the reference and create the order.
+      const ref = data.reference;
+      console.log(`[Paystack] charge.success — ref: ${ref}, amount: ₦${(data.amount || 0) / 100}`);
+      // Safety net: if the frontend redirect already created/updated the order, this is a no-op.
+      // If the redirect failed (e.g. user closed browser), this webhook marks the order as paid.
+      try {
+        const order = await Order.findOne({ paymentReference: ref });
+        if (order) {
+          if (order.paymentStatus !== 'paid') {
+            await paymentService.attachPaymentToOrder(order._id.toString(), {
+              method: 'paystack',
+              transactionId: String(data.id || ''),
+              reference: ref,
+              amount: (data.amount || 0) / 100,
+              currency: (data.currency || 'NGN').toUpperCase(),
+              paidAt: data.paid_at ? new Date(data.paid_at) : new Date(),
+              channel: data.channel,
+            });
+            console.log(`[Paystack] Order ${order.orderNumber} marked as paid via webhook`);
+          } else {
+            console.log(`[Paystack] Order ${order.orderNumber} already paid — webhook skipped`);
+          }
+        } else {
+          console.warn(`[Paystack] No order found for reference ${ref} — may be created by frontend redirect`);
+        }
+      } catch (err) {
+        console.error('[Paystack] Failed to process charge.success webhook:', err.message);
+      }
       break;
     }
     case 'charge.failed':

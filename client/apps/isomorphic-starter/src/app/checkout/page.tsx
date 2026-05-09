@@ -3,1035 +3,701 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import Script from 'next/script';
 import { useRouter } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useCart } from '@/context/CartContext';
 import CouponComponent from '@/components/Coupon/Coupon';
 import PaymentHandler from '@/components/Payment/PaymentHandler';
 import { API_URL } from '@/lib/api';
 import AddressAutocomplete, { type AddressDetails } from '@/components/AddressAutocomplete/AddressAutocomplete';
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+declare global {
+  interface Window { PaystackPop?: any; }
+}
+
 const NIGERIAN_STATES = [
-  'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue', 'Borno',
-  'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu', 'FCT - Abuja', 'Gombe',
-  'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina', 'Kebbi', 'Kogi', 'Kwara', 'Lagos',
-  'Nasarawa', 'Niger', 'Ogun', 'Ondo', 'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto',
-  'Taraba', 'Yobe', 'Zamfara',
+  'Abia','Adamawa','Akwa Ibom','Anambra','Bauchi','Bayelsa','Benue','Borno',
+  'Cross River','Delta','Ebonyi','Edo','Ekiti','Enugu','FCT - Abuja','Gombe',
+  'Imo','Jigawa','Kaduna','Kano','Katsina','Kebbi','Kogi','Kwara','Lagos',
+  'Nasarawa','Niger','Ogun','Ondo','Osun','Oyo','Plateau','Rivers','Sokoto',
+  'Taraba','Yobe','Zamfara',
 ];
 
-/** Map a Nominatim state string to a canonical NIGERIAN_STATES entry. */
 function matchNigerianState(raw: string): string {
   const s = raw.trim();
-  // Direct match
   const exact = NIGERIAN_STATES.find(n => n.toLowerCase() === s.toLowerCase());
   if (exact) return exact;
-  // FCT aliases
   if (/federal capital territory|abuja/i.test(s)) return 'FCT - Abuja';
-  // Strip common suffixes and retry: "Lagos State" → "Lagos"
   const stripped = s.replace(/\s+state$/i, '').trim();
-  const byStripped = NIGERIAN_STATES.find(n => n.toLowerCase() === stripped.toLowerCase());
-  if (byStripped) return byStripped;
-  // Partial containment
-  const partial = NIGERIAN_STATES.find(
-    n => n.toLowerCase().includes(stripped.toLowerCase()) ||
-         stripped.toLowerCase().includes(n.toLowerCase()),
-  );
-  return partial || s;
+  return NIGERIAN_STATES.find(n => n.toLowerCase() === stripped.toLowerCase())
+    || NIGERIAN_STATES.find(n => n.toLowerCase().includes(stripped.toLowerCase()) || stripped.toLowerCase().includes(n.toLowerCase()))
+    || s;
 }
+
+const fmt = (n: number) =>
+  new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(n);
 
 interface FormData {
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  address: string;
-  city: string;
-  state: string;
-  zipCode: string;
-  country: string;
+  firstName: string; lastName: string; email: string; phone: string;
+  address: string; city: string; state: string; zipCode: string; country: string;
   paymentMethod: 'card' | 'bank_transfer' | 'cash_on_delivery';
 }
+type FormErrors = Partial<Record<keyof FormData, string>>;
 
-interface FormErrors {
-  firstName?: string;
-  lastName?: string;
-  email?: string;
-  phone?: string;
-  address?: string;
-  city?: string;
-  state?: string;
-  zipCode?: string;
-  country?: string;
-  paymentMethod?: string;
-}
-
-const paymentMethods = [
-  {
-    id: 'cash_on_delivery',
-    name: 'Cash on Delivery',
-    description: 'Pay when you receive your order',
-    icon: Icon.PiMoney,
-  },
-  {
-    id: 'card',
-    name: 'Credit/Debit Card',
-    description: 'Pay securely with Stripe',
-    icon: Icon.PiCreditCard,
-  },
-  {
-    id: 'bank_transfer',
-    name: 'Bank Transfer',
-    description: 'Pay securely with Paystack',
-    icon: Icon.PiBuilding,
-  },
+const PAYMENT_METHODS = [
+  { id: 'cash_on_delivery', name: 'Cash on Delivery',   description: 'Pay cash when your order arrives', icon: Icon.PiMoneyBold, badge: null },
+  { id: 'card',             name: 'Card Payment',        description: 'Visa, Mastercard — powered by Stripe', icon: Icon.PiCreditCardBold, badge: 'Instant' },
+  { id: 'bank_transfer',    name: 'Bank Transfer / USSD', description: 'Pay via Paystack — card, bank, USSD', icon: Icon.PiBankBold, badge: null },
 ] as const;
 
-interface InputFieldProps {
-  label: string;
-  name: keyof FormData;
-  type?: string;
-  placeholder?: string;
-  required?: boolean;
-  icon?: any;
-  gridClass?: string;
-  value: string;
-  error?: string;
+// ─── Input field ─────────────────────────────────────────────────────────────
+
+const inputCls = (err?: string) =>
+  `w-full px-4 py-2.5 border rounded-xl text-sm outline-none transition-all ${
+    err
+      ? 'border-red-400 bg-red-50 focus:border-red-500 focus:ring-2 focus:ring-red-100'
+      : 'border-gray-200 bg-gray-50 focus:bg-white focus:border-red-400 focus:ring-2 focus:ring-red-100'
+  }`;
+
+function Field({ label, name, type = 'text', placeholder, required = true, icon: Ic, value, error, onChange }: {
+  label: string; name: string; type?: string; placeholder?: string; required?: boolean;
+  icon?: React.ElementType; value: string; error?: string;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onClearError: (name: string) => void;
-}
-
-// Simple InputField component without React.memo to avoid stale closures
-const InputField = ({ 
-  label, 
-  name, 
-  type = 'text', 
-  placeholder,
-  required = true,
-  icon: IconComponent,
-  gridClass = '',
-  value,
-  error,
-  onChange,
-  onClearError
-}: InputFieldProps) => {
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onChange(e);
-    if (onClearError && error) {
-      onClearError(name as string);
-    }
-  };
-
+}) {
   return (
-    <div className={gridClass}>
-      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+    <div>
+      <label className="text-xs font-semibold text-gray-600 mb-1.5 block">
         {label} {required && <span className="text-red-500">*</span>}
       </label>
       <div className="relative">
-        {IconComponent && (
-          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-            <IconComponent size={18} />
-          </div>
-        )}
+        {Ic && <Ic size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />}
         <input
           type={type}
           name={name}
-          value={value || ''}
-          onChange={handleChange}
+          value={value}
+          onChange={onChange}
           placeholder={placeholder}
-          className={`w-full ${IconComponent ? 'pl-10' : 'pl-3'} pr-3 py-2.5 rounded-lg border text-sm
-            ${error 
-              ? 'border-red-400 bg-red-50 focus:border-red-500 focus:ring-1 focus:ring-red-200' 
-              : 'border-gray-300 focus:border-gray-900 focus:ring-1 focus:ring-gray-200'
-            } outline-none transition-colors`}
+          className={`${inputCls(error)} ${Ic ? 'pl-10' : ''}`}
         />
       </div>
-      {error && (
-        <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
-          <Icon.PiWarningCircle size={12} />
-          {error}
-        </p>
-      )}
+      {error && <p className="mt-1 text-xs text-red-500 flex items-center gap-1"><Icon.PiWarningCircleBold size={11} />{error}</p>}
     </div>
   );
-};
+}
 
-const Checkout = () => {
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+export default function CheckoutPage() {
   const router = useRouter();
   const { cartState, clearCart, syncCartToServer, loadServerCart } = useCart();
-  const [mounted, setMounted] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [activePayment, setActivePayment] = useState<string>('cash_on_delivery');
-  const [couponDiscount, setCouponDiscount] = useState(0);
-  const [appliedCouponCode, setAppliedCouponCode] = useState('');
-  const [createdOrderId, setCreatedOrderId] = useState<string | null>(null);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentData, setPaymentData] = useState<any>(null);
 
+  const [mounted,         setMounted]         = useState(false);
+  const [isLoading,       setIsLoading]       = useState(false);
+  const [error,           setError]           = useState('');
+  const [activePayment,   setActivePayment]   = useState<string>('cash_on_delivery');
+  const [couponDiscount,  setCouponDiscount]  = useState(0);
+  const [appliedCoupon,   setAppliedCoupon]   = useState('');
+  const [showStripeForm,  setShowStripeForm]  = useState(false);
+  const [stripeData,      setStripeData]      = useState<{ clientSecret: string; paymentIntentId: string } | null>(null);
+  const [paystackReady,   setPaystackReady]   = useState(false);
+  const [addressDetails,  setAddressDetails]  = useState<AddressDetails | null>(null);
+
+  const [form, setForm] = useState<FormData>({
+    firstName: '', lastName: '', email: '', phone: '',
+    address: '', city: '', state: '', zipCode: '', country: 'Nigeria',
+    paymentMethod: 'cash_on_delivery',
+  });
+  const [errors, setErrors] = useState<FormErrors>({});
+
+  // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const initCheckout = async () => {
-      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      
-      if (!token) {
-        router.push('/login?redirect=/checkout');
-        return;
-      }
-      
-      setMounted(true);
-      await loadServerCart();
-    };
-    initCheckout();
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token) { router.push('/login?redirect=/checkout'); return; }
+    setMounted(true);
+    loadServerCart();
   }, [router, loadServerCart]);
 
-  const [formData, setFormData] = useState<FormData>({
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    address: '',
-    city: '',
-    state: '',
-    zipCode: '',
-    country: 'Nigeria',
-    paymentMethod: 'cash_on_delivery' as 'card' | 'bank_transfer' | 'cash_on_delivery',
-  });
+  // Pre-fill from localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem('user') || sessionStorage.getItem('user');
+    if (!stored) return;
+    try {
+      const u = JSON.parse(stored);
+      setForm(f => ({
+        ...f,
+        firstName: u.firstName || f.firstName,
+        lastName:  u.lastName  || f.lastName,
+        email:     u.email     || f.email,
+        phone:     u.phone     || f.phone,
+      }));
+    } catch {}
+  }, [mounted]);
 
-  // Ensure all form values are strings (not undefined)
-  const getSafeValue = (value: string | undefined): string => value ?? '';
-  const [errors, setErrors] = useState<FormErrors>({});
-  const [addressDetails, setAddressDetails] = useState<AddressDetails | null>(null);
+  // ── Derived totals ────────────────────────────────────────────────────────
+  const subtotal  = cartState.cartArray.reduce((s, i) => s + i.price * (i.quantity || 1), 0);
+  const shipping  = subtotal > 50000 ? 0 : 2500;
+  const discount  = Math.min(couponDiscount, subtotal);
+  const total     = Math.max(0, subtotal - discount + shipping);
 
-  const subtotal = cartState.cartArray.reduce((sum, item) => {
-    return sum + (item.price * (item.quantity || 1));
-  }, 0);
-  const shipping = subtotal > 50000 ? 0 : 2500;
-  const discountedSubtotal = Math.max(0, subtotal - couponDiscount);
-  const total = Math.max(0, discountedSubtotal + shipping);
-
-  const validateForm = useCallback((): boolean => {
-    const newErrors: FormErrors = {};
-
-    if (!formData.firstName || !formData.firstName.trim()) newErrors.firstName = 'First name is required';
-    if (!formData.lastName || !formData.lastName.trim()) newErrors.lastName = 'Last name is required';
-    if (!formData.email || !formData.email.trim()) {
-      newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Please enter a valid email';
-    }
-    if (!formData.phone || !formData.phone.trim()) newErrors.phone = 'Phone number is required';
-    if (!formData.address || !formData.address.trim()) newErrors.address = 'Address is required';
-    if (!formData.city || !formData.city.trim()) newErrors.city = 'City is required';
-    if (!formData.state || !formData.state.trim()) newErrors.state = 'State is required';
-    // Postal code is optional in Nigeria
-    if (!formData.country || !formData.country.trim()) newErrors.country = 'Country is required';
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  }, [formData]);
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  // ── Form helpers ──────────────────────────────────────────────────────────
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    
-    setFormData(prev => {
-      const newData = { ...prev, [name]: value };
-      return newData;
-    });
-    
-    // Clear error for this field
-    setErrors(prev => {
-      if (prev[name as keyof FormErrors]) {
-        const newErrors = { ...prev };
-        delete newErrors[name as keyof FormErrors];
-        return newErrors;
-      }
-      return prev;
-    });
+    setForm(f => ({ ...f, [name]: value }));
+    if (errors[name as keyof FormErrors]) setErrors(p => { const n = { ...p }; delete n[name as keyof FormErrors]; return n; });
   };
-
-  const handleClearError = useCallback((name: string) => {
-    if (errors[name as keyof FormErrors]) {
-      setErrors(prev => ({ ...prev, [name]: undefined }));
-    }
-  }, [errors]);
 
   const handleAddressSelect = (address: string, details?: AddressDetails) => {
     setAddressDetails(details ?? null);
+    setForm(f => ({
+      ...f,
+      address,
+      ...(details?.city     ? { city:    details.city } : {}),
+      ...(details?.postcode ? { zipCode: details.postcode } : {}),
+      ...(details?.state    ? { state:   matchNigerianState(details.state) } : {}),
+    }));
+  };
 
-    const updates: Partial<FormData> = { address };
-    if (details?.city) updates.city = details.city;
-    if (details?.postcode) updates.zipCode = details.postcode;
-    if (details?.state) {
-      updates.state = matchNigerianState(details.state);
-    }
+  const validate = useCallback((): boolean => {
+    const e: FormErrors = {};
+    if (!form.firstName.trim()) e.firstName = 'Required';
+    if (!form.lastName.trim())  e.lastName  = 'Required';
+    if (!form.email.trim())     e.email     = 'Required';
+    else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = 'Invalid email';
+    if (!form.phone.trim())     e.phone     = 'Required';
+    if (!form.address.trim())   e.address   = 'Required';
+    if (!form.city.trim())      e.city      = 'Required';
+    if (!form.state.trim())     e.state     = 'Required';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }, [form]);
 
-    setFormData(prev => ({ ...prev, ...updates }));
-    setErrors(prev => {
-      const newErrors = { ...prev };
-      Object.keys(updates).forEach(key => delete newErrors[key as keyof FormErrors]);
-      return newErrors;
+  // ── Cart item mapping ─────────────────────────────────────────────────────
+  const buildItems = () =>
+    cartState.cartArray.map(item => ({
+      productId:    item.selectedProductId || item.id || item._id,
+      name:         item.name,
+      price:        item.price,
+      quantity:     item.quantity || 1,
+      sizeId:       item.selectedSizeId    || null,
+      subProductId: item.selectedSubProductId || null,
+      tenantId:     item.selectedVendorId  || null,
+    }));
+
+  const buildShipping = () => ({
+    address: form.address, city: form.city, state: form.state,
+    zipCode: form.zipCode, country: form.country,
+    ...(addressDetails ? { coordinates: { latitude: addressDetails.lat, longitude: addressDetails.lon } } : {}),
+  });
+
+  const buildCustomer = () => ({
+    firstName: form.firstName, lastName: form.lastName,
+    email: form.email, phone: form.phone,
+  });
+
+  const token = () => localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+
+  // ── After successful payment: create order ────────────────────────────────
+  const createOrderAfterPayment = async (paymentDetails: any) => {
+    const res = await fetch(`${API_URL}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+      body: JSON.stringify({
+        customer: buildCustomer(),
+        shipping: buildShipping(),
+        paymentMethod: activePayment,
+        paymentDetails,
+        items: buildItems(),
+        subtotal,
+        shippingFee: shipping,
+        total,
+        couponCode: appliedCoupon || undefined,
+        status: 'processing',
+        paymentStatus: 'paid',
+      }),
     });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Failed to create order');
+    return data.data?.order?._id || data.data?.order?.id || data.order?._id;
   };
 
-  const handlePayment = (item: string) => {
-    setActivePayment(item);
-    let method: 'card' | 'bank_transfer' | 'cash_on_delivery' = 'cash_on_delivery';
-    if (item === 'card') method = 'card';
-    else if (item === 'bank_transfer') method = 'bank_transfer';
-    else method = 'cash_on_delivery';
-
-    setFormData(prev => ({ ...prev, paymentMethod: method }));
-    setShowPaymentModal(false);
-  };
-
-  const handleCouponApplied = (code: string, discount: number, couponData?: any) => {
-    setCouponDiscount(discount);
-    setAppliedCouponCode(code);
-  };
-
-  const handleCouponRemoved = () => {
-    setCouponDiscount(0);
-    setAppliedCouponCode('');
-  };
-
-  const getShippingDisplay = () => {
-    if (couponDiscount >= shipping && shipping > 0) {
-      return { text: 'Free', cost: 0 };
-    }
-    return { text: `₦${shipping.toLocaleString()}`, cost: shipping };
-  };
-
-  const shippingDisplay = getShippingDisplay();
-  const finalTotal = subtotal - couponDiscount + shippingDisplay.cost;
-
-  const initializeOnlinePayment = async () => {
+  // ── Stripe ────────────────────────────────────────────────────────────────
+  const initStripe = async () => {
     setIsLoading(true);
     setError('');
-
     try {
-      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-
-      if (activePayment === 'card') {
-        const response = await fetch(`${API_URL}/api/payments/stripe/initialize`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token && { 'Authorization': `Bearer ${token}` }),
-          },
-          body: JSON.stringify({
-            amount: finalTotal,
-            currency: 'ngn',
-            metadata: {
-              customerEmail: formData.email,
-              customerName: `${formData.firstName} ${formData.lastName}`,
-            },
-          }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.message || 'Failed to initialize Stripe payment');
-        }
-
-        setPaymentData({
-          method: 'stripe',
-          clientSecret: data.data.clientSecret,
-          paymentIntentId: data.data.paymentIntentId,
-        });
-        setShowPaymentModal(true);
-      } else if (activePayment === 'bank_transfer') {
-        if (!formData.address || !formData.city || !formData.state || !formData.country) {
-          setError('Please complete all shipping address fields');
-          setIsLoading(false);
-          return;
-        }
-
-        const response = await fetch(`${API_URL}/api/payments/paystack/initialize`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token && { 'Authorization': `Bearer ${token}` }),
-          },
-          body: JSON.stringify({
-            amount: finalTotal,
-            email: formData.email,
-            metadata: {
-              customerName: `${formData.firstName} ${formData.lastName}`,
-              customerPhone: formData.phone,
-            },
-          }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.message || 'Failed to initialize Paystack payment');
-        }
-
-        if (data.data.authorizationUrl) {
-          const paymentData = {
-            reference: data.data.reference,
-            method: 'paystack',
-            formData: {
-              customer: {
-                firstName: formData.firstName,
-                lastName: formData.lastName,
-                email: formData.email,
-                phone: formData.phone,
-              },
-              shipping: {
-                address: formData.address,
-                city: formData.city,
-                state: formData.state,
-                zipCode: formData.zipCode,
-                country: formData.country,
-                coordinates: addressDetails ? {
-                  latitude: addressDetails.lat,
-                  longitude: addressDetails.lon,
-                } : undefined,
-              },
-            },
-            cartItems: cartState.cartArray,
-        subtotal,
-        shippingFee: shippingDisplay.cost,
-        total: finalTotal,
-            couponCode: appliedCouponCode,
-          };
-          
-          // localStorage survives cross-domain redirects better than sessionStorage
-          localStorage.setItem('pendingPayment', JSON.stringify(paymentData));
-          window.location.href = data.data.authorizationUrl;
-        } else {
-          throw new Error('No authorization URL received');
-        }
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to initialize payment');
+      const res  = await fetch(`${API_URL}/api/payments/stripe/initialize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({
+          amount: total, currency: 'ngn',
+          metadata: { customerEmail: form.email, customerName: `${form.firstName} ${form.lastName}` },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Could not initialise card payment');
+      setStripeData({ clientSecret: data.data.clientSecret, paymentIntentId: data.data.paymentIntentId });
+      setShowStripeForm(true);
+    } catch (e: any) {
+      setError(e.message);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!validateForm()) {
-      return;
+  const handleStripeSuccess = async (paymentResult: any) => {
+    setIsLoading(true);
+    try {
+      const orderId = await createOrderAfterPayment({
+        method: 'stripe',
+        transactionId: paymentResult.paymentIntentId,
+        status: 'paid',
+        paidAt: new Date().toISOString(),
+        amount: total,
+      });
+      clearCart();
+      localStorage.setItem('customerEmail', form.email);
+      router.push(`/order-confirmation?orderId=${orderId}`);
+    } catch (e: any) {
+      setError(e.message || 'Payment succeeded but order creation failed. Contact support.');
+    } finally {
+      setIsLoading(false);
     }
+  };
 
-    if (cartState.cartArray.length === 0) {
-      setError('Your cart is empty');
-      return;
+  // ── Paystack ──────────────────────────────────────────────────────────────
+  const initPaystack = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const PAYSTACK_PUBLIC_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || '';
+
+      // If inline JS is loaded, use the popup for better UX
+      if (paystackReady && window.PaystackPop && PAYSTACK_PUBLIC_KEY) {
+        const handler = window.PaystackPop.setup({
+          key:      PAYSTACK_PUBLIC_KEY,
+          email:    form.email,
+          amount:   Math.round(total * 100), // kobo
+          currency: 'NGN',
+          ref:      `DH-${Date.now()}`,
+          metadata: {
+            custom_fields: [
+              { display_name: 'Customer Name',  variable_name: 'customer_name',  value: `${form.firstName} ${form.lastName}` },
+              { display_name: 'Customer Phone', variable_name: 'customer_phone', value: form.phone },
+            ],
+          },
+          callback: async (response: any) => {
+            // Verify with our server, then create order
+            try {
+              setIsLoading(true);
+              const verifyRes  = await fetch(`${API_URL}/api/payments/paystack/verify/${response.reference}`, {
+                headers: { Authorization: `Bearer ${token()}` },
+              });
+              const verifyData = await verifyRes.json();
+              if (!verifyRes.ok || !verifyData.success) throw new Error(verifyData.message || 'Verification failed');
+
+              const pInfo   = verifyData.data;
+              const orderId = await createOrderAfterPayment({
+                method: 'paystack',
+                transactionId: pInfo.reference || response.reference,
+                paystackTransactionId: pInfo.transactionId,
+                status: 'paid',
+                paidAt: pInfo.paidAt || new Date().toISOString(),
+                channel: pInfo.channel,
+                amount: pInfo.amount,
+              });
+              clearCart();
+              localStorage.setItem('customerEmail', form.email);
+              router.push(`/order-confirmation?orderId=${orderId}`);
+            } catch (e: any) {
+              setError(e.message || 'Payment received but order creation failed. Contact support.');
+            } finally {
+              setIsLoading(false);
+            }
+          },
+          onClose: () => {
+            setIsLoading(false);
+          },
+        });
+        handler.openIframe();
+        return; // popup handles the rest
+      }
+
+      // Fallback: redirect to Paystack
+      const res  = await fetch(`${API_URL}/api/payments/paystack/initialize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({
+          amount: total, email: form.email,
+          metadata: { customerName: `${form.firstName} ${form.lastName}`, customerPhone: form.phone },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Could not initialise payment');
+
+      const pending = {
+        reference: data.data.reference,
+        formData: { customer: buildCustomer(), shipping: buildShipping() },
+        cartItems: cartState.cartArray,
+        subtotal, shippingFee: shipping, total,
+        couponCode: appliedCoupon,
+      };
+      localStorage.setItem('pendingPayment', JSON.stringify(pending));
+      window.location.href = data.data.authorizationUrl;
+
+    } catch (e: any) {
+      setError(e.message);
+      setIsLoading(false);
     }
+  };
 
-    if (activePayment === 'card' || activePayment === 'bank_transfer') {
-      await initializeOnlinePayment();
-      return;
-    }
-
+  // ── COD submit ────────────────────────────────────────────────────────────
+  const submitCOD = async () => {
     setIsLoading(true);
     try {
       await syncCartToServer();
-
-      const orderData = {
-        customer: {
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          email: formData.email,
-          phone: formData.phone,
-        },
-        shipping: {
-          address: formData.address,
-          city: formData.city,
-          state: formData.state,
-          zipCode: formData.zipCode,
-          country: formData.country,
-        },
-        paymentMethod: formData.paymentMethod,
-        items: cartState.cartArray.map(item => ({
-          productId: item.selectedProductId || item.id || item._id,
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity || 1,
-          sizeId: item.selectedSizeId || null,
-          subProductId: item.selectedSubProductId || null,
-          tenantId: item.selectedVendorId || null,
-        })),
-        subtotal,
-        shippingFee: shippingDisplay.cost,
-        total: finalTotal,
-        couponCode: appliedCouponCode || undefined,
-      };
-      
-      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-
-      const response = await fetch(`${API_URL}/api/orders`, {
+      const res  = await fetch(`${API_URL}/api/orders`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { 'Authorization': `Bearer ${token}` }),
-        },
-        body: JSON.stringify(orderData),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({
+          customer: buildCustomer(),
+          shipping: buildShipping(),
+          paymentMethod: 'cash_on_delivery',
+          items: buildItems(),
+          subtotal, shippingFee: shipping, total,
+          couponCode: appliedCoupon || undefined,
+        }),
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to place order');
-      }
-
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to place order');
       clearCart();
-      localStorage.removeItem('appliedCoupon');
-      // Save customer email for order confirmation page (guest users)
-      localStorage.setItem('customerEmail', formData.email);
-      const orderId = data.data?.order?._id || data.data?.order?.id || data.order?._id || data.order?.id;
+      localStorage.setItem('customerEmail', form.email);
+      const orderId = data.data?.order?._id || data.data?.order?.id || data.order?._id;
       router.push(`/order-confirmation?orderId=${orderId}`);
-    } catch (err: any) {
-      setError(err.message || 'Something went wrong. Please try again.');
+    } catch (e: any) {
+      setError(e.message || 'Something went wrong. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handlePaymentSuccess = async (paymentData: any) => {
-    setIsLoading(true);
-    
-    try {
-      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+  // ── Main submit ───────────────────────────────────────────────────────────
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validate())                     return;
+    if (cartState.cartArray.length === 0) { setError('Your cart is empty'); return; }
 
-      const orderData = {
-        customer: {
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          email: formData.email,
-          phone: formData.phone,
-        },
-        shipping: {
-          address: formData.address,
-          city: formData.city,
-          state: formData.state,
-          zipCode: formData.zipCode,
-          country: formData.country,
-          coordinates: addressDetails ? {
-            latitude: addressDetails.lat,
-            longitude: addressDetails.lon,
-          } : undefined,
-        },
-        paymentMethod: activePayment,
-        paymentDetails: {
-          method: paymentData.method,
-          transactionId: paymentData.paymentIntentId,
-          status: 'paid',
-          paidAt: new Date().toISOString(),
-        },
-        items: cartState.cartArray.map(item => ({
-          productId: item.selectedProductId || item.id || item._id,
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity || 1,
-          sizeId: item.selectedSizeId || null,
-          subProductId: item.selectedSubProductId || null,
-          tenantId: item.selectedVendorId || null,
-        })),
-        subtotal,
-        shippingFee: shippingDisplay.cost,
-        total: finalTotal,
-        couponCode: appliedCouponCode || undefined,
-        status: 'processing',
-        paymentStatus: 'paid',
-      };
-
-      const response = await fetch(`${API_URL}/api/orders`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { 'Authorization': `Bearer ${token}` }),
-        },
-        body: JSON.stringify(orderData),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to create order');
-      }
-
-      clearCart();
-      localStorage.removeItem('appliedCoupon');
-      // Save customer email for order confirmation page (guest users)
-      localStorage.setItem('customerEmail', formData.email);
-      const orderId = data.data?.order?._id || data.data?.order?.id || data.order?._id || data.order?.id;
-      router.push(`/order-confirmation?orderId=${orderId}`);
-    } catch (err: any) {
-      setError(err.message || 'Payment succeeded but order creation failed. Please contact support.');
-      setIsLoading(false);
-    }
+    if (activePayment === 'card')         { await initStripe();   return; }
+    if (activePayment === 'bank_transfer') { await initPaystack(); return; }
+    await submitCOD();
   };
 
-  const handlePaymentError = (errorMessage: string) => {
-    setError(errorMessage);
-    setShowPaymentModal(false);
-  };
+  // ── Loading / empty states ────────────────────────────────────────────────
+  if (!mounted) return (
+    <div className="min-h-[60vh] flex items-center justify-center bg-gray-50">
+      <div className="w-10 h-10 border-4 border-red-100 border-t-red-700 rounded-full animate-spin" />
+    </div>
+  );
 
-  if (!mounted) {
-    return (
-      <div className="min-h-[60vh] flex items-center justify-center bg-gray-50">
-        <div className="w-12 h-12 border-4 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
+  if (cartState.cartArray.length === 0) return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="text-center px-6">
+        <Icon.PiShoppingCartBold size={56} className="mx-auto text-gray-200 mb-4" />
+        <h2 className="text-xl font-black text-gray-900 mb-2">Your cart is empty</h2>
+        <p className="text-gray-500 text-sm mb-6">Add products before checking out.</p>
+        <Link href="/shop" className="inline-flex items-center gap-2 bg-gradient-to-br from-red-700 to-red-900 text-white px-6 py-3 rounded-xl font-bold text-sm">
+          <Icon.PiStorefrontBold size={16} /> Browse Shop
+        </Link>
       </div>
-    );
-  }
-
-  if (cartState.cartArray.length === 0) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center px-6">
-          <Icon.PiShoppingCart size={64} className="mx-auto text-gray-300 mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Your cart is empty</h2>
-          <p className="text-gray-600 mb-6">Add some products to proceed to checkout.</p>
-          <Link 
-            href="/shop" 
-            className="inline-block py-3 px-8 bg-gray-900 text-white font-semibold rounded-lg hover:bg-gray-800"
-          >
-            Start Shopping
-          </Link>
-        </div>
-      </div>
-    );
-  }
+    </div>
+  );
 
   return (
     <>
-      {/* Progress Header */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between max-w-4xl mx-auto">
-            <Link href="/cart" className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
-              <Icon.PiArrowLeft size={18} />
-              <span className="font-medium">Back to Cart</span>
-            </Link>
-            <div className="flex items-center gap-2 text-sm">
-              <div className="flex items-center gap-1.5">
-                <div className="w-6 h-6 rounded-full bg-green-500 text-white flex items-center justify-center text-xs font-bold">1</div>
-                <span className="hidden sm:block text-gray-900">Cart</span>
-              </div>
-              <div className="w-8 h-0.5 bg-green-500" />
-              <div className="flex items-center gap-1.5">
-                <div className="w-6 h-6 rounded-full bg-gray-900 text-white flex items-center justify-center text-xs font-bold">2</div>
-                <span className="hidden sm:block text-gray-900">Checkout</span>
-              </div>
-              <div className="w-8 h-0.5 bg-gray-300" />
-              <div className="flex items-center gap-1.5">
-                <div className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-xs font-bold">3</div>
-                <span className="hidden sm:block text-gray-400">Confirmation</span>
-              </div>
+      {/* Paystack inline script */}
+      <Script
+        src="https://js.paystack.co/v1/inline.js"
+        strategy="afterInteractive"
+        onLoad={() => setPaystackReady(true)}
+      />
+
+      {/* Progress bar */}
+      <div className="bg-white border-b border-gray-100 sticky top-0 z-20">
+        <div className="container mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
+          <Link href="/cart" className="flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-red-700 transition-colors">
+            <Icon.PiArrowLeftBold size={15} /> Back to Cart
+          </Link>
+          <div className="flex items-center gap-2 text-xs font-semibold">
+            <div className="flex items-center gap-1.5 text-green-600">
+              <div className="w-5 h-5 rounded-full bg-green-500 text-white flex items-center justify-center text-[10px] font-black">1</div>
+              <span className="hidden sm:inline">Cart</span>
             </div>
-            <div className="w-24" />
+            <div className="w-6 h-0.5 bg-green-500" />
+            <div className="flex items-center gap-1.5 text-red-700">
+              <div className="w-5 h-5 rounded-full bg-red-700 text-white flex items-center justify-center text-[10px] font-black">2</div>
+              <span className="hidden sm:inline">Checkout</span>
+            </div>
+            <div className="w-6 h-0.5 bg-gray-200" />
+            <div className="flex items-center gap-1.5 text-gray-400">
+              <div className="w-5 h-5 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-[10px] font-black">3</div>
+              <span className="hidden sm:inline">Confirmation</span>
+            </div>
           </div>
+          <div className="w-28" />
         </div>
       </div>
 
-      <div className="container mx-auto px-4 py-6">
-        <form onSubmit={handleSubmit}>
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
-              <Icon.PiWarningCircle size={20} className="text-red-500" />
-              <p className="text-sm text-red-700">{error}</p>
-            </div>
-          )}
+      <div className="bg-gray-50 min-h-screen">
+        <div className="container mx-auto max-w-6xl px-4 py-8">
+          <form onSubmit={handleSubmit}>
 
-          <div className="flex flex-col lg:flex-row gap-6 max-w-6xl mx-auto">
-            {/* Left Column - Forms */}
-            <div className="lg:w-3/5 space-y-4">
-              {/* Customer Information */}
-              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                <div className="bg-gray-900 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <Icon.PiUser size={18} className="text-white" />
-                    <h2 className="text-base font-semibold text-white">Customer Information</h2>
+            <AnimatePresence>
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  className="mb-5 flex items-center gap-3 bg-red-50 border border-red-200 rounded-2xl px-5 py-3.5"
+                >
+                  <Icon.PiWarningCircleBold size={18} className="text-red-600 flex-shrink-0" />
+                  <p className="text-sm text-red-700 font-medium">{error}</p>
+                  <button type="button" onClick={() => setError('')} className="ml-auto text-red-400 hover:text-red-600">
+                    <Icon.PiXBold size={14} />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="flex flex-col lg:flex-row gap-6">
+
+              {/* ── Left: Forms ─────────────────────────────────────────── */}
+              <div className="lg:w-3/5 space-y-5">
+
+                {/* Customer info */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="flex items-center gap-2.5 px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-900 to-red-950">
+                    <Icon.PiUserBold size={16} className="text-red-400" />
+                    <h2 className="text-sm font-black text-white">Customer Information</h2>
+                  </div>
+                  <div className="p-5 grid sm:grid-cols-2 gap-4">
+                    <Field label="First Name"    name="firstName" icon={Icon.PiUserBold}     value={form.firstName} error={errors.firstName} onChange={handleChange} />
+                    <Field label="Last Name"     name="lastName"  icon={Icon.PiUserBold}     value={form.lastName}  error={errors.lastName}  onChange={handleChange} />
+                    <Field label="Email Address" name="email"     type="email" icon={Icon.PiEnvelopeBold} value={form.email} error={errors.email} onChange={handleChange} />
+                    <Field label="Phone Number"  name="phone"     type="tel"   icon={Icon.PiPhoneBold}   placeholder="+234" value={form.phone} error={errors.phone} onChange={handleChange} />
                   </div>
                 </div>
-                <div className="p-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <InputField 
-                      label="First Name" 
-                      name="firstName" 
-                      icon={Icon.PiUser}
-                      value={formData.firstName}
-                      error={errors.firstName}
-                      onChange={handleInputChange}
-                      onClearError={handleClearError}
-                    />
-                    <InputField 
-                      label="Last Name" 
-                      name="lastName" 
-                      icon={Icon.PiUser}
-                      value={formData.lastName}
-                      error={errors.lastName}
-                      onChange={handleInputChange}
-                      onClearError={handleClearError}
-                    />
-                    <InputField 
-                      label="Email" 
-                      name="email" 
-                      type="email" 
-                      icon={Icon.PiEnvelope}
-                      value={formData.email}
-                      error={errors.email}
-                      onChange={handleInputChange}
-                      onClearError={handleClearError}
-                    />
-                    <InputField 
-                      label="Phone" 
-                      name="phone" 
-                      type="tel" 
-                      placeholder="+234" 
-                      icon={Icon.PiPhone}
-                      value={formData.phone}
-                      error={errors.phone}
-                      onChange={handleInputChange}
-                      onClearError={handleClearError}
-                    />
+
+                {/* Shipping address */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="flex items-center gap-2.5 px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-900 to-red-950">
+                    <Icon.PiTruckBold size={16} className="text-red-400" />
+                    <h2 className="text-sm font-black text-white">Delivery Address</h2>
                   </div>
-                </div>
-              </div>
-
-              {/* Shipping Address */}
-              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                <div className="bg-gray-800 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <Icon.PiTruck size={18} className="text-white" />
-                    <h2 className="text-base font-semibold text-white">Shipping Address</h2>
-                  </div>
-                </div>
-                <div className="p-4 space-y-4">
-                  <AddressAutocomplete
-                    value={formData.address || ''}
-                    onChange={handleAddressSelect}
-                    onClearError={() => handleClearError('address')}
-                    error={errors.address}
-                    label="Street Address"
-                    placeholder="Start typing your address..."
-                  />
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <InputField
-                      label="City / LGA"
-                      name="city"
-                      icon={Icon.PiBuildings}
-                      value={formData.city}
-                      error={errors.city}
-                      onChange={handleInputChange}
-                      onClearError={handleClearError}
+                  <div className="p-5 space-y-4">
+                    <AddressAutocomplete
+                      value={form.address}
+                      onChange={handleAddressSelect}
+                      onClearError={() => {}}
+                      error={errors.address}
+                      label="Street Address"
+                      placeholder="Start typing your address…"
                     />
-
-                    {/* State — Nigerian states dropdown */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                        State <span className="text-red-500">*</span>
-                      </label>
-                      <div className="relative">
-                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-                          <Icon.PiMapTrifold size={18} />
-                        </div>
-                        <select
-                          name="state"
-                          value={formData.state}
-                          onChange={handleInputChange}
-                          className={`w-full pl-10 pr-8 py-2.5 rounded-lg border text-sm appearance-none bg-white outline-none transition-colors
-                            ${errors.state
-                              ? 'border-red-400 bg-red-50 focus:border-red-500 focus:ring-1 focus:ring-red-200'
-                              : 'border-gray-300 focus:border-gray-900 focus:ring-1 focus:ring-gray-200'
-                            }`}
-                        >
-                          <option value="">Select state…</option>
-                          {NIGERIAN_STATES.map(s => (
-                            <option key={s} value={s}>{s}</option>
-                          ))}
-                        </select>
-                        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-                          <Icon.PiCaretDown size={14} />
-                        </div>
-                      </div>
-                      {errors.state && (
-                        <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
-                          <Icon.PiWarningCircle size={12} />
-                          {errors.state}
-                        </p>
-                      )}
-                    </div>
-
-                    <InputField
-                      label="Postal Code"
-                      name="zipCode"
-                      required={false}
-                      icon={Icon.PiMailbox}
-                      value={formData.zipCode}
-                      error={errors.zipCode}
-                      onChange={handleInputChange}
-                      onClearError={handleClearError}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Country</label>
-                    <div className="relative">
-                      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                        <Icon.PiGlobe size={18} />
-                      </div>
-                      <select
-                        name="country"
-                        value={formData.country}
-                        onChange={handleInputChange}
-                        className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:border-gray-900 outline-none appearance-none bg-white"
-                      >
-                        <option value="Nigeria">Nigeria</option>
-                        {/* <option value="Ghana">Ghana</option>
-                        <option value="Kenya">Kenya</option>
-                        <option value="South Africa">South Africa</option>
-                        <option value="United States">United States</option>
-                        <option value="United Kingdom">United Kingdom</option> */}
-                      </select>
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-                        <Icon.PiCaretDown size={16} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Payment Method */}
-              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                <div className="bg-gray-700 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <Icon.PiCreditCard size={18} className="text-white" />
-                    <h2 className="text-base font-semibold text-white">Payment Method</h2>
-                  </div>
-                </div>
-                <div className="p-4">
-                  {showPaymentModal && paymentData?.method === 'stripe' && (
-                    <div className="mb-4">
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
-                        <p className="text-sm text-blue-800">
-                          Enter your card details to complete payment
-                        </p>
-                      </div>
-                      <PaymentHandler
-                        clientSecret={paymentData.clientSecret}
-                        amount={finalTotal}
-                        onPaymentSuccess={handlePaymentSuccess}
-                        onPaymentError={handlePaymentError}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowPaymentModal(false);
-                          setPaymentData(null);
-                        }}
-                        className="mt-3 w-full py-2 text-gray-600 hover:text-gray-900 text-sm"
-                      >
-                        ← Back to payment options
-                      </button>
-                    </div>
-                  )}
-
-                  {showPaymentModal && paymentData?.method === 'paystack' && (
-                    <div className="text-center py-6">
-                      <Icon.PiArrowRight size={32} className="mx-auto text-green-600 mb-2" />
-                      <h3 className="text-lg font-semibold">Redirecting to Paystack</h3>
-                    </div>
-                  )}
-
-                  {!showPaymentModal && (
-                    <div className="space-y-2">
-                      {paymentMethods.map((method) => {
-                        const IconComponent = method.icon;
-                        const isActive = activePayment === method.id;
-                        return (
-                          <label
-                            key={method.id}
-                            onClick={() => handlePayment(method.id)}
-                            className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors
-                              ${isActive 
-                                ? 'border-gray-900 bg-gray-50' 
-                                : 'border-gray-200 hover:border-gray-300'
-                              }`}
+                    <div className="grid sm:grid-cols-3 gap-4">
+                      <Field label="City / LGA" name="city" icon={Icon.PiBuildingsBold} value={form.city} error={errors.city} onChange={handleChange} />
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 mb-1.5 block">State <span className="text-red-500">*</span></label>
+                        <div className="relative">
+                          <Icon.PiMapPinBold size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                          <select
+                            name="state" value={form.state} onChange={handleChange}
+                            className={`${inputCls(errors.state)} pl-10 pr-8 appearance-none`}
                           >
-                            <input
-                              type="radio"
-                              name="payment"
-                              checked={isActive}
-                              onChange={() => handlePayment(method.id)}
-                              className="w-4 h-4"
-                            />
-                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
-                              ${isActive ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500'}`}
+                            <option value="">Select…</option>
+                            {NIGERIAN_STATES.map(s => <option key={s}>{s}</option>)}
+                          </select>
+                          <Icon.PiCaretDownBold size={12} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                        </div>
+                        {errors.state && <p className="mt-1 text-xs text-red-500 flex items-center gap-1"><Icon.PiWarningCircleBold size={11} />{errors.state}</p>}
+                      </div>
+                      <Field label="Postal Code" name="zipCode" required={false} icon={Icon.PiMapTrifoldBold} value={form.zipCode} onChange={handleChange} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Payment method */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="flex items-center gap-2.5 px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-900 to-red-950">
+                    <Icon.PiCreditCardBold size={16} className="text-red-400" />
+                    <h2 className="text-sm font-black text-white">Payment Method</h2>
+                  </div>
+                  <div className="p-5">
+                    {/* Stripe form */}
+                    <AnimatePresence>
+                      {showStripeForm && stripeData && (
+                        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mb-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <p className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                              <Icon.PiCreditCardBold size={16} className="text-red-700" /> Enter card details
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => { setShowStripeForm(false); setStripeData(null); }}
+                              className="text-xs text-gray-400 hover:text-red-700 flex items-center gap-1"
                             >
-                              <IconComponent size={20} />
-                            </div>
-                            <div className="flex-1">
-                              <p className={`font-medium text-sm ${isActive ? 'text-gray-900' : 'text-gray-700'}`}>
-                                {method.name}
-                              </p>
-                              <p className="text-xs text-gray-500">{method.description}</p>
-                            </div>
-                            {isActive && (
-                              <div className="w-5 h-5 rounded-full bg-green-500 text-white flex items-center justify-center">
-                                <Icon.PiCheck size={12} />
+                              <Icon.PiArrowLeftBold size={12} /> Change method
+                            </button>
+                          </div>
+                          <PaymentHandler
+                            clientSecret={stripeData.clientSecret}
+                            amount={total}
+                            onPaymentSuccess={handleStripeSuccess}
+                            onPaymentError={(msg) => { setError(msg); setShowStripeForm(false); setStripeData(null); }}
+                          />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {!showStripeForm && (
+                      <div className="space-y-2.5">
+                        {PAYMENT_METHODS.map(({ id, name, description, icon: Ic, badge }) => {
+                          const active = activePayment === id;
+                          return (
+                            <label
+                              key={id}
+                              onClick={() => { setActivePayment(id); setForm(f => ({ ...f, paymentMethod: id as any })); }}
+                              className={`flex items-center gap-3.5 p-3.5 rounded-xl border cursor-pointer transition-all ${
+                                active ? 'border-red-200 bg-red-50' : 'border-gray-200 hover:border-red-100 bg-white hover:bg-gray-50'
+                              }`}
+                            >
+                              <input type="radio" name="payment" checked={active} readOnly className="sr-only" />
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-all ${
+                                active ? 'bg-red-700 text-white' : 'bg-gray-100 text-gray-500'
+                              }`}>
+                                <Ic size={19} />
                               </div>
-                            )}
-                          </label>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <p className={`font-bold text-sm ${active ? 'text-red-800' : 'text-gray-800'}`}>{name}</p>
+                                  {badge && <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{badge}</span>}
+                                </div>
+                                <p className="text-xs text-gray-400 mt-0.5">{description}</p>
+                              </div>
+                              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                                active ? 'border-red-700 bg-red-700' : 'border-gray-300'
+                              }`}>
+                                {active && <Icon.PiCheckBold size={11} className="text-white" />}
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Right: Order summary ─────────────────────────────────── */}
+              <div className="lg:w-2/5">
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden sticky top-20">
+                  <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-900 to-red-950">
+                    <h2 className="text-sm font-black text-white flex items-center gap-2">
+                      <Icon.PiShoppingCartBold size={16} /> Order Summary
+                    </h2>
+                    <p className="text-xs text-red-300 mt-0.5">{cartState.cartArray.length} item{cartState.cartArray.length !== 1 ? 's' : ''}</p>
+                  </div>
+
+                  <div className="p-5 space-y-4">
+                    {/* Items */}
+                    <div className="space-y-3 max-h-52 overflow-y-auto pr-1">
+                      {cartState.cartArray.map(item => {
+                        const img = item.thumbImage?.[0] || (item as any).primaryImage?.url || (item as any).images?.[0]?.url;
+                        return (
+                          <div key={item.cartItemId} className="flex items-center gap-3 bg-gray-50 rounded-xl p-2.5">
+                            <div className="w-12 h-12 rounded-xl overflow-hidden bg-white border border-gray-100 flex-shrink-0">
+                              {img
+                                ? <Image src={img} alt={item.name} width={48} height={48} className="w-full h-full object-contain p-0.5" />
+                                : <div className="w-full h-full flex items-center justify-center"><Icon.PiImageBold size={16} className="text-gray-300" /></div>}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold text-gray-900 truncate">{item.name}</p>
+                              <p className="text-xs text-gray-400">Qty: {item.quantity || 1}{item.selectedSize ? ` · ${item.selectedSize}` : ''}</p>
+                            </div>
+                            <span className="text-sm font-black text-gray-900 flex-shrink-0">{fmt(item.price * (item.quantity || 1))}</span>
+                          </div>
                         );
                       })}
                     </div>
-                  )}
-                </div>
-              </div>
-            </div>
 
-            {/* Right Column - Order Summary */}
-            <div className="lg:w-2/5">
-              <div className="bg-white rounded-lg border border-gray-200 sticky top-4">
-                <div className="bg-gray-900 px-4 py-3 border-b border-gray-200">
-                  <h2 className="text-base font-semibold text-white flex items-center gap-2">
-                    <Icon.PiShoppingCart size={18} />
-                    Order Summary
-                  </h2>
-                  <p className="text-gray-400 text-xs mt-0.5">{cartState.cartArray.length} item(s)</p>
-                </div>
-
-                <div className="p-4">
-                  {/* Cart Items */}
-                  <div className="space-y-3 mb-4 max-h-56 overflow-y-auto">
-                    {cartState.cartArray.map((item, index) => (
-                      <div 
-                        key={item.cartItemId}
-                        className="flex items-center gap-3 p-2 rounded-lg bg-gray-50"
-                      >
-                        <div className="w-14 h-14 rounded-lg overflow-hidden bg-white flex-shrink-0 border border-gray-200">
-                          {(() => {
-                            const imgSrc = item.thumbImage?.[0] || item.primaryImage?.url || item.images?.[0]?.url;
-                            if (imgSrc) {
-                              return (
-                                <Image 
-                                  src={imgSrc} 
-                                  alt={item.name} 
-                                  width={56} 
-                                  height={56} 
-                                  className="w-full h-full object-cover" 
-                                />
-                              );
-                            }
-                            return (
-                              <div className="w-full h-full flex items-center justify-center bg-gray-100">
-                                <Icon.PiImage size={16} className="text-gray-400" />
-                              </div>
-                            );
-                          })()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm text-gray-900 truncate">{item.name}</p>
-                          <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                            {item.selectedVendor && (
-                              <span className="text-xs text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded">
-                                {item.selectedVendor}
-                              </span>
-                            )}
-                            <span className="text-xs text-gray-500">
-                              Qty: {item.quantity || 1}
-                            </span>
-                            {item.selectedSize && (
-                              <span className="text-xs text-gray-500">
-                                {item.selectedSize}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <span className="font-semibold text-sm text-gray-900">₦{(item.price * (item.quantity || 1)).toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Coupon */}
-                  <div className="mb-4">
+                    {/* Coupon */}
                     <CouponComponent
-                      onCouponApplied={handleCouponApplied}
-                      onCouponRemoved={handleCouponRemoved}
+                      onCouponApplied={(code, disc) => { setCouponDiscount(disc); setAppliedCoupon(code); }}
+                      onCouponRemoved={() => { setCouponDiscount(0); setAppliedCoupon(''); }}
                       cartItems={cartState.cartArray}
                       subtotal={subtotal}
                       shipping={shipping}
                     />
-                  </div>
 
-                  {/* Price Breakdown */}
-                  <div className="space-y-2 mb-4 text-sm">
-                    <div className="flex justify-between text-gray-600 py-1">
-                      <span>Subtotal</span>
-                      <span className="font-medium">₦{subtotal.toLocaleString()}</span>
-                    </div>
-                    
-                    {couponDiscount > 0 && (
-                      <div className="flex justify-between text-green-600 py-1">
-                        <span>Discount</span>
-                        <span className="font-medium">-₦{couponDiscount.toLocaleString()}</span>
+                    {/* Totals */}
+                    <div className="space-y-2 text-sm border-t border-gray-100 pt-3">
+                      <div className="flex justify-between text-gray-600">
+                        <span>Subtotal</span><span className="font-semibold">{fmt(subtotal)}</span>
                       </div>
-                    )}
-                    
-                    <div className="flex justify-between text-gray-600 py-1">
-                      <span>Shipping</span>
-                      <span className={`font-medium ${shippingDisplay.cost === 0 ? 'text-green-600' : ''}`}>
-                        {shippingDisplay.text}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Total */}
-                  <div className="border-t border-gray-200 pt-3 mb-4">
-                    <div className="flex justify-between items-center">
-                      <span className="font-semibold text-gray-900">Total</span>
-                      <span className="text-xl font-bold text-gray-900">₦{finalTotal.toLocaleString()}</span>
-                    </div>
-                  </div>
-
-                  {/* Submit Button */}
-                  {!showPaymentModal && (
-                    <button
-                      type="submit"
-                      disabled={isLoading}
-                      className="w-full py-3 px-4 bg-gray-900 text-white font-semibold rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                      {isLoading ? (
-                        <>
-                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          Processing...
-                        </>
-                      ) : (
-                        <>
-                          <Icon.PiLockKey size={18} />
-                          {activePayment === 'cash_on_delivery' ? 'Place Order' : `Pay ₦${finalTotal.toLocaleString()}`}
-                        </>
+                      {discount > 0 && (
+                        <div className="flex justify-between text-green-600">
+                          <span>Discount</span><span className="font-semibold">-{fmt(discount)}</span>
+                        </div>
                       )}
-                    </button>
-                  )}
-
-                  {/* Security Note */}
-                  <div className="mt-3 flex items-center justify-center gap-3 text-xs text-gray-500">
-                    <div className="flex items-center gap-1">
-                      <Icon.PiShieldCheck size={14} className="text-green-500" />
-                      <span>Secure</span>
+                      <div className="flex justify-between text-gray-600">
+                        <span>Delivery</span>
+                        <span className={`font-semibold ${shipping === 0 ? 'text-green-600' : ''}`}>
+                          {shipping === 0 ? 'Free' : fmt(shipping)}
+                        </span>
+                      </div>
+                      {shipping === 0 && (
+                        <p className="text-xs text-green-600 flex items-center gap-1">
+                          <Icon.PiCheckCircleBold size={12} /> Free delivery on orders above ₦50,000
+                        </p>
+                      )}
                     </div>
-                    <div className="w-1 h-1 rounded-full bg-gray-300" />
-                    <div className="flex items-center gap-1">
-                      <Icon.PiLockKey size={14} className="text-blue-500" />
-                      <span>Encrypted</span>
+
+                    <div className="flex justify-between items-center border-t border-gray-100 pt-3">
+                      <span className="font-black text-gray-900">Total</span>
+                      <span className="text-xl font-black text-gray-900">{fmt(total)}</span>
+                    </div>
+
+                    {/* Submit */}
+                    {!showStripeForm && (
+                      <button
+                        type="submit"
+                        disabled={isLoading}
+                        className="w-full flex items-center justify-center gap-2.5 bg-gradient-to-br from-red-700 to-red-900 text-white py-3.5 rounded-xl font-bold text-sm hover:from-red-800 hover:to-red-950 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+                      >
+                        {isLoading ? (
+                          <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Processing…</>
+                        ) : (
+                          <>
+                            <Icon.PiLockKeyBold size={16} />
+                            {activePayment === 'cash_on_delivery' ? 'Place Order' : `Pay ${fmt(total)}`}
+                          </>
+                        )}
+                      </button>
+                    )}
+
+                    {/* Trust badges */}
+                    <div className="flex items-center justify-center gap-4 text-xs text-gray-400 pt-1">
+                      <span className="flex items-center gap-1"><Icon.PiShieldCheckBold size={13} className="text-green-500" /> Secure</span>
+                      <span className="flex items-center gap-1"><Icon.PiLockKeyBold size={13} className="text-blue-500" /> Encrypted</span>
+                      <span className="flex items-center gap-1"><Icon.PiArrowCounterClockwiseBold size={13} className="text-amber-500" /> Easy Returns</span>
                     </div>
                   </div>
                 </div>
               </div>
+
             </div>
-          </div>
-        </form>
+          </form>
+        </div>
       </div>
     </>
   );
-};
-
-export default Checkout;
+}
