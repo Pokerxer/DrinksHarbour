@@ -73,8 +73,18 @@ const ModalCart = () => {
   };
 
   const handleQuantityChange = (cartItemId: string, newQuantity: number) => {
-    if (newQuantity <= 0) handleRemove(cartItemId);
-    else updateQuantity(cartItemId, newQuantity);
+    if (newQuantity <= 0) {
+      handleRemove(cartItemId);
+      return;
+    }
+    // Hard guard: never allow setting qty beyond the validated stock
+    const item = cartState.cartArray.find(i => i.cartItemId === cartItemId);
+    if (item) {
+      const v = getValidation(item);
+      const cap = v?.maxQuantity ?? Infinity;
+      if (newQuantity > cap) return;
+    }
+    updateQuantity(cartItemId, newQuantity);
   };
 
   const handleRemove = async (cartItemId: string) => {
@@ -410,8 +420,8 @@ const ModalCart = () => {
                                   </span>
                                   <button
                                     onClick={() => handleQuantityChange(item.cartItemId, (item.quantity || 1) + 1)}
-                                    disabled={(item.quantity || 1) >= maxQty}
-                                    title={maxQty < 99 ? `Max ${maxQty} available` : undefined}
+                                    disabled={validating || (item.quantity || 1) >= maxQty}
+                                    title={maxQty < 99 ? `Max ${maxQty} in stock` : validating ? 'Checking stock…' : undefined}
                                     className="w-8 h-8 flex items-center justify-center hover:bg-red-50 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                                   >
                                     <Icon.PiPlusBold size={11} />

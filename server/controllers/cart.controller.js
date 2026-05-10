@@ -378,7 +378,7 @@ const validateCart = asyncHandler(async (req, res) => {
       .lean(),
     sizeIds.length > 0
       ? Size.find({ _id: { $in: sizeIds } })
-          .select('costPrice sellingPrice stock subproduct')
+          .select('costPrice sellingPrice stock availableStock subproduct')
           .lean()
       : [],
     tenantIds.length > 0
@@ -418,7 +418,8 @@ const validateCart = asyncHandler(async (req, res) => {
 
     // ── 3. Quantity cap ───────────────────────────────────────────────────────
     const sizeDoc   = sizeId ? sizeMap[sizeId] : null;
-    const stockQty  = sizeDoc?.stock ?? sp.availableStock ?? null; // null = unlimited
+    // Prefer availableStock (stock minus reservations) over raw stock; fall back to SubProduct level
+    const stockQty  = sizeDoc?.availableStock ?? sizeDoc?.stock ?? sp.availableStock ?? sp.totalStock ?? null; // null = unlimited
     const maxQty    = stockQty != null ? stockQty : Infinity;
 
     // ── 4. Live price ─────────────────────────────────────────────────────────
