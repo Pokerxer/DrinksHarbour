@@ -115,7 +115,10 @@ export async function generateMetadata({
 // ─── Title builder ────────────────────────────────────────────────────────────
 
 function buildTitle(p: any): string {
-  if (p.metaTitle) return p.metaTitle;
+  if (p.metaTitle) {
+    // Strip any trailing "| DrinksHarbour" the admin may have saved — we append it ourselves
+    return p.metaTitle.replace(/\s*\|\s*DrinksHarbour\s*$/i, "").trim();
+  }
 
   const parts: string[] = [p.name];
 
