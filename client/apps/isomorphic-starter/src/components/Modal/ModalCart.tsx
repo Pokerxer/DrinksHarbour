@@ -322,40 +322,32 @@ const ModalCart = () => {
                           animate={{ opacity: isRemoving ? 0 : 1, x: isRemoving ? 100 : 0, scale: isRemoving ? 0.9 : 1 }}
                           exit={{ opacity: 0, x: 100, scale: 0.9 }}
                           transition={{ delay: index * 0.05 }}
-                          className={`p-4 transition-colors ${isOutOfStock ? 'bg-red-50/60' : 'hover:bg-gray-50'}`}
+                          className={`p-4 transition-colors ${isOutOfStock ? 'bg-gray-50 border-l-4 border-red-300' : 'hover:bg-gray-50'}`}
                         >
                           <div className="flex gap-4">
                             {/* Image */}
-                            <Link
-                              href={`/product/${item.slug}`}
-                              onClick={closeModalCart}
-                              className={`relative w-20 h-20 md:w-24 md:h-24 flex-shrink-0 ${isOutOfStock ? 'opacity-50' : ''}`}
-                            >
+                            <div className={`relative w-20 h-20 md:w-24 md:h-24 flex-shrink-0 ${isOutOfStock ? 'grayscale opacity-40' : ''}`}>
                               <div className="w-full h-full rounded-xl overflow-hidden bg-gradient-to-b from-gray-50 to-gray-100 border border-gray-100 flex items-center justify-center p-1">
                                 {imgSrc ? (
                                   <Image
                                     src={imgSrc}
                                     alt={item.name}
                                     fill
-                                    className="object-contain hover:scale-105 transition-transform duration-300 p-1"
+                                    className="object-contain p-1"
                                     sizes="96px"
                                   />
                                 ) : (
                                   <Icon.PiImage size={24} className="text-gray-300" />
                                 )}
                               </div>
-                            </Link>
+                            </div>
 
                             {/* Info */}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-start justify-between gap-2">
-                                <Link
-                                  href={`/product/${item.slug}`}
-                                  onClick={closeModalCart}
-                                  className={`font-semibold text-sm line-clamp-2 transition-colors ${isOutOfStock ? 'text-gray-400' : 'text-gray-900 hover:text-red-700'}`}
-                                >
+                                <span className={`font-semibold text-sm line-clamp-2 ${isOutOfStock ? 'text-gray-400 line-through decoration-red-300' : 'text-gray-900'}`}>
                                   {item.name}
-                                </Link>
+                                </span>
                                 <button
                                   onClick={() => handleRemove(item.cartItemId)}
                                   disabled={isRemoving}
@@ -366,88 +358,108 @@ const ModalCart = () => {
                               </div>
 
                               {/* Vendor & Size Tags */}
-                              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                                {item.selectedVendor && (
-                                  <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700 bg-red-50 px-2 py-0.5 rounded">
-                                    <Icon.PiStorefront size={10} />
-                                    {item.selectedVendor}
-                                  </span>
-                                )}
-                                {item.selectedSize && (
-                                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-                                    {item.selectedSize}
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Validation status badges */}
-                              {isOutOfStock && (
-                                <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-red-600 bg-red-100 px-2.5 py-1 rounded-lg w-fit">
-                                  <Icon.PiWarningCircleFill size={13} />
-                                  Out of stock — remove to continue
-                                </div>
-                              )}
-                              {isPriceChanged && !appliedUpdates && (
-                                <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg w-fit border border-amber-200">
-                                  <Icon.PiArrowsClockwise size={13} />
-                                  Price updated:&nbsp;
-                                  <span className="line-through text-gray-400">{formatPrice(validation!.oldPrice)}</span>
-                                  &nbsp;→&nbsp;
-                                  <span className={validation!.currentPrice > validation!.oldPrice ? 'text-red-600' : 'text-green-600'}>
-                                    {formatPrice(validation!.currentPrice)}
-                                  </span>
-                                </div>
-                              )}
-                              {isQtyReduced && (
-                                <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-orange-700 bg-orange-50 px-2.5 py-1 rounded-lg w-fit">
-                                  <Icon.PiWarning size={13} />
-                                  Only {maxQty} available
-                                </div>
-                              )}
-
-                              {/* Quantity + Price */}
-                              <div className={`flex items-center justify-between mt-3 ${isOutOfStock ? 'opacity-40 pointer-events-none' : ''}`}>
-                                <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
-                                  <button
-                                    onClick={() => handleQuantityChange(item.cartItemId, (item.quantity || 1) - 1)}
-                                    disabled={(item.quantity || 1) <= 1}
-                                    className="w-8 h-8 flex items-center justify-center hover:bg-red-50 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                                  >
-                                    <Icon.PiMinusBold size={11} />
-                                  </button>
-                                  <span className="w-10 text-center text-sm font-bold text-gray-900">
-                                    {item.quantity || 1}
-                                  </span>
-                                  <button
-                                    onClick={() => handleQuantityChange(item.cartItemId, (item.quantity || 1) + 1)}
-                                    disabled={validating || (item.quantity || 1) >= maxQty}
-                                    title={maxQty < 99 ? `Max ${maxQty} in stock` : validating ? 'Checking stock…' : undefined}
-                                    className="w-8 h-8 flex items-center justify-center hover:bg-red-50 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                                  >
-                                    <Icon.PiPlusBold size={11} />
-                                  </button>
-                                </div>
-                                <div className="text-right">
-                                  {isPriceChanged && !appliedUpdates && (
-                                    <p className="text-xs text-gray-400 line-through">
-                                      {formatPrice((validation!.oldPrice || 0) * (item.quantity || 1))}
-                                    </p>
-                                  )}
-                                  <span className={`font-bold ${isPriceChanged && !appliedUpdates ? (validation!.currentPrice > validation!.oldPrice ? 'text-red-600' : 'text-green-600') : 'text-gray-900'}`}>
-                                    {formatPrice((isPriceChanged && !appliedUpdates ? validation!.currentPrice : (item.price || 0)) * (item.quantity || 1))}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Move to Wishlist */}
                               {!isOutOfStock && (
-                                <button
-                                  onClick={() => handleMoveToWishlist(item)}
-                                  className="mt-2 text-xs text-gray-400 hover:text-red-600 transition-colors flex items-center gap-1"
-                                >
-                                  <Icon.PiHeart size={12} />
-                                  Move to Wishlist
-                                </button>
+                                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                  {item.selectedVendor && (
+                                    <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700 bg-red-50 px-2 py-0.5 rounded">
+                                      <Icon.PiStorefront size={10} />
+                                      {item.selectedVendor}
+                                    </span>
+                                  )}
+                                  {item.selectedSize && (
+                                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                                      {item.selectedSize}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* ── Out of Stock state ── */}
+                              {isOutOfStock ? (
+                                <div className="mt-2 space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-red-500 px-2.5 py-1 rounded-full">
+                                      <Icon.PiProhibitBold size={12} />
+                                      Out of Stock
+                                    </span>
+                                    {item.selectedSize && (
+                                      <span className="text-xs text-gray-400">{item.selectedSize}</span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-gray-400">This item is no longer available.</p>
+                                  <button
+                                    onClick={() => handleRemove(item.cartItemId)}
+                                    disabled={isRemoving}
+                                    className="flex items-center gap-1.5 text-xs font-semibold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 px-3 py-1.5 rounded-lg transition-colors"
+                                  >
+                                    <Icon.PiTrash size={12} />
+                                    Remove from cart
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  {/* Price-changed badge */}
+                                  {isPriceChanged && !appliedUpdates && (
+                                    <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg w-fit border border-amber-200">
+                                      <Icon.PiArrowsClockwise size={13} />
+                                      Price updated:&nbsp;
+                                      <span className="line-through text-gray-400">{formatPrice(validation!.oldPrice)}</span>
+                                      &nbsp;→&nbsp;
+                                      <span className={validation!.currentPrice > validation!.oldPrice ? 'text-red-600' : 'text-green-600'}>
+                                        {formatPrice(validation!.currentPrice)}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {isQtyReduced && (
+                                    <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-orange-700 bg-orange-50 px-2.5 py-1 rounded-lg w-fit">
+                                      <Icon.PiWarning size={13} />
+                                      Only {maxQty} available
+                                    </div>
+                                  )}
+
+                                  {/* Quantity + Price */}
+                                  <div className="flex items-center justify-between mt-3">
+                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+                                      <button
+                                        onClick={() => handleQuantityChange(item.cartItemId, (item.quantity || 1) - 1)}
+                                        disabled={(item.quantity || 1) <= 1}
+                                        className="w-8 h-8 flex items-center justify-center hover:bg-red-50 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                      >
+                                        <Icon.PiMinusBold size={11} />
+                                      </button>
+                                      <span className="w-10 text-center text-sm font-bold text-gray-900">
+                                        {item.quantity || 1}
+                                      </span>
+                                      <button
+                                        onClick={() => handleQuantityChange(item.cartItemId, (item.quantity || 1) + 1)}
+                                        disabled={validating || (item.quantity || 1) >= maxQty}
+                                        title={maxQty < 99 ? `Max ${maxQty} in stock` : validating ? 'Checking stock…' : undefined}
+                                        className="w-8 h-8 flex items-center justify-center hover:bg-red-50 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                      >
+                                        <Icon.PiPlusBold size={11} />
+                                      </button>
+                                    </div>
+                                    <div className="text-right">
+                                      {isPriceChanged && !appliedUpdates && (
+                                        <p className="text-xs text-gray-400 line-through">
+                                          {formatPrice((validation!.oldPrice || 0) * (item.quantity || 1))}
+                                        </p>
+                                      )}
+                                      <span className={`font-bold ${isPriceChanged && !appliedUpdates ? (validation!.currentPrice > validation!.oldPrice ? 'text-red-600' : 'text-green-600') : 'text-gray-900'}`}>
+                                        {formatPrice((isPriceChanged && !appliedUpdates ? validation!.currentPrice : (item.price || 0)) * (item.quantity || 1))}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Move to Wishlist */}
+                                  <button
+                                    onClick={() => handleMoveToWishlist(item)}
+                                    className="mt-2 text-xs text-gray-400 hover:text-red-600 transition-colors flex items-center gap-1"
+                                  >
+                                    <Icon.PiHeart size={12} />
+                                    Move to Wishlist
+                                  </button>
+                                </>
                               )}
                             </div>
                           </div>
