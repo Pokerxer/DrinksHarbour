@@ -68,6 +68,7 @@ export interface CartItemValidation {
   priceDiff: number;
   stockStatus: string;
   maxQuantity: number | null;
+  isLowStock: boolean;
 }
 
 interface CartContextProps {

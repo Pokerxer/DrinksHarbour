@@ -373,12 +373,12 @@ const validateCart = asyncHandler(async (req, res) => {
 
   const [subProducts, sizes, tenants] = await Promise.all([
     SubProduct.find({ _id: { $in: subProductIds } })
-      .select('product costPrice baseSellingPrice status availableStock isOnSale saleType saleDiscountValue saleStartDate saleEndDate')
+      .select('product costPrice baseSellingPrice status availableStock totalStock lowStockThreshold isOnSale saleType saleDiscountValue saleStartDate saleEndDate')
       .populate({ path: 'product', select: 'name slug status platformMarkup platformDiscount' })
       .lean(),
     sizeIds.length > 0
       ? Size.find({ _id: { $in: sizeIds } })
-          .select('costPrice sellingPrice stock availableStock subproduct')
+          .select('costPrice sellingPrice stock availableStock lowStockThreshold subproduct')
           .lean()
       : [],
     tenantIds.length > 0
@@ -416,11 +416,15 @@ const validateCart = asyncHandler(async (req, res) => {
       continue;
     }
 
-    // ── 3. Quantity cap ───────────────────────────────────────────────────────
+    // ── 3. Quantity cap & low-stock detection ─────────────────────────────────
     const sizeDoc   = sizeId ? sizeMap[sizeId] : null;
     // Prefer availableStock (stock minus reservations) over raw stock; fall back to SubProduct level
     const stockQty  = sizeDoc?.availableStock ?? sizeDoc?.stock ?? sp.availableStock ?? sp.totalStock ?? null; // null = unlimited
     const maxQty    = stockQty != null ? stockQty : Infinity;
+
+    // Low-stock: use size threshold if available, else subproduct threshold
+    const lowThreshold = sizeDoc?.lowStockThreshold ?? sp.lowStockThreshold ?? 10;
+    const isLowStock   = stockQty != null && stockQty > 0 && stockQty <= lowThreshold;
 
     // ── 4. Live price ─────────────────────────────────────────────────────────
     const tenant       = tenantId ? tenantMap[tenantId] : null;
@@ -453,6 +457,7 @@ const validateCart = asyncHandler(async (req, res) => {
       priceDiff  : priceChanged ? Math.round(currentPrice - clientPrice) : 0,
       stockStatus: sp.status,
       maxQuantity: stockQty,
+      isLowStock,
     });
   }
 

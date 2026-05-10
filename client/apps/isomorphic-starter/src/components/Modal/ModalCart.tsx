@@ -312,6 +312,7 @@ const ModalCart = () => {
                       const isOutOfStock   = validation?.status === 'out_of_stock' || validation?.status === 'unavailable';
                       const isPriceChanged = validation?.status === 'price_changed';
                       const isQtyReduced   = validation?.status === 'quantity_reduced';
+                      const isLowStock     = !isOutOfStock && (validation?.isLowStock ?? false);
                       const maxQty = validation?.maxQuantity ?? 99;
 
                       return (
@@ -414,6 +415,12 @@ const ModalCart = () => {
                                     <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-orange-700 bg-orange-50 px-2.5 py-1 rounded-lg w-fit">
                                       <Icon.PiWarning size={13} />
                                       Only {maxQty} available
+                                    </div>
+                                  )}
+                                  {isLowStock && !isQtyReduced && (
+                                    <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg w-fit">
+                                      <Icon.PiFireSimpleBold size={13} />
+                                      Almost gone — only {maxQty} left
                                     </div>
                                   )}
 

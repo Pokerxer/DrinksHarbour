@@ -265,6 +265,7 @@ const CartPage = () => {
                   const isOutOfStock = validation && !validation.available;
                   const isPriceChanged = validation?.status === 'price_changed';
                   const isQtyReduced = validation?.status === 'quantity_reduced';
+                  const isLowStock = !isOutOfStock && (validation?.isLowStock ?? false);
                   const maxQty = validation?.maxQuantity ?? 99;
 
                   return (
@@ -351,6 +352,12 @@ const CartPage = () => {
                               <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded">
                                 <Icon.PiInfoBold size={10} />
                                 Only {validation.maxQuantity} left
+                              </span>
+                            )}
+                            {isLowStock && !isQtyReduced && validation?.maxQuantity != null && (
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded">
+                                <Icon.PiFireSimpleBold size={10} />
+                                Almost gone — only {validation.maxQuantity} left
                               </span>
                             )}
                           </div>
