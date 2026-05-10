@@ -54,7 +54,7 @@ export async function generateMetadata({
     };
   }
 
-  const productUrl = p.seo?.canonicalUrl || `${BASE_URL}/product/${slug}`;
+  const productUrl = p.canonicalUrl || `${BASE_URL}/product/${slug}`;
   const title      = buildTitle(p);
   const description = buildDescription(p);
   const keywords   = buildKeywords(p);
@@ -115,7 +115,7 @@ export async function generateMetadata({
 // ─── Title builder ────────────────────────────────────────────────────────────
 
 function buildTitle(p: any): string {
-  if (p.seo?.metaTitle) return p.seo.metaTitle;
+  if (p.metaTitle) return p.metaTitle;
 
   const parts: string[] = [p.name];
 
@@ -131,8 +131,8 @@ function buildTitle(p: any): string {
 // ─── Description builder ──────────────────────────────────────────────────────
 
 function buildDescription(p: any): string {
-  if (p.seo?.metaDescription) return p.seo.metaDescription;
-  if (p.shortDescription)      return p.shortDescription.slice(0, 160);
+  if (p.metaDescription)  return p.metaDescription;
+  if (p.shortDescription) return p.shortDescription.slice(0, 160);
 
   const parts: string[] = [`Buy ${p.name}`];
   if (p.brand?.name)    parts.push(`by ${p.brand.name}`);
@@ -159,7 +159,7 @@ function buildKeywords(p: any): string[] {
 
   return [
     // Stored keywords first
-    ...(p.seo?.metaKeywords ?? []),
+    ...(p.metaKeywords ?? []),
     // Core identifiers
     p.name,
     brand,
@@ -234,7 +234,7 @@ function buildSchemas(p: any, slug: string): object[] {
 }
 
 function buildProductSchema(p: any, slug: string): object {
-  const productUrl = p.seo?.canonicalUrl || `${BASE_URL}/product/${slug}`;
+  const productUrl = p.canonicalUrl || `${BASE_URL}/product/${slug}`;
   const brand      = p.brand?.name ?? "";
   const minPrice: number | undefined = p.priceRange?.min;
   const maxPrice: number | undefined = p.priceRange?.max;
@@ -251,7 +251,7 @@ function buildProductSchema(p: any, slug: string): object {
     "@context": "https://schema.org",
     "@type":    "Product",
     name:        p.name,
-    description: p.seo?.metaDescription || p.shortDescription || p.description || undefined,
+    description: p.metaDescription || p.shortDescription || p.description || undefined,
     image:       allImageUrls.length > 0 ? allImageUrls : (p.primaryImage?.url || `${BASE_URL}/og-default.jpg`),
     url:         productUrl,
     // Prefer real identifiers over MongoDB _id
@@ -353,7 +353,7 @@ function buildProductSchema(p: any, slug: string): object {
 }
 
 function buildBreadcrumbSchema(p: any, slug: string): object {
-  const productUrl   = p.seo?.canonicalUrl || `${BASE_URL}/product/${slug}`;
+  const productUrl   = p.canonicalUrl || `${BASE_URL}/product/${slug}`;
   const categoryName = p.category?.name;
   const categorySlug = p.category?.slug;
 
