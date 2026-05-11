@@ -27,6 +27,28 @@ const NIGERIAN_STATES = [
   'Taraba','Yobe','Zamfara',
 ];
 
+// Zone-based delivery fees dispatched from Abuja warehouse (base rate, single bottle)
+// Full range shown on /shipping-info. Cartons attract higher fees at dispatch.
+const FREE_DELIVERY_THRESHOLD = 2_000_000;
+
+const SHIPPING_ZONES: { states: string[]; fee: number; label: string }[] = [
+  { states: ['FCT - Abuja'],                                                            fee: 2_500,  label: 'Zone 1 — FCT (Local)' },
+  { states: ['Nasarawa', 'Niger', 'Kogi'],                                              fee: 10_000, label: 'Zone 2 — Abuja Environs' },
+  { states: ['Kaduna', 'Plateau', 'Benue', 'Kwara'],                                   fee: 15_000, label: 'Zone 3 — North Central' },
+  { states: ['Lagos', 'Ogun', 'Oyo', 'Ondo', 'Osun', 'Ekiti'],                        fee: 20_000, label: 'Zone 4 — Southwest' },
+  { states: ['Enugu', 'Anambra', 'Imo', 'Abia', 'Ebonyi',
+             'Rivers', 'Delta', 'Edo', 'Bayelsa', 'Cross River', 'Akwa Ibom'],         fee: 20_000, label: 'Zone 5 — SE & South-South' },
+  { states: ['Kano', 'Katsina', 'Sokoto', 'Borno', 'Bauchi',
+             'Gombe', 'Yobe', 'Kebbi', 'Zamfara', 'Jigawa', 'Adamawa', 'Taraba'],     fee: 18_000, label: 'Zone 6 — Far North' },
+];
+
+function getShippingFee(state: string, subtotal: number): { fee: number; zone: string } {
+  if (subtotal >= FREE_DELIVERY_THRESHOLD) return { fee: 0, zone: 'Free delivery' };
+  if (!state) return { fee: 0, zone: '' }; // no state selected yet — show 0 until filled
+  const zone = SHIPPING_ZONES.find(z => z.states.some(s => s.toLowerCase() === state.toLowerCase()));
+  return zone ? { fee: zone.fee, zone: zone.label } : { fee: 30_000, zone: 'Zone 7 — Remote' };
+}
+
 function matchNigerianState(raw: string): string {
   const s = raw.trim();
   const exact = NIGERIAN_STATES.find(n => n.toLowerCase() === s.toLowerCase());
@@ -143,7 +165,7 @@ export default function CheckoutPage() {
 
   // ── Derived totals ────────────────────────────────────────────────────────
   const subtotal  = cartState.cartArray.reduce((s, i) => s + i.price * (i.quantity || 1), 0);
-  const shipping  = subtotal > 50000 ? 0 : 2500;
+  const { fee: shipping, zone: shippingZone } = getShippingFee(form.state, subtotal);
   const discount  = Math.min(couponDiscount, subtotal);
   const total     = Math.max(0, subtotal - discount + shipping);
 
@@ -819,14 +841,21 @@ export default function CheckoutPage() {
                         </div>
                       )}
                       <div className="flex justify-between text-gray-600">
-                        <span>Delivery</span>
-                        <span className={`font-semibold ${shipping === 0 ? 'text-green-600' : ''}`}>
-                          {shipping === 0 ? 'Free' : fmt(shipping)}
+                        <span>Delivery{shippingZone ? <> <span className="text-[11px] text-gray-400">({shippingZone})</span></> : null}</span>
+                        <span className={`font-semibold ${shipping === 0 && form.state ? 'text-green-600' : ''}`}>
+                          {!form.state
+                            ? <span className="text-gray-400 text-xs">Select state</span>
+                            : shipping === 0 ? 'Free' : fmt(shipping)}
                         </span>
                       </div>
-                      {shipping === 0 && (
+                      {shipping === 0 && subtotal >= FREE_DELIVERY_THRESHOLD && (
                         <p className="text-xs text-green-600 flex items-center gap-1">
-                          <Icon.PiCheckCircleBold size={12} /> Free delivery on orders above ₦50,000
+                          <Icon.PiCheckCircleBold size={12} /> Free delivery on orders ≥ ₦2,000,000
+                        </p>
+                      )}
+                      {form.state && shipping > 0 && (
+                        <p className="text-xs text-gray-400 flex items-center gap-1">
+                          <Icon.PiInfoBold size={12} /> Base rate — cartons &amp; bulk orders may cost more
                         </p>
                       )}
                     </div>

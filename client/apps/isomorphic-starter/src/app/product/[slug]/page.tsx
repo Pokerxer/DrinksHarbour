@@ -48,7 +48,7 @@ export async function generateMetadata({
 
   if (!p) {
     return {
-      title: `Product Not Found | ${SITE_NAME}`,
+      title: { absolute: `Product Not Found | ${SITE_NAME}` },
       description: "This product could not be found on DrinksHarbour.",
       robots: { index: false, follow: false },
     };
@@ -72,7 +72,7 @@ export async function generateMetadata({
   const isAvailable = p.availability !== "out_of_stock" && p.status !== "out_of_stock";
 
   return {
-    title: `${title} | ${SITE_NAME}`,
+    title: { absolute: `${title} | ${SITE_NAME}` },
     description,
     keywords,
     robots: { index: true, follow: true, "max-image-preview": "large" },

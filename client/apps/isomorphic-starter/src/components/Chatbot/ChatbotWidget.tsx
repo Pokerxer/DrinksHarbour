@@ -170,6 +170,13 @@ export default function ChatbotWidget() {
     };
   }, []);
 
+  // ── Listen for toggle event dispatched by MobileBottomNav ───────────────────
+  useEffect(() => {
+    const handler = () => setIsOpen(o => !o);
+    document.addEventListener('toggle-chatbot', handler);
+    return () => document.removeEventListener('toggle-chatbot', handler);
+  }, []);
+
   // Scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -320,7 +327,7 @@ export default function ChatbotWidget() {
       <button
         onClick={() => setIsOpen(o => !o)}
         aria-label={isOpen ? 'Close chat' : 'Open chat'}
-        className={`fixed bottom-5 right-5 z-[9999] w-14 h-14 rounded-full bg-gradient-to-br from-red-700 to-red-900 text-white shadow-2xl flex items-center justify-center transition-transform duration-200 hover:scale-105 active:scale-95 ${isOpen ? 'hidden sm:flex' : 'flex'}`}
+        className={`fixed bottom-5 right-5 z-[9999] w-14 h-14 rounded-full bg-gradient-to-br from-red-700 to-red-900 text-white shadow-2xl items-center justify-center transition-transform duration-200 hover:scale-105 active:scale-95 hidden sm:flex`}
       >
         {isOpen ? (
           <CloseIcon />

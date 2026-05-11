@@ -5,6 +5,7 @@ const productService = require('../services/product.service');
 const { ForbiddenError, ValidationError } = require('../utils/errors');
 const cartService = require('../services/cart.service');
 const wishlistService = require('../services/wishlist.service');
+const Review = require('../models/Review');
 
 /**
  * @desc    Create a new product (central catalog)
@@ -928,6 +929,47 @@ const getProductReviewSummary = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Submit a product review
+ * @route   POST /api/products/:id/reviews
+ * @access  Private (logged-in users only)
+ */
+const submitProductReview = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user._id;
+  const { rating, title, comment } = req.body;
+
+  if (!rating || !comment?.trim()) {
+    return res.status(400).json({ success: false, message: 'Rating and comment are required' });
+  }
+
+  const ratingNum = parseInt(rating, 10);
+  if (isNaN(ratingNum) || ratingNum < 1 || ratingNum > 5) {
+    return res.status(400).json({ success: false, message: 'Rating must be between 1 and 5' });
+  }
+
+  // One review per user per product
+  const existing = await Review.findOne({ user: userId, product: id });
+  if (existing) {
+    return res.status(400).json({ success: false, message: 'You have already submitted a review for this product' });
+  }
+
+  const review = await Review.create({
+    user:    userId,
+    product: id,
+    rating:  ratingNum,
+    title:   title?.trim() || undefined,
+    comment: comment.trim(),
+    status:  'pending', // held for moderation before going live
+  });
+
+  res.status(201).json({
+    success: true,
+    message: 'Thank you! Your review has been submitted and will appear after moderation.',
+    data: { review },
+  });
+});
+
 
 
 
@@ -1503,6 +1545,7 @@ module.exports = {
     getProductReviews,
     getProductRatingDistribution,
     getProductReviewSummary,
+    submitProductReview,
 
     getProductByBarcode,
     importProducts,

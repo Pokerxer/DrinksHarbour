@@ -195,6 +195,19 @@ router.get(
   productController.getProductReviews
 );
 
+/**
+ * Submit a product review
+ * @route POST /api/products/:id/reviews
+ * @access Private
+ */
+router.post(
+  '/:id/reviews',
+  protect,
+  mongoIdValidation,
+  validate,
+  productController.submitProductReview
+);
+
 // ============================================================
 // WISHLIST & CART ROUTES (Optional Auth)
 // ============================================================

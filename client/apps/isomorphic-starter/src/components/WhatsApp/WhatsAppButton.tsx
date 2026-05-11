@@ -25,8 +25,8 @@ export default function WhatsAppButton() {
 
   return (
     <div
-      // Sits just above the chatbot FAB (bottom-24 = 96 px, bottom-5 = 20 px → gap = 64 px ≈ 16 gap)
-      className="fixed bottom-[88px] right-5 z-[9998] flex flex-col items-end gap-2"
+      // Mobile: sits just above the 60px bottom nav bar. Desktop: sits above the chatbot FAB.
+      className="fixed bottom-[72px] sm:bottom-[88px] right-5 z-[9998] flex flex-col items-end gap-2"
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
     >

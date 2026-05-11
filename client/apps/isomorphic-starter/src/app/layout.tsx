@@ -13,6 +13,7 @@ import ModalNewsletter from "@/components/Modal/ModalNewsletter";
 import Footer from "@/components/Footer/Footer";
 import ChatbotWidget from "@/components/Chatbot/ChatbotWidget";
 import WhatsAppButton from "@/components/WhatsApp/WhatsAppButton";
+import AgeGate from "@/components/AgeGate/AgeGate";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -84,7 +85,7 @@ const orgJsonLd = {
   "@type": "Organization",
   name: "DrinksHarbour",
   url: BASE_URL,
-  logo: `${BASE_URL}/logo.png`,
+  logo: { "@type": "ImageObject", url: `${BASE_URL}/logo.png` },
   sameAs: [
     "https://twitter.com/drinksharbour",
     "https://www.instagram.com/drinksharbour",
@@ -94,6 +95,23 @@ const orgJsonLd = {
     "@type": "ContactPoint",
     contactType: "customer support",
     availableLanguage: "English",
+  },
+};
+
+const websiteJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "DrinksHarbour",
+  url: BASE_URL,
+  description: "Nigeria's premier online beverage store — wines, spirits, beers and non-alcoholic drinks delivered nationwide.",
+  inLanguage: "en-NG",
+  potentialAction: {
+    "@type": "SearchAction",
+    target: {
+      "@type": "EntryPoint",
+      urlTemplate: `${BASE_URL}/shop?search={search_term_string}`,
+    },
+    "query-input": "required name=search_term_string",
   },
 };
 
@@ -110,6 +128,11 @@ export default function RootLayout({
             type="application/ld+json"
             dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd) }}
           />
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
+          />
+          <AgeGate />
           <Header variant="default" showAnnouncement={false} />
           {children}
           <ModalCart />

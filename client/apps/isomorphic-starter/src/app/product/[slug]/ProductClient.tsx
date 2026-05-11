@@ -24,7 +24,8 @@ const ProductDetail = dynamic(() => import("@/components/Product/Detail"), {
     </div>
   ),
 });
-const RecentlyViewed = dynamic(() => import("@/components/Shop/RecentlyViewed"));
+const RecentlyViewed    = dynamic(() => import("@/components/Shop/RecentlyViewed"));
+const ProductReviews    = dynamic(() => import("@/components/Product/ProductReviews"));
 
 // ─── In-memory cache: product data keyed by slug, 5 min TTL ─────────────────
 const _productCache = new Map<string, { product: any; related: ProductType[]; ts: number }>();
@@ -195,6 +196,7 @@ export default function ProductClient({ slug }: { slug: string }) {
         <BreadcrumbProduct data={productData} productPage="default" productId={slug} />
       </div>
       <ProductDetail productData={productData} relatedProducts={relatedProducts} />
+      <ProductReviews productId={productData._id} />
       <RecentlyViewed productId={productData._id} currentProduct={currentProductData} />
     </>
   );

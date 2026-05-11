@@ -11,73 +11,95 @@ const DELIVERY_OPTIONS = [
   {
     icon: Icon.PiLightningBold,
     title: 'Same-Day Delivery',
-    badge: 'Fastest',
+    badge: 'FCT Only',
     badgeColor: 'bg-red-100 text-red-700',
-    areas: 'Abuja & Lagos only',
+    areas: 'Abuja / FCT only',
     cutoff: 'Order before 12:00 noon',
-    fee: '₦2,500 – ₦4,000',
+    fee: '₦2,500 – ₦10,000',
     highlight: true,
-    details: 'Your order will be picked, packed, and delivered the same day by a dedicated rider. You\'ll receive real-time SMS updates.',
+    details: 'Available exclusively within the FCT. A dedicated rider picks, packs, and delivers your order the same day. Real-time SMS updates throughout. Fee depends on quantity — single bottles start from ₦2,500; larger orders or cartons attract a higher handling fee due to the fragile nature of the goods.',
   },
   {
     icon: Icon.PiTruckBold,
     title: 'Next-Day Delivery',
-    badge: 'Popular',
+    badge: 'Nearby States',
     badgeColor: 'bg-blue-100 text-blue-700',
-    areas: 'PH, Kano, Ibadan, Enugu + major cities',
+    areas: 'Nasarawa · Niger · Kogi · S. Kaduna',
     cutoff: 'Order before 5:00 pm',
-    fee: '₦1,500 – ₦3,000',
+    fee: '₦10,000 – ₦20,000',
     highlight: false,
-    details: 'Delivered the next business day. Available in over 20 major Nigerian cities. Exact fee shown at checkout based on your location.',
+    details: 'For states immediately surrounding Abuja — Nasarawa (Lafia), Niger (Minna), Kogi (Lokoja), and southern Kaduna. Dispatched from our Abuja warehouse next business day. Carton orders and multi-bottle shipments attract a higher fee due to fragile packaging requirements.',
   },
   {
     icon: Icon.PiPackageBold,
-    title: 'Standard Delivery',
-    badge: 'Free over ₦50k',
+    title: 'Interstate Delivery',
+    badge: 'Free over ₦2M',
     badgeColor: 'bg-green-100 text-green-700',
     areas: 'All 36 states + FCT',
     cutoff: 'Ships within 24 h of payment',
-    fee: 'Free on orders ≥ ₦50,000 · else ₦1,000',
+    fee: 'From ₦15,000 · Free on orders ≥ ₦2,000,000',
     highlight: false,
-    details: 'Nationwide coverage via our trusted courier partners. Estimated 2–4 business days for remote areas. Tracking link sent by SMS and email.',
+    details: 'We ship nationwide from our Abuja warehouse via trusted courier partners. Fees are based on your zone (distance from Abuja), the number of bottles, and whether your order includes full cartons — which require reinforced crating and incur a higher handling charge. The exact fee is shown at checkout. Free delivery is automatically applied on orders of ₦2,000,000 and above.',
   },
 ];
 
+// Zones are ordered by distance from Abuja hub
 const ZONES = [
   {
-    zone: 'Zone 1 — FCT',
-    cities: ['Abuja', 'Gwagwalada', 'Kuje', 'Bwari'],
+    zone: 'Zone 1 — FCT (Local)',
+    cities: ['Abuja', 'Gwagwalada', 'Kuje', 'Bwari', 'Kubwa'],
     eta: 'Same-day / Next-day',
+    fee: '₦2,500 – ₦10,000',
     color: 'border-red-300 bg-red-50',
     dot: 'bg-red-500',
   },
   {
-    zone: 'Zone 2 — Southwest',
-    cities: ['Lagos', 'Ibadan', 'Abeokuta', 'Akure', 'Oshogbo'],
-    eta: 'Same-day (Lagos) · 1–2 days',
+    zone: 'Zone 2 — Abuja Environs',
+    cities: ['Lafia', 'Minna', 'Lokoja', 'Suleja', 'S. Kaduna'],
+    eta: '1 business day',
+    fee: '₦10,000 – ₦20,000',
+    color: 'border-orange-200 bg-orange-50',
+    dot: 'bg-orange-500',
+  },
+  {
+    zone: 'Zone 3 — North Central',
+    cities: ['Kaduna', 'Jos', 'Makurdi', 'Ilorin', 'Zaria'],
+    eta: '1–2 business days',
+    fee: '₦15,000 – ₦28,000',
     color: 'border-blue-200 bg-blue-50',
     dot: 'bg-blue-500',
   },
   {
-    zone: 'Zone 3 — South-South',
-    cities: ['Port Harcourt', 'Benin City', 'Warri', 'Calabar', 'Uyo'],
-    eta: '1–2 business days',
+    zone: 'Zone 4 — Southwest',
+    cities: ['Lagos', 'Ibadan', 'Abeokuta', 'Akure', 'Osogbo'],
+    eta: '2–3 business days',
+    fee: '₦20,000 – ₦40,000',
+    color: 'border-violet-200 bg-violet-50',
+    dot: 'bg-violet-500',
+  },
+  {
+    zone: 'Zone 5 — Southeast & South-South',
+    cities: ['Enugu', 'Port Harcourt', 'Benin City', 'Owerri', 'Onitsha', 'Warri', 'Calabar', 'Uyo'],
+    eta: '2–3 business days',
+    fee: '₦20,000 – ₦40,000',
     color: 'border-amber-200 bg-amber-50',
     dot: 'bg-amber-500',
   },
   {
-    zone: 'Zone 4 — Southeast',
-    cities: ['Enugu', 'Onitsha', 'Owerri', 'Aba', 'Awka'],
-    eta: '1–3 business days',
-    color: 'border-purple-200 bg-purple-50',
-    dot: 'bg-purple-500',
-  },
-  {
-    zone: 'Zone 5 — North',
-    cities: ['Kano', 'Kaduna', 'Katsina', 'Sokoto', 'Maiduguri', 'Zaria'],
+    zone: 'Zone 6 — Far North',
+    cities: ['Kano', 'Katsina', 'Sokoto', 'Maiduguri', 'Bauchi', 'Gombe', 'Kebbi'],
     eta: '2–4 business days',
+    fee: '₦18,000 – ₦35,000',
     color: 'border-emerald-200 bg-emerald-50',
     dot: 'bg-emerald-500',
+  },
+  {
+    zone: 'Zone 7 — Remote & Riverine',
+    cities: ['Other LGAs', 'Riverine communities', 'Remote areas'],
+    eta: '4–7 business days',
+    fee: '₦30,000 – ₦60,000',
+    color: 'border-gray-200 bg-gray-50',
+    dot: 'bg-gray-400',
   },
 ];
 
@@ -136,19 +158,19 @@ export default function ShippingInfoPage() {
             Shipping & Delivery
           </div>
           <h1 className="text-3xl sm:text-4xl font-black tracking-tight mb-3">
-            Fast delivery, all across Nigeria
+            Dispatched from Abuja, delivered nationwide
           </h1>
           <p className="text-gray-300 text-sm sm:text-base max-w-xl mx-auto leading-relaxed">
-            Same-day delivery in Abuja and Lagos. Standard coverage nationwide.
-            All orders tracked end-to-end with SMS and email updates.
+            Same-day delivery within the FCT. Interstate fees calculated by zone distance from Abuja.
+            Free delivery on orders ₦2,000,000 and above.
           </p>
 
           {/* Quick stats */}
           <div className="grid grid-cols-3 gap-3 mt-8 max-w-lg mx-auto">
             {[
-              { value: '36+', label: 'States Covered' },
-              { value: '₦0',  label: 'Free over ₦50k' },
-              { value: '24h', label: 'Max dispatch time' },
+              { value: '36+',   label: 'States Covered' },
+              { value: '₦0',    label: 'Free over ₦2M' },
+              { value: '₦15k+', label: 'Interstate from' },
             ].map(({ value, label }) => (
               <div key={label} className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/10">
                 <p className="text-xl font-black">{value}</p>
@@ -232,8 +254,22 @@ export default function ShippingInfoPage() {
 
         {/* ── Delivery Zones ──────────────────────────────────────────────────── */}
         <Section title="Delivery Zones" icon={Icon.PiMapPin}>
+          {/* Fragile / carton notice */}
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-5 flex gap-3">
+            <div className="w-8 h-8 bg-amber-100 text-amber-600 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Icon.PiWarningBold size={16} />
+            </div>
+            <div className="text-xs text-amber-800 leading-relaxed space-y-1">
+              <p className="font-bold text-amber-900">Fragile goods & carton surcharge</p>
+              <p>All alcohol is classified as fragile cargo. Delivery fees shown are for <strong>single-bottle orders</strong>. Carton orders (6, 12, or 24 bottles) attract additional handling and crating fees due to the increased weight and packaging required for safe transit. The final fee is always shown at checkout before payment.</p>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mb-4 flex items-center gap-1.5">
+            <Icon.PiMapPinBold size={13} className="text-red-600 flex-shrink-0" />
+            All fees are calculated from our Abuja warehouse. The exact fee for your address is shown at checkout.
+          </p>
           <div className="grid sm:grid-cols-2 gap-4">
-            {ZONES.map(({ zone, cities, eta, color, dot }) => (
+            {ZONES.map(({ zone, cities, eta, fee, color, dot }) => (
               <div key={zone} className={`rounded-2xl border p-5 ${color}`}>
                 <div className="flex items-center gap-2 mb-3">
                   <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${dot}`} />
@@ -246,15 +282,18 @@ export default function ShippingInfoPage() {
                     </span>
                   ))}
                 </div>
-                <p className="text-xs text-gray-500 flex items-center gap-1.5">
-                  <Icon.PiClock size={12} /> {eta}
-                </p>
+                <div className="flex items-center justify-between text-xs text-gray-500 mt-1">
+                  <span className="flex items-center gap-1.5">
+                    <Icon.PiClock size={12} /> {eta}
+                  </span>
+                  <span className="font-semibold text-gray-700">{fee}</span>
+                </div>
               </div>
             ))}
           </div>
           <p className="text-xs text-gray-400 mt-3 flex items-center gap-1.5">
             <Icon.PiInfo size={13} />
-            All 36 states are covered. Delivery to remote LGAs may add 1–2 business days.
+            Free delivery on orders ≥ ₦2,000,000 — applied automatically at checkout regardless of zone.
           </p>
         </Section>
 
@@ -318,8 +357,8 @@ export default function ShippingInfoPage() {
             </p>
             <p>
               After <strong className="text-gray-900">two failed attempts</strong>, the order is returned to
-              our warehouse. You will be contacted to reschedule at a convenient time.
-              A ₦500 re-delivery fee may apply.
+              our Abuja warehouse. You will be contacted to reschedule at a convenient time.
+              A re-delivery fee based on your zone will apply.
             </p>
             <p>
               For perishable or chilled products, a third attempt may not be possible.
