@@ -93,15 +93,13 @@ export default function Home() {
       {/* Main Content Area */}
       <div className="min-w-0">
         {/* Hero Banner — above the fold, loads immediately */}
-        <div className="bg-gradient-to-r from-orange-500 to-pink-500">
-          <HeroBanner
-            placement="home_hero"
-            limit={5}
-            autoPlay={true}
-            showControls={true}
-            showIndicators={true}
-          />
-        </div>
+        <HeroBanner
+          placement="home_hero"
+          limit={5}
+          autoPlay={true}
+          showControls={true}
+          showIndicators={true}
+        />
 
         {/* Flash Sale — just below the fold, preload with small margin */}
         <LazySection rootMargin="400px">

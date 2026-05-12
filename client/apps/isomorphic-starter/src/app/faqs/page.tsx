@@ -40,7 +40,7 @@ const FAQS: FAQ[] = [
   {
     category: 'ordering',
     q: 'Is there a minimum order amount?',
-    a: 'There is no minimum order amount. However, free standard delivery applies to orders of ₦50,000 and above. Orders below that threshold attract a flat delivery fee that is shown at checkout.',
+    a: 'There is no minimum order amount. However, free standard delivery applies to orders of ₦2,000,000 and above. Orders below that threshold attract a flat delivery fee that is shown at checkout.',
   },
   {
     category: 'ordering',

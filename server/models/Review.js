@@ -35,6 +35,19 @@ const reviewSchema = new Schema(
       sparse: true, // link to verified purchase
     },
 
+    // Which size variant was bought — stored as ref + cached label
+    sizeId: {
+      type: ObjectId,
+      ref: 'Size',
+      sparse: true,
+    },
+
+    sizeName: {
+      type: String,
+      trim: true,
+      maxlength: 50,
+    },
+
     // ────────────────────────────────────────────────
     // Review content
     // ────────────────────────────────────────────────
@@ -85,6 +98,12 @@ const reviewSchema = new Schema(
       type: Number,
       default: 0,
     },
+
+    // Users who have marked this review as helpful (prevents duplicate votes)
+    helpfulVoters: [{
+      type: ObjectId,
+      ref: 'User',
+    }],
 
     reportedCount: {
       type: Number,

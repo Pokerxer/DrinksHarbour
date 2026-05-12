@@ -14,6 +14,7 @@ import Footer from "@/components/Footer/Footer";
 import ChatbotWidget from "@/components/Chatbot/ChatbotWidget";
 import WhatsAppButton from "@/components/WhatsApp/WhatsAppButton";
 import AgeGate from "@/components/AgeGate/AgeGate";
+import PopupBanner from "@/components/Banner/PopupBanner";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -145,6 +146,7 @@ export default function RootLayout({
           <MobileBottomNav />
           <WhatsAppButton />
           <ChatbotWidget />
+          <PopupBanner />
         </body>
       </html>
     </GlobalProvider>

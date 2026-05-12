@@ -42,7 +42,7 @@ const bannerTemplates = [
     autoplay: { enabled: true, interval: 5000 },
     tags: ['premium', 'spirits', 'luxury', 'celebration'],
     seoTitle: 'Premium Spirits & Whiskey Collection | DrinksHarbour',
-    seoDescription: 'Shop our exclusive collection of premium spirits, whiskeys, cognacs, and champagne. Free delivery on orders over ₦50,000.',
+    seoDescription: 'Shop our exclusive collection of premium spirits, whiskeys, cognacs, and champagne. Free delivery on orders over ₦2,000,000.',
     seoKeywords: ['premium spirits', 'whiskey collection', 'cognac', 'champagne', 'luxury drinks'],
     image: {
       url: 'https://images.unsplash.com/photo-1569529465841-dfecdab7503b',
@@ -457,7 +457,7 @@ const bannerTemplates = [
 
   // ANNOUNCEMENT BANNERS
   {
-    title: 'Free Delivery on Orders Over ₦50,000',
+    title: 'Free Delivery on Orders Over ₦2,000,000',
     subtitle: 'Fast & reliable shipping across Nigeria',
     description: 'Get your favorite drinks delivered to your doorstep. Same-day delivery available in Lagos.',
     type: 'announcement',

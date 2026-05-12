@@ -1,9 +1,22 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
+// Stable pseudo-random positions (seeded by index) — avoids SSR hydration mismatch
+function seededPositions(count: number) {
+  return Array.from({ length: count }, (_, i) => ({
+    left: `${((i * 37 + 13) % 97)}%`,
+    top:  `${((i * 53 + 7)  % 91)}%`,
+    size: `${((i * 17 + 10) % 20) + 10}px`,
+    dur:  ((i * 7 + 2) % 3) + 2,
+    delay: ((i * 3) % 20) / 10,
+  }));
+}
 
 interface SeasonalBannerProps {
   placement?: string;
@@ -58,10 +71,12 @@ const SeasonalBanner: React.FC<SeasonalBannerProps> = ({
   const [activeIndex, setActiveIndex] = useState(0);
   const [timeLeft, setTimeLeft] = useState<Record<string, string>>({});
 
+  const stablePositions = useMemo(() => seededPositions(20), []);
+
   const fetchBanners = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/banners/placement/${placement}?type=seasonal&limit=${limit}`);
+      const response = await fetch(`${API_URL}/api/banners/placement/${placement}?type=seasonal&limit=${limit}`);
       
       if (response.ok) {
         const data = await response.json();
@@ -223,13 +238,7 @@ const SeasonalBanner: React.FC<SeasonalBannerProps> = ({
 
   const handleBannerClick = async (bannerId: string) => {
     if (!bannerId) return;
-    try {
-      await fetch(`/api/banners/${bannerId}/click`, {
-        method: 'POST'
-      });
-    } catch (err) {
-      console.error('Error tracking click:', err);
-    }
+    try { await fetch(`${API_URL}/api/banners/${bannerId}/click`, { method: 'POST' }); } catch {}
   };
 
   const getContentPosition = (position: string = 'center') => {
@@ -326,27 +335,16 @@ const SeasonalBanner: React.FC<SeasonalBannerProps> = ({
             </>
           )}
 
-          {/* Decorative Overlay */}
+          {/* Decorative Overlay — stable positions to avoid SSR hydration mismatch */}
           {showDecorations && (
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
-              {[...Array(20)].map((_, i) => (
+              {stablePositions.map((pos, i) => (
                 <motion.div
                   key={i}
                   className="absolute text-white/20"
-                  style={{
-                    left: `${Math.random() * 100}%`,
-                    top: `${Math.random() * 100}%`,
-                    fontSize: `${Math.random() * 20 + 10}px`
-                  }}
-                  animate={{
-                    y: [0, -100],
-                    opacity: [0, 1, 0]
-                  }}
-                  transition={{
-                    duration: Math.random() * 3 + 2,
-                    repeat: Infinity,
-                    delay: Math.random() * 2
-                  }}
+                  style={{ left: pos.left, top: pos.top, fontSize: pos.size }}
+                  animate={{ y: [0, -100], opacity: [0, 1, 0] }}
+                  transition={{ duration: pos.dur, repeat: Infinity, delay: pos.delay }}
                 >
                   {themeConfig.decorations[i % themeConfig.decorations.length]}
                 </motion.div>

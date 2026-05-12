@@ -6,6 +6,8 @@ const { ForbiddenError, ValidationError } = require('../utils/errors');
 const cartService = require('../services/cart.service');
 const wishlistService = require('../services/wishlist.service');
 const Review = require('../models/Review');
+const Order  = require('../models/Order');
+const cloudinaryService = require('../services/cloudinary.service');
 
 /**
  * @desc    Create a new product (central catalog)
@@ -930,37 +932,169 @@ const getProductReviewSummary = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Submit a product review
+ * @desc    Check if the logged-in user is eligible to review a product
+ * @route   GET /api/products/:id/reviews/eligibility
+ * @access  Private
+ */
+const checkReviewEligibility = asyncHandler(async (req, res) => {
+  const { id: productId } = req.params;
+  const userId = req.user._id;
+
+  // Already reviewed?
+  const existing = await Review.findOne({ user: userId, product: productId })
+    .select('_id rating status createdAt sizeName')
+    .lean();
+
+  if (existing) {
+    return res.status(200).json({
+      success: true,
+      data: {
+        canReview: false,
+        reason: 'already_reviewed',
+        existingReview: existing,
+      },
+    });
+  }
+
+  // Find all delivered orders that contain this product
+  const orders = await Order.find({
+    user: userId,
+    status: 'delivered',
+    'items.product': productId,
+  })
+    .select('orderNumber placedAt items')
+    .populate('items.size', 'displayName size volumeMl')
+    .lean();
+
+  if (!orders.length) {
+    return res.status(200).json({
+      success: true,
+      data: { canReview: false, reason: 'not_purchased' },
+    });
+  }
+
+  // Build a de-duplicated list of purchased size/subproduct combos for this product
+  const purchasedSizes = [];
+  const seen = new Set();
+
+  for (const order of orders) {
+    for (const item of order.items) {
+      if (String(item.product) !== String(productId)) continue;
+
+      const sizeId   = item.size?._id   ? String(item.size._id)   : null;
+      const subId    = item.subproduct  ? String(item.subproduct)  : null;
+      const key      = sizeId ?? subId ?? String(order._id);
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      purchasedSizes.push({
+        orderId:      order._id,
+        orderNumber:  order.orderNumber,
+        orderDate:    order.placedAt,
+        subproductId: item.subproduct || null,
+        sizeId:       sizeId || null,
+        sizeName:     item.size?.displayName || item.size?.size || null,
+      });
+    }
+  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      canReview:     purchasedSizes.length > 0,
+      reason:        purchasedSizes.length > 0 ? 'eligible' : 'not_purchased',
+      purchasedSizes,
+    },
+  });
+});
+
+/**
+ * @desc    Submit a product review (verified-purchase only, supports image uploads)
  * @route   POST /api/products/:id/reviews
  * @access  Private (logged-in users only)
  */
 const submitProductReview = asyncHandler(async (req, res) => {
-  const { id } = req.params;
+  const { id: productId } = req.params;
   const userId = req.user._id;
-  const { rating, title, comment } = req.body;
+  const { rating, title, comment, orderId, subproductId, sizeId, sizeName } = req.body;
 
+  // ── Validate inputs ────────────────────────────────────────────────────────
   if (!rating || !comment?.trim()) {
     return res.status(400).json({ success: false, message: 'Rating and comment are required' });
   }
-
   const ratingNum = parseInt(rating, 10);
   if (isNaN(ratingNum) || ratingNum < 1 || ratingNum > 5) {
     return res.status(400).json({ success: false, message: 'Rating must be between 1 and 5' });
   }
+  if (comment.trim().length < 10) {
+    return res.status(400).json({ success: false, message: 'Review must be at least 10 characters' });
+  }
 
-  // One review per user per product
-  const existing = await Review.findOne({ user: userId, product: id });
+  // ── Duplicate check ────────────────────────────────────────────────────────
+  const existing = await Review.findOne({ user: userId, product: productId });
   if (existing) {
     return res.status(400).json({ success: false, message: 'You have already submitted a review for this product' });
   }
 
+  // ── Verify purchase ────────────────────────────────────────────────────────
+  const orderQuery = {
+    user:           userId,
+    status:         'delivered',
+    'items.product': productId,
+  };
+  if (orderId) orderQuery._id = orderId;
+
+  const order = await Order.findOne(orderQuery).lean();
+  if (!order) {
+    return res.status(403).json({
+      success: false,
+      message: 'You can only review products you have purchased and received.',
+    });
+  }
+
+  // If a specific sizeId was supplied, confirm it belongs to this order
+  if (sizeId) {
+    const sizeInOrder = order.items.some(
+      item =>
+        String(item.product) === String(productId) &&
+        item.size && String(item.size) === String(sizeId)
+    );
+    if (!sizeInOrder) {
+      return res.status(403).json({
+        success: false,
+        message: 'The selected size does not match your order.',
+      });
+    }
+  }
+
+  // ── Upload review images to Cloudinary ────────────────────────────────────
+  let images = [];
+  if (req.files && req.files.length > 0) {
+    const uploadResults = await Promise.all(
+      req.files.map(file =>
+        cloudinaryService.uploadImage(file.buffer, {
+          folder: 'reviews',
+          tags:   ['review', String(productId)],
+        })
+      )
+    );
+    images = uploadResults.map(u => ({ url: u.url, publicId: u.publicId, alt: '' }));
+  }
+
+  // ── Create review ──────────────────────────────────────────────────────────
   const review = await Review.create({
-    user:    userId,
-    product: id,
-    rating:  ratingNum,
-    title:   title?.trim() || undefined,
-    comment: comment.trim(),
-    status:  'pending', // held for moderation before going live
+    user:               userId,
+    product:            productId,
+    order:              order._id,
+    subproduct:         subproductId || undefined,
+    sizeId:             sizeId       || undefined,
+    sizeName:           sizeName     || undefined,
+    rating:             ratingNum,
+    title:              title?.trim()   || undefined,
+    comment:            comment.trim(),
+    images,
+    isVerifiedPurchase: true,
+    status:             'pending',
   });
 
   res.status(201).json({
@@ -970,7 +1104,36 @@ const submitProductReview = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Mark a review as helpful (one vote per user, toggleable)
+ * @route   POST /api/products/reviews/:reviewId/helpful
+ * @access  Private
+ */
+const markReviewHelpful = asyncHandler(async (req, res) => {
+  const { reviewId } = req.params;
+  const userId = req.user._id;
 
+  const review = await Review.findById(reviewId);
+  if (!review || review.status !== 'approved') {
+    return res.status(404).json({ success: false, message: 'Review not found' });
+  }
+
+  const alreadyVoted = review.helpfulVoters.some(v => String(v) === String(userId));
+
+  if (alreadyVoted) {
+    // Toggle off — remove vote
+    review.helpfulVoters = review.helpfulVoters.filter(v => String(v) !== String(userId));
+    review.helpfulCount  = Math.max(0, (review.helpfulCount || 0) - 1);
+    await review.save();
+    return res.json({ success: true, data: { helpfulCount: review.helpfulCount, voted: false } });
+  }
+
+  review.helpfulVoters.push(userId);
+  review.helpfulCount = (review.helpfulCount || 0) + 1;
+  await review.save();
+
+  res.json({ success: true, data: { helpfulCount: review.helpfulCount, voted: true } });
+});
 
 
 const getAllProducts = asyncHandler(async (req, res) => {
@@ -1545,7 +1708,9 @@ module.exports = {
     getProductReviews,
     getProductRatingDistribution,
     getProductReviewSummary,
+    checkReviewEligibility,
     submitProductReview,
+    markReviewHelpful,
 
     getProductByBarcode,
     importProducts,

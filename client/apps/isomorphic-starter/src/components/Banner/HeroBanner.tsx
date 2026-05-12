@@ -6,6 +6,8 @@ import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 import { motion, AnimatePresence, Variants } from 'framer-motion';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
 interface HeroBannerProps {
   placement?: string;
   limit?: number;
@@ -30,353 +32,264 @@ interface BannerData {
   overlayOpacity?: number;
   textAlignment?: string;
   contentPosition?: string;
-  image: {
-    url: string;
-    alt?: string;
-  };
-  animation?: {
-    type: string;
-    duration?: number;
-    delay?: number;
-  };
-  autoplay?: {
-    enabled: boolean;
-    interval?: number;
-  };
+  image: { url: string; alt?: string };
+  animation?: { type: string; duration?: number; delay?: number };
+  autoplay?: { enabled: boolean; interval?: number };
 }
+
+// Fallback slides shown when the API has no data yet
+const FALLBACK_SLIDES: BannerData[] = [
+  {
+    _id: 'fallback-1',
+    title: 'Premium Spirits, Delivered',
+    subtitle: 'New Arrivals',
+    description: 'Explore our curated selection of world-class whiskeys, wines, and more — straight to your door.',
+    type: 'hero',
+    placement: 'home_hero',
+    ctaText: 'Shop Now',
+    ctaLink: '/shop',
+    ctaStyle: 'primary',
+    backgroundColor: '#1A1A2E',
+    image: { url: '/images/images/product/1000x1000.png', alt: 'DrinksHarbour' },
+  },
+  {
+    _id: 'fallback-2',
+    title: 'Weekend Flash Sale',
+    subtitle: 'Up to 40% Off',
+    description: 'Limited time deals on premium bottles. Stock up before they\'re gone.',
+    type: 'hero',
+    placement: 'home_hero',
+    ctaText: 'View Deals',
+    ctaLink: '/shop?sale=true',
+    ctaStyle: 'primary',
+    backgroundColor: '#7C1D1D',
+    image: { url: '/images/images/product/1000x1000.png', alt: 'Sale' },
+  },
+];
 
 const HeroBanner: React.FC<HeroBannerProps> = ({
   placement = 'home_hero',
   limit = 5,
   autoPlay = true,
   showControls = true,
-  showIndicators = true
+  showIndicators = true,
 }) => {
-  const [banners, setBanners] = useState<BannerData[]>([]);
+  const [banners, setBanners]       = useState<BannerData[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [direction, setDirection] = useState(0);
-  const [isPaused, setIsPaused] = useState(false);
-  const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
+  const [loading, setLoading]       = useState(true);
+  const [direction, setDirection]   = useState(0);
+  const [isPaused, setIsPaused]     = useState(false);
+  const [imgErrors, setImgErrors]   = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const fetchBanners = async () => {
       try {
         setLoading(true);
-        setFetchError(null);
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
-        const response = await fetch(`${apiUrl}/api/banners/placement/${placement}?limit=${limit}`);
-
-        if (!response.ok) {
-          setFetchError(`Server returned ${response.status}`);
-          return;
-        }
-
-        const data = await response.json();
+        const res = await fetch(`${API_URL}/api/banners/placement/${placement}?limit=${limit}`);
+        if (!res.ok) return;
+        const data = await res.json();
         if (data.success && Array.isArray(data.data) && data.data.length > 0) {
           setBanners(data.data);
-        } else {
-          setFetchError(data.message || 'No banners found for this placement');
         }
-      } catch (err: any) {
-        setFetchError(err.message || 'Failed to fetch banners');
+      } catch {
+        // use fallbacks
       } finally {
         setLoading(false);
       }
     };
-
     fetchBanners();
   }, [placement, limit]);
 
+  const slides = banners.length > 0 ? banners : FALLBACK_SLIDES;
+
   const slideVariants = {
-    enter: (direction: number) => ({
-      x: direction > 0 ? '100%' : '-100%',
-      opacity: 0,
-      scale: 1.05,
-    }),
-    center: {
-      zIndex: 1,
-      x: 0,
-      opacity: 1,
-      scale: 1,
-    },
-    exit: (direction: number) => ({
-      zIndex: 0,
-      x: direction < 0 ? '100%' : '-100%',
-      opacity: 0,
-      scale: 0.95,
-    }),
+    enter:  (d: number) => ({ x: d > 0 ? '100%' : '-100%', opacity: 0, scale: 1.04 }),
+    center: { zIndex: 1, x: 0, opacity: 1, scale: 1 },
+    exit:   (d: number) => ({ zIndex: 0, x: d < 0 ? '100%' : '-100%', opacity: 0, scale: 0.96 }),
   };
 
   const textVariants: Variants = {
-    initial: {
-      y: 30,
-      opacity: 0,
-    },
-    animate: {
-      y: 0,
-      opacity: 1,
-      transition: {
-        duration: 0.6,
-        ease: 'easeOut' as const,
-      },
-    },
-    exit: {
-      y: -30,
-      opacity: 0,
-      transition: { duration: 0.4 },
-    },
+    initial:  { y: 28, opacity: 0 },
+    animate:  { y: 0, opacity: 1, transition: { duration: 0.55, ease: 'easeOut' } },
+    exit:     { y: -20, opacity: 0, transition: { duration: 0.3 } },
   };
 
-  const buttonVariants: Variants = {
-    initial: { scale: 0.8, opacity: 0 },
-    animate: {
-      scale: 1,
-      opacity: 1,
-      transition: {
-        delay: 0.4,
-        duration: 0.5,
-        ease: 'backOut' as const,
-      },
-    },
+  const btnVariants: Variants = {
+    initial:  { scale: 0.82, opacity: 0 },
+    animate:  { scale: 1, opacity: 1, transition: { delay: 0.38, duration: 0.45, ease: [0.34, 1.56, 0.64, 1] } },
   };
 
+  // Auto-advance
   useEffect(() => {
-    if (!autoPlay || banners.length <= 1 || isPaused) return;
-
-    const currentBanner = banners[currentIndex];
-    const interval = currentBanner?.autoplay?.enabled
-      ? (currentBanner.autoplay.interval || 6000)
-      : 6000;
-
+    if (!autoPlay || slides.length <= 1 || isPaused || loading) return;
+    const interval = slides[currentIndex]?.autoplay?.interval || 6000;
     const timer = setInterval(() => {
       setDirection(1);
-      setCurrentIndex((prev) => (prev + 1) % banners.length);
+      setCurrentIndex(p => (p + 1) % slides.length);
     }, interval);
-
     return () => clearInterval(timer);
-  }, [autoPlay, banners, currentIndex, isPaused]);
+  }, [autoPlay, slides, currentIndex, isPaused, loading]);
 
   const handleNext = useCallback(() => {
     setDirection(1);
-    setCurrentIndex((prev) => (prev + 1) % banners.length);
-  }, [banners.length]);
+    setCurrentIndex(p => (p + 1) % slides.length);
+  }, [slides.length]);
 
   const handlePrev = useCallback(() => {
     setDirection(-1);
-    setCurrentIndex((prev) => (prev - 1 + banners.length) % banners.length);
-  }, [banners.length]);
+    setCurrentIndex(p => (p - 1 + slides.length) % slides.length);
+  }, [slides.length]);
 
-  const handleIndicatorClick = (index: number) => {
-    setDirection(index > currentIndex ? 1 : -1);
-    setCurrentIndex(index);
+  const handleDotClick = (i: number) => {
+    setDirection(i > currentIndex ? 1 : -1);
+    setCurrentIndex(i);
   };
 
-  const handleBannerClick = async (bannerId: string) => {
-    if (!bannerId) return;
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
-      await fetch(`${apiUrl}/api/banners/${bannerId}/click`, { method: 'POST' });
-    } catch {
-      // Ignore click tracking errors
-    }
+  const trackClick = async (id: string) => {
+    if (!id || id.startsWith('fallback')) return;
+    try { await fetch(`${API_URL}/api/banners/${id}/click`, { method: 'POST' }); } catch {}
   };
 
-  const getContentPosition = (position: string = 'center') => {
-    const positions: Record<string, string> = {
-      'top-left': 'items-start justify-start', 'top-center': 'items-start justify-center', 'top-right': 'items-start justify-end',
-      'center-left': 'items-center justify-start', 'center': 'items-center justify-center', 'center-right': 'items-center justify-end',
-      'bottom-left': 'items-end justify-start', 'bottom-center': 'items-end justify-center', 'bottom-right': 'items-end justify-end',
-    };
-    return positions[position] || 'items-center justify-center';
-  };
+  const contentPos = (p = 'center') => ({
+    'top-left': 'items-start justify-start', 'top-center': 'items-start justify-center', 'top-right': 'items-start justify-end',
+    'center-left': 'items-center justify-start', center: 'items-center justify-center', 'center-right': 'items-center justify-end',
+    'bottom-left': 'items-end justify-start', 'bottom-center': 'items-end justify-center', 'bottom-right': 'items-end justify-end',
+  }[p] ?? 'items-center justify-center');
 
-  const getTextAlignment = (alignment: string = 'center') => {
-    return alignment === 'left' ? 'text-left' : alignment === 'right' ? 'text-right' : 'text-center';
-  };
+  const textAlign = (a = 'center') => ({ left: 'text-left', right: 'text-right', center: 'text-center' }[a] ?? 'text-center');
 
-  const getCTAStyle = (style: string = 'primary', isDark: boolean = false) => {
-    if (style === 'primary') {
-      return isDark 
-        ? 'bg-white text-gray-900 hover:bg-gray-100' 
-        : 'bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white shadow-lg shadow-green-500/25';
-    }
-    if (style === 'secondary') {
-      return 'bg-white/20 backdrop-blur-sm border border-white/30 text-white hover:bg-white/30';
-    }
+  const ctaClass = (style = 'primary') => {
+    if (style === 'primary')   return 'bg-gradient-to-r from-red-700 to-red-800 hover:from-red-800 hover:to-red-900 text-white shadow-lg shadow-red-900/30';
+    if (style === 'secondary') return 'bg-white/15 backdrop-blur-sm border border-white/30 text-white hover:bg-white/25';
     return 'bg-transparent text-white hover:underline';
   };
 
   if (loading) {
     return (
-      <div className="relative w-full h-[70vh] min-h-[500px] max-h-[800px] bg-gray-900 overflow-hidden">
+      <div className="relative w-full h-[70vh] min-h-[500px] max-h-[800px] bg-[#1A1A2E] overflow-hidden">
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-12 h-12 border-4 border-green-500/30 border-t-green-500 rounded-full animate-spin" />
-            <p className="text-white/70 text-sm">Loading...</p>
-          </div>
+          <div className="w-10 h-10 border-3 border-red-700/30 border-t-red-600 rounded-full animate-spin" />
         </div>
       </div>
     );
   }
 
-  if (banners.length === 0) {
-    if (process.env.NODE_ENV === 'development' && fetchError) {
-      return (
-        <div className="relative w-full h-[200px] bg-gray-800 flex items-center justify-center rounded-xl border border-red-500/30">
-          <p className="text-red-400 text-sm font-mono px-4 text-center">
-            HeroBanner: {fetchError}
-          </p>
-        </div>
-      );
-    }
-    return null;
-  }
-
-  const currentBanner = banners[currentIndex];
-  // Consider background dark if it has an overlay or a dark color is set
-  const isDarkBg = (currentBanner.overlayOpacity ?? 0) > 20 || !currentBanner.backgroundColor || currentBanner.backgroundColor === '#ffffff';
+  const slide = slides[currentIndex];
+  const imgSrc = imgErrors[slide._id] ? '/images/images/product/1000x1000.png' : slide.image.url;
 
   return (
-    <div 
+    <div
       className="relative w-full h-[70vh] min-h-[500px] max-h-[800px] overflow-hidden"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
     >
       <AnimatePresence initial={false} custom={direction} mode="wait">
         <motion.div
-          key={currentBanner._id}
+          key={slide._id}
           custom={direction}
           variants={slideVariants}
           initial="enter"
           animate="center"
           exit="exit"
-          transition={{
-            x: { type: 'spring', stiffness: 300, damping: 30 },
-            opacity: { duration: 0.4 },
-            scale: { duration: 0.4 },
-          }}
+          transition={{ x: { type: 'spring', stiffness: 280, damping: 28 }, opacity: { duration: 0.35 }, scale: { duration: 0.35 } }}
           className="absolute inset-0"
         >
-          {/* Background Image */}
+          {/* Background */}
           <div className="absolute inset-0">
             <Image
-              src={imgErrors[currentBanner._id] ? '/images/images/product/1000x1000.png' : currentBanner.image.url}
-              alt={currentBanner.image.alt || currentBanner.title}
+              src={imgSrc}
+              alt={slide.image.alt || slide.title}
               fill
               className="object-cover"
               priority
               sizes="100vw"
-              onError={() => setImgErrors(prev => ({ ...prev, [currentBanner._id]: true }))}
+              onError={() => setImgErrors(p => ({ ...p, [slide._id]: true }))}
             />
-            {/* Dark overlay for text readability */}
-            {(currentBanner.overlayOpacity ?? 0) > 0 && (
-              <div
-                className="absolute inset-0"
-                style={{ backgroundColor: `rgba(0,0,0,${(currentBanner.overlayOpacity ?? 0) / 100})` }}
-              />
+            {/* Dark overlay */}
+            {(slide.overlayOpacity ?? 0) > 0 && (
+              <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${(slide.overlayOpacity ?? 0) / 100})` }} />
             )}
-            {/* Edge fade gradient for content contrast */}
+            {/* Edge gradient */}
             <div
               className="absolute inset-0"
               style={{
-                background: `linear-gradient(to right, ${currentBanner.backgroundColor || '#1A1A2E'}cc 0%, transparent 55%), linear-gradient(to top, ${currentBanner.backgroundColor || '#1A1A2E'}88 0%, transparent 35%)`
+                background: `linear-gradient(to right, ${slide.backgroundColor || '#1A1A2E'}e0 0%, ${slide.backgroundColor || '#1A1A2E'}55 45%, transparent 70%), linear-gradient(to top, ${slide.backgroundColor || '#1A1A2E'}88 0%, transparent 35%)`,
               }}
             />
           </div>
 
           {/* Content */}
-          <div className={`relative z-10 container mx-auto px-4 md:px-8 h-full flex ${getContentPosition(currentBanner.contentPosition)}`}>
-            <motion.div 
-              className={`max-w-2xl ${getTextAlignment(currentBanner.textAlignment || 'center')}`}
-            >
-              {/* Badge/Category */}
-              <motion.div
-                variants={textVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className="mb-4"
-              >
-                <span className="inline-flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur-sm rounded-full text-sm font-medium text-white/90">
-                  <Icon.PiSparkleFill className="text-yellow-400" size={14} />
-                  {currentBanner.subtitle}
-                </span>
-              </motion.div>
+          <div className={`relative z-10 container mx-auto px-5 md:px-10 h-full flex ${contentPos(slide.contentPosition)}`}>
+            <motion.div className={`max-w-2xl ${textAlign(slide.textAlignment || 'left')}`}>
+
+              {/* Badge */}
+              {slide.subtitle && (
+                <motion.div variants={textVariants} initial="initial" animate="animate" exit="exit" className="mb-4">
+                  <span className="inline-flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur-sm rounded-full text-sm font-semibold text-white/90 border border-white/15">
+                    <Icon.PiSparkleFill className="text-amber-400" size={13} />
+                    {slide.subtitle}
+                  </span>
+                </motion.div>
+              )}
 
               {/* Title */}
               <motion.h1
-                variants={textVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold text-white mb-4 leading-tight"
+                variants={textVariants} initial="initial" animate="animate" exit="exit"
+                className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-black text-white mb-4 leading-tight tracking-tight"
               >
-                {currentBanner.title}
+                {slide.title}
               </motion.h1>
 
               {/* Description */}
-              {currentBanner.description && (
+              {slide.description && (
                 <motion.p
-                  variants={textVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  className="text-lg md:text-xl text-white/80 mb-8 max-w-lg leading-relaxed"
+                  variants={textVariants} initial="initial" animate="animate" exit="exit"
+                  transition={{ delay: 0.1, duration: 0.5, ease: 'easeOut' }}
+                  className="text-base md:text-lg text-white/75 mb-8 max-w-lg leading-relaxed"
                 >
-                  {currentBanner.description}
+                  {slide.description}
                 </motion.p>
               )}
 
-              {/* CTA Button */}
-              {currentBanner.ctaText && (
-                <motion.div
-                  variants={buttonVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                >
-                  {currentBanner.linkType === 'external' ? (
+              {/* CTA */}
+              {slide.ctaText && (
+                <motion.div variants={btnVariants} initial="initial" animate="animate">
+                  {slide.linkType === 'external' ? (
                     <a
-                      href={currentBanner.ctaLink}
+                      href={slide.ctaLink}
                       target="_blank"
                       rel="noopener noreferrer"
-                      onClick={() => handleBannerClick(currentBanner._id)}
-                      className={`inline-flex items-center gap-2 px-8 py-4 rounded-full font-semibold transition-all duration-300 ${getCTAStyle(currentBanner.ctaStyle, isDarkBg)}`}
+                      onClick={() => trackClick(slide._id)}
+                      className={`inline-flex items-center gap-2 px-8 py-4 rounded-full font-bold text-sm transition-all duration-300 ${ctaClass(slide.ctaStyle)}`}
                     >
-                      {currentBanner.ctaText}
-                      <Icon.PiArrowRight size={18} />
+                      {slide.ctaText} <Icon.PiArrowRight size={16} />
                     </a>
                   ) : (
                     <Link
-                      href={currentBanner.ctaLink || '#'}
-                      onClick={() => handleBannerClick(currentBanner._id)}
-                      className={`inline-flex items-center gap-2 px-8 py-4 rounded-full font-semibold transition-all duration-300 ${getCTAStyle(currentBanner.ctaStyle, isDarkBg)}`}
+                      href={slide.ctaLink || '#'}
+                      onClick={() => trackClick(slide._id)}
+                      className={`inline-flex items-center gap-2 px-8 py-4 rounded-full font-bold text-sm transition-all duration-300 ${ctaClass(slide.ctaStyle)}`}
                     >
-                      {currentBanner.ctaText}
-                      <Icon.PiArrowRight size={18} />
+                      {slide.ctaText} <Icon.PiArrowRight size={16} />
                     </Link>
                   )}
                 </motion.div>
               )}
 
-              {/* Features Pills */}
+              {/* Trust pills */}
               <motion.div
-                variants={textVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                transition={{ delay: 0.6 }}
+                variants={textVariants} initial="initial" animate="animate" exit="exit"
+                transition={{ delay: 0.55, duration: 0.5, ease: 'easeOut' }}
                 className="flex flex-wrap gap-3 mt-10"
               >
-                {['Free Delivery', 'Original Products', 'Secure Payment'].map((feature, index) => (
-                  <div 
-                    key={feature}
-                    className="flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur-sm rounded-full text-sm text-white/90"
-                  >
-                    <Icon.PiCheckCircleFill className="text-green-400" size={16} />
-                    {feature}
+                {[
+                  { icon: <Icon.PiTruck size={14} />, label: 'Free Delivery' },
+                  { icon: <Icon.PiSealCheck size={14} />, label: 'Authentic Products' },
+                  { icon: <Icon.PiLockKey size={14} />, label: 'Secure Checkout' },
+                ].map(({ icon, label }) => (
+                  <div key={label} className="flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur-sm rounded-full text-xs text-white/85 border border-white/10">
+                    <span className="text-red-400">{icon}</span>
+                    {label}
                   </div>
                 ))}
               </motion.div>
@@ -385,91 +298,56 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
         </motion.div>
       </AnimatePresence>
 
-      {/* Navigation Controls */}
-      {showControls && banners.length > 1 && (
+      {/* Nav arrows */}
+      {showControls && slides.length > 1 && (
         <>
           <motion.button
-            initial={{ opacity: 0, x: -50 }}
-            animate={{ opacity: 1, x: 0 }}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
+            initial={{ opacity: 0, x: -40 }} animate={{ opacity: 1, x: 0 }}
+            whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }}
             onClick={handlePrev}
-            className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-12 h-12 md:w-14 md:h-14 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white hover:bg-white/20 hover:border-white/40 transition-all duration-300"
+            className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 md:w-13 md:h-13 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all"
             aria-label="Previous slide"
           >
-            <Icon.PiCaretLeft size={24} />
+            <Icon.PiCaretLeft size={20} />
           </motion.button>
-          
           <motion.button
-            initial={{ opacity: 0, x: 50 }}
-            animate={{ opacity: 1, x: 0 }}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
+            initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }}
+            whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }}
             onClick={handleNext}
-            className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-12 h-12 md:w-14 md:h-14 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white hover:bg-white/20 hover:border-white/40 transition-all duration-300"
+            className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 md:w-13 md:h-13 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all"
             aria-label="Next slide"
           >
-            <Icon.PiCaretRight size={24} />
+            <Icon.PiCaretRight size={20} />
           </motion.button>
         </>
       )}
 
-      {/* Indicators */}
-      {showIndicators && banners.length > 1 && (
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3">
-          {banners.map((_, index) => (
-            <motion.button
-              key={index}
-              initial={{ opacity: 0, scale: 0 }}
-              animate={{ opacity: 1, scale: 1 }}
-              whileHover={{ scale: 1.2 }}
-              onClick={() => handleIndicatorClick(index)}
-              className={`relative group`}
-              aria-label={`Go to slide ${index + 1}`}
-            >
-              <span className={`block w-3 h-3 rounded-full transition-all duration-300 ${
-                index === currentIndex 
-                  ? 'bg-white w-8' 
-                  : 'bg-white/40 hover:bg-white/70'
-              }`} />
-              {index === currentIndex && (
-                <motion.span
-                  layoutId="activeIndicator"
-                  className="absolute inset-0 w-3 h-3 rounded-full border-2 border-white"
-                  initial={false}
-                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                />
-              )}
-            </motion.button>
+      {/* Dots */}
+      {showIndicators && slides.length > 1 && (
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
+          {slides.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => handleDotClick(i)}
+              aria-label={`Slide ${i + 1}`}
+              className={`h-2 rounded-full transition-all duration-300 ${i === currentIndex ? 'bg-white w-7' : 'bg-white/40 hover:bg-white/65 w-2'}`}
+            />
           ))}
         </div>
       )}
 
-      {/* Progress Bar */}
-      {autoPlay && banners.length > 1 && (
-        <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10 z-20">
+      {/* Progress bar */}
+      {autoPlay && slides.length > 1 && !isPaused && (
+        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/10 z-20">
           <motion.div
-            key={`progress-${currentBanner._id}`}
-            className="h-full bg-gradient-to-r from-green-500 to-green-400"
+            key={`pb-${slide._id}`}
+            className="h-full bg-gradient-to-r from-red-600 to-red-400"
             initial={{ width: '0%' }}
             animate={{ width: '100%' }}
-            transition={{ 
-              duration: (banners[currentIndex]?.autoplay?.interval || 6000) / 1000, 
-              ease: 'linear' 
-            }}
+            transition={{ duration: (slides[currentIndex]?.autoplay?.interval || 6000) / 1000, ease: 'linear' }}
           />
         </div>
       )}
-
-      {/* Floating Elements */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 1 }}
-        className="absolute top-20 right-20 hidden xl:block z-10"
-      >
-        <div className="w-48 h-48 rounded-full bg-gradient-to-br from-green-500/20 to-transparent blur-3xl" />
-      </motion.div>
     </div>
   );
 };

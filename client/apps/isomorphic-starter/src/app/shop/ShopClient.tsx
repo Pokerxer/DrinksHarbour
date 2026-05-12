@@ -201,6 +201,19 @@ function ShopPageContent({ params }: PageProps) {
   const [layoutCol,      setLayoutCol]      = useState(4);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Sort value mapping (frontend key → backend sort key) ─────────────────
+  const SORT_MAP: Record<string, string> = {
+    newest:            'newest',
+    priceLowToHigh:    'price_low',
+    priceHighToLow:    'price_high',
+    discountHighToLow: 'discount',
+    bestselling:       'bestselling',
+    popularity:        'popular',
+    rating:            'rating',
+    alphabetical:      'name_asc',
+    alphabeticalDesc:  'name_desc',
+  };
+
   // ── API URL ──────────────────────────────────────────────────────────────
   const buildApiUrl = useCallback(() => {
     const base = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/api/products/search`;
@@ -213,7 +226,12 @@ function ShopPageContent({ params }: PageProps) {
     if (searchParams.get('flavor'))         p.set('flavor',      searchParams.get('flavor')!);
     if (searchParams.get('volume'))         p.set('volume',      searchParams.get('volume')!);
     if (searchParams.get('size'))           p.set('size',        searchParams.get('size')!);
-    if (searchParams.get('sort'))           p.set('sort',        searchParams.get('sort')!);
+
+    // Map frontend sort value to backend sort key
+    const frontendSort = searchParams.get('sort') || '';
+    const backendSort  = SORT_MAP[frontendSort] || '';
+    if (backendSort) p.set('sort', backendSort);
+
     if (sale === 'true') {
       p.set('onSale', 'true');
       // Do NOT pass saleType — we fetch ALL sale products once and
@@ -224,8 +242,12 @@ function ShopPageContent({ params }: PageProps) {
     if (searchParams.get('minABV'))         p.set('minABV',      searchParams.get('minABV')!);
     if (searchParams.get('maxABV'))         p.set('maxABV',      searchParams.get('maxABV')!);
     if (searchParams.get('minRating'))      p.set('minRating',   searchParams.get('minRating')!);
-    // Fetch more products on the sale page so we don't miss deals past position 50
-    p.set('limit', sale === 'true' ? '200' : '50');
+
+    // Fetch more products when a sort is active so the sort covers a larger slice of the catalog.
+    // Price/discount/newest sorts are now executed server-side before pagination, so the returned
+    // products are already the correct top-N — we just need enough to fill several pages.
+    const hasActiveSort = Boolean(frontendSort);
+    p.set('limit', sale === 'true' ? '200' : hasActiveSort ? '150' : '80');
     return `${base}?${p.toString()}`;
   }, [searchParams, searchQuery, sale]);
 

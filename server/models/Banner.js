@@ -251,6 +251,64 @@ const bannerSchema = new mongoose.Schema(
       },
     },
 
+    // Popup-specific settings (only used when placement === 'popup')
+    popup: {
+      // What triggers the popup to appear
+      trigger: {
+        type: String,
+        enum: ['time_delay', 'exit_intent', 'scroll_depth', 'page_load', 'inactivity'],
+        default: 'time_delay',
+      },
+      // Seconds to wait before showing (for time_delay / inactivity triggers)
+      delaySeconds: {
+        type: Number,
+        default: 3,
+      },
+      // Percentage of page scrolled before showing (for scroll_depth trigger)
+      scrollDepthPercent: {
+        type: Number,
+        default: 50,
+        min: 1,
+        max: 100,
+      },
+      // How often to show the popup
+      frequency: {
+        type: String,
+        enum: ['every_visit', 'once_per_session', 'once_per_day', 'once_ever'],
+        default: 'once_per_session',
+      },
+      // Visual layout variant
+      variant: {
+        type: String,
+        enum: ['modal', 'slide_in', 'full_screen', 'notification'],
+        default: 'modal',
+      },
+      // Corner position for slide_in / notification variants
+      position: {
+        type: String,
+        enum: ['center', 'bottom-right', 'bottom-left', 'top-right', 'top-left'],
+        default: 'center',
+      },
+      showCloseButton: {
+        type: Boolean,
+        default: true,
+      },
+      closeOnBackdrop: {
+        type: Boolean,
+        default: true,
+      },
+      // If true, renders an email capture input inside the popup
+      collectEmail: {
+        type: Boolean,
+        default: false,
+      },
+      // Coupon code to reveal after email capture or CTA click
+      couponCode: {
+        type: String,
+        trim: true,
+      },
+    },
+
     // Analytics & Tracking
     impressions: {
       type: Number,

@@ -1439,8 +1439,8 @@ const handleFileQuery = async (fileContent, fileName, userQuery, tenantId = null
       response += foundItems.join('\n');
       response += `\n\n**Total: ₦${totalOrder.toLocaleString()}**`;
       
-      if (totalOrder < 50000) {
-        response += `\nAdd ₦${(50000 - totalOrder).toLocaleString()} more for FREE delivery!`;
+      if (totalOrder < 2000000) {
+        response += `\nAdd ₦${(2000000 - totalOrder).toLocaleString()} more for FREE delivery!`;
       }
     }
     

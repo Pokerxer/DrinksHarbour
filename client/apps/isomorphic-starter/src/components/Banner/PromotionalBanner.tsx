@@ -6,6 +6,8 @@ import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
 interface PromotionalBannerProps {
   placement?: string;
   layout?: 'card' | 'overlay' | 'split' | 'badge' | 'modern';
@@ -125,37 +127,31 @@ const defaultPromotionalBanners: BannerData[] = [
 const CountdownTimer = ({ endDate }: { endDate?: string }) => {
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   const [isUrgent, setIsUrgent] = useState(false);
-  const [prevSeconds, setPrevSeconds] = useState(0);
 
   useEffect(() => {
     const targetDate = endDate ? new Date(endDate) : new Date(Date.now() + 48 * 60 * 60 * 1000);
 
-    const calculateTimeLeft = () => {
-      const now = new Date().getTime();
-      const distance = targetDate.getTime() - now;
-
-      if (distance < 0) return;
-
-      const days = Math.floor(distance / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const tick = () => {
+      const distance = targetDate.getTime() - Date.now();
+      if (distance < 0) { setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 }); return; }
+      const days    = Math.floor(distance / (1000 * 60 * 60 * 24));
+      const hours   = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
       const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-
-      setPrevSeconds(timeLeft.seconds);
       setTimeLeft({ days, hours, minutes, seconds });
       setIsUrgent(days < 1);
     };
 
-    calculateTimeLeft();
-    const interval = setInterval(calculateTimeLeft, 1000);
+    tick();
+    const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [endDate, timeLeft.seconds]);
+  }, [endDate]); // no timeLeft dependency — fixed re-render loop
 
   const timeUnits = [
-    { value: timeLeft.days, prev: prevSeconds, label: 'Days', color: 'from-blue-500/80 to-blue-600/80' },
-    { value: timeLeft.hours, prev: prevSeconds, label: 'Hours', color: isUrgent ? 'from-red-500/80 to-red-600/80' : 'from-purple-500/80 to-purple-600/80' },
-    { value: timeLeft.minutes, prev: prevSeconds, label: 'Mins', color: 'from-amber-500/80 to-amber-600/80' },
-    { value: timeLeft.seconds, prev: prevSeconds, label: 'Secs', color: isUrgent ? 'from-red-600/80 to-red-700/80' : 'from-emerald-500/80 to-emerald-600/80' }
+    { value: timeLeft.days,    label: 'Days', color: 'from-blue-500/80 to-blue-600/80' },
+    { value: timeLeft.hours,   label: 'Hrs',  color: isUrgent ? 'from-red-500/80 to-red-600/80' : 'from-purple-500/80 to-purple-600/80' },
+    { value: timeLeft.minutes, label: 'Mins', color: 'from-amber-500/80 to-amber-600/80' },
+    { value: timeLeft.seconds, label: 'Secs', color: isUrgent ? 'from-red-600/80 to-red-700/80' : 'from-emerald-500/80 to-emerald-600/80' },
   ];
 
   return (
@@ -167,15 +163,18 @@ const CountdownTimer = ({ endDate }: { endDate?: string }) => {
     >
       {timeUnits.map((item, idx) => (
         <div key={item.label} className="flex flex-col items-center">
-          <motion.div
-            key={item.value}
-            initial={item.value !== item.prev ? { scale: 1.2, y: -5 } : {}}
-            animate={{ scale: 1, y: 0 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-            className={`bg-gradient-to-br ${item.color} backdrop-blur-md rounded-lg px-2 py-1.5 min-w-[32px] text-center shadow-lg border border-white/10`}
-          >
-            <span className="text-white font-black text-sm">{String(item.value).padStart(2, '0')}</span>
-          </motion.div>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={`${item.label}-${item.value}`}
+              initial={{ scale: 1.15, y: -4, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.85, y: 4, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+              className={`bg-gradient-to-br ${item.color} backdrop-blur-md rounded-lg px-2 py-1.5 min-w-[32px] text-center shadow-lg border border-white/10`}
+            >
+              <span className="text-white font-black text-sm">{String(item.value).padStart(2, '0')}</span>
+            </motion.div>
+          </AnimatePresence>
           <span className="text-white/50 text-[8px] mt-1 font-medium uppercase">{item.label}</span>
           {idx < 3 && <span className="text-white/30 text-lg font-bold -mt-4 ml-[38px]">:</span>}
         </div>
@@ -291,16 +290,13 @@ const PromotionalBanner: React.FC<PromotionalBannerProps> = ({
     const fetchBanners = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`/api/banners/placement/${placement}?limit=${columns}`);
-        
+        const response = await fetch(`${API_URL}/api/banners/placement/${placement}?limit=${columns}`);
         if (response.ok) {
           const data = await response.json();
-          if (data.success && data.data?.length > 0) {
-            setBanners(data.data);
-          }
+          if (data.success && data.data?.length > 0) setBanners(data.data);
         }
       } catch {
-        console.warn('Using default promotional banners');
+        // use defaults
       } finally {
         setLoading(false);
       }
@@ -311,16 +307,13 @@ const PromotionalBanner: React.FC<PromotionalBannerProps> = ({
 
   const handleBannerClick = useCallback(async (bannerId: string) => {
     if (!bannerId) return;
-    try {
-      await fetch(`/api/banners/${bannerId}/click`, { method: 'POST' });
-    } catch {
-      // Ignore click tracking errors
-    }
+    try { await fetch(`${API_URL}/api/banners/${bannerId}/click`, { method: 'POST' }); } catch {}
   }, []);
 
   if (loading) {
+    const skeletonColClass = { 1: 'md:grid-cols-1', 2: 'md:grid-cols-2', 3: 'md:grid-cols-3', 4: 'md:grid-cols-4' }[columns] ?? 'md:grid-cols-2';
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+      <div className={`grid grid-cols-1 ${skeletonColClass} gap-4 md:gap-6`}>
         {[...Array(columns)].map((_, i) => (
           <motion.div
             key={i}
@@ -342,9 +335,11 @@ const PromotionalBanner: React.FC<PromotionalBannerProps> = ({
 
   if (banners.length === 0) return null;
 
+  const colClass = { 1: 'md:grid-cols-1', 2: 'md:grid-cols-2', 3: 'md:grid-cols-3', 4: 'md:grid-cols-4' }[columns] ?? 'md:grid-cols-2';
+
   return (
     <section className="py-8 md:py-12">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+      <div className={`grid grid-cols-1 ${colClass} gap-4 md:gap-6`}>
         <AnimatePresence mode="popLayout">
           {banners.map((banner, index) => {
             const imageUrl = banner.mobileImage?.url || banner.image?.url || '/images/images/product/1000x1000.png';

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 import { FilterState, SortOption } from '@/types/filter.types';
 import ActiveFilters from './ActiveFilters';
@@ -16,6 +16,8 @@ interface FilterHeaderProps {
   totalProducts?: number;
   isLoading?: boolean;
   onClearAllFilters?: () => void;
+  searchQuery?: string | null;
+  onClearSearch?: () => void;
 }
 
 const LAYOUT_OPTIONS = [
@@ -35,6 +37,8 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
   totalProducts,
   isLoading = false,
   onClearAllFilters,
+  searchQuery,
+  onClearSearch,
 }) => {
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [isFilterTooltipVisible, setIsFilterTooltipVisible] = useState(false);
@@ -54,29 +58,22 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
 
   const activeFiltersCount = React.useMemo(() => {
     let count = 0;
+    if (searchQuery?.trim()) count++;
+    if (filters.sortOption) count++;
     if (filters.size) count++;
-    if (filters.brand) {
-      count += Array.isArray(filters.brand) ? filters.brand.length : 1;
-    }
-    if (filters.originCountry) {
-      count += Array.isArray(filters.originCountry) ? filters.originCountry.length : 1;
-    }
-    if (filters.categoryType) {
-      count += Array.isArray(filters.categoryType) ? filters.categoryType.length : 1;
-    }
-    if (filters.subCategoryType) {
-      count += Array.isArray(filters.subCategoryType) ? filters.subCategoryType.length : 1;
-    }
-    if (filters.flavorCategory) {
-      count += Array.isArray(filters.flavorCategory) ? filters.flavorCategory.length : 1;
-    }
+    if (filters.color) count++;
+    if (filters.brand)         count += Array.isArray(filters.brand)         ? filters.brand.length         : 1;
+    if (filters.originCountry) count += Array.isArray(filters.originCountry) ? filters.originCountry.length : 1;
+    if (filters.categoryType)  count += Array.isArray(filters.categoryType)  ? filters.categoryType.length  : 1;
+    if (filters.subCategoryType) count += Array.isArray(filters.subCategoryType) ? filters.subCategoryType.length : 1;
+    if (filters.flavorCategory) count += Array.isArray(filters.flavorCategory) ? filters.flavorCategory.length : 1;
     if (filters.minRating) count++;
     if (filters.showOnlySale) count++;
     if (filters.priceRange?.min !== 0 || filters.priceRange?.max !== 100000) count++;
     if (filters.abvRange) count++;
     if (filters.volumeRange) count++;
     return count;
-  }, [filters]);
+  }, [filters, searchQuery]);
 
   const hasActiveFilters = activeFiltersCount > 0;
 
@@ -114,11 +111,20 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
           >
             <Icon.PiFadersHorizontal size={16} />
             <span className="font-medium">Filters</span>
-            {activeFiltersCount > 0 && (
-              <span className="px-1.5 sm:px-2 py-0.5 bg-white text-gray-900 text-xs font-bold rounded-full">
-                {activeFiltersCount}
-              </span>
-            )}
+            <AnimatePresence mode="wait">
+              {activeFiltersCount > 0 && (
+                <motion.span
+                  key={activeFiltersCount}
+                  initial={{ scale: 0.6, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.6, opacity: 0 }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                  className="px-1.5 sm:px-2 py-0.5 bg-white text-gray-900 text-xs font-bold rounded-full"
+                >
+                  {activeFiltersCount}
+                </motion.span>
+              )}
+            </AnimatePresence>
             
             {/* Tooltip */}
             {isFilterTooltipVisible && hasActiveFilters && (
@@ -266,17 +272,29 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
       </div>
 
       {/* Active Filters Bar */}
-      {hasActiveFilters && (
-        <div className="border-t border-gray-100 mt-4 pt-1">
-          <ActiveFilters
-            filters={filters}
-            updateFilter={updateFilter}
-            onClearAll={handleClearAll}
-            totalProducts={totalProducts ?? 0}
-            isLoading={isLoading}
-          />
-        </div>
-      )}
+      <AnimatePresence>
+        {hasActiveFilters && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <div className="border-t border-gray-100 mt-4 pt-1">
+              <ActiveFilters
+                filters={filters}
+                updateFilter={updateFilter}
+                onClearAll={handleClearAll}
+                totalProducts={totalProducts ?? 0}
+                isLoading={isLoading}
+                searchQuery={searchQuery}
+                onClearSearch={onClearSearch}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

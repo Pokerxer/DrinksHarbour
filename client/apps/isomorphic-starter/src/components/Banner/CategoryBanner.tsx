@@ -5,6 +5,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
 interface CategoryBannerProps {
   categorySlug?: string;
   placement?: string;
@@ -216,7 +218,7 @@ const CategoryBanner: React.FC<CategoryBannerProps> = ({
       // Try to fetch from API
       if (categorySlug) {
         try {
-          const response = await fetch(`/api/products/categories/slug/${categorySlug}`);
+          const response = await fetch(`${API_URL}/api/categories/slug/${categorySlug}`);
           if (response.ok) {
             const data = await response.json();
             if (data.success) {

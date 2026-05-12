@@ -87,7 +87,7 @@ const bannerData = [
   {
     title: 'Free Delivery',
     slug: generateSlug('Free Delivery'),
-    subtitle: 'Orders Over ₦50,000',
+    subtitle: 'Orders Over ₦2,000,000',
     description: 'On all alcoholic beverages',
     image: { url: validPlaceholderImages[5], alt: 'Free Delivery' },
     type: 'announcement', placement: 'header', status: 'active', isActive: true,

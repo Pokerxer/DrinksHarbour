@@ -4294,6 +4294,40 @@ const searchProducts = async (searchParams = {}) => {
             },
           },
         },
+        // Min base selling price across all subProducts × sizes — used for price sort BEFORE pagination
+        minBaseSellingPrice: {
+          $min: {
+            $map: {
+              input: '$subProducts',
+              as: 'sub',
+              in: {
+                $min: {
+                  $map: {
+                    input: '$$sub.sizes',
+                    as: 'size',
+                    in: { $ifNull: ['$$size.baseSellingPrice', 999999999] },
+                  },
+                },
+              },
+            },
+          },
+        },
+        // Max sale discount % across all subProducts — used for discount sort BEFORE pagination
+        maxSaleDiscountPct: {
+          $max: {
+            $map: {
+              input: '$subProducts',
+              as: 'sub',
+              in: {
+                $cond: [
+                  { $in: ['$$sub.saleType', ['percentage', 'flash_sale']] },
+                  { $ifNull: ['$$sub.saleDiscountValue', 0] },
+                  0,
+                ],
+              },
+            },
+          },
+        },
         // Calculate relevance score
         relevanceScore: {
           $add: [
@@ -4352,12 +4386,16 @@ const searchProducts = async (searchParams = {}) => {
       sortStage = { relevanceScore: -1, averageRating: -1, totalSold: -1 };
       break;
     case 'price_low':
-      // Will sort after price calculation
-      sortStage = { name: 1 };
+      // Sort by minBaseSellingPrice ASC before pagination — no-price products sink to bottom
+      sortStage = { minBaseSellingPrice: 1, name: 1 };
       break;
     case 'price_high':
-      // Will sort after price calculation
-      sortStage = { name: 1 };
+      // Sort by minBaseSellingPrice DESC before pagination
+      sortStage = { minBaseSellingPrice: -1, name: 1 };
+      break;
+    case 'discount':
+      // Sort by highest discount % before pagination
+      sortStage = { maxSaleDiscountPct: -1, totalSold: -1 };
       break;
     case 'rating':
       sortStage = { averageRating: order === 'asc' ? 1 : -1, reviewCount: -1 };
@@ -4365,11 +4403,16 @@ const searchProducts = async (searchParams = {}) => {
     case 'newest':
       sortStage = { createdAt: -1 };
       break;
+    case 'bestselling':
     case 'popular':
       sortStage = { totalSold: -1, averageRating: -1 };
       break;
+    case 'name_asc':
     case 'name':
-      sortStage = { name: order === 'asc' ? 1 : -1 };
+      sortStage = { name: 1 };
+      break;
+    case 'name_desc':
+      sortStage = { name: -1 };
       break;
     default:
       sortStage = { relevanceScore: -1 };
@@ -4655,17 +4698,6 @@ const searchProducts = async (searchParams = {}) => {
   if (saleType) {
     filteredProducts = filteredProducts.filter(({ processedSubProducts }) => {
       return processedSubProducts.some(sp => sp.isOnSale === true && sp.saleType === saleType);
-    });
-  }
-
-  // ============================================================
-  // STEP 10: Apply Price Sorting
-  // ============================================================
-  if (sortBy === 'price_low' || sortBy === 'price_high') {
-    filteredProducts.sort((a, b) => {
-      const priceA = a.globalPriceRange.min;
-      const priceB = b.globalPriceRange.min;
-      return sortBy === 'price_low' ? priceA - priceB : priceB - priceA;
     });
   }
 

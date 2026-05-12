@@ -26,9 +26,10 @@ const ModalCart = () => {
   const [appliedUpdates, setAppliedUpdates] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
 
-  const shipping = useMemo(() => cartTotal > 50000 ? 0 : 2500, [cartTotal]);
-  const remainingForFree = useMemo(() => Math.max(0, 50000 - cartTotal), [cartTotal]);
-  const freeShippingProgress = useMemo(() => Math.min(100, (cartTotal / 50000) * 100), [cartTotal]);
+  const FREE_DELIVERY_THRESHOLD = 2_000_000;
+  const shipping = useMemo(() => cartTotal >= FREE_DELIVERY_THRESHOLD ? 0 : 2500, [cartTotal]);
+  const remainingForFree = useMemo(() => Math.max(0, FREE_DELIVERY_THRESHOLD - cartTotal), [cartTotal]);
+  const freeShippingProgress = useMemo(() => Math.min(100, (cartTotal / FREE_DELIVERY_THRESHOLD) * 100), [cartTotal]);
 
   // Trigger validation every time the cart opens
   useEffect(() => {

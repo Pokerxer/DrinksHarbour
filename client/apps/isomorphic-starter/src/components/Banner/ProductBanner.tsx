@@ -5,6 +5,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
 interface ProductBannerProps {
   placement?: string;
   brandSlug?: string;
@@ -111,12 +113,12 @@ const ProductBanner: React.FC<ProductBannerProps> = ({
       setLoading(true);
       
       // Fetch banner
-      let bannerUrl = `/api/banners/placement/${placement}?limit=${limit}`;
+      let bannerUrl = `${API_URL}/api/banners/placement/${placement}?limit=${limit}`;
       if (brandSlug) {
-        bannerUrl = `/api/banners?brand=${brandSlug}&type=product&limit=1`;
+        bannerUrl = `${API_URL}/api/banners?brand=${brandSlug}&type=product&limit=1`;
       }
       if (productId) {
-        bannerUrl = `/api/banners?product=${productId}&type=product&limit=1`;
+        bannerUrl = `${API_URL}/api/banners?product=${productId}&type=product&limit=1`;
       }
       
       const response = await fetch(bannerUrl);
@@ -128,7 +130,7 @@ const ProductBanner: React.FC<ProductBannerProps> = ({
           
           // Fetch product details if banner has target product
           if (bannerData.targetProduct) {
-            const productResponse = await fetch(`/api/products/${bannerData.targetProduct._id}`);
+            const productResponse = await fetch(`${API_URL}/api/products/${bannerData.targetProduct._id}`);
             if (productResponse.ok) {
               const productData = await productResponse.json();
               if (productData.success) {
@@ -186,13 +188,7 @@ const ProductBanner: React.FC<ProductBannerProps> = ({
 
   const handleBannerClick = async (bannerId?: string) => {
     if (!bannerId) return;
-    try {
-      await fetch(`/api/banners/${bannerId}/click`, {
-        method: 'POST'
-      });
-    } catch (err) {
-      console.error('Error tracking click:', err);
-    }
+    try { await fetch(`${API_URL}/api/banners/${bannerId}/click`, { method: 'POST' }); } catch {}
   };
 
   // Loading State

@@ -37,7 +37,7 @@ const BannerTop: React.FC<Props> = ({ props, textColor, bgLine }) => {
   const displayItems = items.length > 0 ? items : [
     'Get 10% off on selected items',
     'New customers save 10% with the code GET10',
-    'Free shipping on all orders over ₦50,000',
+    'Free delivery on all orders over ₦2,000,000',
     '10% off on all seasonal essentials!',
   ];
 

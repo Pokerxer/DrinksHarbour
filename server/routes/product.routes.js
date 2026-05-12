@@ -7,6 +7,7 @@ const productService = require('../services/product.service');
 const asyncHandler = require('../utils/asyncHandler');
 const { protect, authorize } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validation.middleware');
+const { uploadReviewImages } = require('../middleware/imageUpload.middleware');
 const { body, param, query } = require('express-validator');
 
 const productValidation = [
@@ -196,7 +197,20 @@ router.get(
 );
 
 /**
- * Submit a product review
+ * Check if the authenticated user can review this product
+ * @route GET /api/products/:id/reviews/eligibility
+ * @access Private
+ */
+router.get(
+  '/:id/reviews/eligibility',
+  protect,
+  mongoIdValidation,
+  validate,
+  productController.checkReviewEligibility
+);
+
+/**
+ * Submit a product review (verified-purchase only, up to 5 images)
  * @route POST /api/products/:id/reviews
  * @access Private
  */
@@ -205,7 +219,19 @@ router.post(
   protect,
   mongoIdValidation,
   validate,
+  uploadReviewImages,   // multer: up to 5 images in field "images"
   productController.submitProductReview
+);
+
+/**
+ * Mark a review as helpful (toggle)
+ * @route POST /api/products/reviews/:reviewId/helpful
+ * @access Private
+ */
+router.post(
+  '/reviews/:reviewId/helpful',
+  protect,
+  productController.markReviewHelpful
 );
 
 // ============================================================

@@ -1,9 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import Image from 'next/image';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
+import * as Icon from 'react-icons/pi';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+const DISMISS_KEY = 'dh_announcement_dismissed';
 
 interface AnnouncementBannerProps {
   placement?: string;
@@ -24,404 +27,276 @@ interface BannerData {
   placement: string;
   ctaText?: string;
   ctaLink?: string;
-  ctaStyle?: string;
   backgroundColor?: string;
   textColor?: string;
-  icon?: string;
   tags?: string[];
   startDate?: string;
   endDate?: string;
 }
 
-const defaultAnnouncements: BannerData[] = [
+const DEFAULT_ANNOUNCEMENTS: BannerData[] = [
   {
-    _id: 'default-1',
-    title: 'Free Delivery on Orders Over ₦50,000',
-    subtitle: 'Fast & Reliable Shipping',
-    type: 'announcement',
-    placement: 'header',
-    ctaText: 'Learn More',
-    ctaLink: '/shipping-info',
-    backgroundColor: '#4CAF50',
-    textColor: '#FFFFFF',
-    tags: ['delivery', 'free-delivery']
+    _id: 'def-1', title: 'Free Delivery on Orders Over ₦2,000,000', subtitle: 'Fast & Reliable Shipping',
+    type: 'announcement', placement: 'header', ctaText: 'Shop Now', ctaLink: '/shop',
+    backgroundColor: '#7C1D1D', textColor: '#FFFFFF',
   },
   {
-    _id: 'default-2',
-    title: 'Get 10% Off Your First Order',
-    subtitle: 'Use Code: WELCOME10',
-    type: 'announcement',
-    placement: 'header',
-    backgroundColor: '#2196F3',
-    textColor: '#FFFFFF',
-    tags: ['promo', 'discount']
+    _id: 'def-2', title: 'Get 10% Off Your First Order', subtitle: 'Use Code: WELCOME10',
+    type: 'announcement', placement: 'header',
+    backgroundColor: '#1A1A2E', textColor: '#FFFFFF',
   },
   {
-    _id: 'default-3',
-    title: 'Age Verification Required',
-    subtitle: 'You must be 18+ to purchase',
-    type: 'announcement',
-    placement: 'header',
-    ctaText: 'Verify Age',
-    backgroundColor: '#FF9800',
-    textColor: '#FFFFFF',
-    tags: ['compliance', 'legal']
-  }
+    _id: 'def-3', title: 'Premium Spirits, Authentic Products', subtitle: 'Curated Selection',
+    type: 'announcement', placement: 'header', ctaText: 'Explore', ctaLink: '/shop',
+    backgroundColor: '#7C1D1D', textColor: '#FFFFFF',
+  },
 ];
+
+const VARIANT_STYLES: Record<string, { bg: string; text: string }> = {
+  info:    { bg: '#1E40AF', text: '#FFFFFF' },
+  success: { bg: '#15803D', text: '#FFFFFF' },
+  warning: { bg: '#B45309', text: '#FFFFFF' },
+  error:   { bg: '#B91C1C', text: '#FFFFFF' },
+  promo:   { bg: '#7C1D1D', text: '#FFFFFF' },
+};
+
+function VariantIcon({ v }: { v: string }) {
+  const size = 14;
+  if (v === 'info')    return <Icon.PiInfoBold size={size} />;
+  if (v === 'success') return <Icon.PiCheckCircleBold size={size} />;
+  if (v === 'warning') return <Icon.PiWarningBold size={size} />;
+  if (v === 'error')   return <Icon.PiXCircleBold size={size} />;
+  return <Icon.PiLightningBold size={size} />;
+}
 
 const AnnouncementBanner: React.FC<AnnouncementBannerProps> = ({
   placement = 'header',
   layout = 'marquee',
   limit = 5,
-  showClose = false,
-  scrollSpeed = 30,
+  showClose = true,
+  scrollSpeed = 40,
   pauseOnHover = true,
-  variant = 'promo'
+  variant = 'promo',
 }) => {
-  const [banners, setBanners] = useState<BannerData[]>(defaultAnnouncements);
+  const [banners, setBanners] = useState<BannerData[]>(DEFAULT_ANNOUNCEMENTS);
   const [loading, setLoading] = useState(false);
-  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [paused, setPaused] = useState(false);
+  const trackRef = useRef<HTMLDivElement>(null);
+
+  // Restore dismissed IDs from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(DISMISS_KEY);
+      if (stored) setDismissed(new Set(JSON.parse(stored)));
+    } catch {}
+  }, []);
 
   useEffect(() => {
     const fetchBanners = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`/api/banners/placement/${placement}?limit=${limit}`);
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.data?.length > 0) {
-            setBanners(data.data);
-          }
+        const res = await fetch(`${API_URL}/api/banners/placement/${placement}?limit=${limit}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.data?.length > 0) setBanners(data.data);
         }
-      } catch (err) {
-        console.warn('Using default announcements');
-      } finally {
-        setLoading(false);
-      }
+      } catch {}
+      finally { setLoading(false); }
     };
-
     fetchBanners();
   }, [placement, limit]);
 
-  const getVariantStyles = (bannerVariant: string | undefined, bgColor: string | undefined) => {
-    if (bgColor) {
-      return {
-        backgroundColor: bgColor,
-        textColor: '#FFFFFF',
-        iconBg: 'rgba(255,255,255,0.2)',
-        bg: bgColor,
-        text: '#FFFFFF'
-      };
-    }
-
-    const variants: Record<string, { bg: string; text: string; iconBg: string }> = {
-      info: { bg: '#2196F3', text: '#FFFFFF', iconBg: 'rgba(255,255,255,0.2)' },
-      success: { bg: '#4CAF50', text: '#FFFFFF', iconBg: 'rgba(255,255,255,0.2)' },
-      warning: { bg: '#FF9800', text: '#FFFFFF', iconBg: 'rgba(255,255,255,0.2)' },
-      error: { bg: '#F44336', text: '#FFFFFF', iconBg: 'rgba(255,255,255,0.2)' },
-      promo: { bg: '#9C27B0', text: '#FFFFFF', iconBg: 'rgba(255,255,255,0.2)' }
-    };
-
-    const variant = variants[bannerVariant || 'promo'] || variants.promo;
-    return {
-      backgroundColor: variant.bg,
-      textColor: variant.text,
-      iconBg: variant.iconBg,
-      bg: variant.bg,
-      text: variant.text
-    };
+  const dismiss = (id: string) => {
+    setDismissed(prev => {
+      const next = new Set(prev).add(id);
+      try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...next])); } catch {}
+      return next;
+    });
   };
 
-  const getVariantIcon = (bannerVariant: string | undefined): React.ReactElement => {
-    const icons: Record<string, React.ReactElement> = {
-      info: (
-        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-        </svg>
-      ),
-      success: (
-        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-        </svg>
-      ),
-      warning: (
-        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-        </svg>
-      ),
-      error: (
-        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-        </svg>
-      ),
-      promo: (
-        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-          <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" />
-        </svg>
-      )
-    };
-
-    return icons[bannerVariant || 'promo'] || icons.promo;
+  const trackClick = async (id: string) => {
+    if (!id || id.startsWith('def')) return;
+    try { await fetch(`${API_URL}/api/banners/${id}/click`, { method: 'POST' }); } catch {}
   };
 
-  const handleClose = (bannerId: string) => {
-    setDismissedIds(prev => new Set(prev).add(bannerId));
-  };
+  const active = banners.filter(b => !dismissed.has(b._id));
 
-  const handleReset = () => {
-    setDismissedIds(new Set());
-  };
+  const getBg = (b: BannerData) => b.backgroundColor || VARIANT_STYLES[variant]?.bg || '#7C1D1D';
 
-  const handleBannerClick = async (bannerId: string) => {
-    if (!bannerId) return;
-    try {
-      await fetch(`/api/banners/${bannerId}/click`, {
-        method: 'POST'
-      });
-    } catch (err) {
-      // Ignore click tracking errors
-    }
-  };
+  if (loading) return <div className="h-10 bg-[#7C1D1D] animate-pulse" />;
+  if (active.length === 0) return null;
 
-  const activeBanners = banners.filter(b => !dismissedIds.has(b._id));
-
-  if (loading) {
-    return (
-      <div className="h-10 bg-gray-200 animate-pulse"></div>
-    );
-  }
-
-  if (activeBanners.length === 0) {
-    return null;
-  }
-
-  // Toast Layout
+  // ── Toast ──────────────────────────────────────────────────────────────────
   if (layout === 'toast') {
     return (
-      <div className="fixed top-4 right-4 z-50 space-y-3 max-w-md">
+      <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm pointer-events-none">
         <AnimatePresence>
-          {activeBanners.slice(0, 3).map((banner) => {
-            const styles = getVariantStyles(variant, banner.backgroundColor);
-            return (
-              <motion.div
-                key={banner._id}
-                initial={{ opacity: 0, x: 50 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 50 }}
-                className="rounded-lg shadow-lg overflow-hidden"
-                style={{ backgroundColor: styles.backgroundColor }}
-              >
-                <div className="p-4 flex items-start gap-3">
-                  <div 
-                    className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
-                    style={{ backgroundColor: styles.iconBg, color: styles.textColor }}
-                  >
-                    {getVariantIcon(variant)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium" style={{ color: styles.textColor }}>
-                      {banner.title}
-                    </p>
-                    {banner.subtitle && (
-                      <p className="text-xs mt-1 opacity-90" style={{ color: styles.textColor }}>
-                        {banner.subtitle}
-                      </p>
-                    )}
-                    {banner.ctaText && (
-                      <Link
-                        href={banner.ctaLink || '#'}
-                        onClick={() => handleBannerClick(banner._id)}
-                        className="inline-block mt-2 text-xs font-semibold underline hover:no-underline"
-                        style={{ color: styles.textColor }}
-                      >
-                        {banner.ctaText}
-                      </Link>
-                    )}
-                  </div>
-                  {showClose && (
-                    <button
-                      onClick={() => handleClose(banner._id)}
-                      className="flex-shrink-0 opacity-70 hover:opacity-100 transition-opacity"
-                      style={{ color: styles.textColor }}
-                    >
-                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                      </svg>
-                    </button>
+          {active.slice(0, 3).map(b => (
+            <motion.div
+              key={b._id}
+              initial={{ opacity: 0, x: 60, scale: 0.95 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 60, scale: 0.9 }}
+              className="pointer-events-auto rounded-xl shadow-xl overflow-hidden"
+              style={{ backgroundColor: getBg(b) }}
+            >
+              <div className="p-4 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-white/15 flex items-center justify-center flex-shrink-0 text-white">
+                  <VariantIcon v={variant} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white leading-snug">{b.title}</p>
+                  {b.subtitle && <p className="text-xs text-white/75 mt-0.5">{b.subtitle}</p>}
+                  {b.ctaText && (
+                    <Link href={b.ctaLink || '#'} onClick={() => trackClick(b._id)}
+                      className="inline-block mt-2 text-xs font-bold text-white underline hover:no-underline">
+                      {b.ctaText}
+                    </Link>
                   )}
                 </div>
-              </motion.div>
-            );
-          })}
+                {showClose && (
+                  <button onClick={() => dismiss(b._id)} className="text-white/60 hover:text-white flex-shrink-0">
+                    <Icon.PiXBold size={13} />
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          ))}
         </AnimatePresence>
       </div>
     );
   }
 
-  // Alert Layout
+  // ── Alert ──────────────────────────────────────────────────────────────────
   if (layout === 'alert') {
     return (
-      <div className="space-y-3">
-        {activeBanners.map((banner) => {
-          const styles = getVariantStyles(variant, banner.backgroundColor);
-          return (
-            <motion.div
-              key={banner._id}
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="relative rounded-lg p-4"
-              style={{ backgroundColor: styles.backgroundColor }}
-            >
-              <div className="flex items-center gap-3">
-                <div 
-                  className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center"
-                  style={{ backgroundColor: styles.iconBg, color: styles.textColor }}
-                >
-                  {getVariantIcon(variant)}
-                </div>
-                <div className="flex-1">
-                  <h4 className="text-sm font-semibold" style={{ color: styles.textColor }}>
-                    {banner.title}
-                  </h4>
-                  {banner.subtitle && (
-                    <p className="text-xs mt-1 opacity-90" style={{ color: styles.textColor }}>
-                      {banner.subtitle}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {banner.ctaText && (
-                    <Link
-                      href={banner.ctaLink || '#'}
-                      onClick={() => handleBannerClick(banner._id)}
-                      className="px-4 py-2 rounded-lg text-sm font-semibold transition-colors hover:brightness-110"
-                      style={{ backgroundColor: 'rgba(255,255,255,0.2)', color: styles.textColor }}
-                    >
-                      {banner.ctaText}
-                    </Link>
-                  )}
-                  {showClose && (
-                    <button
-                      onClick={() => handleClose(banner._id)}
-                      className="p-1 rounded-lg opacity-70 hover:opacity-100 transition-opacity"
-                      style={{ color: styles.textColor }}
-                    >
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
+      <div className="space-y-2">
+        {active.map(b => (
+          <motion.div
+            key={b._id}
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="relative rounded-xl p-4"
+            style={{ backgroundColor: getBg(b) }}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center flex-shrink-0 text-white">
+                <VariantIcon v={variant} />
               </div>
-            </motion.div>
-          );
-        })}
+              <div className="flex-1">
+                <p className="text-sm font-bold text-white">{b.title}</p>
+                {b.subtitle && <p className="text-xs text-white/75 mt-0.5">{b.subtitle}</p>}
+              </div>
+              <div className="flex items-center gap-2">
+                {b.ctaText && (
+                  <Link href={b.ctaLink || '#'} onClick={() => trackClick(b._id)}
+                    className="px-4 py-1.5 rounded-lg text-xs font-bold bg-white/20 hover:bg-white/30 text-white transition-colors">
+                    {b.ctaText}
+                  </Link>
+                )}
+                {showClose && (
+                  <button onClick={() => dismiss(b._id)} className="p-1 text-white/60 hover:text-white transition-colors">
+                    <Icon.PiXBold size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        ))}
       </div>
     );
   }
 
-  // Static Layout
+  // ── Static ─────────────────────────────────────────────────────────────────
   if (layout === 'static') {
-    const banner = activeBanners[0];
-    if (!banner) return null;
-
-    const styles = getVariantStyles(variant, banner.backgroundColor);
+    const b = active[0];
+    if (!b) return null;
     return (
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         className="relative"
-        style={{ backgroundColor: styles.backgroundColor }}
+        style={{ backgroundColor: getBg(b) }}
       >
-        <div className="container mx-auto px-4 py-3">
-          <div className="flex items-center justify-center gap-4">
-            <div 
-              className="flex items-center gap-2"
-              style={{ color: styles.textColor }}
-            >
-              {getVariantIcon(variant)}
-              <span className="text-sm font-medium">{banner.title}</span>
-            </div>
-            {banner.subtitle && (
-              <span className="text-sm opacity-90" style={{ color: styles.textColor }}>
-                {banner.subtitle}
-              </span>
-            )}
-            {banner.ctaText && (
-              <Link
-                href={banner.ctaLink || '#'}
-                onClick={() => handleBannerClick(banner._id)}
-                className="px-4 py-1.5 rounded-full text-xs font-semibold transition-colors hover:brightness-110"
-                style={{ backgroundColor: 'rgba(255,255,255,0.2)', color: styles.textColor }}
-              >
-                {banner.ctaText}
+        <div className="container mx-auto px-4 py-2.5">
+          <div className="flex items-center justify-center gap-3 flex-wrap">
+            <span className="text-white/80"><VariantIcon v={variant} /></span>
+            <span className="text-sm font-semibold text-white">{b.title}</span>
+            {b.subtitle && <span className="text-xs text-white/75 hidden sm:inline">— {b.subtitle}</span>}
+            {b.ctaText && (
+              <Link href={b.ctaLink || '#'} onClick={() => trackClick(b._id)}
+                className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-full text-xs font-bold text-white transition-colors">
+                {b.ctaText}
               </Link>
             )}
           </div>
         </div>
         {showClose && (
           <button
-            onClick={() => handleClose(banner._id)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs rounded opacity-50 hover:opacity-100 transition-opacity"
-            style={{ color: styles.textColor }}
+            onClick={() => dismiss(b._id)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors"
+            aria-label="Dismiss"
           >
-            ✕
+            <Icon.PiXBold size={14} />
           </button>
         )}
       </motion.div>
     );
   }
 
-  // Marquee Layout (Default)
+  // ── Marquee (default) ──────────────────────────────────────────────────────
+  // Duplicate items so the scroll appears seamless
+  const bg = getBg(active[0]);
+  const marqueeItems = [...active, ...active];   // duplicate for loop
+
   return (
-    <div className="relative" style={{ backgroundColor: getVariantStyles(variant, undefined).bg }}>
-      <div className="overflow-hidden py-3">
-        <div className="flex animate-marquee whitespace-nowrap">
-          {activeBanners.map((banner, index) => (
-            <React.Fragment key={banner._id}>
-              <div className="flex items-center gap-6 px-8" style={{ color: getVariantStyles(variant, banner.backgroundColor).textColor }}>
-                <div className="flex items-center gap-2">
-                  {getVariantIcon(variant)}
-                  <span className="text-sm font-medium">{banner.title}</span>
-                </div>
-                {banner.subtitle && (
-                  <>
-                    <span className="opacity-50">•</span>
-                    <span className="text-sm opacity-90">{banner.subtitle}</span>
-                  </>
-                )}
-                {banner.ctaText && (
-                  <>
-                    <span className="opacity-50">•</span>
-                    <Link
-                      href={banner.ctaLink || '#'}
-                      onClick={() => handleBannerClick(banner._id)}
-                      className="text-sm font-semibold hover:underline"
-                    >
-                      {banner.ctaText}
-                    </Link>
-                  </>
-                )}
-              </div>
-              {index < activeBanners.length - 1 && (
-                <span className="opacity-30">|</span>
-              )}
-            </React.Fragment>
-          ))}
-        </div>
-      </div>
-      
-      {/* Reset Button */}
-      {dismissedIds.size > 0 && (
-        <button
-          onClick={handleReset}
-          className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 text-xs rounded opacity-50 hover:opacity-100 transition-opacity"
-          style={{ color: getVariantStyles(variant, undefined).textColor }}
+    <div
+      className="relative overflow-hidden"
+      style={{ backgroundColor: bg }}
+      onMouseEnter={() => pauseOnHover && setPaused(true)}
+      onMouseLeave={() => pauseOnHover && setPaused(false)}
+    >
+      <div className="py-2.5">
+        <motion.div
+          ref={trackRef}
+          animate={{ x: paused ? undefined : ['0%', '-50%'] }}
+          transition={{ repeat: Infinity, duration: active.length * scrollSpeed, ease: 'linear' }}
+          className="flex whitespace-nowrap"
         >
-          Reset
-        </button>
-      )}
+          {marqueeItems.map((b, idx) => (
+            <span key={`${b._id}-${idx}`} className="inline-flex items-center gap-4 px-6">
+              <span className="text-white/70 flex-shrink-0"><VariantIcon v={variant} /></span>
+              <span className="text-sm font-semibold text-white">{b.title}</span>
+              {b.subtitle && (
+                <>
+                  <span className="text-white/30">•</span>
+                  <span className="text-sm text-white/75">{b.subtitle}</span>
+                </>
+              )}
+              {b.ctaText && (
+                <>
+                  <span className="text-white/30">•</span>
+                  <Link
+                    href={b.ctaLink || '#'}
+                    onClick={() => trackClick(b._id)}
+                    className="text-sm font-bold text-white hover:underline"
+                  >
+                    {b.ctaText} →
+                  </Link>
+                </>
+              )}
+              <span className="text-white/20 ml-4">◆</span>
+            </span>
+          ))}
+        </motion.div>
+      </div>
+
+      {/* Fade edges */}
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-16 z-10"
+        style={{ background: `linear-gradient(to right, ${bg}, transparent)` }} />
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-16 z-10"
+        style={{ background: `linear-gradient(to left, ${bg}, transparent)` }} />
     </div>
   );
 };
