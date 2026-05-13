@@ -238,7 +238,7 @@ export default function CheckoutPage() {
     setAddressDetails(details);
     setForm(f => ({
       ...f,
-      address: details.street || details.formatted || f.address,
+      address: details.formatted || details.street || f.address,
       zipCode: details.postcode || f.zipCode,
       ...(details.state ? { state: matchNigerianState(details.state) } : {}),
     }));
