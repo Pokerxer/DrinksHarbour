@@ -48,6 +48,7 @@ export interface Order {
   shippingAddress?: ShippingAddress;
   shippingMethod?: string;
   shippingInfo?: any;
+  platformCommissionTotal?: number;
   status: string;
   placedAt: string;
   confirmedAt?: string;

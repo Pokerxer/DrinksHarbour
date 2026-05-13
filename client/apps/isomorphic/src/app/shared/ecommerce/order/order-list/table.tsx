@@ -328,6 +328,7 @@ export default function OrderTable({
                   <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer whitespace-nowrap" onClick={() => handleSort('total')}>
                     Total <SortIcon field="total" />
                   </th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Platform Profit</th>
                   <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Payment</th>
                   <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer whitespace-nowrap" onClick={() => handleSort('placedAt')}>
@@ -363,6 +364,15 @@ export default function OrderTable({
                       </td>
                       <td className="px-5 py-4 font-semibold text-gray-900 whitespace-nowrap">
                         {fmt(order.totalAmount)}
+                      </td>
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        {order.platformCommissionTotal != null && order.platformCommissionTotal > 0 ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-50 text-violet-700 text-xs font-semibold">
+                            {fmt(order.platformCommissionTotal)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
+                        )}
                       </td>
                       <td className="px-5 py-4">
                         <StatusBadge status={order.status} />

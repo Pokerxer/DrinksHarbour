@@ -851,6 +851,12 @@ export default function OrderView({
                 <div className="flex justify-between border-t border-muted pt-4 text-base font-semibold">
                   Total <span>{formatCurrency(order.totalAmount, order.currency)}</span>
                 </div>
+                {order.platformCommissionTotal != null && order.platformCommissionTotal > 0 && (
+                  <div className="flex justify-between items-center rounded-lg bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-700">
+                    Platform Profit
+                    <span>{formatCurrency(order.platformCommissionTotal, order.currency)}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
