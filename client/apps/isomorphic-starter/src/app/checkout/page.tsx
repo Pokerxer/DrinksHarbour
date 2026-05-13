@@ -233,16 +233,17 @@ export default function CheckoutPage() {
   // Called automatically by AddressAutocomplete with the best-match coordinates
   // (even when user hasn't selected from the dropdown). Updates shipping coords
   // without touching form.address — so the customer's typed address is preserved.
-  // Called when user pins/drags on the map — updates coords AND auto-fills address fields
+  // Called when user pins/drags on the map — always updates address from reverse geocode
   const handleMapLocationChange = useCallback((details: AddressDetails) => {
     setAddressDetails(details);
     setForm(f => ({
       ...f,
-      // Fill address from reverse geocode if the user hasn't typed anything yet
-      address:  f.address || details.street || details.formatted || f.address,
-      zipCode:  details.postcode || f.zipCode,
+      address: details.street || details.formatted || f.address,
+      zipCode: details.postcode || f.zipCode,
       ...(details.state ? { state: matchNigerianState(details.state) } : {}),
     }));
+    // Clear address validation error when map sets it
+    setErrors(prev => { const n = { ...prev }; delete n.address; return n; });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleBestMatch = useCallback((details: AddressDetails | null) => {
