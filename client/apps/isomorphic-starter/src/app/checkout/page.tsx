@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import Script from 'next/script';
@@ -19,56 +19,38 @@ declare global {
   interface Window { PaystackPop?: any; }
 }
 
-const NIGERIAN_STATES = [
-  'Abia','Adamawa','Akwa Ibom','Anambra','Bauchi','Bayelsa','Benue','Borno',
-  'Cross River','Delta','Ebonyi','Edo','Ekiti','Enugu','FCT - Abuja','Gombe',
-  'Imo','Jigawa','Kaduna','Kano','Katsina','Kebbi','Kogi','Kwara','Lagos',
-  'Nasarawa','Niger','Ogun','Ondo','Osun','Oyo','Plateau','Rivers','Sokoto',
-  'Taraba','Yobe','Zamfara',
-];
-
-// Zone-based delivery fees dispatched from Abuja warehouse (base rate, single bottle)
-// Full range shown on /shipping-info. Cartons attract higher fees at dispatch.
 const FREE_DELIVERY_THRESHOLD = 2_000_000;
-
-const SHIPPING_ZONES: { states: string[]; fee: number; label: string }[] = [
-  { states: ['FCT - Abuja'],                                                            fee: 2_500,  label: 'Zone 1 — FCT (Local)' },
-  { states: ['Nasarawa', 'Niger', 'Kogi'],                                              fee: 10_000, label: 'Zone 2 — Abuja Environs' },
-  { states: ['Kaduna', 'Plateau', 'Benue', 'Kwara'],                                   fee: 15_000, label: 'Zone 3 — North Central' },
-  { states: ['Lagos', 'Ogun', 'Oyo', 'Ondo', 'Osun', 'Ekiti'],                        fee: 20_000, label: 'Zone 4 — Southwest' },
-  { states: ['Enugu', 'Anambra', 'Imo', 'Abia', 'Ebonyi',
-             'Rivers', 'Delta', 'Edo', 'Bayelsa', 'Cross River', 'Akwa Ibom'],         fee: 20_000, label: 'Zone 5 — SE & South-South' },
-  { states: ['Kano', 'Katsina', 'Sokoto', 'Borno', 'Bauchi',
-             'Gombe', 'Yobe', 'Kebbi', 'Zamfara', 'Jigawa', 'Adamawa', 'Taraba'],     fee: 18_000, label: 'Zone 6 — Far North' },
-];
-
-function getShippingFee(state: string, subtotal: number): { fee: number; zone: string } {
-  if (subtotal >= FREE_DELIVERY_THRESHOLD) return { fee: 0, zone: 'Free delivery' };
-  if (!state) return { fee: 0, zone: '' }; // no state selected yet — show 0 until filled
-  const zone = SHIPPING_ZONES.find(z => z.states.some(s => s.toLowerCase() === state.toLowerCase()));
-  return zone ? { fee: zone.fee, zone: zone.label } : { fee: 30_000, zone: 'Zone 7 — Remote' };
-}
-
-function matchNigerianState(raw: string): string {
-  const s = raw.trim();
-  const exact = NIGERIAN_STATES.find(n => n.toLowerCase() === s.toLowerCase());
-  if (exact) return exact;
-  if (/federal capital territory|abuja/i.test(s)) return 'FCT - Abuja';
-  const stripped = s.replace(/\s+state$/i, '').trim();
-  return NIGERIAN_STATES.find(n => n.toLowerCase() === stripped.toLowerCase())
-    || NIGERIAN_STATES.find(n => n.toLowerCase().includes(stripped.toLowerCase()) || stripped.toLowerCase().includes(n.toLowerCase()))
-    || s;
-}
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(n);
 
+interface ShippingRate {
+  fee: number;
+  zone: string;
+  label: string;
+  deliveryDaysMin: number;
+  deliveryDaysMax: number;
+  isFree: boolean;
+  remaining: number;
+  source?: 'google' | 'zone';
+  routeType?: 'direct' | 'single-vendor' | 'multi-vendor';
+  stops?: number;
+  distanceKm?: number;
+}
+
 interface FormData {
   firstName: string; lastName: string; email: string; phone: string;
-  address: string; city: string; state: string; zipCode: string; country: string;
+  address: string; lga: string; state: string; zipCode: string; country: string;
   paymentMethod: 'card' | 'bank_transfer' | 'cash_on_delivery';
 }
 type FormErrors = Partial<Record<keyof FormData, string>>;
+
+// Map display names → package-compatible names for API calls
+function toApiState(state: string): string {
+  if (!state) return '';
+  if (/^fct/i.test(state) || /abuja/i.test(state)) return 'Federal Capital Territory';
+  return state;
+}
 
 const PAYMENT_METHODS = [
   { id: 'cash_on_delivery', name: 'Cash on Delivery',   description: 'Pay cash when your order arrives', icon: Icon.PiMoneyBold, badge: null },
@@ -127,6 +109,14 @@ export default function CheckoutPage() {
   const [stripeData,      setStripeData]      = useState<{ clientSecret: string; paymentIntentId: string } | null>(null);
   const [paystackReady,   setPaystackReady]   = useState(false);
   const [addressDetails,  setAddressDetails]  = useState<AddressDetails | null>(null);
+
+  // LGA state
+  const [lgaList,         setLgaList]         = useState<string[]>([]);
+  const [lgaLoading,      setLgaLoading]      = useState(false);
+  const [shippingRate,    setShippingRate]     = useState<ShippingRate | null>(null);
+  const [shippingLoading, setShippingLoading] = useState(false);
+  const shippingDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Validation modal state
   const [validationIssues, setValidationIssues] = useState<Array<{ name: string; status: string; currentPrice?: number; oldPrice?: number; maxQuantity?: number | null }>>([]);
   const [showValidationModal, setShowValidationModal] = useState(false);
@@ -134,7 +124,7 @@ export default function CheckoutPage() {
 
   const [form, setForm] = useState<FormData>({
     firstName: '', lastName: '', email: '', phone: '',
-    address: '', city: '', state: '', zipCode: '', country: 'Nigeria',
+    address: '', lga: '', state: '', zipCode: '', country: 'Nigeria',
     paymentMethod: 'cash_on_delivery',
   });
   const [errors, setErrors] = useState<FormErrors>({});
@@ -163,9 +153,59 @@ export default function CheckoutPage() {
     } catch {}
   }, [mounted]);
 
+  // ── Fetch LGA list when state changes ────────────────────────────────────
+  useEffect(() => {
+    if (!form.state) { setLgaList([]); setShippingRate(null); return; }
+    setLgaLoading(true);
+    setForm(f => ({ ...f, lga: '' }));
+    setShippingRate(null);
+    fetch(`${API_URL}/api/shipping/lgas?state=${encodeURIComponent(toApiState(form.state))}`)
+      .then(r => r.json())
+      .then(d => setLgaList(d.success ? d.data : []))
+      .catch(() => setLgaList([]))
+      .finally(() => setLgaLoading(false));
+  }, [form.state]);
+
+  // ── Calculate shipping whenever state, LGA, subtotal, or address changes ──
+  const subtotal = cartState.cartArray.reduce((s, i) => s + i.price * (i.quantity || 1), 0);
+
+  // Unique vendor IDs across all cart items (for multi-vendor route pricing)
+  const vendorIds = [...new Set(
+    cartState.cartArray
+      .map(i => i.selectedVendorId || i.tenantId)
+      .filter(Boolean)
+  )];
+
+  useEffect(() => {
+    if (!form.state) return;
+    if (shippingDebounce.current) clearTimeout(shippingDebounce.current);
+    shippingDebounce.current = setTimeout(() => {
+      setShippingLoading(true);
+      const params = new URLSearchParams({
+        state:    form.state,
+        lga:      form.lga || '',
+        subtotal: String(subtotal),
+      });
+      if (addressDetails?.lat && addressDetails?.lon) {
+        params.set('lat', String(addressDetails.lat));
+        params.set('lon', String(addressDetails.lon));
+      }
+      // Pass vendor IDs for multi-vendor route distance calculation
+      if (vendorIds.length >= 2) {
+        params.set('vendors', vendorIds.join(','));
+      }
+      fetch(`${API_URL}/api/shipping/calculate?${params}`)
+        .then(r => r.json())
+        .then(d => { if (d.success) setShippingRate(d.data); })
+        .catch(() => {})
+        .finally(() => setShippingLoading(false));
+    }, 350);
+    return () => { if (shippingDebounce.current) clearTimeout(shippingDebounce.current); };
+  }, [form.state, form.lga, subtotal, addressDetails]);
+
   // ── Derived totals ────────────────────────────────────────────────────────
-  const subtotal  = cartState.cartArray.reduce((s, i) => s + i.price * (i.quantity || 1), 0);
-  const { fee: shipping, zone: shippingZone } = getShippingFee(form.state, subtotal);
+  const shipping    = shippingRate?.fee ?? 0;
+  const shippingZone = shippingRate?.label ?? '';
   const discount  = Math.min(couponDiscount, subtotal);
   const total     = Math.max(0, subtotal - discount + shipping);
 
@@ -177,15 +217,43 @@ export default function CheckoutPage() {
   };
 
   const handleAddressSelect = (address: string, details?: AddressDetails) => {
+    // Always save the address as typed — do not replace with geocoded display name.
+    // Coordinates from details (if any) are used only for shipping calculation.
     setAddressDetails(details ?? null);
     setForm(f => ({
       ...f,
       address,
-      ...(details?.city     ? { city:    details.city } : {}),
       ...(details?.postcode ? { zipCode: details.postcode } : {}),
       ...(details?.state    ? { state:   matchNigerianState(details.state) } : {}),
+      // lga intentionally not auto-set — user must pick from dropdown for accuracy
     }));
   };
+
+  // Called automatically by AddressAutocomplete with the best-match coordinates
+  // (even when user hasn't selected from the dropdown). Updates shipping coords
+  // without touching form.address — so the customer's typed address is preserved.
+  const handleBestMatch = useCallback((details: AddressDetails | null) => {
+    setAddressDetails(prev => {
+      // Don't override coords if user already made an explicit selection
+      // (explicit selection passes details through handleAddressSelect directly)
+      return details;
+    });
+  }, []);
+
+  // Keep matchNigerianState local since we removed the module-level version
+  function matchNigerianState(raw: string): string {
+    const s = raw.trim();
+    if (/federal capital territory|abuja/i.test(s)) return 'FCT - Abuja';
+    const stripped = s.replace(/\s+state$/i, '').trim();
+    const STATES = ['Abia','Adamawa','Akwa Ibom','Anambra','Bauchi','Bayelsa','Benue','Borno',
+      'Cross River','Delta','Ebonyi','Edo','Ekiti','Enugu','FCT - Abuja','Gombe','Imo','Jigawa',
+      'Kaduna','Kano','Katsina','Kebbi','Kogi','Kwara','Lagos','Nasarawa','Niger','Ogun','Ondo',
+      'Osun','Oyo','Plateau','Rivers','Sokoto','Taraba','Yobe','Zamfara'];
+    return STATES.find(n => n.toLowerCase() === s.toLowerCase())
+      || STATES.find(n => n.toLowerCase() === stripped.toLowerCase())
+      || STATES.find(n => n.toLowerCase().includes(stripped.toLowerCase()))
+      || s;
+  }
 
   const validate = useCallback((): boolean => {
     const e: FormErrors = {};
@@ -195,8 +263,8 @@ export default function CheckoutPage() {
     else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = 'Invalid email';
     if (!form.phone.trim())     e.phone     = 'Required';
     if (!form.address.trim())   e.address   = 'Required';
-    if (!form.city.trim())      e.city      = 'Required';
     if (!form.state.trim())     e.state     = 'Required';
+    if (!form.lga.trim())       e.lga       = 'Select your LGA';
     setErrors(e);
     return Object.keys(e).length === 0;
   }, [form]);
@@ -214,10 +282,27 @@ export default function CheckoutPage() {
     }));
 
   const buildShipping = () => ({
-    address: form.address, city: form.city, state: form.state,
-    zipCode: form.zipCode, country: form.country,
+    address: form.address,
+    lga: form.lga,
+    city: form.lga,   // keep city = lga for backend compat
+    state: form.state,
+    zipCode: form.zipCode,
+    country: form.country,
+    ...(shippingRate ? { shippingZone: shippingRate.zone, shippingLabel: shippingRate.label } : {}),
     ...(addressDetails ? { coordinates: { latitude: addressDetails.lat, longitude: addressDetails.lon } } : {}),
   });
+
+  const buildShippingInfo = () => shippingRate ? ({
+    distanceKm:  shippingRate.distanceKm ?? null,
+    routeType:   shippingRate.routeType  ?? null,
+    stops:       shippingRate.stops      ?? null,
+    daysMin:     shippingRate.deliveryDaysMin ?? null,
+    daysMax:     shippingRate.deliveryDaysMax ?? null,
+    zone:        shippingRate.zone       ?? null,
+    zoneLabel:   shippingRate.label      ?? null,
+    isFree:      shippingRate.isFree     ?? false,
+    source:      shippingRate.source     ?? null,
+  }) : null;
 
   const buildCustomer = () => ({
     firstName: form.firstName, lastName: form.lastName,
@@ -239,6 +324,7 @@ export default function CheckoutPage() {
         items: buildItems(),
         subtotal,
         shippingFee: shipping,
+        shippingInfo: buildShippingInfo(),
         total,
         couponCode: appliedCoupon || undefined,
         status: 'processing',
@@ -368,7 +454,7 @@ export default function CheckoutPage() {
         reference: data.data.reference,
         formData: { customer: buildCustomer(), shipping: buildShipping() },
         cartItems: cartState.cartArray,
-        subtotal, shippingFee: shipping, total,
+        subtotal, shippingFee: shipping, shippingInfo: buildShippingInfo(), total,
         couponCode: appliedCoupon,
       };
       localStorage.setItem('pendingPayment', JSON.stringify(pending));
@@ -393,7 +479,7 @@ export default function CheckoutPage() {
           shipping: buildShipping(),
           paymentMethod: 'cash_on_delivery',
           items: buildItems(),
-          subtotal, shippingFee: shipping, total,
+          subtotal, shippingFee: shipping, shippingInfo: buildShippingInfo(), total,
           couponCode: appliedCoupon || undefined,
         }),
       });
@@ -690,30 +776,111 @@ export default function CheckoutPage() {
                     <AddressAutocomplete
                       value={form.address}
                       onChange={handleAddressSelect}
+                      onBestMatch={handleBestMatch}
                       onClearError={() => {}}
                       error={errors.address}
                       label="Street Address"
-                      placeholder="Start typing your address…"
+                      placeholder="Estate, street or landmark…"
                     />
-                    <div className="grid sm:grid-cols-3 gap-4">
-                      <Field label="City / LGA" name="city" icon={Icon.PiBuildingsBold} value={form.city} error={errors.city} onChange={handleChange} />
+
+                    {/* State + LGA row */}
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      {/* State */}
                       <div>
-                        <label className="text-xs font-semibold text-gray-600 mb-1.5 block">State <span className="text-red-500">*</span></label>
+                        <label className="text-xs font-semibold text-gray-600 mb-1.5 block">
+                          State <span className="text-red-500">*</span>
+                        </label>
                         <div className="relative">
                           <Icon.PiMapPinBold size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                           <select
                             name="state" value={form.state} onChange={handleChange}
                             className={`${inputCls(errors.state)} pl-10 pr-8 appearance-none`}
                           >
-                            <option value="">Select…</option>
-                            {NIGERIAN_STATES.map(s => <option key={s}>{s}</option>)}
+                            <option value="">Select state…</option>
+                            {[
+                              'Abia','Adamawa','Akwa Ibom','Anambra','Bauchi','Bayelsa','Benue','Borno',
+                              'Cross River','Delta','Ebonyi','Edo','Ekiti','Enugu','FCT - Abuja','Gombe',
+                              'Imo','Jigawa','Kaduna','Kano','Katsina','Kebbi','Kogi','Kwara','Lagos',
+                              'Nasarawa','Niger','Ogun','Ondo','Osun','Oyo','Plateau','Rivers','Sokoto',
+                              'Taraba','Yobe','Zamfara',
+                            ].map(s => <option key={s}>{s}</option>)}
                           </select>
                           <Icon.PiCaretDownBold size={12} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                         </div>
                         {errors.state && <p className="mt-1 text-xs text-red-500 flex items-center gap-1"><Icon.PiWarningCircleBold size={11} />{errors.state}</p>}
                       </div>
-                      <Field label="Postal Code" name="zipCode" required={false} icon={Icon.PiMapTrifoldBold} value={form.zipCode} onChange={handleChange} />
+
+                      {/* LGA */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1.5">
+                          Local Government Area (LGA) <span className="text-red-500">*</span>
+                          {lgaLoading && <span className="w-3 h-3 rounded-full border-2 border-red-200 border-t-red-600 animate-spin" />}
+                        </label>
+                        <div className="relative">
+                          <Icon.PiBuildingsBold size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                          <select
+                            name="lga" value={form.lga} onChange={handleChange}
+                            disabled={!form.state || lgaLoading}
+                            className={`${inputCls(errors.lga)} pl-10 pr-8 appearance-none disabled:opacity-50 disabled:cursor-not-allowed`}
+                          >
+                            <option value="">
+                              {!form.state ? 'Select state first' : lgaLoading ? 'Loading…' : 'Select LGA…'}
+                            </option>
+                            {lgaList.map(l => <option key={l} value={l}>{l}</option>)}
+                          </select>
+                          <Icon.PiCaretDownBold size={12} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                        </div>
+                        {errors.lga && <p className="mt-1 text-xs text-red-500 flex items-center gap-1"><Icon.PiWarningCircleBold size={11} />{errors.lga}</p>}
+                      </div>
                     </div>
+
+                    {/* Shipping rate preview card */}
+                    <AnimatePresence>
+                      {form.state && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                          className={`rounded-xl border px-4 py-3 flex items-center gap-3 text-sm ${
+                            shippingRate?.isFree
+                              ? 'bg-green-50 border-green-200'
+                              : 'bg-blue-50 border-blue-200'
+                          }`}
+                        >
+                          {shippingLoading ? (
+                            <>
+                              <span className="w-4 h-4 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin flex-shrink-0" />
+                              <span className="text-blue-600 text-xs">Calculating delivery fee…</span>
+                            </>
+                          ) : shippingRate ? (
+                            <>
+                              <Icon.PiTruckBold size={18} className={shippingRate.isFree ? 'text-green-600 flex-shrink-0' : 'text-blue-600 flex-shrink-0'} />
+                              <div className="flex-1 min-w-0">
+                                <p className={`font-bold ${shippingRate.isFree ? 'text-green-700' : 'text-blue-800'}`}>
+                                  {shippingRate.isFree ? 'Free Delivery' : fmt(shippingRate.fee)}
+                                  {!shippingRate.isFree && !form.lga && (
+                                    <span className="text-xs font-normal text-blue-500 ml-1.5">(select LGA for exact rate)</span>
+                                  )}
+                                </p>
+                                <p className={`text-xs mt-0.5 ${shippingRate.isFree ? 'text-green-600' : 'text-blue-600'}`}>
+                                  {shippingRate.isFree
+                                    ? 'Your order qualifies for free delivery!'
+                                    : shippingRate.source === 'google' && shippingRate.distanceKm
+                                      ? `~${shippingRate.distanceKm} km${shippingRate.routeType === 'multi-vendor' ? ` · ${shippingRate.stops} pickup stops` : ''} · Est. ${shippingRate.deliveryDaysMin}–${shippingRate.deliveryDaysMax} business days`
+                                      : `${shippingRate.label} · Est. ${shippingRate.deliveryDaysMin}–${shippingRate.deliveryDaysMax} business days`
+                                  }
+                                </p>
+                                {!shippingRate.isFree && shippingRate.remaining > 0 && (
+                                  <p className="text-xs text-blue-500 mt-0.5">
+                                    Add {fmt(shippingRate.remaining)} more to get free delivery
+                                  </p>
+                                )}
+                              </div>
+                            </>
+                          ) : null}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    <Field label="Postal Code" name="zipCode" required={false} icon={Icon.PiMapTrifoldBold} value={form.zipCode} onChange={handleChange} />
                   </div>
                 </div>
 
@@ -841,22 +1008,48 @@ export default function CheckoutPage() {
                         </div>
                       )}
                       <div className="flex justify-between text-gray-600">
-                        <span>Delivery{shippingZone ? <> <span className="text-[11px] text-gray-400">({shippingZone})</span></> : null}</span>
-                        <span className={`font-semibold ${shipping === 0 && form.state ? 'text-green-600' : ''}`}>
+                        <span className="flex items-center gap-1">
+                          Delivery
+                          {shippingLoading && <span className="w-2.5 h-2.5 rounded-full border-2 border-gray-200 border-t-gray-500 animate-spin" />}
+                        </span>
+                        <span className={`font-semibold ${shippingRate?.isFree ? 'text-green-600' : ''}`}>
                           {!form.state
                             ? <span className="text-gray-400 text-xs">Select state</span>
-                            : shipping === 0 ? 'Free' : fmt(shipping)}
+                            : !form.lga
+                              ? <span className="text-gray-400 text-xs">Select LGA</span>
+                              : shippingLoading
+                                ? <span className="text-gray-400 text-xs">…</span>
+                                : shipping === 0 ? 'Free' : fmt(shipping)}
                         </span>
                       </div>
-                      {shipping === 0 && subtotal >= FREE_DELIVERY_THRESHOLD && (
-                        <p className="text-xs text-green-600 flex items-center gap-1">
-                          <Icon.PiCheckCircleBold size={12} /> Free delivery on orders ≥ ₦2,000,000
-                        </p>
-                      )}
-                      {form.state && shipping > 0 && (
-                        <p className="text-xs text-gray-400 flex items-center gap-1">
-                          <Icon.PiInfoBold size={12} /> Base rate — cartons &amp; bulk orders may cost more
-                        </p>
+                      {shippingRate && !shippingLoading && (
+                        <div className="text-xs text-gray-400 space-y-0.5">
+                          {shippingRate.isFree ? (
+                            <p className="text-green-600 flex items-center gap-1">
+                              <Icon.PiCheckCircleBold size={12} /> Free delivery — order qualifies!
+                            </p>
+                          ) : (
+                            <>
+                              {shippingRate.source === 'google' && shippingRate.distanceKm ? (
+                                <p className="flex items-center gap-1">
+                                  <Icon.PiRoadHorizonBold size={11} />
+                                  ~{shippingRate.distanceKm} km by road
+                                  {shippingRate.routeType === 'multi-vendor' && ` · ${shippingRate.stops} pickup stops`}
+                                </p>
+                              ) : (
+                                <p className="flex items-center gap-1">
+                                  <Icon.PiMapPinBold size={11} /> {shippingZone}
+                                </p>
+                              )}
+                              <p className="flex items-center gap-1">
+                                <Icon.PiCalendarBold size={11} /> Est. {shippingRate.deliveryDaysMin}–{shippingRate.deliveryDaysMax} business days
+                              </p>
+                              <p className="flex items-center gap-1">
+                                <Icon.PiInfoBold size={11} /> Base rate — bulk/carton orders may vary
+                              </p>
+                            </>
+                          )}
+                        </div>
                       )}
                     </div>
 

@@ -202,7 +202,7 @@ const categorySchema = new Schema(
       default: false,
     },
     
-    isNew: {
+    isNewArrival: {
       type: Boolean,
       default: false,
     },

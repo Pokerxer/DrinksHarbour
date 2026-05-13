@@ -133,7 +133,7 @@ const notificationSchema = new Schema(
 
     expiresAt: {
       type: Date,
-      index: true,
+      // index defined below via notificationSchema.index() with expireAfterSeconds
     },
 
     isArchived: {

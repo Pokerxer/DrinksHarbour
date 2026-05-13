@@ -281,6 +281,21 @@ const orderSchema = new Schema(
     cancelReason: String,
 
     // ────────────────────────────────────────────────
+    // Shipping Calculation Metadata
+    // ────────────────────────────────────────────────
+    shippingInfo: {
+      distanceKm:   { type: Number, default: null },
+      routeType:    { type: String, enum: ['direct', 'single-vendor', 'multi-vendor'], default: null },
+      stops:        { type: Number, default: null },
+      daysMin:      { type: Number, default: null },
+      daysMax:      { type: Number, default: null },
+      zone:         { type: String, default: null },
+      zoneLabel:    { type: String, default: null },
+      isFree:       { type: Boolean, default: false },
+      source:       { type: String, enum: ['google', 'zone'], default: null },
+    },
+
+    // ────────────────────────────────────────────────
     // Revenue & Platform Tracking
     // ────────────────────────────────────────────────
     platformCommissionTotal: {

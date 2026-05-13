@@ -41,6 +41,8 @@ const uomConversionRoutes = require('./routes/uomConversion.routes');
 const exchangeRateRoutes = require('./routes/exchangeRate.routes');
 const chatbotRoutes = require('./routes/chatbot.routes');
 const bannerGeminiRoutes = require('./routes/banner-gemini.routes');
+const shippingRoutes = require('./routes/shipping.routes');
+const placesRoutes   = require('./routes/places.routes');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -131,13 +133,9 @@ const limiter = rateLimit({
   max: isProduction ? 100 : 1000,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: { success: false, message: 'Too many requests, please try again later.' },
-  keyGenerator: (req) => {
-    return req.headers['x-forwarded-for']?.split(',')[0].trim() || req.ip;
-  },
-  skip: (req) => {
-    return req.path === '/health' || req.path === '/api/ping';
-  },
+  skip: (req) => req.path === '/health' || req.path === '/api/ping',
 });
 app.use('/api', limiter);
 
@@ -180,6 +178,8 @@ app.use('/api/whatsapp', require('./routes/whatsapp.routes'));
 app.use('/api/contact', require('./routes/contact.routes'));
 app.use('/api/pinterest', require('./routes/pinterest.routes'));
 app.use('/api/banner-ai', bannerGeminiRoutes);
+app.use('/api/shipping', shippingRoutes);
+app.use('/api/places',  placesRoutes);
 
 // ────────────────────────────────────────────────
  // Health Check Endpoint

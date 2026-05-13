@@ -1,24 +1,31 @@
 // services/email.service.js
 const nodemailer = require('nodemailer');
 const { google } = require('googleapis');
+const path = require('path');
+const fs   = require('fs');
+
+// ─── Logo (base64-embedded so it renders in all email clients regardless of env) ─
+const LOGO_PATH = path.join(__dirname, '../../client/apps/isomorphic-starter/public/images/logo.png');
+const LOGO_SRC  = fs.existsSync(LOGO_PATH)
+  ? 'data:image/png;base64,' + fs.readFileSync(LOGO_PATH).toString('base64')
+  : `${process.env.FRONTEND_URL || 'https://drinksharbour.com'}/images/logo.png`;
 
 // Email sending status
 let emailServiceReady = false;
 let transporter = null;
 
 // Check if Google OAuth credentials are properly configured
-const hasGoogleOAuth = process.env.MAILING_SERVICE_CLIENT_ID && 
+const hasGoogleOAuth = process.env.MAILING_SERVICE_CLIENT_ID &&
                       process.env.MAILING_SERVICE_CLIENT_SECRET &&
                       process.env.MAILING_REFRESH_TOKEN &&
                       !process.env.MAILING_SERVICE_CLIENT_ID?.includes('your-');
 
 // Check if simple SMTP credentials are configured
-const hasSimpleSMTP = process.env.MAIL_PASSWORD && 
+const hasSimpleSMTP = process.env.MAIL_PASSWORD &&
                      !process.env.MAIL_PASSWORD?.includes('your-');
 
 // Initialize email service
 const initializeEmailService = async () => {
-  // Try simple SMTP first (with app password)
   if (hasSimpleSMTP) {
     try {
       transporter = nodemailer.createTransport({
@@ -30,8 +37,6 @@ const initializeEmailService = async () => {
           pass: process.env.MAIL_PASSWORD,
         },
       });
-
-      // Test connection
       await transporter.verify();
       emailServiceReady = true;
       console.log('✅ Email service initialized (Simple SMTP)');
@@ -41,7 +46,6 @@ const initializeEmailService = async () => {
     }
   }
 
-  // Fall back to Google OAuth2
   if (hasGoogleOAuth) {
     try {
       const oauth2Client = new google.auth.OAuth2(
@@ -49,14 +53,8 @@ const initializeEmailService = async () => {
         process.env.MAILING_SERVICE_CLIENT_SECRET,
         'https://developers.google.com/oauthplayground'
       );
-
-      oauth2Client.setCredentials({
-        refresh_token: process.env.MAILING_REFRESH_TOKEN,
-      });
-
-      // Try to get access token
+      oauth2Client.setCredentials({ refresh_token: process.env.MAILING_REFRESH_TOKEN });
       await oauth2Client.getAccessToken();
-
       transporter = nodemailer.createTransport({
         service: 'gmail',
         auth: {
@@ -68,7 +66,6 @@ const initializeEmailService = async () => {
           accessToken: oauth2Client.getAccessToken(),
         },
       });
-
       emailServiceReady = true;
       console.log('✅ Email service initialized (Google OAuth2)');
       return;
@@ -77,404 +74,165 @@ const initializeEmailService = async () => {
     }
   }
 
-  // No credentials configured
   console.log('⚠️  Mailing service not configured, using development mode');
   emailServiceReady = false;
 };
 
-// Initialize on module load
 initializeEmailService();
 
-// Helper function for formatting Nigerian Naira
-const formatCurrency = (amount) => {
-  return new Intl.NumberFormat('en-NG', {
-    style: 'currency',
-    currency: 'NGN',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const formatCurrency = (amount) =>
+  new Intl.NumberFormat('en-NG', {
+    style: 'currency', currency: 'NGN',
+    minimumFractionDigits: 0, maximumFractionDigits: 0,
   }).format(amount || 0);
-};
 
-// Helper function for date formatting
-const formatDate = (dateString) => {
-  return new Date(dateString).toLocaleDateString('en-NG', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+const formatDate = (dateString) =>
+  new Date(dateString).toLocaleDateString('en-NG', {
+    weekday: 'long', year: 'numeric', month: 'long',
+    day: 'numeric', hour: '2-digit', minute: '2-digit',
   });
-};
 
-// Helper function for payment status badge
-const getPaymentStatusBadge = (status) => {
-  const styles = {
-    pending: { bg: '#fef3c7', text: '#92400e', border: '#fcd34d' },
-    paid: { bg: '#d1fae5', text: '#065f46', border: '#34d399' },
-    failed: { bg: '#fee2e2', text: '#991b1b', border: '#fca5a5' },
-    refunded: { bg: '#e0e7ff', text: '#3730a3', border: '#a5b4fc' },
+const capitalize = (s) =>
+  (s || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+/** Small coloured badge using inline-block span (works in most clients) */
+const badge = (label, bg, color, border) =>
+  `<span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background-color:${bg};color:${color};border:1px solid ${border};text-transform:capitalize;">${label}</span>`;
+
+const paymentBadge = (status) => {
+  const map = {
+    paid:     ['#d1fae5','#065f46','#34d399'],
+    pending:  ['#fef3c7','#92400e','#fcd34d'],
+    failed:   ['#fee2e2','#991b1b','#fca5a5'],
+    refunded: ['#e0e7ff','#3730a3','#a5b4fc'],
   };
-  
-  const style = styles[status?.toLowerCase()] || styles.pending;
-  
-  return `
-    <span style="
-      display: inline-block;
-      padding: 4px 12px;
-      border-radius: 9999px;
-      font-size: 12px;
-      font-weight: 600;
-      background-color: ${style.bg};
-      color: ${style.text};
-      border: 1px solid ${style.border};
-      text-transform: capitalize;
-    ">${status || 'Pending'}</span>
-  `;
+  const [bg, color, border] = map[status?.toLowerCase()] || map.pending;
+  return badge(status || 'Pending', bg, color, border);
 };
 
-// Helper function for order status badge
-const getOrderStatusBadge = (status) => {
-  const styles = {
-    pending: { bg: '#fef3c7', text: '#92400e', border: '#fcd34d' },
-    processing: { bg: '#dbeafe', text: '#1e40af', border: '#60a5fa' },
-    shipped: { bg: '#e0e7ff', text: '#3730a3', border: '#818cf8' },
-    delivered: { bg: '#d1fae5', text: '#065f46', border: '#34d399' },
-    cancelled: { bg: '#fee2e2', text: '#991b1b', border: '#fca5a5' },
+const orderStatusBadge = (status) => {
+  const map = {
+    pending:    ['#fef3c7','#92400e','#fcd34d'],
+    processing: ['#dbeafe','#1e40af','#60a5fa'],
+    shipped:    ['#e0e7ff','#3730a3','#818cf8'],
+    delivered:  ['#d1fae5','#065f46','#34d399'],
+    cancelled:  ['#fee2e2','#991b1b','#fca5a5'],
   };
-  
-  const style = styles[status?.toLowerCase()] || styles.pending;
-  
-  return `
-    <span style="
-      display: inline-block;
-      padding: 4px 12px;
-      border-radius: 9999px;
-      font-size: 12px;
-      font-weight: 600;
-      background-color: ${style.bg};
-      color: ${style.text};
-      border: 1px solid ${style.border};
-      text-transform: capitalize;
-    ">${status || 'Pending'}</span>
-  `;
+  const [bg, color, border] = map[status?.toLowerCase()] || map.pending;
+  return badge(status || 'Pending', bg, color, border);
 };
 
-// Helper function to calculate vendor totals for an order
+/** 2-column info table replacing the old flex infoGrid */
+const infoTable = (cells) => {
+  const rows = [];
+  for (let i = 0; i < cells.length; i += 2) {
+    const left  = cells[i];
+    const right = cells[i + 1];
+    rows.push(`
+      <tr>
+        <td width="50%" style="padding:8px 8px 8px 0;vertical-align:top;">
+          <div style="padding:12px 16px;background-color:#f9fafb;border-radius:8px;">
+            <p style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 4px 0;">${left.label}</p>
+            <p style="font-size:14px;font-weight:600;color:#111827;margin:0;">${left.value}</p>
+          </div>
+        </td>
+        ${right ? `
+        <td width="50%" style="padding:8px 0 8px 8px;vertical-align:top;">
+          <div style="padding:12px 16px;background-color:#f9fafb;border-radius:8px;">
+            <p style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 4px 0;">${right.label}</p>
+            <p style="font-size:14px;font-weight:600;color:#111827;margin:0;">${right.value}</p>
+          </div>
+        </td>` : '<td width="50%"></td>'}
+      </tr>
+    `);
+  }
+  return `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">${rows.join('')}</table>`;
+};
+
+/** Section heading — plain bold text, no SVG/flex */
+const sectionHeading = (text, color = '#111827') =>
+  `<h3 style="font-size:16px;font-weight:700;color:${color};margin:0 0 16px 0;padding-bottom:8px;border-bottom:2px solid #e5e7eb;">${text}</h3>`;
+
+/** Placeholder image cell when product has no image */
+const productImageCell = (imgUrl, altText) => {
+  if (imgUrl && !imgUrl.includes('placeholder')) {
+    return `<img src="${imgUrl}" alt="${altText}" width="72" height="72"
+      style="width:72px;height:72px;object-fit:cover;border-radius:8px;display:block;" />`;
+  }
+  // Inline SVG placeholder — no external request
+  return `<div style="width:72px;height:72px;border-radius:8px;background-color:#f3f4f6;display:inline-block;text-align:center;line-height:72px;font-size:24px;" aria-label="${altText}">&#127863;</div>`;
+};
+
+/** Delivery estimate text from shippingInfo */
+const deliveryEstimate = (si) => {
+  if (!si) return 'Within 7 business days';
+  if (si.isFree) return 'Priority delivery';
+  if (si.daysMin && si.daysMax) {
+    if (si.daysMin === si.daysMax) return `${si.daysMin} business day${si.daysMin > 1 ? 's' : ''}`;
+    return `${si.daysMin}–${si.daysMax} business days`;
+  }
+  return 'Within 7 business days';
+};
+
+/** Shipping line detail (distance, route stops) */
+const shippingDetail = (si) => {
+  if (!si || si.source !== 'google') return si?.zoneLabel || '';
+  const parts = [];
+  if (si.distanceKm) parts.push(`~${si.distanceKm} km by road`);
+  if (si.stops >= 2)  parts.push(`${si.stops} vendor pickup stops`);
+  return parts.join(' · ');
+};
+
+// ─── Revenue calculations ─────────────────────────────────────────────────────
+
 const calculateVendorTotals = (order, tenantId) => {
   const vendorItems = order.items?.filter(item => {
-    const itemTenantId = item.tenant?._id?.toString() || item.tenant?.toString();
-    return itemTenantId === tenantId?.toString();
+    const id = item.tenant?._id?.toString() || item.tenant?.toString();
+    return id === tenantId?.toString();
   }) || order.items || [];
-  
-  // Use the actual stored tenantRevenueShare (already calculated correctly in order controller)
-  const customerSubtotal = vendorItems.reduce((sum, item) => sum + (item.itemSubtotal || 0), 0);
-  const vendorEarnings = vendorItems.reduce((sum, item) => sum + (item.tenantRevenueShare || 0), 0);
-  const platformCommission = vendorItems.reduce((sum, item) => sum + (item.platformCommission || 0), 0);
-  const itemDiscounts = vendorItems.reduce((sum, item) => sum + (item.discountAmount || 0), 0);
-  const itemCount = vendorItems.reduce((sum, item) => sum + item.quantity, 0);
-  
-  // Verify: customerSubtotal should equal vendorEarnings + platformCommission + itemDiscounts
-  const verification = customerSubtotal - vendorEarnings - platformCommission - itemDiscounts;
-  
-  return {
-    items: vendorItems,
-    customerSubtotal,
-    vendorEarnings,
-    platformCommission,
-    itemDiscounts,
-    itemCount,
-    verification, // Should be 0
-  };
+
+  const customerSubtotal  = vendorItems.reduce((s, i) => s + (i.itemSubtotal || 0), 0);
+  const vendorEarnings    = vendorItems.reduce((s, i) => s + (i.tenantRevenueShare || 0), 0);
+  const platformCommission= vendorItems.reduce((s, i) => s + (i.platformCommission || 0), 0);
+  const itemDiscounts     = vendorItems.reduce((s, i) => s + (i.discountAmount || 0), 0);
+  const itemCount         = vendorItems.reduce((s, i) => s + i.quantity, 0);
+
+  return { items: vendorItems, customerSubtotal, vendorEarnings, platformCommission, itemDiscounts, itemCount };
 };
 
-// Helper function to calculate overall order breakdown
 const calculateOrderBreakdown = (order) => {
-  const totalCustomerPaid = order.items?.reduce((sum, item) => sum + (item.itemSubtotal || 0), 0) || 0;
-  const totalVendorEarnings = order.items?.reduce((sum, item) => sum + (item.tenantRevenueShare || 0), 0) || 0;
-  const totalDiscounts = order.items?.reduce((sum, item) => sum + (item.discountAmount || 0), 0) || 0;
-  // Use the actual stored platform commission
-  const platformCommission = order.platformCommissionTotal || order.items?.reduce((sum, item) => sum + (item.platformCommission || 0), 0) || 0;
-  const totalCommissionFromItems = order.items?.reduce((sum, item) => sum + (item.platformCommission || 0), 0) || 0;
-  
-  // Group items by tenant for admin view
+  const totalCustomerPaid  = order.items?.reduce((s, i) => s + (i.itemSubtotal || 0), 0) || 0;
+  const totalVendorEarnings= order.items?.reduce((s, i) => s + (i.tenantRevenueShare || 0), 0) || 0;
+  const totalDiscounts     = order.items?.reduce((s, i) => s + (i.discountAmount || 0), 0) || 0;
+  const platformCommission = order.platformCommissionTotal ||
+    order.items?.reduce((s, i) => s + (i.platformCommission || 0), 0) || 0;
+
   const itemsByTenant = {};
   order.items?.forEach(item => {
-    const tenantId = item.tenant?._id?.toString() || item.tenant?.toString() || 'no-tenant';
-    if (!itemsByTenant[tenantId]) {
-      itemsByTenant[tenantId] = {
-        items: [],
-        customerTotal: 0,
-        vendorEarnings: 0,
-        platformCommission: 0,
-      };
+    const tid = item.tenant?._id?.toString() || item.tenant?.toString() || 'no-tenant';
+    if (!itemsByTenant[tid]) {
+      itemsByTenant[tid] = { items: [], customerTotal: 0, vendorEarnings: 0, platformCommission: 0 };
     }
-    itemsByTenant[tenantId].items.push(item);
-    itemsByTenant[tenantId].customerTotal += item.itemSubtotal || 0;
-    itemsByTenant[tenantId].vendorEarnings += item.tenantRevenueShare || 0;
-    itemsByTenant[tenantId].platformCommission += item.platformCommission || 0;
+    itemsByTenant[tid].items.push(item);
+    itemsByTenant[tid].customerTotal  += item.itemSubtotal || 0;
+    itemsByTenant[tid].vendorEarnings += item.tenantRevenueShare || 0;
+    itemsByTenant[tid].platformCommission += item.platformCommission || 0;
   });
-  
-  // Verify totals
+
   const verification = totalCustomerPaid - totalVendorEarnings - platformCommission - totalDiscounts;
-  
+
   return {
-    totalCustomerPaid,
-    totalVendorEarnings,
-    totalDiscounts,
-    platformCommission,
-    totalCommissionFromItems,
-    itemsByTenant,
-    itemCount: order.items?.reduce((sum, item) => sum + item.quantity, 0) || 0,
-    verification, // Should be 0
+    totalCustomerPaid, totalVendorEarnings, totalDiscounts,
+    platformCommission, itemsByTenant,
+    itemCount: order.items?.reduce((s, i) => s + i.quantity, 0) || 0,
+    verification,
   };
 };
 
-// Email styles
-const styles = {
-  container: `
-    max-width: 680px;
-    margin: 0 auto;
-    padding: 0;
-    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-    line-height: 1.6;
-    color: #1f2937;
-    background-color: #f9fafb;
-  `,
-  header: `
-    background: linear-gradient(135deg, #111827 0%, #1f2937 50%, #374151 100%);
-    padding: 40px 50px;
-    text-align: center;
-  `,
-  headerLogo: `
-    font-size: 28px;
-    font-weight: 800;
-    color: #ffffff;
-    margin: 0;
-    letter-spacing: -0.5px;
-  `,
-  headerSubtitle: `
-    font-size: 14px;
-    color: #9ca3af;
-    margin: 8px 0 0 0;
-  `,
-  content: `
-    padding: 40px 50px;
-    background-color: #ffffff;
-  `,
-  section: `
-    margin-bottom: 32px;
-    padding-bottom: 24px;
-    border-bottom: 1px solid #e5e7eb;
-  `,
-  sectionLast: `
-    margin-bottom: 0;
-    padding-bottom: 0;
-    border-bottom: none;
-  `,
-  sectionTitle: `
-    font-size: 18px;
-    font-weight: 700;
-    color: #111827;
-    margin: 0 0 16px 0;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  `,
-  sectionTitleIcon: `
-    width: 24px;
-    height: 24px;
-    color: #4f46e5;
-  `,
-  orderNumber: `
-    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-    color: #ffffff;
-    padding: 16px 24px;
-    border-radius: 12px;
-    text-align: center;
-    margin-bottom: 24px;
-  `,
-  orderNumberLabel: `
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    opacity: 0.9;
-    margin: 0 0 4px 0;
-  `,
-  orderNumberValue: `
-    font-size: 24px;
-    font-weight: 700;
-    margin: 0;
-    letter-spacing: 1px;
-  `,
-  infoGrid: `
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 16px;
-  `,
-  infoItem: `
-    padding: 12px 16px;
-    background-color: #f9fafb;
-    border-radius: 8px;
-  `,
-  infoLabel: `
-    font-size: 12px;
-    color: #6b7280;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin: 0 0 4px 0;
-  `,
-  infoValue: `
-    font-size: 14px;
-    font-weight: 600;
-    color: #111827;
-    margin: 0;
-  `,
-  table: `
-    width: 100%;
-    border-collapse: collapse;
-    margin: 16px 0;
-  `,
-  tableHead: `
-    background-color: #f9fafb;
-  `,
-  tableHeader: `
-    padding: 12px 16px;
-    text-align: left;
-    font-size: 12px;
-    font-weight: 600;
-    color: #6b7280;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    border-bottom: 2px solid #e5e7eb;
-  `,
-  tableHeaderCenter: `
-    text-align: center;
-  `,
-  tableHeaderRight: `
-    text-align: right;
-  `,
-  tableCell: `
-    padding: 16px;
-    border-bottom: 1px solid #e5e7eb;
-    vertical-align: middle;
-  `,
-  productImage: `
-    width: 60px;
-    height: 60px;
-    border-radius: 8px;
-    object-fit: cover;
-    background-color: #f3f4f6;
-  `,
-  productName: `
-    font-weight: 600;
-    color: #111827;
-    margin: 0 0 4px 0;
-  `,
-  productMeta: `
-    font-size: 13px;
-    color: #6b7280;
-    margin: 0;
-  `,
-  quantity: `
-    display: inline-block;
-    background-color: #f3f4f6;
-    padding: 4px 12px;
-    border-radius: 6px;
-    font-size: 13px;
-    font-weight: 600;
-    color: #374151;
-  `,
-  price: `
-    font-weight: 700;
-    font-size: 15px;
-    color: #111827;
-  `,
-  totalRow: `
-    background-color: #f9fafb;
-  `,
-  totalCell: `
-    padding: 16px;
-    text-align: right;
-  `,
-  totalLabel: `
-    font-size: 14px;
-    font-weight: 600;
-    color: #374151;
-    margin: 0 0 4px 0;
-  `,
-  totalValue: `
-    font-size: 24px;
-    font-weight: 800;
-    color: #111827;
-    margin: 0;
-  `,
-  shippingAddress: `
-    background-color: #f9fafb;
-    padding: 20px;
-    border-radius: 12px;
-    border-left: 4px solid #4f46e5;
-  `,
-  addressName: `
-    font-weight: 700;
-    color: #111827;
-    margin: 0 0 8px 0;
-  `,
-  addressText: `
-    font-size: 14px;
-    color: #4b5563;
-    margin: 0 0 4px 0;
-    line-height: 1.5;
-  `,
-  ctaButton: `
-    display: inline-block;
-    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-    color: #ffffff;
-    padding: 16px 32px;
-    border-radius: 10px;
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 15px;
-    text-align: center;
-    box-shadow: 0 4px 14px rgba(79, 70, 229, 0.3);
-  `,
-  ctaSection: `
-    text-align: center;
-    padding: 32px 0 0 0;
-  `,
-  footer: `
-    padding: 32px 50px;
-    text-align: center;
-    background-color: #111827;
-  `,
-  footerText: `
-    font-size: 13px;
-    color: #9ca3af;
-    margin: 0 0 8px 0;
-  `,
-  footerLink: `
-    color: #9ca3af;
-    text-decoration: underline;
-  `,
-  socialLinks: `
-    margin-top: 16px;
-  `,
-  socialLink: `
-    display: inline-block;
-    margin: 0 8px;
-    color: #9ca3af;
-    text-decoration: none;
-  `,
-  divider: `
-    height: 1px;
-    background: linear-gradient(90deg, transparent 0%, #e5e7eb 50%, transparent 100%);
-    margin: 24px 0;
-  `,
-};
+// ─── Email sender ─────────────────────────────────────────────────────────────
 
-/**
- * Send email helper
- */
 const sendEmail = async (options) => {
   try {
     if (!emailServiceReady) {
@@ -502,694 +260,595 @@ const sendEmail = async (options) => {
   }
 };
 
-/**
- * Send order confirmation email to customer
- */
-const sendOrderConfirmationToCustomer = async (order, customer) => {
-  // Helper function to safely get image URL
-  const getProductImage = (item) => {
-    // Check product.images first
-    if (item.product?.images?.length > 0) {
-      const img = item.product.images.find(img => img?.url) || item.product.images[0];
-      if (img?.url) return img.url;
-    }
-    // Fallback to subproduct images
-    if (item.subproduct?.images?.length > 0) {
-      const img = item.subproduct.images.find(img => img?.url) || item.subproduct.images[0];
-      if (img?.url) return img.url;
-    }
-    return 'https://via.placeholder.com/80x80/f3f4f6/9ca3af?text=No+Image';
-  };
+// ─── Shared email shell ───────────────────────────────────────────────────────
+// Header structure:
+//   1. White logo band  — always white, shows the brand logo
+//   2. Coloured accent bar — thin bar in email-type colour (red / green / blue)
+//   3. White body
+//   4. Dark footer
 
-  // Helper function to get product name
-  const getProductName = (item) => {
-    return item.product?.name || item.subproduct?.name || 'Product';
-  };
-
-  // Helper function to get size name
-  const getSizeName = (item) => {
-    return item.size?.name || item.subproduct?.name || '';
-  };
-
-  // Helper function to get vendor name
-  const getVendorName = (item) => {
-    return item.tenant?.name || '';
-  };
-
-  const itemsList = order.items?.map((item) => `
-    <tr>
-      <td style="${styles.tableCell}">
-        <table cellpadding="0" cellspacing="0">
-          <tr>
-            <td style="padding-right: 16px; vertical-align: top;">
-              <img 
-                src="${getProductImage(item)}" 
-                alt="${getProductName(item)}"
-                style="width: 80px; height: 80px; object-fit: cover; border-radius: 8px; background: #f3f4f6;"
-              />
-            </td>
-            <td style="vertical-align: top;">
-              <p style="${styles.productName}; margin: 0 0 4px 0;">${getProductName(item)}</p>
-              ${getSizeName(item) ? `<p style="${styles.productMeta}; margin: 0 0 4px 0;">${getSizeName(item)}</p>` : ''}
-              ${getVendorName(item) ? `<p style="${styles.productMeta}; margin: 0; color: #f97316;">${getVendorName(item)}</p>` : ''}
-            </td>
-          </tr>
-        </table>
-      </td>
-      <td style="${styles.tableCell}; text-align: center; vertical-align: middle;">
-        <span style="${styles.quantity}">${item.quantity}</span>
-      </td>
-      <td style="${styles.tableCell}; text-align: right; vertical-align: middle;">
-        <span style="${styles.price}">${formatCurrency(item.priceAtPurchase * item.quantity)}</span>
-      </td>
-    </tr>
-  `).join('') || '';
-
-  const couponRow = order.coupon ? `
-    <tr>
-      <td colspan="2" style="${styles.totalCell}; text-align: right;">
-        <p style="${styles.totalLabel}">Coupon (${order.coupon.code})</p>
-      </td>
-      <td style="${styles.totalCell}; text-align: right;">
-        <p style="${styles.totalLabel}; color: #059669;">-${formatCurrency(order.discountTotal)}</p>
-      </td>
-    </tr>
-  ` : '';
-
-  const html = `
+const emailShell = ({ accentColor, accentLabel, accentSubtitle, body, footerNote }) => {
+  const accent = accentColor || '#c0392b'; // default brand red
+  return `
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Order Confirmation - DrinksHarbour</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${accentLabel} - DrinksHarbour</title>
 </head>
-<body style="${styles.container}; margin: 0;">
-  <!-- Header -->
-  <div style="${styles.header}">
-    <h1 style="${styles.headerLogo}">🍾 DrinksHarbour</h1>
-    <p style="${styles.headerSubtitle}">Premium Beverage Shopping Experience</p>
-  </div>
+<body style="margin:0;padding:0;background-color:#f3f4f6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f3f4f6;">
+    <tr>
+      <td align="center" style="padding:24px 16px;">
 
-  <!-- Content -->
-  <div style="${styles.content}">
-    <!-- Thank You Message -->
-    <div style="text-align: center; margin-bottom: 32px;">
-      <h2 style="font-size: 28px; font-weight: 700; color: #111827; margin: 0 0 8px 0;">
-        🎉 Order Confirmed!
-      </h2>
-      <p style="font-size: 16px; color: #6b7280; margin: 0;">
-        Thank you for your order, ${customer.firstName}! We're getting it ready.
-      </p>
-    </div>
+        <!-- Email wrapper — max 640px, rounded card -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.10);">
 
-    <!-- Order Number -->
-    <div style="${styles.orderNumber}">
-      <p style="${styles.orderNumberLabel}">Order Number</p>
-      <p style="${styles.orderNumberValue}">#${order.orderNumber}</p>
-    </div>
-
-    <!-- Order Details -->
-    <div style="${styles.section}">
-      <h3 style="${styles.sectionTitle}">
-        <svg style="${styles.sectionTitleIcon}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
-        </svg>
-        Order Details
-      </h3>
-      <div style="${styles.infoGrid}">
-        <div style="${styles.infoItem}">
-          <p style="${styles.infoLabel}">Order Date</p>
-          <p style="${styles.infoValue}">${formatDate(order.placedAt)}</p>
-        </div>
-        <div style="${styles.infoItem}">
-          <p style="${styles.infoLabel}">Status</p>
-          <p style="${styles.infoValue}">${getOrderStatusBadge(order.status)}</p>
-        </div>
-        <div style="${styles.infoItem}">
-          <p style="${styles.infoLabel}">Payment</p>
-          <p style="${styles.infoValue}">${getPaymentStatusBadge(order.paymentStatus)}</p>
-        </div>
-        <div style="${styles.infoItem}">
-          <p style="${styles.infoLabel}">Items</p>
-          <p style="${styles.infoValue}">${order.items?.length || 0} item(s)</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Items Ordered -->
-    <div style="${styles.section}">
-      <h3 style="${styles.sectionTitle}">
-        <svg style="${styles.sectionTitleIcon}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
-        </svg>
-        Items Ordered
-      </h3>
-      <table style="${styles.table}">
-        <thead style="${styles.tableHead}">
+          <!-- ① White logo band -->
           <tr>
-            <th style="${styles.tableHeader}">Product</th>
-            <th style="${styles.tableHeader}; ${styles.tableHeaderCenter}">Qty</th>
-            <th style="${styles.tableHeader}; ${styles.tableHeaderRight}">Total</th>
+            <td style="background-color:#ffffff;padding:24px 40px;text-align:center;border-bottom:1px solid #f0f0f0;">
+              <a href="${process.env.FRONTEND_URL || 'https://drinksharbour.com'}" style="display:inline-block;text-decoration:none;">
+                <img src="${LOGO_SRC}"
+                     alt="DrinksHarbour"
+                     width="220"
+                     style="display:block;width:220px;max-width:220px;height:auto;border:0;outline:none;" />
+              </a>
+            </td>
+          </tr>
+
+          <!-- ② Coloured accent bar -->
+          <tr>
+            <td style="background:${accent};padding:20px 40px;text-align:center;">
+              <p style="font-size:20px;font-weight:800;color:#ffffff;margin:0;letter-spacing:-0.3px;">${accentLabel}</p>
+              ${accentSubtitle ? `<p style="font-size:13px;color:rgba(255,255,255,0.85);margin:6px 0 0 0;">${accentSubtitle}</p>` : ''}
+            </td>
+          </tr>
+
+          <!-- ③ Body -->
+          <tr>
+            <td style="background-color:#ffffff;padding:36px 40px;">
+              ${body}
+            </td>
+          </tr>
+
+          <!-- ④ Footer -->
+          <tr>
+            <td style="background-color:#1a1a1a;padding:28px 40px;text-align:center;">
+              <img src="${LOGO_SRC}"
+                   alt="DrinksHarbour"
+                   width="140"
+                   style="display:block;margin:0 auto 14px;width:140px;max-width:140px;height:auto;opacity:0.6;filter:grayscale(1) brightness(2);" />
+              <p style="font-size:13px;color:#9ca3af;margin:0 0 8px 0;">${footerNote || 'Thank you for shopping with DrinksHarbour!'}</p>
+              <p style="font-size:13px;color:#9ca3af;margin:0 0 16px 0;">
+                <a href="${process.env.FRONTEND_URL || 'https://drinksharbour.com'}" style="color:#9ca3af;text-decoration:underline;">www.drinksharbour.com</a>
+              </p>
+              <!-- Divider -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr><td style="border-top:1px solid #2d2d2d;padding-top:14px;">
+                  <p style="font-size:11px;color:#4b5563;margin:0;">&#169; ${new Date().getFullYear()} DrinksHarbour Ltd. All rights reserved.</p>
+                  <p style="font-size:11px;color:#4b5563;margin:4px 0 0 0;">One Harbour. Endless Possibilities.</p>
+                </td></tr>
+              </table>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+`;
+};
+
+// ─── 1. Customer order confirmation ──────────────────────────────────────────
+
+const sendOrderConfirmationToCustomer = async (order, customer) => {
+  const getProductImage = (item) => {
+    if (item.product?.images?.length > 0) {
+      const img = item.product.images.find(i => i?.url) || item.product.images[0];
+      if (img?.url) return img.url;
+    }
+    if (item.subproduct?.images?.length > 0) {
+      const img = item.subproduct.images.find(i => i?.url) || item.subproduct.images[0];
+      if (img?.url) return img.url;
+    }
+    return null;
+  };
+
+  const si = order.shippingInfo;
+  const addr = order.shippingAddress;
+
+  const itemRows = (order.items || []).map(item => {
+    const name    = item.product?.name || item.subproduct?.name || 'Product';
+    const size    = item.size?.name || '';
+    const vendor  = item.tenant?.name || '';
+    const imgUrl  = getProductImage(item);
+    const lineTotal = formatCurrency((item.priceAtPurchase || 0) * item.quantity);
+
+    return `
+      <tr>
+        <td style="padding:14px 12px;border-bottom:1px solid #f3f4f6;vertical-align:top;">
+          <table cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding-right:14px;vertical-align:top;">
+                ${productImageCell(imgUrl, name)}
+              </td>
+              <td style="vertical-align:top;">
+                <p style="font-size:14px;font-weight:700;color:#111827;margin:0 0 3px 0;">${name}</p>
+                ${size   ? `<p style="font-size:12px;color:#6b7280;margin:0 0 2px 0;">${size}</p>` : ''}
+                ${vendor ? `<p style="font-size:12px;color:#f97316;margin:0;">Sold by ${vendor}</p>` : ''}
+              </td>
+            </tr>
+          </table>
+        </td>
+        <td style="padding:14px 12px;border-bottom:1px solid #f3f4f6;text-align:center;vertical-align:middle;">
+          <span style="display:inline-block;background-color:#f3f4f6;padding:4px 12px;border-radius:6px;font-size:13px;font-weight:600;color:#374151;">${item.quantity}</span>
+        </td>
+        <td style="padding:14px 12px;border-bottom:1px solid #f3f4f6;text-align:right;vertical-align:middle;">
+          <span style="font-size:14px;font-weight:700;color:#111827;">${lineTotal}</span>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  const couponRow = order.discountTotal > 0 ? `
+    <tr>
+      <td colspan="2" style="padding:10px 12px;text-align:right;font-size:13px;font-weight:600;color:#374151;">Discount</td>
+      <td style="padding:10px 12px;text-align:right;font-size:13px;font-weight:600;color:#059669;">-${formatCurrency(order.discountTotal)}</td>
+    </tr>` : '';
+
+  const shippingDetailText = shippingDetail(si);
+  const deliveryText = deliveryEstimate(si);
+
+  const body = `
+    <!-- Greeting -->
+    <div style="text-align:center;margin-bottom:28px;">
+      <p style="font-size:28px;margin:0 0 8px 0;">&#127881;</p>
+      <h2 style="font-size:22px;font-weight:800;color:#111827;margin:0 0 6px 0;">Order Confirmed!</h2>
+      <p style="font-size:15px;color:#6b7280;margin:0;">Thank you, <strong>${customer.firstName}</strong>! We're getting your order ready.</p>
+    </div>
+
+    <!-- Order number pill -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+      <tr>
+        <td style="background:linear-gradient(135deg,#4f46e5,#7c3aed);border-radius:10px;padding:16px 24px;text-align:center;">
+          <p style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,0.8);margin:0 0 4px 0;">Order Number</p>
+          <p style="font-size:22px;font-weight:800;color:#ffffff;margin:0;letter-spacing:1px;">#${order.orderNumber}</p>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Order summary info -->
+    <div style="margin-bottom:28px;">
+      ${sectionHeading('Order Summary')}
+      ${infoTable([
+        { label: 'Order Date',    value: formatDate(order.placedAt) },
+        { label: 'Order Status',  value: orderStatusBadge(order.status) },
+        { label: 'Payment',       value: paymentBadge(order.paymentStatus) },
+        { label: 'Payment Method',value: capitalize(order.paymentMethod) },
+      ])}
+    </div>
+
+    <!-- Items table -->
+    <div style="margin-bottom:28px;">
+      ${sectionHeading('Items Ordered')}
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+        <thead>
+          <tr style="background-color:#f9fafb;">
+            <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #e5e7eb;">Product</th>
+            <th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #e5e7eb;">Qty</th>
+            <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #e5e7eb;">Total</th>
           </tr>
         </thead>
-        <tbody>
-          ${itemsList}
-        </tbody>
+        <tbody>${itemRows}</tbody>
         <tfoot>
           <tr>
-            <td colspan="2" style="${styles.totalCell}; text-align: right;">
-              <p style="${styles.totalLabel}">Subtotal</p>
-            </td>
-            <td style="${styles.totalCell}; text-align: right;">
-              <p style="${styles.totalLabel}">${formatCurrency(order.subtotal)}</p>
-            </td>
+            <td colspan="2" style="padding:10px 12px;text-align:right;font-size:13px;color:#6b7280;">Subtotal</td>
+            <td style="padding:10px 12px;text-align:right;font-size:13px;color:#6b7280;">${formatCurrency(order.subtotal)}</td>
           </tr>
           ${couponRow}
           <tr>
-            <td colspan="2" style="${styles.totalCell}; text-align: right;">
-              <p style="${styles.totalLabel}">Shipping</p>
+            <td colspan="2" style="padding:10px 12px;text-align:right;font-size:13px;color:#6b7280;">
+              Shipping${shippingDetailText ? `<br/><span style="font-size:11px;">${shippingDetailText}</span>` : ''}
             </td>
-            <td style="${styles.totalCell}; text-align: right;">
-              <p style="${styles.totalLabel}; ${order.shippingFee === 0 ? 'color: #059669;' : ''}">
-                ${order.shippingFee === 0 ? 'FREE' : formatCurrency(order.shippingFee)}
-              </p>
+            <td style="padding:10px 12px;text-align:right;font-size:13px;${order.shippingFee === 0 ? 'color:#059669;font-weight:700;' : 'color:#6b7280;'}">
+              ${order.shippingFee === 0 ? 'FREE' : formatCurrency(order.shippingFee)}
             </td>
           </tr>
-          <tr style="${styles.totalRow}">
-            <td colspan="2" style="${styles.totalCell}; text-align: right;">
-              <p style="${styles.totalLabel}; font-size: 16px;">Total</p>
-            </td>
-            <td style="${styles.totalCell}; text-align: right;">
-              <p style="${styles.totalValue}">${formatCurrency(order.totalAmount)}</p>
-            </td>
+          <tr style="background-color:#f9fafb;">
+            <td colspan="2" style="padding:14px 12px;text-align:right;font-size:16px;font-weight:700;color:#374151;">Grand Total</td>
+            <td style="padding:14px 12px;text-align:right;font-size:20px;font-weight:800;color:#111827;">${formatCurrency(order.totalAmount)}</td>
           </tr>
         </tfoot>
       </table>
     </div>
 
-    <!-- Shipping Address -->
-    <div style="${styles.sectionLast}">
-      <h3 style="${styles.sectionTitle}">
-        <svg style="${styles.sectionTitleIcon}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
-        </svg>
-        Shipping Address
-      </h3>
-      <div style="${styles.shippingAddress}">
-        <p style="${styles.addressName}">${order.shippingAddress?.fullName || `${customer.firstName} ${customer.lastName}`}</p>
-        <p style="${styles.addressText}">${order.shippingAddress?.addressLine1}</p>
-        <p style="${styles.addressText}">
-          ${order.shippingAddress?.city}, ${order.shippingAddress?.state} ${order.shippingAddress?.postalCode}
-        </p>
-        <p style="${styles.addressText}">${order.shippingAddress?.country}</p>
-        <p style="${styles.addressText}; margin-top: 8px;">
-          📞 ${order.shippingAddress?.phone || customer.phone}
-        </p>
+    <!-- Delivery estimate -->
+    <div style="margin-bottom:28px;">
+      ${sectionHeading('Delivery Information')}
+      <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#ecfdf5;border-radius:10px;border-left:4px solid #059669;">
+        <tr>
+          <td style="padding:16px 20px;">
+            <table cellpadding="0" cellspacing="0" width="100%">
+              <tr>
+                <td style="padding-bottom:10px;">
+                  <p style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 4px 0;">Estimated Delivery</p>
+                  <p style="font-size:18px;font-weight:800;color:#065f46;margin:0;">${deliveryText}</p>
+                </td>
+              </tr>
+              ${si?.zoneLabel || shippingDetailText ? `
+              <tr>
+                <td>
+                  <p style="font-size:12px;color:#047857;margin:0;">
+                    ${si?.zoneLabel || ''}${shippingDetailText ? (si?.zoneLabel ? ' &bull; ' : '') + shippingDetailText : ''}
+                  </p>
+                </td>
+              </tr>` : ''}
+            </table>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Shipping address -->
+    <div style="margin-bottom:28px;">
+      ${sectionHeading('Shipping Address')}
+      <div style="background-color:#f9fafb;padding:16px 20px;border-radius:10px;border-left:4px solid #4f46e5;">
+        <p style="font-size:15px;font-weight:700;color:#111827;margin:0 0 6px 0;">${addr?.fullName || `${customer.firstName} ${customer.lastName}`}</p>
+        ${addr?.addressLine1 ? `<p style="font-size:14px;color:#4b5563;margin:0 0 3px 0;">${addr.addressLine1}</p>` : ''}
+        ${(addr?.city || addr?.state) ? `<p style="font-size:14px;color:#4b5563;margin:0 0 3px 0;">${[addr?.city, addr?.state, addr?.postalCode].filter(Boolean).join(', ')}</p>` : ''}
+        ${addr?.country ? `<p style="font-size:14px;color:#4b5563;margin:0 0 6px 0;">${addr.country}</p>` : ''}
+        <p style="font-size:14px;color:#4b5563;margin:0;">&#128222; ${addr?.phone || customer.phone || ''}</p>
       </div>
     </div>
 
-    <!-- CTA Button -->
-    <div style="${styles.ctaSection}">
-      <a href="${process.env.FRONTEND_URL}/order-confirmation?orderId=${order._id}" style="${styles.ctaButton}">
-        View Order Details →
-      </a>
-    </div>
+    <!-- CTA -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+      <tr>
+        <td align="center">
+          <a href="${process.env.FRONTEND_URL || 'https://drinksharbour.com'}/order-confirmation?orderId=${order._id}"
+             style="display:inline-block;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#ffffff;padding:14px 32px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;">
+            View Order Details &rarr;
+          </a>
+        </td>
+      </tr>
+    </table>
 
-    <!-- Help Section -->
-    <div style="text-align: center; margin-top: 32px; padding-top: 24px; border-top: 1px solid #e5e7eb;">
-      <p style="font-size: 14px; color: #6b7280; margin: 0 0 16px 0;">
-        Have questions about your order?
-      </p>
-      <p style="font-size: 14px; color: #111827; margin: 0;">
-        Contact us at <a href="mailto:support@drinksharbour.com" style="color: #4f46e5;">support@drinksharbour.com</a>
-      </p>
-    </div>
-  </div>
-
-  <!-- Footer -->
-  <div style="${styles.footer}">
-    <p style="${styles.footerText}">Thank you for shopping with DrinksHarbour!</p>
-    <p style="${styles.footerText}">
-      <a href="${process.env.FRONTEND_URL}" style="${styles.footerLink}">www.drinksharbour.com</a>
+    <!-- Help -->
+    <p style="font-size:13px;color:#9ca3af;text-align:center;margin:0;">
+      Questions? Email us at
+      <a href="mailto:support@drinksharbour.com" style="color:#4f46e5;">support@drinksharbour.com</a>
     </p>
-    <div style="${styles.socialLinks}">
-      <span style="font-size: 12px; color: #6b7280;">Follow us on social media for exclusive offers</span>
-    </div>
-    <p style="${styles.footerText}; margin-top: 24px; opacity: 0.6;">
-      © ${new Date().getFullYear()} DrinksHarbour. All rights reserved.
-    </p>
-  </div>
-</body>
-</html>
   `;
+
+  const html = emailShell({
+    accentColor:    '#c0392b',
+    accentLabel:    `&#127881; Order Confirmed!`,
+    accentSubtitle: `Order #${order.orderNumber}`,
+    body,
+  });
 
   return sendEmail({
     to: customer.email,
-    subject: `🎉 Order Confirmed! #${order.orderNumber} - DrinksHarbour`,
+    subject: `Order Confirmed! #${order.orderNumber} — DrinksHarbour`,
     html,
   });
 };
 
-/**
- * Send new order notification to tenant
- */
+// ─── 2. Vendor (tenant) new order notification ────────────────────────────────
+
 const sendNewOrderNotificationToTenant = async (order, tenant, customer) => {
   const totals = calculateVendorTotals(order, tenant._id);
-  
-  // Get the revenue model from one of the items
   const sampleItem = totals.items[0];
-  const revenueModel = sampleItem?.tenantRevenueModel || tenant.revenueModel || 'platform_markup';
-  const platformMarkupPercentage = sampleItem?.platformMarkupPercentage || tenant.platformMarkupPercentage || 15;
-  
-  const itemsList = totals.items.map(item => `
+  const platformMarkupPct = sampleItem?.platformMarkupPercentage || tenant.platformMarkupPercentage || 15;
+
+  const itemRows = totals.items.map(item => `
     <tr>
-      <td style="${styles.tableCell}">
-        <p style="${styles.productName}">${item.product?.name || 'Product'}</p>
-        <p style="${styles.productMeta}">${item.size ? `Size: ${item.size.name}` : ''}</p>
+      <td style="padding:12px;border-bottom:1px solid #f3f4f6;">
+        <p style="font-size:14px;font-weight:600;color:#111827;margin:0 0 2px 0;">${item.product?.name || 'Product'}</p>
+        ${item.size?.name ? `<p style="font-size:12px;color:#6b7280;margin:0;">Size: ${item.size.name}</p>` : ''}
       </td>
-      <td style="${styles.tableCell}; text-align: center;">
-        <span style="${styles.quantity}">${item.quantity}</span>
+      <td style="padding:12px;border-bottom:1px solid #f3f4f6;text-align:center;">
+        <span style="display:inline-block;background-color:#f3f4f6;padding:4px 12px;border-radius:6px;font-size:13px;font-weight:600;color:#374151;">${item.quantity}</span>
       </td>
-      <td style="${styles.tableCell}; text-align: right;">
-        <span style="${styles.price}">${formatCurrency(item.itemSubtotal)}</span>
-      </td>
+      <td style="padding:12px;border-bottom:1px solid #f3f4f6;text-align:right;font-size:14px;font-weight:700;color:#111827;">${formatCurrency(item.itemSubtotal)}</td>
     </tr>
-  `).join('') || '';
+  `).join('');
 
-  const modelLabel = revenueModel === 'platform_markup' 
-    ? `${platformMarkupPercentage}% Platform Markup`
-    : `${sampleItem?.tenantCommissionPercentage || 0}% Commission`;
+  const addr = order.shippingAddress;
 
-  const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>New Order - DrinksHarbour</title>
-</head>
-<body style="${styles.container}; margin: 0;">
-  <!-- Header -->
-  <div style="background: linear-gradient(135deg, #059669 0%, #10b981 50%, #34d399 100%); padding: 40px 50px; text-align: center;">
-    <h1 style="font-size: 28px; font-weight: 800; color: #ffffff; margin: 0;">🍾 DrinksHarbour</h1>
-    <p style="font-size: 14px; color: #d1fae5; margin: 8px 0 0 0;">Partner Dashboard</p>
-  </div>
-
-  <!-- Content -->
-  <div style="${styles.content}">
-    <!-- Alert Message -->
-    <div style="background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); padding: 24px; border-radius: 12px; text-align: center; margin-bottom: 32px;">
-      <h2 style="font-size: 24px; font-weight: 700; color: #065f46; margin: 0 0 8px 0;">
-        🛒 New Order Received!
-      </h2>
-      <p style="font-size: 16px; color: #047857; margin: 0;">
-        You have a new order to fulfill. Log in to your dashboard to process it.
-      </p>
+  const body = `
+    <!-- Alert banner -->
+    <div style="background-color:#d1fae5;border-radius:10px;padding:20px;text-align:center;margin-bottom:24px;">
+      <p style="font-size:20px;font-weight:800;color:#065f46;margin:0 0 4px 0;">&#128722; New Order Received!</p>
+      <p style="font-size:14px;color:#047857;margin:0;">You have a new order to fulfill.</p>
     </div>
 
-    <!-- Order Number -->
-    <div style="${styles.orderNumber}">
-      <p style="${styles.orderNumberLabel}">Order Number</p>
-      <p style="${styles.orderNumberValue}">#${order.orderNumber}</p>
+    <!-- Order number -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+      <tr>
+        <td style="background:linear-gradient(135deg,#4f46e5,#7c3aed);border-radius:10px;padding:14px 24px;text-align:center;">
+          <p style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,0.8);margin:0 0 4px 0;">Order Number</p>
+          <p style="font-size:20px;font-weight:800;color:#ffffff;margin:0;">#${order.orderNumber}</p>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Order info -->
+    <div style="margin-bottom:24px;">
+      ${sectionHeading('Order Information')}
+      ${infoTable([
+        { label: 'Order Date',    value: formatDate(order.placedAt) },
+        { label: 'Items to Fulfill', value: `${totals.itemCount} item(s)` },
+        { label: 'Payment Method', value: capitalize(order.paymentMethod) },
+        { label: 'Revenue Model',  value: `${platformMarkupPct}% Platform Markup` },
+      ])}
     </div>
 
-    <!-- Order Info -->
-    <div style="${styles.section}">
-      <h3 style="${styles.sectionTitle}">
-        <svg style="${styles.sectionTitleIcon}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
-        </svg>
-        Order Information
-      </h3>
-      <div style="${styles.infoGrid}">
-        <div style="${styles.infoItem}">
-          <p style="${styles.infoLabel}">Order Date</p>
-          <p style="${styles.infoValue}">${formatDate(order.placedAt)}</p>
-        </div>
-        <div style="${styles.infoItem}">
-          <p style="${styles.infoLabel}">Items to Fulfill</p>
-          <p style="${styles.infoValue}">${totals.itemCount} item(s)</p>
-        </div>
-        <div style="${styles.infoItem}">
-          <p style="${styles.infoLabel}">Payment Method</p>
-          <p style="${styles.infoValue}">${order.paymentMethod?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</p>
-        </div>
-        <div style="${styles.infoItem}">
-          <p style="${styles.infoLabel}">Revenue Model</p>
-          <p style="${styles.infoValue}; color: #6b7280; font-size: 13px;">${modelLabel}</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Your Earnings Breakdown -->
-    <div style="${styles.section}">
-      <h3 style="${styles.sectionTitle}">
-        <svg style="${styles.sectionTitleIcon}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-        </svg>
-        Your Earnings Breakdown
-      </h3>
-      
-      <!-- Items Sold -->
-      <div style="margin-bottom: 20px;">
-        <h4 style="font-size: 14px; font-weight: 600; color: #374151; margin: 0 0 12px 0;">Items Sold</h4>
-        <table style="${styles.table}">
-          <thead style="${styles.tableHead}">
-            <tr>
-              <th style="${styles.tableHeader}">Product</th>
-              <th style="${styles.tableHeader}; ${styles.tableHeaderCenter}">Qty</th>
-              <th style="${styles.tableHeader}; ${styles.tableHeaderRight}">Price Paid</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${itemsList}
-          </tbody>
-        </table>
-      </div>
-      
-      <!-- Earnings Summary -->
-      <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); padding: 20px; border-radius: 12px; border-left: 4px solid #059669;">
-        <h4 style="font-size: 14px; font-weight: 600; color: #065f46; margin: 0 0 12px 0;">💰 Your Earnings Summary</h4>
-        <table cellpadding="0" cellspacing="0" style="width: 100%;">
-          <tr>
-            <td style="padding: 6px 0; font-size: 14px; color: #374151;">Total Sales (Customer Paid)</td>
-            <td style="padding: 6px 0; font-size: 14px; color: #374151; text-align: right;">${formatCurrency(totals.customerSubtotal)}</td>
+    <!-- Items sold -->
+    <div style="margin-bottom:24px;">
+      ${sectionHeading('Items Sold')}
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+        <thead>
+          <tr style="background-color:#f9fafb;">
+            <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;border-bottom:2px solid #e5e7eb;">Product</th>
+            <th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;border-bottom:2px solid #e5e7eb;">Qty</th>
+            <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;border-bottom:2px solid #e5e7eb;">Price Paid</th>
           </tr>
-          <tr>
-            <td style="padding: 6px 0; font-size: 14px; color: #6b7280;">Platform Markup (${platformMarkupPercentage}%)</td>
-            <td style="padding: 6px 0; font-size: 14px; color: #6b7280; text-align: right;">-${formatCurrency(totals.platformCommission)}</td>
-          </tr>
-          ${totals.itemDiscounts > 0 ? `
-          <tr>
-            <td style="padding: 6px 0; font-size: 14px; color: #6b7280;">Item Discounts</td>
-            <td style="padding: 6px 0; font-size: 14px; color: #6b7280; text-align: right;">-${formatCurrency(totals.itemDiscounts)}</td>
-          </tr>
-          ` : ''}
-          <tr style="border-top: 2px solid #059669;">
-            <td style="padding: 12px 0; font-size: 16px; font-weight: 700; color: #065f46;">Your Earnings</td>
-            <td style="padding: 12px 0; font-size: 16px; font-weight: 700; color: #065f46; text-align: right;">${formatCurrency(totals.vendorEarnings)}</td>
-          </tr>
-        </table>
-      </div>
-      
-      <!-- Verification (debug info, hidden in production if needed) -->
-      ${totals.verification !== 0 ? `
-      <div style="margin-top: 12px; padding: 8px; background: #fef3c7; border-radius: 6px; font-size: 11px; color: #92400e;">
-        ⚠️ Calculation verification: ${totals.verification.toFixed(2)} (should be 0)
-      </div>
-      ` : ''}
+        </thead>
+        <tbody>${itemRows}</tbody>
+      </table>
     </div>
 
-    <!-- Customer Details -->
-    <div style="${styles.sectionLast}">
-      <h3 style="${styles.sectionTitle}">
-        <svg style="${styles.sectionTitleIcon}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
-        </svg>
-        Customer Details
-      </h3>
-      <div style="${styles.infoGrid}">
-        <div style="${styles.infoItem}">
-          <p style="${styles.infoLabel}">Customer Name</p>
-          <p style="${styles.infoValue}">${customer.firstName} ${customer.lastName}</p>
-        </div>
-        <div style="${styles.infoItem}">
-          <p style="${styles.infoLabel}">Email</p>
-          <p style="${styles.infoValue}">${customer.email}</p>
-        </div>
-        <div style="${styles.infoItem}">
-          <p style="${styles.infoLabel}">Phone</p>
-          <p style="${styles.infoValue}">${customer.phone}</p>
-        </div>
-      </div>
-
-      <div style="${styles.shippingAddress}; margin-top: 16px;">
-        <p style="${styles.addressName}">📦 Shipping Address</p>
-        <p style="${styles.addressText}">${order.shippingAddress?.addressLine1}</p>
-        <p style="${styles.addressText}">
-          ${order.shippingAddress?.city}, ${order.shippingAddress?.state} ${order.shippingAddress?.postalCode}
-        </p>
-        <p style="${styles.addressText}">${order.shippingAddress?.country}</p>
-      </div>
+    <!-- Earnings breakdown -->
+    <div style="margin-bottom:24px;">
+      ${sectionHeading('Your Earnings Breakdown', '#065f46')}
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#ecfdf5,#d1fae5);border-radius:10px;border-left:4px solid #059669;">
+        <tr>
+          <td style="padding:18px 20px;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="padding:5px 0;font-size:14px;color:#374151;">Total Sales (Customer Paid)</td>
+                <td style="padding:5px 0;font-size:14px;color:#374151;text-align:right;">${formatCurrency(totals.customerSubtotal)}</td>
+              </tr>
+              <tr>
+                <td style="padding:5px 0;font-size:13px;color:#6b7280;">Platform Markup (${platformMarkupPct}%)</td>
+                <td style="padding:5px 0;font-size:13px;color:#6b7280;text-align:right;">-${formatCurrency(totals.platformCommission)}</td>
+              </tr>
+              ${totals.itemDiscounts > 0 ? `
+              <tr>
+                <td style="padding:5px 0;font-size:13px;color:#6b7280;">Item Discounts</td>
+                <td style="padding:5px 0;font-size:13px;color:#6b7280;text-align:right;">-${formatCurrency(totals.itemDiscounts)}</td>
+              </tr>` : ''}
+              <tr>
+                <td colspan="2" style="padding-top:10px;"><hr style="border:none;border-top:2px solid #059669;margin:0;" /></td>
+              </tr>
+              <tr>
+                <td style="padding:10px 0 0 0;font-size:16px;font-weight:800;color:#065f46;">Your Earnings</td>
+                <td style="padding:10px 0 0 0;font-size:16px;font-weight:800;color:#065f46;text-align:right;">${formatCurrency(totals.vendorEarnings)}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
     </div>
 
-    <!-- CTA Button -->
-    <div style="${styles.ctaSection}">
-      <a href="${process.env.BACKEND_URL}/admin/orders/${order._id}" style="${styles.ctaButton}">
-        Process Order →
-      </a>
+    <!-- Customer details -->
+    <div style="margin-bottom:24px;">
+      ${sectionHeading('Customer & Delivery Details')}
+      ${infoTable([
+        { label: 'Customer Name', value: `${customer.firstName} ${customer.lastName}` },
+        { label: 'Email',         value: customer.email },
+        { label: 'Phone',         value: customer.phone || '—' },
+        { label: 'Payment',       value: paymentBadge(order.paymentStatus) },
+      ])}
+      ${addr ? `
+      <div style="margin-top:12px;background-color:#f9fafb;padding:14px 18px;border-radius:10px;border-left:4px solid #4f46e5;">
+        <p style="font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 6px 0;">Shipping Address</p>
+        <p style="font-size:14px;color:#374151;margin:0 0 2px 0;">${addr.fullName || ''}</p>
+        ${addr.addressLine1 ? `<p style="font-size:14px;color:#374151;margin:0 0 2px 0;">${addr.addressLine1}</p>` : ''}
+        ${[addr.city, addr.state, addr.postalCode].filter(Boolean).join(', ') ? `<p style="font-size:14px;color:#374151;margin:0;">${[addr.city, addr.state, addr.postalCode].filter(Boolean).join(', ')}</p>` : ''}
+      </div>` : ''}
     </div>
 
-    <!-- Urgent Message -->
-    <div style="background: #fef3c7; padding: 20px; border-radius: 12px; text-align: center; margin-top: 32px; border-left: 4px solid #f59e0b;">
-      <p style="font-size: 14px; font-weight: 600; color: #92400e; margin: 0;">
-        ⚡ Please process this order as soon as possible to ensure timely delivery!
-      </p>
-    </div>
-  </div>
+    <!-- CTA -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
+      <tr>
+        <td align="center">
+          <a href="${process.env.BACKEND_URL || process.env.FRONTEND_URL || 'https://drinksharbour.com'}/dashboard/orders"
+             style="display:inline-block;background:linear-gradient(135deg,#059669,#10b981);color:#ffffff;padding:14px 32px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;">
+            Process Order &rarr;
+          </a>
+        </td>
+      </tr>
+    </table>
 
-  <!-- Footer -->
-  <div style="${styles.footer}">
-    <p style="${styles.footerText}">This is an automated notification from DrinksHarbour</p>
-    <p style="${styles.footerText}; margin-top: 16px; opacity: 0.6;">
-      © ${new Date().getFullYear()} DrinksHarbour. All rights reserved.
-    </p>
-  </div>
-</body>
-</html>
+    <!-- Urgency notice -->
+    <div style="background-color:#fef3c7;border-radius:8px;padding:14px 18px;border-left:4px solid #f59e0b;text-align:center;">
+      <p style="font-size:13px;font-weight:700;color:#92400e;margin:0;">&#9889; Please process this order promptly to ensure timely delivery!</p>
+    </div>
   `;
 
+  const html = emailShell({
+    accentColor:    '#059669',
+    accentLabel:    '&#128722; New Order Received',
+    accentSubtitle: `Order #${order.orderNumber} · Partner Dashboard`,
+    body,
+  });
+
   return sendEmail({
-    to: tenant.email,
-    subject: `🛒 New Order #${order.orderNumber} - Your Earnings: ${formatCurrency(totals.vendorEarnings)}`,
+    to: tenant.email || tenant.contactEmail,
+    subject: `New Order #${order.orderNumber} — Your Earnings: ${formatCurrency(totals.vendorEarnings)}`,
     html,
   });
 };
 
-/**
- * Send new order notification to admin
- */
+// ─── 3. Admin order notification ─────────────────────────────────────────────
+
 const sendNewOrderNotificationToAdmin = async (order, customer) => {
   const breakdown = calculateOrderBreakdown(order);
-  
-  // Group items by tenant for detailed breakdown
+
   const tenantBreakdowns = Object.entries(breakdown.itemsByTenant).map(([tenantId, data]) => {
-    const isNoTenant = tenantId === 'no-tenant';
     const sampleItem = data.items[0];
-    const revenueModel = sampleItem?.tenantRevenueModel || 'platform_markup';
-    const platformMarkupPercentage = sampleItem?.platformMarkupPercentage || 15;
-    
-    return {
-      tenantName: isNoTenant ? 'Unassigned Items' : (data.items[0]?.tenant?.name || 'Unknown Tenant'),
-      items: data.items,
-      customerTotal: data.customerTotal,
-      vendorEarnings: data.vendorEarnings,
-      platformCommission: data.platformCommission,
-      platformMarkupPercentage,
-      revenueModel,
-      itemCount: data.items.reduce((sum, item) => sum + item.quantity, 0),
-    };
+    const platformMarkupPct = sampleItem?.platformMarkupPercentage || 15;
+    const tenantName = tenantId === 'no-tenant'
+      ? 'Unassigned Items'
+      : (data.items[0]?.tenant?.name || 'Unknown Vendor');
+
+    return { tenantName, platformMarkupPct, data };
   });
 
-  const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>New Platform Order - DrinksHarbour Admin</title>
-</head>
-<body style="${styles.container}; margin: 0;">
-  <!-- Header -->
-  <div style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #60a5fa 100%); padding: 40px 50px; text-align: center;">
-    <h1 style="font-size: 28px; font-weight: 800; color: #ffffff; margin: 0;">🔐 DrinksHarbour</h1>
-    <p style="font-size: 14px; color: #bfdbfe; margin: 8px 0 0 0;">Admin Dashboard</p>
-  </div>
-
-  <!-- Content -->
-  <div style="${styles.content}">
-    <!-- Alert Message -->
-    <div style="background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); padding: 24px; border-radius: 12px; text-align: center; margin-bottom: 32px;">
-      <h2 style="font-size: 24px; font-weight: 700; color: #1e40af; margin: 0 0 8px 0;">
-        🛍️ New Platform Order
-      </h2>
-      <p style="font-size: 16px; color: #1d4ed8; margin: 0;">
-        A new order has been placed on the platform
-      </p>
-    </div>
-
-    <!-- Order Number -->
-    <div style="${styles.orderNumber}">
-      <p style="${styles.orderNumberLabel}">Order Number</p>
-      <p style="${styles.orderNumberValue}">#${order.orderNumber}</p>
-    </div>
-
-    <!-- Revenue Breakdown -->
-    <div style="${styles.section}">
-      <h3 style="${styles.sectionTitle}">
-        <svg style="${styles.sectionTitleIcon}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-        </svg>
-        💰 Revenue Breakdown
-      </h3>
-      
-      <!-- Overall Summary -->
-      <div style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); padding: 20px; border-radius: 12px; margin-bottom: 24px; border-left: 4px solid #f59e0b;">
-        <table cellpadding="0" cellspacing="0" style="width: 100%;">
+  const vendorRows = tenantBreakdowns.map(({ tenantName, platformMarkupPct, data }) => `
+    <tr>
+      <td style="padding:14px 16px;border-bottom:1px solid #e5e7eb;">
+        <table width="100%" cellpadding="0" cellspacing="0">
           <tr>
-            <td style="padding: 8px 0; font-size: 16px; font-weight: 700; color: #92400e;">💵 Total Customer Paid</td>
-            <td style="padding: 8px 0; font-size: 16px; font-weight: 700; color: #92400e; text-align: right;">${formatCurrency(breakdown.totalCustomerPaid)}</td>
-          </tr>
-          <tr>
-            <td style="padding: 8px 0; font-size: 14px; color: #78350f;">💸 Total to Vendors</td>
-            <td style="padding: 8px 0; font-size: 14px; color: #78350f; text-align: right;">${formatCurrency(breakdown.totalVendorEarnings)}</td>
-          </tr>
-          ${breakdown.totalDiscounts > 0 ? `
-          <tr>
-            <td style="padding: 8px 0; font-size: 14px; color: #78350f;">🏷️ Total Discounts</td>
-            <td style="padding: 8px 0; font-size: 14px; color: #78350f; text-align: right;">${formatCurrency(breakdown.totalDiscounts)}</td>
-          </tr>
-          ` : ''}
-          <tr style="border-top: 2px solid #f59e0b;">
-            <td style="padding: 12px 0; font-size: 18px; font-weight: 800; color: #059669;">💵 Platform Revenue</td>
-            <td style="padding: 12px 0; font-size: 18px; font-weight: 800; color: #059669; text-align: right;">${formatCurrency(breakdown.platformCommission)}</td>
+            <td>
+              <p style="font-size:14px;font-weight:700;color:#374151;margin:0 0 2px 0;">${tenantName}</p>
+              <p style="font-size:11px;color:#9ca3af;margin:0;">${platformMarkupPct}% Platform Markup</p>
+            </td>
+            <td style="text-align:right;white-space:nowrap;">
+              <p style="font-size:12px;color:#6b7280;margin:0 0 2px 0;">Cust. Paid: <strong style="color:#111827;">${formatCurrency(data.customerTotal)}</strong></p>
+              <p style="font-size:12px;color:#6b7280;margin:0 0 2px 0;">Vendor Gets: <strong style="color:#059669;">${formatCurrency(data.vendorEarnings)}</strong></p>
+              <p style="font-size:12px;color:#6b7280;margin:0;">Platform: <strong style="color:#dc2626;">${formatCurrency(data.platformCommission)}</strong></p>
+            </td>
           </tr>
         </table>
-      </div>
-      
-      <!-- Verification -->
+      </td>
+    </tr>
+  `).join('');
+
+  const si = order.shippingInfo;
+
+  const body = `
+    <!-- Alert banner -->
+    <div style="background-color:#dbeafe;border-radius:10px;padding:20px;text-align:center;margin-bottom:24px;">
+      <p style="font-size:20px;font-weight:800;color:#1e40af;margin:0 0 4px 0;">&#128717; New Platform Order</p>
+      <p style="font-size:14px;color:#1d4ed8;margin:0;">A new order has been placed on the platform.</p>
+    </div>
+
+    <!-- Order number -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+      <tr>
+        <td style="background:linear-gradient(135deg,#4f46e5,#7c3aed);border-radius:10px;padding:14px 24px;text-align:center;">
+          <p style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,0.8);margin:0 0 4px 0;">Order Number</p>
+          <p style="font-size:20px;font-weight:800;color:#ffffff;margin:0;">#${order.orderNumber}</p>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Revenue summary -->
+    <div style="margin-bottom:24px;">
+      ${sectionHeading('Revenue Summary')}
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#fef9c3,#fde68a);border-radius:10px;border-left:4px solid #f59e0b;">
+        <tr>
+          <td style="padding:18px 20px;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="padding:6px 0;font-size:15px;font-weight:700;color:#92400e;">Total Customer Paid</td>
+                <td style="padding:6px 0;font-size:15px;font-weight:700;color:#92400e;text-align:right;">${formatCurrency(breakdown.totalCustomerPaid)}</td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;font-size:13px;color:#78350f;">Shipping Fee</td>
+                <td style="padding:6px 0;font-size:13px;color:#78350f;text-align:right;">${formatCurrency(order.shippingFee)}</td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;font-size:13px;color:#78350f;">Total to Vendors</td>
+                <td style="padding:6px 0;font-size:13px;color:#78350f;text-align:right;">${formatCurrency(breakdown.totalVendorEarnings)}</td>
+              </tr>
+              ${breakdown.totalDiscounts > 0 ? `
+              <tr>
+                <td style="padding:6px 0;font-size:13px;color:#78350f;">Discounts Applied</td>
+                <td style="padding:6px 0;font-size:13px;color:#78350f;text-align:right;">-${formatCurrency(breakdown.totalDiscounts)}</td>
+              </tr>` : ''}
+              <tr>
+                <td colspan="2" style="padding:8px 0;">
+                  <hr style="border:none;border-top:2px solid #f59e0b;margin:0;" />
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:8px 0 0 0;font-size:17px;font-weight:800;color:#059669;">Platform Revenue</td>
+                <td style="padding:8px 0 0 0;font-size:17px;font-weight:800;color:#059669;text-align:right;">${formatCurrency(breakdown.platformCommission)}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
       ${breakdown.verification !== 0 ? `
-      <div style="margin-bottom: 16px; padding: 12px; background: #fee2e2; border-radius: 8px; border-left: 4px solid #dc2626;">
-        <p style="font-size: 13px; font-weight: 600; color: #991b1b; margin: 0;">
-          ⚠️ Calculation Mismatch: ${breakdown.verification.toFixed(2)}
-        </p>
-        <p style="font-size: 11px; color: #7f1d1d; margin: 4px 0 0 0;">
-          Expected: Customer (${breakdown.totalCustomerPaid}) = Vendors (${breakdown.totalVendorEarnings}) + Commission (${breakdown.platformCommission}) + Discounts (${breakdown.totalDiscounts})
-        </p>
-      </div>
-      ` : `
-      <div style="margin-bottom: 16px; padding: 12px; background: #d1fae5; border-radius: 8px; border-left: 4px solid #059669;">
-        <p style="font-size: 12px; font-weight: 600; color: #065f46; margin: 0;">
-          ✅ Calculations verified
-        </p>
-      </div>
-      `}
+      <div style="margin-top:10px;padding:10px 14px;background-color:#fee2e2;border-radius:6px;border-left:4px solid #dc2626;">
+        <p style="font-size:12px;font-weight:700;color:#991b1b;margin:0;">&#9888; Calculation mismatch: ${breakdown.verification.toFixed(2)} (should be 0)</p>
+      </div>` : `
+      <div style="margin-top:10px;padding:10px 14px;background-color:#d1fae5;border-radius:6px;border-left:4px solid #059669;">
+        <p style="font-size:12px;font-weight:700;color:#065f46;margin:0;">&#10003; Revenue calculations verified</p>
+      </div>`}
     </div>
 
-    <!-- Tenant Breakdowns -->
-    <div style="${styles.section}">
-      <h3 style="${styles.sectionTitle}">
-        <svg style="${styles.sectionTitleIcon}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
-        </svg>
-        Vendor Breakdown
-      </h3>
-      
-      ${tenantBreakdowns.map(tenantData => `
-        <div style="background: #f9fafb; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <h4 style="font-size: 14px; font-weight: 700; color: #374151; margin: 0;">${tenantData.tenantName}</h4>
-            <span style="font-size: 11px; padding: 3px 8px; border-radius: 4px; background: #dbeafe; color: #1e40af;">
-              ${tenantData.platformMarkupPercentage}% Platform Markup
-            </span>
-          </div>
-          <table cellpadding="0" cellspacing="0" style="width: 100%; font-size: 13px;">
-            <tr>
-              <td style="padding: 4px 0; color: #6b7280;">Items</td>
-              <td style="padding: 4px 0; text-align: right; color: #111827;">${tenantData.itemCount}</td>
-            </tr>
-            <tr>
-              <td style="padding: 4px 0; color: #6b7280;">Customer Paid</td>
-              <td style="padding: 4px 0; text-align: right; color: #111827;">${formatCurrency(tenantData.customerTotal)}</td>
-            </tr>
-            <tr>
-              <td style="padding: 4px 0; color: #6b7280;">Vendor Receives</td>
-              <td style="padding: 4px 0; text-align: right; color: #059669; font-weight: 600;">${formatCurrency(tenantData.vendorEarnings)}</td>
-            </tr>
-            <tr style="border-top: 1px solid #e5e7eb;">
-              <td style="padding: 4px 0; font-weight: 600; color: #374151;">Platform Markup</td>
-              <td style="padding: 4px 0; text-align: right; font-weight: 600; color: #dc2626;">${formatCurrency(tenantData.platformCommission)}</td>
-            </tr>
-          </table>
-        </div>
-      `).join('')}
+    <!-- Vendor breakdown -->
+    <div style="margin-bottom:24px;">
+      ${sectionHeading('Vendor Breakdown')}
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+        ${vendorRows}
+      </table>
     </div>
 
-    <!-- Order Stats -->
-    <div style="${styles.section}">
-      <h3 style="${styles.sectionTitle}">
-        <svg style="${styles.sectionTitleIcon}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-        </svg>
-        Order Statistics
-      </h3>
-      <div style="${styles.infoGrid}">
-        <div style="${styles.infoItem}">
-          <p style="${styles.infoLabel}">Total Items</p>
-          <p style="${styles.infoValue}; font-size: 18px;">${breakdown.itemCount}</p>
-        </div>
-        <div style="${styles.infoItem}">
-          <p style="${styles.infoLabel}">Payment Status</p>
-          <p style="${styles.infoValue}">${getPaymentStatusBadge(order.paymentStatus)}</p>
-        </div>
-        <div style="${styles.infoItem}">
-          <p style="${styles.infoLabel}">Payment Method</p>
-          <p style="${styles.infoValue}">${order.paymentMethod?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</p>
-        </div>
-        <div style="${styles.infoItem}">
-          <p style="${styles.infoLabel}">Customer Type</p>
-          <p style="${styles.infoValue}">${order.user ? 'Registered User' : 'Guest Checkout'}</p>
-        </div>
-      </div>
+    <!-- Shipping info -->
+    ${si ? `
+    <div style="margin-bottom:24px;">
+      ${sectionHeading('Shipping Details')}
+      ${infoTable([
+        { label: 'Delivery Estimate', value: deliveryEstimate(si) },
+        { label: 'Route Type',        value: capitalize(si.routeType || 'standard') },
+        ...(si.distanceKm ? [{ label: 'Distance', value: `~${si.distanceKm} km` }] : []),
+        ...(si.stops >= 1 ? [{ label: 'Vendor Stops', value: `${si.stops}` }] : []),
+      ])}
+    </div>` : ''}
+
+    <!-- Order stats -->
+    <div style="margin-bottom:24px;">
+      ${sectionHeading('Order Statistics')}
+      ${infoTable([
+        { label: 'Total Items',    value: `${breakdown.itemCount}` },
+        { label: 'Payment Status', value: paymentBadge(order.paymentStatus) },
+        { label: 'Payment Method', value: capitalize(order.paymentMethod) },
+        { label: 'Customer Type',  value: order.user ? 'Registered User' : 'Guest Checkout' },
+      ])}
     </div>
 
-    <!-- Customer Info -->
-    <div style="${styles.sectionLast}">
-      <h3 style="${styles.sectionTitle}">
-        <svg style="${styles.sectionTitleIcon}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
-        </svg>
-        Customer Information
-      </h3>
-      <div style="${styles.infoGrid}">
-        <div style="${styles.infoItem}">
-          <p style="${styles.infoLabel}">Name</p>
-          <p style="${styles.infoValue}">${customer.firstName} ${customer.lastName}</p>
-        </div>
-        <div style="${styles.infoItem}">
-          <p style="${styles.infoLabel}">Email</p>
-          <p style="${styles.infoValue}">${customer.email}</p>
-        </div>
-        <div style="${styles.infoItem}">
-          <p style="${styles.infoLabel}">Phone</p>
-          <p style="${styles.infoValue}">${customer.phone}</p>
-        </div>
-      </div>
+    <!-- Customer info -->
+    <div style="margin-bottom:24px;">
+      ${sectionHeading('Customer Information')}
+      ${infoTable([
+        { label: 'Name',  value: `${customer.firstName} ${customer.lastName}` },
+        { label: 'Email', value: customer.email },
+        { label: 'Phone', value: customer.phone || '—' },
+        { label: 'Order Date', value: formatDate(order.placedAt) },
+      ])}
     </div>
 
-    <!-- CTA Button -->
-    <div style="${styles.ctaSection}">
-      <a href="${process.env.BACKEND_URL}/admin/orders/${order._id}" style="${styles.ctaButton}">
-        View Full Order Details →
-      </a>
-    </div>
-  </div>
-
-  <!-- Footer -->
-  <div style="${styles.footer}">
-    <p style="${styles.footerText}">Admin Notification - DrinksHarbour Platform</p>
-    <p style="${styles.footerText}; margin-top: 16px; opacity: 0.6;">
-      © ${new Date().getFullYear()} DrinksHarbour. All rights reserved.
-    </p>
-  </div>
-</body>
-</html>
+    <!-- CTA -->
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td align="center">
+          <a href="${process.env.BACKEND_URL || process.env.FRONTEND_URL || 'https://drinksharbour.com'}/admin/orders/${order._id}"
+             style="display:inline-block;background:linear-gradient(135deg,#1e3a8a,#3b82f6);color:#ffffff;padding:14px 32px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;">
+            View Full Order Details &rarr;
+          </a>
+        </td>
+      </tr>
+    </table>
   `;
 
+  const html = emailShell({
+    accentColor:    '#1e3a8a',
+    accentLabel:    '&#128276; New Platform Order',
+    accentSubtitle: `Order #${order.orderNumber} · Admin Dashboard`,
+    body,
+    footerNote: 'Admin Notification — DrinksHarbour Platform',
+  });
+
   const adminEmail = process.env.ADMIN_EMAIL || process.env.SENDER_EMAIL_ADDRESS;
-  
   if (!adminEmail) {
     console.log('⚠️  Admin email not configured, skipping admin notification');
     return { success: false, message: 'Admin email not configured' };
@@ -1197,290 +856,177 @@ const sendNewOrderNotificationToAdmin = async (order, customer) => {
 
   return sendEmail({
     to: adminEmail,
-    subject: `🔔 [Admin] New Order #${order.orderNumber} - Revenue: ${formatCurrency(breakdown.totalCustomerPaid)} | Commission: ${formatCurrency(breakdown.platformCommission)}`,
+    subject: `[Admin] New Order #${order.orderNumber} — Revenue: ${formatCurrency(breakdown.totalCustomerPaid)} | Commission: ${formatCurrency(breakdown.platformCommission)}`,
     html,
   });
 };
 
-/**
- * Send email verification code to user
- * @param {Object} params
- * @param {string} params.email - User email
- * @param {string} params.code - Verification code
- * @param {string} params.firstName - User first name
- */
+// ─── 4. Email verification code ───────────────────────────────────────────────
+
 const sendVerificationCodeEmail = async ({ email, code, firstName }) => {
   if (!emailServiceReady) {
     console.log('⚠️  Email service not ready, cannot send verification code');
     return { success: false, message: 'Email service not configured' };
   }
 
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Verify Your Email - Drinksharbour</title>
-      <style>
-        body {
-          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-          background-color: #f5f5f5;
-          margin: 0;
-          padding: 20px;
-        }
-        .container {
-          max-width: 600px;
-          margin: 0 auto;
-          background: white;
-          border-radius: 12px;
-          overflow: hidden;
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        .header {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          padding: 40px 30px;
-          text-align: center;
-        }
-        .header h1 {
-          color: white;
-          margin: 0;
-          font-size: 28px;
-          font-weight: 700;
-        }
-        .header p {
-          color: rgba(255, 255, 255, 0.9);
-          margin: 10px 0 0 0;
-          font-size: 16px;
-        }
-        .content {
-          padding: 40px 30px;
-        }
-        .greeting {
-          font-size: 18px;
-          color: #333;
-          margin-bottom: 20px;
-        }
-        .code-container {
-          background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-          border-radius: 12px;
-          padding: 30px;
-          text-align: center;
-          margin: 30px 0;
-        }
-        .code-label {
-          font-size: 14px;
-          color: #666;
-          margin-bottom: 15px;
-          text-transform: uppercase;
-          letter-spacing: 2px;
-        }
-        .code {
-          font-size: 48px;
-          font-weight: 700;
-          color: #667eea;
-          letter-spacing: 8px;
-          font-family: 'Courier New', monospace;
-        }
-        .expiry {
-          text-align: center;
-          color: #666;
-          font-size: 14px;
-          margin-top: 20px;
-        }
-        .expiry strong {
-          color: #e74c3c;
-        }
-        .footer {
-          background: #f8f9fa;
-          padding: 30px;
-          text-align: center;
-          border-top: 1px solid #e9ecef;
-        }
-        .footer p {
-          color: #666;
-          font-size: 14px;
-          margin: 5px 0;
-        }
-        .footer a {
-          color: #667eea;
-          text-decoration: none;
-        }
-        .warning {
-          background: #fff3cd;
-          border-left: 4px solid #ffc107;
-          padding: 15px;
-          margin: 20px 0;
-          border-radius: 4px;
-        }
-        .warning p {
-          margin: 0;
-          color: #856404;
-          font-size: 14px;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>🔐 Verify Your Email</h1>
-          <p>Complete your registration to access your admin dashboard</p>
-        </div>
-        
-        <div class="content">
-          <p class="greeting">Hello ${firstName || 'there'},</p>
-          
-          <p style="color: #555; line-height: 1.6;">
-            Thank you for registering as an administrator on Drinksharbour. To complete your account setup and ensure the security of your admin access, please verify your email address using the verification code below:
-          </p>
-          
-          <div class="code-container">
-            <div class="code-label">Your Verification Code</div>
-            <div class="code">${code}</div>
-          </div>
-          
-          <p class="expiry">
-            ⏰ This code will expire in <strong>10 minutes</strong>
-          </p>
-          
-          <div class="warning">
-            <p>
-              <strong>🔒 Security Notice:</strong> Never share this code with anyone. Our team will never ask for your verification code.
-            </p>
-          </div>
-          
-          <p style="color: #555; line-height: 1.6; margin-top: 30px;">
-            If you didn't create an account on Drinksharbour, please ignore this email or contact our support team if you have concerns.
-          </p>
-        </div>
-        
-        <div class="footer">
-          <p><strong>Drinksharbour Admin Portal</strong></p>
-          <p>Need help? Contact us at <a href="mailto:support@drinksharbour.com">support@drinksharbour.com</a></p>
-          <p style="margin-top: 15px; font-size: 12px; color: #999;">
-            © ${new Date().getFullYear()} Drinksharbour. All rights reserved.
-          </p>
-        </div>
+  const html = emailShell({
+    accentColor:    '#7c3aed',
+    accentLabel:    '&#128274; Verify Your Email',
+    accentSubtitle: 'Complete your account setup',
+    body: `
+      <p style="font-size:16px;color:#374151;margin:0 0 16px 0;">Hello <strong>${firstName || 'there'}</strong>,</p>
+      <p style="font-size:14px;color:#6b7280;line-height:1.7;margin:0 0 24px 0;">
+        Thank you for registering on DrinksHarbour. Use the verification code below to complete your account setup.
+      </p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+        <tr>
+          <td style="background:linear-gradient(135deg,#f5f7fa,#c3cfe2);border-radius:12px;padding:28px;text-align:center;">
+            <p style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:2px;margin:0 0 12px 0;">Your Verification Code</p>
+            <p style="font-size:44px;font-weight:800;color:#7c3aed;letter-spacing:10px;font-family:Courier New,monospace;margin:0;">${code}</p>
+          </td>
+        </tr>
+      </table>
+      <p style="font-size:13px;color:#9ca3af;text-align:center;margin:0 0 20px 0;">
+        &#9200; This code expires in <strong style="color:#dc2626;">10 minutes</strong>
+      </p>
+      <div style="background-color:#fffbeb;border-left:4px solid #f59e0b;padding:14px 18px;border-radius:6px;">
+        <p style="font-size:13px;color:#92400e;margin:0;">
+          <strong>&#128274; Security notice:</strong> Never share this code. Our team will never ask for it.
+        </p>
       </div>
-    </body>
-    </html>
-  `;
+    `,
+    footerNote: 'Need help? Email support@drinksharbour.com',
+  });
 
   return sendEmail({
     to: email,
-    subject: '🔐 Verify Your Email - Drinksharbour Admin Registration',
+    subject: '&#128274; Verify Your Email - DrinksHarbour',
     html,
   });
 };
 
-// @desc    Send Purchase Order to Vendor
-// @access  Private
+// ─── 5. Purchase order to vendor ─────────────────────────────────────────────
+
 const sendPurchaseOrderToVendor = async (purchaseOrder, vendor, tenant) => {
-  const docType = purchaseOrder.type === 'rfq' ? 'Request for Quotation (RFQ)' : 'Purchase Order (PO)';
+  const docType   = purchaseOrder.type === 'rfq' ? 'Request for Quotation (RFQ)' : 'Purchase Order (PO)';
   const docNumber = purchaseOrder.poNumber || purchaseOrder.rfqNumber || 'N/A';
-  
-  const itemsHtml = (purchaseOrder.items || [])
-    .map((item, index) => `
-      <tr>
-        <td style="padding: 10px; border: 1px solid #ddd;">${index + 1}</td>
-        <td style="padding: 10px; border: 1px solid #ddd;">${item.subProductName || '-'} ${item.sizeName ? `(${item.sizeName})` : ''}</td>
-        <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${item.quantity || 0}</td>
-        <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">${formatCurrency(item.unitCost || 0)}</td>
-        <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">${formatCurrency(item.totalCost || 0)}</td>
-      </tr>
-    `)
-    .join('');
+
+  const itemRows = (purchaseOrder.items || []).map((item, i) => `
+    <tr style="${i % 2 === 0 ? '' : 'background-color:#f9fafb;'}">
+      <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6b7280;">${i + 1}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-size:14px;color:#111827;font-weight:600;">
+        ${item.subProductName || '—'}${item.sizeName ? ` <span style="font-size:12px;color:#6b7280;">(${item.sizeName})</span>` : ''}
+      </td>
+      <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;text-align:center;font-size:14px;color:#374151;">${item.quantity || 0}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;text-align:right;font-size:14px;color:#374151;">${formatCurrency(item.unitCost || 0)}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;text-align:right;font-size:14px;font-weight:700;color:#111827;">${formatCurrency(item.totalCost || 0)}</td>
+    </tr>
+  `).join('');
 
   const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
-      <div style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); color: white; padding: 30px; border-radius: 10px 10px 0 0;">
-        <h1 style="margin: 0; font-size: 24px;">${docType}</h1>
-        <p style="margin: 10px 0 0 0; font-size: 14px; opacity: 0.9;">From: ${tenant?.name || 'DrinksHarbour'}</p>
-      </div>
-      
-      <div style="background: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none;">
-        <table style="width: 100%; margin-bottom: 20px;">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${docType} - DrinksHarbour</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f3f4f6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f3f4f6;">
+    <tr>
+      <td align="center" style="padding:24px 16px;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:720px;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
           <tr>
-            <td style="padding: 10px; background: white; border: 1px solid #e5e7eb;">
-              <strong>${docType} #:</strong><br/>
-              <span style="font-size: 18px; color: #1e3a8a;">${docNumber}</span>
+            <td style="background:linear-gradient(135deg,#1e3a8a,#3b82f6);padding:32px 40px;">
+              <p style="font-size:20px;font-weight:800;color:#ffffff;margin:0 0 4px 0;">${docType}</p>
+              <p style="font-size:13px;color:rgba(255,255,255,0.8);margin:0;">From: ${tenant?.name || 'DrinksHarbour'}</p>
             </td>
-            <td style="padding: 10px; background: white; border: 1px solid #e5e7eb;">
-              <strong>Date:</strong><br/>
-              ${formatDate(purchaseOrder.orderDate || new Date())}
+          </tr>
+          <tr>
+            <td style="background-color:#ffffff;padding:32px 40px;">
+
+              <!-- Meta info -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+                <tr>
+                  <td width="33%" style="padding:12px;background-color:#f9fafb;border:1px solid #e5e7eb;vertical-align:top;">
+                    <p style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 4px 0;">${docType.split(' ')[0]} No.</p>
+                    <p style="font-size:15px;font-weight:700;color:#1e3a8a;margin:0;">${docNumber}</p>
+                  </td>
+                  <td width="33%" style="padding:12px;background-color:#f9fafb;border:1px solid #e5e7eb;border-left:none;vertical-align:top;">
+                    <p style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 4px 0;">Date</p>
+                    <p style="font-size:13px;font-weight:600;color:#111827;margin:0;">${formatDate(purchaseOrder.orderDate || new Date())}</p>
+                  </td>
+                  <td width="33%" style="padding:12px;background-color:#f9fafb;border:1px solid #e5e7eb;border-left:none;vertical-align:top;">
+                    <p style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 4px 0;">Expected Delivery</p>
+                    <p style="font-size:13px;font-weight:600;color:#111827;margin:0;">${formatDate(purchaseOrder.expectedArrival)}</p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Vendor info -->
+              <p style="font-size:15px;font-weight:700;color:#374151;margin:0 0 12px 0;">Vendor Details</p>
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+                <tr>
+                  <td width="50%" style="padding:12px;background-color:#f9fafb;border:1px solid #e5e7eb;vertical-align:top;">
+                    <p style="font-size:13px;color:#374151;margin:0 0 4px 0;"><strong>Vendor:</strong> ${vendor?.name || purchaseOrder.vendorName || 'N/A'}</p>
+                    <p style="font-size:13px;color:#374151;margin:0;"><strong>Contact:</strong> ${vendor?.contactPerson?.name || '—'}</p>
+                  </td>
+                  <td width="50%" style="padding:12px;background-color:#f9fafb;border:1px solid #e5e7eb;border-left:none;vertical-align:top;">
+                    <p style="font-size:13px;color:#374151;margin:0 0 4px 0;"><strong>Email:</strong> ${vendor?.email || '—'}</p>
+                    <p style="font-size:13px;color:#374151;margin:0;"><strong>Phone:</strong> ${vendor?.phone || '—'}</p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Items table -->
+              <p style="font-size:15px;font-weight:700;color:#374151;margin:0 0 12px 0;">Order Items</p>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:24px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+                <thead>
+                  <tr style="background-color:#f3f4f6;">
+                    <th style="padding:11px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;border-bottom:2px solid #e5e7eb;">#</th>
+                    <th style="padding:11px 14px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;border-bottom:2px solid #e5e7eb;">Product</th>
+                    <th style="padding:11px 14px;text-align:center;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;border-bottom:2px solid #e5e7eb;">Qty</th>
+                    <th style="padding:11px 14px;text-align:right;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;border-bottom:2px solid #e5e7eb;">Unit Price</th>
+                    <th style="padding:11px 14px;text-align:right;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;border-bottom:2px solid #e5e7eb;">Total</th>
+                  </tr>
+                </thead>
+                <tbody>${itemRows}</tbody>
+                <tfoot>
+                  <tr style="background-color:#f9fafb;">
+                    <td colspan="4" style="padding:13px 14px;text-align:right;font-size:14px;font-weight:700;color:#374151;">Grand Total</td>
+                    <td style="padding:13px 14px;text-align:right;font-size:16px;font-weight:800;color:#1e3a8a;">${formatCurrency(purchaseOrder.totalAmount || purchaseOrder.grandTotal || 0)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+
+              ${purchaseOrder.notes ? `
+              <p style="font-size:15px;font-weight:700;color:#374151;margin:0 0 10px 0;">Notes</p>
+              <p style="font-size:14px;color:#374151;background-color:#f9fafb;padding:14px 18px;border-radius:8px;border:1px solid #e5e7eb;margin:0 0 20px 0;">${purchaseOrder.notes}</p>` : ''}
+
+              ${purchaseOrder.termsConditions ? `
+              <p style="font-size:15px;font-weight:700;color:#374151;margin:0 0 10px 0;">Terms &amp; Conditions</p>
+              <p style="font-size:13px;color:#6b7280;background-color:#f9fafb;padding:14px 18px;border-radius:8px;border:1px solid #e5e7eb;margin:0;">${purchaseOrder.termsConditions}</p>` : ''}
             </td>
-            <td style="padding: 10px; background: white; border: 1px solid #e5e7eb;">
-              <strong>Expected Delivery:</strong><br/>
-              ${formatDate(purchaseOrder.expectedArrival)}
+          </tr>
+          <tr>
+            <td style="background-color:#111827;padding:24px 40px;text-align:center;">
+              <p style="font-size:13px;color:#9ca3af;margin:0 0 4px 0;">This is an automated email from DrinksHarbour. Please do not reply directly.</p>
+              <p style="font-size:11px;color:#6b7280;margin:0;">&#169; ${new Date().getFullYear()} DrinksHarbour. All rights reserved.</p>
             </td>
           </tr>
         </table>
-
-        <h3 style="color: #374151; margin-top: 0;">Vendor Details</h3>
-        <table style="width: 100%; margin-bottom: 20px;">
-          <tr>
-            <td style="padding: 10px; background: white; border: 1px solid #e5e7eb;">
-              <strong>Vendor:</strong> ${vendor?.name || purchaseOrder.vendorName || 'N/A'}<br/>
-              <strong>Contact:</strong> ${vendor?.contactPerson?.name || '-'}
-            </td>
-            <td style="padding: 10px; background: white; border: 1px solid #e5e7eb;">
-              <strong>Email:</strong> ${vendor?.email || '-'}<br/>
-              <strong>Phone:</strong> ${vendor?.phone || '-'}
-            </td>
-          </tr>
-        </table>
-
-        <h3 style="color: #374151;">Order Items</h3>
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-          <thead>
-            <tr style="background: #f3f4f6;">
-              <th style="padding: 12px; border: 1px solid #e5e7eb; text-align: left;">#</th>
-              <th style="padding: 12px; border: 1px solid #e5e7eb; text-align: left;">Product</th>
-              <th style="padding: 12px; border: 1px solid #e5e7eb; text-align: center;">Qty</th>
-              <th style="padding: 12px; border: 1px solid #e5e7eb; text-align: right;">Unit Price</th>
-              <th style="padding: 12px; border: 1px solid #e5e7eb; text-align: right;">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${itemsHtml}
-          </tbody>
-          <tfoot>
-            <tr style="background: #f3f4f6;">
-              <td colspan="4" style="padding: 12px; border: 1px solid #e5e7eb; text-align: right; font-weight: bold;">Total:</td>
-              <td style="padding: 12px; border: 1px solid #e5e7eb; text-align: right; font-weight: bold; font-size: 18px; color: #1e3a8a;">
-                ${formatCurrency(purchaseOrder.totalAmount || purchaseOrder.grandTotal || 0)}
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-
-        ${purchaseOrder.notes ? `
-          <h3 style="color: #374151;">Notes</h3>
-          <p style="background: white; padding: 15px; border: 1px solid #e5e7eb; border-radius: 5px;">
-            ${purchaseOrder.notes}
-          </p>
-        ` : ''}
-
-        ${purchaseOrder.termsConditions ? `
-          <h3 style="color: #374151;">Terms & Conditions</h3>
-          <p style="background: white; padding: 15px; border: 1px solid #e5e7eb; border-radius: 5px; font-size: 14px;">
-            ${purchaseOrder.termsConditions}
-          </p>
-        ` : ''}
-
-        <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #e5e7eb; text-align: center; color: #6b7280; font-size: 12px;">
-          <p>This is an automated email from DrinksHarbour. Please do not reply directly to this email.</p>
-          <p>© ${new Date().getFullYear()} DrinksHarbour. All rights reserved.</p>
-        </div>
-      </div>
-    </div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
   `;
 
-  const subject = purchaseOrder.type === 'rfq' 
+  const subject = purchaseOrder.type === 'rfq'
     ? `Request for Quotation ${docNumber} - ${tenant?.name || 'DrinksHarbour'}`
     : `Purchase Order ${docNumber} - ${tenant?.name || 'DrinksHarbour'}`;
 
-  await sendEmail({
+  return sendEmail({
     to: vendor?.email || purchaseOrder.vendorEmail,
     subject,
     html,

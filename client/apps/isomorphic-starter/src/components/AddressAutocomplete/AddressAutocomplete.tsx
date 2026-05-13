@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as Icon from 'react-icons/pi';
+import { API_URL } from '@/lib/api';
 
 export interface AddressDetails {
   formatted: string;
@@ -17,6 +18,9 @@ export interface AddressDetails {
 interface AddressAutocompleteProps {
   value: string;
   onChange: (value: string, details?: AddressDetails) => void;
+  /** Called automatically with the best-match coordinates after every search,
+   *  so shipping can be calculated without the user selecting from the dropdown. */
+  onBestMatch?: (details: AddressDetails | null) => void;
   onClearError?: () => void;
   error?: string;
   placeholder?: string;
@@ -24,99 +28,70 @@ interface AddressAutocompleteProps {
   required?: boolean;
 }
 
-interface NominatimResult {
+interface Prediction {
   place_id: string;
-  display_name: string;
-  name?: string;
-  lat: string;
-  lon: string;
-  address: {
-    house_number?: string;
-    road?: string;
-    neighbourhood?: string;
-    suburb?: string;
-    island?: string;
-    city?: string;
-    city_district?: string;
-    town?: string;
-    village?: string;
-    hamlet?: string;
-    county?: string;
-    state_district?: string;
-    state?: string;
-    postcode?: string;
-    country?: string;
+  description: string;
+  structured_formatting: {
+    main_text: string;
+    secondary_text?: string;
   };
 }
 
-function normalise(r: NominatimResult): AddressDetails {
-  const a = r.address;
+// ── API helpers ───────────────────────────────────────────────────────────────
 
-  // Street: house number + road name
-  const streetParts = [a.house_number, a.road].filter(Boolean);
-  const street = streetParts.length > 0
-    ? streetParts.join(' ')
-    : (r.name || r.display_name.split(',')[0]);
-
-  // City: most specific populated place available
-  const city =
-    a.city ||
-    a.town ||
-    a.suburb ||        // e.g. "Victoria Island", "Maitama"
-    a.village ||
-    a.hamlet ||
-    a.city_district ||
-    a.county ||        // LGA as last resort
-    '';
-
-  return {
-    formatted: r.display_name,
-    street,
-    city,
-    state: a.state || '',
-    postcode: a.postcode || '',
-    country: a.country || 'Nigeria',
-    lat: parseFloat(r.lat),
-    lon: parseFloat(r.lon),
-  };
+async function fetchPredictions(input: string, signal: AbortSignal): Promise<Prediction[]> {
+  const res = await fetch(
+    `${API_URL}/api/places/autocomplete?input=${encodeURIComponent(input)}`,
+    { signal },
+  );
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.success ? (data.data as Prediction[]) : [];
 }
 
-const MIN_CHARS = 4;
-const DEBOUNCE_MS = 500;
+async function fetchDetails(placeId: string): Promise<AddressDetails | null> {
+  const res = await fetch(`${API_URL}/api/places/details?place_id=${encodeURIComponent(placeId)}`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.success ? (data.data as AddressDetails) : null;
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+const MIN_CHARS  = 3;
+const DEBOUNCE_MS = 400;
 
 const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
   value: externalValue,
   onChange,
+  onBestMatch,
   onClearError,
   error,
-  placeholder = 'Start typing your address…',
+  placeholder = 'Estate, street or landmark…',
   label = 'Address',
   required = true,
 }) => {
   const value = externalValue ?? '';
-  const [inputValue, setInputValue] = useState(value);
-  const [results, setResults] = useState<NominatimResult[]>([]);
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [activeIndex, setActiveIndex] = useState(-1);
+  const [inputValue, setInputValue]     = useState(value);
+  const [predictions, setPredictions]   = useState<Prediction[]>([]);
+  const [open, setOpen]                 = useState(false);
+  const [loading, setLoading]           = useState(false);
+  const [fetchError, setFetchError]     = useState<string | null>(null);
+  const [activeIndex, setActiveIndex]   = useState(-1);
 
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const timerRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef  = useRef<HTMLDivElement>(null);
+  const inputRef      = useRef<HTMLInputElement>(null);
+  const abortRef      = useRef<AbortController | null>(null);
+  const onBestMatchRef = useRef(onBestMatch);
+  useEffect(() => { onBestMatchRef.current = onBestMatch; }, [onBestMatch]);
 
-  // Keep input in sync if parent resets value
-  useEffect(() => {
-    setInputValue(externalValue ?? '');
-  }, [externalValue]);
+  useEffect(() => { setInputValue(externalValue ?? ''); }, [externalValue]);
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node))
         setOpen(false);
-      }
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
@@ -124,50 +99,35 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
 
   const search = useCallback(async (query: string) => {
     if (query.trim().length < MIN_CHARS) {
-      setResults([]);
+      setPredictions([]);
       setOpen(false);
       return;
     }
 
-    // Cancel previous in-flight request
     abortRef.current?.abort();
     abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
 
     setLoading(true);
     setFetchError(null);
 
-    try {
-      const params = new URLSearchParams({
-        q: query,
-        format: 'json',
-        addressdetails: '1',
-        countrycodes: 'ng',
-        limit: '6',
-        'accept-language': 'en',
-      });
+    const results = await fetchPredictions(query, signal);
 
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?${params.toString()}`,
-        {
-          signal: abortRef.current.signal,
-          headers: {
-            'User-Agent': 'DrinksHarbour/1.0 (support@drinksharbour.com)',
-          },
-        },
-      );
+    if (signal.aborted) return;
 
-      if (!res.ok) throw new Error('Search failed');
-      const data: NominatimResult[] = await res.json();
-      setResults(data);
-      setOpen(data.length > 0);
-      setActiveIndex(-1);
-    } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        setFetchError('Could not load suggestions. Please type your address manually.');
-        setOpen(false);
-      }
-    } finally {
-      setLoading(false);
+    setLoading(false);
+    setPredictions(results);
+    setOpen(results.length > 0);
+    setActiveIndex(-1);
+
+    // Silently fetch details for the top result so shipping can be calculated
+    // without requiring the user to click a suggestion
+    if (results.length > 0) {
+      fetchDetails(results[0].place_id)
+        .then(d => { if (!signal.aborted) onBestMatchRef.current?.(d); })
+        .catch(() => {});
+    } else {
+      onBestMatchRef.current?.(null);
     }
   }, []);
 
@@ -176,27 +136,28 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     setInputValue(val);
     onChange(val, undefined);
     onClearError?.();
-
+    setFetchError(null);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => search(val), DEBOUNCE_MS);
   };
 
-  const handleSelect = (result: NominatimResult) => {
-    const details = normalise(result);
-    // Use street line as the address field value (cleaner than the full display_name)
-    const displayVal = details.street || result.display_name.split(',')[0];
-    setInputValue(displayVal);
+  const handleSelect = async (p: Prediction) => {
+    setInputValue(p.structured_formatting.main_text);
     setOpen(false);
-    setResults([]);
-    onChange(displayVal, details);
+    setPredictions([]);
+
+    const details = await fetchDetails(p.place_id);
+    onChange(p.structured_formatting.main_text, details ?? undefined);
+    onBestMatchRef.current?.(details);
     onClearError?.();
   };
 
   const handleClear = () => {
     setInputValue('');
-    setResults([]);
+    setPredictions([]);
     setOpen(false);
     onChange('', undefined);
+    onBestMatchRef.current?.(null);
     onClearError?.();
     inputRef.current?.focus();
   };
@@ -205,13 +166,13 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     if (!open) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setActiveIndex(i => Math.min(i + 1, results.length - 1));
+      setActiveIndex(i => Math.min(i + 1, predictions.length - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setActiveIndex(i => Math.max(i - 1, 0));
     } else if (e.key === 'Enter' && activeIndex >= 0) {
       e.preventDefault();
-      handleSelect(results[activeIndex]);
+      handleSelect(predictions[activeIndex]);
     } else if (e.key === 'Escape') {
       setOpen(false);
     }
@@ -224,7 +185,6 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
       </label>
 
       <div className="relative">
-        {/* Map pin icon */}
         <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none z-10">
           <Icon.PiMapPin size={18} />
         </div>
@@ -235,7 +195,7 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
           value={inputValue}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          onFocus={() => results.length > 0 && setOpen(true)}
+          onFocus={() => predictions.length > 0 && setOpen(true)}
           placeholder={placeholder}
           autoComplete="off"
           className={`w-full pl-10 ${inputValue ? 'pr-9' : 'pr-3'} py-2.5 rounded-lg border text-sm outline-none transition-colors
@@ -245,7 +205,6 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
             }`}
         />
 
-        {/* Right side: spinner or clear */}
         <div className="absolute right-3 top-1/2 -translate-y-1/2">
           {loading ? (
             <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
@@ -256,39 +215,37 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
           ) : null}
         </div>
 
-        {/* Suggestions dropdown */}
-        {open && results.length > 0 && (
+        {open && predictions.length > 0 && (
           <ul
-            className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden max-h-56 overflow-y-auto"
+            className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden max-h-64 overflow-y-auto"
             role="listbox"
           >
-            {results.map((result, i) => {
-              const parts = result.display_name.split(', ');
-              const primary = parts.slice(0, 2).join(', ');
-              const secondary = parts.slice(2).join(', ');
-              return (
-                <li
-                  key={result.place_id}
-                  role="option"
-                  aria-selected={i === activeIndex}
-                  onMouseDown={(e) => { e.preventDefault(); handleSelect(result); }}
-                  onMouseEnter={() => setActiveIndex(i)}
-                  className={`flex items-start gap-2.5 px-3 py-2.5 cursor-pointer transition-colors text-sm
-                    ${i === activeIndex ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
-                >
-                  <Icon.PiMapPin size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <p className="font-medium text-gray-900 truncate">{primary}</p>
-                    {secondary && (
-                      <p className="text-xs text-gray-500 truncate mt-0.5">{secondary}</p>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
+            {predictions.map((p, i) => (
+              <li
+                key={p.place_id}
+                role="option"
+                aria-selected={i === activeIndex}
+                onMouseDown={(e) => { e.preventDefault(); handleSelect(p); }}
+                onMouseEnter={() => setActiveIndex(i)}
+                className={`flex items-start gap-2.5 px-3 py-2.5 cursor-pointer transition-colors text-sm
+                  ${i === activeIndex ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
+              >
+                <Icon.PiMapPin size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-gray-900 truncate">
+                    {p.structured_formatting.main_text}
+                  </p>
+                  {p.structured_formatting.secondary_text && (
+                    <p className="text-xs text-gray-500 truncate mt-0.5">
+                      {p.structured_formatting.secondary_text}
+                    </p>
+                  )}
+                </div>
+              </li>
+            ))}
             <li className="flex items-center justify-end gap-1 px-3 py-1.5 bg-gray-50 border-t border-gray-100">
               <span className="text-[10px] text-gray-400">Powered by</span>
-              <span className="text-[10px] font-semibold text-gray-500">OpenStreetMap</span>
+              <span className="text-[10px] font-semibold text-gray-500">Google</span>
             </li>
           </ul>
         )}

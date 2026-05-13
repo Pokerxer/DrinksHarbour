@@ -133,7 +133,7 @@ function recordInventoryMovements(orderItems, orderId, type, quantityMultiplier 
  * @access  Private/Public (Guest checkout supported)
  */
 exports.createOrder = asyncHandler(async (req, res) => {
-  const { customer, shipping, paymentMethod, paymentDetails, items, subtotal, shippingFee, total, couponCode, ageVerified, status, paymentStatus } = req.body;
+  const { customer, shipping, paymentMethod, paymentDetails, items, subtotal, shippingFee, shippingInfo, total, couponCode, ageVerified, status, paymentStatus } = req.body;
 
   let appliedCoupon = null;
   let discountTotal = 0;
@@ -265,6 +265,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
       postalCode: shipping.zipCode,
       coordinates: shipping.coordinates || undefined,
     },
+    shippingInfo: shippingInfo || null,
     shippingMethod: 'standard',
     fulfillmentStatus: new Map(),
     ageVerifiedAtOrderTime: ageVerified || false,

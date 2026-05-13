@@ -134,16 +134,33 @@ const tenantSchema = new Schema(
       default: "Nigeria",
     },
 
-    city: String,
-    state: String, // e.g. "Lagos", "Abuja FCT"
-
+    // ────────────────────────────────────────────────
+    // Physical / Pickup Address
+    // ────────────────────────────────────────────────
     address: {
-      street: { type: String },
-      city: { type: String },
-      state: { type: String },
-      country: { type: String, default: "Nigeria" },
-      zipCode: { type: String },
-      phone: { type: String },
+      street:    { type: String, trim: true },
+      city:      { type: String, trim: true },
+      lga:       { type: String, trim: true },   // Local Government Area
+      state:     { type: String, trim: true },   // raw input e.g. "Lagos", "FCT - Abuja"
+      zipCode:   { type: String, trim: true },
+      country:   { type: String, default: "Nigeria" },
+      formatted: { type: String },               // full address string (set by geocoder)
+    },
+
+    // Canonical state name — normalised for shipping zone lookups
+    // Populated automatically from address.state via pre-save hook
+    normalizedState: {
+      type: String,
+      trim: true,
+      index: true,
+    },
+
+    // GPS coordinates — auto-populated when address is saved
+    location: {
+      lat:         { type: Number, default: null },
+      lon:         { type: Number, default: null },
+      geocodedAt:  { type: Date,   default: null },
+      source:      { type: String, enum: ['google', 'manual'], default: null },
     },
 
     enforceAgeVerification: {
@@ -277,10 +294,104 @@ tenantSchema.virtual("isActive").get(function () {
   );
 });
 
-// Compound index examples – very useful in practice
+// ────────────────────────────────────────────────
+// Indexes
+// ────────────────────────────────────────────────
+
 tenantSchema.index({ slug: 1, status: 1 });
-// stripeCustomerId index comes from sparse: true in the field definition
 tenantSchema.index({ status: 1, subscriptionStatus: 1 });
+tenantSchema.index({ normalizedState: 1, status: 1 });    // shipping lookups
+tenantSchema.index({ 'location.lat': 1, 'location.lon': 1 }); // geo queries
+
+// ────────────────────────────────────────────────
+// State normalisation helper (mirrors shipping-zones logic)
+// ────────────────────────────────────────────────
+
+function normaliseState(raw) {
+  if (!raw) return '';
+  const s = raw.trim();
+  if (/federal capital territory|fct/i.test(s) || /\babuja\b/i.test(s)) return 'FCT - Abuja';
+  // Strip trailing " State" if present
+  return s.replace(/\s+state$/i, '').trim();
+}
+
+// ────────────────────────────────────────────────
+// Auto-geocode address on save (non-blocking)
+// ────────────────────────────────────────────────
+
+async function geocodeAddress(tenant) {
+  const a = tenant.address;
+  if (!a?.street && !a?.city && !a?.state) return; // nothing to geocode
+
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY || '';
+  if (!apiKey) return;
+
+  const parts = [a.street, a.lga, a.city, a.state, a.country || 'Nigeria'].filter(Boolean);
+  const query  = parts.join(', ');
+
+  try {
+    const params = new URLSearchParams({
+      address:    query,
+      components: 'country:NG',
+      key:        apiKey,
+    });
+    const res  = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params}`);
+    const data = await res.json();
+
+    if (data.status !== 'OK' || !data.results?.[0]) return;
+
+    const result    = data.results[0];
+    const { lat, lng } = result.geometry.location;
+
+    tenant.location.lat        = lat;
+    tenant.location.lon        = lng;
+    tenant.location.geocodedAt = new Date();
+    tenant.location.source     = 'google';
+    tenant.address.formatted   = result.formatted_address;
+  } catch (err) {
+    console.warn('[Tenant] Geocoding failed for', query, '—', err.message);
+  }
+}
+
+// ── Pre-save: normalise state + geocode if address changed ───────────────────
+
+tenantSchema.pre('save', async function (next) {
+  // Always keep normalizedState in sync with address.state
+  if (this.address?.state) {
+    this.normalizedState = normaliseState(this.address.state);
+  }
+
+  // Re-geocode only when address fields actually changed
+  const addressChanged = ['address.street', 'address.city', 'address.lga', 'address.state']
+    .some(path => this.isModified(path));
+
+  if (addressChanged) {
+    await geocodeAddress(this);
+  }
+
+  next();
+});
+
+// ── Pre-findOneAndUpdate: normalise state in $set operations ─────────────────
+
+tenantSchema.pre('findOneAndUpdate', function (next) {
+  const update = this.getUpdate();
+  const state  = update?.$set?.['address.state'] || update?.address?.state;
+  if (state) {
+    if (!update.$set) update.$set = {};
+    update.$set.normalizedState = normaliseState(state);
+  }
+  next();
+});
+
+// ────────────────────────────────────────────────
+// Instance method — manually trigger geocoding
+// ────────────────────────────────────────────────
+
+tenantSchema.methods.geocode = async function () {
+  await geocodeAddress(this);
+  return this.save();
+};
 
 const Tenant = mongoose.models.Tenant || mongoose.model("Tenant", tenantSchema);
 

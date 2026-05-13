@@ -372,8 +372,7 @@ tagSchema.virtual('url').get(function () {
 // INDEXES
 // ════════════════════════════════════════════════════════════
 
-tagSchema.index({ name: 1 });
-tagSchema.index({ slug: 1 });
+// name and slug already indexed via unique:true on the field definitions above
 tagSchema.index({ type: 1, productCount: -1 });
 tagSchema.index({ status: 1, isPopular: 1 });
 tagSchema.index({ popularityScore: -1 });
