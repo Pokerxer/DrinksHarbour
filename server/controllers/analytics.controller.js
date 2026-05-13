@@ -40,18 +40,17 @@ const COMPLETED_STATUSES = ['shipped','delivered'];   // stock has physically le
  *
  * Revenue / Profit model
  * ─────────────────────
- * Each order item stores snapshot amounts at purchase time:
- *   itemSubtotal          = what customer paid for this line
- *   tenantRevenueShare    = what platform owes vendor  (platform's cost)
- *   platformCommission    = platform's net profit for this line
+ * Pricing chain (both revenue models):
+ *   Markup model    → supplierCost ×(1+markupPct%) = vendorPayout ×(1+platformMarkupPct%) = customerPrice
+ *   Commission model→ tenantPrice ×(1−commissionPct%) = vendorPayout ×(1+platformMarkupPct%) = customerPrice
  *
- * Formula (varies by tenantRevenueModel snapshot):
- *   markup model    → vendorPayout = costPrice × qty; profit = itemSubtotal − vendorPayout
- *   commission model→ vendorPayout = itemSubtotal × (1 − rate); profit = itemSubtotal × rate
+ * Both collapse to the same formula stored at order time:
+ *   tenantRevenueShare  = vendorPayout (per-line) = customerPrice/unit ÷ (1+platformMarkupPct%) × qty
+ *   platformCommission  = platform profit (per-line) = itemSubtotal − tenantRevenueShare
  *
- * Legacy fallback (orders created before this fix, where both fields = 0):
- *   vendorPayout = itemSubtotal / 1.15  (assumes old hardcoded 15% markup)
- *   profit       = itemSubtotal − vendorPayout
+ * Legacy fallback (orders before this fix, where both snapshot fields = 0):
+ *   vendorPayout  = itemSubtotal / 1.15  (15% was the hardcoded default platformMarkupPct)
+ *   platformProfit = itemSubtotal − vendorPayout
  */
 exports.getDashboard = asyncHandler(async (req, res) => {
   const now = new Date();
