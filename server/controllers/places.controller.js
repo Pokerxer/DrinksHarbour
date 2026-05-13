@@ -154,18 +154,38 @@ const reverse = asyncHandler(async (req, res) => {
 
 /**
  * GET /api/places/maps-script?callback=<name>
- * Redirects to the Google Maps JS API with the server-side key injected.
- * Keeps the API key out of the frontend bundle.
+ * Proxies the Google Maps JS API bundle so the key stays server-side.
+ * Streams the JS content rather than redirecting (avoids cross-origin script errors).
  */
 const mapsScript = asyncHandler(async (req, res) => {
   const key = getKey();
-  if (!key) return res.status(503).json({ success: false, message: 'Maps API not configured' });
+  if (!key) {
+    console.error('[Maps] GOOGLE_PLACES_API_KEY not set');
+    return res.status(503).send('// Maps API not configured');
+  }
 
   const { callback = 'initMap', libraries = '' } = req.query;
   const params = new URLSearchParams({ key, callback, loading: 'async' });
-  if (libraries) params.set('libraries', String(libraries));
+  if (libraries) params.set('libraries', String(String(libraries)));
 
-  res.redirect(302, `https://maps.googleapis.com/maps/api/js?${params}`);
+  const mapsUrl = `https://maps.googleapis.com/maps/api/js?${params}`;
+
+  try {
+    const upstream = await fetch(mapsUrl);
+    const body     = await upstream.text();
+
+    if (!upstream.ok) {
+      console.error(`[Maps] Google returned ${upstream.status}:`, body.slice(0, 200));
+      return res.status(upstream.status).send(`// Google Maps error: ${upstream.status}`);
+    }
+
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.send(body);
+  } catch (err) {
+    console.error('[Maps] Failed to fetch Maps JS API:', err.message);
+    res.status(502).send('// Failed to fetch Google Maps API');
+  }
 });
 
 module.exports = { autocomplete, details, reverse, mapsScript };
