@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { routes } from '@/config/routes';
@@ -337,61 +337,87 @@ export default function OrderTable({
                   <th className="px-5 py-3.5" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody>
                 {orders.map((order, i) => {
-                  const customer = order.customer || (order.user ? { firstName: order.user.firstName, lastName: order.user.lastName, email: order.user.email, phone: '' } : null);
-                  const name     = customer ? `${customer.firstName} ${customer.lastName}`.trim() : '—';
-                  const email    = customer?.email || '—';
+                  const customer  = order.customer || (order.user ? { firstName: order.user.firstName, lastName: order.user.lastName, email: order.user.email, phone: '' } : null);
+                  const name      = customer ? `${customer.firstName} ${customer.lastName}`.trim() : '—';
+                  const email     = customer?.email || '—';
                   const itemCount = order.items.reduce((s, it) => s + it.quantity, 0);
 
+                  // Build per-vendor payout map
+                  const vendorMap = new Map();
+                  for (const item of order.items) {
+                    const id   = item.tenant?._id ?? '__unknown__';
+                    const vname = item.tenant?.name ?? 'Unknown';
+                    const prev = vendorMap.get(id) ?? { name: vname, payout: 0 };
+                    vendorMap.set(id, { name: vname, payout: prev.payout + (item.tenantRevenueShare ?? 0) });
+                  }
+                  const vendors = [...vendorMap.values()].filter(v => v.payout > 0);
+
                   return (
-                    <motion.tr
-                      key={order._id}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: Math.min(i * 0.03, 0.3) }}
-                      className="hover:bg-gray-50/70 transition-colors group"
-                    >
-                      <td className="px-5 py-4 font-mono text-xs font-semibold text-gray-700 whitespace-nowrap">
-                        #{order.orderNumber}
-                      </td>
-                      <td className="px-5 py-4">
-                        <p className="font-semibold text-gray-800 text-sm">{name}</p>
-                        <p className="text-xs text-gray-400 mt-0.5">{email}</p>
-                      </td>
-                      <td className="px-5 py-4 text-gray-600">
-                        {itemCount} item{itemCount !== 1 ? 's' : ''}
-                      </td>
-                      <td className="px-5 py-4 font-semibold text-gray-900 whitespace-nowrap">
-                        {fmt(order.totalAmount)}
-                      </td>
-                      <td className="px-5 py-4 whitespace-nowrap">
-                        {order.platformCommissionTotal != null && order.platformCommissionTotal > 0 ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-50 text-violet-700 text-xs font-semibold">
-                            {fmt(order.platformCommissionTotal)}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-gray-300">—</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-4">
-                        <StatusBadge status={order.status} />
-                      </td>
-                      <td className="px-5 py-4">
-                        <PayBadge status={order.paymentStatus} />
-                      </td>
-                      <td className="px-5 py-4 text-gray-500 whitespace-nowrap text-xs">
-                        {fmtDate(order.placedAt || order.createdAt)}
-                      </td>
-                      <td className="px-5 py-4">
-                        <button
-                          onClick={() => router.push(routes.eCommerce.orderDetails(order._id))}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white rounded-lg text-xs font-semibold hover:bg-gray-700"
-                        >
-                          <PiEyeBold className="w-3.5 h-3.5" /> View
-                        </button>
-                      </td>
-                    </motion.tr>
+                    <React.Fragment key={order._id}>
+                      <motion.tr
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: Math.min(i * 0.03, 0.3) }}
+                        className="hover:bg-gray-50/70 transition-colors group border-t border-gray-50"
+                      >
+                        <td className="px-5 py-4 font-mono text-xs font-semibold text-gray-700 whitespace-nowrap">
+                          #{order.orderNumber}
+                        </td>
+                        <td className="px-5 py-4">
+                          <p className="font-semibold text-gray-800 text-sm">{name}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">{email}</p>
+                        </td>
+                        <td className="px-5 py-4 text-gray-600">
+                          {itemCount} item{itemCount !== 1 ? 's' : ''}
+                        </td>
+                        <td className="px-5 py-4 font-semibold text-gray-900 whitespace-nowrap">
+                          {fmt(order.totalAmount)}
+                        </td>
+                        <td className="px-5 py-4 whitespace-nowrap">
+                          {order.platformCommissionTotal != null && order.platformCommissionTotal > 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-50 text-violet-700 text-xs font-semibold">
+                              {fmt(order.platformCommissionTotal)}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-300">—</span>
+                          )}
+                        </td>
+                        <td className="px-5 py-4">
+                          <StatusBadge status={order.status} />
+                        </td>
+                        <td className="px-5 py-4">
+                          <PayBadge status={order.paymentStatus} />
+                        </td>
+                        <td className="px-5 py-4 text-gray-500 whitespace-nowrap text-xs">
+                          {fmtDate(order.placedAt || order.createdAt)}
+                        </td>
+                        <td className="px-5 py-4">
+                          <button
+                            onClick={() => router.push(routes.eCommerce.orderDetails(order._id))}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white rounded-lg text-xs font-semibold hover:bg-gray-700"
+                          >
+                            <PiEyeBold className="w-3.5 h-3.5" /> View
+                          </button>
+                        </td>
+                      </motion.tr>
+                      {vendors.length > 0 && (
+                        <tr className="bg-gray-50/60 border-t border-gray-50">
+                          <td colSpan={9} className="px-5 py-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mr-1">Vendors:</span>
+                              {vendors.map((v, vi) => (
+                                <span key={vi} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-100 text-xs">
+                                  <span className="font-semibold text-blue-700">{v.name}</span>
+                                  <span className="text-blue-500">{fmt(v.payout)}</span>
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>

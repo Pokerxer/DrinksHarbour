@@ -829,6 +829,49 @@ export default function OrderView({
               </table>
             </div>
 
+            {/* Vendor Revenue Breakdown */}
+            {(() => {
+              // Group items by tenant
+              const vendorMap = new Map<string, { name: string; revenue: number; payout: number; items: number }>();
+              for (const item of order.items) {
+                const id   = item.tenant?._id   ?? '__unknown__';
+                const name = item.tenant?.name  ?? 'Unknown Vendor';
+                const existing = vendorMap.get(id) ?? { name, revenue: 0, payout: 0, items: 0 };
+                vendorMap.set(id, {
+                  name,
+                  revenue: existing.revenue + item.itemSubtotal,
+                  payout:  existing.payout  + (item.tenantRevenueShare ?? 0),
+                  items:   existing.items   + item.quantity,
+                });
+              }
+              const vendors = [...vendorMap.values()];
+              if (vendors.length === 0) return null;
+              return (
+                <div className="mt-6">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Vendor Revenue</p>
+                  <div className="rounded-xl border border-gray-100 overflow-hidden">
+                    {vendors.map((v, i) => (
+                      <div key={i} className="flex items-center justify-between px-4 py-3 border-b border-gray-50 last:border-0 bg-white hover:bg-gray-50 transition-colors">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 text-[11px] font-bold shrink-0">
+                            {v.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-800">{v.name}</p>
+                            <p className="text-xs text-gray-400">{v.items} item{v.items !== 1 ? 's' : ''} · revenue {formatCurrency(v.revenue, order.currency)}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-blue-700">{formatCurrency(v.payout, order.currency)}</p>
+                          <p className="text-[10px] text-gray-400">vendor payout</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Totals */}
             <div className="border-t border-muted pt-7 @5xl:mt-3">
               <div className="ms-auto max-w-lg space-y-4">

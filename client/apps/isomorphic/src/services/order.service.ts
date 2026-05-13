@@ -13,6 +13,9 @@ export interface OrderItem {
   priceAtPurchase: number;
   itemSubtotal: number;
   discountAmount?: number;
+  tenantRevenueShare?: number;
+  platformCommission?: number;
+  tenantRevenueModel?: string;
 }
 
 export interface ShippingAddress {
