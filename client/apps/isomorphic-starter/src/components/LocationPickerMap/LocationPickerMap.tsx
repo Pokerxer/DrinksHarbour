@@ -29,6 +29,12 @@ let loadState: LoadState = 'idle';
 const queue: Array<() => void> = [];
 
 function loadMaps(cb: () => void) {
+  // Already in window (e.g. HMR reload) — sync the module state and call back
+  if (window.google?.maps?.marker?.AdvancedMarkerElement) {
+    loadState = 'ready';
+    cb();
+    return;
+  }
   if (loadState === 'ready') { cb(); return; }
   queue.push(cb);
   if (loadState === 'loading') return;
@@ -40,11 +46,11 @@ function loadMaps(cb: () => void) {
     queue.length = 0;
   };
 
-  const s     = document.createElement('script');
-  s.async     = true;
-  s.defer     = true;
-  s.src       = `${API_URL}/api/places/maps-script?callback=${CALLBACK_NAME}&libraries=marker`;
-  s.onerror   = () => {
+  const s   = document.createElement('script');
+  s.async   = true;
+  s.defer   = true;
+  s.src     = `${API_URL}/api/places/maps-script?callback=${CALLBACK_NAME}&libraries=marker`;
+  s.onerror = () => {
     loadState = 'idle';
     console.error('[Maps] Failed to load Google Maps JS API');
   };
