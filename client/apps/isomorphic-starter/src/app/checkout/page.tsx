@@ -12,6 +12,7 @@ import CouponComponent from '@/components/Coupon/Coupon';
 import PaymentHandler from '@/components/Payment/PaymentHandler';
 import { API_URL } from '@/lib/api';
 import AddressAutocomplete, { type AddressDetails } from '@/components/AddressAutocomplete/AddressAutocomplete';
+import LocationPickerMap from '@/components/LocationPickerMap/LocationPickerMap';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -232,6 +233,18 @@ export default function CheckoutPage() {
   // Called automatically by AddressAutocomplete with the best-match coordinates
   // (even when user hasn't selected from the dropdown). Updates shipping coords
   // without touching form.address — so the customer's typed address is preserved.
+  // Called when user pins/drags on the map — updates coords AND auto-fills address fields
+  const handleMapLocationChange = useCallback((details: AddressDetails) => {
+    setAddressDetails(details);
+    setForm(f => ({
+      ...f,
+      // Fill address from reverse geocode if the user hasn't typed anything yet
+      address:  f.address || details.street || details.formatted || f.address,
+      zipCode:  details.postcode || f.zipCode,
+      ...(details.state ? { state: matchNigerianState(details.state) } : {}),
+    }));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleBestMatch = useCallback((details: AddressDetails | null) => {
     setAddressDetails(prev => {
       // Don't override coords if user already made an explicit selection
@@ -781,6 +794,13 @@ export default function CheckoutPage() {
                       error={errors.address}
                       label="Street Address"
                       placeholder="Estate, street or landmark…"
+                    />
+
+                    {/* Location map */}
+                    <LocationPickerMap
+                      lat={addressDetails?.lat ?? null}
+                      lon={addressDetails?.lon ?? null}
+                      onLocationChange={handleMapLocationChange}
                     />
 
                     {/* State + LGA row */}

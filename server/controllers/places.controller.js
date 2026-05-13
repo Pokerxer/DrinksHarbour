@@ -98,4 +98,58 @@ const details = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { autocomplete, details };
+/**
+ * GET /api/places/reverse?lat=<lat>&lon=<lon>
+ * Reverse-geocodes a coordinate to address details.
+ */
+const reverse = asyncHandler(async (req, res) => {
+  const { lat, lon } = req.query;
+  if (!lat || !lon) return res.status(400).json({ success: false, message: 'lat and lon required' });
+
+  const key = getKey();
+  if (!key) return res.status(503).json({ success: false, message: 'Places API not configured' });
+
+  const params = new URLSearchParams({
+    latlng:   `${lat},${lon}`,
+    key,
+    language: 'en',
+    result_type: 'street_address|route|neighborhood|sublocality|locality',
+  });
+
+  const r    = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params}`);
+  const data = await r.json();
+
+  if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+    return res.status(502).json({ success: false, message: data.error_message || data.status });
+  }
+
+  const result     = (data.results || [])[0];
+  if (!result) return res.json({ success: true, data: null });
+
+  const components = result.address_components || [];
+  const get        = (type) => components.find(c => c.types.includes(type))?.long_name  || '';
+
+  const street =
+    [get('street_number'), get('route')].filter(Boolean).join(' ') ||
+    get('neighborhood') || get('sublocality_level_1') || get('sublocality') || '';
+
+  const city =
+    get('locality') || get('sublocality_level_1') || get('sublocality') ||
+    get('administrative_area_level_2') || '';
+
+  res.json({
+    success: true,
+    data: {
+      formatted: result.formatted_address,
+      street,
+      city,
+      state:    get('administrative_area_level_1'),
+      postcode: get('postal_code'),
+      country:  get('country'),
+      lat: parseFloat(lat),
+      lon: parseFloat(lon),
+    },
+  });
+});
+
+module.exports = { autocomplete, details, reverse };
