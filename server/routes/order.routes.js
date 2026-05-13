@@ -3,7 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const orderController = require('../controllers/order.controller');
-const { protect, optionalProtect } = require('../middleware/auth.middleware');
+const { protect, optionalProtect, superAdminOnly, tenantAdminOrSuperAdmin } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validation.middleware');
 const { body, param, query } = require('express-validator');
 
@@ -86,6 +86,9 @@ router.get(
 
 router.use(protect);
 
+// Admin: list all orders
+router.get('/', tenantAdminOrSuperAdmin, orderController.getAllOrders);
+
 router.get('/my-orders', orderController.getMyOrders);
 
 router.get(
@@ -105,10 +108,24 @@ router.post(
 );
 
 router.put(
+  '/:id/payment',
+  tenantAdminOrSuperAdmin,
+  param('id').isMongoId(),
+  body('action')
+    .isIn(['mark_paid', 'mark_failed', 'mark_refunded'])
+    .withMessage('Invalid action'),
+  body('reference').optional().trim(),
+  body('notes').optional().trim(),
+  body('amount').optional().isFloat({ min: 0 }),
+  validate,
+  orderController.updatePaymentStatus
+);
+
+router.put(
   '/:id/status',
   param('id').isMongoId(),
   body('status')
-    .isIn(['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'])
+    .isIn(['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'])
     .withMessage('Invalid status'),
   body('reason').optional().trim(),
   validate,

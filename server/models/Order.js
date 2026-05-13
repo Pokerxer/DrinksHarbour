@@ -260,11 +260,12 @@ const orderSchema = new Schema(
     status: {
       type: String,
       enum: [
-        'pending',          // payment not completed
-        'processing',       // payment ok, preparing
+        'pending',          // payment not completed / awaiting confirmation
+        'confirmed',        // order confirmed by admin
+        'processing',       // being prepared / packed
         'partially_shipped',
-        'shipped',
-        'delivered',
+        'shipped',          // handed to courier
+        'delivered',        // customer received
         'cancelled',
         'refunded',
       ],
@@ -277,7 +278,11 @@ const orderSchema = new Schema(
       default: Date.now,
     },
 
-    cancelledAt: Date,
+    confirmedAt:  Date,
+    processingAt: Date,
+    shippedAt:    Date,
+    deliveredAt:  Date,
+    cancelledAt:  Date,
     cancelReason: String,
 
     // ────────────────────────────────────────────────
