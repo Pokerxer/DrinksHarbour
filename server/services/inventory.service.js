@@ -2,17 +2,17 @@
  * inventory.service.js — single source of truth for all stock mutations.
  *
  * Stock accounting model:
- *   totalStock     = physical units in the warehouse
- *   reservedStock  = units held for confirmed-but-not-yet-shipped orders
- *   availableStock = units customers can still order (= totalStock - reservedStock)
+ *   totalStock     = sellable units remaining (decrements on order placement, not shipment)
+ *   reservedStock  = units in-flight: order placed but not yet shipped
+ *   availableStock = same as totalStock (kept in sync for backwards compat)
  *
  * Order lifecycle:
- *   placed         → reserve()        availableStock--, reservedStock++
- *   shipped        → commitShipment() reservedStock--,  totalStock--   (left warehouse)
+ *   placed         → reserve()        totalStock--, availableStock--, reservedStock++
+ *   shipped        → commitShipment() reservedStock--, totalSold++  (stock already decremented)
  *   cancel/fail
- *     before ship  → releaseReserve() availableStock++, reservedStock--
- *     after  ship  → restoreStock()   availableStock++, totalStock++   (returned)
- *   refund         → restoreStock()   availableStock++, totalStock++
+ *     before ship  → releaseReserve() totalStock++, availableStock++, reservedStock--
+ *     after  ship  → restoreStock()   totalStock++, availableStock++, totalSold--  (item returned)
+ *   refund         → restoreStock()   totalStock++, availableStock++, totalSold--
  */
 
 'use strict';
@@ -107,7 +107,13 @@ async function reserve(items, orderId, userId) {
           { availableStock: { $exists: false }, totalStock: { $gte: item.quantity } },
         ],
       },
-      { $inc: { availableStock: -item.quantity, reservedStock: item.quantity } },
+      {
+        $inc: {
+          totalStock:     -item.quantity,  // visible stock drops immediately on order
+          availableStock: -item.quantity,
+          reservedStock:   item.quantity,
+        },
+      },
       { new: true }
     );
 
@@ -119,7 +125,7 @@ async function reserve(items, orderId, userId) {
     if (item.size) {
       Size.findOneAndUpdate(
         { _id: item.size, $or: [{ availableStock: { $gte: item.quantity } }, { stock: { $gte: item.quantity } }] },
-        { $inc: { availableStock: -item.quantity, reservedStock: item.quantity } }
+        { $inc: { stock: -item.quantity, availableStock: -item.quantity, reservedStock: item.quantity } }
       ).catch(() => {});
     }
 
@@ -139,14 +145,20 @@ async function releaseReserve(items, orderId, userId) {
   const ops = items.filter(i => i.subproduct).map(async (item) => {
     const updated = await SubProduct.findByIdAndUpdate(
       item.subproduct,
-      { $inc: { availableStock: item.quantity, reservedStock: -item.quantity } },
+      {
+        $inc: {
+          totalStock:      item.quantity,   // restore visible stock
+          availableStock:  item.quantity,
+          reservedStock:  -item.quantity,
+        },
+      },
       { new: true }
     ).catch(() => null);
 
     if (item.size) {
       Size.findByIdAndUpdate(
         item.size,
-        { $inc: { availableStock: item.quantity, reservedStock: -item.quantity } }
+        { $inc: { stock: item.quantity, availableStock: item.quantity, reservedStock: -item.quantity } }
       ).catch(() => {});
     }
 
@@ -164,23 +176,26 @@ async function releaseReserve(items, orderId, userId) {
  */
 async function commitShipment(items, orderId, userId) {
   const ops = items.filter(i => i.subproduct).map(async (item) => {
-    await SubProduct.findByIdAndUpdate(item.subproduct, {
+    // totalStock and availableStock were already decremented at reserve() time.
+    // Here we only clear the reservation and record the sale.
+    const updated = await SubProduct.findByIdAndUpdate(item.subproduct, {
       $inc: {
-        totalStock:    -item.quantity,
         reservedStock: -item.quantity,
         totalSold:      item.quantity,
         totalRevenue:   item.itemSubtotal || 0,
         purchaseCount:  1,
       },
       $set: { lastSoldDate: new Date() },
-    }).catch(() => {});
+    }, { new: true }).catch(() => null);
 
     if (item.size) {
       Size.findByIdAndUpdate(
         item.size,
-        { $inc: { stock: -item.quantity, reservedStock: -item.quantity } }
+        { $inc: { reservedStock: -item.quantity } }
       ).catch(() => {});
     }
+
+    if (updated) syncStatus(item.subproduct, updated.lowStockThreshold);
   });
 
   await Promise.allSettled(ops);
