@@ -4,6 +4,8 @@ const Order = require('../models/Order');
 const Coupon = require('../models/Coupon');
 const User = require('../models/User');
 const Tenant = require('../models/Tenant');
+const SubProduct = require('../models/SubProduct');
+const Size = require('../models/Size');
 const asyncHandler = require('../utils/asyncHandler');
 const { generateOrderNumber } = require('../utils/orderUtils');
 const inventoryService = require('../services/inventory.service');
@@ -69,38 +71,80 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
   // Fetch tenant information for proper revenue calculation
   const tenantIds = [...new Set(items.map(item => item.tenantId).filter(Boolean))];
-  const tenants = await Tenant.find({ _id: { $in: tenantIds } }).select('_id name revenueModel markupPercentage commissionPercentage').lean();
+  const tenants = await Tenant.find({ _id: { $in: tenantIds } })
+    .select('_id name revenueModel markupPercentage commissionPercentage')
+    .lean();
   const tenantMap = new Map(tenants.map(t => [t._id.toString(), t]));
+
+  // Bulk-fetch SubProducts and Sizes for cost-price snapshots
+  const subProductIds = items.map(i => i.subProductId).filter(Boolean);
+  const sizeIds       = items.map(i => i.sizeId).filter(Boolean);
+  const [subProducts, sizes] = await Promise.all([
+    subProductIds.length ? SubProduct.find({ _id: { $in: subProductIds } }).select('_id costPrice').lean() : [],
+    sizeIds.length       ? Size.find({ _id: { $in: sizeIds } }).select('_id costPrice').lean()       : [],
+  ]);
+  const subProductMap = new Map(subProducts.map(s => [s._id.toString(), s]));
+  const sizeMap       = new Map(sizes.map(s => [s._id.toString(), s]));
 
   // Build orderItems first (needed for reserve call below)
   const orderItems = items.map(item => {
-    const tenant = tenantMap.get(item.tenantId?.toString());
-    const customerPrice = item.price; // This is the website price (platform price)
+    const tenant       = tenantMap.get(item.tenantId?.toString());
+    const customerPrice = item.price;           // platform selling price (what customer pays)
+    const qty           = item.quantity;
+    const itemSubtotal  = customerPrice * qty;
 
-    // Calculate revenue share based on new pricing model
-    // Formula: tenantPrice = customerPrice / (1 + platformMarkupPercentage/100)
-    // platformCommission = customerPrice - tenantPrice
-    const platformMarkupPercentage = 15; // Platform markup percentage
-    const platformMultiplier = 1 + (platformMarkupPercentage / 100);
-    const tenantRevenueShare = customerPrice / platformMultiplier;
-    const platformCommission = customerPrice - tenantRevenueShare;
+    // Resolve vendor cost price:
+    //   Size.costPrice takes priority (most specific variant)
+    //   → fall back to SubProduct.costPrice
+    //   → fall back to 0 (edge-case; legacy items or missing data)
+    const sizeDoc       = item.sizeId       ? sizeMap.get(item.sizeId.toString())       : null;
+    const spDoc         = item.subProductId ? subProductMap.get(item.subProductId.toString()) : null;
+    const costPrice     = sizeDoc?.costPrice ?? spDoc?.costPrice ?? 0;
+
+    const revenueModel  = tenant?.revenueModel ?? 'markup';
+
+    let vendorPayout;   // what platform owes vendor (platform's cost)
+    let platformProfit; // what the platform earns
+    let revenueRate;    // snapshot of the rate used
+
+    if (revenueModel === 'commission') {
+      // Vendor sets retail price; platform takes commissionPercentage cut
+      const commissionRate = (tenant?.commissionPercentage ?? 12) / 100;
+      revenueRate    = tenant?.commissionPercentage ?? 12;
+      vendorPayout   = itemSubtotal * (1 - commissionRate);
+      platformProfit = itemSubtotal * commissionRate;
+    } else {
+      // markup model (default): platform buys at costPrice, sells at customerPrice
+      // Vendor payout = costPrice × qty  (what platform owes vendor)
+      // Platform profit = customerPrice×qty − costPrice×qty
+      if (costPrice > 0) {
+        revenueRate    = tenant?.markupPercentage ?? 40;
+        vendorPayout   = costPrice * qty;
+        platformProfit = itemSubtotal - vendorPayout;
+      } else {
+        // No costPrice on record — fall back to the platform's default 15% markup
+        // so that tenantRevenueShare is still reasonable
+        const fallbackMarkup = 1.15;
+        revenueRate    = 15;
+        vendorPayout   = itemSubtotal / fallbackMarkup;
+        platformProfit = itemSubtotal - vendorPayout;
+      }
+    }
 
     return {
-      product: item.productId,
-      subproduct: item.subProductId || null,
-      size: item.sizeId || null,
-      tenant: item.tenantId || null,
-      quantity: item.quantity,
-      priceAtPurchase: customerPrice,
-      itemSubtotal: customerPrice * item.quantity,
-      discountAmount: 0,
-      tenantRevenueShare: Math.round(tenantRevenueShare * 100) / 100,
-      platformCommission: Math.round(platformCommission * 100) / 100,
-      // Store revenue model info for reporting
-      tenantRevenueModel: 'platform_markup',
-      tenantCommissionPercentage: 0,
-      tenantMarkupPercentage: tenant?.markupPercentage || 20,
-      platformMarkupPercentage: platformMarkupPercentage,
+      product:               item.productId,
+      subproduct:            item.subProductId || null,
+      size:                  item.sizeId || null,
+      tenant:                item.tenantId || null,
+      quantity:              qty,
+      priceAtPurchase:       customerPrice,
+      itemSubtotal:          Math.round(itemSubtotal   * 100) / 100,
+      discountAmount:        0,
+      vendorPriceAtPurchase: Math.round(costPrice      * 100) / 100,
+      tenantRevenueShare:    Math.round(vendorPayout   * 100) / 100,
+      platformCommission:    Math.round(platformProfit * 100) / 100,
+      tenantRevenueModel:    revenueModel,
+      revenueRateAtPurchase: revenueRate,
     };
   });
 
@@ -193,35 +237,25 @@ exports.createOrder = asyncHandler(async (req, res) => {
     { path: 'items.tenant', select: 'name' },
   ]);
 
-   // Log vendor earnings breakdown for debugging
+  // Log vendor earnings breakdown for debugging
   console.log('\n💰 Order Revenue Breakdown:');
-  console.log(`   Order: ${order.orderNumber}`);
-  console.log(`   Total Customer Paid: ₦${order.totalAmount.toLocaleString()}`);
-  console.log(`   Platform Commission: ₦${calculatedPlatformCommission.toLocaleString()}`);
-  
-  // Group by tenant
+  console.log(`   Order:            ${order.orderNumber}`);
+  console.log(`   Customer paid:    ₦${order.totalAmount.toLocaleString()}`);
+  console.log(`   Platform profit:  ₦${calculatedPlatformCommission.toLocaleString()}`);
+
   const tenantBreakdown = {};
   order.items.forEach(item => {
-    const tenantId = item.tenant?.toString() || 'no-tenant';
-    if (!tenantBreakdown[tenantId]) {
-      tenantBreakdown[tenantId] = {
-        items: 0,
-        customerTotal: 0,
-        vendorEarnings: 0,
-      };
-    }
-    tenantBreakdown[tenantId].items += item.quantity;
-    tenantBreakdown[tenantId].customerTotal += item.itemSubtotal;
-    tenantBreakdown[tenantId].vendorEarnings += item.tenantRevenueShare;
+    const tid = item.tenant?.toString() || 'no-tenant';
+    if (!tenantBreakdown[tid]) tenantBreakdown[tid] = { qty: 0, revenue: 0, vendorPayout: 0, model: item.tenantRevenueModel };
+    tenantBreakdown[tid].qty          += item.quantity;
+    tenantBreakdown[tid].revenue      += item.itemSubtotal;
+    tenantBreakdown[tid].vendorPayout += item.tenantRevenueShare;
   });
-  
-  Object.entries(tenantBreakdown).forEach(([tenantId, data]) => {
-    const tenant = tenantMap.get(tenantId);
-    console.log(`   ${tenant?.name || 'Unknown'}:`);
-    console.log(`     - Items: ${data.items}`);
-    console.log(`     - Customer Paid: ₦${data.customerTotal.toLocaleString()}`);
-    console.log(`     - Vendor Earnings: ₦${data.vendorEarnings.toLocaleString()}`);
-    console.log(`     - Model: ${tenant?.revenueModel || 'markup'}`);
+
+  Object.entries(tenantBreakdown).forEach(([tid, d]) => {
+    const t = tenantMap.get(tid);
+    console.log(`   ${t?.name || 'Unknown'} [${d.model}]:`);
+    console.log(`     qty: ${d.qty} | customer: ₦${d.revenue.toLocaleString()} | vendor payout: ₦${d.vendorPayout.toLocaleString()} | platform: ₦${(d.revenue - d.vendorPayout).toLocaleString()}`);
   });
   console.log('');
 

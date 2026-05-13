@@ -53,14 +53,26 @@ const orderItemSchema = new Schema({
     default: 0,
   },
 
-  // For reporting / revenue share calculation
+  // ── Revenue snapshot (all amounts are per-LINE, not per-unit) ──────────────
+  // tenantRevenueShare = what the platform owes the vendor for this line
+  //   markup model  → costPriceAtPurchase × quantity
+  //   commission    → itemSubtotal × (1 − commissionRate)
   tenantRevenueShare: {
     type: Number,
     default: 0,
   },
 
-  // Platform commission for this item
+  // platformCommission = platform's net profit for this line
+  //   markup model  → itemSubtotal − tenantRevenueShare
+  //   commission    → itemSubtotal × commissionRate
   platformCommission: {
+    type: Number,
+    default: 0,
+  },
+
+  // Snapshot of the per-unit vendor cost at purchase time (markup model only)
+  // This is the costPrice from SubProduct or Size — what the platform paid/owes the vendor
+  vendorPriceAtPurchase: {
     type: Number,
     default: 0,
   },
@@ -68,26 +80,14 @@ const orderItemSchema = new Schema({
   // Tenant revenue model snapshot for reporting
   tenantRevenueModel: {
     type: String,
-    enum: ['markup', 'commission', 'platform_markup'],
+    enum: ['markup', 'commission'],
     default: 'markup',
   },
 
-  // Tenant's commission percentage (for commission model)
-  tenantCommissionPercentage: {
+  // Rate used at purchase time (commissionPercentage or markupPercentage, depending on model)
+  revenueRateAtPurchase: {
     type: Number,
     default: 0,
-  },
-
-  // Tenant's markup percentage (for markup model)
-  tenantMarkupPercentage: {
-    type: Number,
-    default: 40,
-  },
-
-  // Platform markup percentage (for platform_markup model)
-  platformMarkupPercentage: {
-    type: Number,
-    default: 15,
   },
 }, { _id: false });
 
