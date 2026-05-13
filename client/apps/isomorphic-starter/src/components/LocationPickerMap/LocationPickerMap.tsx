@@ -12,57 +12,70 @@ interface LocationPickerMapProps {
 }
 
 declare global {
-  interface Window {
-    google: any;
-    __mapsInitCallback?: () => void;
-  }
+  interface Window { google: any; __mapsInitCallback?: () => void; }
 }
 
 const NIGERIA_CENTER = { lat: 9.0765, lng: 7.3986 };
 const DEFAULT_ZOOM   = 16;
 const COUNTRY_ZOOM   = 6;
 const CALLBACK_NAME  = '__mapsInitCallback';
+// DEMO_MAP_ID enables AdvancedMarkerElement without a Cloud Console map ID
+const MAP_ID         = 'DEMO_MAP_ID';
 
-// ── Google Maps loader (proxied through our backend) ──────────────────────────
+// ── Loader ────────────────────────────────────────────────────────────────────
 
 type LoadState = 'idle' | 'loading' | 'ready';
 let loadState: LoadState = 'idle';
-const pendingCallbacks: Array<() => void> = [];
+const queue: Array<() => void> = [];
 
-function loadMaps(callback: () => void) {
-  if (loadState === 'ready') { callback(); return; }
-  pendingCallbacks.push(callback);
+function loadMaps(cb: () => void) {
+  if (loadState === 'ready') { cb(); return; }
+  queue.push(cb);
   if (loadState === 'loading') return;
   loadState = 'loading';
 
-  window[CALLBACK_NAME] = () => {
+  (window as any)[CALLBACK_NAME] = () => {
     loadState = 'ready';
-    pendingCallbacks.forEach(cb => cb());
-    pendingCallbacks.length = 0;
+    queue.forEach(fn => fn());
+    queue.length = 0;
   };
 
-  const script   = document.createElement('script');
-  script.async   = true;
-  script.defer   = true;
-  // Load via backend proxy — API key never touches the browser bundle
-  script.src     = `${API_URL}/api/places/maps-script?callback=${CALLBACK_NAME}`;
-  script.onerror = () => {
-    loadState = 'idle'; // allow retry
-    console.error('[Maps] Failed to load Google Maps JS API via proxy');
+  const s     = document.createElement('script');
+  s.async     = true;
+  s.defer     = true;
+  s.src       = `${API_URL}/api/places/maps-script?callback=${CALLBACK_NAME}&libraries=marker`;
+  s.onerror   = () => {
+    loadState = 'idle';
+    console.error('[Maps] Failed to load Google Maps JS API');
   };
-  document.head.appendChild(script);
+  document.head.appendChild(s);
 }
 
-// ── Reverse geocode via backend ───────────────────────────────────────────────
+// ── Reverse geocode ───────────────────────────────────────────────────────────
 
 async function reverseGeocode(lat: number, lon: number): Promise<AddressDetails | null> {
   try {
     const res  = await fetch(`${API_URL}/api/places/reverse?lat=${lat}&lon=${lon}`);
     const data = await res.json();
     return data.success && data.data ? (data.data as AddressDetails) : null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
+}
+
+// ── Red pin HTML element ──────────────────────────────────────────────────────
+
+function makePinElement() {
+  const el       = document.createElement('div');
+  el.style.cssText = `
+    width:32px; height:40px; cursor:grab;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,.4));
+  `;
+  el.innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 40" width="32" height="40">
+      <path d="M16 0C9.4 0 4 5.4 4 12c0 9 12 28 12 28S28 21 28 12C28 5.4 22.6 0 16 0z"
+            fill="#c0392b" stroke="#fff" stroke-width="1.5"/>
+      <circle cx="16" cy="12" r="5" fill="#fff"/>
+    </svg>`;
+  return el;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -71,17 +84,36 @@ const LocationPickerMap: React.FC<LocationPickerMapProps> = ({ lat, lon, onLocat
   const mapRef      = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const markerRef   = useRef<any>(null);
+
   const [ready,     setReady]     = useState(false);
   const [locating,  setLocating]  = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [gpsError,  setGpsError]  = useState('');
 
-  // ── Load SDK ────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    loadMaps(() => setReady(true));
-  }, []);
+  // ── Load Maps SDK ────────────────────────────────────────────────────────────
+  useEffect(() => { loadMaps(() => setReady(true)); }, []);
 
-  // ── Init map ────────────────────────────────────────────────────────────────
+  // ── Helper: create AdvancedMarkerElement at a position ──────────────────────
+  const makeMarker = useCallback((position: { lat: number; lng: number }, map: any) => {
+    const { AdvancedMarkerElement } = window.google.maps.marker;
+    const marker = new AdvancedMarkerElement({
+      position,
+      map,
+      gmpDraggable: true,
+      content:      makePinElement(),
+      title:        'Drag to adjust your exact location',
+    });
+    marker.addListener('dragend', async () => {
+      const p = marker.position;
+      setGeocoding(true);
+      const d = await reverseGeocode(p.lat, p.lng);
+      setGeocoding(false);
+      if (d) onLocationChange(d);
+    });
+    return marker;
+  }, [onLocationChange]);
+
+  // ── Init map once SDK ready ──────────────────────────────────────────────────
   useEffect(() => {
     if (!ready || !mapRef.current || mapInstance.current) return;
 
@@ -91,51 +123,23 @@ const LocationPickerMap: React.FC<LocationPickerMapProps> = ({ lat, lon, onLocat
     const map = new window.google.maps.Map(mapRef.current, {
       center,
       zoom,
-      disableDefaultUI:  true,
-      zoomControl:       true,
-      gestureHandling:   'greedy',
-      styles: [
-        { featureType: 'poi',     stylers: [{ visibility: 'simplified' }] },
-        { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-      ],
+      mapId:            MAP_ID,
+      disableDefaultUI: true,
+      zoomControl:      true,
+      gestureHandling:  'greedy',
     });
 
-    // Custom red pin using AdvancedMarkerElement if available, else Marker
-    function makeMarker(position: any) {
-      const marker = new window.google.maps.Marker({
-        position,
-        map,
-        draggable: true,
-        icon: {
-          path:         window.google.maps.SymbolPath.CIRCLE,
-          scale:        10,
-          fillColor:    '#c0392b',
-          fillOpacity:  1,
-          strokeColor:  '#ffffff',
-          strokeWeight: 2.5,
-        },
-      });
-      marker.addListener('dragend', async () => {
-        const p = marker.getPosition();
-        setGeocoding(true);
-        const d = await reverseGeocode(p.lat(), p.lng());
-        setGeocoding(false);
-        if (d) onLocationChange(d);
-      });
-      return marker;
-    }
-
     if (lat && lon) {
-      markerRef.current = makeMarker({ lat, lng: lon });
+      markerRef.current = makeMarker({ lat, lng: lon }, map);
     }
 
     map.addListener('click', async (e: any) => {
       const newLat = e.latLng.lat();
       const newLon = e.latLng.lng();
       if (markerRef.current) {
-        markerRef.current.setPosition(e.latLng);
+        markerRef.current.position = e.latLng;
       } else {
-        markerRef.current = makeMarker(e.latLng);
+        markerRef.current = makeMarker({ lat: newLat, lng: newLon }, map);
       }
       map.panTo(e.latLng);
       setGeocoding(true);
@@ -145,77 +149,51 @@ const LocationPickerMap: React.FC<LocationPickerMapProps> = ({ lat, lon, onLocat
     });
 
     mapInstance.current = map;
-  }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ready, makeMarker]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Sync pin when lat/lon change from address autocomplete ─────────────────
+  // ── Sync marker when address autocomplete picks a location ──────────────────
   useEffect(() => {
-    if (!mapInstance.current || !ready || !lat || !lon) return;
-    const pos = new window.google.maps.LatLng(lat, lon);
+    if (!ready || !mapInstance.current || !lat || !lon) return;
+    const pos = { lat, lng: lon };
     if (markerRef.current) {
-      markerRef.current.setPosition(pos);
+      markerRef.current.position = pos;
     } else {
-      const marker = new window.google.maps.Marker({
-        position: pos, map: mapInstance.current, draggable: true,
-        icon: {
-          path: window.google.maps.SymbolPath.CIRCLE,
-          scale: 10, fillColor: '#c0392b', fillOpacity: 1,
-          strokeColor: '#ffffff', strokeWeight: 2.5,
-        },
-      });
-      marker.addListener('dragend', async () => {
-        const p = marker.getPosition();
-        setGeocoding(true);
-        const d = await reverseGeocode(p.lat(), p.lng());
-        setGeocoding(false);
-        if (d) onLocationChange(d);
-      });
-      markerRef.current = marker;
+      markerRef.current = makeMarker(pos, mapInstance.current);
     }
     mapInstance.current.panTo(pos);
     mapInstance.current.setZoom(DEFAULT_ZOOM);
-  }, [lat, lon, ready]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lat, lon, ready, makeMarker]);
 
-  // ── GPS ─────────────────────────────────────────────────────────────────────
+  // ── GPS ──────────────────────────────────────────────────────────────────────
   const handleLocateMe = useCallback(() => {
-    if (!navigator.geolocation) { setGpsError('Geolocation not supported by your browser'); return; }
+    if (!navigator.geolocation) {
+      setGpsError('Geolocation not supported by your browser');
+      return;
+    }
     setLocating(true);
     setGpsError('');
+
     navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const newLat = pos.coords.latitude;
-        const newLon = pos.coords.longitude;
+      async ({ coords }) => {
+        const newLat = coords.latitude;
+        const newLon = coords.longitude;
         setLocating(false);
 
         if (mapInstance.current && ready) {
-          const latLng = new window.google.maps.LatLng(newLat, newLon);
+          const pos = { lat: newLat, lng: newLon };
           if (markerRef.current) {
-            markerRef.current.setPosition(latLng);
+            markerRef.current.position = pos;
           } else {
-            const marker = new window.google.maps.Marker({
-              position: latLng, map: mapInstance.current, draggable: true,
-              icon: {
-                path: window.google.maps.SymbolPath.CIRCLE,
-                scale: 10, fillColor: '#c0392b', fillOpacity: 1,
-                strokeColor: '#ffffff', strokeWeight: 2.5,
-              },
-            });
-            marker.addListener('dragend', async () => {
-              const p = marker.getPosition();
-              setGeocoding(true);
-              const d = await reverseGeocode(p.lat(), p.lng());
-              setGeocoding(false);
-              if (d) onLocationChange(d);
-            });
-            markerRef.current = marker;
+            markerRef.current = makeMarker(pos, mapInstance.current);
           }
-          mapInstance.current.setCenter(latLng);
+          mapInstance.current.setCenter(pos);
           mapInstance.current.setZoom(DEFAULT_ZOOM);
         }
 
         setGeocoding(true);
-        const details = await reverseGeocode(newLat, newLon);
+        const d = await reverseGeocode(newLat, newLon);
         setGeocoding(false);
-        if (details) onLocationChange(details);
+        if (d) onLocationChange(d);
       },
       (err) => {
         setLocating(false);
@@ -227,11 +205,11 @@ const LocationPickerMap: React.FC<LocationPickerMapProps> = ({ lat, lon, onLocat
       },
       { enableHighAccuracy: true, timeout: 10000 },
     );
-  }, [ready, onLocationChange]);
+  }, [ready, makeMarker, onLocationChange]);
 
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-2">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <label className="text-xs font-semibold text-gray-600 flex items-center gap-1.5">
           <Icon.PiMapTrifoldBold size={13} className="text-red-600" />
@@ -251,7 +229,6 @@ const LocationPickerMap: React.FC<LocationPickerMapProps> = ({ lat, lon, onLocat
         </button>
       </div>
 
-      {/* Map container */}
       <div className="relative rounded-xl overflow-hidden border border-gray-200 shadow-sm">
         <div ref={mapRef} className="w-full h-[220px] bg-gray-100" />
 
