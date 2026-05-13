@@ -152,4 +152,20 @@ const reverse = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { autocomplete, details, reverse };
+/**
+ * GET /api/places/maps-script?callback=<name>
+ * Redirects to the Google Maps JS API with the server-side key injected.
+ * Keeps the API key out of the frontend bundle.
+ */
+const mapsScript = asyncHandler(async (req, res) => {
+  const key = getKey();
+  if (!key) return res.status(503).json({ success: false, message: 'Maps API not configured' });
+
+  const { callback = 'initMap', libraries = '' } = req.query;
+  const params = new URLSearchParams({ key, callback, loading: 'async' });
+  if (libraries) params.set('libraries', String(libraries));
+
+  res.redirect(302, `https://maps.googleapis.com/maps/api/js?${params}`);
+});
+
+module.exports = { autocomplete, details, reverse, mapsScript };

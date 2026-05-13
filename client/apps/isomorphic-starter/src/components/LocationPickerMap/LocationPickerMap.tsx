@@ -12,42 +12,48 @@ interface LocationPickerMapProps {
 }
 
 declare global {
-  interface Window { L: any; }
+  interface Window {
+    google: any;
+    __mapsInitCallback?: () => void;
+  }
 }
 
-const NIGERIA_CENTER: [number, number] = [9.0765, 7.3986]; // Abuja
+const NIGERIA_CENTER = { lat: 9.0765, lng: 7.3986 };
 const DEFAULT_ZOOM   = 16;
 const COUNTRY_ZOOM   = 6;
+const CALLBACK_NAME  = '__mapsInitCallback';
 
-// ── Leaflet CDN loader (idempotent) ──────────────────────────────────────────
+// ── Google Maps loader (proxied through our backend) ──────────────────────────
 
-let leafletState: 'idle' | 'loading' | 'ready' = 'idle';
-const leafletCallbacks: Array<() => void> = [];
+type LoadState = 'idle' | 'loading' | 'ready';
+let loadState: LoadState = 'idle';
+const pendingCallbacks: Array<() => void> = [];
 
-function loadLeaflet(callback: () => void) {
-  if (leafletState === 'ready') { callback(); return; }
-  leafletCallbacks.push(callback);
-  if (leafletState === 'loading') return;
-  leafletState = 'loading';
+function loadMaps(callback: () => void) {
+  if (loadState === 'ready') { callback(); return; }
+  pendingCallbacks.push(callback);
+  if (loadState === 'loading') return;
+  loadState = 'loading';
 
-  // CSS
-  const link  = document.createElement('link');
-  link.rel    = 'stylesheet';
-  link.href   = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-  document.head.appendChild(link);
+  window[CALLBACK_NAME] = () => {
+    loadState = 'ready';
+    pendingCallbacks.forEach(cb => cb());
+    pendingCallbacks.length = 0;
+  };
 
-  // JS
-  const script = document.createElement('script');
-  script.src   = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-  script.onload = () => {
-    leafletState = 'ready';
-    leafletCallbacks.forEach(cb => cb());
-    leafletCallbacks.length = 0;
+  const script   = document.createElement('script');
+  script.async   = true;
+  script.defer   = true;
+  // Load via backend proxy — API key never touches the browser bundle
+  script.src     = `${API_URL}/api/places/maps-script?callback=${CALLBACK_NAME}`;
+  script.onerror = () => {
+    loadState = 'idle'; // allow retry
+    console.error('[Maps] Failed to load Google Maps JS API via proxy');
   };
   document.head.appendChild(script);
 }
 
-// ── Reverse geocode via our backend proxy ─────────────────────────────────────
+// ── Reverse geocode via backend ───────────────────────────────────────────────
 
 async function reverseGeocode(lat: number, lon: number): Promise<AddressDetails | null> {
   try {
@@ -70,146 +76,108 @@ const LocationPickerMap: React.FC<LocationPickerMapProps> = ({ lat, lon, onLocat
   const [geocoding, setGeocoding] = useState(false);
   const [gpsError,  setGpsError]  = useState('');
 
-  // ── Load Leaflet ────────────────────────────────────────────────────────────
+  // ── Load SDK ────────────────────────────────────────────────────────────────
   useEffect(() => {
-    loadLeaflet(() => setReady(true));
+    loadMaps(() => setReady(true));
   }, []);
 
-  // ── Init map once Leaflet is ready ──────────────────────────────────────────
+  // ── Init map ────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!ready || !mapRef.current || mapInstance.current) return;
 
-    const L      = window.L;
-    const center = (lat && lon) ? [lat, lon] : NIGERIA_CENTER;
-    const zoom   = (lat && lon) ? DEFAULT_ZOOM : COUNTRY_ZOOM;
+    const center = lat && lon ? { lat, lng: lon } : NIGERIA_CENTER;
+    const zoom   = lat && lon ? DEFAULT_ZOOM : COUNTRY_ZOOM;
 
-    // Fix default marker icon paths broken by bundlers
-    delete (L.Icon.Default.prototype as any)._getIconUrl;
-    L.Icon.Default.mergeOptions({
-      iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-      iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-      shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-    });
-
-    const map = L.map(mapRef.current, {
+    const map = new window.google.maps.Map(mapRef.current, {
       center,
       zoom,
+      disableDefaultUI:  true,
       zoomControl:       true,
-      attributionControl: false,
+      gestureHandling:   'greedy',
+      styles: [
+        { featureType: 'poi',     stylers: [{ visibility: 'simplified' }] },
+        { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+      ],
     });
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap',
-      maxZoom:     19,
-    }).addTo(map);
-
-    // Custom red pin icon
-    const redIcon = L.divIcon({
-      className: '',
-      html: `<div style="
-        width:28px;height:36px;
-        background:#c0392b;
-        border-radius:50% 50% 50% 0;
-        transform:rotate(-45deg);
-        border:3px solid #fff;
-        box-shadow:0 2px 8px rgba(0,0,0,.35);
-        position:relative;
-      ">
-        <div style="
-          position:absolute;inset:4px;
-          background:#fff;border-radius:50%;
-        "></div>
-      </div>`,
-      iconSize:   [28, 36],
-      iconAnchor: [14, 36],
-    });
-
-    const marker = lat && lon
-      ? L.marker([lat, lon], { draggable: true, icon: redIcon }).addTo(map)
-      : null;
-
-    // Click on map → place/move pin
-    map.on('click', async (e: any) => {
-      const { lat: newLat, lng: newLon } = e.latlng;
-      if (markerRef.current) {
-        markerRef.current.setLatLng([newLat, newLon]);
-      } else {
-        markerRef.current = L.marker([newLat, newLon], { draggable: true, icon: redIcon }).addTo(map);
-        attachDragEnd(markerRef.current);
-      }
-      map.panTo([newLat, newLon]);
-      setGeocoding(true);
-      const details = await reverseGeocode(newLat, newLon);
-      setGeocoding(false);
-      if (details) onLocationChange(details);
-    });
-
-    function attachDragEnd(m: any) {
-      m.on('dragend', async () => {
-        const pos = m.getLatLng();
-        setGeocoding(true);
-        const details = await reverseGeocode(pos.lat, pos.lng);
-        setGeocoding(false);
-        if (details) onLocationChange(details);
+    // Custom red pin using AdvancedMarkerElement if available, else Marker
+    function makeMarker(position: any) {
+      const marker = new window.google.maps.Marker({
+        position,
+        map,
+        draggable: true,
+        icon: {
+          path:         window.google.maps.SymbolPath.CIRCLE,
+          scale:        10,
+          fillColor:    '#c0392b',
+          fillOpacity:  1,
+          strokeColor:  '#ffffff',
+          strokeWeight: 2.5,
+        },
       });
+      marker.addListener('dragend', async () => {
+        const p = marker.getPosition();
+        setGeocoding(true);
+        const d = await reverseGeocode(p.lat(), p.lng());
+        setGeocoding(false);
+        if (d) onLocationChange(d);
+      });
+      return marker;
     }
 
-    if (marker) {
-      attachDragEnd(marker);
-      markerRef.current = marker;
+    if (lat && lon) {
+      markerRef.current = makeMarker({ lat, lng: lon });
     }
+
+    map.addListener('click', async (e: any) => {
+      const newLat = e.latLng.lat();
+      const newLon = e.latLng.lng();
+      if (markerRef.current) {
+        markerRef.current.setPosition(e.latLng);
+      } else {
+        markerRef.current = makeMarker(e.latLng);
+      }
+      map.panTo(e.latLng);
+      setGeocoding(true);
+      const d = await reverseGeocode(newLat, newLon);
+      setGeocoding(false);
+      if (d) onLocationChange(d);
+    });
 
     mapInstance.current = map;
   }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Sync marker when lat/lon change from outside ────────────────────────────
+  // ── Sync pin when lat/lon change from address autocomplete ─────────────────
   useEffect(() => {
-    if (!mapInstance.current || !ready) return;
-    const L = window.L;
-
-    if (lat && lon) {
-      if (markerRef.current) {
-        markerRef.current.setLatLng([lat, lon]);
-      } else {
-        const redIcon = L.divIcon({
-          className: '',
-          html: `<div style="
-            width:28px;height:36px;
-            background:#c0392b;
-            border-radius:50% 50% 50% 0;
-            transform:rotate(-45deg);
-            border:3px solid #fff;
-            box-shadow:0 2px 8px rgba(0,0,0,.35);
-            position:relative;
-          ">
-            <div style="
-              position:absolute;inset:4px;
-              background:#fff;border-radius:50%;
-            "></div>
-          </div>`,
-          iconSize:   [28, 36],
-          iconAnchor: [14, 36],
-        });
-        const marker = L.marker([lat, lon], { draggable: true, icon: redIcon }).addTo(mapInstance.current);
-        marker.on('dragend', async () => {
-          const pos = marker.getLatLng();
-          setGeocoding(true);
-          const details = await reverseGeocode(pos.lat, pos.lng);
-          setGeocoding(false);
-          if (details) onLocationChange(details);
-        });
-        markerRef.current = marker;
-      }
-      mapInstance.current.setView([lat, lon], DEFAULT_ZOOM);
+    if (!mapInstance.current || !ready || !lat || !lon) return;
+    const pos = new window.google.maps.LatLng(lat, lon);
+    if (markerRef.current) {
+      markerRef.current.setPosition(pos);
+    } else {
+      const marker = new window.google.maps.Marker({
+        position: pos, map: mapInstance.current, draggable: true,
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: 10, fillColor: '#c0392b', fillOpacity: 1,
+          strokeColor: '#ffffff', strokeWeight: 2.5,
+        },
+      });
+      marker.addListener('dragend', async () => {
+        const p = marker.getPosition();
+        setGeocoding(true);
+        const d = await reverseGeocode(p.lat(), p.lng());
+        setGeocoding(false);
+        if (d) onLocationChange(d);
+      });
+      markerRef.current = marker;
     }
+    mapInstance.current.panTo(pos);
+    mapInstance.current.setZoom(DEFAULT_ZOOM);
   }, [lat, lon, ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── GPS ─────────────────────────────────────────────────────────────────────
   const handleLocateMe = useCallback(() => {
-    if (!navigator.geolocation) {
-      setGpsError('Geolocation is not supported by your browser');
-      return;
-    }
+    if (!navigator.geolocation) { setGpsError('Geolocation not supported by your browser'); return; }
     setLocating(true);
     setGpsError('');
     navigator.geolocation.getCurrentPosition(
@@ -219,26 +187,29 @@ const LocationPickerMap: React.FC<LocationPickerMapProps> = ({ lat, lon, onLocat
         setLocating(false);
 
         if (mapInstance.current && ready) {
-          const L = window.L;
+          const latLng = new window.google.maps.LatLng(newLat, newLon);
           if (markerRef.current) {
-            markerRef.current.setLatLng([newLat, newLon]);
+            markerRef.current.setPosition(latLng);
           } else {
-            const redIcon = L.divIcon({
-              className: '',
-              html: `<div style="width:28px;height:36px;background:#c0392b;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35);position:relative;"><div style="position:absolute;inset:4px;background:#fff;border-radius:50%;"></div></div>`,
-              iconSize: [28, 36], iconAnchor: [14, 36],
+            const marker = new window.google.maps.Marker({
+              position: latLng, map: mapInstance.current, draggable: true,
+              icon: {
+                path: window.google.maps.SymbolPath.CIRCLE,
+                scale: 10, fillColor: '#c0392b', fillOpacity: 1,
+                strokeColor: '#ffffff', strokeWeight: 2.5,
+              },
             });
-            const marker = L.marker([newLat, newLon], { draggable: true, icon: redIcon }).addTo(mapInstance.current);
-            marker.on('dragend', async () => {
-              const p = marker.getLatLng();
+            marker.addListener('dragend', async () => {
+              const p = marker.getPosition();
               setGeocoding(true);
-              const d = await reverseGeocode(p.lat, p.lng);
+              const d = await reverseGeocode(p.lat(), p.lng());
               setGeocoding(false);
               if (d) onLocationChange(d);
             });
             markerRef.current = marker;
           }
-          mapInstance.current.setView([newLat, newLon], DEFAULT_ZOOM);
+          mapInstance.current.setCenter(latLng);
+          mapInstance.current.setZoom(DEFAULT_ZOOM);
         }
 
         setGeocoding(true);
@@ -250,7 +221,7 @@ const LocationPickerMap: React.FC<LocationPickerMapProps> = ({ lat, lon, onLocat
         setLocating(false);
         setGpsError(
           err.code === 1
-            ? 'Location access denied — please allow it in your browser settings'
+            ? 'Location access denied — allow it in your browser settings'
             : 'Could not get your location. Try again or pin manually.',
         );
       },
@@ -280,7 +251,7 @@ const LocationPickerMap: React.FC<LocationPickerMapProps> = ({ lat, lon, onLocat
         </button>
       </div>
 
-      {/* Map */}
+      {/* Map container */}
       <div className="relative rounded-xl overflow-hidden border border-gray-200 shadow-sm">
         <div ref={mapRef} className="w-full h-[220px] bg-gray-100" />
 
