@@ -5,6 +5,8 @@ const {
   calculateShipping,
   calculateShippingByDistance,
   FREE_THRESHOLD,
+  FREE_THRESHOLD_OUTSIDE,
+  getFreeThreshold,
   STATE_ZONES,
 } = require('../data/shipping-zones');
 const { getRoadDistanceKm, getRouteDistanceKm, WAREHOUSE } = require('../services/ors.service');
@@ -108,14 +110,15 @@ const getShippingRate = asyncHandler(async (req, res) => {
         distanceKm = await getRoadDistanceKm(customerLat, customerLon);
       }
 
-      const result = calculateShippingByDistance(distanceKm, sub);
+      const result = calculateShippingByDistance(distanceKm, sub, state);
+      const threshold = getFreeThreshold(state);
 
       return res.json({
         success: true,
         data: {
           ...result,
-          freeThreshold: FREE_THRESHOLD,
-          remaining:  result.isFree ? 0 : Math.max(0, FREE_THRESHOLD - sub),
+          freeThreshold: threshold,
+          remaining:  result.isFree ? 0 : Math.max(0, threshold - sub),
           source:     'google',
           routeType,
           stops,
@@ -129,12 +132,13 @@ const getShippingRate = asyncHandler(async (req, res) => {
 
   // ── Zone / LGA fallback ───────────────────────────────────────────────────
   const result = calculateShipping(state, lga, sub);
+  const threshold = getFreeThreshold(state);
   res.json({
     success: true,
     data: {
       ...result,
-      freeThreshold: FREE_THRESHOLD,
-      remaining: result.isFree ? 0 : Math.max(0, FREE_THRESHOLD - sub),
+      freeThreshold: threshold,
+      remaining: result.isFree ? 0 : Math.max(0, threshold - sub),
       source: 'zone',
     },
   });

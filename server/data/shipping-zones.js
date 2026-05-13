@@ -2,7 +2,16 @@
 // Shipping rates dispatched from Abuja (FCT) warehouse
 // All fees in NGN. Free delivery on orders >= FREE_THRESHOLD.
 
-const FREE_THRESHOLD = 2_000_000;
+const FREE_THRESHOLD         = 2_000_000;   // FCT / Abuja
+const FREE_THRESHOLD_OUTSIDE = 10_000_000;  // all other states
+
+function getFreeThreshold(state) {
+  if (!state) return FREE_THRESHOLD_OUTSIDE;
+  const s = state.trim();
+  return /federal capital territory|fct|abuja/i.test(s)
+    ? FREE_THRESHOLD
+    : FREE_THRESHOLD_OUTSIDE;
+}
 
 // ─── State-level zone rates ───────────────────────────────────────────────────
 const STATE_ZONES = [
@@ -129,9 +138,11 @@ const DISTANCE_MAX_FEE = 45_000;
 /**
  * Calculate shipping fee from a road distance (km) + subtotal.
  * Used when ORS coordinates are available.
+ * @param {string} [state] - Customer state (used to pick the correct free threshold)
  */
-function calculateShippingByDistance(distanceKm, subtotal) {
-  if (subtotal >= FREE_THRESHOLD) {
+function calculateShippingByDistance(distanceKm, subtotal, state) {
+  const threshold = getFreeThreshold(state);
+  if (subtotal >= threshold) {
     return { fee: 0, distanceKm, method: 'distance', isFree: true, label: 'Free Delivery',
              deliveryDaysMin: 1, deliveryDaysMax: 7 };
   }
@@ -189,8 +200,9 @@ function normaliseState(state) {
 function calculateShipping(state, lga, subtotal) {
   state = normaliseState(state);
 
-  // Free delivery threshold
-  if (subtotal >= FREE_THRESHOLD) {
+  // Free delivery threshold (Abuja: ₦2M, outside Abuja: ₦10M)
+  const threshold = getFreeThreshold(state);
+  if (subtotal >= threshold) {
     return {
       fee: 0,
       zone: 'free',
@@ -247,4 +259,4 @@ function calculateShipping(state, lga, subtotal) {
   };
 }
 
-module.exports = { calculateShipping, calculateShippingByDistance, FREE_THRESHOLD, STATE_ZONES, LGA_OVERRIDES };
+module.exports = { calculateShipping, calculateShippingByDistance, FREE_THRESHOLD, FREE_THRESHOLD_OUTSIDE, getFreeThreshold, STATE_ZONES, LGA_OVERRIDES };
