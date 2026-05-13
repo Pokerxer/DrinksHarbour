@@ -45,6 +45,7 @@ const shippingRoutes = require('./routes/shipping.routes');
 const placesRoutes   = require('./routes/places.routes');
 
 const app = express();
+app.set('trust proxy', 1); // Trust first proxy (Vercel edge)
 const PORT = process.env.PORT || 5001;
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -133,7 +134,7 @@ const limiter = rateLimit({
   max: isProduction ? 100 : 1000,
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false },
+  validate: { xForwardedForHeader: false, forwardedHeader: false },
   message: { success: false, message: 'Too many requests, please try again later.' },
   skip: (req) => req.path === '/health' || req.path === '/api/ping',
 });
