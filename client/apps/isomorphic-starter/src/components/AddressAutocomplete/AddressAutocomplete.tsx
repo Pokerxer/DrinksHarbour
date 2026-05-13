@@ -111,7 +111,14 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     setLoading(true);
     setFetchError(null);
 
-    const results = await fetchPredictions(query, signal);
+    let results: Prediction[];
+    try {
+      results = await fetchPredictions(query, signal);
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return; // request was superseded — ignore
+      setLoading(false);
+      return;
+    }
 
     if (signal.aborted) return;
 
