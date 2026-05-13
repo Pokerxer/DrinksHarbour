@@ -10,178 +10,117 @@ import {
   PiGiftDuotone,
   PiBankDuotone,
   PiChartPieSliceDuotone,
+  PiWarningDiamondDuotone,
 } from 'react-icons/pi';
 import { BarChart, Bar, ResponsiveContainer } from 'recharts';
+import { useDashboard } from './use-dashboard';
 
-const orderData = [
-  {
-    day: 'Sunday',
-    sale: 4000,
-    cost: 2400,
-  },
-  {
-    day: 'Monday',
-    sale: 3000,
-    cost: 1398,
-  },
-  {
-    day: 'Tuesday',
-    sale: 2000,
-    cost: 9800,
-  },
-  {
-    day: 'Wednesday',
-    sale: 2780,
-    cost: 3908,
-  },
-  {
-    day: 'Thursday',
-    sale: 1890,
-    cost: 4800,
-  },
-  {
-    day: 'Friday',
-    sale: 2390,
-    cost: 3800,
-  },
-  {
-    day: 'Saturday',
-    sale: 3490,
-    cost: 4300,
-  },
-];
+function pct(curr: number, prev: number): number {
+  if (!prev) return curr > 0 ? 100 : 0;
+  return Math.round(((curr - prev) / prev) * 1000) / 10;
+}
 
-const salesData = [
-  {
-    day: 'Sunday',
-    sale: 2000,
-    cost: 2400,
-  },
-  {
-    day: 'Monday',
-    sale: 3000,
-    cost: 1398,
-  },
-  {
-    day: 'Tuesday',
-    sale: 2000,
-    cost: 9800,
-  },
-  {
-    day: 'Wednesday',
-    sale: 2780,
-    cost: 3908,
-  },
-  {
-    day: 'Thursday',
-    sale: 1890,
-    cost: 4800,
-  },
-  {
-    day: 'Friday',
-    sale: 2390,
-    cost: 3800,
-  },
-  {
-    day: 'Saturday',
-    sale: 3490,
-    cost: 4300,
-  },
-];
+function fmt(n: number): string {
+  if (n >= 1_000_000) return `₦${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000)     return `₦${(n / 1_000).toFixed(1)}K`;
+  return `₦${n.toLocaleString()}`;
+}
 
-const revenueData = [
-  {
-    day: 'Sunday',
-    sale: 2000,
-    cost: 2400,
-  },
-  {
-    day: 'Monday',
-    sale: 2800,
-    cost: 1398,
-  },
-  {
-    day: 'Tuesday',
-    sale: 3500,
-    cost: 9800,
-  },
-  {
-    day: 'Wednesday',
-    sale: 2780,
-    cost: 3908,
-  },
-  {
-    day: 'Thursday',
-    sale: 1890,
-    cost: 4800,
-  },
-  {
-    day: 'Friday',
-    sale: 2390,
-    cost: 3800,
-  },
-  {
-    day: 'Saturday',
-    sale: 3490,
-    cost: 4300,
-  },
-];
-
-const eComDashboardStatData = [
-  {
-    id: '1',
-    icon: <PiGiftDuotone className="h-6 w-6" />,
-    title: 'New Orders',
-    metric: '1,390',
-    increased: true,
-    decreased: false,
-    percentage: '+32.40',
-    style: 'text-[#3872FA]',
-    fill: '#3872FA',
-    chart: orderData,
-  },
-  {
-    id: '2',
-    icon: <PiChartPieSliceDuotone className="h-6 w-6" />,
-    title: 'Sales',
-    metric: '$57,890',
-    increased: false,
-    decreased: true,
-    percentage: '-4.40',
-    style: 'text-[#10b981]',
-    fill: '#10b981',
-    chart: salesData,
-  },
-  {
-    id: '3',
-    icon: <PiBankDuotone className="h-6 w-6" />,
-    title: 'Revenue',
-    metric: '$12,390',
-    increased: true,
-    decreased: false,
-    percentage: '+32.40',
-    style: 'text-[#7928ca]',
-    fill: '#7928ca',
-    chart: revenueData,
-  },
-];
+function SkeletonCard() {
+  return (
+    <div className="animate-pulse rounded-2xl border border-muted bg-white p-5 dark:bg-gray-100/20">
+      <div className="mb-4 flex items-start justify-between">
+        <div className="h-8 w-8 rounded bg-gray-200" />
+        <div className="h-4 w-16 rounded bg-gray-200" />
+      </div>
+      <div className="mb-2 h-7 w-24 rounded bg-gray-200" />
+      <div className="mt-5 border-t border-dashed border-muted pt-4">
+        <div className="h-4 w-32 rounded bg-gray-200" />
+      </div>
+    </div>
+  );
+}
 
 export default function StatCards({ className }: { className?: string }) {
+  const data = useDashboard();
+
+  if (!data) {
+    return (
+      <div className={cn('grid grid-cols-1 gap-5 3xl:gap-8 4xl:gap-9', className)}>
+        {[1, 2, 3, 4].map(i => <SkeletonCard key={i} />)}
+      </div>
+    );
+  }
+
+  const { thisMonth, lastMonth, today, yesterday, pendingOrders, lowStockCount, avgOrderValue, sparkline } = data.statCards;
+
+  const ordersPct   = pct(thisMonth.orders,  lastMonth.orders);
+  const revenuePct  = pct(thisMonth.revenue, lastMonth.revenue);
+  const avgLastMonth = lastMonth.orders > 0 ? Math.round(lastMonth.revenue / lastMonth.orders) : 0;
+  const avgPct       = pct(avgOrderValue, avgLastMonth);
+
+  const stats = [
+    {
+      id: '1',
+      icon: <PiGiftDuotone className="h-6 w-6" />,
+      title: 'Orders This Month',
+      metric: thisMonth.orders.toLocaleString(),
+      sub: `${today.orders} today`,
+      increased: ordersPct >= 0,
+      pct: Math.abs(ordersPct),
+      style: 'text-[#3872FA]',
+      fill: '#3872FA',
+      chart: sparkline.map(d => ({ day: d.day, sale: d.orders })),
+    },
+    {
+      id: '2',
+      icon: <PiChartPieSliceDuotone className="h-6 w-6" />,
+      title: 'Revenue This Month',
+      metric: fmt(thisMonth.revenue),
+      sub: `${fmt(today.revenue)} today`,
+      increased: revenuePct >= 0,
+      pct: Math.abs(revenuePct),
+      style: 'text-[#10b981]',
+      fill: '#10b981',
+      chart: sparkline.map(d => ({ day: d.day, sale: d.revenue })),
+    },
+    {
+      id: '3',
+      icon: <PiBankDuotone className="h-6 w-6" />,
+      title: 'Avg Order Value',
+      metric: fmt(avgOrderValue),
+      sub: 'from paid orders',
+      increased: avgPct >= 0,
+      pct: Math.abs(avgPct),
+      style: 'text-[#7928ca]',
+      fill: '#7928ca',
+      chart: sparkline.map(d => ({ day: d.day, sale: d.revenue })),
+    },
+    {
+      id: '4',
+      icon: <PiWarningDiamondDuotone className="h-6 w-6" />,
+      title: 'Pending Orders',
+      metric: pendingOrders.toLocaleString(),
+      sub: `${lowStockCount} low/out-of-stock`,
+      increased: false,
+      pct: null,
+      style: 'text-[#f59e0b]',
+      fill: '#f59e0b',
+      chart: sparkline.map(d => ({ day: d.day, sale: d.orders })),
+    },
+  ];
+
   return (
-    <div
-      className={cn('grid grid-cols-1 gap-5 3xl:gap-8 4xl:gap-9', className)}
-    >
-      {eComDashboardStatData.map((stat) => (
+    <div className={cn('grid grid-cols-1 gap-5 3xl:gap-8 4xl:gap-9', className)}>
+      {stats.map((stat) => (
         <MetricCard
-          key={stat.title + stat.id}
+          key={stat.id}
           title={stat.title}
           metric={stat.metric}
           metricClassName="lg:text-[22px]"
           icon={stat.icon}
           iconClassName={cn(
             '[&>svg]:w-10 [&>svg]:h-8 lg:[&>svg]:w-11 lg:[&>svg]:h-9 w-auto h-auto p-0 bg-transparent -mx-1.5',
-            stat.id === '1' &&
-              '[&>svg]:w-9 [&>svg]:h-7 lg:[&>svg]:w-[42px] lg:[&>svg]:h-[34px]',
             stat.style
           )}
           chart={
@@ -195,24 +134,28 @@ export default function StatCards({ className }: { className?: string }) {
           className="@container [&>div]:items-center"
         >
           <Text className="mt-5 flex items-center border-t border-dashed border-muted pt-4 leading-none text-gray-500">
-            <Text
-              as="span"
-              className={cn(
-                'me-2 inline-flex items-center font-medium',
-                stat.increased ? 'text-green' : 'text-red'
-              )}
-            >
-              {stat.increased ? (
-                <PiCaretDoubleUpDuotone className="me-1 h-4 w-4" />
-              ) : (
-                <PiCaretDoubleDownDuotone className="me-1 h-4 w-4" />
-              )}
-              {stat.percentage}%
-            </Text>
-            <Text as="span" className="me-1 hidden @[240px]:inline-flex">
-              {stat.increased ? 'Increased' : 'Decreased'}
-            </Text>{' '}
-            last month
+            {stat.pct !== null ? (
+              <>
+                <Text
+                  as="span"
+                  className={cn(
+                    'me-2 inline-flex items-center font-medium',
+                    stat.increased ? 'text-green' : 'text-red'
+                  )}
+                >
+                  {stat.increased
+                    ? <PiCaretDoubleUpDuotone className="me-1 h-4 w-4" />
+                    : <PiCaretDoubleDownDuotone className="me-1 h-4 w-4" />
+                  }
+                  {stat.pct}%
+                </Text>
+                <Text as="span" className="hidden @[240px]:inline-flex">
+                  {stat.increased ? 'up' : 'down'} vs last month
+                </Text>
+              </>
+            ) : (
+              <Text as="span" className="text-sm text-orange-500">{stat.sub}</Text>
+            )}
           </Text>
         </MetricCard>
       ))}

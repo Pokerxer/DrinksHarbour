@@ -4,11 +4,9 @@ const Order = require('../models/Order');
 const Coupon = require('../models/Coupon');
 const User = require('../models/User');
 const Tenant = require('../models/Tenant');
-const SubProduct = require('../models/SubProduct');
-const Size = require('../models/Size');
-const InventoryMovement = require('../models/InventoryMovement');
 const asyncHandler = require('../utils/asyncHandler');
 const { generateOrderNumber } = require('../utils/orderUtils');
+const inventoryService = require('../services/inventory.service');
 const {
   sendOrderConfirmationToCustomer,
   sendNewOrderNotificationToTenant,
@@ -26,106 +24,6 @@ const {
   sendNewOrderAlertWhatsApp,
 } = require('../services/whatsapp.service');
 
-/**
- * Atomically decrement stock for a single item.
- * Returns the updated SubProduct document, or null if insufficient stock.
- */
-async function decrementStock(subProductId, sizeId, quantity, session) {
-  const opts = session ? { session, new: true } : { new: true };
-
-  const updated = await SubProduct.findOneAndUpdate(
-    {
-      _id: subProductId,
-      $or: [
-        { availableStock: { $gte: quantity } },
-        // fallback for items where availableStock was never initialised
-        { availableStock: { $exists: false }, totalStock: { $gte: quantity } },
-      ],
-    },
-    { $inc: { availableStock: -quantity, totalStock: -quantity } },
-    opts
-  );
-
-  if (!updated) return null;
-
-  // updated already reflects the post-decrement values (new: true)
-  // Update stockStatus accordingly (best-effort, non-blocking)
-  const newAvailable = updated.availableStock ?? updated.totalStock ?? 0;
-  const threshold = updated.lowStockThreshold || 10;
-  const newStatus =
-    newAvailable <= 0
-      ? 'out_of_stock'
-      : newAvailable <= threshold
-      ? 'low_stock'
-      : 'in_stock';
-  SubProduct.findByIdAndUpdate(subProductId, { stockStatus: newStatus }).catch(() => {});
-
-  // Decrement size-level stock if a size is linked
-  if (sizeId) {
-    Size.findOneAndUpdate(
-      { _id: sizeId, stock: { $gte: quantity } },
-      { $inc: { stock: -quantity, availableStock: -quantity } },
-      session ? { session } : {}
-    ).catch(() => {});
-  }
-
-  return updated;
-}
-
-/**
- * Roll back all stock decrements that succeeded before a failure.
- */
-async function rollbackStockDecrements(decrements) {
-  await Promise.all(
-    decrements.map(({ subProductId, sizeId, quantity }) =>
-      Promise.all([
-        SubProduct.findByIdAndUpdate(subProductId, {
-          $inc: { availableStock: quantity, totalStock: quantity },
-        }).catch(() => {}),
-        sizeId
-          ? Size.findByIdAndUpdate(sizeId, {
-              $inc: { stock: quantity, availableStock: quantity },
-            }).catch(() => {})
-          : Promise.resolve(),
-      ])
-    )
-  );
-}
-
-/**
- * Record InventoryMovement documents for audit (fire-and-forget).
- * Does NOT touch stock quantities — stock was already updated atomically.
- */
-function recordInventoryMovements(orderItems, orderId, type, quantityMultiplier = 1) {
-  setImmediate(async () => {
-    for (const item of orderItems) {
-      if (!item.subproduct || !item.tenant) continue;
-      try {
-        await InventoryMovement.create({
-          subProduct: item.subproduct,
-          tenant: item.tenant,
-          product: item.product,
-          size: item.size || undefined,
-          type,
-          category: type === 'return' ? 'in' : 'out',
-          quantity: item.quantity * quantityMultiplier,
-          quantityBefore: 0, // approximation — exact value not tracked here
-          quantityAfter: 0,
-          relatedOrder: orderId,
-          sellingPrice: item.priceAtPurchase,
-          referenceType: 'order',
-          source: 'order',
-          performedAt: new Date(),
-          status: 'confirmed',
-          isVerified: true,
-          verifiedAt: new Date(),
-        });
-      } catch (err) {
-        console.error(`[Inventory] Failed to record movement for subproduct ${item.subproduct}:`, err.message);
-      }
-    }
-  });
-}
 
 /**
  * @desc    Create new order
@@ -174,37 +72,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
   const tenants = await Tenant.find({ _id: { $in: tenantIds } }).select('_id name revenueModel markupPercentage commissionPercentage').lean();
   const tenantMap = new Map(tenants.map(t => [t._id.toString(), t]));
 
-  // ─── STOCK VALIDATION & ATOMIC DECREMENT ─────────────────────────────────
-  // Decrement stock for each item that has a subProductId, one at a time so
-  // we can cleanly roll back on the first insufficiency.
-  const itemsRequiringStock = items.filter(item => item.subProductId);
-  const successfulDecrements = [];
-
-  for (const item of itemsRequiringStock) {
-    const updated = await decrementStock(
-      item.subProductId,
-      item.sizeId || null,
-      item.quantity,
-      null // no session needed — atomic findOneAndUpdate is safe on standalone
-    );
-
-    if (!updated) {
-      // Roll back all decrements that already succeeded
-      await rollbackStockDecrements(successfulDecrements);
-      return res.status(400).json({
-        success: false,
-        message: 'One or more items are out of stock or do not have sufficient quantity',
-      });
-    }
-
-    successfulDecrements.push({
-      subProductId: item.subProductId,
-      sizeId: item.sizeId || null,
-      quantity: item.quantity,
-    });
-  }
-  // ─────────────────────────────────────────────────────────────────────────
-
+  // Build orderItems first (needed for reserve call below)
   const orderItems = items.map(item => {
     const tenant = tenantMap.get(item.tenantId?.toString());
     const customerPrice = item.price; // This is the website price (platform price)
@@ -291,18 +159,31 @@ exports.createOrder = asyncHandler(async (req, res) => {
     }
   }
 
+  // ── Reserve stock (availableStock--, reservedStock++) ─────────────────────
+  // Must happen before order save so a failed reserve aborts the whole request.
+  const stockItems = orderItems.filter(i => i.subproduct);
+  if (stockItems.length) {
+    const { success, failedItem } = await inventoryService.reserve(stockItems, null, userId);
+    if (!success) {
+      return res.status(400).json({
+        success: false,
+        message: `"${failedItem?.product || 'An item'}" is out of stock or has insufficient quantity`,
+      });
+    }
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
   const order = new Order(orderData);
 
   try {
     await order.save();
   } catch (saveErr) {
-    // Order save failed — restore all stock that was decremented
-    await rollbackStockDecrements(successfulDecrements);
+    // Order save failed — release the reservation we just made
+    if (stockItems.length) {
+      await inventoryService.releaseReserve(stockItems, null, userId).catch(() => {});
+    }
     throw saveErr;
   }
-
-  // Audit trail — create InventoryMovement records (fire-and-forget, does not affect stock)
-  recordInventoryMovements(order.items, order._id, 'sold');
 
   // Populate order items for email notifications
   await order.populate([
@@ -416,6 +297,91 @@ exports.createOrder = asyncHandler(async (req, res) => {
         placedAt: order.placedAt,
         coupon: order.coupon,
       },
+    },
+  });
+});
+
+/**
+ * @desc    Get all orders (admin)
+ * @route   GET /api/orders
+ * @access  Private (admin/super_admin)
+ */
+exports.getAllOrders = asyncHandler(async (req, res) => {
+  const {
+    page     = '1',
+    limit    = '20',
+    search   = '',
+    status   = '',
+    payment  = '',
+    from,
+    to,
+    sort     = 'placedAt',
+    order: sortDir = 'desc',
+  } = req.query;
+
+  const pageNum  = Math.max(1, parseInt(page));
+  const pageSize = Math.min(100, Math.max(1, parseInt(limit)));
+  const skip     = (pageNum - 1) * pageSize;
+
+  const filter = {};
+
+  if (status)  filter.status        = status;
+  if (payment) filter.paymentStatus = payment;
+
+  if (from || to) {
+    filter.placedAt = {};
+    if (from) filter.placedAt.$gte = new Date(from);
+    if (to)   filter.placedAt.$lte = new Date(to);
+  }
+
+  if (search.trim()) {
+    const re = new RegExp(search.trim(), 'i');
+    filter.$or = [
+      { orderNumber:                re },
+      { 'customer.firstName':       re },
+      { 'customer.lastName':        re },
+      { 'customer.email':           re },
+      { 'shippingAddress.fullName': re },
+    ];
+  }
+
+  const sortObj = { [sort === 'total' ? 'totalAmount' : sort === 'status' ? 'status' : 'placedAt']: sortDir === 'asc' ? 1 : -1 };
+
+  const [orders, total] = await Promise.all([
+    Order.find(filter)
+      .sort(sortObj)
+      .skip(skip)
+      .limit(pageSize)
+      .populate('user', 'firstName lastName email')
+      .populate('items.product', 'name images')
+      .populate('items.tenant', 'name')
+      .lean(),
+    Order.countDocuments(filter),
+  ]);
+
+  // Status summary counts
+  const [statusCounts] = await Promise.all([
+    Order.aggregate([
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+    ]),
+  ]);
+
+  const counts = { all: total, pending: 0, processing: 0, shipped: 0, delivered: 0, cancelled: 0, refunded: 0 };
+  statusCounts.forEach(({ _id, count }) => {
+    if (_id in counts) counts[_id] = count;
+  });
+
+  res.json({
+    success: true,
+    data: {
+      orders,
+      pagination: {
+        page: pageNum,
+        limit: pageSize,
+        total,
+        pages: Math.ceil(total / pageSize),
+      },
+      counts,
     },
   });
 });
@@ -581,46 +547,16 @@ exports.cancelOrder = asyncHandler(async (req, res) => {
 
   await order.save();
 
-  // Restore stock for all items that had a subproduct
-  const restoreDecrements = order.items
-    .filter(item => item.subproduct)
-    .map(item => ({
-      subProductId: item.subproduct,
-      sizeId: item.size || null,
-      quantity: item.quantity,
-    }));
-
-  if (restoreDecrements.length > 0) {
-    // Increment stock back (inverse of the decrement on order creation)
-    await Promise.all(
-      restoreDecrements.map(({ subProductId, sizeId, quantity }) =>
-        Promise.all([
-          SubProduct.findByIdAndUpdate(subProductId, {
-            $inc: { availableStock: quantity, totalStock: quantity },
-          }).then(updated => {
-            if (updated) {
-              const newAvailable = (updated.availableStock || 0) + quantity;
-              const threshold = updated.lowStockThreshold || 10;
-              const newStatus =
-                newAvailable <= 0
-                  ? 'out_of_stock'
-                  : newAvailable <= threshold
-                  ? 'low_stock'
-                  : 'in_stock';
-              return SubProduct.findByIdAndUpdate(subProductId, { stockStatus: newStatus });
-            }
-          }).catch(() => {}),
-          sizeId
-            ? Size.findByIdAndUpdate(sizeId, {
-                $inc: { stock: quantity, availableStock: quantity },
-              }).catch(() => {})
-            : Promise.resolve(),
-        ])
-      )
-    );
-
-    // Audit trail for stock restoration
-    recordInventoryMovements(order.items, order._id, 'return');
+  // Release reservation (pre-ship) or restore physical stock (post-ship)
+  const stockItems = order.items.filter(i => i.subproduct);
+  if (stockItems.length) {
+    if (inventoryService.isShipped(previousStatus)) {
+      // Item physically left the warehouse — restore both availableStock and totalStock
+      await inventoryService.restoreStock(stockItems, order._id, req.user?._id).catch(() => {});
+    } else {
+      // Item never shipped — just release the reservation
+      await inventoryService.releaseReserve(stockItems, order._id, req.user?._id).catch(() => {});
+    }
   }
 
   res.status(200).json({
@@ -665,14 +601,35 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const previousStatus = order.status;
   order.status = status;
 
-  if (status === 'delivered') order.deliveredAt   = new Date();
-  if (status === 'shipped')   order.shippedAt     = new Date();
+  const now = new Date();
+  if (status === 'confirmed'  && !order.confirmedAt)  order.confirmedAt  = now;
+  if (status === 'processing' && !order.processingAt) order.processingAt = now;
+  if (status === 'shipped'    && !order.shippedAt)    order.shippedAt    = now;
+  if (status === 'delivered'  && !order.deliveredAt)  order.deliveredAt  = now;
   if (status === 'cancelled') {
-    order.cancelledAt  = new Date();
+    order.cancelledAt  = now;
     order.cancelReason = req.body.reason || 'Cancelled by admin';
   }
 
   await order.save();
+
+  // ── Inventory adjustments on status change ───────────────────────────────
+  const stockItems = order.items.filter(i => i.subproduct);
+  if (stockItems.length) {
+    if (status === 'shipped' && previousStatus !== 'shipped') {
+      // Item is leaving the warehouse: decrement totalStock + reservedStock
+      inventoryService.commitShipment(stockItems, order._id, req.user?._id).catch(() => {});
+    } else if (status === 'cancelled' && previousStatus !== 'cancelled') {
+      if (inventoryService.isShipped(previousStatus)) {
+        // Already shipped: restore physical stock (item returned)
+        inventoryService.restoreStock(stockItems, order._id, req.user?._id).catch(() => {});
+      } else {
+        // Not yet shipped: release reservation only
+        inventoryService.releaseReserve(stockItems, order._id, req.user?._id).catch(() => {});
+      }
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   res.status(200).json({
     success: true,
@@ -693,6 +650,90 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
       })();
     }
   }
+});
+
+/**
+ * @desc    Admin: update payment status for an order
+ * @route   PUT /api/orders/:id/payment
+ * @access  Private (admin)
+ */
+exports.updatePaymentStatus = asyncHandler(async (req, res) => {
+  const { action, reference, notes, amount } = req.body;
+
+  const order = await Order.findById(req.params.id);
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'Order not found' });
+  }
+
+  const now = new Date();
+
+  switch (action) {
+    case 'mark_paid': {
+      order.paymentStatus = 'paid';
+      order.paidAt = now;
+      if (reference) order.paymentReference = reference;
+      order.paymentDetails = {
+        ...(order.paymentDetails || {}),
+        method: order.paymentMethod,
+        paidAt: now,
+        ...(reference ? { reference } : {}),
+        ...(notes    ? { notes }     : {}),
+        markedPaidBy: req.user._id,
+      };
+      // Auto-advance COD/bank_transfer orders that are still pending
+      if (['cash_on_delivery', 'bank_transfer', 'mobile_money'].includes(order.paymentMethod)) {
+        if (order.status === 'pending') {
+          order.status = 'confirmed';
+          order.confirmedAt = now;
+        }
+      }
+      break;
+    }
+
+    case 'mark_failed': {
+      order.paymentStatus = 'failed';
+      if (notes) {
+        order.paymentDetails = { ...(order.paymentDetails || {}), failureReason: notes };
+      }
+      break;
+    }
+
+    case 'mark_refunded': {
+      order.paymentStatus = amount && amount < order.totalAmount ? 'partially_refunded' : 'refunded';
+      order.status = 'refunded';
+      order.refundDetails = {
+        amount: amount || order.totalAmount,
+        reason: notes || 'Refunded by admin',
+        createdAt: now,
+        processedBy: req.user._id,
+      };
+      break;
+    }
+
+    default:
+      return res.status(400).json({ success: false, message: 'Invalid action. Use: mark_paid, mark_failed, mark_refunded' });
+  }
+
+  await order.save();
+
+  // ── Inventory adjustments for payment actions ────────────────────────────
+  const stockItems = order.items.filter(i => i.subproduct);
+  if (stockItems.length) {
+    if (action === 'mark_failed') {
+      // Payment failed: release the stock reservation (order won't be fulfilled)
+      inventoryService.releaseReserve(stockItems, order._id, req.user?._id).catch(() => {});
+    } else if (action === 'mark_refunded') {
+      // Refund: restore physical stock (item returned to warehouse)
+      inventoryService.restoreStock(stockItems, order._id, req.user?._id).catch(() => {});
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
+  res.json({
+    success: true,
+    message: 'Payment updated successfully',
+    data: { order },
+  });
 });
 
 module.exports = exports;

@@ -43,6 +43,7 @@ const chatbotRoutes = require('./routes/chatbot.routes');
 const bannerGeminiRoutes = require('./routes/banner-gemini.routes');
 const shippingRoutes = require('./routes/shipping.routes');
 const placesRoutes   = require('./routes/places.routes');
+const analyticsRoutes = require('./routes/analytics.routes');
 
 const app = express();
 app.set('trust proxy', 1); // Trust first proxy (Vercel edge)
@@ -181,6 +182,7 @@ app.use('/api/pinterest', require('./routes/pinterest.routes'));
 app.use('/api/banner-ai', bannerGeminiRoutes);
 app.use('/api/shipping', shippingRoutes);
 app.use('/api/places',  placesRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // ────────────────────────────────────────────────
  // Health Check Endpoint
