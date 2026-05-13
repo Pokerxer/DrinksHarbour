@@ -66,9 +66,9 @@ export default function ProfitWidget({ className }: { className?: string }) {
   const yestRevenue  = data?.statCards?.yesterday?.revenue ?? 0;
   const todayUp      = todayRevenue >= yestRevenue;
 
-  // Profit margin % = platformProfit / paidRevenue
-  const margin = (profit?.paidRevenue ?? 0) > 0
-    ? Math.round((profit!.thisMonth / profit!.paidRevenue) * 1000) / 10
+  // Profit margin % = platformProfit / grossRevenue
+  const margin = (profit?.grossRevenue ?? 0) > 0
+    ? Math.round((profit!.thisMonth / profit!.grossRevenue) * 1000) / 10
     : 0;
 
   return (
@@ -80,7 +80,7 @@ export default function ProfitWidget({ className }: { className?: string }) {
           : (
             <span>
               {fmt(profit?.thisMonth ?? 0)}
-              {profit?.paidRevenue ? (
+              {profit?.grossRevenue ? (
                 <span className="ms-2 text-sm font-normal text-gray-400">
                   {margin}% margin
                 </span>
@@ -118,7 +118,7 @@ export default function ProfitWidget({ className }: { className?: string }) {
           <>
             {/* Equation row: Revenue - Cost = Profit */}
             <div className="flex items-center gap-1.5 rounded-xl border border-dashed border-muted px-3 py-2 text-xs">
-              <span className="font-semibold text-gray-900">{fmt(profit?.paidRevenue ?? 0)}</span>
+              <span className="font-semibold text-gray-900">{fmt(profit?.grossRevenue ?? 0)}</span>
               <span className="text-gray-400">Revenue</span>
               <span className="mx-1 text-gray-300">−</span>
               <span className="font-semibold text-blue-600">{fmt(profit?.vendorCost ?? 0)}</span>
@@ -131,7 +131,7 @@ export default function ProfitWidget({ className }: { className?: string }) {
             <div className="grid grid-cols-2 gap-2">
               <MetricBox
                 label="Gross Revenue"
-                value={fmt(profit?.paidRevenue ?? 0)}
+                value={fmt(profit?.grossRevenue ?? 0)}
                 sub="paid orders only"
                 color="text-gray-900"
               />
@@ -212,7 +212,7 @@ export default function ProfitWidget({ className }: { className?: string }) {
 
         <Text className="text-[11px] text-gray-400 leading-tight">
           <PiInfoFill className="inline-flex h-3.5 w-3.5 text-gray-400" />{' '}
-          Profit = Revenue − Vendor Cost. Vendor cost = platform price ÷ 1.15.
+          Profit = Revenue − Vendor Cost across all active orders. Vendor cost = customerPrice ÷ (1 + platformMarkup%).
         </Text>
       </div>
     </WidgetCard>

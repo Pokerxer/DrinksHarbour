@@ -94,13 +94,13 @@ export interface TopVendor {
 
 export interface ProfitData {
   /** Platform markup earned this month (= grossRevenue - vendorCost) */
-  thisMonth:   number;
+  thisMonth:    number;
   /** Platform markup earned last month */
-  lastMonth:   number;
-  /** Gross revenue from paid orders this month (what customers paid for items) */
-  paidRevenue: number;
+  lastMonth:    number;
+  /** Gross revenue from all active orders this month */
+  grossRevenue: number;
   /** Platform's cost = Σ vendor payouts (what platform owes vendors) */
-  vendorCost:  number;
+  vendorCost:   number;
   trend: {
     month:      string;
     totalSales: number;

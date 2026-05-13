@@ -180,30 +180,28 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     ]),
 
     // 14. Profit this month from paid orders
-    // Priority: use stored platformCommission (new orders) → fall back for legacy (both = 0)
+    // 14. Profit this month — all active orders (same basis as revenue stats)
     Order.aggregate([
-      { $match: { ...tenantFilter, placedAt: { $gte: thisMonthStart, $lte: thisMonthEnd }, paymentStatus: { $in: PAID_STATUSES } } },
+      { $match: { ...tenantFilter, placedAt: { $gte: thisMonthStart, $lte: thisMonthEnd }, status: { $in: ACTIVE_STATUSES } } },
       { $unwind: '$items' },
       { $addFields: {
-        // Vendor cost: use stored snapshot; legacy fallback = itemSubtotal / 1.15
         '_vc': { $cond: [{ $gt: ['$items.tenantRevenueShare', 0] }, '$items.tenantRevenueShare', { $divide: ['$items.itemSubtotal', 1.15] }] },
       }},
       { $addFields: {
-        // Platform profit: use stored commission when set; otherwise derive from vendor cost
         '_pp': { $cond: [{ $gt: ['$items.platformCommission', 0] }, '$items.platformCommission', { $subtract: ['$items.itemSubtotal', '$_vc'] }] },
       }},
       { $group: {
-        _id:          null,
-        grossRevenue: { $sum: '$items.itemSubtotal' },
-        vendorCost:   { $sum: '$_vc' },
+        _id:            null,
+        grossRevenue:   { $sum: '$items.itemSubtotal' },
+        vendorCost:     { $sum: '$_vc' },
         platformProfit: { $sum: '$_pp' },
-        orderCount:   { $addToSet: '$_id' },
+        orderCount:     { $addToSet: '$_id' },
       }},
     ]),
 
     // 15. Last month profit (for % change)
     Order.aggregate([
-      { $match: { ...tenantFilter, placedAt: { $gte: lastMonthStart, $lte: lastMonthEnd }, paymentStatus: { $in: PAID_STATUSES } } },
+      { $match: { ...tenantFilter, placedAt: { $gte: lastMonthStart, $lte: lastMonthEnd }, status: { $in: ACTIVE_STATUSES } } },
       { $unwind: '$items' },
       { $addFields: {
         '_vc': { $cond: [{ $gt: ['$items.tenantRevenueShare', 0] }, '$items.tenantRevenueShare', { $divide: ['$items.itemSubtotal', 1.15] }] },
@@ -212,16 +210,16 @@ exports.getDashboard = asyncHandler(async (req, res) => {
         '_pp': { $cond: [{ $gt: ['$items.platformCommission', 0] }, '$items.platformCommission', { $subtract: ['$items.itemSubtotal', '$_vc'] }] },
       }},
       { $group: {
-        _id:          null,
-        grossRevenue: { $sum: '$items.itemSubtotal' },
-        vendorCost:   { $sum: '$_vc' },
+        _id:            null,
+        grossRevenue:   { $sum: '$items.itemSubtotal' },
+        vendorCost:     { $sum: '$_vc' },
         platformProfit: { $sum: '$_pp' },
       }},
     ]),
 
-    // 16. Monthly profit trend (12 months, paid orders only)
+    // 16. Monthly profit trend (12 months, all active orders)
     Order.aggregate([
-      { $match: { ...tenantFilter, placedAt: { $gte: startOf(addMonths(now, -11), 'month') }, paymentStatus: { $in: PAID_STATUSES } } },
+      { $match: { ...tenantFilter, placedAt: { $gte: startOf(addMonths(now, -11), 'month') }, status: { $in: ACTIVE_STATUSES } } },
       { $unwind: '$items' },
       { $addFields: {
         '_vc': { $cond: [{ $gt: ['$items.tenantRevenueShare', 0] }, '$items.tenantRevenueShare', { $divide: ['$items.itemSubtotal', 1.15] }] },
@@ -273,15 +271,15 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   const yestOrders   = yesterdayAgg[0]?.orders  ?? 0;
   const yestRevenue  = yesterdayAgg[0]?.revenue ?? 0;
 
-  // vendorCost  = what platform pays out to vendors (platform's cost of goods)
-  // platformProfit = gross revenue − vendor cost (platform markup earned, per revenue model)
-  const paidGross           = profitThisMonthAgg[0]?.grossRevenue    ?? 0;
+  // vendorCost     = what platform pays out to vendors across ALL active orders
+  // platformProfit = grossRevenue − vendorCost (platform markup earned)
+  const grossThisMonth      = profitThisMonthAgg[0]?.grossRevenue    ?? 0;
   const vendorCostThisMonth = profitThisMonthAgg[0]?.vendorCost      ?? 0;
   const platformProfit      = profitThisMonthAgg[0]?.platformProfit  ?? 0;
-  const paidOrderCount      = profitThisMonthAgg[0]?.orderCount?.length ?? 0;
-  const avgOrderValue       = paidOrderCount > 0 ? Math.round(paidGross / paidOrderCount) : 0;
+  const orderCountThisMonth = profitThisMonthAgg[0]?.orderCount?.length ?? 0;
+  // avgOrderValue from active-order count (consistent with revenue)
+  const avgOrderValue       = orderCountThisMonth > 0 ? Math.round(grossThisMonth / orderCountThisMonth) : 0;
   const lastGross           = profitLastMonthAgg[0]?.grossRevenue    ?? 0;
-  const lastVendorCost      = profitLastMonthAgg[0]?.vendorCost      ?? 0;
   const lastProfit          = profitLastMonthAgg[0]?.platformProfit  ?? 0;
 
   // 7-day sparkline normalised
@@ -430,13 +428,11 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       recentOrders: recentOrdersList,
       customerChart,
       profit: {
-        // platformProfit = gross revenue - vendor cost (= platform markup earned)
-        thisMonth:      platformProfit,
-        lastMonth:      lastProfit,
-        // paidRevenue = gross revenue from paid orders (what customers paid for items)
-        paidRevenue:    paidGross,
-        // vendorCost = platform's cost = Σ vendor payouts (what platform owes vendors)
-        vendorCost:     vendorCostThisMonth,
+        thisMonth:    platformProfit,
+        lastMonth:    lastProfit,
+        // grossRevenue = total revenue across all active orders this month
+        grossRevenue: grossThisMonth,
+        vendorCost:   vendorCostThisMonth,
         trend: salesReport.map(m => ({
           month:      m.month,
           totalSales: m.revenue,
