@@ -4,6 +4,8 @@ const Order = require('../models/Order');
 const Coupon = require('../models/Coupon');
 const User = require('../models/User');
 const Tenant = require('../models/Tenant');
+const SubProduct = require('../models/SubProduct');
+const Size = require('../models/Size');
 const asyncHandler = require('../utils/asyncHandler');
 const { generateOrderNumber } = require('../utils/orderUtils');
 const inventoryService = require('../services/inventory.service');
@@ -70,38 +72,61 @@ exports.createOrder = asyncHandler(async (req, res) => {
   // Fetch tenant information for proper revenue calculation
   const tenantIds = [...new Set(items.map(item => item.tenantId).filter(Boolean))];
   const tenants = await Tenant.find({ _id: { $in: tenantIds } })
-    .select('_id name revenueModel platformMarkupPercentage')
+    .select('_id name revenueModel markupPercentage commissionPercentage platformMarkupPercentage')
     .lean();
   const tenantMap = new Map(tenants.map(t => [t._id.toString(), t]));
 
+  // Bulk-fetch SubProducts to get actual costPrice and per-product markupPercentage
+  const subProductIds = [...new Set(items.map(i => i.subProductId).filter(Boolean))];
+  const subProducts = subProductIds.length
+    ? await SubProduct.find({ _id: { $in: subProductIds } })
+        .select('_id costPrice markupPercentage')
+        .lean()
+    : [];
+  const subProductMap = new Map(subProducts.map(sp => [sp._id.toString(), sp]));
+
   // ── Build orderItems ─────────────────────────────────────────────────────
   //
-  // Pricing chain (both models):
-  //   Markup model    → supplierCost ×(1+markupPct%) = vendorPayout ×(1+platformMarkupPct%) = customerPrice
-  //   Commission model→ tenantPrice ×(1−commissionPct%) = vendorPayout ×(1+platformMarkupPct%) = customerPrice
+  // Pricing chain:
+  //   Markup model     → vendorPayout = costPrice × (1 + markupPct%)
+  //   Commission model → vendorPayout = itemSubtotal × (1 − commissionPct%)
   //
-  // In both cases the relationship holds:
-  //   vendorPayout (per unit) = customerPrice ÷ (1 + platformMarkupPct/100)
-  //   platformProfit (per line) = itemSubtotal − vendorPayout×qty
+  // platformProfit = itemSubtotal − vendorPayout×qty
   //
-  // platformMarkupPct is the platform-level additional markup stored on Tenant
-  // (defaults to 15 if not set). This is what the platform earns on top of the
-  // vendor payout — consistent regardless of the vendor's own revenue model.
+  // Fallback (no costPrice): vendorPayout = customerPrice ÷ (1 + platformMarkupPct/100)
   const orderItems = items.map(item => {
     const tenant        = tenantMap.get(item.tenantId?.toString());
-    const customerPrice = item.price;  // platform selling price (what customer pays per unit)
+    const sp            = subProductMap.get(item.subProductId?.toString());
+    const revenueModel  = tenant?.revenueModel ?? 'markup';
+    const customerPrice = item.price;  // platform selling price per unit
     const qty           = item.quantity;
     const itemSubtotal  = customerPrice * qty;
 
-    // Platform's additional markup on top of the vendor payout
-    const platformMarkupPct = tenant?.platformMarkupPercentage ?? 15;
+    let vendorCostPerUnit;
+    let rateUsed;
 
-    // Back-calculate vendor payout from the customer price:
-    //   customerPrice = vendorPayout × (1 + platformMarkupPct/100)
-    //   ∴ vendorPayout = customerPrice / (1 + platformMarkupPct/100)
-    const vendorCostPerUnit = customerPrice / (1 + platformMarkupPct / 100);
-    const vendorPayout      = vendorCostPerUnit * qty;
-    const platformProfit    = itemSubtotal - vendorPayout;
+    if (revenueModel === 'commission') {
+      const commissionPct  = tenant?.commissionPercentage ?? 12;
+      vendorCostPerUnit    = customerPrice * (1 - commissionPct / 100);
+      rateUsed             = commissionPct;
+    } else {
+      // markup model — use actual costPrice from SubProduct when available
+      const costPrice  = sp?.costPrice ?? 0;
+      const markupPct  = sp?.markupPercentage ?? tenant?.markupPercentage ?? 40;
+
+      if (costPrice > 0) {
+        vendorCostPerUnit = costPrice * (1 + markupPct / 100);
+        rateUsed          = markupPct;
+      } else {
+        // fallback: back-calculate via platformMarkupPercentage
+        const platformMarkupPct = tenant?.platformMarkupPercentage ?? 15;
+        vendorCostPerUnit       = customerPrice / (1 + platformMarkupPct / 100);
+        rateUsed                = platformMarkupPct;
+      }
+    }
+
+    const vendorPayout   = vendorCostPerUnit * qty;
+    const platformProfit = itemSubtotal - vendorPayout;
 
     return {
       product:               item.productId,
@@ -112,13 +137,11 @@ exports.createOrder = asyncHandler(async (req, res) => {
       priceAtPurchase:       customerPrice,
       itemSubtotal:          Math.round(itemSubtotal     * 100) / 100,
       discountAmount:        0,
-      // Per-unit snapshot of the vendor's cost to the platform
       vendorPriceAtPurchase: Math.round(vendorCostPerUnit * 100) / 100,
-      // Per-line totals for reporting
       tenantRevenueShare:    Math.round(vendorPayout      * 100) / 100,
       platformCommission:    Math.round(platformProfit    * 100) / 100,
-      tenantRevenueModel:    tenant?.revenueModel ?? 'markup',
-      revenueRateAtPurchase: platformMarkupPct,
+      tenantRevenueModel:    revenueModel,
+      revenueRateAtPurchase: rateUsed,
     };
   });
 
