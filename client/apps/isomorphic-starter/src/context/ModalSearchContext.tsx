@@ -1,9 +1,19 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  ReactNode,
+} from 'react';
 import { ProductType } from '@/types/product.types';
 
-interface SearchFilters {
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface SearchFilters {
   category?: string;
   type?: string;
   brand?: string;
@@ -12,447 +22,431 @@ interface SearchFilters {
   inStock?: boolean;
 }
 
-interface SearchResult {
+export interface SearchResult {
   products: ProductType[];
   total: number;
   page: number;
   totalPages: number;
 }
 
-interface RecentSearch {
+export interface RecentSearch {
   query: string;
   filters?: SearchFilters;
   timestamp: number;
 }
 
 interface ModalSearchContextValue {
-  // Modal state
+  // Modal
   isModalOpen: boolean;
   openModalSearch: () => void;
   closeModalSearch: () => void;
   toggleModalSearch: () => void;
-  
+
   // Search state
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   searchResults: SearchResult | null;
   isSearching: boolean;
   searchError: string | null;
-  
+  hasMore: boolean;
+
   // Filters
   filters: SearchFilters;
   setFilters: (filters: SearchFilters) => void;
+  updateFilter: <K extends keyof SearchFilters>(key: K, value: SearchFilters[K]) => void;
   clearFilters: () => void;
-  
-  // Search actions
-  performSearch: (query?: string) => Promise<void>;
+
+  // Actions
+  performSearch: (query?: string, page?: number) => Promise<void>;
   loadMoreResults: () => Promise<void>;
-  
+  clearSearch: () => void;
+
   // Recent searches
   recentSearches: RecentSearch[];
   addRecentSearch: (query: string, filters?: SearchFilters) => void;
   clearRecentSearches: () => void;
   removeRecentSearch: (query: string) => void;
-  
+
   // Popular searches
   popularSearches: string[];
-  
+
   // Suggestions
   suggestions: string[];
   isLoadingSuggestions: boolean;
-  fetchSuggestions: (query: string) => Promise<void>;
+  fetchSuggestions: (query: string) => void;
 }
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const LS_KEY = 'dh_recentSearches';
+const MAX_RECENT = 10;
+const SUGGESTION_DEBOUNCE_MS = 250;
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
+const POPULAR_SEARCHES: string[] = [
+  'Whiskey', 'Red Wine', 'Beer', 'Vodka',
+  'Champagne', 'Gin', 'Rum', 'Brandy',
+  'Tequila', 'Rosé',
+];
+
+function buildSearchParams(
+  query: string,
+  filters: SearchFilters,
+  page: number,
+  limit = 12,
+): URLSearchParams {
+  const p = new URLSearchParams();
+  if (query.trim()) p.set('q', query.trim());
+  p.set('page', String(page));
+  p.set('limit', String(limit));
+  if (filters.category)                 p.set('category',  filters.category);
+  if (filters.type)                     p.set('type',       filters.type);
+  if (filters.brand)                    p.set('brand',      filters.brand);
+  if (filters.minPrice !== undefined)   p.set('minPrice',   String(filters.minPrice));
+  if (filters.maxPrice !== undefined)   p.set('maxPrice',   String(filters.maxPrice));
+  if (filters.inStock)                  p.set('inStock',    'true');
+  return p;
+}
+
+function readLocalRecents(): RecentSearch[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    return raw ? (JSON.parse(raw) as RecentSearch[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalRecents(searches: RecentSearch[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(searches));
+  } catch { /* quota exceeded — ignore */ }
+}
+
+// ─── Context ─────────────────────────────────────────────────────────────────
 
 const ModalSearchContext = createContext<ModalSearchContextValue | undefined>(undefined);
 
-const MAX_RECENT_SEARCHES = 10;
-const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
-
 export const useModalSearchContext = (): ModalSearchContextValue => {
-  const context = useContext(ModalSearchContext);
-  if (!context) {
-    throw new Error(
-      'useModalSearchContext must be used within a ModalSearchProvider',
-    );
-  }
-  return context;
+  const ctx = useContext(ModalSearchContext);
+  if (!ctx) throw new Error('useModalSearchContext must be used within a ModalSearchProvider');
+  return ctx;
 };
 
-interface ModalSearchProviderProps {
-  children: ReactNode;
-}
+// ─── Provider ────────────────────────────────────────────────────────────────
 
-export const ModalSearchProvider: React.FC<ModalSearchProviderProps> = ({
-  children,
-}) => {
-  // Modal state
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  
-  // Search state
-  const [searchQuery, setSearchQuery] = useState('');
+export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // Modal
+  const [isModalOpen, setIsModalOpen]     = useState(false);
+  const originalOverflow                  = useRef<string>('');
+
+  // Search
+  const [searchQuery, setSearchQuery]     = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult | null>(null);
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  
-  // Filters
-  const [filters, setFilters] = useState<SearchFilters>({});
-  
-  // Recent searches (load from localStorage on mount)
-  const [recentSearches, setRecentSearches] = useState<RecentSearch[]>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('recentSearches');
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch {
-          return [];
-        }
-      }
-    }
-    return [];
-  });
-  
-  // Popular searches (static for now, could be fetched from API)
-  const [popularSearches] = useState<string[]>([
-    'Whiskey',
-    'Red Wine',
-    'Beer',
-    'Vodka',
-    'Champagne',
-    'Gin',
-    'Rum',
-    'Brandy',
-  ]);
-  
-  // Suggestions
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [isSearching, setIsSearching]     = useState(false);
+  const [searchError, setSearchError]     = useState<string | null>(null);
+  const [currentPage, setCurrentPage]     = useState(1);
 
-  // Modal actions
+  // Track the exact term + filters used for the current result set (for loadMore)
+  const lastSearchRef = useRef<{ query: string; filters: SearchFilters }>({ query: '', filters: {} });
+
+  // Filters
+  const [filters, setFilters]             = useState<SearchFilters>({});
+
+  // Recent searches
+  const [recentSearches, setRecentSearches] = useState<RecentSearch[]>(readLocalRecents);
+
+  // Popular searches
+  const [popularSearches] = useState<string[]>(POPULAR_SEARCHES);
+
+  // Suggestions
+  const [suggestions, setSuggestions]               = useState<string[]>([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const suggestionAbortRef                           = useRef<AbortController | null>(null);
+  const suggestionTimerRef                           = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Abort controller for main search
+  const searchAbortRef = useRef<AbortController | null>(null);
+
+  // ── Derived ────────────────────────────────────────────────────────────────
+  const hasMore = Boolean(searchResults && currentPage < searchResults.totalPages);
+
+  // ── Body scroll lock ───────────────────────────────────────────────────────
   const openModalSearch = useCallback(() => {
-    setIsModalOpen(true);
-    // Prevent body scroll when modal is open
     if (typeof document !== 'undefined') {
+      originalOverflow.current = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
     }
+    setIsModalOpen(true);
   }, []);
 
   const closeModalSearch = useCallback(() => {
-    setIsModalOpen(false);
-    // Restore body scroll
     if (typeof document !== 'undefined') {
-      document.body.style.overflow = 'unset';
+      document.body.style.overflow = originalOverflow.current;
     }
+    setIsModalOpen(false);
   }, []);
 
   const toggleModalSearch = useCallback(() => {
-    if (isModalOpen) {
-      closeModalSearch();
-    } else {
-      openModalSearch();
-    }
-  }, [isModalOpen, openModalSearch, closeModalSearch]);
-
-  // Save recent searches to localStorage
-  const saveRecentSearches = useCallback((searches: RecentSearch[]) => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('recentSearches', JSON.stringify(searches));
-    }
+    setIsModalOpen((open) => {
+      if (open) {
+        if (typeof document !== 'undefined')
+          document.body.style.overflow = originalOverflow.current;
+        return false;
+      } else {
+        if (typeof document !== 'undefined') {
+          originalOverflow.current = document.body.style.overflow;
+          document.body.style.overflow = 'hidden';
+        }
+        return true;
+      }
+    });
   }, []);
 
-  // Add recent search
+  // Restore scroll on unmount (safety net)
+  useEffect(() => {
+    return () => {
+      if (typeof document !== 'undefined')
+        document.body.style.overflow = originalOverflow.current;
+    };
+  }, []);
+
+  // ── Recent searches ────────────────────────────────────────────────────────
   const addRecentSearch = useCallback((query: string, searchFilters?: SearchFilters) => {
     if (!query.trim()) return;
-    
     setRecentSearches((prev) => {
-      // Remove duplicate if exists
       const filtered = prev.filter((s) => s.query.toLowerCase() !== query.toLowerCase());
-      
-      // Add new search at the beginning
-      const newSearch: RecentSearch = {
-        query,
-        filters: searchFilters,
-        timestamp: Date.now(),
-      };
-      
-      const updated = [newSearch, ...filtered].slice(0, MAX_RECENT_SEARCHES);
-      saveRecentSearches(updated);
+      const updated  = [{ query, filters: searchFilters, timestamp: Date.now() }, ...filtered]
+        .slice(0, MAX_RECENT);
+      writeLocalRecents(updated);
       return updated;
     });
-  }, [saveRecentSearches]);
+  }, []);
 
-  // Clear recent searches
   const clearRecentSearches = useCallback(() => {
     setRecentSearches([]);
-    saveRecentSearches([]);
-  }, [saveRecentSearches]);
+    writeLocalRecents([]);
+  }, []);
 
-  // Remove single recent search
   const removeRecentSearch = useCallback((query: string) => {
     setRecentSearches((prev) => {
       const updated = prev.filter((s) => s.query !== query);
-      saveRecentSearches(updated);
+      writeLocalRecents(updated);
       return updated;
     });
-  }, [saveRecentSearches]);
-
-  // Clear filters
-  const clearFilters = useCallback(() => {
-    setFilters({});
   }, []);
 
-  // Perform search
-  const performSearch = useCallback(async (query?: string) => {
-    const searchTerm = query ?? searchQuery;
-    
-    if (!searchTerm.trim() && Object.keys(filters).length === 0) {
-      // When no search term, get default products
-      setIsSearching(true);
-      setSearchError(null);
-      setCurrentPage(1);
+  // ── Filters ────────────────────────────────────────────────────────────────
+  const updateFilter = useCallback(<K extends keyof SearchFilters>(
+    key: K,
+    value: SearchFilters[K],
+  ) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+  }, []);
 
-      try {
-        const params = new URLSearchParams();
-        params.append('page', '1');
-        params.append('limit', '12');
+  const clearFilters = useCallback(() => setFilters({}), []);
 
-        const searchUrl = `${API_URL}/api/products/search?${params.toString()}`;
-        
-        const response = await fetch(searchUrl, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-        });
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
+  // ── Core fetch helper ──────────────────────────────────────────────────────
+  const fetchSearchPage = useCallback(async (
+    query: string,
+    activeFilters: SearchFilters,
+    page: number,
+    signal: AbortSignal,
+  ): Promise<SearchResult> => {
+    const params = buildSearchParams(query, activeFilters, page);
+    const res    = await fetch(`${API_URL}/api/products/search?${params}`, { signal });
 
-        if (data.success) {
-          const responseData = data.data || data;
-          const products = responseData.products || [];
-          const total = responseData.pagination?.totalResults || products.length;
-          const page = responseData.pagination?.currentPage || 1;
-          const totalPages = responseData.pagination?.totalPages || 1;
-          
-          setSearchResults({
-            products,
-            total,
-            page,
-            totalPages,
-          });
-        } else {
-          setSearchResults({ products: [], total: 0, page: 1, totalPages: 0 });
-        }
-      } catch (error) {
-        console.error('Search error:', error);
-        setSearchError(error instanceof Error ? error.message : 'Search failed');
-        setSearchResults({ products: [], total: 0, page: 1, totalPages: 0 });
-      } finally {
-        setIsSearching(false);
-      }
-      return;
-    }
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Search failed');
+
+    const rd         = data.data ?? data;
+    const products   = rd.products ?? [];
+    const pagination = rd.pagination ?? {};
+
+    return {
+      products,
+      total:      pagination.totalResults  ?? rd.total      ?? products.length,
+      page:       pagination.currentPage   ?? rd.page       ?? page,
+      totalPages: pagination.totalPages    ?? rd.totalPages ?? 1,
+    };
+  }, []);
+
+  // ── performSearch ──────────────────────────────────────────────────────────
+  const performSearch = useCallback(async (query?: string, page = 1) => {
+    const term = (query ?? searchQuery).trim();
+
+    // Abort any in-flight search
+    searchAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
 
     setIsSearching(true);
     setSearchError(null);
-    setCurrentPage(1);
+    if (page === 1) setCurrentPage(1);
 
     try {
-      const params = new URLSearchParams();
-      params.append('q', searchTerm);
-      params.append('page', '1');
-      params.append('limit', '12');
-      
-      // Add filters
-      if (filters.category) params.append('category', filters.category);
-      if (filters.type) params.append('type', filters.type);
-      if (filters.brand) params.append('brand', filters.brand);
-      if (filters.minPrice !== undefined) params.append('minPrice', filters.minPrice.toString());
-      if (filters.maxPrice !== undefined) params.append('maxPrice', filters.maxPrice.toString());
-      if (filters.inStock) params.append('inStock', 'true');
+      const result = await fetchSearchPage(term, filters, page, controller.signal);
 
-      const searchUrl = `${API_URL}/api/products/search?${params.toString()}`;
+      setSearchResults(result);
+      setCurrentPage(page);
+      lastSearchRef.current = { query: term, filters };
 
-      const response = await fetch(searchUrl, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-
-      if (data.success) {
-        const responseData = data.data || data;
-        const products = responseData.products || [];
-        
-        let total, page, totalPages;
-        if (responseData.pagination) {
-          total = responseData.pagination.totalResults || products.length;
-          page = responseData.pagination.currentPage || 1;
-          totalPages = responseData.pagination.totalPages || 1;
-        } else {
-          total = responseData.total || products.length;
-          page = responseData.page || 1;
-          totalPages = responseData.totalPages || 1;
-        }
-        
-        setSearchResults({
-          products,
-          total,
-          page,
-          totalPages,
-        });
-        
-        // Add to recent searches
-        addRecentSearch(searchTerm, filters);
-      } else {
-        setSearchError(data.message || 'Search failed');
-        setSearchResults({ products: [], total: 0, page: 1, totalPages: 0 });
-      }
-    } catch (error) {
-      console.error('Search error:', error);
-      setSearchError(error instanceof Error ? error.message : 'Failed to perform search. Please try again.');
-      setSearchResults({ products: [], total: 0, page: 1, totalPages: 0 });
+      // Only add non-empty queries to history
+      if (term) addRecentSearch(term, filters);
+    } catch (err: any) {
+      if (err.name === 'AbortError') return;           // intentionally cancelled
+      setSearchError(err.message ?? 'Search failed');
+      if (page === 1) setSearchResults({ products: [], total: 0, page: 1, totalPages: 0 });
     } finally {
       setIsSearching(false);
     }
-  }, [searchQuery, filters, addRecentSearch]);
+  }, [searchQuery, filters, fetchSearchPage, addRecentSearch]);
 
-  // Load more results (pagination)
+  // ── loadMoreResults ────────────────────────────────────────────────────────
   const loadMoreResults = useCallback(async () => {
-    if (!searchResults || currentPage >= searchResults.totalPages || isSearching) {
-      return;
-    }
+    if (!hasMore || isSearching) return;
 
-    const nextPage = currentPage + 1;
+    const nextPage   = currentPage + 1;
+    const { query, filters: f } = lastSearchRef.current;
+
+    searchAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
+
     setIsSearching(true);
 
     try {
-      const params = new URLSearchParams();
-      params.append('q', searchQuery);
-      params.append('page', nextPage.toString());
-      params.append('limit', '12');
-      
-      if (filters.category) params.append('category', filters.category);
-      if (filters.type) params.append('type', filters.type);
-      if (filters.brand) params.append('brand', filters.brand);
-      if (filters.minPrice !== undefined) params.append('minPrice', filters.minPrice.toString());
-      if (filters.maxPrice !== undefined) params.append('maxPrice', filters.maxPrice.toString());
-      if (filters.inStock) params.append('inStock', 'true');
+      const result = await fetchSearchPage(query, f, nextPage, controller.signal);
 
-      const response = await fetch(`${API_URL}/api/products/search?${params.toString()}`);
-      const data = await response.json();
-
-      if (data.success && searchResults) {
-        setSearchResults({
-          ...searchResults,
-          products: [...searchResults.products, ...(data.data.products || [])],
-          page: nextPage,
-        });
-        setCurrentPage(nextPage);
-      }
-    } catch (error) {
-      console.error('Load more error:', error);
+      setSearchResults((prev) =>
+        prev
+          ? { ...result, products: [...prev.products, ...result.products] }
+          : result,
+      );
+      setCurrentPage(nextPage);
+    } catch (err: any) {
+      if (err.name === 'AbortError') return;
+      console.error('loadMoreResults error:', err.message);
     } finally {
       setIsSearching(false);
     }
-  }, [searchQuery, filters, searchResults, currentPage, isSearching]);
+  }, [hasMore, isSearching, currentPage, fetchSearchPage]);
 
-  // Fetch search suggestions
-  const fetchSuggestions = useCallback(async (query: string) => {
+  // ── clearSearch ────────────────────────────────────────────────────────────
+  const clearSearch = useCallback(() => {
+    searchAbortRef.current?.abort();
+    setSearchQuery('');
+    setSearchResults(null);
+    setSearchError(null);
+    setCurrentPage(1);
+    setFilters({});
+    setSuggestions([]);
+    lastSearchRef.current = { query: '', filters: {} };
+  }, []);
+
+  // ── fetchSuggestions (debounced + abortable) ───────────────────────────────
+  const fetchSuggestions = useCallback((query: string) => {
+    // Clear pending timer and in-flight request
+    if (suggestionTimerRef.current) clearTimeout(suggestionTimerRef.current);
+    suggestionAbortRef.current?.abort();
+
     if (!query.trim() || query.length < 2) {
       setSuggestions([]);
       return;
     }
 
-    setIsLoadingSuggestions(true);
+    suggestionTimerRef.current = setTimeout(async () => {
+      const controller = new AbortController();
+      suggestionAbortRef.current = controller;
+      setIsLoadingSuggestions(true);
 
-    try {
-      // Try to fetch suggestions from API
-      const response = await fetch(`${API_URL}/api/products/suggestions?q=${encodeURIComponent(query)}&limit=8`);
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && Array.isArray(data.data)) {
-          setSuggestions(data.data);
-          return;
+      try {
+        const res = await fetch(
+          `${API_URL}/api/products/suggestions?q=${encodeURIComponent(query)}&limit=8`,
+          { signal: controller.signal },
+        );
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+            setSuggestions(data.data);
+            return;
+          }
+        }
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+      } finally {
+        setIsLoadingSuggestions(false);
+      }
+
+      // Fallback: merge recent + popular, deduplicated, matching prefix/substring
+      const q    = query.toLowerCase();
+      const seen = new Set<string>();
+      const fb: string[] = [];
+
+      for (const s of [...recentSearches.map((r) => r.query), ...popularSearches]) {
+        const lower = s.toLowerCase();
+        if (lower.includes(q) && !seen.has(lower)) {
+          seen.add(lower);
+          fb.push(s);
+          if (fb.length >= 8) break;
         }
       }
-      
-      // Fallback: Use recent searches and popular searches
-      const fallbackSuggestions = [
-        ...recentSearches.filter(s => 
-          s.query.toLowerCase().includes(query.toLowerCase())
-        ).map(s => s.query),
-        ...popularSearches.filter(p => 
-          p.toLowerCase().includes(query.toLowerCase())
-        ),
-      ].slice(0, 8);
-      
-      setSuggestions(fallbackSuggestions);
-    } catch (error) {
-      // On error, use fallback
-      const fallbackSuggestions = [
-        ...recentSearches.filter(s => 
-          s.query.toLowerCase().includes(query.toLowerCase())
-        ).map(s => s.query),
-        ...popularSearches.filter(p => 
-          p.toLowerCase().includes(query.toLowerCase())
-        ),
-      ].slice(0, 8);
-      
-      setSuggestions(fallbackSuggestions);
-    } finally {
-      setIsLoadingSuggestions(false);
-    }
+
+      setSuggestions(fb);
+    }, SUGGESTION_DEBOUNCE_MS);
   }, [recentSearches, popularSearches]);
 
-  const contextValue: ModalSearchContextValue = {
-    // Modal state
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (suggestionTimerRef.current) clearTimeout(suggestionTimerRef.current);
+      suggestionAbortRef.current?.abort();
+      searchAbortRef.current?.abort();
+    };
+  }, []);
+
+  // ── Context value ──────────────────────────────────────────────────────────
+  const value: ModalSearchContextValue = {
     isModalOpen,
     openModalSearch,
     closeModalSearch,
     toggleModalSearch,
-    
-    // Search state
+
     searchQuery,
     setSearchQuery,
     searchResults,
     isSearching,
     searchError,
-    
-    // Filters
+    hasMore,
+
     filters,
     setFilters,
+    updateFilter,
     clearFilters,
-    
-    // Search actions
+
     performSearch,
     loadMoreResults,
-    
-    // Recent searches
+    clearSearch,
+
     recentSearches,
     addRecentSearch,
     clearRecentSearches,
     removeRecentSearch,
-    
-    // Popular searches
+
     popularSearches,
-    
-    // Suggestions
+
     suggestions,
     isLoadingSuggestions,
     fetchSuggestions,
   };
 
   return (
-    <ModalSearchContext.Provider value={contextValue}>
+    <ModalSearchContext.Provider value={value}>
       {children}
     </ModalSearchContext.Provider>
   );
