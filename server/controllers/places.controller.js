@@ -181,6 +181,8 @@ const mapsScript = asyncHandler(async (req, res) => {
 
     res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=3600');
+    // Override Helmet's same-origin CORP so browsers can load this cross-origin script
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.send(body);
   } catch (err) {
     console.error('[Maps] Failed to fetch Maps JS API:', err.message);
