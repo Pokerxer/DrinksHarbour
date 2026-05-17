@@ -160,7 +160,7 @@ const orderSchema = new Schema(
     // ────────────────────────────────────────────────
     paymentMethod: {
       type: String,
-      enum: ['card', 'bank_transfer', 'mobile_money', 'cash_on_delivery', 'wallet'],
+      enum: ['card', 'bank_transfer', 'mobile_money', 'cash_on_delivery', 'cash', 'wallet', 'split'],
       required: true,
     },
 
@@ -196,6 +196,14 @@ const orderSchema = new Schema(
       currency: String,
       paidAt: Date,
       channel: String,
+      change: Number,
+      splitPayments: [{ method: String, amount: Number }],
+      // POS customer snapshot (walk-in or named customer)
+      customer: {
+        firstName: String,
+        lastName:  String,
+        phone:     String,
+      },
     },
 
     refundDetails: {
@@ -307,6 +315,53 @@ const orderSchema = new Schema(
       type: Number,
       default: 0,
     },
+
+    // ────────────────────────────────────────────────
+    // Order Origin
+    // ────────────────────────────────────────────────
+    source: {
+      type: String,
+      enum: ['web', 'pos', 'app', 'manual'],
+      default: 'web',
+      index: true,
+    },
+
+    receiptNumber: {
+      type: String,
+      index: true,
+      sparse: true,
+    },
+    posSessionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'POSSession',
+      default: null,
+    },
+    posStaff: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    voidedAt:   { type: Date, default: null },
+    voidedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    voidReason: { type: String, default: '' },
+    isVoided:   { type: Boolean, default: false },
+    refunds: [{
+      receiptNumber:    String,
+      items: [{
+        orderItemIndex: Number,   // index into order.items array
+        quantity:       Number,   // units returned
+        unitPrice:      Number,   // per-unit refund price used
+        discPct:        Number,   // deduction % applied (0 = full value)
+        amount:         Number,   // final refund amount for this line = unitPrice * qty * (1 - discPct/100)
+        restock:        { type: Boolean, default: true },  // whether stock was returned
+        reason:         String,   // per-line reason
+      }],
+      totalRefunded:    Number,
+      reason:           String,
+      refundedBy:       { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      refundedAt:       { type: Date, default: Date.now },
+      paymentMethod:    String,   // payment method used for the refund (if different from original)
+    }],
   },
   {
     timestamps: true,

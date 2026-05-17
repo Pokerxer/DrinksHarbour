@@ -22,6 +22,36 @@ async function generateOrderNumber() {
   return `${prefix}${sequence}`;
 }
 
+async function generateReceiptNumber() {
+  const date = new Date();
+  const y = date.getFullYear().toString();
+  const m = (date.getMonth() + 1).toString().padStart(2, '0');
+  const d = date.getDate().toString().padStart(2, '0');
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const todayEnd   = new Date(); todayEnd.setHours(23,59,59,999);
+  const count = await Order.countDocuments({
+    receiptNumber: { $exists: true, $regex: `^RCP-${y}${m}${d}` },
+    createdAt: { $gte: todayStart, $lte: todayEnd },
+  });
+  return `RCP-${y}${m}${d}-${(count + 1).toString().padStart(4, '0')}`;
+}
+
+async function generateReturnNumber() {
+  const date = new Date();
+  const y = date.getFullYear().toString();
+  const m = (date.getMonth() + 1).toString().padStart(2, '0');
+  const d = date.getDate().toString().padStart(2, '0');
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const todayEnd   = new Date(); todayEnd.setHours(23,59,59,999);
+  const count = await Order.countDocuments({
+    'refunds.receiptNumber': { $regex: `^RTN-${y}${m}${d}` },
+    createdAt: { $gte: todayStart, $lte: todayEnd },
+  });
+  return `RTN-${y}${m}${d}-${(count + 1).toString().padStart(4, '0')}`;
+}
+
 module.exports = {
   generateOrderNumber,
+  generateReceiptNumber,
+  generateReturnNumber,
 };

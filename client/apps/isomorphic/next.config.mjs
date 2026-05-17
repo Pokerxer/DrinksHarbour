@@ -2,14 +2,12 @@ import './src/env.mjs';
 /** @type {import('next').NextConfig} */
 
 const nextConfig = {
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
   typescript: {
     ignoreBuildErrors: true,
   },
-  experimental: {
-    reactCompiler: false,
+  reactCompiler: false,
+  turbopack: {
+    root: '../..',
   },
   images: {
     remotePatterns: [
@@ -64,6 +62,18 @@ const nextConfig = {
     ],
   },
   reactStrictMode: true,
+  // Serve POS terminal pages (no admin header) under /point-of-sale/* URLs.
+  // beforeFiles rewrites take priority over filesystem routes so the
+  // (hydrogen) layout is bypassed and only the root layout is used.
+  async rewrites() {
+    return {
+      beforeFiles: [
+        { source: '/point-of-sale/sell',     destination: '/pos/sell'     },
+        { source: '/point-of-sale/history',  destination: '/pos/orders'   },
+        { source: '/point-of-sale/sessions', destination: '/pos/sessions' },
+      ],
+    };
+  },
   transpilePackages: ['core', 'framer-motion'],
   // Ignore specific build warnings that don't break the build
   webpack: (config) => {
