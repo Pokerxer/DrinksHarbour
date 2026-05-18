@@ -17,16 +17,16 @@ export interface InventoryMovement {
   subProduct: string;
   tenant: string;
   product?: any;
-  size?: any;
+  size?: { _id: string; displayName?: string; size?: string } | null;
   warehouse?: any;
   type: string;
   category: string;
   quantity: number;
-  quantityBefore: number;
-  quantityAfter: number;
+  quantityBefore?: number;
+  quantityAfter?: number;
   reference?: string;
   referenceType?: string;
-  relatedOrder?: string;
+  relatedOrder?: { _id: string; orderNumber?: string; receiptNumber?: string; placedAt?: string } | string | null;
   unitCost?: number;
   totalCost?: number;
   sellingPrice?: number;
@@ -39,12 +39,13 @@ export interface InventoryMovement {
   reason?: string;
   notes?: string;
   status: string;
-  isVerified: boolean;
-  performedBy: any;
-  performedAt: string;
-  source: string;
+  isVerified?: boolean;
+  performedBy?: { _id: string; firstName?: string; lastName?: string; email?: string; posName?: string } | null;
+  performedAt?: string;
+  source: string; // 'manual' | 'order' | 'system' | 'api' | 'pos'
   createdAt: string;
   updatedAt: string;
+  sizeName?: string;
 }
 
 export interface InventorySummary {
@@ -63,6 +64,11 @@ export interface InventorySummary {
     returned: number;
     adjusted: number;
     damaged: number;
+  };
+  sources?: {
+    pos: number;
+    online: number;
+    manual: number;
   };
   summary: Array<{
     _id: string;

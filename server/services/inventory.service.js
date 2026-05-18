@@ -522,8 +522,9 @@ async function getMovements(tenantId, options = {}) {
       .sort(sort)
       .skip(skip)
       .limit(limit)
-      .populate('performedBy', 'firstName lastName email')
+      .populate('performedBy', 'firstName lastName email posName')
       .populate('size', 'displayName size')
+      .populate('relatedOrder', 'orderNumber receiptNumber placedAt')
       .lean(),
     InventoryMovement.countDocuments(query),
   ]);
@@ -579,14 +580,27 @@ async function getInventorySummary(tenantId, subProductId) {
   // Build totals from summary groups
   const totals = { received: 0, sold: 0, returned: 0, adjusted: 0, damaged: 0 };
   for (const row of summary) {
-    if (row._id === 'received')     totals.received  += row.totalQuantity;
-    if (row._id === 'sold' || row._id === 'shipped') totals.sold += row.totalQuantity;
-    if (row._id === 'return')       totals.returned  += row.totalQuantity;
-    if (row._id === 'adjustment_in' || row._id === 'adjustment_out') totals.adjusted += row.totalQuantity;
-    if (row._id === 'damaged' || row._id === 'written_off') totals.damaged += row.totalQuantity;
+    if (['received', 'purchase'].includes(row._id))            totals.received  += row.totalQuantity;
+    if (['sold', 'shipped'].includes(row._id))                  totals.sold      += row.totalQuantity;
+    if (['return', 'return_in'].includes(row._id))              totals.returned  += row.totalQuantity;
+    if (['adjustment_in', 'adjustment_out'].includes(row._id))  totals.adjusted  += row.totalQuantity;
+    if (['damaged', 'written_off', 'expired', 'theft'].includes(row._id)) totals.damaged += row.totalQuantity;
   }
 
-  return { subProduct: sp, totals, summary, recentMovements, stockFlow };
+  // Source breakdown (POS vs online vs manual)
+  const sourceBreakdown = await InventoryMovement.aggregate([
+    { $match: { tenant: tId, subProduct: spId, status: 'confirmed', type: { $in: ['sold', 'shipped'] } } },
+    { $group: { _id: '$source', totalQuantity: { $sum: '$quantity' }, count: { $sum: 1 } } },
+  ]);
+
+  const sources = { pos: 0, online: 0, manual: 0 };
+  for (const row of sourceBreakdown) {
+    if (row._id === 'order')  sources.pos    += row.totalQuantity; // POS uses source:'order'
+    else if (row._id === 'system') sources.online += row.totalQuantity; // ecommerce audit uses source implicitly
+    else                          sources.manual += row.totalQuantity;
+  }
+
+  return { subProduct: sp, totals, sources, summary, recentMovements, stockFlow };
 }
 
 /**

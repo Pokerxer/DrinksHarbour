@@ -15,7 +15,7 @@ import {
   PiBell, PiWarningCircle, PiArrowsLeftRight,
   PiTimer, PiHandPalm, PiBrain, PiArrowUUpLeft, PiArrowUDownLeft,
   PiStack, PiFlow, PiScan, PiPiggyBank, PiReceipt, PiHandPointing,
-  PiCheckSquare, PiLightning, PiTote, PiMapPin, PiFactory, PiStorefront,
+  PiCheckSquare, PiLightning, PiTote, PiMapPin, PiFactory, PiStorefront, PiShoppingCart,
   PiTruck, PiRecycle, PiNumberSquareOne, PiNumberSquareTwo, PiGear, PiUpload,
   PiPrinter, PiPath, PiArrowULeft, PiPackageBox, PiTarget, PiArmchair, PiDotsThree,
   PiMagnifyingGlass, PiCaretLeft, PiCaretRight, PiSpinner
@@ -338,7 +338,7 @@ export default function SubProductInventory() {
     try {
       const [summaryRes, movementsRes] = await Promise.all([
         inventoryService.getInventorySummary(subProductId, session.user.token),
-        inventoryService.getMovements(session.user.token, { subProductId, limit: 50 })
+        inventoryService.getMovements(session.user.token, { subProductId, limit: 500, sortBy: 'createdAt', sortOrder: 'desc' })
       ]);
       
       if (summaryRes.success) {
@@ -1396,19 +1396,36 @@ export default function SubProductInventory() {
 
           {/* Totals strip */}
           {inventorySummary && (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-              {[
-                { label: 'Current Stock', value: inventorySummary.subProduct?.totalStock ?? 0,  bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-100' },
-                { label: 'Received',      value: inventorySummary.totals?.received   ?? 0,        bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-100' },
-                { label: 'Sold',          value: inventorySummary.totals?.sold        ?? 0,        bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-100' },
-                { label: 'Returned',      value: inventorySummary.totals?.returned    ?? 0,        bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'border-amber-100' },
-                { label: 'Adjusted',      value: inventorySummary.totals?.adjusted    ?? 0,        bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-100' },
-              ].map(({ label, value, bg, text, border }) => (
-                <div key={label} className={`rounded-xl border p-3 ${bg} ${border}`}>
-                  <p className={`text-[10px] font-semibold uppercase tracking-wider ${text} opacity-80`}>{label}</p>
-                  <p className={`mt-1 text-2xl font-bold tabular-nums ${text}`}>{value}</p>
+            <div className="space-y-3">
+              {/* Movement totals */}
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                {[
+                  { label: 'Current Stock', value: inventorySummary.subProduct?.totalStock ?? 0, bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-100' },
+                  { label: 'Received',      value: inventorySummary.totals?.received   ?? 0,      bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-100' },
+                  { label: 'Sold',          value: inventorySummary.totals?.sold        ?? 0,      bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-100' },
+                  { label: 'Returned',      value: inventorySummary.totals?.returned    ?? 0,      bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'border-amber-100' },
+                  { label: 'Adjusted',      value: inventorySummary.totals?.adjusted    ?? 0,      bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-100' },
+                ].map(({ label, value, bg, text, border }) => (
+                  <div key={label} className={`rounded-xl border p-3 ${bg} ${border}`}>
+                    <p className={`text-[10px] font-semibold uppercase tracking-wider ${text} opacity-80`}>{label}</p>
+                    <p className={`mt-1 text-xl font-bold tabular-nums ${text}`}>{value}</p>
+                  </div>
+                ))}
+              </div>
+              {/* Sales source breakdown */}
+              {(inventorySummary.totals?.sold ?? 0) > 0 && (
+                <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-2.5">
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Sales by channel:</span>
+                  <span className="flex items-center gap-1.5 rounded-md bg-[#b20202]/10 px-2.5 py-1 text-xs font-semibold text-[#b20202]">
+                    <PiStorefront className="h-3.5 w-3.5" />
+                    POS: {inventorySummary.sources?.pos ?? 0}
+                  </span>
+                  <span className="flex items-center gap-1.5 rounded-md bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                    <PiShoppingCart className="h-3.5 w-3.5" />
+                    Online: {inventorySummary.sources?.online ?? 0}
+                  </span>
                 </div>
-              ))}
+              )}
             </div>
           )}
 
