@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import {
   PiPlus, PiMinus, PiArrowsLeftRight, PiSliders, PiTrash,
@@ -129,12 +129,12 @@ function MovementDetailPanel({
   const [order, setOrder] = useState<any>(null);
   const [loadingOrder, setLoadingOrder] = useState(false);
   const [orderErr, setOrderErr] = useState<string | null>(null);
+  const [tab, setTab] = useState<'movement' | 'order'>('order');
 
   const orderId = getOrderId(movement);
   const cat = getCategory(movement);
   const style = getCatStyle(cat);
   const source = getSourceBadge(movement);
-  const orderRef = getOrderRef(movement);
   const sizeName = (typeof movement.size === 'object' && movement.size)
     ? (movement.size.displayName || movement.size.size)
     : (movement.sizeName || null);
@@ -142,34 +142,37 @@ function MovementDetailPanel({
     ? (movement.performedBy.posName || `${movement.performedBy.firstName || ''} ${movement.performedBy.lastName || ''}`.trim() || movement.performedBy.email)
     : null;
 
-  // Fetch order on mount if orderId exists
-  const fetchOrder = useCallback(async () => {
-    if (!orderId || !token) return;
+  // Auto-fetch order when panel opens
+  useEffect(() => {
+    if (!orderId || !token) { setTab('movement'); return; }
     setLoadingOrder(true);
     setOrderErr(null);
-    try {
-      const res = await fetch(`${API_URL}/api/orders/${orderId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('Order not found');
-      const data = await res.json();
-      setOrder(data.data?.order || data.order || data.data || null);
-    } catch (e: any) {
-      setOrderErr(e.message || 'Could not load order');
-    } finally {
-      setLoadingOrder(false);
-    }
+    fetch(`${API_URL}/api/orders/${orderId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.json())
+      .then(data => setOrder(data.data?.order || data.order || data.data || null))
+      .catch(e => setOrderErr(e.message || 'Could not load order'))
+      .finally(() => setLoadingOrder(false));
   }, [orderId, token]);
 
-  // Auto-fetch
-  useState(() => { fetchOrder(); });
+  const isPOS    = order?.source === 'pos';
+  const isOnline = order?.source && order.source !== 'pos';
+
+  // Helpers
+  const orderType = isPOS ? 'POS Sale' : isOnline ? 'Online Order' : 'Order';
+  const customer  = order?.customer;
+  const staff     = order?.posStaff;
+  const staffName = staff ? (staff.posName || `${staff.firstName || ''} ${staff.lastName || ''}`.trim()) : null;
+  const splits    = order?.paymentDetails?.splitPayments || [];
+  const change    = order?.paymentDetails?.change || 0;
 
   return (
     <div className="flex h-full flex-col bg-white">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <span className={`flex h-7 w-7 items-center justify-center rounded-full ${style.bg} ${style.text}`}>
+        <div className="flex items-center gap-2.5">
+          <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${style.bg} ${style.text}`}>
             {style.icon}
           </span>
           <div>
@@ -182,151 +185,228 @@ function MovementDetailPanel({
         </button>
       </div>
 
+      {/* Tabs */}
+      <div className="flex border-b border-gray-100 text-xs font-semibold">
+        {orderId && <button type="button" onClick={() => setTab('order')}
+          className={`flex-1 py-2.5 transition-colors ${tab === 'order' ? 'border-b-2 border-[#b20202] text-[#b20202]' : 'text-gray-400 hover:text-gray-600'}`}>
+          {orderType}
+        </button>}
+        <button type="button" onClick={() => setTab('movement')}
+          className={`flex-1 py-2.5 transition-colors ${tab === 'movement' ? 'border-b-2 border-[#b20202] text-[#b20202]' : 'text-gray-400 hover:text-gray-600'}`}>
+          Movement
+        </button>
+      </div>
+
       <div className="flex-1 overflow-y-auto">
-        {/* Movement details */}
-        <div className="border-b border-gray-100 px-4 py-4 space-y-3">
-          <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Movement Details</p>
 
-          {/* Qty strip */}
-          <div className="grid grid-cols-3 divide-x divide-gray-100 rounded-xl border border-gray-200 bg-gray-50">
-            {[
-              { label: 'Quantity', value: <span className={`text-lg font-bold tabular-nums ${getQtyColor(cat)}`}>{getQtySign(cat)}{movement.quantity}</span> },
-              { label: 'Before', value: <span className="text-lg font-bold tabular-nums text-gray-700">{movement.quantityBefore ?? '—'}</span> },
-              { label: 'After',  value: <span className="text-lg font-bold tabular-nums text-gray-700">{movement.quantityAfter  ?? '—'}</span> },
-            ].map(({ label, value }) => (
-              <div key={label} className="px-3 py-3 text-center">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">{label}</p>
-                {value}
-              </div>
-            ))}
-          </div>
-
-          {/* Meta fields */}
-          <div className="space-y-2">
-            {[
-              { label: 'Status',    value: <StatusBadge status={movement.status} /> },
-              { label: 'Source',    value: <span className={`flex w-fit items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${source.cls}`}>{source.icon}{source.label}</span> },
-              sizeName  && { label: 'Size',      value: sizeName },
-              orderRef  && { label: 'Reference', value: orderRef },
-              performer && { label: 'By',        value: performer },
-              movement.supplierName && { label: 'Supplier',  value: movement.supplierName },
-              movement.unitCost     && { label: 'Unit Cost', value: fmtMoney(movement.unitCost) },
-              (movement.reason || movement.notes) && { label: 'Reason', value: movement.reason || movement.notes },
-            ].filter(Boolean).map(({ label, value }: any) => (
-              <div key={label} className="flex items-start gap-3">
-                <span className="w-20 shrink-0 text-[11px] text-gray-400">{label}</span>
-                <span className="text-[11px] font-medium text-gray-700 break-words">{value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Related order */}
-        {orderId && (
-          <div className="px-4 py-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Related Order</p>
-              {!loadingOrder && !orderErr && order && (
-                <a
-                  href={`/admin/orders/${orderId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-[11px] text-[#b20202] hover:underline"
-                >
-                  <PiArrowSquareOut className="h-3 w-3" />
-                  Open
-                </a>
-              )}
-            </div>
-
+        {/* ── Order / Invoice tab ── */}
+        {tab === 'order' && (
+          <div className="p-4 space-y-4">
             {loadingOrder ? (
-              <div className="flex items-center gap-2 py-4 text-xs text-gray-400">
-                <PiSpinner className="h-4 w-4 animate-spin" /> Loading order…
+              <div className="flex items-center justify-center gap-2 py-8 text-xs text-gray-400">
+                <PiSpinner className="h-5 w-5 animate-spin" /> Loading order…
               </div>
             ) : orderErr ? (
-              <p className="text-xs text-amber-600">{orderErr}</p>
-            ) : order ? (
-              <div className="space-y-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
-                {/* Order header */}
-                <div className="flex items-center justify-between">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-700">{orderErr}</div>
+            ) : order ? (<>
+
+              {/* Invoice header */}
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-2">
+                <div className="flex items-start justify-between gap-2">
                   <div>
-                    <p className="text-sm font-bold text-gray-900">
-                      {order.receiptNumber || order.orderNumber || '—'}
+                    <p className="text-base font-bold text-gray-900">
+                      {order.receiptNumber || order.orderNumber}
                     </p>
-                    <p className="text-[10px] text-gray-400">
-                      {formatDate(order.placedAt || order.createdAt)}
-                    </p>
+                    <p className="text-xs text-gray-500">{formatDate(order.placedAt || order.createdAt)}</p>
                   </div>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${
-                    order.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' :
-                    order.paymentStatus === 'refunded' ? 'bg-amber-100 text-amber-700' :
-                    'bg-gray-100 text-gray-600'
-                  }`}>{order.paymentStatus || order.status}</span>
+                  <div className="flex flex-col items-end gap-1.5">
+                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                      order.paymentStatus === 'paid'             ? 'bg-green-100 text-green-700' :
+                      order.isVoided                             ? 'bg-gray-100 text-gray-500'   :
+                      order.paymentStatus === 'refunded'         ? 'bg-amber-100 text-amber-700' :
+                      order.paymentStatus === 'partially_refunded' ? 'bg-orange-100 text-orange-700' :
+                      'bg-gray-100 text-gray-600'
+                    }`}>{order.isVoided ? 'Voided' : (order.paymentStatus || order.status)}</span>
+                    <span className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${source.cls}`}>
+                      {source.icon}{source.label}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Customer */}
-                {order.customer?.firstName && order.customer.firstName !== 'Walk-in' && (
-                  <div className="flex items-center gap-2 text-xs text-gray-600">
-                    <PiUser className="h-3.5 w-3.5 text-gray-400" />
-                    {order.customer.firstName} {order.customer.lastName || ''} {order.customer.phone ? `· ${order.customer.phone}` : ''}
+                {customer && (customer.firstName !== 'Walk-in' || customer.phone) ? (
+                  <div className="flex items-center gap-2 text-xs text-gray-600 pt-1 border-t border-gray-200">
+                    <PiUser className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                    <span>
+                      {customer.firstName} {customer.lastName || ''}
+                      {customer.phone && <span className="text-gray-400"> · {customer.phone}</span>}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-xs text-gray-400 pt-1 border-t border-gray-200">
+                    <PiUser className="h-3.5 w-3.5 shrink-0" /> Walk-in Customer
                   </div>
                 )}
-
-                {/* Items */}
-                {order.items && order.items.length > 0 && (
-                  <div className="space-y-1.5">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Items</p>
-                    {order.items.map((item: any, i: number) => (
-                      <div key={i} className="flex items-start justify-between gap-2 text-xs">
-                        <div className="min-w-0">
-                          <p className="font-medium text-gray-800 truncate">
-                            {item.name || item.product?.name || 'Product'}
-                            {item.variant ? ` — ${item.variant}` : ''}
-                          </p>
-                          <p className="text-[10px] text-gray-400">
-                            {item.quantity} × {fmtMoney(item.priceAtPurchase)}
-                          </p>
-                        </div>
-                        <span className="shrink-0 font-semibold text-gray-700 tabular-nums">
-                          {fmtMoney(item.itemSubtotal)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Totals */}
-                <div className="border-t border-gray-200 pt-2 space-y-1">
-                  {order.discountTotal > 0 && (
-                    <div className="flex justify-between text-xs text-gray-500">
-                      <span>Discount</span>
-                      <span>−{fmtMoney(order.discountTotal)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-sm font-bold text-gray-900">
-                    <span>Total</span>
-                    <span>{fmtMoney(order.totalAmount ?? order.total ?? 0)}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
-                    <PiCurrencyNgn className="h-3 w-3" />
-                    <span className="capitalize">{(order.paymentMethod || '').replace(/_/g, ' ')}</span>
-                    {order.paymentDetails?.change > 0 && (
-                      <span>· Change {fmtMoney(order.paymentDetails.change)}</span>
-                    )}
-                  </div>
-                </div>
 
                 {/* Cashier */}
-                {(order.posStaff?.posName || order.posStaff?.firstName) && (
-                  <div className="flex items-center gap-1.5 text-[11px] text-gray-400 border-t border-gray-200 pt-2">
-                    <PiTag className="h-3 w-3" />
-                    Cashier: {order.posStaff.posName || `${order.posStaff.firstName} ${order.posStaff.lastName || ''}`.trim()}
+                {staffName && (
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    <PiTag className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                    Cashier: <span className="font-medium text-gray-700">{staffName}</span>
                   </div>
                 )}
               </div>
-            ) : null}
+
+              {/* Items */}
+              <div className="space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Items Ordered</p>
+                <div className="rounded-xl border border-gray-200 overflow-hidden">
+                  {/* Column headers */}
+                  <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 bg-gray-50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                    <span>Product</span>
+                    <span className="text-right">Qty</span>
+                    <span className="text-right">Total</span>
+                  </div>
+                  {order.items?.map((item: any, i: number) => {
+                    const productName = item.product?.name || 'Product';
+                    const sizeName2 = item.size?.displayName || item.size?.size || null;
+                    const unitPrice = item.priceAtPurchase || 0;
+                    const lineTotal = item.itemSubtotal || 0;
+                    const disc = item.discountAmount || 0;
+                    return (
+                      <div key={i} className={`grid grid-cols-[1fr_auto_auto] gap-x-3 px-3 py-2.5 text-xs ${i < order.items.length - 1 ? 'border-b border-gray-100' : ''}`}>
+                        <div className="min-w-0">
+                          <p className="font-medium text-gray-800 leading-snug">{productName}</p>
+                          {sizeName2 && <p className="text-[10px] text-gray-400">{sizeName2}</p>}
+                          <p className="text-[10px] text-gray-400 tabular-nums">@ {fmtMoney(unitPrice)}{disc > 0 && <span className="text-amber-600"> −{fmtMoney(disc)}</span>}</p>
+                        </div>
+                        <span className="text-right font-medium text-gray-600 tabular-nums self-start pt-0.5">{item.quantity}</span>
+                        <span className="text-right font-semibold text-gray-800 tabular-nums self-start pt-0.5">{fmtMoney(lineTotal)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Totals */}
+              <div className="rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                {(order.subtotal || 0) !== (order.totalAmount || 0) && (
+                  <div className="flex justify-between px-3 py-2 text-xs text-gray-500">
+                    <span>Subtotal</span>
+                    <span className="tabular-nums">{fmtMoney(order.subtotal || 0)}</span>
+                  </div>
+                )}
+                {(order.discountTotal || 0) > 0 && (
+                  <div className="flex justify-between px-3 py-2 text-xs text-amber-700">
+                    <span>Discount</span>
+                    <span className="tabular-nums">−{fmtMoney(order.discountTotal)}</span>
+                  </div>
+                )}
+                {(order.shippingFee || 0) > 0 && (
+                  <div className="flex justify-between px-3 py-2 text-xs text-gray-500">
+                    <span>Shipping</span>
+                    <span className="tabular-nums">{fmtMoney(order.shippingFee)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between bg-gray-50 px-3 py-2.5 text-sm font-bold text-gray-900">
+                  <span>Total</span>
+                  <span className="tabular-nums">{fmtMoney(order.totalAmount || order.total || 0)}</span>
+                </div>
+              </div>
+
+              {/* Payment */}
+              <div className="space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Payment</p>
+                <div className="rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                  {splits.length > 0 ? splits.map((sp: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between px-3 py-2 text-xs">
+                      <span className="capitalize text-gray-600">{sp.method?.replace(/_/g,' ')}</span>
+                      <span className="tabular-nums font-medium text-gray-800">{fmtMoney(sp.amount)}</span>
+                    </div>
+                  )) : (
+                    <div className="flex items-center justify-between px-3 py-2 text-xs">
+                      <span className="capitalize text-gray-600">{(order.paymentMethod || '').replace(/_/g,' ')}</span>
+                      <span className="tabular-nums font-medium text-gray-800">{fmtMoney(order.totalAmount || 0)}</span>
+                    </div>
+                  )}
+                  {change > 0 && (
+                    <div className="flex items-center justify-between bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                      <span>Change given</span>
+                      <span className="tabular-nums">{fmtMoney(change)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Refunds */}
+              {order.refunds?.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600">Returns / Refunds</p>
+                  <div className="rounded-xl border border-amber-200 divide-y divide-amber-100 overflow-hidden">
+                    {order.refunds.map((r: any, i: number) => (
+                      <div key={i} className="px-3 py-2.5 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-gray-700">{r.receiptNumber || `Return ${i+1}`}</span>
+                          <span className="font-bold text-amber-700 tabular-nums">−{fmtMoney(r.totalRefunded)}</span>
+                        </div>
+                        {r.items?.map((ri: any, j: number) => (
+                          <p key={j} className="text-[10px] text-gray-400 mt-0.5">
+                            Item {ri.orderItemIndex + 1} · ×{ri.quantity} · {fmtMoney(ri.amount)}
+                          </p>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+            </>) : (
+              <div className="flex flex-col items-center gap-2 py-8 text-center">
+                <PiReceipt className="h-10 w-10 text-gray-200" />
+                <p className="text-xs text-gray-400">Order details not available</p>
+              </div>
+            )}
           </div>
         )}
+
+        {/* ── Movement tab ── */}
+        {tab === 'movement' && (
+          <div className="p-4 space-y-4">
+            {/* Qty strip */}
+            <div className="grid grid-cols-3 divide-x divide-gray-100 rounded-xl border border-gray-200 bg-gray-50">
+              {[
+                { label: 'Qty',    value: <span className={`text-xl font-bold tabular-nums ${getQtyColor(cat)}`}>{getQtySign(cat)}{movement.quantity}</span> },
+                { label: 'Before', value: <span className="text-xl font-bold tabular-nums text-gray-700">{movement.quantityBefore ?? '—'}</span> },
+                { label: 'After',  value: <span className="text-xl font-bold tabular-nums text-gray-700">{movement.quantityAfter  ?? '—'}</span> },
+              ].map(({ label, value }) => (
+                <div key={label} className="px-3 py-3 text-center">
+                  <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-400">{label}</p>
+                  {value}
+                </div>
+              ))}
+            </div>
+
+            {/* Fields */}
+            <div className="rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+              {[
+                { label: 'Status',    value: <StatusBadge status={movement.status} /> },
+                { label: 'Source',    value: <span className={`flex w-fit items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${source.cls}`}>{source.icon}{source.label}</span> },
+                sizeName            && { label: 'Size',      value: sizeName },
+                getOrderRef(movement) && { label: 'Reference', value: getOrderRef(movement) },
+                performer           && { label: 'By',        value: performer },
+                movement.supplierName && { label: 'Supplier',  value: movement.supplierName },
+                movement.unitCost   && { label: 'Unit Cost', value: fmtMoney(movement.unitCost) },
+                (movement.reason || movement.notes) && { label: 'Reason', value: movement.reason || movement.notes },
+              ].filter(Boolean).map(({ label, value }: any) => (
+                <div key={label} className="flex items-start gap-3 px-3 py-2.5">
+                  <span className="w-20 shrink-0 text-[11px] text-gray-400">{label}</span>
+                  <span className="text-[11px] font-medium text-gray-700 break-words">{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );

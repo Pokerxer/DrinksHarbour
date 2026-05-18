@@ -431,10 +431,11 @@ exports.getAllOrders = asyncHandler(async (req, res) => {
  */
 exports.getOrder = asyncHandler(async (req, res) => {
   const order = await Order.findById(req.params.id)
-    .populate('items.product', 'name slug images')
-    .populate('items.subproduct', 'name sku images')
-    .populate('items.size', 'name')
+    .populate('items.product', 'name slug images type')
+    .populate('items.subproduct', 'name sku images baseSellingPrice')
+    .populate('items.size', 'displayName size sellingPrice')
     .populate('items.tenant', 'name')
+    .populate('posStaff', 'firstName lastName posName email')
     .populate('coupon', 'code discountType discountValue');
 
   if (!order) {
