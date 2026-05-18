@@ -70,20 +70,20 @@ function audit(items, orderId, type, category, performedBy) {
           quantity:      item.quantity,
           quantityBefore,
           quantityAfter:  currentStock,
-          relatedOrder:  orderId,
+          relatedOrder:  orderId || undefined,
           sellingPrice:  item.priceAtPurchase,
           unitCost:      sp?.costPrice ?? 0,
           totalCost:     (sp?.costPrice ?? 0) * item.quantity,
           referenceType: 'order',
-          source:        'order',
-          performedBy:   performedBy || orderId,     // system fallback: reuse orderId ObjectId
+          source:        'system',
+          performedBy:   performedBy || item.tenant, // fallback to tenant ObjectId
           performedAt:   new Date(),
           status:        'confirmed',
           isVerified:    true,
           verifiedAt:    new Date(),
         });
       } catch (err) {
-        console.error(`[Inventory] audit(${type}) failed for subproduct ${item.subproduct}:`, err.message);
+        console.error(`[Inventory] audit(${type}) failed for subproduct ${item.subproduct}:`, err.message, JSON.stringify({ tenant: item.tenant, performedBy, orderId }));
       }
     }
   });
@@ -504,8 +504,8 @@ async function getMovements(tenantId, options = {}) {
     page = 1, limit = 50, sortBy = 'createdAt', sortOrder = 'desc',
   } = options;
 
-  const query = { tenant: tenantId };
-  if (subProductId) query.subProduct = subProductId;
+  const query = { tenant: new mongoose.Types.ObjectId(tenantId.toString()) };
+  if (subProductId) query.subProduct = new mongoose.Types.ObjectId(subProductId.toString());
   if (type)         query.type       = type;
   if (category)     query.category   = category;
   if (startDate || endDate) {
@@ -538,8 +538,8 @@ async function getMovements(tenantId, options = {}) {
  * Get full inventory summary for a subProduct.
  */
 async function getInventorySummary(tenantId, subProductId) {
-  const tId = mongoose.Types.ObjectId(tenantId.toString());
-  const spId = mongoose.Types.ObjectId(subProductId.toString());
+  const tId = new mongoose.Types.ObjectId(tenantId.toString());
+  const spId = new mongoose.Types.ObjectId(subProductId.toString());
 
   const [sp, recentMovements, summary, stockFlow] = await Promise.all([
     SubProduct.findById(subProductId)
@@ -656,7 +656,7 @@ async function getLowStockItems(tenantId) {
  */
 async function getInventoryValuation(tenantId) {
   return SubProduct.aggregate([
-    { $match: { tenant: mongoose.Types.ObjectId(tenantId.toString()) } },
+    { $match: { tenant: new mongoose.Types.ObjectId(tenantId.toString()) } },
     {
       $group: {
         _id: null,

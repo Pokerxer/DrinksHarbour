@@ -102,26 +102,27 @@ async function deductStock({ subProductId, sizeId, quantity, tenantId, staffId, 
     ? deductedDoc.availableStock + quantity   // pre-deduction value
     : deductedDoc.availableStock + quantity;
 
-  await InventoryMovement.create({
-    subProduct:    subProductId,
-    tenant:        tenantId,
-    product:       productId || undefined,
-    size:          sizeId    || undefined,
-    type:          'sold',
-    category:      'out',
+  InventoryMovement.create({
+    subProduct:     subProductId,
+    tenant:         tenantId,
+    product:        productId || undefined,
+    size:           sizeId    || undefined,
+    type:           'sold',
+    category:       'out',
     quantity,
-    quantityBefore: stockBefore,
-    quantityAfter:  deductedDoc.availableStock,
+    quantityBefore: (sizeId ? deductedDoc.availableStock : deductedDoc.availableStock ?? 0) + quantity,
+    quantityAfter:  deductedDoc.availableStock ?? 0,
     reference:      receiptNumber,
     referenceType:  'order',
     sellingPrice:   finalPrice,
     unitCost:       costPrice || 0,
     totalCost:      (costPrice || 0) * quantity,
-    performedBy:    staffId,
+    performedBy:    staffId || tenantId, // fallback to tenantId ObjectId if no staffId
+    performedAt:    new Date(),
     source:         'order',
     status:         'confirmed',
-    notes:          `POS sale — order ${receiptNumber}`,
-  }).catch(() => {}); // Non-blocking — audit failure should not fail the order
+    notes:          `POS sale — receipt ${receiptNumber}`,
+  }).catch(err => console.error('[Inventory] POS deductStock audit failed:', err.message));
 
   return deductedDoc;
 }
@@ -167,9 +168,11 @@ async function restoreStock({ subProductId, sizeId, quantity, tenantId, staffId,
       quantityAfter:  sizeAfter?.availableStock ?? 0,
       reference: returnNumber, referenceType: 'return',
       sellingPrice: unitPrice || 0,
-      performedBy: staffId, source: 'return', status: 'confirmed',
+      performedBy: staffId || tenantId,
+      performedAt: new Date(),
+      source: 'return', status: 'confirmed',
       notes: `POS return — ${returnNumber}`,
-    }).catch(() => {});
+    }).catch(err => console.error('[Inventory] POS restoreStock audit failed:', err.message));
   } else {
     const spAfter = await SubProduct.findByIdAndUpdate(
       subProductId,
@@ -191,9 +194,11 @@ async function restoreStock({ subProductId, sizeId, quantity, tenantId, staffId,
       quantityBefore: (spAfter?.availableStock ?? 0) - quantity,
       quantityAfter:  spAfter?.availableStock ?? 0,
       reference: returnNumber, referenceType: 'return',
-      performedBy: staffId, source: 'return', status: 'confirmed',
+      performedBy: staffId || tenantId,
+      performedAt: new Date(),
+      source: 'return', status: 'confirmed',
       notes: `POS return — ${returnNumber}`,
-    }).catch(() => {});
+    }).catch(err => console.error('[Inventory] POS restoreStock audit failed:', err.message));
   }
 }
 
@@ -1413,6 +1418,12 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     ageVerifiedAtOrderTime:  true,
     placedAt:                new Date(),
   });
+
+  // Back-link InventoryMovement records to this order (non-blocking)
+  InventoryMovement.updateMany(
+    { reference: receiptNumber, tenant: tenantId, relatedOrder: { $exists: false } },
+    { $set: { relatedOrder: order._id } }
+  ).catch(err => console.error('[Inventory] back-link movements failed:', err.message));
 
   // Update session stats atomically
   if (session) {
