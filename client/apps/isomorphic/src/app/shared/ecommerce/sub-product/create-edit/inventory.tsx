@@ -22,6 +22,8 @@ import {
 } from 'react-icons/pi';
 import { fieldStaggerVariants, containerVariants, toggleVariants } from './animations';
 import { inventoryService, type InventoryMovement, type InventorySummary } from '@/services/inventory.service';
+import { ServerMovementsList } from './inventory/HistoryTab/ServerMovementsList';
+import { ServerAdjustmentModal, type AdjustmentData } from './inventory/modals/ServerAdjustmentModal';
 
 const STOCK_STATUS_OPTIONS = [
   { value: 'in_stock', label: 'In Stock', icon: PiCheckCircle, color: 'success', bg: 'bg-green-50', border: 'border-green-200' },
@@ -359,52 +361,70 @@ export default function SubProductInventory() {
     }
   }, [subProductId, session?.user?.token, fetchInventoryData]);
   
-  // Handle inventory adjustment from server
-  const handleServerAdjustment = async () => {
-    if (!subProductId || !session?.user?.token) return;
-    if (serverAdjustmentQuantity <= 0) {
-      toast.error('Please enter a valid quantity');
+  // Handle inventory adjustment from server — accepts full AdjustmentData from the modal
+  const handleServerAdjustment = async (data: {
+    type: string; quantity: number; reason: string; notes: string;
+    sizeId?: string; sizeName?: string; reference?: string;
+    unitCost?: number; supplierName?: string;
+  }) => {
+    if (!subProductId || !session?.user?.token) {
+      toast.error('Product must be saved before recording stock movements');
       return;
     }
-    
+    setIsProcessing(true);
     try {
-      if (serverAdjustmentType === 'received') {
-        await inventoryService.recordReceived(
-          subProductId,
-          serverAdjustmentQuantity,
-          session.user.token,
-          {
-            reason: serverAdjustmentReason,
-            notes: serverAdjustmentNotes,
-          }
-        );
-        toast.success('Stock received recorded successfully');
+      if (data.type === 'received') {
+        await inventoryService.recordReceived(subProductId, data.quantity, session.user.token, {
+          reason: data.reason,
+          notes: data.notes,
+          reference: data.reference,
+          unitCost: data.unitCost,
+          supplierName: data.supplierName,
+          sizeId: data.sizeId,
+          sizeName: data.sizeName,
+        });
+      } else if (data.type === 'return') {
+        await inventoryService.recordReturn(subProductId, data.quantity, session.user.token, {
+          reason: data.reason,
+          notes: data.notes,
+          reference: data.reference,
+        });
       } else {
-        const adjustment = serverAdjustmentType === 'adjustment_in' 
-          ? serverAdjustmentQuantity 
-          : -serverAdjustmentQuantity;
-          
+        const delta = data.type === 'adjustment_out' ? -data.quantity : data.quantity;
         await inventoryService.adjustInventory(
-          subProductId,
-          adjustment,
-          serverAdjustmentReason,
-          session.user.token,
-          serverAdjustmentNotes
+          subProductId, delta, data.reason, session.user.token, data.notes, data.reference
         );
-        toast.success('Inventory adjusted successfully');
       }
-      
-      // Refresh data
+      toast.success('Stock movement recorded');
       await fetchInventoryData();
-      
-      // Reset form
       setShowServerAdjustmentModal(false);
-      setServerAdjustmentQuantity(0);
-      setServerAdjustmentReason('');
-      setServerAdjustmentNotes('');
-      
     } catch (error: any) {
-      toast.error(error.message || 'Failed to process adjustment');
+      toast.error(error.message || 'Failed to record movement');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Sync form values when inventory summary updates
+  useEffect(() => {
+    if (inventorySummary?.subProduct) {
+      const sp = inventorySummary.subProduct;
+      if (sp.totalStock !== undefined)     setValue?.('subProductData.totalStock',     sp.totalStock);
+      if (sp.availableStock !== undefined) setValue?.('subProductData.availableStock', sp.availableStock);
+      if (sp.reservedStock !== undefined)  setValue?.('subProductData.reservedStock',  sp.reservedStock);
+      if (sp.stockStatus)                  setValue?.('subProductData.stockStatus',    sp.stockStatus);
+    }
+  }, [inventorySummary]);
+
+  // Cancel a movement and refresh
+  const handleCancelMovement = async (movementId: string) => {
+    if (!session?.user?.token) return;
+    try {
+      await inventoryService.cancelMovement(movementId, session.user.token, 'Manual cancel');
+      toast.success('Movement cancelled');
+      await fetchInventoryData();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to cancel movement');
     }
   };
   
@@ -414,7 +434,7 @@ export default function SubProductInventory() {
     if (hasSizeVariants) {
       sizes.forEach((s: any) => {
         if (s?.size) {
-          map[s.size] = s?.stockQuantity || 0;
+          map[s.size] = s?.stock ?? s?.stockQuantity ?? 0;
         }
       });
     }
@@ -1410,46 +1430,13 @@ export default function SubProductInventory() {
             </motion.div>
           )}
 
-          {/* Recent Server Movements */}
-          {serverMovements.length > 0 && (
-            <motion.div 
-              className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
-              <Text className="font-semibold mb-3">Recent Movements</Text>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {serverMovements.slice(0, 10).map((movement) => (
-                  <div key={movement._id} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50">
-                    <div className="flex items-center gap-3">
-                      <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full ${
-                        movement.category === 'in' ? 'bg-green-100 text-green-600' :
-                        movement.category === 'out' ? 'bg-red-100 text-red-600' :
-                        'bg-blue-100 text-blue-600'
-                      }`}>
-                        {movement.category === 'in' ? <PiPlus className="h-4 w-4" /> :
-                         movement.category === 'out' ? <PiMinus className="h-4 w-4" /> :
-                         <PiArrowsLeftRight className="h-4 w-4" />}
-                      </span>
-                      <div>
-                        <Text className="text-sm font-medium capitalize">{movement.type?.replace('_', ' ')}</Text>
-                        <Text className="text-xs text-gray-500">
-                          {movement.reference || movement.reason || 'No reference'} • {new Date(movement.createdAt).toLocaleDateString()}
-                        </Text>
-                      </div>
-                    </div>
-                    <Text className={`font-semibold ${
-                      movement.category === 'in' ? 'text-green-600' :
-                      movement.category === 'out' ? 'text-red-600' :
-                      'text-blue-600'
-                    }`}>
-                      {movement.category === 'in' ? '+' : movement.category === 'out' ? '-' : '~'}{movement.quantity}
-                    </Text>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          )}
+          {/* Full movement history with pagination + filters */}
+          <ServerMovementsList
+            movements={serverMovements}
+            isLoading={isLoadingMovements}
+            onRefresh={fetchInventoryData}
+            onCancel={handleCancelMovement}
+          />
 
           {/* Header */}
           <div className="flex items-center justify-between">
@@ -2727,8 +2714,18 @@ export default function SubProductInventory() {
       </AnimatePresence>
 
       {/* Server-side Inventory Adjustment Modal */}
+      <ServerAdjustmentModal
+        isOpen={showServerAdjustmentModal}
+        onClose={() => setShowServerAdjustmentModal(false)}
+        onSubmit={handleServerAdjustment}
+        isSubmitting={isProcessing}
+        sizes={hasSizeVariants ? sizes : []}
+        hasSizes={hasSizeVariants}
+      />
+
+      {/* LEGACY MODAL PLACEHOLDER — kept for surrounding AnimatePresence wrapper removal */}
       <AnimatePresence>
-        {showServerAdjustmentModal && (
+        {false && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowServerAdjustmentModal(false)}>
             <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }} className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <div className="mb-6 flex items-center justify-between">
