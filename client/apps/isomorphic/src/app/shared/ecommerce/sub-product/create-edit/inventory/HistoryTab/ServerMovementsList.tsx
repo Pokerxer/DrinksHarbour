@@ -457,9 +457,8 @@ export function ServerMovementsList({ movements, isLoading, onRefresh, onCancel 
   };
 
   return (
-    <div className={`flex gap-4 ${selected ? 'items-start' : ''}`}>
-      {/* List */}
-      <div className={`overflow-hidden rounded-xl border border-gray-200 bg-white transition-all ${selected ? 'flex-1' : 'w-full'}`}>
+    <div>
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
 
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
@@ -621,10 +620,14 @@ export function ServerMovementsList({ movements, isLoading, onRefresh, onCancel 
         )}
       </div>
 
-      {/* Detail panel */}
+      {/* Full-screen modal */}
       {selected && (
-        <div className="w-80 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-white" style={{ maxHeight: 600, overflowY: 'auto' }}>
-          <MovementDetailPanel movement={selected} token={token} onClose={() => setSelected(null)} />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          onClick={() => setSelected(null)}>
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col"
+            onClick={e => e.stopPropagation()}>
+            <MovementDetailPanel movement={selected} token={token} onClose={() => setSelected(null)} />
+          </div>
         </div>
       )}
     </div>
