@@ -1371,570 +1371,67 @@ export default function SubProductInventory() {
         </div>
       )}
 
-      {/* History Tab */}
+      {/* ── History Tab ─────────────────────────────────────────────── */}
       {activeTab === 'history' && (
-        <motion.div 
-          variants={fieldStaggerVariants} 
-          initial="hidden"
-          animate="visible"
-          className="space-y-6"
-        >
-          {/* Server-side Inventory Summary */}
-          {subProductId && (
-            <motion.div 
-              className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <Text className="font-semibold text-lg">Inventory Summary</Text>
-                  {isLoadingMovements && <PiSpinner className="h-4 w-4 animate-spin text-gray-400" />}
-                </div>
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  onClick={() => setShowServerAdjustmentModal(true)}
-                >
-                  <PiPlus className="mr-1 h-4 w-4" /> Record Stock
-                </Button>
-              </div>
-              
-              {inventorySummary ? (
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                  <div className="p-3 rounded-lg bg-blue-50 border border-blue-100">
-                    <Text className="text-xs text-blue-600 font-medium">Current Stock</Text>
-                    <Text className="text-2xl font-bold text-blue-700">{inventorySummary.subProduct?.totalStock || 0}</Text>
-                  </div>
-                  <div className="p-3 rounded-lg bg-green-50 border border-green-100">
-                    <Text className="text-xs text-green-600 font-medium">Total Received</Text>
-                    <Text className="text-2xl font-bold text-green-700">{inventorySummary.totals?.received || 0}</Text>
-                  </div>
-                  <div className="p-3 rounded-lg bg-red-50 border border-red-100">
-                    <Text className="text-xs text-red-600 font-medium">Total Sold</Text>
-                    <Text className="text-2xl font-bold text-red-700">{inventorySummary.totals?.sold || 0}</Text>
-                  </div>
-                  <div className="p-3 rounded-lg bg-amber-50 border border-amber-100">
-                    <Text className="text-xs text-amber-600 font-medium">Returned</Text>
-                    <Text className="text-2xl font-bold text-amber-700">{inventorySummary.totals?.returned || 0}</Text>
-                  </div>
-                  <div className="p-3 rounded-lg bg-purple-50 border border-purple-100">
-                    <Text className="text-xs text-purple-600 font-medium">Adjusted</Text>
-                    <Text className="text-2xl font-bold text-purple-700">{inventorySummary.totals?.adjusted || 0}</Text>
-                  </div>
-                </div>
-              ) : (
-                <Text className="text-sm text-gray-500">
-                  {!subProductId ? 'Save the product to start tracking inventory.' : 'No inventory data available.'}
-                </Text>
-              )}
-            </motion.div>
-          )}
-
-          {/* Full movement history with pagination + filters */}
-          <ServerMovementsList
-            movements={serverMovements}
-            isLoading={isLoadingMovements}
-            onRefresh={fetchInventoryData}
-            onCancel={handleCancelMovement}
-          />
+        <div className="space-y-5">
 
           {/* Header */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Text className="font-semibold text-xl">Stock Moves</Text>
-              <Badge color="primary" variant="flat">
-                {filteredHistory.length} moves
-              </Badge>
+            <div>
+              <p className="text-base font-semibold text-gray-900">Movement History</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {subProductId ? 'All stock movements recorded for this product' : 'Save the product to start recording movements'}
+              </p>
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={exportStockReportCSV}>
-                <PiDownload className="mr-1 h-4 w-4" /> Export
-              </Button>
-              <Button size="sm">
-                <PiPlus className="mr-1 h-4 w-4" /> New
-              </Button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowServerAdjustmentModal(true)}
+              disabled={!subProductId}
+              className="flex items-center gap-2 rounded-xl bg-[#b20202] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#7f1d1d] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <PiPlus className="h-4 w-4" />
+              Record Movement
+            </button>
           </div>
 
-          {/* Enhanced Filters */}
-          <motion.div 
-            className="rounded-xl border border-gray-200 p-4 bg-white shadow-sm"
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-          >
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Search */}
-              <div className="relative flex-1 min-w-[200px]">
-                <input
-                  type="text"
-                  placeholder="Search by reference, product, or reason..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 pl-10 pr-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-                <PiMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              </div>
-
-              <div className="h-6 w-px bg-gray-300" />
-
-              {/* Type Filter */}
-              <div className="flex items-center gap-2">
-                <Text className="text-sm font-medium text-gray-600">Type:</Text>
-                <div className="flex gap-1">
-                  {[
-                    { value: 'all', label: 'All' },
-                    { value: 'add', label: 'Receipt', color: 'green' },
-                    { value: 'remove', label: 'Delivery', color: 'red' },
-                    { value: 'transfer', label: 'Transfer', color: 'purple' },
-                    { value: 'set', label: 'Adjust', color: 'amber' },
-                  ].map((type) => (
-                    <button
-                      key={type.value}
-                      onClick={() => setHistoryFilter(type.value as typeof historyFilter)}
-                      className={`px-3 py-1.5 text-xs font-medium rounded-full transition-all ${
-                        historyFilter === type.value
-                          ? type.value === 'all' ? 'bg-gray-200 text-gray-700' :
-                            type.value === 'add' ? 'bg-green-100 text-green-700' :
-                            type.value === 'remove' ? 'bg-red-100 text-red-700' :
-                            type.value === 'transfer' ? 'bg-purple-100 text-purple-700' :
-                            'bg-amber-100 text-amber-700'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
-                    >
-                      {type.label}
-                    </button>
-                  ))}
+          {/* Totals strip */}
+          {inventorySummary && (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+              {[
+                { label: 'Current Stock', value: inventorySummary.subProduct?.totalStock ?? 0,  bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-100' },
+                { label: 'Received',      value: inventorySummary.totals?.received   ?? 0,        bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-100' },
+                { label: 'Sold',          value: inventorySummary.totals?.sold        ?? 0,        bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-100' },
+                { label: 'Returned',      value: inventorySummary.totals?.returned    ?? 0,        bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'border-amber-100' },
+                { label: 'Adjusted',      value: inventorySummary.totals?.adjusted    ?? 0,        bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-100' },
+              ].map(({ label, value, bg, text, border }) => (
+                <div key={label} className={`rounded-xl border p-3 ${bg} ${border}`}>
+                  <p className={`text-[10px] font-semibold uppercase tracking-wider ${text} opacity-80`}>{label}</p>
+                  <p className={`mt-1 text-2xl font-bold tabular-nums ${text}`}>{value}</p>
                 </div>
-              </div>
-
-              <div className="h-6 w-px bg-gray-300" />
-
-              {/* Status Filter */}
-              <div className="flex items-center gap-2">
-                <Text className="text-sm font-medium text-gray-600">Status:</Text>
-                <div className="flex gap-1">
-                  {[
-                    { value: 'all', label: 'All', color: 'gray' },
-                    { value: 'done', label: 'Done', color: 'green' },
-                    { value: 'ready', label: 'Ready', color: 'blue' },
-                    { value: 'waiting', label: 'Waiting', color: 'amber' },
-                    { value: 'pending', label: 'Pending', color: 'purple' },
-                    { value: 'draft', label: 'Draft', color: 'gray' },
-                    { value: 'returned', label: 'Returned', color: 'amber' },
-                    { value: 'cancel', label: 'Cancelled', color: 'red' },
-                  ].map((status) => (
-                    <button
-                      key={status.value}
-                      onClick={() => setStatusFilter(status.value as typeof statusFilter)}
-                      className={`px-3 py-1.5 text-xs font-medium rounded-full transition-all ${
-                        statusFilter === status.value
-                          ? status.color === 'green' ? 'bg-green-100 text-green-700' :
-                            status.color === 'blue' ? 'bg-blue-100 text-blue-700' :
-                            status.color === 'amber' ? 'bg-amber-100 text-amber-700' :
-                            status.color === 'purple' ? 'bg-purple-100 text-purple-700' :
-                            'bg-gray-200 text-gray-700'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
-                    >
-                      {status.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="h-6 w-px bg-gray-300" />
-
-              {/* Date Filter */}
-              <select
-                value={historyDateRange}
-                onChange={(e) => setHistoryDateRange(e.target.value as typeof historyDateRange)}
-                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm"
-              >
-                <option value="all">Any Date</option>
-                <option value="today">Today</option>
-                <option value="week">This Week</option>
-                <option value="month">This Month</option>
-              </select>
-
-              {/* Size Filter */}
-              {hasSizeVariants && (
-                <>
-                  <div className="h-6 w-px bg-gray-300" />
-                  <select
-                    value={sizeFilter}
-                    onChange={(e) => setSizeFilter(e.target.value)}
-                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm"
-                  >
-                    <option value="all">All Sizes</option>
-                    {sizes.map((s: any) => (
-                      <option key={s?.size} value={s?.size}>
-                        {s?.label || s?.size}
-                      </option>
-                    ))}
-                  </select>
-                </>
-              )}
-
-              {/* Items per page */}
-              <select
-                value={itemsPerPage}
-                onChange={(e) => {
-                  setItemsPerPage(Number(e.target.value));
-                  setCurrentPage(1);
-                }}
-                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm"
-              >
-                <option value={5}>5 / page</option>
-                <option value={10}>10 / page</option>
-                <option value={20}>20 / page</option>
-                <option value={50}>50 / page</option>
-              </select>
-            </div>
-          </motion.div>
-
-          {/* Bulk Actions */}
-          {selectedItems.length > 0 && (
-            <motion.div 
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="flex items-center gap-4 p-3 bg-blue-50 rounded-lg border border-blue-200"
-            >
-              <Text className="text-sm font-medium text-blue-700">
-                {selectedItems.length} item(s) selected
-              </Text>
-              <div className="flex-1" />
-              <Button variant="outline" size="sm" className="border-blue-300 text-blue-700">
-                Mark as Done
-              </Button>
-              <Button variant="outline" size="sm" className="border-blue-300 text-blue-700">
-                Cancel
-              </Button>
-              <Button variant="text" size="sm" onClick={() => setSelectedItems([])}>
-                Clear
-              </Button>
-            </motion.div>
-          )}
-
-          {/* History List - Odoo Style */}
-          {filteredHistory.length === 0 ? (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="rounded-xl border-2 border-dashed border-gray-300 p-12 text-center"
-            >
-              <PiPackage className="mx-auto h-16 w-16 text-gray-300" />
-              <Text className="mt-4 text-lg font-medium text-gray-500">No stock moves found</Text>
-              <Text className="text-sm text-gray-400 mt-1">Try adjusting your filters or create a new stock move</Text>
-              <Button className="mt-4">
-                <PiPlus className="mr-2 h-4 w-4" /> Create Stock Move
-              </Button>
-            </motion.div>
-          ) : (
-            <motion.div 
-              className="space-y-3"
-              variants={{ visible: { transition: { staggerChildren: 0.05 } } }}
-            >
-              {paginatedHistory.map((adj, index) => (
-                <motion.div
-                  key={adj.id}
-                  variants={{
-                    hidden: { opacity: 0, x: -20 },
-                    visible: { opacity: 1, x: 0 }
-                  }}
-                  className={`rounded-xl border bg-white hover:shadow-lg transition-all duration-200 cursor-pointer overflow-hidden group ${
-                    selectedItems.includes(adj.id) ? 'ring-2 ring-blue-500 border-blue-500' : 'border-gray-200'
-                  }`}
-                  onClick={() => setSelectedHistoryItem(adj)}
-                >
-                  {/* Header with gradient */}
-                  <div className="flex items-center justify-between px-5 py-3 bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
-                    <div className="flex items-center gap-4">
-                      <input 
-                        type="checkbox" 
-                        checked={selectedItems.includes(adj.id)}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          toggleSelectItem(adj.id);
-                        }}
-                        className="rounded border-gray-300 w-4 h-4 cursor-pointer"
-                      />
-                      <div className="flex items-center gap-2">
-                        <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-                          adj.status === 'done' ? 'bg-green-100 text-green-700 border border-green-200' :
-                          adj.status === 'ready' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
-                          adj.status === 'waiting' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
-                          adj.status === 'pending' ? 'bg-purple-100 text-purple-700 border border-purple-200' :
-                          adj.status === 'cancel' ? 'bg-red-100 text-red-700 border border-red-200' :
-                          adj.status === 'returned' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
-                          'bg-gray-100 text-gray-700 border border-gray-200'
-                        }`}>
-                          {adj.status === 'done' && <PiCheck className="mr-1 h-3 w-3" />}
-                          {adj.status === 'done' && 'Done'}
-                          {adj.status === 'ready' && 'Ready'}
-                          {adj.status === 'waiting' && 'Waiting'}
-                          {adj.status === 'pending' && 'Pending'}
-                          {adj.status === 'draft' && 'Draft'}
-                          {adj.status === 'cancel' && 'Cancelled'}
-                          {adj.status === 'returned' && 'Returned'}
-                        </span>
-                        {/* Transfer badge */}
-                        {adj.type === 'transfer' && (
-                          <Badge color="info" variant="flat" className="text-xs">
-                            <PiArrowsLeftRight className="mr-1 h-3 w-3" />
-                            Transfer
-                          </Badge>
-                        )}
-                        {/* Return badge */}
-                        {adj.type === 'return' && (
-                          <Badge color="warning" variant="flat" className="text-xs">
-                            <PiArrowCounterClockwise className="mr-1 h-3 w-3" />
-                            Return
-                          </Badge>
-                        )}
-                      </div>
-                      <Text className={`font-mono text-sm font-bold px-2 py-1 rounded ${
-                        adj.type === 'transfer' ? 'text-purple-600 bg-purple-50' : 'text-blue-600 bg-blue-50'
-                      }`}>
-                        {adj.reference || adj.transferReference || `WH/${adj.operationType?.slice(0,3).toUpperCase() || 'MOV'}/${adj.id.slice(-5)}`}
-                      </Text>
-                    </div>
-                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {adj.type === 'transfer' && (
-                        <Button variant="outline" size="xs" onClick={(e) => e.stopPropagation()}>
-                          <PiPackage className="h-3 w-3 mr-1" /> Transfer Slip
-                        </Button>
-                      )}
-                      <Button variant="outline" size="xs" onClick={(e) => e.stopPropagation()}>
-                        <PiPrinter className="h-3 w-3 mr-1" /> Print
-                      </Button>
-                      <Button variant="outline" size="xs" onClick={(e) => e.stopPropagation()}>
-                        <PiPencil className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Content Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-gray-100">
-                    {/* Main Info */}
-                    <div className="p-4">
-                      <div className="space-y-3">
-                        <div>
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <PiCalendar className="h-3 w-3 text-gray-400" />
-                            <Text className="text-xs text-gray-500 uppercase font-medium">Date</Text>
-                          </div>
-                          <Text className="font-semibold">{adj.timestamp.toLocaleDateString()}</Text>
-                          <Text className="text-xs text-gray-500">{adj.timestamp.toLocaleTimeString()}</Text>
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <PiPath className="h-3 w-3 text-gray-400" />
-                            <Text className="text-xs text-gray-500 uppercase font-medium">Operation</Text>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {adj.type === 'add' || adj.operationType === 'receipt' ? (
-                              <PiArrowsDownUp className="h-4 w-4 text-green-600 rotate-180" />
-                            ) : adj.type === 'remove' || adj.operationType === 'delivery' ? (
-                              <PiArrowsDownUp className="h-4 w-4 text-red-600" />
-                            ) : adj.operationType === 'transfer' ? (
-                              <PiArrowsLeftRight className="h-4 w-4 text-blue-600" />
-                            ) : adj.type === 'return' || adj.operationType === 'return' ? (
-                              <PiArrowCounterClockwise className="h-4 w-4 text-amber-600" />
-                            ) : (
-                              <PiPencil className="h-4 w-4 text-amber-600" />
-                            )}
-                            <Text className="font-semibold text-sm">
-                              {adj.operationType === 'receipt' && 'Receipt'}
-                              {adj.operationType === 'delivery' && 'Delivery'}
-                              {adj.operationType === 'transfer' && 'Transfer'}
-                              {adj.operationType === 'pos_order' && 'PoS Order'}
-                              {adj.operationType === 'return' && 'Return'}
-                              {!adj.operationType && (adj.type === 'add' ? 'Receipt' : adj.type === 'remove' ? 'Delivery' : adj.type === 'transfer' ? 'Transfer' : adj.type === 'return' ? 'Return' : 'Adjustment')}
-                            </Text>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* From/To */}
-                    <div className="p-4">
-                      <div className="space-y-3">
-                        {adj.type === 'transfer' ? (
-                          <>
-                            <div className="p-3 bg-purple-50 rounded-lg border border-purple-100">
-                              <div className="flex items-center justify-between mb-2">
-                                <Text className="text-xs text-purple-600 uppercase font-medium">Transfer Route</Text>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <div className="flex-1 text-center">
-                                  <Text className="text-xs text-gray-500">From</Text>
-                                  <Text className="font-semibold text-sm text-purple-700">{adj.fromLocationName || adj.fromLocation || 'WH/Stock'}</Text>
-                                </div>
-                                <PiArrowRight className="h-4 w-4 text-purple-400" />
-                                <div className="flex-1 text-center">
-                                  <Text className="text-xs text-gray-500">To</Text>
-                                  <Text className="font-semibold text-sm text-purple-700">{adj.toLocationName || adj.toLocation || 'WH/Stock'}</Text>
-                                </div>
-                              </div>
-                              {adj.transferReference && (
-                                <Text className="text-xs text-purple-500 mt-2 text-center font-mono">
-                                  Ref: {adj.transferReference}
-                                </Text>
-                              )}
-                            </div>
-                            {adj.transferNotes && (
-                              <div className="mt-2">
-                                <Text className="text-xs text-gray-500">Notes</Text>
-                                <Text className="text-xs text-gray-700 mt-0.5">{adj.transferNotes}</Text>
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            <div>
-                              <div className="flex items-center gap-1.5 mb-1">
-                                <PiArrowRight className="h-3 w-3 text-gray-400 rotate-180" />
-                                <Text className="text-xs text-gray-500 uppercase font-medium">From</Text>
-                              </div>
-                              <Text className="font-semibold text-sm">{adj.fromLocation || (adj.type === 'add' ? 'Vendors' : 'WH/Stock')}</Text>
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-1.5 mb-1">
-                                <PiArrowRight className="h-3 w-3 text-gray-400" />
-                                <Text className="text-xs text-gray-500 uppercase font-medium">To</Text>
-                              </div>
-                              <Text className="font-semibold text-sm">{adj.toLocation || (adj.type === 'remove' ? 'Customers' : 'WH/Stock')}</Text>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Product & Qty */}
-                    <div className="p-4 md:col-span-2">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <PiPackage className="h-4 w-4 text-gray-400" />
-                          <Text className="text-xs text-gray-500 uppercase font-medium">Product</Text>
-                        </div>
-                        <Text className="text-xs text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded">
-                          {adj.sourceDocument || `Shop/${adj.id.slice(-3)}`}
-                        </Text>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <Text className="font-semibold">{adj.productName || 'SubProduct'}</Text>
-                          {(adj.lotNumber || adj.serialNumber) && (
-                            <Text className="text-xs text-purple-600 mt-0.5">
-                              {adj.serialNumber ? `SN: ${adj.serialNumber}` : `Lot: ${adj.lotNumber}`}
-                            </Text>
-                          )}
-                          {(adj.sizeVariant || adj.sizeLabel) && (
-                            <Badge color="primary" variant="flat" className="mt-1 text-xs">
-                              Size: {adj.sizeLabel || adj.sizeVariant}
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-6">
-                          <div className="text-center">
-                            <Text className="text-xs text-gray-500">Demand</Text>
-                            <Text className="font-bold text-lg">{adj.demand || adj.quantity}</Text>
-                          </div>
-                          <div className="text-center">
-                            <Text className="text-xs text-gray-500">Done</Text>
-                            <Text className="font-bold text-lg text-green-600">{adj.picked || adj.quantity}</Text>
-                          </div>
-                          <div className="text-center">
-                            <Text className="text-xs text-gray-500">Unit</Text>
-                            <Text className="font-medium text-gray-600">{adj.unit || 'units'}</Text>
-                          </div>
-                        </div>
-                      </div>
-                      {/* Progress bar */}
-                      <div className="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-gradient-to-r from-green-400 to-green-500 rounded-full transition-all duration-500"
-                          style={{ width: '100%' }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
               ))}
-            </motion.div>
-          )}
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-              <Text className="text-sm text-gray-500">
-                Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredHistory.length)} of {filteredHistory.length} entries
-              </Text>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage(1)}
-                >
-                  <PiCaretLeft className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                >
-                  <PiCaretLeft className="h-4 w-4" />
-                </Button>
-                
-                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  let pageNum;
-                  if (totalPages <= 5) {
-                    pageNum = i + 1;
-                  } else if (currentPage <= 3) {
-                    pageNum = i + 1;
-                  } else if (currentPage >= totalPages - 2) {
-                    pageNum = totalPages - 4 + i;
-                  } else {
-                    pageNum = currentPage - 2 + i;
-                  }
-                  return (
-                    <Button
-                      key={pageNum}
-                      variant={currentPage === pageNum ? 'solid' : 'outline'}
-                      size="sm"
-                      onClick={() => setCurrentPage(pageNum)}
-                      className="w-8"
-                    >
-                      {pageNum}
-                    </Button>
-                  );
-                })}
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={currentPage === totalPages}
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                >
-                  <PiCaretRight className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={currentPage === totalPages}
-                  onClick={() => setCurrentPage(totalPages)}
-                >
-                  <PiCaretRight className="h-4 w-4" />
-                </Button>
-              </div>
             </div>
           )}
-        </motion.div>
+
+          {/* Not saved yet */}
+          {!subProductId && (
+            <div className="rounded-xl border border-dashed border-gray-300 p-10 text-center">
+              <PiPackage className="mx-auto h-12 w-12 text-gray-200" />
+              <p className="mt-3 text-sm font-medium text-gray-500">No movements yet</p>
+              <p className="mt-1 text-xs text-gray-400">Save this product first to start recording inventory movements</p>
+            </div>
+          )}
+
+          {/* Full paginated movement list */}
+          {subProductId && (
+            <ServerMovementsList
+              movements={serverMovements}
+              isLoading={isLoadingMovements}
+              onRefresh={fetchInventoryData}
+              onCancel={handleCancelMovement}
+            />
+          )}
+
+        </div>
       )}
 
       {/* Locations Tab */}
