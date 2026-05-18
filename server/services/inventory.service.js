@@ -17,6 +17,7 @@
 
 'use strict';
 
+const mongoose          = require('mongoose');
 const SubProduct        = require('../models/SubProduct');
 const Size              = require('../models/Size');
 const InventoryMovement = require('../models/InventoryMovement');
@@ -54,6 +55,11 @@ function audit(items, orderId, type, category, performedBy) {
           .select('availableStock totalStock costPrice lowStockThreshold')
           .lean();
 
+        const currentStock = sp?.availableStock ?? 0;
+        // Audit fires after the mutation, so we reconstruct quantityBefore from current state
+        const quantityBefore = category === 'out'
+          ? currentStock + item.quantity   // stock was decremented, so before = current + qty
+          : Math.max(0, currentStock - item.quantity); // stock was incremented, so before = current - qty
         await InventoryMovement.create({
           subProduct:    item.subproduct,
           tenant:        item.tenant,
@@ -62,8 +68,8 @@ function audit(items, orderId, type, category, performedBy) {
           type,
           category,
           quantity:      item.quantity,
-          quantityBefore: 0,                         // exact value not critical for audit
-          quantityAfter:  sp?.availableStock ?? 0,
+          quantityBefore,
+          quantityAfter:  currentStock,
           relatedOrder:  orderId,
           sellingPrice:  item.priceAtPurchase,
           unitCost:      sp?.costPrice ?? 0,
@@ -241,4 +247,418 @@ function isShipped(status) {
   return ['shipped', 'delivered', 'refunded'].includes(status);
 }
 
-module.exports = { reserve, releaseReserve, commitShipment, restoreStock, isShipped };
+// ─── Admin / manual inventory management API ───────────────────────────────
+
+/**
+ * Record received goods (purchase / restock).
+ * Increments totalStock and availableStock.
+ */
+async function recordReceived(subProductId, tenantId, data, performedBy) {
+  const {
+    quantity, unitCost, reference, supplierId, supplierName,
+    batchNumber, lotNumber, expirationDate, notes, reason,
+    sizeId, sizeName,
+  } = data;
+
+  if (!quantity || quantity <= 0) throw new Error('Quantity must be positive');
+
+  const sp = await SubProduct.findById(subProductId).select(
+    'totalStock availableStock reservedStock lowStockThreshold stockStatus tenant'
+  );
+  if (!sp) throw new Error('SubProduct not found');
+
+  const qBefore = sp.availableStock ?? 0;
+  const qAfter  = qBefore + quantity;
+
+  sp.totalStock     = (sp.totalStock     ?? 0) + quantity;
+  sp.availableStock = (sp.availableStock ?? 0) + quantity;
+  sp.stockStatus    = computeStockStatus(sp.availableStock, sp.lowStockThreshold);
+  await sp.save();
+
+  const movement = await InventoryMovement.create({
+    subProduct:     subProductId,
+    tenant:         tenantId || sp.tenant,
+    type:           'received',
+    category:       'in',
+    quantity,
+    quantityBefore: qBefore,
+    quantityAfter:  qAfter,
+    reference,
+    referenceType:  'purchase_order',
+    unitCost:       unitCost ?? sp.costPrice ?? 0,
+    totalCost:      (unitCost ?? sp.costPrice ?? 0) * quantity,
+    supplierName,
+    supplier:       supplierId || undefined,
+    batchNumber,
+    lotNumber,
+    expirationDate,
+    reason:         reason || 'Stock received',
+    notes,
+    size:           sizeId   || undefined,
+    sizeName:       sizeName || undefined,
+    performedBy,
+    performedAt:    new Date(),
+    source:         'manual',
+    status:         'confirmed',
+    isVerified:     true,
+    verifiedAt:     new Date(),
+  });
+
+  // Update size stock if sizeId provided
+  if (sizeId) {
+    Size.findByIdAndUpdate(sizeId, { $inc: { stock: quantity, availableStock: quantity } }).catch(() => {});
+  }
+
+  return movement;
+}
+
+/**
+ * Adjust inventory by a signed delta (positive = add, negative = remove).
+ */
+async function adjustInventory(subProductId, tenantId, adjustment, reason, performedBy, notes, reference) {
+  if (adjustment === 0) throw new Error('Adjustment cannot be zero');
+
+  const sp = await SubProduct.findById(subProductId).select(
+    'totalStock availableStock reservedStock lowStockThreshold stockStatus tenant'
+  );
+  if (!sp) throw new Error('SubProduct not found');
+
+  const qBefore = sp.availableStock ?? 0;
+
+  sp.totalStock     = Math.max(0, (sp.totalStock     ?? 0) + adjustment);
+  sp.availableStock = Math.max(0, (sp.availableStock ?? 0) + adjustment);
+  sp.stockStatus    = computeStockStatus(sp.availableStock, sp.lowStockThreshold);
+  await sp.save();
+
+  const qAfter = sp.availableStock;
+  const type   = adjustment > 0 ? 'adjustment_in' : 'adjustment_out';
+  const cat    = adjustment > 0 ? 'in' : 'out';
+
+  const movement = await InventoryMovement.create({
+    subProduct:     subProductId,
+    tenant:         tenantId || sp.tenant,
+    type,
+    category:       cat,
+    quantity:       Math.abs(adjustment),
+    quantityBefore: qBefore,
+    quantityAfter:  qAfter,
+    reference,
+    referenceType:  'adjustment',
+    reason:         reason || (adjustment > 0 ? 'Manual adjustment in' : 'Manual adjustment out'),
+    notes,
+    performedBy,
+    performedAt:    new Date(),
+    source:         'manual',
+    status:         'confirmed',
+    isVerified:     true,
+    verifiedAt:     new Date(),
+  });
+
+  return movement;
+}
+
+/**
+ * Record a customer return.
+ */
+async function recordReturn(subProductId, tenantId, data, performedBy) {
+  const { quantity, reason, notes, reference, relatedOrder } = data;
+  if (!quantity || quantity <= 0) throw new Error('Quantity must be positive');
+
+  const sp = await SubProduct.findById(subProductId).select(
+    'totalStock availableStock lowStockThreshold stockStatus tenant'
+  );
+  if (!sp) throw new Error('SubProduct not found');
+
+  const qBefore = sp.availableStock ?? 0;
+  sp.totalStock     = (sp.totalStock     ?? 0) + quantity;
+  sp.availableStock = (sp.availableStock ?? 0) + quantity;
+  sp.stockStatus    = computeStockStatus(sp.availableStock, sp.lowStockThreshold);
+  await sp.save();
+
+  const movement = await InventoryMovement.create({
+    subProduct:     subProductId,
+    tenant:         tenantId || sp.tenant,
+    type:           'return',
+    category:       'in',
+    quantity,
+    quantityBefore: qBefore,
+    quantityAfter:  sp.availableStock,
+    reference,
+    referenceType:  'return',
+    relatedOrder,
+    reason:         reason || 'Customer return',
+    notes,
+    performedBy,
+    performedAt:    new Date(),
+    source:         'manual',
+    status:         'confirmed',
+  });
+
+  return movement;
+}
+
+/**
+ * Transfer stock between warehouses.
+ */
+async function transferStock(data, performedBy, tenantId) {
+  const { subProductId, sourceWarehouseId, destinationWarehouseId, quantity, notes, reference } = data;
+  if (!quantity || quantity <= 0) throw new Error('Quantity must be positive');
+
+  const sp = await SubProduct.findById(subProductId).select('totalStock availableStock tenant');
+  if (!sp) throw new Error('SubProduct not found');
+
+  const qBefore = sp.availableStock ?? 0;
+
+  const outMovement = await InventoryMovement.create({
+    subProduct:          subProductId,
+    tenant:              tenantId || sp.tenant,
+    type:                'transfer_out',
+    category:            'transfer',
+    quantity,
+    quantityBefore:      qBefore,
+    quantityAfter:       qBefore,   // transfer doesn't change total
+    sourceWarehouse:     sourceWarehouseId,
+    destinationWarehouse: destinationWarehouseId,
+    reference,
+    referenceType:       'transfer',
+    reason:              'Stock transfer',
+    notes,
+    performedBy,
+    performedAt:         new Date(),
+    source:              'manual',
+    status:              'confirmed',
+  });
+
+  const inMovement = await InventoryMovement.create({
+    subProduct:          subProductId,
+    tenant:              tenantId || sp.tenant,
+    type:                'transfer_in',
+    category:            'transfer',
+    quantity,
+    quantityBefore:      qBefore,
+    quantityAfter:       qBefore,
+    sourceWarehouse:     sourceWarehouseId,
+    destinationWarehouse: destinationWarehouseId,
+    reference,
+    referenceType:       'transfer',
+    reason:              'Stock transfer',
+    notes,
+    performedBy,
+    performedAt:         new Date(),
+    source:              'manual',
+    status:              'confirmed',
+  });
+
+  return { outMovement, inMovement };
+}
+
+/**
+ * Create a raw InventoryMovement (generic endpoint).
+ */
+async function createMovement(data, performedBy, tenantId) {
+  const sp = await SubProduct.findById(data.subProductId).select(
+    'availableStock totalStock lowStockThreshold stockStatus tenant'
+  );
+  if (!sp) throw new Error('SubProduct not found');
+
+  const qBefore = sp.availableStock ?? 0;
+  const isIn = ['in'].includes(data.category);
+  const qty  = isIn ? Math.abs(data.quantity) : -Math.abs(data.quantity);
+
+  if (data.category !== 'transfer') {
+    sp.totalStock     = Math.max(0, (sp.totalStock     ?? 0) + qty);
+    sp.availableStock = Math.max(0, (sp.availableStock ?? 0) + qty);
+    sp.stockStatus    = computeStockStatus(sp.availableStock, sp.lowStockThreshold);
+    await sp.save();
+  }
+
+  const movement = await InventoryMovement.create({
+    subProduct:     data.subProductId,
+    tenant:         tenantId || sp.tenant,
+    type:           data.type,
+    category:       data.category,
+    quantity:       Math.abs(data.quantity),
+    quantityBefore: qBefore,
+    quantityAfter:  sp.availableStock,
+    reference:      data.reference,
+    referenceType:  data.referenceType || 'manual',
+    reason:         data.reason,
+    notes:          data.notes,
+    unitCost:       data.unitCost,
+    totalCost:      data.unitCost ? data.unitCost * Math.abs(data.quantity) : undefined,
+    performedBy,
+    performedAt:    new Date(),
+    source:         'manual',
+    status:         data.status || 'confirmed',
+  });
+
+  return movement;
+}
+
+/**
+ * Get paginated movements for a tenant/subProduct.
+ */
+async function getMovements(tenantId, options = {}) {
+  const {
+    subProductId, type, category, startDate, endDate,
+    page = 1, limit = 50, sortBy = 'createdAt', sortOrder = 'desc',
+  } = options;
+
+  const query = { tenant: tenantId };
+  if (subProductId) query.subProduct = subProductId;
+  if (type)         query.type       = type;
+  if (category)     query.category   = category;
+  if (startDate || endDate) {
+    query.createdAt = {};
+    if (startDate) query.createdAt.$gte = new Date(startDate);
+    if (endDate)   query.createdAt.$lte = new Date(endDate);
+  }
+
+  const sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
+  const skip = (page - 1) * limit;
+
+  const [movements, total] = await Promise.all([
+    InventoryMovement.find(query)
+      .sort(sort)
+      .skip(skip)
+      .limit(limit)
+      .populate('performedBy', 'firstName lastName email')
+      .populate('size', 'displayName size')
+      .lean(),
+    InventoryMovement.countDocuments(query),
+  ]);
+
+  return {
+    data: { movements, total, page, limit, totalPages: Math.ceil(total / limit) },
+  };
+}
+
+/**
+ * Get full inventory summary for a subProduct.
+ */
+async function getInventorySummary(tenantId, subProductId) {
+  const tId = mongoose.Types.ObjectId(tenantId.toString());
+  const spId = mongoose.Types.ObjectId(subProductId.toString());
+
+  const [sp, recentMovements, summary, stockFlow] = await Promise.all([
+    SubProduct.findById(subProductId)
+      .select('sku totalStock availableStock reservedStock stockStatus lowStockThreshold costPrice')
+      .lean(),
+    InventoryMovement.find({ tenant: tId, subProduct: spId })
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .populate('performedBy', 'firstName lastName')
+      .populate('size', 'displayName size')
+      .lean(),
+    InventoryMovement.aggregate([
+      { $match: { tenant: tId, subProduct: spId, status: 'confirmed' } },
+      { $group: { _id: '$type', totalQuantity: { $sum: '$quantity' }, count: { $sum: 1 }, totalCost: { $sum: '$totalCost' } } },
+    ]),
+    InventoryMovement.aggregate([
+      {
+        $match: {
+          tenant:    tId,
+          subProduct: spId,
+          status:    'confirmed',
+          createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            date:     { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+            category: '$category',
+          },
+          totalQuantity: { $sum: '$quantity' },
+        },
+      },
+      { $sort: { '_id.date': 1 } },
+    ]),
+  ]);
+
+  // Build totals from summary groups
+  const totals = { received: 0, sold: 0, returned: 0, adjusted: 0, damaged: 0 };
+  for (const row of summary) {
+    if (row._id === 'received')     totals.received  += row.totalQuantity;
+    if (row._id === 'sold' || row._id === 'shipped') totals.sold += row.totalQuantity;
+    if (row._id === 'return')       totals.returned  += row.totalQuantity;
+    if (row._id === 'adjustment_in' || row._id === 'adjustment_out') totals.adjusted += row.totalQuantity;
+    if (row._id === 'damaged' || row._id === 'written_off') totals.damaged += row.totalQuantity;
+  }
+
+  return { subProduct: sp, totals, summary, recentMovements, stockFlow };
+}
+
+/**
+ * Cancel a movement and reverse its stock effect.
+ */
+async function cancelMovement(movementId, tenantId, performedBy, reason) {
+  const movement = await InventoryMovement.findById(movementId);
+  if (!movement) throw new Error('Movement not found');
+  if (movement.status === 'cancelled') throw new Error('Movement is already cancelled');
+
+  // Reverse stock effect
+  const sp = await SubProduct.findById(movement.subProduct).select(
+    'totalStock availableStock lowStockThreshold stockStatus tenant'
+  );
+  if (sp) {
+    const reversal = movement.category === 'in' ? -movement.quantity : movement.quantity;
+    sp.totalStock     = Math.max(0, (sp.totalStock     ?? 0) + reversal);
+    sp.availableStock = Math.max(0, (sp.availableStock ?? 0) + reversal);
+    sp.stockStatus    = computeStockStatus(sp.availableStock, sp.lowStockThreshold);
+    await sp.save();
+  }
+
+  movement.status   = 'cancelled';
+  movement.notes    = movement.notes ? `${movement.notes}\nCancelled: ${reason}` : `Cancelled: ${reason}`;
+  await movement.save();
+
+  return movement;
+}
+
+/**
+ * Get next PO number for a tenant.
+ */
+async function getNextPONumber(tenantId) {
+  const count = await InventoryMovement.countDocuments({ tenant: tenantId, type: 'received' });
+  const year  = new Date().getFullYear();
+  return `PO-${year}-${String(count + 1).padStart(4, '0')}`;
+}
+
+/**
+ * Get low stock items for a tenant.
+ */
+async function getLowStockItems(tenantId) {
+  return SubProduct.find({
+    tenant: tenantId,
+    $or: [{ stockStatus: 'low_stock' }, { stockStatus: 'out_of_stock' }],
+  })
+    .select('name totalStock availableStock lowStockThreshold stockStatus')
+    .lean();
+}
+
+/**
+ * Get inventory valuation for a tenant.
+ */
+async function getInventoryValuation(tenantId) {
+  return SubProduct.aggregate([
+    { $match: { tenant: mongoose.Types.ObjectId(tenantId.toString()) } },
+    {
+      $group: {
+        _id: null,
+        totalUnits:     { $sum: '$totalStock' },
+        totalCostValue: { $sum: { $multiply: ['$totalStock', { $ifNull: ['$costPrice', 0] }] } },
+        productCount:   { $sum: 1 },
+      },
+    },
+  ]);
+}
+
+module.exports = {
+  // Order lifecycle (used by order processing)
+  reserve, releaseReserve, commitShipment, restoreStock, isShipped,
+  // Admin / manual inventory management
+  recordReceived, adjustInventory, recordReturn, transferStock,
+  createMovement, getMovements, getInventorySummary,
+  cancelMovement, getNextPONumber, getLowStockItems, getInventoryValuation,
+};

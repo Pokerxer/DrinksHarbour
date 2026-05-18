@@ -77,18 +77,11 @@ import { ValidationSummary } from '@/components/validation-summary';
 
 const STEPS = [
   {
-    key: formParts.basicInfo,
-    label: 'Basic Info',
+    key: formParts.basicPricingSizes,
+    label: 'Product',
     icon: PiTag,
     color: 'blue' as const,
-    description: 'Product selection',
-  },
-  {
-    key: formParts.pricing,
-    label: 'Pricing',
-    icon: PiCurrencyNgn,
-    color: 'green' as const,
-    description: 'Prices & margins',
+    description: 'Info, pricing & sizes',
   },
   {
     key: formParts.inventory,
@@ -96,13 +89,6 @@ const STEPS = [
     icon: PiArchiveBox,
     color: 'purple' as const,
     description: 'Stock levels',
-  },
-  {
-    key: formParts.sizes,
-    label: 'Sizes',
-    icon: PiRuler,
-    color: 'cyan' as const,
-    description: 'Size variants',
   },
   {
     key: formParts.vendor,
@@ -142,10 +128,7 @@ const STEPS = [
 ];
 
 const COMPONENTS: Record<string, React.FC> = {
-  [formParts.basicInfo]: SubProductBasicInfo,
-  [formParts.pricing]: SubProductPricing,
   [formParts.inventory]: SubProductInventory,
-  [formParts.sizes]: SubProductSizes,
   [formParts.vendor]: SubProductVendor,
   [formParts.statusVisibility]: SubProductStatusVisibility,
   [formParts.promotions]: SubProductPromotions,
@@ -226,6 +209,144 @@ const SmartButton = ({
     </span>
   </button>
 );
+
+// ── ProductStep ──────────────────────────────────────────────────────────────
+// Renders Basic Info + Pricing + Sizes as one step with a sticky section nav
+
+const PRODUCT_SECTIONS = [
+  { id: 'product-info',    label: 'Product Info',    icon: PiTag,         description: 'Select or create the base product' },
+  { id: 'pricing-sizes',  label: 'Pricing & Sizes',  icon: PiCurrencyNgn, description: 'Prices, markup & size variants' },
+];
+
+function ProductStep({ onProductSelect }: { onProductSelect?: (id: string, name?: string) => void }) {
+  const [activeSection, setActiveSection] = useState('product-info');
+
+  function scrollTo(id: string) {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setActiveSection(id);
+    }
+  }
+
+  // Update active section on scroll
+  useEffect(() => {
+    function onScroll() {
+      for (const s of [...PRODUCT_SECTIONS].reverse()) {
+        const el = document.getElementById(s.id);
+        if (el && el.getBoundingClientRect().top <= 180) {
+          setActiveSection(s.id);
+          break;
+        }
+      }
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  return (
+    <div className="flex gap-6">
+      {/* Sticky side nav */}
+      <aside className="hidden lg:flex flex-col gap-1 w-48 shrink-0 sticky top-24 self-start">
+        <p className="px-3 mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">Sections</p>
+        {PRODUCT_SECTIONS.map((s) => {
+          const Icon = s.icon;
+          const isActive = activeSection === s.id;
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => scrollTo(s.id)}
+              className={`flex items-start gap-2.5 rounded-xl px-3 py-2.5 text-left transition-all ${
+                isActive
+                  ? 'bg-[#b20202]/8 text-[#b20202]'
+                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+              }`}
+            >
+              <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${isActive ? 'text-[#b20202]' : 'text-gray-400'}`} />
+              <div>
+                <p className={`text-xs font-semibold leading-tight ${isActive ? 'text-[#b20202]' : ''}`}>{s.label}</p>
+                <p className="text-[10px] text-gray-400 leading-tight mt-0.5">{s.description}</p>
+              </div>
+            </button>
+          );
+        })}
+
+        {/* Progress indicator */}
+        <div className="mt-4 px-3 space-y-1">
+          {PRODUCT_SECTIONS.map((s, i) => {
+            const idx = PRODUCT_SECTIONS.findIndex(x => x.id === activeSection);
+            const done = i < idx;
+            const current = i === idx;
+            return (
+              <div key={s.id} className="flex items-center gap-2">
+                <span className={`h-1.5 w-1.5 rounded-full transition-colors ${done ? 'bg-green-500' : current ? 'bg-[#b20202]' : 'bg-gray-200'}`} />
+                <span className={`text-[10px] transition-colors ${done ? 'text-green-600' : current ? 'text-[#b20202] font-medium' : 'text-gray-400'}`}>{s.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      </aside>
+
+      {/* Mobile section pills */}
+      <div className="lg:hidden flex gap-2 overflow-x-auto pb-1 mb-4 w-full">
+        {PRODUCT_SECTIONS.map((s) => {
+          const Icon = s.icon;
+          const isActive = activeSection === s.id;
+          return (
+            <button key={s.id} type="button" onClick={() => scrollTo(s.id)}
+              className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
+                isActive ? 'bg-[#b20202] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}>
+              <Icon className="h-3.5 w-3.5" />
+              {s.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Sections */}
+      <div className="flex-1 min-w-0 space-y-10">
+
+        {/* ── Product Info ── */}
+        <section id="product-info" className="scroll-mt-24">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#b20202]/10">
+              <PiTag className="h-4 w-4 text-[#b20202]" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">Product Info</h3>
+              <p className="text-xs text-gray-500">Select or create the base product, then set SKU and currency</p>
+            </div>
+            <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-[#b20202] text-[10px] font-bold text-white">1</span>
+          </div>
+          <SubProductBasicInfo onProductSelect={onProductSelect} />
+        </section>
+
+        <div className="border-t border-dashed border-gray-200" />
+
+        {/* ── Pricing & Sizes ── */}
+        <section id="pricing-sizes" className="scroll-mt-24">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-green-100">
+              <PiCurrencyNgn className="h-4 w-4 text-green-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">Pricing & Sizes</h3>
+              <p className="text-xs text-gray-500">Set base cost & markup, then add size variants with individual prices and stock</p>
+            </div>
+            <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-green-500 text-[10px] font-bold text-white">2</span>
+          </div>
+          <SubProductPricing />
+          <div className="mt-8">
+            <SubProductSizes />
+          </div>
+        </section>
+
+      </div>
+    </div>
+  );
+}
 
 export default function CreateEditSubProduct({
   slug,
@@ -1823,14 +1944,8 @@ export default function CreateEditSubProduct({
                 >
                   {(() => {
                     const key = STEPS[currentStep].key;
-                    if (key === formParts.basicInfo) {
-                      return (
-                        <SubProductBasicInfo
-                          onProductSelect={(_, name) => {
-                            if (name) setLinkedProductName(name);
-                          }}
-                        />
-                      );
+                    if (key === formParts.basicPricingSizes) {
+                      return <ProductStep onProductSelect={(_, name) => { if (name) setLinkedProductName(name); }} />;
                     }
                     const Component = COMPONENTS[key];
                     return Component ? <Component /> : null;

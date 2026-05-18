@@ -19,6 +19,8 @@ interface HistoryTabProps {
   serverMovements: InventoryMovement[];
   isLoadingMovements: boolean;
   onRecordStock: () => void;
+  onRefreshMovements?: () => void;
+  onCancelMovement?: (id: string) => void;
   
   // Local history
   filteredHistory: StockAdjustment[];
@@ -64,6 +66,8 @@ export function HistoryTab({
   serverMovements,
   isLoadingMovements,
   onRecordStock,
+  onRefreshMovements,
+  onCancelMovement,
   filteredHistory,
   paginatedHistory,
   searchQuery,
@@ -106,7 +110,12 @@ export function HistoryTab({
       />
 
       {/* Recent Server Movements */}
-      <ServerMovementsList movements={serverMovements} />
+      <ServerMovementsList
+        movements={serverMovements}
+        isLoading={isLoadingMovements}
+        onRefresh={onRefreshMovements || (() => {})}
+        onCancel={onCancelMovement || (() => {})}
+      />
 
       {/* Header */}
       <div className="flex items-center justify-between">

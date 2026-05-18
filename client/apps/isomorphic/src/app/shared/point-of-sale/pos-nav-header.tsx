@@ -16,7 +16,7 @@ const navItems: NavItem[] = [
   {
     label: 'Orders',
     items: [
-      { label: 'Orders',               href: routes.pos.history },
+      { label: 'Orders',               href: routes.pos.orders },
       { label: 'Sessions',             href: routes.pos.sessions },
       { label: 'Payments',             href: '#' },
       { label: 'Preparation Printers', href: '#' },
@@ -27,8 +27,8 @@ const navItems: NavItem[] = [
   {
     label: 'Products',
     items: [
-      { label: 'Products',             href: routes.eCommerce.products },
-      { label: 'Product Variants',     href: routes.eCommerce.subProducts },
+      { label: 'Products',             href: `${routes.eCommerce.subProducts}?from=pos` },
+      { label: 'Product Variants',     href: `${routes.eCommerce.subProducts}?from=pos` },
       { label: 'Combo Choices',        href: '#' },
       { label: 'Pricelists',           href: '#' },
       { label: 'Discount & Loyalty',   href: routes.eCommerce.promotions },
@@ -38,7 +38,7 @@ const navItems: NavItem[] = [
   {
     label: 'Reporting',
     items: [
-      { label: 'Orders',         href: routes.pos.history },
+      { label: 'Orders',         href: routes.pos.orders },
       { label: 'Sales Details',  href: '#' },
       { label: 'Session Report', href: routes.pos.sessions },
     ],
@@ -46,12 +46,12 @@ const navItems: NavItem[] = [
   {
     label: 'Configuration',
     items: [
-      { label: 'Settings',               href: '#' },
+      { label: 'Settings',               href: routes.pos.settings },
       { label: 'Payment Methods',        href: '#' },
       { label: 'Coins/Bills',            href: '#' },
       { label: 'Point of Sales',         href: routes.pos.index },
       { label: 'Note Models',            href: '#' },
-      { label: 'Products',               href: routes.eCommerce.products },
+      { label: 'Products',               href: `${routes.eCommerce.subProducts}?from=pos` },
       { label: 'PoS Product Categories', href: routes.eCommerce.categories },
       { label: 'Attributes',             href: '#' },
     ],

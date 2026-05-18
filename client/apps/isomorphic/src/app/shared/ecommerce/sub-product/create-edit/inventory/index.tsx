@@ -141,6 +141,9 @@ export default function SubProductInventory() {
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState<StockAdjustment | null>(null);
 
+  // Processing state for modals
+  const [isProcessing, setIsProcessing] = useState(false);
+
   // Server Data State
   const [inventorySummary, setInventorySummary] = useState<InventorySummary | null>(null);
   const [serverMovements, setServerMovements] = useState<InventoryMovement[]>([]);
@@ -209,6 +212,17 @@ export default function SubProductInventory() {
       setValue?.('subProductData.availableStock', calculatedAvailable);
     }
   }, [calculatedAvailable, autoCalculateAvailable, setValue]);
+
+  // Sync form values from server inventory summary after fetch
+  useEffect(() => {
+    if (inventorySummary?.subProduct) {
+      const sp = inventorySummary.subProduct;
+      if (sp.totalStock !== undefined) setValue('subProductData.totalStock', sp.totalStock);
+      if (sp.availableStock !== undefined) setValue('subProductData.availableStock', sp.availableStock);
+      if (sp.reservedStock !== undefined) setValue('subProductData.reservedStock', sp.reservedStock);
+      if (sp.stockStatus) setValue('subProductData.stockStatus', sp.stockStatus);
+    }
+  }, [inventorySummary]);
 
   // Fetch server inventory data
   const fetchInventoryData = useCallback(async () => {
@@ -536,63 +550,37 @@ export default function SubProductInventory() {
     setTransferNotes('');
   };
 
-  const handleServerAdjustment = async () => {
+  const handleServerAdjustment = async (data: {
+    type: string; quantity: number; reason: string; notes: string;
+    sizeId?: string; sizeName?: string; reference?: string;
+    unitCost?: number; supplierName?: string;
+  }) => {
     if (!subProductId || !session?.user?.token) return;
-    if (serverAdjustmentQuantity <= 0) {
-      toast.error('Please enter a valid quantity');
-      return;
-    }
-
+    setIsProcessing(true);
     try {
-      let adjustment = 0;
-      
-      if (serverAdjustmentType === 'received') {
-        adjustment = serverAdjustmentQuantity;
-        await inventoryService.recordReceived(subProductId, serverAdjustmentQuantity, session.user.token, {
-          reason: serverAdjustmentReason,
-          notes: serverAdjustmentNotes,
+      if (data.type === 'received') {
+        await inventoryService.recordReceived(subProductId, data.quantity, session.user.token, {
+          reason: data.reason,
+          notes: data.notes,
+          reference: data.reference,
+          unitCost: data.unitCost,
+          supplierName: data.supplierName,
+          sizeId: data.sizeId,
+          sizeName: data.sizeName,
         });
       } else {
-        adjustment = serverAdjustmentType === 'adjustment_in' ? serverAdjustmentQuantity : -serverAdjustmentQuantity;
-        await inventoryService.adjustInventory(subProductId, adjustment, serverAdjustmentReason, session.user.token, serverAdjustmentNotes);
+        const delta = data.type === 'adjustment_out' ? -data.quantity : data.quantity;
+        await inventoryService.adjustInventory(subProductId, delta, data.reason, session.user.token, data.notes, data.reference);
       }
-
-      // Calculate new totals and update SubProduct
-      const newTotal = Math.max(0, (totalStock || 0) + adjustment);
-      const newAvailable = Math.max(0, newTotal - (reservedStock || 0));
-      
-      // Update local form state
-      setValue?.('subProductData.totalStock', newTotal);
-      setValue?.('subProductData.availableStock', newAvailable);
-      setValue?.('subProductData.stockStatus', newTotal === 0 ? 'out_of_stock' : newTotal <= lowStockThreshold ? 'low_stock' : 'in_stock');
-      
-      // Also update SubProduct directly on server
-      await subproductService.updateSubProduct(subProductId, {
-        totalStock: newTotal,
-        availableStock: newAvailable,
-        stockStatus: newTotal === 0 ? 'out_of_stock' : newTotal <= lowStockThreshold ? 'low_stock' : 'in_stock',
-      }, session.user.token);
-      
-      // Add to local history
-      addToHistory(
-        serverAdjustmentType === 'received' ? 'add' : adjustment > 0 ? 'add' : 'remove',
-        serverAdjustmentQuantity,
-        totalStock,
-        newTotal,
-        serverAdjustmentReason || `Server ${serverAdjustmentType}`,
-        serverAdjustmentNotes
-      );
-
       await fetchInventoryData();
+      // Update form values from summary
+      // (done in fetchInventoryData via useEffect watching inventorySummary)
+      toast.success('Stock movement recorded');
       setShowServerAdjustmentModal(false);
-      setServerAdjustmentQuantity(0);
-      setServerAdjustmentReason('');
-      setServerAdjustmentNotes('');
-      
-      toast.success('Inventory adjusted successfully');
     } catch (error: any) {
-      console.error('Server adjustment failed:', error);
-      toast.error(error.message || 'Failed to process adjustment');
+      toast.error(error.message || 'Failed to record movement');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -774,6 +762,11 @@ export default function SubProductInventory() {
           inventorySummary={inventorySummary}
           serverMovements={serverMovements}
           isLoadingMovements={isLoadingMovements}
+          onRefreshMovements={fetchInventoryData}
+          onCancelMovement={async (id) => {
+            await inventoryService.cancelMovement(id, session?.user?.token || '', 'Manual cancel');
+            await fetchInventoryData();
+          }}
           onRecordStock={() => setShowServerAdjustmentModal(true)}
           filteredHistory={filteredHistory}
           paginatedHistory={paginatedHistory}
@@ -926,15 +919,10 @@ export default function SubProductInventory() {
       <ServerAdjustmentModal
         isOpen={showServerAdjustmentModal}
         onClose={() => setShowServerAdjustmentModal(false)}
-        adjustmentType={serverAdjustmentType}
-        onTypeChange={setServerAdjustmentType}
-        quantity={serverAdjustmentQuantity}
-        onQuantityChange={setServerAdjustmentQuantity}
-        reason={serverAdjustmentReason}
-        onReasonChange={setServerAdjustmentReason}
-        notes={serverAdjustmentNotes}
-        onNotesChange={setServerAdjustmentNotes}
         onSubmit={handleServerAdjustment}
+        isSubmitting={isProcessing}
+        sizes={hasSizeVariants ? sizes : []}
+        hasSizes={hasSizeVariants}
       />
     </motion.div>
   );

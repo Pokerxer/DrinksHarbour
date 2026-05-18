@@ -136,7 +136,10 @@ export interface WarehouseOption {
 export interface SizeVariant {
   size: string;
   label?: string;
+  stock?: number;
   stockQuantity?: number;
+  displayName?: string;
+  _id?: string;
 }
 
 // Form context values commonly used

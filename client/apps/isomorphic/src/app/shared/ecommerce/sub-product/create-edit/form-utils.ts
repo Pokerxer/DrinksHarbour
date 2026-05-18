@@ -635,6 +635,7 @@ export const mixerOptions = [
 ];
 
 export const formParts = {
+  basicPricingSizes: 'basic-pricing-sizes',
   basicInfo: 'basic-info',
   pricing: 'pricing',
   inventory: 'inventory',

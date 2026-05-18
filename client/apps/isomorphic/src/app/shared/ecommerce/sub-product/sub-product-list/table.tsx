@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import Table from '@core/components/table';
 import { useTanStackTable } from '@core/components/table/custom/use-TanStack-Table';
@@ -25,6 +25,17 @@ import {
   PiTrendDownBold,
   PiSparkle,
   PiFunnelBold,
+  PiMagnifyingGlass,
+  PiCaretDown,
+  PiCaretUp,
+  PiCaretRight,
+  PiX,
+  PiFunnel,
+  PiStack,
+  PiStar,
+  PiFloppyDisk,
+  PiTrash,
+  PiPlus,
 } from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -98,6 +109,676 @@ export interface SubProductListItem {
   lastRestockDate?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// ── Custom filter rule types ────────────────────────────────────────────────────
+type RuleOperator = '=' | '!=' | '>' | '<' | '>=' | '<=' | 'contains' | 'not_contains' | 'is_set' | 'is_not_set' | 'in' | 'not_in';
+type FieldType = 'text' | 'number' | 'boolean' | 'date' | 'select';
+interface FieldDef { key: string; label: string; type: FieldType; options?: { value: string; label: string }[]; }
+interface CustomRule { id: string; fieldKey: string; operator: RuleOperator; value: string; }
+
+const CUSTOM_FIELDS: FieldDef[] = [
+  { key: 'name',              label: 'Product Name',         type: 'text' },
+  { key: 'sku',               label: 'SKU',                  type: 'text' },
+  { key: 'status',            label: 'Status',               type: 'select', options: [{value:'active',label:'Active'},{value:'draft',label:'Draft'},{value:'pending',label:'Pending'},{value:'discontinued',label:'Discontinued'},{value:'archived',label:'Archived'},{value:'hidden',label:'Hidden'}] },
+  { key: 'stockStatus',       label: 'Stock Status',         type: 'select', options: [{value:'in_stock',label:'In Stock'},{value:'low_stock',label:'Low Stock'},{value:'out_of_stock',label:'Out of Stock'},{value:'pre_order',label:'Pre-Order'}] },
+  { key: 'totalStock',        label: 'Total Stock',          type: 'number' },
+  { key: 'availableStock',    label: 'Available Stock',      type: 'number' },
+  { key: 'baseSellingPrice',  label: 'Selling Price',        type: 'number' },
+  { key: 'costPrice',         label: 'Cost Price',           type: 'number' },
+  { key: 'marginPercentage',  label: 'Margin %',             type: 'number' },
+  { key: 'totalSold',         label: 'Total Sold',           type: 'number' },
+  { key: 'totalRevenue',      label: 'Total Revenue',        type: 'number' },
+  { key: 'viewCount',         label: 'View Count',           type: 'number' },
+  { key: 'isPublished',       label: 'Published',            type: 'boolean' },
+  { key: 'isFeaturedByTenant',label: 'Featured',             type: 'boolean' },
+  { key: 'isBestSeller',      label: 'Best Seller',          type: 'boolean' },
+  { key: 'isNewArrival',      label: 'New Arrival',          type: 'boolean' },
+  { key: 'isOnSale',          label: 'On Sale',              type: 'boolean' },
+  { key: 'visibleInPOS',      label: 'Visible in POS',       type: 'boolean' },
+  { key: 'visibleInOnlineStore', label: 'Visible in Store',  type: 'boolean' },
+  { key: 'productType',       label: 'Product Type',         type: 'text' },
+  { key: 'category',          label: 'Category',             type: 'text' },
+  { key: 'brand',             label: 'Brand / Vendor',       type: 'text' },
+  { key: 'originCountry',     label: 'Origin Country',       type: 'text' },
+  { key: 'isAlcoholic',       label: 'Alcoholic',            type: 'boolean' },
+  { key: 'abv',               label: 'ABV (%)',              type: 'number' },
+  { key: 'volumeMl',          label: 'Volume (ml)',          type: 'number' },
+  { key: 'lowStockThreshold', label: 'Low Stock Threshold',  type: 'number' },
+  { key: 'reorderPoint',      label: 'Reorder Point',        type: 'number' },
+  { key: 'createdAt',         label: 'Date Added',           type: 'date' },
+  { key: 'lastSoldDate',      label: 'Last Sold Date',       type: 'date' },
+  { key: 'lastRestockDate',   label: 'Last Restock Date',    type: 'date' },
+];
+
+function getOperatorsForType(type: FieldType): { value: RuleOperator; label: string }[] {
+  if (type === 'boolean') return [{ value: '=', label: 'is' }, { value: '!=', label: 'is not' }];
+  if (type === 'text') return [
+    { value: 'contains', label: 'contains' }, { value: 'not_contains', label: 'does not contain' },
+    { value: '=', label: '=' }, { value: '!=', label: '≠' },
+    { value: 'is_set', label: 'is set' }, { value: 'is_not_set', label: 'is not set' },
+  ];
+  if (type === 'number') return [
+    { value: '=', label: '=' }, { value: '!=', label: '≠' },
+    { value: '>', label: '>' }, { value: '<', label: '<' },
+    { value: '>=', label: '≥' }, { value: '<=', label: '≤' },
+    { value: 'is_set', label: 'is set' }, { value: 'is_not_set', label: 'is not set' },
+  ];
+  if (type === 'date') return [
+    { value: '=', label: '=' }, { value: '!=', label: '≠' },
+    { value: '>', label: 'after' }, { value: '<', label: 'before' },
+    { value: '>=', label: 'on or after' }, { value: '<=', label: 'on or before' },
+    { value: 'is_set', label: 'is set' }, { value: 'is_not_set', label: 'is not set' },
+  ];
+  if (type === 'select') return [
+    { value: '=', label: '=' }, { value: '!=', label: '≠' },
+    { value: 'is_set', label: 'is set' }, { value: 'is_not_set', label: 'is not set' },
+  ];
+  return [{ value: '=', label: '=' }];
+}
+
+function getRuleValue(product: any, fieldKey: string): any {
+  switch (fieldKey) {
+    case 'name':               return product.product?.name || '';
+    case 'sku':                return product.sku || '';
+    case 'status':             return product.status || '';
+    case 'stockStatus':        return product.stockStatus || '';
+    case 'totalStock':         return product.totalStock ?? 0;
+    case 'availableStock':     return product.availableStock ?? 0;
+    case 'baseSellingPrice':   return product.baseSellingPrice ?? 0;
+    case 'costPrice':          return product.costPrice ?? 0;
+    case 'marginPercentage':   return product.marginPercentage ?? 0;
+    case 'totalSold':          return product.totalSold ?? 0;
+    case 'totalRevenue':       return product.totalRevenue ?? 0;
+    case 'viewCount':          return product.viewCount ?? 0;
+    case 'isPublished':        return product.isPublished ? 'true' : 'false';
+    case 'isFeaturedByTenant': return product.isFeaturedByTenant ? 'true' : 'false';
+    case 'isBestSeller':       return product.isBestSeller ? 'true' : 'false';
+    case 'isNewArrival':       return product.isNewArrival ? 'true' : 'false';
+    case 'isOnSale':           return product.isOnSale ? 'true' : 'false';
+    case 'visibleInPOS':       return product.visibleInPOS !== false ? 'true' : 'false';
+    case 'visibleInOnlineStore': return product.visibleInOnlineStore !== false ? 'true' : 'false';
+    case 'productType':        return product.product?.type || '';
+    case 'category':           return product.product?.category?.name || '';
+    case 'brand':              return product.product?.brand?.name || '';
+    case 'originCountry':      return product.product?.originCountry || '';
+    case 'isAlcoholic':        return product.product?.isAlcoholic ? 'true' : 'false';
+    case 'abv':                return product.product?.abv ?? 0;
+    case 'volumeMl':           return product.product?.volumeMl ?? 0;
+    case 'lowStockThreshold':  return product.lowStockThreshold ?? 0;
+    case 'reorderPoint':       return product.reorderPoint ?? 0;
+    case 'createdAt':          return product.createdAt || '';
+    case 'lastSoldDate':       return product.lastSoldDate || '';
+    case 'lastRestockDate':    return product.lastRestockDate || '';
+    default: return '';
+  }
+}
+
+function applyRule(product: any, rule: CustomRule): boolean {
+  const field = CUSTOM_FIELDS.find(f => f.key === rule.fieldKey);
+  if (!field) return true;
+  const actual = getRuleValue(product, rule.fieldKey);
+  const v = rule.value;
+  if (rule.operator === 'is_set')     return actual !== '' && actual !== null && actual !== undefined;
+  if (rule.operator === 'is_not_set') return actual === '' || actual === null || actual === undefined;
+  if (field.type === 'number') {
+    const n = parseFloat(actual); const rv = parseFloat(v);
+    if (isNaN(rv)) return true;
+    switch (rule.operator) {
+      case '=': return n === rv; case '!=': return n !== rv;
+      case '>': return n > rv;   case '<':  return n < rv;
+      case '>=': return n >= rv; case '<=': return n <= rv;
+    }
+  }
+  if (field.type === 'date') {
+    const d = new Date(actual).getTime(); const rv = new Date(v).getTime();
+    if (isNaN(rv)) return true;
+    switch (rule.operator) {
+      case '=': return d === rv; case '!=': return d !== rv;
+      case '>': return d > rv;   case '<':  return d < rv;
+      case '>=': return d >= rv; case '<=': return d <= rv;
+    }
+  }
+  const str = String(actual).toLowerCase(); const vs = v.toLowerCase();
+  switch (rule.operator) {
+    case 'contains':     return str.includes(vs);
+    case 'not_contains': return !str.includes(vs);
+    case '=':            return str === vs;
+    case '!=':           return str !== vs;
+  }
+  return true;
+}
+
+// ── Custom Filter Modal ─────────────────────────────────────────────────────────
+function CustomFilterModal({
+  onAdd, onCancel,
+}: {
+  onAdd: (rules: CustomRule[], matchMode: 'any'|'all', includeArchived: boolean) => void;
+  onCancel: () => void;
+}) {
+  const [rules, setRules] = useState<CustomRule[]>([{ id: '1', fieldKey: 'name', operator: 'contains', value: '' }]);
+  const [matchMode, setMatchMode] = useState<'any'|'all'>('any');
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [fieldPickerFor, setFieldPickerFor] = useState<string|null>(null);
+  const [fieldSearch, setFieldSearch] = useState('');
+
+  function addRule() {
+    setRules(prev => [...prev, { id: Date.now().toString(), fieldKey: 'name', operator: 'contains', value: '' }]);
+  }
+  function removeRule(id: string) { setRules(prev => prev.filter(r => r.id !== id)); }
+  function updateRule(id: string, patch: Partial<CustomRule>) {
+    setRules(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      const updated = { ...r, ...patch };
+      if (patch.fieldKey) {
+        const f = CUSTOM_FIELDS.find(f => f.key === patch.fieldKey);
+        if (f) updated.operator = getOperatorsForType(f.type)[0].value;
+        updated.value = '';
+      }
+      return updated;
+    }));
+  }
+
+  const filteredFields = CUSTOM_FIELDS.filter(f => f.label.toLowerCase().includes(fieldSearch.toLowerCase()));
+
+  const inputCls = "rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none transition-all focus:border-[#b20202] focus:ring-1 focus:ring-[#b20202]/20";
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/10">
+
+        {/* Header — brand gradient */}
+        <div className="flex items-center justify-between bg-gradient-to-r from-[#b20202] to-[#7f1d1d] px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/20">
+              <PiFunnel className="h-4 w-4 text-white" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-white">Add Custom Filter</h2>
+              <p className="text-[11px] text-red-200">Build rules to filter your product list</p>
+            </div>
+          </div>
+          <button type="button" onClick={onCancel}
+            className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-white/70 transition-colors hover:bg-white/20 hover:text-white">
+            <PiX className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Match mode + Include archived bar */}
+        <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-6 py-3">
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <span>Match</span>
+            <select value={matchMode} onChange={e => setMatchMode(e.target.value as any)}
+              className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-sm font-semibold text-[#b20202] outline-none focus:border-[#b20202]">
+              <option value="any">any</option>
+              <option value="all">all</option>
+            </select>
+            <span>of the following rules:</span>
+          </div>
+          <button type="button" onClick={() => setIncludeArchived(v => !v)}
+            className="flex items-center gap-2 text-sm text-gray-600">
+            <div className={`relative h-5 w-9 rounded-full transition-all ${includeArchived ? 'bg-[#b20202]' : 'bg-gray-200'}`}>
+              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${includeArchived ? 'translate-x-4' : 'translate-x-0.5'}`} />
+            </div>
+            Include archived
+          </button>
+        </div>
+
+        {/* Rules */}
+        <div className="max-h-[50vh] overflow-y-auto px-6 py-4 space-y-2.5">
+          {rules.map((rule, idx) => {
+            const field = CUSTOM_FIELDS.find(f => f.key === rule.fieldKey)!;
+            const operators = getOperatorsForType(field?.type || 'text');
+            const needsValue = rule.operator !== 'is_set' && rule.operator !== 'is_not_set';
+            const isPickerOpen = fieldPickerFor === rule.id;
+
+            return (
+              <div key={rule.id} className="group flex items-center gap-2">
+                {/* Rule number */}
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#b20202]/10 text-[10px] font-bold text-[#b20202]">
+                  {idx + 1}
+                </span>
+
+                {/* Field picker */}
+                <div className="relative">
+                  <button type="button"
+                    onClick={() => { setFieldPickerFor(isPickerOpen ? null : rule.id); setFieldSearch(''); }}
+                    className={`flex min-w-[155px] items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all ${isPickerOpen ? 'border-[#b20202] bg-[#b20202]/5 text-[#b20202]' : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-gray-300 hover:bg-white'}`}>
+                    {field?.label || 'Select field'}
+                    <PiCaretDown className={`h-3 w-3 shrink-0 transition-transform ${isPickerOpen ? 'rotate-180 text-[#b20202]' : 'text-gray-400'}`} />
+                  </button>
+                  {isPickerOpen && (
+                    <div className="absolute left-0 top-full z-50 mt-1.5 w-64 overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-black/10">
+                      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+                        <span className="text-xs font-bold text-gray-800">Select a field</span>
+                        <button type="button" onClick={() => setFieldPickerFor(null)}
+                          className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+                          <PiX className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <div className="px-3 py-2 border-b border-gray-100">
+                        <div className="relative">
+                          <PiMagnifyingGlass className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                          <input autoFocus type="text" placeholder="Search fields…" value={fieldSearch}
+                            onChange={e => setFieldSearch(e.target.value)}
+                            className="w-full rounded-lg border border-gray-200 bg-gray-50 py-1.5 pl-8 pr-3 text-sm outline-none focus:border-[#b20202] focus:bg-white" />
+                        </div>
+                      </div>
+                      <div className="max-h-52 overflow-y-auto py-1">
+                        {filteredFields.map(f => (
+                          <button key={f.key} type="button"
+                            onClick={() => { updateRule(rule.id, { fieldKey: f.key }); setFieldPickerFor(null); }}
+                            className={`flex w-full items-center gap-2 px-4 py-2.5 text-sm transition-colors ${f.key === rule.fieldKey ? 'bg-[#b20202]/8 font-semibold text-[#b20202]' : 'text-gray-700 hover:bg-gray-50'}`}>
+                            {f.key === rule.fieldKey && <span className="h-1.5 w-1.5 rounded-full bg-[#b20202]" />}
+                            {f.label}
+                          </button>
+                        ))}
+                        {filteredFields.length === 0 && (
+                          <p className="px-4 py-6 text-center text-xs text-gray-400">No fields match "{fieldSearch}"</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Operator */}
+                <select value={rule.operator} onChange={e => updateRule(rule.id, { operator: e.target.value as RuleOperator })}
+                  className={`${inputCls} min-w-[130px]`}>
+                  {operators.map(op => <option key={op.value} value={op.value}>{op.label}</option>)}
+                </select>
+
+                {/* Value */}
+                {needsValue ? (
+                  field?.type === 'boolean' ? (
+                    <select value={rule.value || 'true'} onChange={e => updateRule(rule.id, { value: e.target.value })}
+                      className={`${inputCls} flex-1`}>
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
+                  ) : field?.type === 'select' ? (
+                    <select value={rule.value} onChange={e => updateRule(rule.id, { value: e.target.value })}
+                      className={`${inputCls} flex-1`}>
+                      <option value="">Select…</option>
+                      {field.options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  ) : (
+                    <input
+                      type={field?.type === 'date' ? 'date' : field?.type === 'number' ? 'number' : 'text'}
+                      value={rule.value}
+                      onChange={e => updateRule(rule.id, { value: e.target.value })}
+                      placeholder="Value…"
+                      className={`${inputCls} flex-1`}
+                    />
+                  )
+                ) : <div className="flex-1" />}
+
+                {/* Row actions */}
+                <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  <button type="button" onClick={addRule} title="Add another rule"
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 text-gray-400 transition-colors hover:border-[#b20202] hover:bg-[#b20202]/5 hover:text-[#b20202]">
+                    <PiPlus className="h-3.5 w-3.5" />
+                  </button>
+                  {rules.length > 1 && (
+                    <button type="button" onClick={() => removeRule(rule.id)} title="Remove rule"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 text-gray-400 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-500">
+                      <PiTrash className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* New Rule */}
+          <button type="button" onClick={addRule}
+            className="flex items-center gap-1.5 text-sm font-medium text-[#b20202] hover:text-[#7f1d1d] transition-colors pt-1">
+            <PiPlus className="h-4 w-4" />
+            New Rule
+          </button>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center gap-3 border-t border-gray-100 bg-gray-50 px-6 py-4">
+          <button type="button" onClick={() => onAdd(rules, matchMode, includeArchived)}
+            className="rounded-xl bg-[#b20202] px-6 py-2.5 text-sm font-bold text-white shadow-sm shadow-[#b20202]/30 transition-all hover:bg-[#7f1d1d] hover:shadow-md active:scale-95">
+            Apply Filter
+          </button>
+          <button type="button" onClick={onCancel}
+            className="rounded-xl border border-gray-200 bg-white px-5 py-2.5 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-50">
+            Cancel
+          </button>
+          {rules.length > 1 && (
+            <span className="ml-auto text-xs text-gray-400">{rules.length} rules · match {matchMode}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Odoo-style search panel types & constants ──────────────────────────────────
+type SPFilterKey = 'services' | 'goods' | 'combo' | 'inventory_management' | 'published' | 'available_in_pos' | 'has_sales' | 'warnings' | 'archived';
+type SPGroupKey  = 'product_type' | 'category';
+interface SPSavedSearch { id: string; name: string; query: string; filters: SPFilterKey[]; groupBy: SPGroupKey | null; chips: SPSearchChip[]; }
+
+type SPChipField = 'product' | 'category' | 'vendor' | 'pos_category' | 'tags' | 'attributes';
+interface SPSearchChip { id: string; field: SPChipField; label: string; query: string; }
+const SP_CHIP_FIELDS: { field: SPChipField; label: string }[] = [
+  { field: 'product',      label: 'Product' },
+  { field: 'category',     label: 'Product Category' },
+  { field: 'vendor',       label: 'Vendor' },
+  { field: 'pos_category', label: 'POS Product Category' },
+  { field: 'tags',         label: 'Tags' },
+  { field: 'attributes',   label: 'Attributes' },
+];
+const SP_SAVED_KEY = 'dh-subproduct-searches';
+function spLoadSaved(): SPSavedSearch[] { try { return JSON.parse(localStorage.getItem(SP_SAVED_KEY) || '[]') as SPSavedSearch[]; } catch { return []; } }
+function spPersistSaved(list: SPSavedSearch[]) { localStorage.setItem(SP_SAVED_KEY, JSON.stringify(list)); }
+
+const SP_FILTER_LABELS: Record<SPFilterKey, string> = {
+  services: 'Services', goods: 'Goods', combo: 'Combo', inventory_management: 'Inventory Management',
+  published: 'Published', available_in_pos: 'Available in POS', has_sales: 'Has Sales',
+  warnings: 'Warnings', archived: 'Archived',
+};
+const SP_GROUP_LABELS: Record<SPGroupKey, string> = {
+  product_type: 'Product Type', category: 'Product Category',
+};
+
+// ── OdooSearchPanel component ─────────────────────────────────────────────────
+function OdooSearchPanel({
+  activeFilters, groupBy, savedSearches,
+  onToggleFilter, onSetGroupBy, onSave, onLoadSaved, onDeleteSaved, onClose,
+  advancedFilters, onAdvancedFilterChange, onReset, activeFilterCount, onAddCustomFilter,
+}: {
+  activeFilters: Set<SPFilterKey>; groupBy: SPGroupKey | null; savedSearches: SPSavedSearch[];
+  onToggleFilter: (f: SPFilterKey) => void; onSetGroupBy: (g: SPGroupKey | null) => void;
+  onSave: (name: string) => void; onLoadSaved: (s: SPSavedSearch) => void;
+  onDeleteSaved: (id: string) => void; onClose: () => void;
+  advancedFilters: FilterConfig; onAdvancedFilterChange: (f: FilterConfig) => void;
+  onReset: () => void; activeFilterCount: number;
+  onAddCustomFilter: () => void;
+}) {
+  const [showSaveInput, setShowSaveInput] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [advTab, setAdvTab] = useState<'basic'|'beverage'|'performance'|'dates'>('basic');
+  const ref = useRef<HTMLDivElement>(null);
+
+  function upd<K extends keyof FilterConfig>(key: K, value: FilterConfig[K]) {
+    onAdvancedFilterChange({ ...advancedFilters, [key]: value });
+  }
+
+  useEffect(() => {
+    function onOut(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); }
+    document.addEventListener('mousedown', onOut);
+    return () => document.removeEventListener('mousedown', onOut);
+  }, [onClose]);
+
+  function FilterItem({ fkey, label }: { fkey: SPFilterKey; label: string }) {
+    const on = activeFilters.has(fkey);
+    return (
+      <button type="button" onClick={() => onToggleFilter(fkey)}
+        className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${on ? 'bg-[#b20202]/8 text-[#b20202] font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}>
+        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${on ? 'border-[#b20202] bg-[#b20202]' : 'border-gray-300'}`}>
+          {on && <span className="h-2 w-2 rounded-sm bg-white" />}
+        </span>
+        {label}
+      </button>
+    );
+  }
+
+  function GroupItem({ gkey, label }: { gkey: SPGroupKey; label: string }) {
+    const on = groupBy === gkey;
+    return (
+      <button type="button" onClick={() => onSetGroupBy(on ? null : gkey)}
+        className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${on ? 'bg-[#b20202]/8 text-[#b20202] font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}>
+        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${on ? 'border-[#b20202]' : 'border-gray-300'}`}>
+          {on && <span className="h-2 w-2 rounded-full bg-[#b20202]" />}
+        </span>
+        {label}
+      </button>
+    );
+  }
+
+  return (
+    <div ref={ref} className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-black/8" style={{ minWidth: 660 }}>
+      <div className="flex divide-x divide-gray-100">
+
+        {/* Filters */}
+        <div className="flex-1 p-4">
+          <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-gray-500">
+            <PiFunnel className="h-3.5 w-3.5" /> Filters
+          </div>
+          <div className="space-y-0.5">
+            <FilterItem fkey="services"             label="Services" />
+            <FilterItem fkey="goods"                label="Goods" />
+            <FilterItem fkey="combo"                label="Combo" />
+            <FilterItem fkey="inventory_management" label="Inventory Management" />
+            <div className="my-1.5 border-t border-gray-100" />
+            <FilterItem fkey="published"            label="Published" />
+            <div className="my-1.5 border-t border-gray-100" />
+            <FilterItem fkey="available_in_pos"     label="Available in POS" />
+            <FilterItem fkey="has_sales"            label="Has Sales" />
+            <FilterItem fkey="warnings"             label="Warnings" />
+            <div className="my-1.5 border-t border-gray-100" />
+            <FilterItem fkey="archived"             label="Archived" />
+            <div className="my-1.5 border-t border-gray-100" />
+            <div className="flex items-center gap-1">
+              <button type="button" onClick={() => setShowAdvanced(v => !v)}
+                className="flex flex-1 items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-teal-600 hover:bg-teal-50 transition-colors font-medium">
+                {showAdvanced ? <PiCaretUp className="h-3.5 w-3.5" /> : <PiCaretDown className="h-3.5 w-3.5" />}
+                Filter Presets
+                {activeFilterCount > 0 && <span className="ml-auto rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">{activeFilterCount}</span>}
+              </button>
+              <button type="button" onClick={onAddCustomFilter}
+                className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-teal-600 hover:bg-teal-50 transition-colors border border-teal-200 whitespace-nowrap">
+                + Custom Filter
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Group By */}
+        <div className="flex-1 p-4">
+          <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-gray-500">
+            <PiStack className="h-3.5 w-3.5" /> Group By
+          </div>
+          <div className="space-y-0.5">
+            <GroupItem gkey="product_type" label="Product Type" />
+            <GroupItem gkey="category"     label="Product Category" />
+          </div>
+        </div>
+
+        {/* Favorites */}
+        <div className="flex-1 p-4">
+          <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-gray-500">
+            <PiStar className="h-3.5 w-3.5" /> Favorites
+          </div>
+          <div className="space-y-1">
+            {!showSaveInput ? (
+              <button type="button" onClick={() => setShowSaveInput(true)}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                <PiFloppyDisk className="h-4 w-4 text-gray-400" /> Save current search
+              </button>
+            ) : (
+              <div className="px-3 py-2 space-y-2">
+                <input autoFocus type="text" value={saveName} onChange={e => setSaveName(e.target.value)}
+                  onKeyDown={e => { if (e.key==='Enter'&&saveName.trim()) { onSave(saveName.trim()); setSaveName(''); setShowSaveInput(false); } if (e.key==='Escape') setShowSaveInput(false); }}
+                  placeholder="Search name…"
+                  className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-[#b20202]" />
+                <div className="flex gap-1.5">
+                  <button type="button" onClick={() => { if (saveName.trim()) { onSave(saveName.trim()); setSaveName(''); setShowSaveInput(false); } }}
+                    disabled={!saveName.trim()} className="flex-1 rounded-lg bg-[#b20202] py-1.5 text-xs font-bold text-white disabled:opacity-40">Save</button>
+                  <button type="button" onClick={() => { setSaveName(''); setShowSaveInput(false); }}
+                    className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs text-gray-500">Cancel</button>
+                </div>
+              </div>
+            )}
+            {savedSearches.length > 0 && (
+              <div className="mt-2 border-t border-gray-100 pt-2 space-y-0.5">
+                {savedSearches.map(s => (
+                  <div key={s.id} className="flex items-center gap-1 group">
+                    <button type="button" onClick={() => { onLoadSaved(s); onClose(); }}
+                      className="flex flex-1 items-center gap-2 truncate rounded-lg px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                      <PiStar className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                      <span className="truncate">{s.name}</span>
+                    </button>
+                    <button type="button" onClick={() => onDeleteSaved(s.id)}
+                      className="hidden shrink-0 group-hover:flex h-6 w-6 items-center justify-center rounded text-gray-300 hover:text-red-500">
+                      <PiTrash className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Advanced filter panel — full-width below 3 columns */}
+      {showAdvanced && (
+        <div className="border-t border-gray-100">
+          {/* Tabs */}
+          <div className="flex border-b border-gray-100 bg-gray-50 px-2">
+            {(['basic','beverage','performance','dates'] as const).map(tab => (
+              <button key={tab} type="button" onClick={() => setAdvTab(tab)}
+                className={`px-4 py-2 text-xs font-medium transition-colors capitalize relative ${advTab === tab ? 'text-blue-600 border-b-2 border-blue-500' : 'text-gray-500 hover:text-gray-700'}`}>
+                {tab}
+              </button>
+            ))}
+            <div className="ml-auto flex items-center pr-3">
+              {activeFilterCount > 0 && (
+                <button type="button" onClick={onReset} className="text-xs text-red-500 hover:text-red-700 font-medium">Reset all</button>
+              )}
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="max-h-56 overflow-y-auto divide-y divide-gray-100">
+            {advTab === 'basic' && (
+              <div className="grid grid-cols-2 divide-x divide-gray-100">
+                {/* Left: Status + Stock */}
+                <div className="p-4 space-y-4">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Product Status</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[{v:'active',l:'Active'},{v:'draft',l:'Draft'},{v:'pending',l:'Pending'},{v:'discontinued',l:'Discontinued'},{v:'archived',l:'Archived'}].map(o => (
+                        <button key={o.v} type="button" onClick={() => upd('status', advancedFilters.status.includes(o.v) ? advancedFilters.status.filter(x=>x!==o.v) : [...advancedFilters.status,o.v])}
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${advancedFilters.status.includes(o.v) ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>
+                          {o.l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Stock Status</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[{v:'in_stock',l:'In Stock'},{v:'low_stock',l:'Low Stock'},{v:'out_of_stock',l:'Out of Stock'},{v:'pre_order',l:'Pre-Order'}].map(o => (
+                        <button key={o.v} type="button" onClick={() => upd('stockStatus', advancedFilters.stockStatus.includes(o.v) ? advancedFilters.stockStatus.filter(x=>x!==o.v) : [...advancedFilters.stockStatus,o.v])}
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${advancedFilters.stockStatus.includes(o.v) ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>
+                          {o.l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                {/* Right: Flags + Channels */}
+                <div className="p-4 space-y-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Product Flags</p>
+                  {[{k:'isFeatured' as const,l:'Featured'},{k:'isBestSeller' as const,l:'Best Seller'},{k:'isNewArrival' as const,l:'New Arrival'},{k:'onSale' as const,l:'On Sale'},{k:'needsReorder' as const,l:'Needs Reorder'},{k:'visibleInPOS' as const,l:'Visible in POS'},{k:'visibleInOnlineStore' as const,l:'Visible Online'}].map(({k,l}) => (
+                    <div key={k} className="flex items-center justify-between">
+                      <span className="text-xs text-gray-700">{l}</span>
+                      <div className="flex">
+                        <button type="button" onClick={() => upd(k, advancedFilters[k]===true?null:true)} className={`px-2 py-0.5 rounded-l text-[10px] font-semibold border transition-all ${advancedFilters[k]===true?'bg-green-500 text-white border-green-500':'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>Yes</button>
+                        <button type="button" onClick={() => upd(k, advancedFilters[k]===false?null:false)} className={`px-2 py-0.5 rounded-r text-[10px] font-semibold border-t border-b border-r transition-all ${advancedFilters[k]===false?'bg-red-500 text-white border-red-500':'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>No</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {advTab === 'beverage' && (
+              <div className="p-4 space-y-4">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Beverage Type</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[{v:'wine',l:'Wine🍷'},{v:'beer',l:'Beer🍺'},{v:'whiskey',l:'Whiskey🥃'},{v:'vodka',l:'Vodka🍸'},{v:'gin',l:'Gin🍸'},{v:'rum',l:'Rum🍹'},{v:'tequila',l:'Tequila🌵'},{v:'champagne',l:'Champagne🥂'},{v:'soft_drink',l:'Soft Drink🥤'},{v:'juice',l:'Juice🧃'},{v:'water',l:'Water💧'},{v:'cocktail',l:'Cocktail🍹'}].map(o => (
+                      <button key={o.v} type="button" onClick={() => upd('beverageTypes', advancedFilters.beverageTypes.includes(o.v) ? advancedFilters.beverageTypes.filter(x=>x!==o.v) : [...advancedFilters.beverageTypes,o.v])}
+                        className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${advancedFilters.beverageTypes.includes(o.v) ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>
+                        {o.l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Origin Country</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[{v:'NG',l:'🇳🇬 Nigeria'},{v:'FR',l:'🇫🇷 France'},{v:'IT',l:'🇮🇹 Italy'},{v:'ES',l:'🇪🇸 Spain'},{v:'US',l:'🇺🇸 USA'},{v:'GB',l:'🇬🇧 UK'},{v:'DE',l:'🇩🇪 Germany'},{v:'ZA',l:'🇿🇦 S.Africa'},{v:'AU',l:'🇦🇺 Australia'},{v:'SC',l:'🏴󠁧󠁢󠁳󠁣󠁴󠁿 Scotland'}].map(o => (
+                      <button key={o.v} type="button" onClick={() => upd('originCountries', advancedFilters.originCountries.includes(o.v) ? advancedFilters.originCountries.filter(x=>x!==o.v) : [...advancedFilters.originCountries,o.v])}
+                        className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${advancedFilters.originCountries.includes(o.v) ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>
+                        {o.l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {advTab === 'performance' && (
+              <div className="grid grid-cols-2 divide-x divide-gray-100">
+                <div className="p-4 space-y-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Total Sales</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[{l:'No sales',r:[0,0]},{l:'1–10',r:[1,10]},{l:'11–50',r:[11,50]},{l:'51–100',r:[51,100]},{l:'100+',r:[100,1000000]}].map(p => {
+                      const on = advancedFilters.salesRange[0]===p.r[0]&&advancedFilters.salesRange[1]===p.r[1];
+                      return <button key={p.l} type="button" onClick={() => upd('salesRange', on?[0,0]:p.r as [number,number])} className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${on?'bg-blue-500 text-white border-blue-500':'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>{p.l}</button>;
+                    })}
+                  </div>
+                </div>
+                <div className="p-4 space-y-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Price Range</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[{l:'Under ₦5k',r:[0,5000]},{l:'₦5k–10k',r:[5000,10000]},{l:'₦10k–25k',r:[10000,25000]},{l:'₦25k–50k',r:[25000,50000]},{l:'₦50k+',r:[50000,10000000]}].map(p => {
+                      const on = advancedFilters.priceRange[0]===p.r[0]&&advancedFilters.priceRange[1]===p.r[1];
+                      return <button key={p.l} type="button" onClick={() => upd('priceRange', on?[0,0]:p.r as [number,number])} className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${on?'bg-blue-500 text-white border-blue-500':'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>{p.l}</button>;
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {advTab === 'dates' && (
+              <div className="grid grid-cols-2 divide-x divide-gray-100">
+                <div className="p-4 space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Date Added</p>
+                  <div className="flex gap-2">
+                    <input type="date" value={advancedFilters.dateRange.from} onChange={e => upd('dateRange',{...advancedFilters.dateRange,from:e.target.value})} className="flex-1 h-8 rounded border border-gray-200 px-2 text-xs outline-none focus:border-blue-400" />
+                    <span className="self-center text-gray-400 text-xs">–</span>
+                    <input type="date" value={advancedFilters.dateRange.to} onChange={e => upd('dateRange',{...advancedFilters.dateRange,to:e.target.value})} className="flex-1 h-8 rounded border border-gray-200 px-2 text-xs outline-none focus:border-blue-400" />
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {[{l:'Today',d:0},{l:'7d',d:7},{l:'30d',d:30},{l:'90d',d:90}].map(p => (
+                      <button key={p.l} type="button" onClick={() => { const to=new Date(); const from=new Date(); from.setDate(from.getDate()-p.d); upd('dateRange',{from:from.toISOString().split('T')[0],to:to.toISOString().split('T')[0]}); }}
+                        className="px-2 py-0.5 text-[10px] rounded bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors">{p.l}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="p-4 space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Last Sold</p>
+                  <div className="flex gap-2">
+                    <input type="date" value={advancedFilters.lastSoldRange.from} onChange={e => upd('lastSoldRange',{...advancedFilters.lastSoldRange,from:e.target.value})} className="flex-1 h-8 rounded border border-gray-200 px-2 text-xs outline-none focus:border-blue-400" />
+                    <span className="self-center text-gray-400 text-xs">–</span>
+                    <input type="date" value={advancedFilters.lastSoldRange.to} onChange={e => upd('lastSoldRange',{...advancedFilters.lastSoldRange,to:e.target.value})} className="flex-1 h-8 rounded border border-gray-200 px-2 text-xs outline-none focus:border-blue-400" />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // Initial filter state - expanded with all new filters
@@ -500,8 +1181,61 @@ export default function SubProductsTable({
   const [statusFilter, setStatusFilter] = useState('');
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'published' | 'draft' | 'hidden'>('all');
   const [advancedFilters, setAdvancedFilters] = useState<FilterConfig>(initialFilters);
-  const [viewMode, setViewMode] = useState<'list' | 'grid' | 'compact'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'grid' | 'compact'>('grid');
   const [gridSelection, setGridSelection] = useState<Record<string, boolean>>({});
+
+  // Odoo-style search panel state
+  const [spActiveFilters, setSpActiveFilters] = useState<Set<SPFilterKey>>(new Set());
+  const [spGroupBy, setSpGroupBy] = useState<SPGroupKey | null>(null);
+  const [spSavedSearches, setSpSavedSearches] = useState<SPSavedSearch[]>(() => spLoadSaved());
+  const [showSearchPanel, setShowSearchPanel] = useState(false);
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [searchChips, setSearchChips] = useState<SPSearchChip[]>([]);
+  const [showCustomFilterModal, setShowCustomFilterModal] = useState(false);
+  const [activeCustomRules, setActiveCustomRules] = useState<{ rules: CustomRule[]; matchMode: 'any'|'all'; includeArchived: boolean } | null>(null);
+  const searchPanelRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Close panels on outside click
+  useEffect(() => {
+    function handleOutsideClick(e: MouseEvent) {
+      if (searchPanelRef.current && !searchPanelRef.current.contains(e.target as Node)) {
+        setShowSearchPanel(false);
+        setShowSearchDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  function addSearchChip(field: SPChipField, label: string) {
+    if (!searchQuery.trim()) return;
+    const q = searchQuery.trim();
+    setSearchChips(prev => {
+      const existing = prev.find(c => c.field === field);
+      if (existing) {
+        // Merge into existing chip with OR
+        return prev.map(c => c.id === existing.id ? { ...c, query: `${c.query} or ${q}` } : c);
+      }
+      return [...prev, { id: Date.now().toString(), field, label, query: q }];
+    });
+    setSearchQuery('');
+    setShowSearchDropdown(false);
+    setShowSearchPanel(false);
+    searchInputRef.current?.focus();
+  }
+
+  function removeSearchChip(id: string) {
+    setSearchChips(prev => prev.filter(c => c.id !== id));
+  }
+
+  function clearAll() {
+    setSearchQuery('');
+    setSearchChips([]);
+    setSpActiveFilters(new Set());
+    setSpGroupBy(null);
+    setActiveCustomRules(null);
+  }
 
   // Page size based on view mode
   const currentPageSize = useMemo(() => {
@@ -539,13 +1273,27 @@ export default function SubProductsTable({
     // ═══════════════════════════════════════════════════════════
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      result = result.filter(p => 
+      result = result.filter(p =>
         p.sku?.toLowerCase().includes(query) ||
         p.product?.name?.toLowerCase().includes(query) ||
         p.product?.type?.toLowerCase().includes(query) ||
         p.product?.brand?.name?.toLowerCase().includes(query) ||
         p.product?.category?.name?.toLowerCase().includes(query)
       );
+    }
+
+    // Search chips — each chip's query may contain " or " terms (any term must match)
+    for (const chip of searchChips) {
+      const terms = chip.query.toLowerCase().split(' or ').map(t => t.trim()).filter(Boolean);
+      const matchesAny = (value: string | undefined) => !!value && terms.some(t => value.toLowerCase().includes(t));
+      switch (chip.field) {
+        case 'product':      result = result.filter(p => matchesAny(p.product?.name) || matchesAny(p.sku)); break;
+        case 'category':     result = result.filter(p => matchesAny(p.product?.category?.name)); break;
+        case 'vendor':       result = result.filter(p => matchesAny(p.product?.brand?.name)); break;
+        case 'pos_category': result = result.filter(p => matchesAny(p.product?.category?.name)); break;
+        case 'tags':         result = result.filter(p => matchesAny(p.product?.name)); break;
+        case 'attributes':   result = result.filter(p => matchesAny(p.sku) || p.sizes?.some((s: SizeVariant) => matchesAny(s.displayName || s.size))); break;
+      }
     }
     
     // ═══════════════════════════════════════════════════════════
@@ -826,8 +1574,44 @@ export default function SubProductsTable({
       result = result.filter(p => p.lastRestockDate && new Date(p.lastRestockDate) <= toDate);
     }
     
+    // ═══════════════════════════════════════════════════════════
+    // ODOO-STYLE SP FILTERS
+    // ═══════════════════════════════════════════════════════════
+    if (spActiveFilters.has('services'))             result = result.filter(p => p.product?.type?.toLowerCase().includes('service'));
+    if (spActiveFilters.has('goods'))                result = result.filter(p => !p.product?.type?.toLowerCase().includes('service') && !p.product?.type?.toLowerCase().includes('combo'));
+    if (spActiveFilters.has('combo'))                result = result.filter(p => p.product?.type?.toLowerCase().includes('combo'));
+    if (spActiveFilters.has('inventory_management')) result = result.filter(p => p.totalStock <= (p.reorderPoint || 5));
+    if (spActiveFilters.has('published'))            result = result.filter(p => p.isPublished);
+    if (spActiveFilters.has('available_in_pos'))     result = result.filter(p => p.visibleInPOS !== false);
+    if (spActiveFilters.has('has_sales'))            result = result.filter(p => (p.totalSold || 0) > 0);
+    if (spActiveFilters.has('warnings'))             result = result.filter(p => p.totalStock === 0 || p.totalStock <= 10);
+    if (spActiveFilters.has('archived'))             result = result.filter(p => p.status === 'discontinued' || p.status === 'archived');
+
+    // Custom rules
+    if (activeCustomRules && activeCustomRules.rules.length > 0) {
+      if (!activeCustomRules.includeArchived) result = result.filter(p => p.status !== 'archived' && p.status !== 'discontinued');
+      result = result.filter(p => {
+        const tests = activeCustomRules.rules.map(r => applyRule(p, r));
+        return activeCustomRules.matchMode === 'any' ? tests.some(Boolean) : tests.every(Boolean);
+      });
+    }
+
     return result;
-  }, [allSubProducts, searchQuery, statusFilter, visibilityFilter, advancedFilters]);
+  }, [allSubProducts, searchQuery, searchChips, statusFilter, visibilityFilter, advancedFilters, spActiveFilters, activeCustomRules]);
+
+  // Grouped products for Odoo group-by
+  const spGroupedProducts = useMemo((): [string, SubProductListItem[]][] | null => {
+    if (!spGroupBy) return null;
+    const map = new Map<string, SubProductListItem[]>();
+    filteredSubProducts.forEach(p => {
+      let key: string;
+      if (spGroupBy === 'product_type') key = p.product?.type?.replace(/_/g, ' ') || 'Unknown';
+      else key = p.product?.category?.name || 'Uncategorised';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(p);
+    });
+    return Array.from(map.entries());
+  }, [filteredSubProducts, spGroupBy]);
 
   // Calculate active filter count
   const activeFilterCount = useMemo(() => {
@@ -965,6 +1749,10 @@ export default function SubProductsTable({
     setStatusFilter('');
     setVisibilityFilter('all');
     setSearchQuery('');
+    setSearchChips([]);
+    setSpActiveFilters(new Set());
+    setSpGroupBy(null);
+    setActiveCustomRules(null);
   }, []);
 
   // Clear search
@@ -1125,126 +1913,202 @@ export default function SubProductsTable({
   }
 
   return (
-    <div className="space-y-6 pb-24">
-      {/* Stats Header */}
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
-        <StatsHeader stats={stats} activeFilter={statusFilter} onFilterChange={handleStatusFilter} />
-      </motion.div>
+    <div className="space-y-4 pb-24">
 
-      {/* Search & Filters Toolbar */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="bg-white rounded-2xl shadow-sm border border-gray-200 p-3 sm:p-4 space-y-3 sm:space-y-4"
-      >
-        {/* Mobile: Stack vertically, Desktop: Side by side */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-          {/* Search - Full width on mobile */}
-          <div className="w-full lg:w-auto lg:flex-1 lg:max-w-md">
-            <EnhancedSearch
-              value={searchQuery}
-              onChange={setSearchQuery}
-              onSearch={handleSearch}
-              onClear={handleClearSearch}
-              isSearching={isSearching}
-              recentSearches={recentSearches}
-            />
+
+      {/* ── Toolbar ── */}
+      <div className="rounded-2xl border border-gray-200 bg-white">
+        {/* Row 1: search + actions */}
+        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100">
+          {/* Odoo search bar */}
+          <div className="relative flex-1" ref={searchPanelRef}>
+            <div className={`flex flex-wrap items-center gap-1 rounded-xl border bg-white px-2 py-1.5 transition-all ${showSearchPanel || showSearchDropdown ? 'border-[#b20202] ring-1 ring-[#b20202]/10' : 'border-gray-200'}`}>
+              <PiMagnifyingGlass className="h-4 w-4 shrink-0 text-gray-400" />
+
+              {/* Filter panel chips */}
+              {Array.from(spActiveFilters).map(f => (
+                <span key={f} className="flex items-center gap-1 rounded-md bg-[#b20202]/10 px-2 py-0.5 text-[11px] font-semibold text-[#b20202]">
+                  <PiFunnelBold className="h-2.5 w-2.5" />
+                  {SP_FILTER_LABELS[f]}
+                  <button type="button" onClick={() => setSpActiveFilters(prev => { const n=new Set(prev); n.delete(f); return n; })} className="opacity-60 hover:opacity-100"><PiX className="h-3 w-3"/></button>
+                </span>
+              ))}
+
+              {/* Group chip */}
+              {spGroupBy && (
+                <span className="flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                  {SP_GROUP_LABELS[spGroupBy]}
+                  <button type="button" onClick={() => setSpGroupBy(null)} className="opacity-60 hover:opacity-100"><PiX className="h-3 w-3"/></button>
+                </span>
+              )}
+
+              {/* Custom rule chip */}
+              {activeCustomRules && (
+                <span className="flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-[11px] font-semibold text-purple-700">
+                  Custom Filter ({activeCustomRules.rules.length} rule{activeCustomRules.rules.length > 1 ? 's' : ''})
+                  <button type="button" onClick={() => setActiveCustomRules(null)} className="opacity-60 hover:opacity-100"><PiX className="h-3 w-3"/></button>
+                </span>
+              )}
+
+              {/* Search field chips */}
+              {searchChips.map(chip => (
+                <span key={chip.id} className="flex items-center gap-0 rounded-md overflow-hidden border border-gray-200 text-[11px] font-semibold">
+                  <span className="bg-gray-800 text-white px-2 py-0.5">{chip.label}</span>
+                  <span className="bg-white text-gray-700 px-2 py-0.5 italic">{chip.query}</span>
+                  <button type="button" onClick={() => removeSearchChip(chip.id)} className="bg-white px-1.5 py-0.5 text-gray-400 hover:text-red-500"><PiX className="h-3 w-3"/></button>
+                </span>
+              ))}
+
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={e => { setSearchQuery(e.target.value); setShowSearchDropdown(e.target.value.trim().length > 0); setShowSearchPanel(false); }}
+                onFocus={() => { if (!searchQuery.trim()) setShowSearchPanel(true); else setShowSearchDropdown(true); }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && searchQuery.trim()) { addSearchChip('product', 'Product'); }
+                  if (e.key === 'Backspace' && !searchQuery && searchChips.length > 0) { removeSearchChip(searchChips[searchChips.length - 1].id); }
+                  if (e.key === 'Escape') { setShowSearchPanel(false); setShowSearchDropdown(false); }
+                }}
+                placeholder={spActiveFilters.size === 0 && !spGroupBy && searchChips.length === 0 ? 'Search products, SKU…' : 'Search…'}
+                className="flex-1 min-w-[100px] bg-transparent text-sm outline-none py-0.5"
+              />
+
+              {(searchQuery || spActiveFilters.size > 0 || spGroupBy || searchChips.length > 0) && (
+                <button type="button" onClick={clearAll} className="text-gray-400 hover:text-gray-600"><PiX className="h-3.5 w-3.5"/></button>
+              )}
+              <button type="button" onClick={() => { setShowSearchPanel(v => !v); setShowSearchDropdown(false); }}
+                className={`flex items-center border-l border-gray-200 pl-2 text-xs font-semibold transition-colors ${showSearchPanel ? 'text-[#b20202]' : 'text-gray-500 hover:text-gray-700'}`}>
+                {showSearchPanel ? <PiCaretUp className="h-3.5 w-3.5"/> : <PiCaretDown className="h-3.5 w-3.5"/>}
+              </button>
+            </div>
+
+            {/* Typing suggestions dropdown */}
+            {showSearchDropdown && searchQuery.trim() && (
+              <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl bg-white shadow-xl ring-1 ring-black/8">
+                {SP_CHIP_FIELDS.map((cf, i) => (
+                  <button
+                    key={cf.field}
+                    type="button"
+                    onClick={() => addSearchChip(cf.field, cf.label)}
+                    className={`flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors hover:bg-gray-50 ${i === 0 ? 'bg-gray-50' : ''}`}
+                  >
+                    {i === 0 ? <PiCaretRight className="h-3 w-3 text-gray-400" /> : <span className="w-3" />}
+                    <span>Search <strong>{cf.label}</strong> for: <em className="text-[#b20202]">{searchQuery.trim()}</em></span>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => { setShowSearchDropdown(false); setShowCustomFilterModal(true); }}
+                  className="flex w-full items-center gap-2 border-t border-gray-100 bg-gray-50 px-4 py-2.5 text-sm font-medium text-teal-600 hover:bg-teal-50 transition-colors"
+                >
+                  Add Custom Filter
+                </button>
+              </div>
+            )}
+
+            {/* Filters / Group By / Favorites panel */}
+            {showSearchPanel && (
+              <OdooSearchPanel
+                activeFilters={spActiveFilters}
+                groupBy={spGroupBy}
+                savedSearches={spSavedSearches}
+                onToggleFilter={f => setSpActiveFilters(prev => { const n=new Set(prev); n.has(f)?n.delete(f):n.add(f); return n; })}
+                onSetGroupBy={g => setSpGroupBy(g)}
+                onSave={name => {
+                  const entry: SPSavedSearch = { id: Date.now().toString(), name, query: searchQuery, filters: Array.from(spActiveFilters), groupBy: spGroupBy, chips: searchChips };
+                  const updated = [...spSavedSearches, entry];
+                  setSpSavedSearches(updated); spPersistSaved(updated);
+                }}
+                onLoadSaved={s => { setSearchQuery(s.query); setSpActiveFilters(new Set(s.filters)); setSpGroupBy(s.groupBy); setSearchChips(s.chips || []); setShowSearchPanel(false); }}
+                onDeleteSaved={id => { const updated = spSavedSearches.filter(s => s.id !== id); setSpSavedSearches(updated); spPersistSaved(updated); }}
+                onClose={() => setShowSearchPanel(false)}
+                advancedFilters={advancedFilters}
+                onAdvancedFilterChange={handleAdvancedFilterChange}
+                onReset={handleResetFilters}
+                activeFilterCount={activeFilterCount}
+                onAddCustomFilter={() => { setShowSearchPanel(false); setShowCustomFilterModal(true); }}
+              />
+            )}
           </div>
 
-          {/* Filter Actions - Scrollable on mobile */}
-          <div className="flex items-center gap-2 sm:gap-3 flex-wrap lg:flex-nowrap">
-            {/* Quick Status Pills - Hidden on small mobile */}
-            <div className="hidden sm:block">
-              <StatusPillsInline
-                activeFilter={statusFilter}
-                onFilterChange={handleStatusFilter}
-                stats={stats}
-              />
-            </div>
+          {/* Visibility */}
+          <select
+            value={visibilityFilter}
+            onChange={e => setVisibilityFilter(e.target.value as any)}
+            className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-2.5 text-sm text-gray-600 outline-none focus:border-gray-400 focus:bg-white transition-colors"
+          >
+            <option value="all">All visibility</option>
+            <option value="published">Published ({stats.published || 0})</option>
+            <option value="draft">Draft ({stats.draft || 0})</option>
+          </select>
 
-            {/* Visibility Toggle */}
-            <VisibilityToggle
-              currentVisibility={visibilityFilter}
-              onVisibilityChange={setVisibilityFilter}
-              counts={{
-                published: stats.published || 0,
-                draft: stats.draft || 0,
-                hidden: 0,
-              }}
-            />
 
-            {/* Advanced Filters */}
-            <AdvancedFilters
-              filters={advancedFilters}
-              onFilterChange={handleAdvancedFilterChange}
-              onReset={handleResetFilters}
-              activeFilterCount={activeFilterCount}
-            />
 
-            {/* Column Toggle - Hidden on mobile for grid view */}
-            <div className={cn(viewMode === 'list' ? 'block' : 'hidden lg:block')}>
-              <ColumnToggle table={table} />
-            </div>
+          <div className="ml-auto flex items-center gap-2">
+            {/* Column toggle (list only) */}
+            {viewMode === 'list' && <ColumnToggle table={table} />}
 
-            {/* View Toggle */}
+            {/* View toggle */}
             <ViewToggle currentView={viewMode} onViewChange={handleViewModeChange} />
 
-            {/* Refresh Button */}
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+            {/* Refresh */}
+            <button
+              type="button"
               onClick={handleRefresh}
               disabled={isRefreshing}
-              className={cn(
-                "flex-shrink-0 flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-medium transition-all",
-                "bg-gradient-to-r from-blue-500 to-blue-600 text-white",
-                "hover:from-blue-600 hover:to-blue-700",
-                "shadow-lg shadow-blue-500/25 hover:shadow-xl",
-                "disabled:opacity-50 disabled:cursor-not-allowed"
-              )}
+              title="Refresh"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 transition-colors"
             >
-              <motion.div
-                animate={{ rotate: isRefreshing ? 360 : 0 }}
-                transition={{ repeat: isRefreshing ? Infinity : 0, duration: 1, ease: "linear" }}
-              >
-                <PiArrowsClockwiseBold className="w-4 h-4 sm:w-5 sm:h-5" />
-              </motion.div>
-              <span className="hidden sm:inline text-sm">{isRefreshing ? 'Loading...' : 'Refresh'}</span>
-            </motion.button>
+              <PiArrowsClockwiseBold className={cn('h-4 w-4', isRefreshing && 'animate-spin')} />
+            </button>
           </div>
         </div>
 
-        {/* Active Filters Bar */}
-        <AnimatePresence>
-          <ActiveFiltersBar
-            statusFilter={statusFilter}
-            visibilityFilter={visibilityFilter}
-            searchQuery={searchQuery}
-            advancedFilters={advancedFilters}
-            filterCount={activeFilterCount}
-            onClearStatus={() => setStatusFilter('')}
-            onClearVisibility={() => setVisibilityFilter('all')}
-            onClearSearch={handleClearSearch}
-            onClearAdvanced={handleClearAdvancedFilter}
-            onClearAll={handleResetFilters}
-          />
-        </AnimatePresence>
+        {/* Row 2: status filter pills + result count */}
+        <div className="flex items-center gap-1.5 px-3 py-2">
+          {[
+            { id: '', label: 'All', count: stats.total },
+            { id: 'active', label: 'Active', count: stats.active },
+            { id: 'low_stock', label: 'Low Stock', count: stats.lowStock },
+            { id: 'out_of_stock', label: 'Out of Stock', count: stats.outOfStock },
+          ].map(f => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => handleStatusFilter(f.id)}
+              className={cn(
+                'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-all',
+                statusFilter === f.id
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              )}
+            >
+              {f.label}
+              <span className={cn(
+                'rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums',
+                statusFilter === f.id ? 'bg-white/20' : 'bg-white text-gray-500'
+              )}>{f.count}</span>
+            </button>
+          ))}
 
-        {/* Results count */}
-        <Flex align="center" justify="between" className="pt-2 border-t border-gray-100 flex-col sm:flex-row gap-2">
-          <Text className="text-xs sm:text-sm text-gray-500">
-            Showing <span className="font-semibold text-gray-800">{filteredSubProducts.length}</span> of{' '}
-            <span className="font-semibold text-gray-800">{allSubProducts.length}</span> products
-          </Text>
-          
-          <Flex gap="2" className="text-[10px] sm:text-xs text-gray-400 hidden sm:flex">
-            <span><kbd className="px-1 sm:px-1.5 py-0.5 bg-gray-100 rounded text-[8px] sm:text-[10px] font-mono">/</kbd> Search</span>
-            <span><kbd className="px-1 sm:px-1.5 py-0.5 bg-gray-100 rounded text-[8px] sm:text-[10px] font-mono">R</kbd> Refresh</span>
-            <span><kbd className="px-1 sm:px-1.5 py-0.5 bg-gray-100 rounded text-[8px] sm:text-[10px] font-mono">Esc</kbd> Clear</span>
-          </Flex>
-        </Flex>
-      </motion.div>
+          {/* Active filter chips */}
+          {activeFilterCount > 0 && (
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              className="ml-1 flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-2.5 py-1 text-[11px] text-gray-500 hover:border-red-300 hover:text-red-500 transition-colors"
+            >
+              <PiXCircleBold className="h-3 w-3" />
+              {activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''} active
+            </button>
+          )}
+
+          <span className="ml-auto text-xs text-gray-400">
+            {filteredSubProducts.length} of {allSubProducts.length} products
+          </span>
+        </div>
+      </div>
 
       {/* Bulk Actions Bar */}
       <AnimatePresence>
@@ -1275,103 +2139,44 @@ export default function SubProductsTable({
           transition={{ delay: 0.3 }}
           className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-gray-200 overflow-hidden"
         >
-          {/* Grid Selection Header */}
-          {filteredSubProducts.length > 0 && (
-            <div className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 sm:px-6 py-2 sm:py-3 flex items-center justify-between gap-2">
-              <Flex align="center" gap="2" className="gap-2 sm:gap-3">
-                <Checkbox
-                  checked={
-                    filteredSubProducts.length > 0 &&
-                    filteredSubProducts.every(sp => gridSelection[sp._id || sp.id])
-                  }
-                  ref={(el) => {
-                    if (el) {
-                      const isAllSelected = filteredSubProducts.every(sp => gridSelection[sp._id || sp.id]);
-                      el.indeterminate = isAllSelected 
-                        ? false 
-                        : filteredSubProducts.some(sp => gridSelection[sp._id || sp.id]);
-                    }
-                  }}
-                  onChange={(e) => {
-                    const checked = (e.target as HTMLInputElement).checked;
-                    if (checked) {
-                      const allIds: Record<string, boolean> = {};
-                      filteredSubProducts.forEach(sp => {
-                        allIds[sp._id || sp.id] = true;
-                      });
-                      setGridSelection(allIds);
-                    } else {
-                      setGridSelection({});
-                    }
-                  }}
-                />
-                <Text className="text-xs sm:text-sm text-gray-600">
-                  {Object.keys(gridSelection).filter(id => gridSelection[id]).length > 0 ? (
-                    <span className="font-semibold">
-                      {Object.keys(gridSelection).filter(id => gridSelection[id]).length} <span className="hidden xs:inline">selected</span>
-                    </span>
-                  ) : (
-                    <span className="hidden xs:inline">Select all</span>
-                  )}
-                </Text>
-              </Flex>
-              
-              <Flex align="center" gap="1" className="gap-1 sm:gap-2 overflow-x-auto">
-                {Object.keys(gridSelection).filter(id => gridSelection[id]).length > 0 ? (
-                  <>
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={handleBulkExport}
-                      className="flex-shrink-0 flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
-                    >
-                      <PiDownloadBold className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                      <span className="hidden xs:inline">Export</span>
-                    </motion.button>
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={handleBulkDelete}
-                      className="flex-shrink-0 flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium bg-red-50 text-red-600 rounded-lg hover:bg-red-100"
-                    >
-                      <PiTrashBold className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                      <span className="hidden xs:inline">Delete</span>
-                    </motion.button>
-                  </>
-                ) : null}
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => {
-                    const visibleIds = filteredSubProducts.slice(0, currentPageSize * (table.getState().pagination.pageIndex + 1)).map(sp => sp._id || sp.id);
-                    const newSelection: Record<string, boolean> = { ...gridSelection };
-                    visibleIds.forEach(id => {
-                      newSelection[id] = !newSelection[id];
-                    });
-                    setGridSelection(newSelection);
-                  }}
-                  className="hidden sm:block text-xs text-blue-600 hover:text-blue-700 font-medium px-2 py-1 rounded hover:bg-blue-50"
-                >
-                  Invert
-                </motion.button>
-                {Object.keys(gridSelection).filter(id => gridSelection[id]).length > 0 && (
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => setGridSelection({})}
-                    className="text-[10px] sm:text-xs text-gray-500 hover:text-gray-700 px-1.5 sm:px-2 py-1 rounded hover:bg-gray-100"
-                  >
-                    Clear
-                  </motion.button>
-                )}
-              </Flex>
-            </div>
-          )}
           
+          {spGroupedProducts ? (
+            /* Grouped view */
+            <div className="p-3 sm:p-6 space-y-6">
+              {spGroupedProducts.map(([groupName, groupItems]) => (
+                <div key={groupName}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <PiStack className="h-4 w-4 text-gray-400" />
+                    <span className="text-sm font-bold text-gray-700 capitalize">{groupName}</span>
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-500">{groupItems.length}</span>
+                  </div>
+                  <div className={cn(
+                    "grid gap-3 sm:gap-4",
+                    viewMode === 'grid'
+                      ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
+                      : "grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8"
+                  )}>
+                    {groupItems.map((subProduct, index) => {
+                      const productId = subProduct._id || subProduct.id;
+                      return (
+                        <motion.div key={productId} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03 }}>
+                          {viewMode === 'grid' ? (
+                            <ProductGridCard product={subProduct} isSelected={false} onSelect={() => {}} onEdit={(p) => console.log('Edit', p)} onView={(p) => console.log('View', p)} onToggleVisibility={(p) => console.log('Toggle visibility', p)} />
+                          ) : (
+                            <ProductGridCardCompact product={subProduct} isSelected={false} onSelect={() => {}} />
+                          )}
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
           <div className={cn(
             "grid gap-3 sm:gap-4 p-3 sm:p-6",
-            viewMode === 'grid' 
-              ? "grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5" 
+            viewMode === 'grid'
+              ? "grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
               : "grid-cols-2 xs:grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7"
           )}>
             {filteredSubProducts.slice(0, currentPageSize * (table.getState().pagination.pageIndex + 1)).map((subProduct, index) => {
@@ -1386,13 +2191,8 @@ export default function SubProductsTable({
                 {viewMode === 'grid' ? (
                   <ProductGridCard
                     product={subProduct}
-                    isSelected={!!gridSelection[productId]}
-                    onSelect={() => {
-                      setGridSelection(prev => ({
-                        ...prev,
-                        [productId]: !prev[productId],
-                      }));
-                    }}
+                    isSelected={false}
+                    onSelect={() => {}}
                     onEdit={(p) => console.log('Edit', p)}
                     onView={(p) => console.log('View', p)}
                     onToggleVisibility={(p) => console.log('Toggle visibility', p)}
@@ -1400,19 +2200,15 @@ export default function SubProductsTable({
                 ) : (
                   <ProductGridCardCompact
                     product={subProduct}
-                    isSelected={!!gridSelection[productId]}
-                    onSelect={() => {
-                      setGridSelection(prev => ({
-                        ...prev,
-                        [productId]: !prev[productId],
-                      }));
-                    }}
+                    isSelected={false}
+                    onSelect={() => {}}
                   />
                 )}
               </motion.div>
               );
             })}
           </div>
+          )}
         </motion.div>
       ) : (
         /* List View */
@@ -1532,12 +2328,23 @@ export default function SubProductsTable({
           />
           
           {!hidePagination && (
-            <TablePagination 
-              table={table} 
-              className={cn('p-4 border-t border-gray-100 bg-gray-50/50', paginationClassName)} 
+            <TablePagination
+              table={table}
+              className={cn('p-4 border-t border-gray-100 bg-gray-50/50', paginationClassName)}
             />
           )}
         </motion.div>
+      )}
+
+      {/* Custom Filter Modal */}
+      {showCustomFilterModal && (
+        <CustomFilterModal
+          onAdd={(rules, matchMode, includeArchived) => {
+            setActiveCustomRules({ rules, matchMode, includeArchived });
+            setShowCustomFilterModal(false);
+          }}
+          onCancel={() => setShowCustomFilterModal(false)}
+        />
       )}
     </div>
   );

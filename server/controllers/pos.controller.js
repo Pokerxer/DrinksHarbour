@@ -7,10 +7,195 @@ const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Tenant = require('../models/Tenant');
-const Size = require('../models/Size');
-const SubProduct = require('../models/SubProduct');
+const Size            = require('../models/Size');
+const SubProduct      = require('../models/SubProduct');
+const InventoryMovement = require('../models/InventoryMovement');
 const { generateOrderNumber, generateReceiptNumber, generateReturnNumber } = require('../utils/orderUtils');
 const { calcPlatformCostPrice, calcPlatformSellingPrice, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
+
+// ─── Stock helpers ────────────────────────────────────────────────────────────
+
+/**
+ * Resolve the correct availability string from a stock count and threshold.
+ */
+function resolveAvailability(stock, lowStockThreshold = 6) {
+  if (stock <= 0)                    return 'out_of_stock';
+  if (stock <= lowStockThreshold)    return 'low_stock';
+  return 'available';
+}
+
+/**
+ * Resolve the SubProduct status from its availableStock.
+ */
+function resolveSubProductStatus(availableStock, lowStockThreshold = 10) {
+  if (availableStock <= 0)                 return 'out_of_stock';
+  if (availableStock <= lowStockThreshold) return 'low_stock';
+  return 'active';
+}
+
+/**
+ * Deduct stock for one order line (size-level or subproduct-level).
+ * Returns the deducted Size/SubProduct document.
+ * Creates an InventoryMovement audit record.
+ * Throws if insufficient stock.
+ */
+async function deductStock({ subProductId, sizeId, quantity, tenantId, staffId, receiptNumber, productId, finalPrice, costPrice, allowOverselling = false }) {
+  let deductedDoc = null;
+
+  if (sizeId) {
+    // ── Size-level deduction ──────────────────────────────────────────────────
+    const sizeFilter = allowOverselling
+      ? { _id: sizeId }
+      : { _id: sizeId, availableStock: { $gte: quantity } };
+
+    deductedDoc = await Size.findOneAndUpdate(
+      sizeFilter,
+      { $inc: { availableStock: -quantity, stock: -quantity } },
+      { new: true }
+    );
+    if (!deductedDoc) throw new Error('Insufficient stock for this size');
+
+    // Update Size.availability
+    await Size.findByIdAndUpdate(sizeId, {
+      availability: resolveAvailability(deductedDoc.stock, deductedDoc.lowStockThreshold),
+    });
+
+    // Also decrement SubProduct aggregate stock
+    const spUpdated = await SubProduct.findByIdAndUpdate(
+      subProductId,
+      {
+        $inc: { availableStock: -quantity, totalStock: -quantity, totalSold: quantity },
+      },
+      { new: true }
+    );
+    if (spUpdated) {
+      await SubProduct.findByIdAndUpdate(subProductId, {
+        stockStatus: resolveSubProductStatus(spUpdated.availableStock, spUpdated.lowStockThreshold),
+        status: spUpdated.availableStock <= 0 ? 'out_of_stock'
+              : spUpdated.availableStock <= spUpdated.lowStockThreshold ? 'low_stock'
+              : 'active',
+      });
+    }
+  } else {
+    // ── SubProduct-level deduction (no sizes) ─────────────────────────────────
+    const spFilter = allowOverselling
+      ? { _id: subProductId }
+      : { _id: subProductId, availableStock: { $gte: quantity } };
+
+    deductedDoc = await SubProduct.findOneAndUpdate(
+      spFilter,
+      { $inc: { availableStock: -quantity, totalStock: -quantity, totalSold: quantity } },
+      { new: true }
+    );
+    if (!deductedDoc) throw new Error('Insufficient stock');
+
+    await SubProduct.findByIdAndUpdate(subProductId, {
+      stockStatus: resolveSubProductStatus(deductedDoc.availableStock, deductedDoc.lowStockThreshold),
+      status: deductedDoc.availableStock <= 0 ? 'out_of_stock'
+            : deductedDoc.availableStock <= deductedDoc.lowStockThreshold ? 'low_stock'
+            : 'active',
+    });
+  }
+
+  // ── Inventory movement audit record ────────────────────────────────────────
+  const stockBefore = sizeId
+    ? deductedDoc.availableStock + quantity   // pre-deduction value
+    : deductedDoc.availableStock + quantity;
+
+  await InventoryMovement.create({
+    subProduct:    subProductId,
+    tenant:        tenantId,
+    product:       productId || undefined,
+    size:          sizeId    || undefined,
+    type:          'sold',
+    category:      'out',
+    quantity,
+    quantityBefore: stockBefore,
+    quantityAfter:  deductedDoc.availableStock,
+    reference:      receiptNumber,
+    referenceType:  'order',
+    sellingPrice:   finalPrice,
+    unitCost:       costPrice || 0,
+    totalCost:      (costPrice || 0) * quantity,
+    performedBy:    staffId,
+    source:         'order',
+    status:         'confirmed',
+    notes:          `POS sale — order ${receiptNumber}`,
+  }).catch(() => {}); // Non-blocking — audit failure should not fail the order
+
+  return deductedDoc;
+}
+
+/**
+ * Restore stock for one refund line.
+ * Creates an InventoryMovement audit record.
+ */
+async function restoreStock({ subProductId, sizeId, quantity, tenantId, staffId, returnNumber, productId, unitPrice }) {
+  if (sizeId) {
+    const sizeAfter = await Size.findByIdAndUpdate(
+      sizeId,
+      { $inc: { availableStock: quantity, stock: quantity } },
+      { new: true }
+    );
+    if (sizeAfter) {
+      await Size.findByIdAndUpdate(sizeId, {
+        availability: resolveAvailability(sizeAfter.stock, sizeAfter.lowStockThreshold),
+      });
+    }
+
+    // Also restore SubProduct aggregate stock
+    const spAfter = await SubProduct.findByIdAndUpdate(
+      subProductId,
+      { $inc: { availableStock: quantity, totalStock: quantity } },
+      { new: true }
+    );
+    if (spAfter) {
+      await SubProduct.findByIdAndUpdate(subProductId, {
+        stockStatus: resolveSubProductStatus(spAfter.availableStock, spAfter.lowStockThreshold),
+        status: spAfter.availableStock <= 0 ? 'out_of_stock'
+              : spAfter.availableStock <= spAfter.lowStockThreshold ? 'low_stock'
+              : 'active',
+      });
+    }
+
+    // Audit
+    await InventoryMovement.create({
+      subProduct: subProductId, tenant: tenantId, product: productId || undefined,
+      size: sizeId, type: 'return', category: 'in',
+      quantity,
+      quantityBefore: (sizeAfter?.availableStock ?? 0) - quantity,
+      quantityAfter:  sizeAfter?.availableStock ?? 0,
+      reference: returnNumber, referenceType: 'return',
+      sellingPrice: unitPrice || 0,
+      performedBy: staffId, source: 'return', status: 'confirmed',
+      notes: `POS return — ${returnNumber}`,
+    }).catch(() => {});
+  } else {
+    const spAfter = await SubProduct.findByIdAndUpdate(
+      subProductId,
+      { $inc: { availableStock: quantity, totalStock: quantity } },
+      { new: true }
+    );
+    if (spAfter) {
+      await SubProduct.findByIdAndUpdate(subProductId, {
+        stockStatus: resolveSubProductStatus(spAfter.availableStock, spAfter.lowStockThreshold),
+        status: spAfter.availableStock <= 0 ? 'out_of_stock'
+              : spAfter.availableStock <= spAfter.lowStockThreshold ? 'low_stock'
+              : 'active',
+      });
+    }
+    await InventoryMovement.create({
+      subProduct: subProductId, tenant: tenantId,
+      type: 'return', category: 'in',
+      quantity,
+      quantityBefore: (spAfter?.availableStock ?? 0) - quantity,
+      quantityAfter:  spAfter?.availableStock ?? 0,
+      reference: returnNumber, referenceType: 'return',
+      performedBy: staffId, source: 'return', status: 'confirmed',
+      notes: `POS return — ${returnNumber}`,
+    }).catch(() => {});
+  }
+}
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -191,12 +376,18 @@ exports.getClosingControl = asyncHandler(async (req, res) => {
   // Re-calculate theoretical values from all orders placed in this session window
   const stats = await getSessionOrderStats(tenantId, session.openedAt, new Date());
 
+  // Net cash movements (in - out)
+  const movements   = session.cashMovements || [];
+  const totalCashIn  = movements.filter(m => m.type === 'in').reduce((s, m) => s + m.amount, 0);
+  const totalCashOut = movements.filter(m => m.type === 'out').reduce((s, m) => s + m.amount, 0);
+  const netCashMove  = totalCashIn - totalCashOut;
+
   const methods = PAYMENT_METHODS.filter(m => m !== 'split').map(method => {
     const orderTotal = stats.breakdown?.[method]?.total || 0;
     const orderCount = stats.breakdown?.[method]?.count || 0;
-    // For cash: theoretical = opening + cash received
+    // For cash: theoretical = opening + cash sales + net cash movements
     const theoretical = method === 'cash'
-      ? session.openingCash + orderTotal
+      ? session.openingCash + orderTotal + netCashMove
       : orderTotal;
 
     return {
@@ -211,11 +402,15 @@ exports.getClosingControl = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: {
-      sessionId:   session._id,
-      openedAt:    session.openedAt,
-      openingCash: session.openingCash,
-      totalSales:  stats.totalSales,
-      orderCount:  stats.orderCount,
+      sessionId:    session._id,
+      openedAt:     session.openedAt,
+      openingCash:  session.openingCash,
+      totalSales:   stats.totalSales,
+      orderCount:   stats.orderCount,
+      totalCashIn,
+      totalCashOut,
+      netCashMove,
+      cashMovements: movements,
       methods,
     },
   });
@@ -247,11 +442,17 @@ exports.closeSession = asyncHandler(async (req, res) => {
   // Final order stats
   const stats = await getSessionOrderStats(tenantId, session.openedAt, closedAt);
 
+  // Net cash movements
+  const movements    = session.cashMovements || [];
+  const totalCashIn  = movements.filter(m => m.type === 'in').reduce((s, m) => s + m.amount, 0);
+  const totalCashOut = movements.filter(m => m.type === 'out').reduce((s, m) => s + m.amount, 0);
+  const netCashMove  = totalCashIn - totalCashOut;
+
   // Build methodBalances with theoretical + counted + difference
   const methodBalances = PAYMENT_METHODS.filter(m => m !== 'split').map(method => {
     const orderTotal = stats.breakdown?.[method]?.total || 0;
     const theoretical = method === 'cash'
-      ? session.openingCash + orderTotal
+      ? session.openingCash + orderTotal + netCashMove
       : orderTotal;
 
     const countedEntry = countedBalances.find(b => b.method === method);
@@ -300,6 +501,92 @@ exports.closeSession = asyncHandler(async (req, res) => {
   await session.populate('openedBy closedBy activeCashier', 'firstName lastName email posName');
 
   res.json({ success: true, data: { session, hasDifference } });
+});
+
+// ─── Cash In / Cash Out ───────────────────────────────────────────────────────
+
+/**
+ * POST /api/pos/sessions/:id/cash-move
+ * Body: { type: 'in'|'out', amount: number, reason?: string }
+ *
+ * Records a manual cash movement against the session.
+ * Adjusts the theoretical cash balance used in closing control.
+ */
+exports.recordCashMove = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  const session  = await POSSession.findOne({ _id: req.params.id, tenant: tenantId, status: 'open' });
+  if (!session) return res.status(404).json({ success: false, message: 'Session not found or not open' });
+
+  const { type, amount, reason = '' } = req.body;
+
+  if (!['in', 'out'].includes(type)) {
+    return res.status(400).json({ success: false, message: "type must be 'in' or 'out'" });
+  }
+  const num = Number(amount);
+  if (!num || num <= 0) {
+    return res.status(400).json({ success: false, message: 'amount must be a positive number' });
+  }
+
+  // Prevent cash-out exceeding current theoretical cash balance
+  if (type === 'out') {
+    const movements   = session.cashMovements || [];
+    const totalCashIn  = movements.filter(m => m.type === 'in').reduce((s, m) => s + m.amount, 0);
+    const totalCashOut = movements.filter(m => m.type === 'out').reduce((s, m) => s + m.amount, 0);
+    const netMoves     = totalCashIn - totalCashOut;
+    // Get cash sales from orders in this session
+    const stats = await getSessionOrderStats(tenantId, session.openedAt, new Date());
+    const cashAvailable = session.openingCash + (stats.breakdown?.cash?.total || 0) + netMoves;
+    if (num > cashAvailable) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient cash. Available: ${cashAvailable.toFixed(2)}`,
+      });
+    }
+  }
+
+  const movement = {
+    type,
+    amount: parseFloat(num.toFixed(2)),
+    reason: reason.trim(),
+    performedBy: req.posUser._id,
+    performedAt: new Date(),
+  };
+
+  session.cashMovements.push(movement);
+
+  // Also update methodBalances theoretical for cash if session already has methodBalances
+  if (session.methodBalances?.length) {
+    const cashBalance = session.methodBalances.find(m => m.method === 'cash');
+    if (cashBalance) {
+      cashBalance.theoretical += type === 'in' ? num : -num;
+    }
+  }
+
+  await session.save();
+  await session.populate('cashMovements.performedBy', 'firstName lastName posName');
+
+  const added = session.cashMovements[session.cashMovements.length - 1];
+
+  res.status(201).json({
+    success: true,
+    data: {
+      movement: added,
+      cashMovements: session.cashMovements,
+    },
+  });
+});
+
+/**
+ * GET /api/pos/sessions/:id/cash-moves
+ */
+exports.getCashMoves = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  const session  = await POSSession.findOne({ _id: req.params.id, tenant: tenantId })
+    .populate('cashMovements.performedBy', 'firstName lastName posName')
+    .select('cashMovements status');
+  if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
+
+  res.json({ success: true, data: { cashMovements: session.cashMovements || [] } });
 });
 
 // ─── Switch Cashier (mid-session) ────────────────────────────────────────────
@@ -397,17 +684,22 @@ exports.getCurrentSession = asyncHandler(async (req, res) => {
  */
 exports.getSessionList = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
-  const page  = Math.max(1, parseInt(req.query.page) || 1);
-  const limit = Math.min(50, parseInt(req.query.limit) || 20);
-  const skip  = (page - 1) * limit;
+  const page   = Math.max(1, parseInt(req.query.page) || 1);
+  const limit  = Math.min(50, parseInt(req.query.limit) || 20);
+  const skip   = (page - 1) * limit;
+  const status = req.query.status; // 'open' | 'closed' | undefined
+
+  const filter = { tenant: tenantId };
+  if (status === 'open' || status === 'closed') filter.status = status;
 
   const [sessions, total] = await Promise.all([
-    POSSession.find({ tenant: tenantId })
-      .populate('openedBy closedBy activeCashier', 'firstName lastName posName')
+    POSSession.find(filter)
+      .populate('openedBy closedBy activeCashier', 'firstName lastName posName avatar')
+      .populate({ path: 'cashMovements.performedBy', select: 'firstName lastName posName', strictPopulate: false })
       .sort({ openedAt: -1 })
       .skip(skip)
       .limit(limit),
-    POSSession.countDocuments({ tenant: tenantId }),
+    POSSession.countDocuments(filter),
   ]);
 
   res.json({ success: true, data: { sessions, total, page, limit } });
@@ -646,6 +938,79 @@ exports.deleteCashier = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Cashier removed' });
 });
 
+// ─── Tenant Bank Accounts ────────────────────────────────────────────────────
+
+/**
+ * PATCH /api/pos/tenant/bank-accounts
+ * Body: { bankAccounts: [{ bankName, accountNumber, accountName }] }
+ * Replaces the tenant's full bank account list.
+ */
+exports.updateTenantBankAccounts = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  const { bankAccounts } = req.body;
+  if (!Array.isArray(bankAccounts)) {
+    return res.status(400).json({ success: false, message: 'bankAccounts must be an array' });
+  }
+
+  const cleaned = bankAccounts
+    .filter((b) => b.bankName || b.accountNumber)
+    .map((b) => ({
+      bankName:      (b.bankName      || '').trim(),
+      accountNumber: (b.accountNumber || '').trim(),
+      accountName:   (b.accountName   || '').trim(),
+    }));
+
+  const tenant = await Tenant.findByIdAndUpdate(
+    tenantId,
+    { bankAccounts: cleaned },
+    { new: true, select: 'bankAccounts name' }
+  );
+
+  res.json({ success: true, data: { bankAccounts: tenant.bankAccounts } });
+});
+
+/**
+ * GET /api/pos/tenant/bank-accounts
+ */
+exports.getTenantBankAccounts = asyncHandler(async (req, res) => {
+  const tenant = await Tenant.findById(req.tenant?._id).select('bankAccounts');
+  res.json({ success: true, data: { bankAccounts: tenant?.bankAccounts || [] } });
+});
+
+/**
+ * GET /api/pos/tenant/settings
+ */
+exports.getPOSSettings = asyncHandler(async (req, res) => {
+  const tenant = await Tenant.findById(req.tenant?._id).select('posSettings');
+  res.json({ success: true, data: { posSettings: tenant?.posSettings || {} } });
+});
+
+/**
+ * PATCH /api/pos/tenant/settings
+ * Body: { posSettings: { allowOverselling?: boolean } }
+ */
+exports.updatePOSSettings = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  const { posSettings = {} } = req.body;
+
+  const allowed = {};
+  if (typeof posSettings.allowOverselling === 'boolean') {
+    allowed['posSettings.allowOverselling'] = posSettings.allowOverselling;
+  }
+
+  if (Object.keys(allowed).length === 0) {
+    return res.status(400).json({ success: false, message: 'No valid settings provided' });
+  }
+
+  const tenant = await Tenant.findByIdAndUpdate(
+    tenantId,
+    { $set: allowed },
+    { new: true, select: 'posSettings' }
+  );
+
+  res.json({ success: true, data: { posSettings: tenant?.posSettings || {} } });
+});
+
 // ─── POS Staff Login ─────────────────────────────────────────────────────────
 /**
  * POST /api/pos/auth/staff-login
@@ -713,7 +1078,9 @@ exports.staffLogin = asyncHandler(async (req, res) => {
         slug:         tenant.slug,
         name:         tenant.name,
         primaryColor: tenant.primaryColor,
-        logo:         tenant.logo,
+        logo:         tenant.logo?.url || null,
+        bankAccounts: tenant.bankAccounts || [],
+        posSettings:  tenant.posSettings  || {},
       },
     },
   });
@@ -811,7 +1178,7 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
       select:   'name images type brand platformMarkup platformDiscount',
       populate: { path: 'brand', select: 'name' },
     })
-    .populate('sizes', 'displayName sellingPrice costPrice availableStock stock _id sku')
+    .populate('sizes', 'displayName sellingPrice costPrice availableStock stock _id sku barcode')
     .populate({ path: 'vendor', select: 'firstName lastName email posName', strictPopulate: false })
     .sort({ isFeaturedByTenant: -1, totalSold: -1, availableStock: -1 })
     .limit(Number(limit))
@@ -888,40 +1255,21 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     return res.status(403).json({ success: false, message: 'Price override permission required' });
   }
 
-  // Atomic stock deduction — one item at a time
-  const deductedItems = [];
-  const orderItems = [];
+  // Resolve receipt number early so audit records can reference it
+  const orderNumber   = await generateOrderNumber();
+  const receiptNumber = await generateReceiptNumber();
+
+  // Read tenant POS settings for stock enforcement
+  const allowOverselling = req.tenant?.posSettings?.allowOverselling === true;
+
+  // Atomic stock deduction with full audit trail
+  const deductedItems = [];  // for rollback on failure
+  const orderItems    = [];
 
   try {
     for (const item of items) {
       const { subProductId, sizeId, quantity } = item;
       if (!quantity || quantity < 1) continue;
-
-      let deductedSize = null;
-
-      if (sizeId) {
-        // Size-specific stock deduction
-        deductedSize = await Size.findOneAndUpdate(
-          { _id: sizeId, availableStock: { $gte: quantity } },
-          { $inc: { availableStock: -quantity, stock: -quantity } },
-          { new: true }
-        );
-        if (!deductedSize) {
-          throw new Error(`Insufficient stock for item (size not available)`);
-        }
-        deductedItems.push({ type: 'size', id: sizeId, quantity });
-      } else {
-        // Top-level subproduct stock
-        const spStock = await SubProduct.findOneAndUpdate(
-          { _id: subProductId, availableStock: { $gte: quantity } },
-          { $inc: { availableStock: -quantity, totalStock: -quantity } },
-          { new: true }
-        );
-        if (!spStock) {
-          throw new Error(`Insufficient stock for item`);
-        }
-        deductedItems.push({ type: 'subproduct', id: subProductId, quantity });
-      }
 
       // Fetch subproduct for price resolution and order line data
       const sp = await SubProduct.findById(subProductId)
@@ -930,11 +1278,42 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         .lean();
 
       // Server-side price: run through same pipeline as the website / cart
-      const pricing     = computePOSPricing(sp, deductedSize, req.tenant);
+      const pricing     = computePOSPricing(sp, null, req.tenant);
       const overrideKey = sizeId ? `${subProductId}_${sizeId}` : subProductId;
-      const finalPrice  = hasOverrides && priceOverrides[overrideKey] != null
+      let finalPrice    = hasOverrides && priceOverrides[overrideKey] != null
         ? Number(priceOverrides[overrideKey])
         : pricing.sellingPrice;
+
+      // If sized, re-price with size doc for accurate cost
+      let sizePricing = pricing;
+      if (sizeId) {
+        const sizeDoc = await Size.findById(sizeId).lean();
+        sizePricing   = computePOSPricing(sp, sizeDoc, req.tenant);
+        if (!(hasOverrides && priceOverrides[overrideKey] != null)) {
+          finalPrice = sizePricing.sellingPrice;
+        }
+      }
+
+      // Deduct stock (throws on insufficient stock unless overselling is allowed)
+      const deductedDoc = await deductStock({
+        subProductId,
+        sizeId:          sizeId || null,
+        quantity,
+        tenantId,
+        staffId,
+        receiptNumber,
+        productId:       sp?.product?._id,
+        finalPrice,
+        costPrice:       sizePricing.costPrice,
+        allowOverselling,
+      });
+
+      deductedItems.push({
+        type:          sizeId ? 'size' : 'subproduct',
+        sizeId:        sizeId || null,
+        subProductId,
+        quantity,
+      });
 
       // Compute per-line revenue fields required by Order schema
       const itemDiscountPct    = Math.max(0, Math.min(100, item.discount || 0));
@@ -942,9 +1321,9 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       const itemDiscountAmount = parseFloat((lineGross * itemDiscountPct / 100).toFixed(2));
       const lineSubtotal       = parseFloat((lineGross - itemDiscountAmount).toFixed(2));
 
-      const tenantRevShare = pricing.revenueModel === 'commission'
-        ? parseFloat((lineSubtotal * (1 - pricing.commissionPct / 100)).toFixed(2))
-        : parseFloat((pricing.costPrice * quantity).toFixed(2));
+      const tenantRevShare = sizePricing.revenueModel === 'commission'
+        ? parseFloat((lineSubtotal * (1 - sizePricing.commissionPct / 100)).toFixed(2))
+        : parseFloat((sizePricing.costPrice * quantity).toFixed(2));
 
       orderItems.push({
         product:               sp?.product?._id || subProductId,
@@ -954,25 +1333,25 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         priceAtPurchase:       finalPrice,
         itemSubtotal:          lineSubtotal,
         discountAmount:        itemDiscountAmount,
-        vendorPriceAtPurchase: pricing.costPrice,
+        vendorPriceAtPurchase: sizePricing.costPrice,
         tenantRevenueShare:    tenantRevShare,
         platformCommission:    parseFloat((lineSubtotal - tenantRevShare).toFixed(2)),
-        tenantRevenueModel:    pricing.revenueModel,
-        revenueRateAtPurchase: pricing.revenueModel === 'commission' ? pricing.commissionPct : pricing.markupPct,
+        tenantRevenueModel:    sizePricing.revenueModel,
+        revenueRateAtPurchase: sizePricing.revenueModel === 'commission' ? sizePricing.commissionPct : sizePricing.markupPct,
         tenant:                tenantId,
-        // Display fields for receipt (not persisted — schema strips unknown fields)
         _name:    sp?.product?.name || 'Product',
         _variant: item.variant || '',
         _sku:     item.sku || sp?.sku || '',
       });
     }
   } catch (stockErr) {
-    // Rollback already-deducted stock
+    // Rollback already-deducted stock on failure
     for (const d of deductedItems) {
-      if (d.type === 'size') {
-        await Size.findByIdAndUpdate(d.id, { $inc: { availableStock: d.quantity, stock: d.quantity } });
+      if (d.sizeId) {
+        await Size.findByIdAndUpdate(d.sizeId, { $inc: { availableStock: d.quantity, stock: d.quantity } });
+        await SubProduct.findByIdAndUpdate(d.subProductId, { $inc: { availableStock: d.quantity, totalStock: d.quantity } });
       } else {
-        await SubProduct.findByIdAndUpdate(d.id, { $inc: { availableStock: d.quantity, totalStock: d.quantity } });
+        await SubProduct.findByIdAndUpdate(d.subProductId, { $inc: { availableStock: d.quantity, totalStock: d.quantity } });
       }
     }
     return res.status(409).json({ success: false, message: stockErr.message });
@@ -988,10 +1367,6 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       : subtotal * discountValue / 100;
   }
   const total = Math.max(0, subtotal - orderDiscountAmount);
-
-  // Generate order + receipt numbers
-  const orderNumber   = await generateOrderNumber();
-  const receiptNumber = await generateReceiptNumber();
 
   // Determine active session — prefer the caller's terminal type
   const orderTerminal = ['retail', 'wholesale'].includes(req.body.terminalType)
@@ -1186,11 +1561,16 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
 
     // Restore stock only if restock flag is true (Odoo-style: cashier controls this)
     if (restock !== false) {
-      if (orderItem.size) {
-        await Size.findByIdAndUpdate(orderItem.size, { $inc: { availableStock: quantity, stock: quantity } });
-      } else if (orderItem.subproduct) {
-        await SubProduct.findByIdAndUpdate(orderItem.subproduct, { $inc: { availableStock: quantity, totalStock: quantity } });
-      }
+      await restoreStock({
+        subProductId: orderItem.subproduct?.toString() || orderItem.subproduct,
+        sizeId:       orderItem.size ? orderItem.size.toString() : null,
+        quantity,
+        tenantId:     req.tenant?._id,
+        staffId:      req.posUser._id,
+        returnNumber,
+        productId:    orderItem.product || undefined,
+        unitPrice:    refundUnitPrice,
+      });
     }
 
     refundLines.push({
@@ -1267,17 +1647,20 @@ exports.voidPOSOrder = asyncHandler(async (req, res) => {
   if (!order)          return res.status(404).json({ success: false, message: 'Order not found' });
   if (order.isVoided)  return res.status(400).json({ success: false, message: 'Already voided' });
 
-  // Restore all stock (schema fields: size / subproduct — lowercase)
+  // Restore all stock with full audit trail
+  const voidNumber = `VOID-${order.receiptNumber || order.orderNumber}`;
   for (const item of order.items) {
-    if (item.size) {
-      await Size.findByIdAndUpdate(item.size, {
-        $inc: { availableStock: item.quantity, stock: item.quantity },
-      });
-    } else if (item.subproduct) {
-      await SubProduct.findByIdAndUpdate(item.subproduct, {
-        $inc: { availableStock: item.quantity, totalStock: item.quantity },
-      });
-    }
+    if (!item.subproduct && !item.size) continue;
+    await restoreStock({
+      subProductId: item.subproduct?.toString() || item.subproduct,
+      sizeId:       item.size ? item.size.toString() : null,
+      quantity:     item.quantity,
+      tenantId:     req.tenant?._id,
+      staffId:      req.posUser._id,
+      returnNumber: voidNumber,
+      productId:    item.product || undefined,
+      unitPrice:    item.priceAtPurchase || 0,
+    });
   }
 
   order.isVoided  = true;
@@ -1327,25 +1710,83 @@ exports.getPOSSessionInfo = asyncHandler(async (req, res) => {
   });
 });
 
+// ─── All POS Orders (across all sessions) ────────────────────────────────────
+/**
+ * GET /api/pos/orders
+ * Returns all POS orders for this tenant, newest first.
+ * Supports: ?limit=&page=&search=&status=
+ */
+exports.getAllPOSOrders = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  const page  = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(500, parseInt(req.query.limit) || 200);
+  const skip  = (page - 1) * limit;
+
+  const orders = await Order.find({ 'items.tenant': tenantId, source: 'pos' })
+    .select('orderNumber receiptNumber totalAmount subtotal discountTotal paymentMethod paymentStatus status placedAt createdAt posStaff isVoided refunds items paymentDetails posSessionId')
+    .populate('posStaff', 'firstName lastName posName')
+    .populate({ path: 'posSessionId', select: 'terminalType openedAt status', strictPopulate: false })
+    .populate('items.product', 'name')
+    .populate('items.size', 'displayName')
+    .populate({ path: 'refunds.refundedBy', select: 'firstName lastName posName', strictPopulate: false })
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .lean();
+
+  const mapped = orders.map((o) => ({
+    ...o,
+    total:        o.totalAmount,
+    subtotal:     o.subtotal     || o.totalAmount,
+    discountTotal: o.discountTotal || 0,
+    customer:     o.paymentDetails?.customer || null,
+    session:      o.posSessionId && typeof o.posSessionId === 'object'
+      ? { _id: o.posSessionId._id, terminalType: o.posSessionId.terminalType, openedAt: o.posSessionId.openedAt }
+      : o.posSessionId ? { _id: o.posSessionId } : null,
+    paymentDetails: {
+      splitPayments: o.paymentDetails?.splitPayments || [],
+      change:        o.paymentDetails?.change        || 0,
+      amount:        o.paymentDetails?.amount        || 0,
+    },
+    items: (o.items || []).map((it) => ({
+      name:            it.product?.name || 'Product',
+      variant:         it.size?.displayName || '',
+      quantity:        it.quantity,
+      priceAtPurchase: it.priceAtPurchase,
+      itemSubtotal:    it.itemSubtotal,
+      discountAmount:  it.discountAmount || 0,
+    })),
+  }));
+
+  res.json({ success: true, data: mapped });
+});
+
 exports.getPOSSessionOrders = asyncHandler(async (req, res) => {
   // Verify the session belongs to this tenant before returning its orders
   const session = await POSSession.findOne({ _id: req.params.id, tenant: req.tenant?._id });
   if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
 
   const orders = await Order.find({ posSessionId: req.params.id })
-    .select('orderNumber receiptNumber totalAmount paymentMethod paymentStatus status placedAt createdAt posStaff isVoided refunds items paymentDetails')
+    .select('orderNumber receiptNumber totalAmount subtotal discountTotal paymentMethod paymentStatus status placedAt createdAt posStaff isVoided refunds items paymentDetails')
     .populate('posStaff', 'firstName lastName posName')
     .populate('items.product', 'name')
     .populate('items.size',    'displayName')
+    .populate({ path: 'refunds.refundedBy', select: 'firstName lastName posName', strictPopulate: false })
     .sort({ createdAt: -1 })
     .limit(200)
     .lean();
 
-  // Normalise for client: totalAmount → total, build display items from populated refs
   const mapped = orders.map((o) => ({
     ...o,
-    total:    o.totalAmount,
-    customer: o.paymentDetails?.customer || null,
+    total:         o.totalAmount,
+    subtotal:      o.subtotal     || o.totalAmount,
+    discountTotal: o.discountTotal || 0,
+    customer:      o.paymentDetails?.customer || null,
+    paymentDetails: {
+      splitPayments: o.paymentDetails?.splitPayments || [],
+      change:        o.paymentDetails?.change        || 0,
+      amount:        o.paymentDetails?.amount        || 0,
+    },
     items: (o.items || []).map((it) => ({
       name:            it.product?.name || 'Product',
       variant:         it.size?.displayName || '',

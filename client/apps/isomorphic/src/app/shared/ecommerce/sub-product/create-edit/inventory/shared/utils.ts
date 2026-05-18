@@ -22,7 +22,7 @@ export const calculateSizeStockMap = (sizes: SizeVariant[]): Record<string, numb
   if (sizes && Array.isArray(sizes)) {
     sizes.forEach((s) => {
       if (s?.size) {
-        map[s.size] = s?.stockQuantity || 0;
+        map[s.size] = s?.stock ?? s?.stockQuantity ?? 0;
       }
     });
   }
