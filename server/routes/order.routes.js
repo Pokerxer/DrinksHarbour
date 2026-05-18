@@ -3,7 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const orderController = require('../controllers/order.controller');
-const { protect, optionalProtect, superAdminOnly, tenantAdminOrSuperAdmin } = require('../middleware/auth.middleware');
+const { protect, optionalProtect, attachTenant, superAdminOnly, tenantAdminOrSuperAdmin } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validation.middleware');
 const { body, param, query } = require('express-validator');
 
@@ -85,9 +85,13 @@ router.get(
 );
 
 router.use(protect);
+router.use(attachTenant);
 
 // Admin: list all orders
 router.get('/', tenantAdminOrSuperAdmin, orderController.getAllOrders);
+
+// Lookup by receipt number (POS orders)
+router.get('/receipt/:receiptNumber', tenantAdminOrSuperAdmin, orderController.getOrderByReceipt);
 
 router.get('/my-orders', orderController.getMyOrders);
 

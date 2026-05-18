@@ -129,9 +129,18 @@ function MovementDetailPanel({
   const [order, setOrder] = useState<any>(null);
   const [loadingOrder, setLoadingOrder] = useState(false);
   const [orderErr, setOrderErr] = useState<string | null>(null);
+  const [orderType, setOrderType] = useState<'pos'|'online'|'purchase'|'none'>('none');
   const [tab, setTab] = useState<'movement' | 'order'>('order');
 
   const orderId = getOrderId(movement);
+  // PO id
+  const poId = movement.relatedPurchaseOrder
+    ? (typeof movement.relatedPurchaseOrder === 'object' ? movement.relatedPurchaseOrder._id : movement.relatedPurchaseOrder)
+    : null;
+  // Receipt number fallback (for POS movements where relatedOrder wasn't back-linked)
+  const isPOSMovement = movement.source === 'order' || (movement.notes || '').toLowerCase().includes('pos');
+  const receiptRef = isPOSMovement && !orderId ? (movement.reference || null) : null;
+
   const cat = getCategory(movement);
   const style = getCatStyle(cat);
   const source = getSourceBadge(movement);
@@ -142,25 +151,44 @@ function MovementDetailPanel({
     ? (movement.performedBy.posName || `${movement.performedBy.firstName || ''} ${movement.performedBy.lastName || ''}`.trim() || movement.performedBy.email)
     : null;
 
-  // Auto-fetch order when panel opens
+  // Determine fetch strategy and load
   useEffect(() => {
-    if (!orderId || !token) { setTab('movement'); return; }
+    if (!token) { setTab('movement'); return; }
     setLoadingOrder(true);
     setOrderErr(null);
-    fetch(`${API_URL}/api/orders/${orderId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    setOrder(null);
+
+    let url: string | null = null;
+
+    if (poId) {
+      url = `${API_URL}/api/purchase-orders/${poId}`;
+    } else if (orderId) {
+      url = `${API_URL}/api/orders/${orderId}`;
+    } else if (receiptRef) {
+      url = `${API_URL}/api/orders/receipt/${encodeURIComponent(receiptRef)}`;
+    }
+
+    if (!url) { setTab('movement'); setLoadingOrder(false); return; }
+
+    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
-      .then(data => setOrder(data.data?.order || data.order || data.data || null))
-      .catch(e => setOrderErr(e.message || 'Could not load order'))
+      .then(data => {
+        const doc = data.data?.order || data.data?.purchaseOrder || data.data || data.order || null;
+        setOrder(doc);
+        if (poId) setOrderType('purchase');
+        else if (doc?.source === 'pos') setOrderType('pos');
+        else if (doc) setOrderType('online');
+        else { setTab('movement'); setOrderType('none'); }
+      })
+      .catch(e => { setOrderErr(e.message || 'Could not load details'); setTab('movement'); })
       .finally(() => setLoadingOrder(false));
-  }, [orderId, token]);
+  }, [orderId, poId, receiptRef, token]);
 
-  const isPOS    = order?.source === 'pos';
-  const isOnline = order?.source && order.source !== 'pos';
+  const isPOS      = orderType === 'pos';
+  const isOnline   = orderType === 'online';
+  const isPurchase = orderType === 'purchase';
+  const orderLabel = isPOS ? 'POS Sale' : isOnline ? 'Online Order' : isPurchase ? 'Purchase Order' : 'Order';
 
-  // Helpers
-  const orderType = isPOS ? 'POS Sale' : isOnline ? 'Online Order' : 'Order';
   const customer  = order?.customer;
   const staff     = order?.posStaff;
   const staffName = staff ? (staff.posName || `${staff.firstName || ''} ${staff.lastName || ''}`.trim()) : null;
@@ -187,10 +215,12 @@ function MovementDetailPanel({
 
       {/* Tabs */}
       <div className="flex border-b border-gray-100 text-xs font-semibold">
-        {orderId && <button type="button" onClick={() => setTab('order')}
-          className={`flex-1 py-2.5 transition-colors ${tab === 'order' ? 'border-b-2 border-[#b20202] text-[#b20202]' : 'text-gray-400 hover:text-gray-600'}`}>
-          {orderType}
-        </button>}
+        {(orderId || poId || receiptRef) && (
+          <button type="button" onClick={() => setTab('order')}
+            className={`flex-1 py-2.5 transition-colors ${tab === 'order' ? 'border-b-2 border-[#b20202] text-[#b20202]' : 'text-gray-400 hover:text-gray-600'}`}>
+            {orderLabel}
+          </button>
+        )}
         <button type="button" onClick={() => setTab('movement')}
           className={`flex-1 py-2.5 transition-colors ${tab === 'movement' ? 'border-b-2 border-[#b20202] text-[#b20202]' : 'text-gray-400 hover:text-gray-600'}`}>
           Movement
@@ -360,10 +390,82 @@ function MovementDetailPanel({
                 </div>
               )}
 
-            </>) : (
+            </>) : isPurchase && order ? (
+              /* ── Purchase Order view ── */
+              <div className="space-y-4">
+                {/* PO header */}
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-base font-bold text-gray-900">{order.poNumber || order._id}</p>
+                      <p className="text-xs text-gray-500">{formatDate(order.placedAt || order.createdAt)}</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider capitalize ${
+                      order.status === 'received' ? 'bg-green-100 text-green-700' :
+                      order.status === 'approved' ? 'bg-blue-100 text-blue-700' :
+                      order.status === 'pending'  ? 'bg-amber-100 text-amber-700' :
+                      'bg-gray-100 text-gray-600'
+                    }`}>{order.status}</span>
+                  </div>
+                  {order.vendor && (
+                    <div className="flex items-center gap-2 text-xs text-gray-600 pt-1 border-t border-gray-200">
+                      <PiStorefront className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                      {order.vendor.name || 'Vendor'}
+                      {order.vendor.email && <span className="text-gray-400">· {order.vendor.email}</span>}
+                    </div>
+                  )}
+                  {order.createdBy && (
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <PiUser className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                      Created by: <span className="font-medium text-gray-700">{order.createdBy.name || order.createdBy.email}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* PO items */}
+                {order.items?.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Items Ordered</p>
+                    <div className="rounded-xl border border-gray-200 overflow-hidden">
+                      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 bg-gray-50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                        <span>Product</span><span className="text-right">Size</span><span className="text-right">Qty</span><span className="text-right">Cost</span>
+                      </div>
+                      {order.items.map((item: any, i: number) => (
+                        <div key={i} className={`grid grid-cols-[1fr_auto_auto_auto] gap-x-3 px-3 py-2.5 text-xs ${i < order.items.length-1 ? 'border-b border-gray-100' : ''}`}>
+                          <p className="font-medium text-gray-800 truncate">{item.subProductId?.name || item.productName || 'Product'}</p>
+                          <span className="text-right text-gray-500">{item.sizeId?.size || item.sizeName || '—'}</span>
+                          <span className="text-right font-medium text-gray-700 tabular-nums">{item.quantity}</span>
+                          <span className="text-right font-semibold text-gray-800 tabular-nums">{fmtMoney(item.unitCost || item.totalCost || 0)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* PO totals */}
+                {(order.totalAmount || order.grandTotal) && (
+                  <div className="rounded-xl border border-gray-200 overflow-hidden">
+                    <div className="flex justify-between bg-gray-50 px-3 py-2.5 text-sm font-bold text-gray-900">
+                      <span>Grand Total</span>
+                      <span className="tabular-nums">{fmtMoney(order.totalAmount || order.grandTotal || 0)}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Notes */}
+                {order.notes && (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-600">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Notes</p>
+                    {order.notes}
+                  </div>
+                )}
+              </div>
+            ) : (
               <div className="flex flex-col items-center gap-2 py-8 text-center">
                 <PiReceipt className="h-10 w-10 text-gray-200" />
-                <p className="text-xs text-gray-400">Order details not available</p>
+                <p className="text-xs text-gray-400">
+                  {orderErr ? orderErr : 'No order details available for this movement'}
+                </p>
               </div>
             )}
           </div>

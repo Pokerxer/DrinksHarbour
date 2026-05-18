@@ -27,6 +27,7 @@ export interface InventoryMovement {
   reference?: string;
   referenceType?: string;
   relatedOrder?: { _id: string; orderNumber?: string; receiptNumber?: string; placedAt?: string } | string | null;
+  relatedPurchaseOrder?: { _id: string; poNumber?: string; createdAt?: string } | string | null;
   unitCost?: number;
   totalCost?: number;
   sellingPrice?: number;

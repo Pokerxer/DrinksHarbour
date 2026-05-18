@@ -376,6 +376,7 @@ exports.getAllOrders = asyncHandler(async (req, res) => {
     const re = new RegExp(search.trim(), 'i');
     filter.$or = [
       { orderNumber:                re },
+      { receiptNumber:              re },
       { 'customer.firstName':       re },
       { 'customer.lastName':        re },
       { 'customer.email':           re },
@@ -503,6 +504,28 @@ exports.getOrderByNumber = asyncHandler(async (req, res) => {
     success: true,
     data: { order },
   });
+});
+
+/**
+ * @desc    Get order by receipt number (POS lookup)
+ * @route   GET /api/orders/receipt/:receiptNumber
+ * @access  Private (admin)
+ */
+exports.getOrderByReceipt = asyncHandler(async (req, res) => {
+  const { receiptNumber } = req.params;
+
+  const order = await Order.findOne({ receiptNumber })
+    .populate('items.product', 'name slug images type')
+    .populate('items.subproduct', 'name sku images baseSellingPrice')
+    .populate('items.size', 'displayName size sellingPrice')
+    .populate('items.tenant', 'name')
+    .populate('posStaff', 'firstName lastName posName email');
+
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'Order not found' });
+  }
+
+  res.status(200).json({ success: true, data: { order } });
 });
 
 /**
