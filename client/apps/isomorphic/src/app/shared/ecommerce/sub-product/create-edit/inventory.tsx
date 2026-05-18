@@ -1087,287 +1087,288 @@ export default function SubProductInventory() {
         )}
       </div>
 
-      {/* Overview Tab */}
+      {/* ── Overview Tab ─────────────────────────────────────────────── */}
       {activeTab === 'overview' && (
-        <>
-          <motion.div variants={fieldStaggerVariants} custom={0}>
-            <div className="flex items-center justify-between">
-              <div>
-                <Text className="mb-1 text-lg font-semibold">Stock Management</Text>
-                <Text className="text-sm text-gray-500">Add, remove, or adjust stock levels</Text>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => setShowTransferModal(true)}>
-                  <PiArrowsLeftRight className="mr-1 h-4 w-4" /> Transfer
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setShowBatchModal(true)}>
-                  <PiStack className="mr-1 h-4 w-4" /> Batch
-                </Button>
-                <div className="relative group">
-                  <Button variant="outline" size="sm">
-                    <PiDownload className="mr-1 h-4 w-4" /> Export
-                  </Button>
-                  <div className="absolute right-0 mt-1 w-40 rounded-lg border border-gray-200 bg-white shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
-                    <button onClick={exportStockReport} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 rounded-t-lg">
-                      Export JSON
-                    </button>
-                    <button onClick={exportStockReportCSV} className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 rounded-b-lg">
-                      Export CSV
-                    </button>
-                  </div>
-                </div>
-              </div>
+        <div className="space-y-5">
+
+          {/* ── Top bar: title + Record Movement ── */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-base font-semibold text-gray-900">Stock Overview</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {subProductId ? 'Live stock from server' : 'Save the product to start tracking inventory'}
+              </p>
             </div>
-          </motion.div>
-
-          {/* Quick Add/Remove Bar */}
-          <motion.div variants={fieldStaggerVariants} className="rounded-xl border border-gray-200 bg-gradient-to-r from-gray-50 to-white p-4">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleStockAdjust(-stockAdjustAmount)}
-                    disabled={totalStock <= 0}
-                    className="flex h-12 w-12 items-center justify-center rounded-lg border-2 border-red-200 bg-red-50 text-red-600 transition-all hover:bg-red-100 hover:border-red-300 disabled:opacity-50"
-                  >
-                    <PiMinus className="h-6 w-6" />
-                  </button>
-                  <div className="text-center">
-                    <Input
-                      type="number"
-                      min="1"
-                      value={stockAdjustAmount}
-                      onChange={(e) => setStockAdjustAmount(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-20 text-center font-bold"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleStockAdjust(stockAdjustAmount)}
-                    className="flex h-12 w-12 items-center justify-center rounded-lg border-2 border-green-200 bg-green-50 text-green-600 transition-all hover:bg-green-100 hover:border-green-300"
-                  >
-                    <PiPlus className="h-6 w-6" />
-                  </button>
-                </div>
-                <div className="h-10 w-px bg-gray-300" />
-                <div className="flex gap-2">
-                  {[1, 5, 10, 25, 50].map((amt) => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => setStockAdjustAmount(amt)}
-                      className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                        stockAdjustAmount === amt ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      ×{amt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => openAdjustmentModal('remove')}>
-                  <PiArrowUDownLeft className="mr-1 h-4 w-4" /> Remove
-                </Button>
-                <Button onClick={() => openAdjustmentModal('add')}>
-                  <PiArrowUUpLeft className="mr-1 h-4 w-4" /> Add Stock
-                </Button>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* Size Variant Selector */}
-          {hasSizeVariants && (
-            <motion.div variants={fieldStaggerVariants} className="rounded-xl border border-purple-200 bg-purple-50 p-4">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <PiPackage className="h-5 w-5 text-purple-600" />
-                  <Text className="font-medium text-purple-800">Size Variant</Text>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  {sizes.map((s: any) => (
-                    <button
-                      key={s?.size}
-                      type="button"
-                      onClick={() => setSelectedSize(s?.size)}
-                      className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${
-                        selectedSize === s?.size 
-                          ? 'bg-purple-600 text-white shadow-md' 
-                          : 'bg-white text-purple-700 border border-purple-200 hover:bg-purple-100'
-                      }`}
-                    >
-                      {s?.label || s?.size}
-                      <span className={`ml-2 ${selectedSize === s?.size ? 'text-purple-200' : 'text-purple-500'}`}>
-                        ({sizeStockMap[s?.size] || 0})
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                {selectedSize && (
-                  <div className="ml-auto">
-                    <Badge color="primary" variant="flat">
-                      Current: {sizes.find((s: any) => s?.size === selectedSize)?.label || selectedSize} - {currentSizeStock} units
-                    </Badge>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
-
-          {/* Stock Summary Cards */}
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            <motion.div variants={fieldStaggerVariants} className={`rounded-xl border-2 p-5 ${statusOption?.border || 'border-gray-200'} ${statusOption?.bg || 'bg-white'}`}>
-              <div className="flex items-center justify-between mb-3">
-                <Text className="text-sm font-medium text-gray-600">Total Stock</Text>
-                <PiPackage className="h-5 w-5 text-gray-400" />
-              </div>
-              <Text className="text-4xl font-bold text-gray-900">{totalStock || 0}</Text>
-              <Text className="mt-2 text-xs text-gray-500">units in inventory</Text>
-            </motion.div>
-
-            <motion.div variants={fieldStaggerVariants} className="rounded-xl border-2 border-green-200 bg-green-50 p-5">
-              <div className="flex items-center justify-between mb-3">
-                <Text className="text-sm font-medium text-green-700">Available</Text>
-                <PiCheckCircle className="h-5 w-5 text-green-500" />
-              </div>
-              <Text className="text-4xl font-bold text-green-700">{finalAvailableStock}</Text>
-              <Text className="mt-2 text-xs text-green-600">ready to sell</Text>
-            </motion.div>
-
-            <motion.div variants={fieldStaggerVariants} className="rounded-xl border-2 border-amber-200 bg-amber-50 p-5">
-              <div className="flex items-center justify-between mb-3">
-                <Text className="text-sm font-medium text-amber-700">Reserved</Text>
-                <PiHandPalm className="h-5 w-5 text-amber-500" />
-              </div>
-              <Text className="text-4xl font-bold text-amber-700">{reservedStock || 0}</Text>
-              <div className="mt-2 flex gap-1">
-                <button onClick={() => handleReservedAdjust(-1)} className="rounded bg-amber-200 p-1 hover:bg-amber-300">
-                  <PiMinus className="h-3 w-3" />
-                </button>
-                <button onClick={() => handleReservedAdjust(1)} className="rounded bg-amber-200 p-1 hover:bg-amber-300">
-                  <PiPlus className="h-3 w-3" />
-                </button>
-              </div>
-            </motion.div>
-
-            <motion.div variants={fieldStaggerVariants} className={`rounded-xl border-2 p-5 ${statusOption?.border || 'border-gray-200'} ${statusOption?.bg || 'bg-white'}`}>
-              <div className="flex items-center justify-between mb-3">
-                <Text className="text-sm font-medium text-gray-600">Status</Text>
-                <StatusIcon className="h-5 w-5 text-gray-400" />
-              </div>
-              <Badge color={statusOption?.color || 'secondary'} className="text-sm">
-                {statusOption?.label || 'Unknown'}
-              </Badge>
-              {daysUntilStockout < 30 && (
-                <Text className="mt-2 text-xs text-amber-600">
-                  ~{daysUntilStockout} days left
-                </Text>
-              )}
-            </motion.div>
+            <button
+              type="button"
+              onClick={() => setShowServerAdjustmentModal(true)}
+              disabled={!subProductId}
+              className="flex items-center gap-2 rounded-xl bg-[#b20202] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#7f1d1d] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <PiPlus className="h-4 w-4" />
+              Record Movement
+            </button>
           </div>
 
-          {/* Quick Action Buttons */}
-          <motion.div variants={fieldStaggerVariants}>
-            <Text className="mb-3 text-sm font-medium text-gray-700">Quick Actions</Text>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { label: '+10', action: () => handleAddStock(10) },
-                { label: '+50', action: () => handleAddStock(50) },
-                { label: '+100', action: () => handleAddStock(100) },
-                { label: '+500', action: () => handleAddStock(500) },
-              ].map((btn, i) => (
-                <Button key={i} variant="outline" size="sm" onClick={btn.action} className="border-green-300 text-green-700 hover:bg-green-50">
-                  {btn.label}
-                </Button>
-              ))}
-              <div className="h-6 w-px bg-gray-300" />
-              <Button variant="outline" size="sm" onClick={handleSetOutOfStock} className="border-red-300 text-red-700 hover:bg-red-50">
-                <PiCube className="mr-1 h-4 w-4" /> Out of Stock
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleSetPreOrder} className="border-blue-300 text-blue-700 hover:bg-blue-50">
-                <PiArrowCounterClockwise className="mr-1 h-4 w-4" /> Pre-Order
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleDiscontinue} className="border-gray-300 text-gray-700 hover:bg-gray-50">
-                <PiTrash className="mr-1 h-4 w-4" /> Discontinue
-              </Button>
+          {/* ── Stock counters ── */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {/* Total */}
+            <div className={`rounded-xl border-2 p-4 ${statusOption?.border || 'border-gray-200'} ${statusOption?.bg || 'bg-white'}`}>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total</p>
+              <p className="mt-1 text-3xl font-bold text-gray-900 tabular-nums">{totalStock ?? 0}</p>
+              <p className="mt-1 text-[11px] text-gray-400">units in inventory</p>
             </div>
-          </motion.div>
+            {/* Available */}
+            <div className="rounded-xl border-2 border-green-200 bg-green-50 p-4">
+              <p className="text-xs font-medium text-green-700 uppercase tracking-wider">Available</p>
+              <p className="mt-1 text-3xl font-bold text-green-700 tabular-nums">{finalAvailableStock}</p>
+              <p className="mt-1 text-[11px] text-green-600">ready to sell</p>
+            </div>
+            {/* Reserved */}
+            <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-4">
+              <p className="text-xs font-medium text-amber-700 uppercase tracking-wider">Reserved</p>
+              <p className="mt-1 text-3xl font-bold text-amber-700 tabular-nums">{reservedStock ?? 0}</p>
+              <p className="mt-1 text-[11px] text-amber-600">pending orders</p>
+            </div>
+            {/* Status */}
+            <div className={`rounded-xl border-2 p-4 flex flex-col justify-between ${statusOption?.border || 'border-gray-200'} ${statusOption?.bg || 'bg-white'}`}>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Status</p>
+              <div className="mt-2">
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                  stockStatus === 'in_stock' ? 'bg-green-100 text-green-700' :
+                  stockStatus === 'low_stock' ? 'bg-amber-100 text-amber-700' :
+                  stockStatus === 'out_of_stock' ? 'bg-red-100 text-red-700' :
+                  'bg-gray-100 text-gray-600'
+                }`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${
+                    stockStatus === 'in_stock' ? 'bg-green-500' :
+                    stockStatus === 'low_stock' ? 'bg-amber-500' :
+                    stockStatus === 'out_of_stock' ? 'bg-red-500' : 'bg-gray-400'
+                  }`} />
+                  {statusOption?.label || 'Unknown'}
+                </span>
+                {daysUntilStockout < 30 && daysUntilStockout !== Infinity && (
+                  <p className="mt-1.5 text-[11px] text-amber-600">~{daysUntilStockout}d until stockout</p>
+                )}
+              </div>
+            </div>
+          </div>
 
-          {/* Inventory Value */}
+          {/* ── Low stock warning bar ── */}
+          {finalAvailableStock <= lowStockThreshold && finalAvailableStock > 0 && (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <PiWarning className="h-4 w-4 shrink-0 text-amber-600" />
+              <p className="text-sm text-amber-700">
+                <span className="font-semibold">Low stock:</span> {finalAvailableStock} units remaining — reorder point is {reorderPoint}.
+              </p>
+            </div>
+          )}
+          {finalAvailableStock === 0 && (
+            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+              <PiWarningCircle className="h-4 w-4 shrink-0 text-red-600" />
+              <p className="text-sm text-red-700"><span className="font-semibold">Out of stock.</span> Record a stock movement to replenish.</p>
+            </div>
+          )}
+
+          {/* ── Server totals (only when we have summarydata) ── */}
+          {inventorySummary && (
+            <div className="rounded-xl border border-gray-200 bg-white p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <p className="text-sm font-semibold text-gray-700">All-time Totals</p>
+                {isLoadingMovements && <PiSpinner className="h-3.5 w-3.5 animate-spin text-gray-400" />}
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {[
+                  { label: 'Received',  value: inventorySummary.totals?.received  ?? 0, color: 'text-green-700',  dot: 'bg-green-500' },
+                  { label: 'Sold',      value: inventorySummary.totals?.sold      ?? 0, color: 'text-red-700',    dot: 'bg-red-500'   },
+                  { label: 'Returned',  value: inventorySummary.totals?.returned  ?? 0, color: 'text-amber-700',  dot: 'bg-amber-500' },
+                  { label: 'Adjusted',  value: inventorySummary.totals?.adjusted  ?? 0, color: 'text-blue-700',   dot: 'bg-blue-500'  },
+                ].map(({ label, value, color, dot }) => (
+                  <div key={label} className="flex items-center gap-2">
+                    <span className={`h-2 w-2 rounded-full shrink-0 ${dot}`} />
+                    <div>
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wider">{label}</p>
+                      <p className={`text-lg font-bold tabular-nums ${color}`}>{value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Size breakdown ── */}
+          {hasSizeVariants && sizes.length > 0 && (
+            <div className="rounded-xl border border-gray-200 bg-white p-4">
+              <p className="mb-3 text-sm font-semibold text-gray-700">Size Breakdown</p>
+              <div className="space-y-2">
+                {sizes.map((s: any) => {
+                  const qty = sizeStockMap[s?.size] ?? 0;
+                  const pct = totalStock > 0 ? (qty / totalStock) * 100 : 0;
+                  const isLow = qty <= lowStockThreshold && qty > 0;
+                  const isOut = qty === 0;
+                  return (
+                    <div key={s?.size} className="flex items-center gap-3">
+                      <div className="w-24 shrink-0">
+                        <p className="text-xs font-medium text-gray-700 truncate">{s?.displayName || s?.label || s?.size}</p>
+                      </div>
+                      <div className="flex-1 h-2 overflow-hidden rounded-full bg-gray-100">
+                        <div
+                          className={`h-full rounded-full transition-all ${isOut ? 'bg-red-400' : isLow ? 'bg-amber-400' : 'bg-green-500'}`}
+                          style={{ width: `${Math.min(100, pct)}%` }}
+                        />
+                      </div>
+                      <span className={`w-14 shrink-0 text-right text-xs font-semibold tabular-nums ${isOut ? 'text-red-600' : isLow ? 'text-amber-600' : 'text-gray-700'}`}>
+                        {qty} units
+                      </span>
+                      {isOut && <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-bold text-red-600">OUT</span>}
+                      {isLow && !isOut && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-600">LOW</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Inventory value ── */}
           {(inventoryValue > 0 || potentialRevenue > 0) && (
-            <motion.div variants={fieldStaggerVariants} className="grid gap-4 md:grid-cols-3">
-              <div className="rounded-xl bg-amber-50 border border-amber-200 p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <PiTrendDown className="h-5 w-5 text-amber-600" />
-                  <Text className="font-medium text-amber-800">Inventory Value</Text>
-                </div>
-                <Text className="text-2xl font-bold text-amber-700">{currencySymbol}{inventoryValue.toLocaleString()}</Text>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-xl border border-gray-200 bg-white p-4">
+                <p className="text-xs text-gray-500 uppercase tracking-wider">Cost Value</p>
+                <p className="mt-1 text-xl font-bold text-gray-800 tabular-nums">{currencySymbol}{inventoryValue.toLocaleString()}</p>
+                <p className="mt-0.5 text-[11px] text-gray-400">at cost price</p>
               </div>
-              <div className="rounded-xl bg-green-50 border border-green-200 p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <PiTrendUp className="h-5 w-5 text-green-600" />
-                  <Text className="font-medium text-green-800">Potential Revenue</Text>
-                </div>
-                <Text className="text-2xl font-bold text-green-700">{currencySymbol}{potentialRevenue.toLocaleString()}</Text>
+              <div className="rounded-xl border border-gray-200 bg-white p-4">
+                <p className="text-xs text-gray-500 uppercase tracking-wider">Potential Revenue</p>
+                <p className="mt-1 text-xl font-bold text-green-700 tabular-nums">{currencySymbol}{potentialRevenue.toLocaleString()}</p>
+                <p className="mt-0.5 text-[11px] text-gray-400">at selling price</p>
               </div>
-              <div className="rounded-xl bg-blue-50 border border-blue-200 p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <PiPiggyBank className="h-5 w-5 text-blue-600" />
-                  <Text className="font-medium text-blue-800">Profit Margin</Text>
-                </div>
-                <Text className="text-2xl font-bold text-blue-700">{profitMargin.toFixed(1)}%</Text>
-              </div>
-            </motion.div>
-          )}
-
-          {/* Stock Settings */}
-          <motion.div variants={fieldStaggerVariants}>
-            <Text className="mb-3 text-sm font-medium text-gray-700">Settings</Text>
-            <div className="grid gap-4 md:grid-cols-4">
-              <div className="flex items-center justify-between rounded-lg border border-gray-200 p-4">
-                <div>
-                  <Text className="text-sm font-medium text-gray-700">Auto-calculate</Text>
-                  <Text className="text-xs text-gray-500">Total - Reserved</Text>
-                </div>
-                <Switch checked={autoCalculateAvailable} onChange={(checked) => setAutoCalculateAvailable(checked)} />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">Low Stock Alert</label>
-                <Input type="number" min="0" value={lowStockThreshold} onChange={(e) => setValue?.('subProductData.lowStockThreshold', parseInt(e.target.value) || 0)} className="w-full" />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">Reorder Point</label>
-                <Input type="number" min="0" value={reorderPoint} onChange={(e) => setValue?.('subProductData.reorderPoint', parseInt(e.target.value) || 0)} className="w-full" />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">Reorder Qty</label>
-                <Input type="number" min="1" value={reorderQuantity} onChange={(e) => setValue?.('subProductData.reorderQuantity', parseInt(e.target.value) || 50)} className="w-full" />
+              <div className="rounded-xl border border-gray-200 bg-white p-4">
+                <p className="text-xs text-gray-500 uppercase tracking-wider">Gross Margin</p>
+                <p className={`mt-1 text-xl font-bold tabular-nums ${profitMargin >= 30 ? 'text-green-700' : profitMargin >= 15 ? 'text-amber-700' : 'text-red-600'}`}>
+                  {profitMargin.toFixed(1)}%
+                </p>
+                <p className="mt-0.5 text-[11px] text-gray-400">{profitMargin >= 30 ? 'healthy' : profitMargin >= 15 ? 'moderate' : 'low margin'}</p>
               </div>
             </div>
-          </motion.div>
-
-          {/* Stock Level Indicator */}
-          {stockStatus !== 'pre_order' && stockStatus !== 'discontinued' && (
-            <motion.div variants={fieldStaggerVariants}>
-              <div className="flex items-center justify-between mb-2">
-                <Text className="text-sm font-medium text-gray-700">Stock Level</Text>
-                <Text className="text-xs text-gray-500">{finalAvailableStock} / {lowStockThreshold}</Text>
-              </div>
-              <div className="h-4 w-full overflow-hidden rounded-full bg-gray-200">
-                <div 
-                  className={`h-full transition-all duration-500 ${
-                    finalAvailableStock === 0 ? 'bg-red-500' :
-                    finalAvailableStock <= lowStockThreshold ? 'bg-amber-500' :
-                    'bg-green-500'
-                  }`}
-                  style={{ width: `${Math.min(100, (finalAvailableStock / (lowStockThreshold * 3)) * 100)}%` }}
-                />
-              </div>
-            </motion.div>
           )}
-        </>
+
+          {/* ── Stock level bar + thresholds ── */}
+          <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+            <p className="text-sm font-semibold text-gray-700">Thresholds & Alerts</p>
+
+            {/* Level bar */}
+            {stockStatus !== 'pre_order' && stockStatus !== 'discontinued' && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5 text-xs text-gray-500">
+                  <span>Stock level</span>
+                  <span className="tabular-nums font-medium">{finalAvailableStock} / {Math.max(lowStockThreshold * 3, finalAvailableStock + 1)} units</span>
+                </div>
+                <div className="relative h-3 w-full overflow-hidden rounded-full bg-gray-100">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      finalAvailableStock === 0 ? 'bg-red-500' :
+                      finalAvailableStock <= lowStockThreshold ? 'bg-amber-400' : 'bg-green-500'
+                    }`}
+                    style={{ width: `${Math.min(100, (finalAvailableStock / (Math.max(lowStockThreshold * 3, finalAvailableStock + 1))) * 100)}%` }}
+                  />
+                  {/* Reorder point marker */}
+                  <div
+                    className="absolute top-0 h-full w-0.5 bg-red-400 opacity-60"
+                    style={{ left: `${Math.min(100, (reorderPoint / (Math.max(lowStockThreshold * 3, finalAvailableStock + 1))) * 100)}%` }}
+                    title={`Reorder at ${reorderPoint}`}
+                  />
+                </div>
+                <div className="flex items-center gap-3 mt-1.5 text-[10px] text-gray-400">
+                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-green-500" />In stock</span>
+                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-amber-400" />Low stock</span>
+                  <span className="flex items-center gap-1"><span className="inline-block h-0.5 w-3 bg-red-400" />Reorder point</span>
+                </div>
+              </div>
+            )}
+
+            {/* Threshold inputs */}
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Low Stock Alert</label>
+                <input
+                  type="number" min="0"
+                  value={lowStockThreshold}
+                  onChange={(e) => setValue?.('subProductData.lowStockThreshold', parseInt(e.target.value) || 0)}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-[#b20202] focus:ring-1 focus:ring-[#b20202]/20"
+                />
+                <p className="mt-0.5 text-[10px] text-gray-400">Alert when stock ≤ this</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Reorder Point</label>
+                <input
+                  type="number" min="0"
+                  value={reorderPoint}
+                  onChange={(e) => setValue?.('subProductData.reorderPoint', parseInt(e.target.value) || 0)}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-[#b20202] focus:ring-1 focus:ring-[#b20202]/20"
+                />
+                <p className="mt-0.5 text-[10px] text-gray-400">Trigger reorder at this qty</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Reorder Quantity</label>
+                <input
+                  type="number" min="1"
+                  value={reorderQuantity}
+                  onChange={(e) => setValue?.('subProductData.reorderQuantity', parseInt(e.target.value) || 50)}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-[#b20202] focus:ring-1 focus:ring-[#b20202]/20"
+                />
+                <p className="mt-0.5 text-[10px] text-gray-400">How much to order</p>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Recent movements mini-list ── */}
+          {serverMovements.length > 0 && (
+            <div className="rounded-xl border border-gray-200 bg-white p-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold text-gray-700">Recent Activity</p>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('history')}
+                  className="text-xs font-medium text-[#b20202] hover:underline"
+                >
+                  View all →
+                </button>
+              </div>
+              <div className="space-y-2">
+                {serverMovements.slice(0, 5).map((m) => {
+                  const isIn = m.category === 'in';
+                  const isOut = m.category === 'out';
+                  return (
+                    <div key={m._id} className="flex items-center gap-3">
+                      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs ${
+                        isIn ? 'bg-green-100 text-green-600' :
+                        isOut ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
+                      }`}>
+                        {isIn ? '+' : isOut ? '−' : '~'}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-gray-700 capitalize truncate">
+                          {m.type?.replace(/_/g, ' ')}
+                          {m.reference && <span className="ml-1 text-gray-400">#{m.reference}</span>}
+                        </p>
+                        <p className="text-[10px] text-gray-400">{new Date(m.createdAt).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className={`text-xs font-bold tabular-nums ${isIn ? 'text-green-600' : isOut ? 'text-red-600' : 'text-blue-600'}`}>
+                          {isIn ? '+' : isOut ? '−' : '~'}{m.quantity}
+                        </p>
+                        {m.quantityBefore !== undefined && m.quantityAfter !== undefined && (
+                          <p className="text-[10px] text-gray-400">{m.quantityBefore}→{m.quantityAfter}</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+        </div>
       )}
 
       {/* History Tab */}
