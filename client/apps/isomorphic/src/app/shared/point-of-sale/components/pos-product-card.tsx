@@ -1,14 +1,17 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { POSProduct, POSSize } from '@/app/shared/point-of-sale/types';
-import { getImageUrl, getProductDisplayName, formatCurrency } from '@/app/shared/point-of-sale/utils';
-import { usePOSCart, usePOSAuth } from '@/app/shared/point-of-sale/store';
+import {
+  getImageUrl, getProductDisplayName, formatCurrency,
+  findMatchingPricelistRules, applyRuleTransform,
+} from '@/app/shared/point-of-sale/utils';
+import { usePOSCart, usePOSAuth, usePOSAvailablePricelists, usePOSPricelist } from '@/app/shared/point-of-sale/store';
 import Image from 'next/image';
 import {
   PiPlus, PiMinus, PiX, PiShoppingCart,
   PiInfo, PiPackage, PiBarcode, PiTag,
-  PiWarning, PiCheckCircle, PiProhibit,
+  PiWarning, PiCheckCircle, PiProhibit, PiTagChevron,
 } from 'react-icons/pi';
 
 type ProductCardProps = {
@@ -17,6 +20,239 @@ type ProductCardProps = {
   className?: string;
   flash?: boolean;
 };
+
+// ── Pricelist comparison panel ────────────────────────────────────────────────
+function PricelistBreakdown({
+  product,
+  hasSizes,
+  validSizes,
+}: {
+  product: POSProduct;
+  hasSizes: boolean;
+  validSizes: POSSize[];
+}) {
+  const { token } = usePOSAuth();
+  const { pricelists, loaded, load } = usePOSAvailablePricelists();
+  const { selectedPricelist } = usePOSPricelist();
+  const [activeSizeId, setActiveSizeId] = useState<string>(validSizes[0]?._id ?? '');
+
+  useEffect(() => { if (token) load(token); }, [token, load]);
+
+  // True base: prefer _priceBeforePricelist (set when pricelist is active) so
+  // we always compare against the actual standard price.
+  const trueBase = useMemo(() => {
+    return (
+      Number((product as any)._priceBeforePricelist) ||
+      Number((product as any).originalPrice) ||
+      Number(product.baseSellingPrice) ||
+      0
+    );
+  }, [product]);
+
+  const costPrice = Number(product.costPrice) || 0;
+
+  // Per-size true bases
+  const sizeBases = useMemo<Record<string, number>>(() => {
+    const map: Record<string, number> = {};
+    for (const sz of validSizes) {
+      map[sz._id] =
+        Number((sz as any)._priceBeforePricelist) ||
+        Number((sz as any).originalPrice) ||
+        Number(sz.sellingPrice) ||
+        0;
+    }
+    return map;
+  }, [validSizes]);
+
+  // Helper: build rule label string
+  function ruleLabel(rules: any[]): string {
+    if (!rules.length) return '';
+    const parts = rules.map(r => {
+      if (r.priceType === 'formula')    return `Cost +${r.markupPercentage}% markup`;
+      if (r.priceType === 'fixed')      return `Fixed price`;
+      if (r.priceType === 'flash_sale') return `⚡ ${r.flashSalePercentage}% flash`;
+      if (r.priceType === 'discount') {
+        return r.discountType === 'fixed'
+          ? `-₦${r.discountAmount} off`
+          : `-${r.discountPercentage}%${r.minQuantity > 0 ? ` (qty ${r.minQuantity}+)` : ''}`;
+      }
+      return r.priceType;
+    });
+    return parts.join(' → ');
+  }
+
+  type PlRow = {
+    id: string;
+    name: string;
+    isActive: boolean;
+    hasRule: boolean;
+    ruleHint: string;
+    // no-size price
+    price: number;
+    saving: number;
+    // per-size prices
+    sizePrices: Record<string, { price: number; saving: number }>;
+  };
+
+  const rows = useMemo<PlRow[]>(() => {
+    const list: PlRow[] = [];
+
+    // Standard row
+    const stdSzPrices: Record<string, { price: number; saving: number }> = {};
+    for (const sz of validSizes) stdSzPrices[sz._id] = { price: sizeBases[sz._id] || 0, saving: 0 };
+
+    list.push({
+      id: '__standard__',
+      name: 'Standard Price',
+      isActive: !selectedPricelist,
+      hasRule: false,
+      ruleHint: 'No pricelist',
+      price: trueBase,
+      saving: 0,
+      sizePrices: stdSzPrices,
+    });
+
+    for (const pl of pricelists) {
+      const rules = findMatchingPricelistRules(pl.rules || [], product._id, 1, 'price');
+      let plPrice = trueBase;
+      for (const rule of rules) plPrice = applyRuleTransform(plPrice, rule, costPrice);
+
+      const szPrices: Record<string, { price: number; saving: number }> = {};
+      for (const sz of validSizes) {
+        const szBase = sizeBases[sz._id] || 0;
+        const szCost = Number((sz as any).costPrice) > 0 ? Number((sz as any).costPrice) : costPrice;
+        let szP = szBase;
+        for (const rule of rules) szP = applyRuleTransform(szP, rule, szCost);
+        szPrices[sz._id] = { price: szP, saving: szBase - szP };
+      }
+
+      list.push({
+        id: pl._id,
+        name: pl.name,
+        isActive: selectedPricelist?._id === pl._id,
+        hasRule: rules.length > 0,
+        ruleHint: ruleLabel(rules),
+        price: plPrice,
+        saving: trueBase - plPrice,
+        sizePrices: szPrices,
+      });
+    }
+
+    return list;
+  }, [pricelists, product, validSizes, sizeBases, trueBase, costPrice, selectedPricelist]);
+
+  if (!loaded) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-4 text-xs text-gray-400">
+        <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-200 border-t-gray-500" />
+        Loading pricelists…
+      </div>
+    );
+  }
+
+  if (pricelists.length === 0) {
+    return (
+      <p className="py-2 text-center text-xs text-gray-400">
+        No selectable pricelists configured.
+      </p>
+    );
+  }
+
+  // Size selector for multi-size products
+  const activeSize = validSizes.find(s => s._id === activeSizeId);
+
+  return (
+    <div className="space-y-2">
+      {/* Size selector */}
+      {hasSizes && validSizes.length > 1 && (
+        <div className="flex flex-wrap gap-1.5">
+          {validSizes.map(sz => (
+            <button
+              key={sz._id}
+              type="button"
+              onClick={() => setActiveSizeId(sz._id)}
+              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                activeSizeId === sz._id
+                  ? 'bg-[#b20202] text-white'
+                  : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {sz.displayName}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Rows */}
+      <div className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200">
+        {rows.map((row) => {
+          const displayPrice = hasSizes && activeSizeId
+            ? (row.sizePrices[activeSizeId]?.price ?? row.price)
+            : row.price;
+          const displaySaving = hasSizes && activeSizeId
+            ? (row.sizePrices[activeSizeId]?.saving ?? row.saving)
+            : row.saving;
+
+          const isCheaper  = displaySaving > 0.5;
+          const isMarkup   = displaySaving < -0.5;
+          const noChange   = !isCheaper && !isMarkup;
+
+          return (
+            <div
+              key={row.id}
+              className={`flex items-center gap-3 px-3.5 py-3 ${
+                row.isActive ? 'bg-emerald-50' : row.id === '__standard__' ? 'bg-gray-50/50' : 'bg-white'
+              }`}
+            >
+              {/* Left: name + rule hint */}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-xs font-bold ${row.isActive ? 'text-emerald-700' : 'text-gray-800'}`}>
+                    {row.name}
+                  </span>
+                  {row.isActive && (
+                    <span className="shrink-0 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-white">
+                      Active
+                    </span>
+                  )}
+                </div>
+                {row.ruleHint && (
+                  <p className={`mt-0.5 truncate text-[10px] ${row.hasRule ? 'text-indigo-600' : 'text-gray-400'}`}>
+                    {row.ruleHint}
+                  </p>
+                )}
+              </div>
+
+              {/* Right: price + delta */}
+              <div className="flex shrink-0 flex-col items-end gap-0.5">
+                <span className={`text-sm font-extrabold tabular-nums ${
+                  row.isActive ? 'text-emerald-700' : 'text-gray-900'
+                }`}>
+                  {formatCurrency(displayPrice)}
+                </span>
+                {noChange ? (
+                  <span className="text-[10px] text-gray-300">—</span>
+                ) : (
+                  <span className={`text-[10px] font-semibold tabular-nums ${
+                    isCheaper ? 'text-emerald-600' : 'text-orange-500'
+                  }`}>
+                    {isCheaper ? '↓' : '↑'} {formatCurrency(Math.abs(displaySaving))}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {hasSizes && activeSize && (
+        <p className="text-right text-[10px] text-gray-400">
+          Showing prices for <strong>{activeSize.displayName}</strong>
+        </p>
+      )}
+    </div>
+  );
+}
 
 // ── Product info modal ────────────────────────────────────────────────────────
 function ProductInfoModal({
@@ -33,6 +269,9 @@ function ProductInfoModal({
   const hasSizes = (product.sizes?.length ?? 0) > 0 && !product.sellWithoutSizeVariants;
   const validSizes: POSSize[] = hasSizes ? (product.sizes || []).filter(Boolean) : [];
 
+  // Tab: 'info' | 'prices'
+  const [tab, setTab] = useState<'info' | 'prices'>('info');
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
     document.addEventListener('keydown', onKey);
@@ -47,7 +286,6 @@ function ProductInfoModal({
     return { text: `${product.availableStock} in stock`, color: 'text-emerald-600', bg: 'bg-emerald-50', icon: <PiCheckCircle className="h-3.5 w-3.5" /> };
   })();
 
-  // All images
   const images = product.product?.images || [];
 
   return (
@@ -58,17 +296,13 @@ function ProductInfoModal({
       <div className="flex w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white sm:rounded-2xl shadow-2xl max-h-[90vh]">
 
         {/* ── Image strip ── */}
-        <div className="relative h-52 shrink-0 overflow-hidden bg-gray-100">
+        <div className="relative h-44 shrink-0 overflow-hidden bg-gray-100">
           {imageUrl ? (
             <Image src={imageUrl} alt={name} fill className="object-cover" sizes="512px" priority />
           ) : (
             <div className="flex h-full items-center justify-center text-7xl text-gray-200">&#127863;</div>
           )}
-
-          {/* Gradient overlay */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
-
-          {/* Close */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
           <button
             type="button"
             onClick={onClose}
@@ -76,140 +310,178 @@ function ProductInfoModal({
           >
             <PiX className="h-4 w-4" />
           </button>
-
-          {/* Sale badge */}
           {product.isOnSale && (
             <span className="absolute left-3 top-3 rounded-full bg-[#b20202] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow">
               Sale
             </span>
           )}
-
-          {/* Name over image */}
-          <div className="absolute bottom-0 left-0 right-0 px-5 pb-4">
+          <div className="absolute bottom-0 left-0 right-0 px-5 pb-3">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-white/70">
               {product.product?.brand?.name || product.product?.type || ''}
             </p>
-            <h2 className="text-lg font-bold text-white leading-tight">{name}</h2>
+            <h2 className="text-base font-bold text-white leading-tight">{name}</h2>
           </div>
-
-          {/* Thumbnail strip if multiple images */}
           {images.length > 1 && (
             <div className="absolute bottom-3 right-4 flex gap-1">
               {images.slice(0, 4).map((img, i) => (
-                <div key={i} className="h-8 w-8 overflow-hidden rounded-lg border border-white/30 bg-gray-200">
+                <div key={i} className="h-7 w-7 overflow-hidden rounded-lg border border-white/30 bg-gray-200">
                   <img src={img.thumbnail || img.url} alt="" className="h-full w-full object-cover" />
                 </div>
               ))}
-              {images.length > 4 && (
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/30 bg-black/40 text-[10px] font-bold text-white">
-                  +{images.length - 4}
-                </div>
-              )}
             </div>
           )}
+        </div>
+
+        {/* ── Tab bar ── */}
+        <div className="flex shrink-0 border-b border-gray-200">
+          {(['info', 'prices'] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 text-xs font-bold transition-colors ${
+                tab === t
+                  ? 'border-b-2 border-[#b20202] text-[#b20202]'
+                  : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              {t === 'info' ? <><PiInfo className="h-3.5 w-3.5" /> Product Info</> : <><PiTagChevron className="h-3.5 w-3.5" /> Pricelist Prices</>}
+            </button>
+          ))}
         </div>
 
         {/* ── Body ── */}
         <div className="flex-1 overflow-y-auto">
 
-          {/* Meta row */}
-          <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
-            {[
-              { label: 'Category', value: (product.product?.type || '—').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) },
-              { label: 'SKU', value: product.sku || '—', mono: true },
-              { label: 'Status', value: product.status?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || '—' },
-            ].map(({ label, value, mono }) => (
-              <div key={label} className="px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</p>
-                <p className={`mt-0.5 text-xs font-semibold text-gray-800 truncate ${mono ? 'font-mono' : ''}`}>{value}</p>
+          {/* ── INFO TAB ── */}
+          {tab === 'info' && (
+            <>
+              {/* Meta row */}
+              <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
+                {[
+                  { label: 'Category', value: (product.product?.type || '—').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) },
+                  { label: 'SKU', value: product.sku || '—', mono: true },
+                  { label: 'Status', value: product.status?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || '—' },
+                ].map(({ label, value, mono }) => (
+                  <div key={label} className="px-4 py-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</p>
+                    <p className={`mt-0.5 text-xs font-semibold text-gray-800 truncate ${mono ? 'font-mono' : ''}`}>{value}</p>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
 
-          {/* Stock (no-size) */}
-          {!hasSizes && stockLabel && (
-            <div className={`mx-4 mt-3 flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold ${stockLabel.bg} ${stockLabel.color}`}>
-              {stockLabel.icon}
-              {stockLabel.text}
-            </div>
-          )}
+              {/* Stock (no-size) */}
+              {!hasSizes && stockLabel && (
+                <div className={`mx-4 mt-3 flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold ${stockLabel.bg} ${stockLabel.color}`}>
+                  {stockLabel.icon}
+                  {stockLabel.text}
+                </div>
+              )}
 
-          {/* Price section (no-size) */}
-          {!hasSizes && (
-            <div className="flex items-center justify-between px-5 py-4">
-              <span className="text-sm font-semibold text-gray-500">Price</span>
-              <span className="text-xl font-extrabold text-gray-900 tabular-nums">
-                {formatCurrency(product.baseSellingPrice)}
-              </span>
-            </div>
-          )}
+              {/* Price section (no-size) */}
+              {!hasSizes && (
+                <div className="flex items-center justify-between px-5 py-4">
+                  <span className="text-sm font-semibold text-gray-500">Current Price</span>
+                  <div className="flex flex-col items-end">
+                    {product.originalPrice && (
+                      <span className="text-xs tabular-nums text-gray-400 line-through leading-tight">
+                        {formatCurrency(product.originalPrice)}
+                      </span>
+                    )}
+                    <span className="text-xl font-extrabold text-gray-900 tabular-nums leading-tight">
+                      {formatCurrency(product.baseSellingPrice)}
+                    </span>
+                  </div>
+                </div>
+              )}
 
-          {/* Sizes table */}
-          {hasSizes && validSizes.length > 0 && (
-            <div className="px-4 py-3">
-              <p className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                <PiPackage className="h-3.5 w-3.5" />
-                Sizes & Stock
-              </p>
-              <div className="overflow-hidden rounded-xl border border-gray-100">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                      <th className="px-3 py-2 text-left">Size</th>
-                      <th className="px-3 py-2 text-right">Price</th>
-                      <th className="px-3 py-2 text-right">Stock</th>
-                      <th className="px-3 py-2 text-left">Barcode / SKU</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {validSizes.map((size) => {
-                      const oos = size.availableStock <= 0;
-                      const low = !oos && size.availableStock <= 5;
-                      return (
-                        <tr key={size._id} className={oos ? 'opacity-40' : ''}>
-                          <td className={`px-3 py-2.5 font-semibold ${oos ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-                            {size.displayName}
-                          </td>
-                          <td className="px-3 py-2.5 text-right font-bold tabular-nums text-gray-900">
-                            {formatCurrency(size.sellingPrice)}
-                          </td>
-                          <td className="px-3 py-2.5 text-right">
-                            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold
-                              ${oos ? 'bg-red-50 text-red-500' : low ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                              {oos ? 'OOS' : size.availableStock}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2.5">
-                            {(size.barcode || size.sku) ? (
-                              <span className="flex items-center gap-1 font-mono text-[10px] text-gray-500">
-                                <PiBarcode className="h-3 w-3 shrink-0 text-gray-400" />
-                                {size.barcode || size.sku}
-                              </span>
-                            ) : (
-                              <span className="text-gray-300">—</span>
-                            )}
-                          </td>
+              {/* Sizes table */}
+              {hasSizes && validSizes.length > 0 && (
+                <div className="px-4 py-3">
+                  <p className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                    <PiPackage className="h-3.5 w-3.5" />
+                    Sizes & Stock
+                  </p>
+                  <div className="overflow-hidden rounded-xl border border-gray-100">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                          <th className="px-3 py-2 text-left">Size</th>
+                          <th className="px-3 py-2 text-right">Price</th>
+                          <th className="px-3 py-2 text-right">Stock</th>
+                          <th className="px-3 py-2 text-left">Barcode / SKU</th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {validSizes.map((size) => {
+                          const oos = size.availableStock <= 0;
+                          const low = !oos && size.availableStock <= 5;
+                          return (
+                            <tr key={size._id} className={oos ? 'opacity-40' : ''}>
+                              <td className={`px-3 py-2.5 font-semibold ${oos ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                                {size.displayName}
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums text-gray-900">
+                                {(size as any).originalPrice && (
+                                  <span className="block text-[10px] text-gray-400 line-through leading-tight">
+                                    {formatCurrency((size as any).originalPrice)}
+                                  </span>
+                                )}
+                                <span className="font-bold">{formatCurrency(size.sellingPrice)}</span>
+                              </td>
+                              <td className="px-3 py-2.5 text-right">
+                                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold
+                                  ${oos ? 'bg-red-50 text-red-500' : low ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                  {oos ? 'OOS' : size.availableStock}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2.5">
+                                {(size.barcode || size.sku) ? (
+                                  <span className="flex items-center gap-1 font-mono text-[10px] text-gray-500">
+                                    <PiBarcode className="h-3 w-3 shrink-0 text-gray-400" />
+                                    {size.barcode || size.sku}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-300">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Vendor */}
+              {product.vendor && (
+                <div className="flex items-center justify-between border-t border-gray-50 px-5 py-3">
+                  <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                    <PiTag className="h-3.5 w-3.5" />
+                    Vendor
+                  </span>
+                  <span className="text-xs font-semibold text-gray-700">
+                    {product.vendor.posName ||
+                      `${product.vendor.firstName ?? ''} ${product.vendor.lastName ?? ''}`.trim() ||
+                      product.vendor.email || '—'}
+                  </span>
+                </div>
+              )}
+            </>
           )}
 
-          {/* Vendor */}
-          {product.vendor && (
-            <div className="flex items-center justify-between border-t border-gray-50 px-5 py-3">
-              <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                <PiTag className="h-3.5 w-3.5" />
-                Vendor
-              </span>
-              <span className="text-xs font-semibold text-gray-700">
-                {product.vendor.posName ||
-                  `${product.vendor.firstName ?? ''} ${product.vendor.lastName ?? ''}`.trim() ||
-                  product.vendor.email || '—'}
-              </span>
+          {/* ── PRICES TAB ── */}
+          {tab === 'prices' && (
+            <div className="px-4 py-4">
+              <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                What this product would cost under each pricelist
+              </p>
+              <PricelistBreakdown
+                product={product}
+                hasSizes={hasSizes}
+                validSizes={validSizes}
+              />
             </div>
           )}
         </div>
@@ -217,7 +489,6 @@ function ProductInfoModal({
         {/* ── Footer: Add to cart ── */}
         <div className="shrink-0 border-t border-gray-100 px-5 py-4">
           {hasSizes && validSizes.length > 1 ? (
-            /* Multi-size: show per-size add buttons */
             <div className="space-y-2">
               <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Add to cart</p>
               <div className="grid grid-cols-2 gap-2">
@@ -365,9 +636,16 @@ function SizePickerModal({
                     {oos && <p className="text-[10px] text-gray-400">Out of stock</p>}
                   </div>
                 </div>
-                <span className={`text-sm font-bold tabular-nums ${sel ? 'text-[#b20202]' : 'text-gray-700'}`}>
-                  {formatCurrency(size.sellingPrice)}
-                </span>
+                <div className="flex flex-col items-end">
+                  {(size as any).originalPrice && (
+                    <span className="text-[10px] tabular-nums text-gray-400 line-through leading-tight">
+                      {formatCurrency((size as any).originalPrice)}
+                    </span>
+                  )}
+                  <span className={`text-sm font-bold tabular-nums leading-tight ${sel ? 'text-[#b20202]' : 'text-gray-700'}`}>
+                    {formatCurrency(size.sellingPrice)}
+                  </span>
+                </div>
               </button>
             );
           })}
@@ -478,6 +756,7 @@ export default function POSProductCard({ product, onAddToCart, className, flash 
       const max = Math.max(...prices);
       priceDisplay = min === max ? formatCurrency(min) : `${formatCurrency(min)} – ${formatCurrency(max)}`;
     }
+    if (product.originalPrice) originalDisplay = formatCurrency(product.originalPrice);
   } else {
     priceDisplay = formatCurrency(product.baseSellingPrice);
     if (product.originalPrice) originalDisplay = formatCurrency(product.originalPrice);
