@@ -7,10 +7,16 @@ import {
   PiPlus, PiUser, PiNotePencil, PiX, PiMagnifyingGlass,
   PiTag, PiNote, PiArrowCounterClockwise, PiTrash,
   PiBarcode, PiStar, PiList, PiLinkSimple,
+  PiCheckCircle, PiSpinner,
 } from 'react-icons/pi';
-import { usePOSCart, usePOSUI, usePOSAuth } from '@/app/shared/point-of-sale/store';
+import {
+  usePOSCart, usePOSUI, usePOSAuth, usePOSPricelist,
+  getBestBundle, getEffectiveBundlePrice,
+  getBestBundleForItem, getEffectiveBundlePriceForItem,
+} from '@/app/shared/point-of-sale/store';
 import { POSCartItem } from '@/app/shared/point-of-sale/types';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
+import { posApi } from '@/app/shared/point-of-sale/api';
 import toast from 'react-hot-toast';
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -20,18 +26,131 @@ function itemKey(item: POSCartItem) {
 
 type DialMode = 'qty' | 'disc' | 'price';
 
+// ── Pricelist modal ────────────────────────────────────────────────────────────
+function PricelistModal({ token, onClose }: { token: string; onClose: () => void }) {
+  const { selectedPricelist, setSelectedPricelist } = usePOSPricelist();
+  const [pricelists, setPricelists] = useState<any[]>([]);
+  const [loading, setLoading]       = useState(true);
+
+  useEffect(() => {
+    posApi.getPricelists(token)
+      .then(d => setPricelists(d.pricelists || []))
+      .catch(() => toast.error('Could not load pricelists'))
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  function select(pl: any) {
+    setSelectedPricelist(pl);
+    if (pl)  toast.success(`Pricelist applied: ${pl.name}`, { icon: '🏷️' });
+    else     toast('Standard pricing restored', { icon: '↩️' });
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+      <div className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+          <div>
+            <h2 className="text-sm font-bold text-gray-900">Select Pricelist</h2>
+            <p className="text-[11px] text-gray-400">Prices update immediately on the product grid</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <PiX className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="py-2">
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-8 text-xs text-gray-400">
+              <PiSpinner className="h-4 w-4 animate-spin" /> Loading…
+            </div>
+          ) : (
+            <>
+              {/* Standard / no pricelist */}
+              <button
+                type="button"
+                onClick={() => select(null)}
+                className={`flex w-full items-center gap-3 px-5 py-3 text-left text-sm transition-colors hover:bg-gray-50 ${
+                  !selectedPricelist ? 'font-semibold text-[#b20202]' : 'text-gray-700'
+                }`}
+              >
+                {!selectedPricelist
+                  ? <PiCheckCircle className="h-4 w-4 shrink-0 text-[#b20202]" />
+                  : <span className="h-4 w-4 shrink-0 rounded-full border-2 border-gray-300" />}
+                <span className="flex-1">Standard Price</span>
+                <span className="text-[10px] text-gray-400">No override</span>
+              </button>
+
+              {pricelists.length > 0 && <div className="mx-4 my-1 border-t border-gray-100" />}
+
+              {pricelists.length === 0 && !loading && (
+                <p className="px-5 py-4 text-center text-xs text-gray-400">
+                  No selectable pricelists configured.<br />
+                  <span className="text-gray-300">Mark a pricelist as "Selectable" in the admin.</span>
+                </p>
+              )}
+
+              {pricelists.map(pl => {
+                const active = selectedPricelist?._id === pl._id;
+                return (
+                  <button
+                    key={pl._id}
+                    type="button"
+                    onClick={() => select(pl)}
+                    className={`flex w-full items-center gap-3 px-5 py-3.5 text-left text-sm transition-colors hover:bg-gray-50 ${
+                      active ? 'bg-[#b20202]/5 font-semibold text-[#b20202]' : 'text-gray-700'
+                    }`}
+                  >
+                    {active
+                      ? <PiCheckCircle className="h-4 w-4 shrink-0 text-[#b20202]" />
+                      : <PiTag className="h-4 w-4 shrink-0 text-gray-300" />}
+                    <div className="flex-1 min-w-0">
+                      <p className="truncate">{pl.name}</p>
+                      {pl.rules?.length > 0 && (
+                        <p className="text-[10px] text-gray-400">{pl.rules.length} rule{pl.rules.length !== 1 ? 's' : ''}</p>
+                      )}
+                    </div>
+                    {pl.currency && pl.currency !== 'NGN' && (
+                      <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                        {pl.currency}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </>
+          )}
+        </div>
+
+        <div className="border-t border-gray-100 px-5 py-3 text-right">
+          <button type="button" onClick={onClose}
+            className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Actions modal ──────────────────────────────────────────────────────────────
 function ActionsModal({
   onDiscount,
   onNote,
+  onPricelist,
   onCancelOrder,
   onClose,
 }: {
   onDiscount: () => void;
   onNote: () => void;
+  onPricelist: () => void;
   onCancelOrder: () => void;
   onClose: () => void;
 }) {
+  const { selectedPricelist } = usePOSPricelist();
+
   const actions = [
     { label: 'General Note', icon: <PiNote className="h-5 w-5" />, fn: () => { onNote(); onClose(); } },
     { label: 'Quotation/Order', icon: <PiLinkSimple className="h-5 w-5" />, fn: null },
@@ -39,7 +158,7 @@ function ActionsModal({
     { label: 'Reward', icon: <PiStar className="h-5 w-5" />, fn: null },
     { label: 'Discount', icon: <PiTag className="h-5 w-5" />, fn: () => { onDiscount(); onClose(); } },
     { label: 'Customer Note', icon: <PiNote className="h-5 w-5" />, fn: () => { onNote(); onClose(); } },
-    { label: 'Price List', icon: <PiList className="h-5 w-5" />, fn: null },
+    { label: selectedPricelist ? selectedPricelist.name : 'Price List', icon: <PiList className="h-5 w-5" />, fn: () => { onPricelist(); onClose(); }, active: !!selectedPricelist },
     { label: 'Refund', icon: <PiArrowCounterClockwise className="h-5 w-5" />, fn: null },
     { label: 'Cancel Order', icon: <PiTrash className="h-5 w-5" />, fn: () => { onCancelOrder(); onClose(); }, danger: true },
   ];
@@ -65,11 +184,13 @@ function ActionsModal({
                   ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
                   : (a as any).danger
                   ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                  : (a as any).active
+                  ? 'bg-[#b20202]/10 text-[#b20202] hover:bg-[#b20202]/15 ring-1 ring-[#b20202]/30'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
               {a.icon}
-              {a.label}
+              <span className="max-w-[80px] truncate text-center leading-tight">{a.label}</span>
             </button>
           ))}
         </div>
@@ -213,16 +334,18 @@ export default function POSCart() {
   } = usePOSCart();
 
   const { setActiveView } = usePOSUI();
-  const { staff } = usePOSAuth();
+  const { staff, token } = usePOSAuth();
+  const { selectedPricelist, setSelectedPricelist } = usePOSPricelist();
   const staffPerms: string[] = staff?.posPermissions ?? [];
   const canDiscount = staffPerms.includes('pos:discount');
   const canRefund   = staffPerms.includes('pos:refund');
 
   // UI state
-  const [showActions, setShowActions] = useState(false);
-  const [showCustomer, setShowCustomer] = useState(false);
-  const [showNote, setShowNote] = useState(false);
-  const [showDiscount, setShowDiscount] = useState(false);
+  const [showActions,   setShowActions]   = useState(false);
+  const [showCustomer,  setShowCustomer]  = useState(false);
+  const [showNote,      setShowNote]      = useState(false);
+  const [showDiscount,  setShowDiscount]  = useState(false);
+  const [showPricelist, setShowPricelist] = useState(false);
 
   // Dialpad state
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -430,7 +553,36 @@ export default function POSCart() {
               {items.map((item) => {
                 const key = itemKey(item);
                 const isSelected = selectedKey === key;
-                const lineTotal = item.price * item.quantity * (1 - item.discount / 100);
+                // Use pricelist-aware helpers so display stays live when pricelist changes
+                const bestBundle = selectedPricelist
+                  ? getBestBundleForItem(item, selectedPricelist)
+                  : getBestBundle(item);
+                const { price: effectivePrice, overrides: bundleOverrides } = selectedPricelist
+                  ? getEffectiveBundlePriceForItem(item, selectedPricelist)
+                  : getEffectiveBundlePrice(item);
+                const lineGross     = effectivePrice * item.quantity;
+                const itemDiscAmt   = lineGross * Math.max(0, Math.min(100, item.discount)) / 100;
+                let bundleDiscAmt   = 0;
+                if (bestBundle && !bundleOverrides) {
+                  const dt = bestBundle.discountType ?? 'percentage';
+                  bundleDiscAmt = dt === 'fixed'
+                    ? Math.max(0, Math.min((bestBundle.discount ?? 0) * item.quantity, lineGross - itemDiscAmt))
+                    : Math.max(0, lineGross * Math.min(100, bestBundle.discount ?? 0) / 100);
+                }
+                const lineTotal = Math.max(0, lineGross - itemDiscAmt - bundleDiscAmt);
+                const bundleActive  = bestBundle && (bundleDiscAmt > 0 || bundleOverrides);
+
+                const bundleLabel = bundleActive ? (() => {
+                  const dt   = bestBundle!.discountType ?? 'percentage';
+                  const name = bestBundle!.name ? ` (${bestBundle!.name})` : '';
+                  if (dt === 'markup_on_cost')
+                    return `📦 Bundle${name}: Cost +${bestBundle!.discount ?? 0}% markup → ${formatCurrency(effectivePrice)}/unit`;
+                  if (dt === 'no_discount')
+                    return `📦 Bundle${name}: No discount → ${formatCurrency(effectivePrice)}/unit`;
+                  if (dt === 'fixed')
+                    return `📦 Bundle${name}: -${formatCurrency((bestBundle!.discount ?? 0) * item.quantity)}`;
+                  return `📦 Bundle${name}: -${bestBundle!.discount ?? 0}%`;
+                })() : null;
                 const qtyDisplay = isSelected && dialMode === 'qty' && dialInput !== ''
                   ? dialInput
                   : String(item.quantity);
@@ -449,11 +601,15 @@ export default function POSCart() {
                       <span className="flex-1 text-sm font-semibold leading-tight text-gray-900">
                         {item.name}{item.variant ? ` - ${item.variant}` : ''}
                       </span>
-                      <span className="shrink-0 text-sm font-bold text-gray-900">
+                      <span className={`shrink-0 text-sm font-bold ${
+                        bundleDiscAmt > 0 ? 'text-purple-700'
+                        : effectivePrice < item.price ? 'text-emerald-700'
+                        : 'text-gray-900'
+                      }`}>
                         {formatCurrency(lineTotal)}
                       </span>
                     </div>
-                    {/* Row 2: qty × price / unit */}
+                    {/* Row 2: qty × price / unit + cashier discount */}
                     <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500">
                       <span className={`inline-block rounded border px-1.5 py-0.5 font-semibold tabular-nums ${
                         isSelected && dialMode === 'qty'
@@ -463,7 +619,15 @@ export default function POSCart() {
                         {qtyDisplay}
                       </span>
                       <span>×</span>
-                      <span>{formatCurrency(item.price)}</span>
+                      <span className={bundleOverrides ? 'font-semibold text-purple-700' : effectivePrice < item.price ? 'font-semibold text-emerald-700' : ''}>
+                        {formatCurrency(effectivePrice)}
+                        {!bundleOverrides && Math.abs(effectivePrice - item.price) > 0.001 && (
+                          <span className="ml-1 font-normal text-gray-400 line-through text-[10px]">{formatCurrency(item.price)}</span>
+                        )}
+                        {bundleOverrides && item.price !== effectivePrice && (
+                          <span className="ml-1 font-normal text-gray-400 line-through text-[10px]">{formatCurrency(item.price)}</span>
+                        )}
+                      </span>
                       <span>/ Units</span>
                       {item.discount > 0 && (
                         <span className="ml-1 rounded bg-red-50 px-1.5 text-[#b20202]">
@@ -490,6 +654,13 @@ export default function POSCart() {
                         <PiX className="h-3.5 w-3.5" />
                       </span>
                     </div>
+                    {/* Bundle discount sub-line — appears as soon as qty hits threshold */}
+                    {bundleLabel && (
+                      <div className="mt-1 flex items-center justify-between rounded-md bg-purple-50 px-2 py-1 text-[10px] font-semibold text-purple-700">
+                        <span>{bundleLabel}</span>
+                        <span className="tabular-nums">-{formatCurrency(bundleDiscAmt)}</span>
+                      </div>
+                    )}
                   </button>
                 );
               })}
@@ -558,6 +729,24 @@ export default function POSCart() {
           </div>
         )}
 
+        {/* ── Active pricelist chip ── */}
+        {selectedPricelist && (
+          <div className="shrink-0 flex items-center justify-between border-t border-gray-100 bg-emerald-50 px-4 py-1.5">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+              <PiTag className="h-3 w-3 shrink-0" />
+              <span className="truncate">{selectedPricelist.name}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setSelectedPricelist(null); toast('Standard pricing restored', { icon: '↩️' }); }}
+              className="ml-2 shrink-0 rounded p-0.5 text-emerald-500 hover:bg-emerald-100 hover:text-emerald-700"
+              title="Clear pricelist"
+            >
+              <PiX className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+
         {/* ── Total ── */}
         <div className="shrink-0 border-t border-gray-200 px-4 py-2.5">
           {discountAmount > 0 && (
@@ -574,7 +763,9 @@ export default function POSCart() {
           )}
           <div className="flex items-baseline justify-between">
             <span className="text-base font-bold text-gray-900">Total</span>
-            <span className="text-lg font-bold text-gray-900">{formatCurrency(total)}</span>
+            <span className={`text-lg font-bold ${selectedPricelist ? 'text-emerald-700' : 'text-gray-900'}`}>
+              {formatCurrency(total)}
+            </span>
           </div>
         </div>
 
@@ -687,8 +878,16 @@ export default function POSCart() {
         <ActionsModal
           onDiscount={() => setShowDiscount(true)}
           onNote={() => setShowNote(true)}
+          onPricelist={() => setShowPricelist(true)}
           onCancelOrder={() => { clearCart(); setSelectedKey(null); setDialInput(''); }}
           onClose={() => setShowActions(false)}
+        />
+      )}
+
+      {showPricelist && token && (
+        <PricelistModal
+          token={token}
+          onClose={() => setShowPricelist(false)}
         />
       )}
 

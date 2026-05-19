@@ -9,6 +9,8 @@ import type {
   POSSession,
   POSClosingControl,
   POSRecentOrder,
+  POSCashMovement,
+  POSSettings,
 } from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -59,6 +61,10 @@ export const posApi = {
     if (params?.category) qs.set('category', params.category);
     if (params?.limit) qs.set('limit', String(params.limit));
     return request<{ products: POSProduct[]; total: number }>(`${API_URL}/api/pos/products?${qs}`, { headers: authHeaders(token) });
+  },
+
+  async getPricelists(token: string) {
+    return request<{ pricelists: any[] }>(`${API_URL}/api/pos/pricelists`, { headers: authHeaders(token) });
   },
 
   async createOrder(token: string, order: Record<string, unknown>) {
@@ -129,11 +135,35 @@ export const posApi = {
     return request<POSClosingControl>(`${API_URL}/api/pos/sessions/${sessionId}/closing-control`, { headers: authHeaders(token) });
   },
 
-  async getSessions(token: string, page?: number, limit?: number) {
+  async recordCashMove(token: string, sessionId: string, type: 'in' | 'out', amount: number, reason?: string) {
+    return request<{ movement: POSCashMovement; cashMovements: POSCashMovement[] }>(
+      `${API_URL}/api/pos/sessions/${sessionId}/cash-move`,
+      { method: 'POST', headers: authHeaders(token), body: JSON.stringify({ type, amount, reason }) }
+    );
+  },
+
+  async getCashMoves(token: string, sessionId: string) {
+    return request<{ cashMovements: POSCashMovement[] }>(
+      `${API_URL}/api/pos/sessions/${sessionId}/cash-moves`,
+      { headers: authHeaders(token) }
+    );
+  },
+
+  async getSessions(token: string, page?: number, limit?: number, status?: 'open' | 'closed') {
     const qs = new URLSearchParams();
-    if (page) qs.set('page', String(page));
-    if (limit) qs.set('limit', String(limit));
-    return request<{ sessions: POSSession[]; total: number }>(`${API_URL}/api/pos/sessions?${qs}`, { headers: authHeaders(token) });
+    if (page)   qs.set('page',   String(page));
+    if (limit)  qs.set('limit',  String(limit));
+    if (status) qs.set('status', status);
+    return request<{ sessions: POSSession[]; total: number; page: number; limit: number }>(
+      `${API_URL}/api/pos/sessions?${qs}`, { headers: authHeaders(token) }
+    );
+  },
+
+  async getAllOrders(token: string, params?: { page?: number; limit?: number }) {
+    const qs = new URLSearchParams();
+    if (params?.page)  qs.set('page',  String(params.page));
+    if (params?.limit) qs.set('limit', String(params.limit));
+    return request<POSRecentOrder[]>(`${API_URL}/api/pos/orders?${qs}`, { headers: authHeaders(token) });
   },
 
   async getSessionOrders(token: string, sessionId: string) {
@@ -142,5 +172,29 @@ export const posApi = {
 
   async listCashiers(token: string) {
     return request<POSStaff[]>(`${API_URL}/api/pos/cashiers`, { headers: authHeaders(token) });
+  },
+
+  async getBankAccounts(token: string) {
+    return request<{ bankAccounts: { bankName: string; accountNumber: string; accountName?: string }[] }>(
+      `${API_URL}/api/pos/tenant/bank-accounts`, { headers: authHeaders(token) }
+    );
+  },
+
+  async updateBankAccounts(token: string, bankAccounts: { bankName: string; accountNumber: string; accountName?: string }[]) {
+    return request<{ bankAccounts: { bankName: string; accountNumber: string; accountName?: string }[] }>(
+      `${API_URL}/api/pos/tenant/bank-accounts`,
+      { method: 'PATCH', headers: authHeaders(token), body: JSON.stringify({ bankAccounts }) }
+    );
+  },
+
+  async getPOSSettings(token: string) {
+    return request<{ posSettings: POSSettings }>(`${API_URL}/api/pos/tenant/settings`, { headers: authHeaders(token) });
+  },
+
+  async updatePOSSettings(token: string, posSettings: POSSettings) {
+    return request<{ posSettings: POSSettings }>(
+      `${API_URL}/api/pos/tenant/settings`,
+      { method: 'PATCH', headers: authHeaders(token), body: JSON.stringify({ posSettings }) }
+    );
   },
 };

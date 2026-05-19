@@ -13,18 +13,48 @@ export interface POSStaff {
   };
 }
 
+export interface POSTenantBankAccount {
+  bankName: string;
+  accountNumber: string;
+  accountName?: string;
+}
+
+export interface POSSettings {
+  allowOverselling?: boolean;
+}
+
 export interface POSTenant {
   _id: string;
   slug: string;
   name: string;
   primaryColor?: string;
-  logo?: string;
+  logo?: string | { url?: string; alt?: string; publicId?: string };
+  bankAccounts?: POSTenantBankAccount[];
+  posSettings?: POSSettings;
 }
 
 export interface POSAuthResponse {
   token: string;
   staff: POSStaff;
   tenant: POSTenant;
+}
+
+export interface POSFlashSale {
+  isActive: boolean;
+  discountPercentage?: number;
+  startDate?: string | null;
+  endDate?: string | null;
+  remainingQuantity?: number | null;
+}
+
+export interface POSBundleDeal {
+  name?: string;
+  quantity?: number;
+  discount?: number;
+  discountType?: 'percentage' | 'fixed' | 'markup_on_cost' | 'no_discount';
+  validUntil?: string | null;
+  active?: boolean;
+  fromPricelist?: boolean; // true = injected by a pricelist rule, not a permanent DB deal
 }
 
 export interface POSProduct {
@@ -45,6 +75,7 @@ export interface POSProduct {
     email?: string;
   };
   baseSellingPrice: number;
+  originalPrice?: number | null;
   costPrice: number;
   availableStock: number;
   totalStock: number;
@@ -56,20 +87,23 @@ export interface POSProduct {
   visibleInPOS: boolean;
   isFeaturedByTenant?: boolean;
   isOnSale: boolean;
-  salePrice?: number;
+  isFlashSale?: boolean;
   saleType?: string;
-  discount?: number;
-  discountType?: string;
+  saleDiscountValue?: number;
+  flashSale?: POSFlashSale;
+  activeBundles?: POSBundleDeal[];
 }
 
 export interface POSSize {
   _id: string;
   displayName: string;
   sellingPrice: number;
+  originalPrice?: number | null;
   costPrice?: number;
   availableStock: number;
   stock?: number;
   sku?: string;
+  barcode?: string;
 }
 
 export interface POSCartItem {
@@ -84,6 +118,9 @@ export interface POSCartItem {
   quantity: number;
   discount: number;
   stock: number;
+  activeBundles?: POSBundleDeal[];
+  costPrice?: number;       // needed for markup_on_cost bundle computation
+  originalPrice?: number;   // pre-sale price, needed for no_discount bundle computation
 }
 
 export interface POSOrderItem {
@@ -159,10 +196,12 @@ export interface POSRefundResponse {
 export interface POSSession {
   _id: string;
   tenant: string;
+  terminalType?: 'retail' | 'wholesale';
   openedBy: { _id: string; firstName: string; lastName: string; posName?: string; avatar?: string };
   closedBy?: { _id: string; firstName: string; lastName: string; posName?: string };
   activeCashier?: { _id: string; firstName: string; lastName: string; posName?: string; avatar?: string };
   cashierLog: { cashier: string; startedAt: string; endedAt?: string }[];
+  cashMovements?: POSCashMovement[];
   status: 'open' | 'closed';
   openedAt: string;
   closedAt?: string;
@@ -253,12 +292,25 @@ export interface POSRefundRecord {
   paymentMethod?: string;
 }
 
+export interface POSCashMovement {
+  _id: string;
+  type: 'in' | 'out';
+  amount: number;
+  reason?: string;
+  performedBy?: { _id: string; firstName: string; lastName: string; posName?: string };
+  performedAt: string;
+}
+
 export interface POSClosingControl {
   sessionId: string;
   openedAt: string;
   openingCash: number;
   totalSales: number;
   orderCount: number;
+  totalCashIn: number;
+  totalCashOut: number;
+  netCashMove: number;
+  cashMovements: POSCashMovement[];
   methods: {
     method: string;
     opening: number;

@@ -191,6 +191,11 @@
     @apply flex min-h-full flex-col overflow-x-hidden text-sm text-gray-600 dark:bg-gray-50;
   }
 
+  /* Remove browser-default border from inputs inside styled containers */
+  input:not([type='checkbox']):not([type='radio']):not([type='range']) {
+    border-width: 0;
+  }
+
   input::-ms-clear,
   input::-ms-reveal {
     @apply hidden;

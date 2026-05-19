@@ -367,7 +367,7 @@ const subProductSchema = new Schema(
       // Quantity and discount
       quantity: { type: Number, default: 2 },
       discount: Number,
-      discountType: { type: String, enum: ['percentage', 'fixed'], default: 'percentage' },
+      discountType: { type: String, enum: ['percentage', 'fixed', 'markup_on_cost', 'no_discount'], default: 'percentage' },
       // Status
       active: { type: Boolean, default: true },
       validUntil: Date,

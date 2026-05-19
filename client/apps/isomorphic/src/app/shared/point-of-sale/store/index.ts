@@ -2,7 +2,8 @@
 
 import { atom, useAtom, useAtomValue } from 'jotai';
 import { atomWithStorage } from 'jotai/utils';
-import { POSCartItem, POSStaff, POSTenant } from '@/app/shared/point-of-sale/types';
+import { POSCartItem, POSBundleDeal, POSStaff, POSTenant } from '@/app/shared/point-of-sale/types';
+import { findBestPricelistRule } from '@/app/shared/point-of-sale/utils';
 import { useCallback, useMemo } from 'react';
 
 // ─── Auth (persisted) ────────────────────────────────────────────────────────
@@ -96,10 +97,200 @@ function makeCartRef(existingCount: number) {
   return String(existingCount + 1).padStart(3, '0');
 }
 
-function computeSubtotal(items: POSCartItem[]) {
+// ── Pricelist-aware helpers ───────────────────────────────────────────────────
+
+/**
+ * Apply a pricelist's matching rule to an item's raw price.
+ * Uses the item's actual quantity so volume/tiered pricing snaps in real time
+ * as the cashier changes qty (e.g., buy 10+ → 20% off kicks in automatically).
+ */
+export function computeItemPriceWithPricelist(item: POSCartItem, pricelist: any): number {
+  if (!pricelist?.rules?.length) return item.price;
+
+  // findBestPricelistRule handles: date check, minQuantity threshold, specificity priority,
+  // and highest-qualifying-tier selection — matching Odoo's rule resolution order.
+  const rule = findBestPricelistRule(pricelist.rules, item.subProductId, item.quantity);
+  if (!rule || rule.priceType === 'bundle') return item.price;
+
+  const p    = item.price;
+  const cost = Number(item.costPrice) || 0;
+  switch (rule.priceType) {
+    case 'fixed': {
+      const fp = Number(rule.fixedPrice);
+      return fp > 0 ? fp : p;
+    }
+    case 'formula': {
+      if (!cost || !rule.markupPercentage) return p;
+      return Math.round(cost * (1 + Number(rule.markupPercentage) / 100) * 100) / 100;
+    }
+    case 'discount': {
+      // Stack on the item's current price (which already includes any product-level
+      // promotions). The pricelist gives an additional discount on top.
+      if (rule.discountType === 'fixed') {
+        const amt = Number(rule.discountAmount || 0);
+        return amt > 0 ? Math.max(0, p - amt) : p;
+      }
+      const pct = Number(rule.discountPercentage || 0);
+      return pct > 0 ? Math.max(0, p * (1 - pct / 100)) : p;
+    }
+    case 'flash_sale': {
+      const pct = Number(rule.flashSalePercentage || 0);
+      return pct > 0 ? Math.max(0, p * (1 - pct / 100)) : p;
+    }
+    default: return p;
+  }
+}
+
+/**
+ * Returns the best qualifying bundle considering both the item's stored DB
+ * bundles AND any bundle rules in the currently selected pricelist.
+ */
+export function getBestBundleForItem(item: POSCartItem, pricelist: any): POSBundleDeal | null {
+  const dbBundles: POSBundleDeal[] = item.activeBundles || [];
+
+  const plBundles: POSBundleDeal[] = [];
+  if (pricelist?.rules?.length) {
+    const now = new Date();
+    for (const r of pricelist.rules as any[]) {
+      if (r.priceType !== 'bundle') continue;
+      if (r.endDate   && new Date(r.endDate)   < now) continue;
+      if (r.startDate && new Date(r.startDate) > now) continue;
+      if (!r.bundleQuantity) continue;
+      if (r.bundleDiscountType !== 'no_discount' && !r.bundleDiscount) continue;
+      // minQuantity is the rule's overall activation threshold (separate from bundleQuantity)
+      if ((Number(r.minQuantity) || 0) > item.quantity) continue;
+      const pid = r.subProduct?._id ? String(r.subProduct._id) : r.subProduct ? String(r.subProduct) : null;
+      if (pid && pid !== String(item.subProductId)) continue;
+      plBundles.push({
+        name:          r.bundleName || `Buy ${r.bundleQuantity}+`,
+        quantity:      r.bundleQuantity || 2,
+        discount:      r.bundleDiscount || 0,
+        discountType:  r.bundleDiscountType || 'percentage',
+        active:        true,
+        validUntil:    r.endDate ?? null,
+        fromPricelist: true,
+      });
+    }
+  }
+
+  const allBundles = [...dbBundles, ...plBundles];
+  if (!allBundles.length) return null;
+
+  const now = new Date();
+  const qualifying = allBundles.filter(b =>
+    b.active !== false &&
+    (!b.validUntil || new Date(b.validUntil) >= now) &&
+    item.quantity >= (b.quantity ?? 2)
+  );
+  if (!qualifying.length) return null;
+
+  const p   = item.price;
+  const qty = item.quantity;
+  return qualifying.sort((a, b) => {
+    const savings = (bd: POSBundleDeal) => {
+      const dt = bd.discountType ?? 'percentage';
+      if (dt === 'fixed')          return (bd.discount ?? 0) * qty;
+      if (dt === 'markup_on_cost') return Math.max(0, p - (Number(item.costPrice) || 0) * (1 + (bd.discount ?? 0) / 100)) * qty;
+      if (dt === 'no_discount')    return 0;
+      return p * qty * Math.min(100, bd.discount ?? 0) / 100;
+    };
+    return savings(b) - savings(a);
+  })[0];
+}
+
+/** Effective unit price for a cart item including pricelist overrides (markup_on_cost / no_discount). */
+export function getEffectiveBundlePriceForItem(
+  item: POSCartItem,
+  pricelist: any,
+): { price: number; overrides: boolean } {
+  const best      = getBestBundleForItem(item, pricelist);
+  const basePrice = computeItemPriceWithPricelist(item, pricelist);
+
+  if (best?.discountType === 'markup_on_cost') {
+    const cost   = Number(item.costPrice) || 0;
+    const markup = best.discount ?? 0;
+    if (cost > 0) return { price: Math.round(cost * (1 + markup / 100) * 100) / 100, overrides: true };
+  }
+  if (best?.discountType === 'no_discount') {
+    const orig = item.originalPrice;
+    if (orig && orig > basePrice) return { price: orig, overrides: true };
+  }
+  return { price: basePrice, overrides: false };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Returns the best qualifying bundle deal for a cart item at its current quantity. */
+export function getBestBundle(item: POSCartItem): POSBundleDeal | null {
+  if (!item.activeBundles?.length) return null;
+  const now = new Date();
+  const qualifying = item.activeBundles.filter(b =>
+    b.active !== false &&
+    (!b.validUntil || new Date(b.validUntil) >= now) &&
+    item.quantity >= (b.quantity ?? 2)
+  );
+  if (!qualifying.length) return null;
+  // Pick the deal with the most absolute savings at current qty × price
+  return qualifying.sort((a, b) => {
+    const savings = (bd: POSBundleDeal) => {
+      const dt = bd.discountType ?? 'percentage';
+      const lineGross = item.price * item.quantity;
+      if (dt === 'fixed')          return (bd.discount ?? 0) * item.quantity;
+      if (dt === 'markup_on_cost') return Math.max(0, item.price - (item.costPrice ?? 0) * (1 + (bd.discount ?? 0) / 100)) * item.quantity;
+      if (dt === 'no_discount')    return 0;
+      return lineGross * Math.min(100, bd.discount ?? 0) / 100;
+    };
+    return savings(b) - savings(a);
+  })[0];
+}
+
+/**
+ * Returns the effective unit price after a price-override bundle (markup_on_cost or no_discount).
+ * For discount-type bundles (percentage/fixed) the unit price is unchanged — the discount is
+ * applied as a separate deduction.
+ */
+export function getEffectiveBundlePrice(item: POSCartItem): { price: number; overrides: boolean } {
+  const best = getBestBundle(item);
+  if (!best) return { price: item.price, overrides: false };
+
+  if (best.discountType === 'markup_on_cost') {
+    const cost   = item.costPrice ?? 0;
+    const markup = best.discount  ?? 0;
+    if (cost > 0) {
+      return { price: Math.round(cost * (1 + markup / 100) * 100) / 100, overrides: true };
+    }
+  }
+
+  if (best.discountType === 'no_discount') {
+    const orig = item.originalPrice;
+    if (orig && orig > item.price) {
+      return { price: orig, overrides: true };
+    }
+  }
+
+  return { price: item.price, overrides: false };
+}
+
+function computeSubtotal(items: POSCartItem[], pricelist?: any) {
   return items.reduce((sum, item) => {
-    const line = item.price * item.quantity;
-    return sum + line - line * (item.discount / 100);
+    const best = pricelist ? getBestBundleForItem(item, pricelist) : getBestBundle(item);
+    const { price: effectivePrice, overrides } = pricelist
+      ? getEffectiveBundlePriceForItem(item, pricelist)
+      : getEffectiveBundlePrice(item);
+
+    const lineGross   = effectivePrice * item.quantity;
+    const itemDiscAmt = lineGross * Math.max(0, Math.min(100, item.discount)) / 100;
+
+    let bundleDiscAmt = 0;
+    if (best && !overrides) {
+      const dt = best.discountType ?? 'percentage';
+      bundleDiscAmt = dt === 'fixed'
+        ? Math.min((best.discount ?? 0) * item.quantity, lineGross - itemDiscAmt)
+        : lineGross * Math.min(100, best.discount ?? 0) / 100;
+      bundleDiscAmt = Math.max(0, bundleDiscAmt);
+    }
+
+    return sum + lineGross - Math.min(lineGross, itemDiscAmt + bundleDiscAmt);
   }, 0);
 }
 
@@ -122,8 +313,14 @@ export const usePOSCart = () => {
 
   const { items, customer, discountType, discountValue, note, ref } = activeCart;
 
+  // Pricelist is applied dynamically so the total stays live as selection changes
+  const [selectedPricelist] = useAtom(posSelectedPricelistAtom);
+
   // Derived values
-  const subtotal      = useMemo(() => computeSubtotal(items), [items]);
+  const subtotal = useMemo(
+    () => computeSubtotal(items, selectedPricelist ?? undefined),
+    [items, selectedPricelist],
+  );
   const discountAmount = useMemo(
     () => computeDiscountAmount(subtotal, discountType, discountValue),
     [subtotal, discountType, discountValue]
@@ -189,11 +386,16 @@ export const usePOSCart = () => {
             (i) => getItemKey(i.subProductId, i.sizeId) === key
           );
           if (existing) {
-            return activeCart.items.map((i) =>
-              getItemKey(i.subProductId, i.sizeId) === key
-                ? { ...i, quantity: Math.min(i.quantity + item.quantity, i.stock) }
-                : i
-            );
+            return activeCart.items.map((i) => {
+              if (getItemKey(i.subProductId, i.sizeId) !== key) return i;
+              const newQty = Math.min(i.quantity + item.quantity, i.stock);
+              return {
+                ...i,
+                quantity: newQty,
+                // Always refresh activeBundles so pricelist changes and DB updates are picked up
+                activeBundles: item.activeBundles ?? i.activeBundles,
+              };
+            });
           }
           return [...activeCart.items, item];
         })(),
@@ -332,6 +534,25 @@ export const usePOSPermissions = () => {
     canPriceOverride: perms.includes('pos:price_override'),
     has: (p: string) => perms.includes(p),
   };
+};
+
+// ─── Pricelist (persisted — survives page refresh) ────────────────────────────
+
+const posSelectedPricelistAtom = atomWithStorage<any | null>('dh-pos-pricelist', null);
+
+export const usePOSPricelist = () => {
+  const [selectedPricelist, setSelectedPricelist] = useAtom(posSelectedPricelistAtom);
+  return { selectedPricelist, setSelectedPricelist };
+};
+
+// ─── Sale refresh signal ──────────────────────────────────────────────────────
+// Increment this after every successful order to trigger session + product refreshes.
+const posSaleCounterAtom = atom(0);
+
+export const usePOSSaleSignal = () => {
+  const [saleCounter, setSaleCounter] = useAtom(posSaleCounterAtom);
+  const notifySale = useCallback(() => setSaleCounter((n) => n + 1), [setSaleCounter]);
+  return { saleCounter, notifySale };
 };
 
 // ─── UI State ────────────────────────────────────────────────────────────────

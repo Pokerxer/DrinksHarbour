@@ -51,25 +51,38 @@ export default function POSSell() {
   }
 
   const handleAddToCart = useCallback(
-    (product: POSProduct, sizeId?: string) => {
+    (product: POSProduct, sizeId?: string, quantity = 1) => {
       if (product.sizes?.length && !sizeId && !product.sellWithoutSizeVariants) return;
       const size = sizeId ? product.sizes.find((s) => s._id === sizeId) : undefined;
-      // Prevent adding an out-of-stock size
       if (size && size.availableStock <= 0) return;
-      // Server already bakes sale discounts into sellingPrice/baseSellingPrice
-      const price = size?.sellingPrice ?? product.baseSellingPrice;
+
+      // Store the raw (pre-pricelist) price so the cart can re-apply the
+      // currently selected pricelist dynamically. _priceBeforePricelist is set
+      // by applyPricelistToProduct; falls back to the server price when no
+      // pricelist was applied.
+      const price = size
+        ? ((size as any)._priceBeforePricelist ?? size.sellingPrice)
+        : ((product as any)._priceBeforePricelist ?? product.baseSellingPrice);
+
+      // Only store DB-level bundles — pricelist bundles are applied dynamically
+      // from the currently selected pricelist so they follow selection changes.
+      const activeBundles = (product.activeBundles ?? []).filter(b => !b.fromPricelist);
+
       addItem({
-        subProductId: product._id,
-        productId: product.product?._id || product._id,
-        sizeId: size?._id,
-        name: product.product?.name || 'Product',
-        variant: size?.displayName || '',
-        sku: size?.sku || product.sku,
-        image: product.product?.images?.[0]?.thumbnail || product.product?.images?.[0]?.url,
+        subProductId:  product._id,
+        productId:     product.product?._id || product._id,
+        sizeId:        size?._id,
+        name:          product.product?.name || 'Product',
+        variant:       size?.displayName || '',
+        sku:           size?.sku || product.sku,
+        image:         product.product?.images?.[0]?.thumbnail || product.product?.images?.[0]?.url,
         price,
-        quantity: 1,
-        discount: 0,
-        stock: size?.availableStock ?? product.availableStock,
+        quantity,
+        discount:      0,
+        stock:         size?.availableStock ?? product.availableStock,
+        activeBundles,
+        costPrice:     product.costPrice,
+        originalPrice: product.originalPrice ?? undefined,
       });
     },
     [addItem]

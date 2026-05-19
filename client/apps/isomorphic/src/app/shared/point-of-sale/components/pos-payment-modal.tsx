@@ -8,7 +8,7 @@ import {
   PiCurrencyNgn, PiCreditCard, PiBank, PiDeviceMobile,
   PiArrowLeft, PiArrowRight,
 } from 'react-icons/pi';
-import { usePOSCart, usePOSAuth, usePOSUI } from '@/app/shared/point-of-sale/store';
+import { usePOSCart, usePOSAuth, usePOSUI, usePOSSaleSignal, usePOSPricelist } from '@/app/shared/point-of-sale/store';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import { POSOrderResponse } from '@/app/shared/point-of-sale/types';
@@ -269,6 +269,8 @@ export default function POSPaymentModal() {
           discountType, discountValue, clearCart } = usePOSCart();
   const { setActiveView } = usePOSUI();
   const { token, terminal } = usePOSAuth();
+  const { notifySale } = usePOSSaleSignal();
+  const { selectedPricelist } = usePOSPricelist();
 
   const [lines,       setLines]       = useState<PaymentLine[]>([]);
   const [activeId,    setActiveId]    = useState<string | null>(null);
@@ -427,8 +429,11 @@ export default function POSPaymentModal() {
         discountValue: discountValue > 0 ? discountValue : 0,
         note:          note || undefined,
         terminalType:  terminal ?? 'retail',
+        pricelistId:   selectedPricelist?._id ?? undefined,
       });
       setOrderResult(result.order);
+      // Signal session bar + product grid to refresh their data
+      notifySale();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Payment failed');
     } finally {

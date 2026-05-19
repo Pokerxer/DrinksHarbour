@@ -234,23 +234,52 @@ function computePOSPricing(sp, sizeDoc, tenant) {
 
   const platformCostPrice    = calcPlatformCostPrice(rawCost, rawSelling, revenueModel, markupPct, commissionPct);
   let   platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
+  const priceBeforeSale      = platformSellingPrice;
 
-  // Apply SubProduct-level sale discount
-  const now       = new Date();
-  const saleStart = sp.saleStartDate ? new Date(sp.saleStartDate) : null;
-  const saleEnd   = sp.saleEndDate   ? new Date(sp.saleEndDate)   : null;
-  const saleActive = sp.isOnSale && (!saleStart || now >= saleStart) && (!saleEnd || now <= saleEnd);
+  const now = new Date();
 
-  if (saleActive && sp.saleDiscountValue > 0) {
-    const dtype = sp.saleType || 'percentage';
-    if (dtype === 'percentage' || dtype === 'flash_sale') {
-      platformSellingPrice = parseFloat((platformSellingPrice * (1 - sp.saleDiscountValue / 100)).toFixed(2));
-    } else if (dtype === 'fixed') {
-      platformSellingPrice = Math.max(0, parseFloat((platformSellingPrice - sp.saleDiscountValue).toFixed(2)));
+  // ── Flash sale (checked first — takes priority over regular sale) ────────────
+  const fs         = sp.flashSale;
+  const flashStart = fs?.startDate ? new Date(fs.startDate) : null;
+  const flashEnd   = fs?.endDate   ? new Date(fs.endDate)   : null;
+  const flashActive =
+    fs?.isActive === true &&
+    (fs?.discountPercentage ?? 0) > 0 &&
+    (!flashStart || now >= flashStart) &&
+    (!flashEnd   || now <= flashEnd)   &&
+    (fs?.remainingQuantity == null || fs.remainingQuantity > 0);
+
+  if (flashActive) {
+    platformSellingPrice = parseFloat((platformSellingPrice * (1 - fs.discountPercentage / 100)).toFixed(2));
+  } else {
+    // ── Regular sale discount ────────────────────────────────────────────────
+    const saleStart  = sp.saleStartDate ? new Date(sp.saleStartDate) : null;
+    const saleEnd    = sp.saleEndDate   ? new Date(sp.saleEndDate)   : null;
+    const saleActive = sp.isOnSale &&
+      (sp.saleDiscountValue ?? 0) > 0 &&
+      (!saleStart || now >= saleStart) &&
+      (!saleEnd   || now <= saleEnd);
+
+    if (saleActive) {
+      const dtype = sp.saleType || 'percentage';
+      if (dtype === 'percentage' || dtype === 'flash_sale') {
+        platformSellingPrice = parseFloat((platformSellingPrice * (1 - sp.saleDiscountValue / 100)).toFixed(2));
+      } else if (dtype === 'fixed') {
+        platformSellingPrice = Math.max(0, parseFloat((platformSellingPrice - sp.saleDiscountValue).toFixed(2)));
+      }
     }
   }
 
-  return { sellingPrice: platformSellingPrice, costPrice: platformCostPrice, revenueModel, markupPct, commissionPct };
+  return {
+    sellingPrice:       platformSellingPrice,
+    originalPrice:      priceBeforeSale,
+    isOnSale:           platformSellingPrice < priceBeforeSale,
+    isFlashSale:        flashActive,
+    costPrice:          platformCostPrice,
+    revenueModel,
+    markupPct,
+    commissionPct,
+  };
 }
 
 /** Convenience wrapper — returns just the selling price (used by getPOSProducts). */
@@ -1173,6 +1202,7 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
       'sku', 'product', 'tenant', 'vendor',
       'baseSellingPrice', 'costPrice',
       'isOnSale', 'saleType', 'saleStartDate', 'saleEndDate', 'saleDiscountValue',
+      'flashSale', 'bundleDeals',
       'availableStock', 'totalStock', 'stockStatus', 'status',
       'sellWithoutSizeVariants', 'defaultSize', 'sizes',
       'visibleInPOS', 'isFeaturedByTenant',
@@ -1191,20 +1221,32 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
 
   // Inject computed platform selling prices so the client never sees raw 0-values
   const enriched = subProducts.map((sp) => {
-    // No-size price (used when sellWithoutSizeVariants or as a fallback)
-    const basePrice = computePOSPrice(sp, null, tenant);
+    const basePricing   = computePOSPricing(sp, null, tenant);
+    const basePrice     = basePricing.sellingPrice;
+    const originalPrice = basePricing.originalPrice;
 
-    const enrichedSizes = (sp.sizes || []).filter(Boolean).map((size) => ({
-      ...size,
-      // Compute per-size price; if size has no own costPrice/sellingPrice it falls back to sp values
-      sellingPrice: computePOSPrice(sp, size, tenant),
-    }));
+    const enrichedSizes = (sp.sizes || []).filter(Boolean).map((size) => {
+      const sizePricing = computePOSPricing(sp, size, tenant);
+      return {
+        ...size,
+        sellingPrice:  sizePricing.sellingPrice,
+        originalPrice: sizePricing.isOnSale ? sizePricing.originalPrice : null,
+      };
+    });
+
+    // Active bundle deals (not expired, sorted best discount first)
+    const now = new Date();
+    const activeBundles = (sp.bundleDeals || [])
+      .filter(bd => bd.active !== false && (!bd.validUntil || new Date(bd.validUntil) >= now))
+      .sort((a, b) => (b.discount || 0) - (a.discount || 0));
 
     return {
       ...sp,
-      baseSellingPrice: basePrice,
-      // Expose whether the product is on sale (discount was already baked into price above)
-      isOnSale: !!(sp.isOnSale && sp.saleDiscountValue > 0),
+      baseSellingPrice:  basePrice,
+      originalPrice:     basePricing.isOnSale ? originalPrice : null,
+      isOnSale:          basePricing.isOnSale,
+      isFlashSale:       basePricing.isFlashSale,
+      activeBundles,
       sizes: enrichedSizes,
     };
   });
@@ -1249,6 +1291,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     note = '',
     sessionId,
     priceOverrides = {}, // { subProductId+sizeId key: newPrice } — requires pos:price_override
+    pricelistId,         // selected pricelist _id — applied to prices at order time
   } = req.body;
 
   if (!items?.length) return res.status(400).json({ success: false, message: 'No items in order' });
@@ -1258,6 +1301,15 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   const hasOverrides = Object.keys(priceOverrides).length > 0;
   if (hasOverrides && !req.posPermissions.includes('pos:price_override')) {
     return res.status(403).json({ success: false, message: 'Price override permission required' });
+  }
+
+  // Fetch the selected pricelist once — applied to every line item's price
+  let selectedPricelist = null;
+  if (pricelistId) {
+    try {
+      const Pricelist = require('../models/Pricelist');
+      selectedPricelist = await Pricelist.findById(pricelistId).select('rules').lean();
+    } catch (_) { /* non-fatal — fall back to DB pricing */ }
   }
 
   // Resolve receipt number early so audit records can reference it
@@ -1278,7 +1330,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
 
       // Fetch subproduct for price resolution and order line data
       const sp = await SubProduct.findById(subProductId)
-        .select('product sku baseSellingPrice costPrice isOnSale saleType saleStartDate saleEndDate saleDiscountValue')
+        .select('product sku baseSellingPrice costPrice isOnSale saleType saleStartDate saleEndDate saleDiscountValue flashSale bundleDeals')
         .populate('product', 'name images platformMarkup platformDiscount')
         .lean();
 
@@ -1320,10 +1372,163 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         quantity,
       });
 
+      // ── Flash sale: decrement remainingQuantity (best-effort, non-blocking) ──
+      const fsNow = new Date();
+      const fsDoc = sp.flashSale;
+      const fsApplied =
+        fsDoc?.isActive === true &&
+        (fsDoc?.discountPercentage ?? 0) > 0 &&
+        (!fsDoc.startDate || fsNow >= new Date(fsDoc.startDate)) &&
+        (!fsDoc.endDate   || fsNow <= new Date(fsDoc.endDate))   &&
+        (fsDoc.remainingQuantity == null || fsDoc.remainingQuantity > 0);
+
+      if (fsApplied && fsDoc.remainingQuantity != null) {
+        SubProduct.findByIdAndUpdate(subProductId, {
+          $inc: { 'flashSale.remainingQuantity': -quantity }
+        }).catch(() => {});
+      }
+
+      // ── Apply selected pricelist rule to finalPrice ───────────────────────────
+      // Pricelist rules are the authoritative price for this session. For
+      // discount/flash_sale rules the base is the pre-promotion (original) price
+      // so the pricelist does not stack on top of the product's own sale.
+      if (selectedPricelist?.rules?.length) {
+        const plNow = new Date();
+        const pid   = String(subProductId);
+
+        // Mirror client-side findBestPricelistRule:
+        // 1) active dates  2) minQuantity <= line qty  3) specific > global  4) highest tier wins
+        const eligible = selectedPricelist.rules.filter(r =>
+          !(r.endDate   && new Date(r.endDate)   < plNow) &&
+          !(r.startDate && new Date(r.startDate) > plNow) &&
+          (Number(r.minQuantity) || 0) <= quantity
+        );
+
+        const specific = eligible.filter(r => {
+          const rid = r.subProduct?._id ? String(r.subProduct._id) : r.subProduct ? String(r.subProduct) : null;
+          return rid && rid === pid;
+        });
+        const global = eligible.filter(r => !r.subProduct);
+        const pool   = specific.length > 0 ? specific : global;
+
+        // Highest qualifying minQuantity = best volume tier
+        const plRule = pool.sort((a, b) => (Number(b.minQuantity) || 0) - (Number(a.minQuantity) || 0))[0];
+
+        if (plRule && plRule.priceType !== 'bundle') {
+          // Apply pricelist rule to the current finalPrice (which already includes
+          // any direct product promotions). Stacking is intentional — the pricelist
+          // gives an additional reduction on top of the product's own sale/flash.
+          if (plRule.priceType === 'fixed') {
+            const fp = Number(plRule.fixedPrice);
+            if (fp > 0) finalPrice = fp;
+          } else if (plRule.priceType === 'formula') {
+            const cost   = sizePricing.costPrice || 0;
+            const markup = Number(plRule.markupPercentage || 0);
+            if (cost > 0 && markup > 0)
+              finalPrice = Math.round(cost * (1 + markup / 100) * 100) / 100;
+          } else if (plRule.priceType === 'discount') {
+            if (plRule.discountType === 'fixed') {
+              const amt = Number(plRule.discountAmount || 0);
+              if (amt > 0) finalPrice = Math.max(0, finalPrice - amt);
+            } else {
+              const pct = Number(plRule.discountPercentage || 0);
+              if (pct > 0) finalPrice = Math.max(0, finalPrice * (1 - pct / 100));
+            }
+          } else if (plRule.priceType === 'flash_sale') {
+            const pct = Number(plRule.flashSalePercentage || 0);
+            if (pct > 0) finalPrice = Math.max(0, finalPrice * (1 - pct / 100));
+          }
+        }
+      }
+
+      // ── Bundle deals: find best qualifying deal for this line quantity ────────
+      const nowBd = new Date();
+
+      // Combine DB bundle deals with pricelist bundle rules (dynamic, not in DB)
+      const allBundleCandidates = [...(sp.bundleDeals || [])];
+      if (selectedPricelist?.rules?.length) {
+        for (const r of selectedPricelist.rules) {
+          if (r.priceType !== 'bundle' || !r.bundleQuantity) continue;
+          if (r.endDate   && new Date(r.endDate)   < nowBd) continue;
+          if (r.startDate && new Date(r.startDate) > nowBd) continue;
+          if (r.bundleDiscountType !== 'no_discount' && !r.bundleDiscount) continue;
+          // minQuantity: overall rule activation threshold (separate from bundleQuantity)
+          if ((Number(r.minQuantity) || 0) > quantity) continue;
+          const rid = r.subProduct?._id ? String(r.subProduct._id) : r.subProduct ? String(r.subProduct) : null;
+          if (rid && rid !== String(subProductId)) continue;
+          allBundleCandidates.push({
+            name:         r.bundleName || `Buy ${r.bundleQuantity}+`,
+            quantity:     r.bundleQuantity,
+            discount:     r.bundleDiscount || 0,
+            discountType: r.bundleDiscountType || 'percentage',
+            active:       true,
+            validUntil:   r.endDate || null,
+          });
+        }
+      }
+
+      // Pick the bundle that delivers the most absolute savings for the cashier
+      const qualifyingBundles = allBundleCandidates.filter(bd =>
+        bd.active !== false &&
+        (!bd.validUntil || new Date(bd.validUntil) >= nowBd) &&
+        quantity >= (bd.quantity || 1)
+      );
+
+      const bestBundle = qualifyingBundles.sort((a, b) => {
+        // For price-override types, rank by estimated savings vs finalPrice
+        const savings = (bd) => {
+          const d = bd.discountType || 'percentage';
+          if (d === 'fixed')          return (bd.discount || 0) * quantity;
+          if (d === 'markup_on_cost') return Math.max(0, finalPrice - sizePricing.costPrice * (1 + (bd.discount || 0) / 100)) * quantity;
+          if (d === 'no_discount')    return 0; // restores full price — 0 net "savings"
+          return finalPrice * quantity * Math.min(100, bd.discount || 0) / 100;
+        };
+        return savings(b) - savings(a);
+      })[0];
+
+      // ── Effective unit price (some bundle types override finalPrice) ──────────
+      let effectivePrice      = finalPrice;
+      let bundleOverridePrice = false;
+
+      if (bestBundle) {
+        const dt = bestBundle.discountType || 'percentage';
+
+        if (dt === 'markup_on_cost') {
+          // price = costPrice × (1 + markup%)
+          const cost   = sizePricing.costPrice || 0;
+          const markup = bestBundle.discount  || 0;
+          if (cost > 0) {
+            effectivePrice      = Math.round(cost * (1 + markup / 100) * 100) / 100;
+            bundleOverridePrice = true;
+          }
+
+        } else if (dt === 'no_discount') {
+          // Charge the pre-sale base price — removes flash sale / regular sale discount
+          const priceBeforeSale = sizePricing.originalPrice;
+          if (priceBeforeSale && priceBeforeSale > finalPrice) {
+            effectivePrice      = priceBeforeSale;
+            bundleOverridePrice = true;
+          }
+        }
+      }
+
+      // Item-level cashier discount (always percentage from the dialpad)
+      const lineGross      = effectivePrice * quantity;
+      const itemDiscPct    = Math.max(0, Math.min(100, item.discount || 0));
+      const itemDiscAmt    = parseFloat((lineGross * itemDiscPct / 100).toFixed(2));
+
+      // Bundle discount amount (only for percentage / fixed types; override types already set effectivePrice)
+      let bundleDiscAmt = 0;
+      if (bestBundle && !bundleOverridePrice) {
+        const dt = bestBundle.discountType || 'percentage';
+        bundleDiscAmt = dt === 'fixed'
+          ? Math.min((bestBundle.discount || 0) * quantity, lineGross - itemDiscAmt)
+          : parseFloat((lineGross * Math.min(100, bestBundle.discount || 0) / 100).toFixed(2));
+        bundleDiscAmt = Math.max(0, bundleDiscAmt);
+      }
+
       // Compute per-line revenue fields required by Order schema
-      const itemDiscountPct    = Math.max(0, Math.min(100, item.discount || 0));
-      const lineGross          = finalPrice * quantity;
-      const itemDiscountAmount = parseFloat((lineGross * itemDiscountPct / 100).toFixed(2));
+      const itemDiscountAmount = parseFloat(Math.min(lineGross, itemDiscAmt + bundleDiscAmt).toFixed(2));
       const lineSubtotal       = parseFloat((lineGross - itemDiscountAmount).toFixed(2));
 
       const tenantRevShare = sizePricing.revenueModel === 'commission'
@@ -1335,7 +1540,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         subproduct:            subProductId,
         size:                  sizeId || undefined,
         quantity,
-        priceAtPurchase:       finalPrice,
+        priceAtPurchase:       effectivePrice,
         itemSubtotal:          lineSubtotal,
         discountAmount:        itemDiscountAmount,
         vendorPriceAtPurchase: sizePricing.costPrice,
@@ -1520,6 +1725,10 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
   const { items: refundItems = [], reason = '', refundPaymentMethod } = req.body;
   if (!refundItems.length) return res.status(400).json({ success: false, message: 'No items to refund' });
 
+  // Support both POS-token context (req.posUser) and admin-token context (req.user)
+  const performer = req.posUser || req.user;
+  if (!performer) return res.status(401).json({ success: false, message: 'Authentication required' });
+
   const order = await Order.findOne({ _id: req.params.id, 'items.tenant': req.tenant?._id });
   if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
   if (order.isVoided) return res.status(400).json({ success: false, message: 'Cannot refund a voided order' });
@@ -1558,9 +1767,11 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
     const safeDiscPct = Math.min(Math.max(0, Number(discPct) || 0), 100);
 
     // Resolve per-unit refund price:
-    //   1. Use override if cashier has pos:price_override permission
+    //   1. Use override if cashier has pos:price_override permission (or is an admin)
     //   2. Otherwise use the original purchase price
-    const hasPriceOverride = req.posPermissions?.includes('pos:price_override');
+    const hasPriceOverride = req.posPermissions?.includes('pos:price_override')
+      || req.user?.role === 'superadmin'
+      || req.user?.role === 'admin';
     const baseUnitPrice    = orderItem.priceAtPurchase ?? 0;
     const refundUnitPrice  = (hasPriceOverride && overridePrice > 0)
       ? Number(overridePrice)
@@ -1577,7 +1788,7 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
         sizeId:       orderItem.size ? orderItem.size.toString() : null,
         quantity,
         tenantId:     req.tenant?._id,
-        staffId:      req.posUser._id,
+        staffId:      performer._id,
         returnNumber,
         productId:    orderItem.product || undefined,
         unitPrice:    refundUnitPrice,
@@ -1605,7 +1816,7 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
     items:         refundLines,
     totalRefunded: parseFloat(totalRefunded.toFixed(2)),
     reason,
-    refundedBy:    req.posUser._id,
+    refundedBy:    performer._id,
     refundedAt:    new Date(),
     paymentMethod: refundPaymentMethod || undefined,
   });
@@ -1620,6 +1831,12 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
   }
 
   await order.save();
+
+  // Back-link all InventoryMovement records created for this return to the order
+  InventoryMovement.updateMany(
+    { reference: returnNumber, tenant: req.tenant?._id },
+    { relatedOrder: order._id }
+  ).catch(err => console.error('[Inventory] POS refund back-link failed:', err.message));
 
   const refundRecord = order.refunds[order.refunds.length - 1];
 
