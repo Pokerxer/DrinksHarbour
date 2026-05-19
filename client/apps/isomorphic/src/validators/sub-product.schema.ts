@@ -199,7 +199,7 @@ const subProductDataSchema = z.object({
   defaultSize: z.string().optional(),
   
   // Inventory Management
-  stockStatus: z.enum(['in_stock', 'low_stock', 'out_of_stock', 'pre_order', 'discontinued']).default('out_of_stock'),
+  stockStatus: z.enum(['in_stock', 'low_stock', 'out_of_stock', 'pre_order', 'discontinued']).catch('in_stock'),
   totalStock: z.preprocess(
     (val) => (val === '' || val === null || val === undefined) ? 0 : Number(val),
     z.number().min(0).default(0)
@@ -226,7 +226,10 @@ const subProductDataSchema = z.object({
   ),
   lastRestockDate: z.string().nullable().optional(),
   nextRestockDate: z.string().nullable().optional(),
-  
+  tracking:  z.enum(['none', 'serial', 'lot']).default('none'),
+  valuation: z.enum(['fifo', 'avco', 'standard']).default('fifo'),
+  routes:    z.array(z.string()).default(['buy']),
+
   // Vendor & Sourcing
   vendor: z.string().optional(),
   supplierSKU: z.string().optional(),
@@ -257,7 +260,7 @@ const subProductDataSchema = z.object({
   isFeaturedByTenant: z.boolean().default(false),
   isNewArrival: z.boolean().default(false),
   isBestSeller: z.boolean().default(false),
-  isPublished: z.boolean().default(false),
+  isPublished: z.boolean().default(true),
   visibleInPOS: z.boolean().default(true),
   visibleInOnlineStore: z.boolean().default(true),
   addedAt: z.string().optional(),

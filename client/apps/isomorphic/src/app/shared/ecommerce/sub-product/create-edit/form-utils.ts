@@ -1,6 +1,11 @@
 import { SubProductInput } from '@/validators/sub-product.schema';
 import isEmpty from 'lodash/isEmpty';
 
+const VALID_STOCK_STATUSES = ['in_stock', 'low_stock', 'out_of_stock', 'pre_order', 'discontinued'];
+function normalizeStockStatus(v: any): string {
+  return VALID_STOCK_STATUSES.includes(v) ? v : 'in_stock';
+}
+
 // Empty objects and arrays
 export const emptyTastingNotes = {
   nose: [],
@@ -220,7 +225,7 @@ export function defaultValues(product?: Partial<SubProductInput>): Partial<SubPr
       visibleInPOS: product?.subProductData?.visibleInPOS ?? true,
       visibleInOnlineStore: product?.subProductData?.visibleInOnlineStore ?? true,
       sellWithoutSizeVariants: product?.subProductData?.sellWithoutSizeVariants ?? false,
-      stockStatus: product?.subProductData?.stockStatus ?? 'in_stock',
+      stockStatus: normalizeStockStatus(product?.subProductData?.stockStatus),
       tracking:    product?.subProductData?.tracking    ?? 'none',
       valuation:   product?.subProductData?.valuation   ?? 'fifo',
       routes:      product?.subProductData?.routes      ?? ['buy'],

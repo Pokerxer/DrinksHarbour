@@ -1,6 +1,11 @@
 // utils/transformers/subProduct.transformer.ts
 // Transforms form data to API-ready format for SubProduct creation
 
+const VALID_STOCK_STATUSES = ['in_stock', 'low_stock', 'out_of_stock', 'pre_order', 'discontinued'] as const;
+function normalizeStockStatus(v: string | undefined | null): string {
+  return VALID_STOCK_STATUSES.includes(v as any) ? (v as string) : 'in_stock';
+}
+
 export interface SizeFormData {
   size: string;
   displayName?: string;
@@ -306,7 +311,7 @@ export const transformFormData = (data: SubProductFormInput) => {
     sizes: (sp.sizes || []).map(transformSize),
     sellWithoutSizeVariants: sp.sellWithoutSizeVariants ?? false,
     defaultSize: sp.defaultSize || '',
-    stockStatus: sp.stockStatus || 'in_stock',
+    stockStatus: normalizeStockStatus(sp.stockStatus),
     totalStock: toNumber(sp.totalStock) ?? 0,
     reservedStock: toNumber(sp.reservedStock) ?? 0,
     availableStock: toNumber(sp.availableStock) ?? 0,
@@ -513,7 +518,7 @@ export const transformBackendToForm = (backendData: any): SubProductFormInput =>
       sizes: transformedSizes,
       sellWithoutSizeVariants: sp.sellWithoutSizeVariants ?? false,
       defaultSize: sp.defaultSize?._id || sp.defaultSize || '',
-      stockStatus: sp.stockStatus || 'in_stock',
+      stockStatus: normalizeStockStatus(sp.stockStatus),
       totalStock: sp.totalStock ?? 0,
       reservedStock: sp.reservedStock ?? 0,
       availableStock: sp.availableStock ?? 0,
