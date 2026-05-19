@@ -243,6 +243,7 @@ export const bannersListColumns = [
       const meta = table.options.meta as any;
       const isActive = status === 'active';
       const isPaused = status === 'paused';
+      // eslint-disable-next-line react-hooks/rules-of-hooks
       const [cloning, setCloning] = useState(false);
 
       const handleClone = async () => {

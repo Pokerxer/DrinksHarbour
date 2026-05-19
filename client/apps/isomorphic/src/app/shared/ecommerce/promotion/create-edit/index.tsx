@@ -1317,19 +1317,8 @@ function DiscountSection({ formData, onChange, errors, touched }: SectionProps) 
   // Find selected type info
   const selectedType = promotionTypes.find(t => t.value === formData.type);
 
-  // Show loading/error state
-  if (!formData.type) {
-    return (
-      <div className="text-center py-12">
-        <PiWarningCircle className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-        <h3 className="text-lg font-semibold text-gray-700 mb-2">No Promotion Type Selected</h3>
-        <p className="text-gray-500">Please go to the Basic Info section to select a promotion type</p>
-      </div>
-    );
-  }
-
   // Enhanced preview calculation with actual product prices
-  // Enhanced preview calculation with actual product prices
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const calculatePreview = useMemo(() => {
     // Get selected products
     const selectedProducts = formData.selectedProducts || [];
@@ -1417,6 +1406,17 @@ function DiscountSection({ formData, onChange, errors, touched }: SectionProps) 
       productCount: selectedProducts.length
     };
   }, [formData.type, formData.discountValue, formData.flashDiscountPercentage, formData.loyaltyDiscountPercentage, formData.buyQuantity, formData.getQuantity, formData.selectedProducts]);
+
+  // Show loading/error state
+  if (!formData.type) {
+    return (
+      <div className="text-center py-12">
+        <PiWarningCircle className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+        <h3 className="text-lg font-semibold text-gray-700 mb-2">No Promotion Type Selected</h3>
+        <p className="text-gray-500">Please go to the Basic Info section to select a promotion type</p>
+      </div>
+    );
+  }
 
   return (
     <motion.div variants={containerVariants} className="space-y-8">

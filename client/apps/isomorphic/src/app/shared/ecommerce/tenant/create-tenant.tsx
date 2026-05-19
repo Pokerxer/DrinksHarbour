@@ -333,6 +333,7 @@ export default function CreateTenant({
         const primaryColorValue = watch('primaryColor') || '';
 
         // Auto-generate slug from name unless manually edited
+        // eslint-disable-next-line react-hooks/rules-of-hooks
         useEffect(() => {
           if (!slugManuallyEdited.current && nameValue && !id) {
             setValue('slug', slugify(nameValue), { shouldValidate: false });

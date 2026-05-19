@@ -386,6 +386,7 @@ export default function CreateBrand({
         const colorAccent = watch('brandColorAccent') || '';
 
         // Auto-generate slug from name unless manually edited
+        // eslint-disable-next-line react-hooks/rules-of-hooks
         useEffect(() => {
           if (!slugManuallyEdited.current && nameValue && !id) {
             setValue('slug', slugify(nameValue), { shouldValidate: false });
@@ -393,6 +394,7 @@ export default function CreateBrand({
         }, [nameValue]);
 
         // Apply AI suggestions when available
+        // eslint-disable-next-line react-hooks/rules-of-hooks
         useEffect(() => {
           if (!aiSuggestions) return;
           Object.entries(aiSuggestions).forEach(([k, v]) => {

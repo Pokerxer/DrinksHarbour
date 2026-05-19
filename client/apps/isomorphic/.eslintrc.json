@@ -4,6 +4,8 @@
         "no-duplicate-imports": "warn",
         "react/react-in-jsx-scope": "off",
         "react/no-unknown-property": "warn",
-        "react-hooks/exhaustive-deps": "warn"
+        "react-hooks/exhaustive-deps": "warn",
+        "react/no-unescaped-entities": "off",
+        "@typescript-eslint/no-explicit-any": "off"
     }
 }

@@ -10,6 +10,7 @@ import {
   PiPencilBold,
   PiSparkle,
   PiArrowUUpLeftBold,
+  PiPlusBold,
 } from 'react-icons/pi';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
