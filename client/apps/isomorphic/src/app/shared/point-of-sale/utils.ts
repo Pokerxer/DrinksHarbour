@@ -213,11 +213,15 @@ export function applyPricelistToProduct(product: any, pricelist: any): any {
     };
   }
 
-  // ── 2. Inject ALL matching bundle rules into activeBundles for card hints ────
+  // ── 2. Inject pricelist bundle rules; suppress DB bundles if pricelist has price rules ────
   const bundleRules = findMatchingPricelistRules(pricelist.rules, product._id, 1, 'bundle');
+  const hasPriceRules = pricelist.rules.some((r: any) => r.priceType !== 'bundle');
 
   if (bundleRules.length > 0) {
-    const dbBundles: any[] = (result.activeBundles || []).filter((b: any) => !b.fromPricelist);
+    // When pricelist has price rules, suppress DB bundles (pricelist is authoritative)
+    const dbBundles: any[] = hasPriceRules
+      ? []
+      : (result.activeBundles || []).filter((b: any) => !b.fromPricelist);
 
     const plEntries = bundleRules.map((rule: any) => {
       const qty  = Math.max(2, Number(rule.bundleQuantity) || 2);
@@ -248,6 +252,9 @@ export function applyPricelistToProduct(product: any, pricelist: any): any {
     ].sort((a: any, b: any) => (b.discount || 0) - (a.discount || 0));
 
     result = { ...result, activeBundles: merged };
+  } else if (hasPriceRules) {
+    // Pricelist has price rules but no bundle rules — clear DB bundle badges from card
+    result = { ...result, activeBundles: [] };
   }
 
   return result;

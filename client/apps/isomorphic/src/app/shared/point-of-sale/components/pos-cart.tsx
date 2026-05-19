@@ -759,11 +759,15 @@ export default function POSCart() {
                     <span className="text-gray-500 truncate max-w-[100px]">{item.name}{item.variant ? ` (${item.variant})` : ''}</span>
                     <span className="shrink-0 text-gray-400">×{item.quantity}</span>
                     <div className="flex flex-wrap gap-1">
-                      {steps.map((s, i) => (
-                        <span key={i} className="rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-700 font-semibold">
-                          {s.label}: -{formatCurrency(s.saving * item.quantity)}
-                        </span>
-                      ))}
+                      {steps.map((s, i) => {
+                        const totalAdj = s.saving * item.quantity;
+                        const isSaving = totalAdj > 0;
+                        return (
+                          <span key={i} className={`rounded px-1.5 py-0.5 font-semibold ${isSaving ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>
+                            {s.label}: {isSaving ? '-' : '+'}{formatCurrency(Math.abs(totalAdj))}
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
                 );

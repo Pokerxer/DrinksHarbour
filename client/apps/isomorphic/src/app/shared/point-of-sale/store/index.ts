@@ -137,9 +137,9 @@ export function computeItemPriceChain(
     const before = price;
     price = applyRuleTransform(price, rule, cost);
     const saving = before - price;
-    if (saving > 0.001) {
+    if (Math.abs(saving) > 0.001) {
       let label = '';
-      if (rule.priceType === 'fixed')      label = `Fixed price`;
+      if (rule.priceType === 'fixed')           label = `Fixed price`;
       else if (rule.priceType === 'formula')    label = `Cost +${rule.markupPercentage}% markup`;
       else if (rule.priceType === 'flash_sale') label = `⚡ ${rule.flashSalePercentage}% flash`;
       else if (rule.priceType === 'discount') {
@@ -159,7 +159,10 @@ export function computeItemPriceChain(
  * bundles AND any bundle rules in the currently selected pricelist.
  */
 export function getBestBundleForItem(item: POSCartItem, pricelist: any): POSBundleDeal | null {
-  const dbBundles: POSBundleDeal[] = item.activeBundles || [];
+  // When a pricelist with price rules (formula/fixed/discount/flash_sale) is active,
+  // suppress DB bundles — the pricelist is the authoritative pricing policy.
+  const hasPriceRules = pricelist?.rules?.some((r: any) => r.priceType !== 'bundle');
+  const dbBundles: POSBundleDeal[] = (hasPriceRules ? [] : item.activeBundles) || [];
 
   const plBundles: POSBundleDeal[] = [];
   if (pricelist?.rules?.length) {
@@ -523,8 +526,9 @@ export const usePOSPricelist = () => {
 
 /** Shared cache of selectable pricelists — avoids duplicate fetches from PricelistPicker and PricelistModal */
 export const usePOSAvailablePricelists = () => {
-  const [pricelists, setPricelists] = useAtom(posAvailablePricelistsAtom);
-  const [loaded,     setLoaded]     = useAtom(posAvailablePricelistsLoadedAtom);
+  const [pricelists, setPricelists]   = useAtom(posAvailablePricelistsAtom);
+  const [loaded,     setLoaded]       = useAtom(posAvailablePricelistsLoadedAtom);
+  const [selectedPricelist, setSelectedPricelist] = useAtom(posSelectedPricelistAtom);
 
   const load = useCallback(
     async (token: string) => {
@@ -532,11 +536,18 @@ export const usePOSAvailablePricelists = () => {
       try {
         const { posApi } = await import('@/app/shared/point-of-sale/api');
         const data = await posApi.getPricelists(token);
-        setPricelists(data.pricelists || []);
+        const fresh = data.pricelists || [];
+        setPricelists(fresh);
         setLoaded(true);
+        // Sync: if a pricelist is selected from a previous session, replace it
+        // with the freshly fetched version so rule changes in admin take effect.
+        if (selectedPricelist?._id) {
+          const updated = fresh.find((p: any) => p._id === selectedPricelist._id);
+          if (updated) setSelectedPricelist(updated);
+        }
       } catch { /* silent — picker shows empty gracefully */ }
     },
-    [loaded, setPricelists, setLoaded],
+    [loaded, setPricelists, setLoaded, selectedPricelist, setSelectedPricelist],
   );
 
   const invalidate = useCallback(() => setLoaded(false), [setLoaded]);
