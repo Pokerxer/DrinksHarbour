@@ -54,7 +54,7 @@ export function calculateChange(amountTendered: number, total: number): number {
 
 // ── Pricelist price application ───────────────────────────────────────────────
 
-function applyRuleTransform(price: number, rule: any, costPrice = 0): number {
+export function applyRuleTransform(price: number, rule: any, costPrice = 0): number {
   if (price <= 0) return price;
   switch (rule.priceType) {
     case 'fixed': {
@@ -85,30 +85,39 @@ function applyRuleTransform(price: number, rule: any, costPrice = 0): number {
 }
 
 /**
- * Finds the best matching pricelist rule for a product at a given order quantity.
+ * Returns ALL matching pricelist rules for a product at a given quantity,
+ * sorted by priority (ascending sequence, then descending minQuantity for volume tiers).
  *
- * Priority (Odoo-style):
- *   1. Product-specific rule  >  "All products" rule
- *   2. Within the same specificity: highest `minQuantity` that still qualifies
- *      (volume tier — e.g., rule for qty≥10 beats rule for qty≥1 when qty=12)
- *   3. Rules outside their active date window are excluded.
- *   4. Rules with `minQuantity > qty` are excluded.
+ * filterType controls which rule categories are included:
+ *   'price'  → fixed, formula, discount, flash_sale only (excludes bundle)
+ *   'bundle' → bundle only
+ *   'all'    → all types (default)
+ *
+ * Specificity: product-specific rules shadow all-products rules.
+ * Volume tiers: multiple rules of different minQuantity can all qualify and
+ * are applied sequentially so they stack (e.g. -10% base + -5% volume qty 6+).
  */
-export function findBestPricelistRule(rules: any[], productId: string, qty: number): any | null {
-  if (!rules?.length) return null;
+export function findMatchingPricelistRules(
+  rules: any[],
+  productId: string,
+  qty: number,
+  filterType: 'price' | 'bundle' | 'all' = 'all',
+): any[] {
+  if (!rules?.length) return [];
 
   const now = new Date();
   const pid = String(productId);
 
-  // Step 1 — keep only active, quantity-eligible rules
   const eligible = rules.filter((r: any) => {
+    const isBundle = r.priceType === 'bundle';
+    if (filterType === 'price'  &&  isBundle) return false;
+    if (filterType === 'bundle' && !isBundle) return false;
     if (r.endDate   && new Date(r.endDate)   < now) return false;
     if (r.startDate && new Date(r.startDate) > now) return false;
     return (Number(r.minQuantity) || 0) <= qty;
   });
-  if (!eligible.length) return null;
+  if (!eligible.length) return [];
 
-  // Step 2 — prefer product-specific over "all products"
   const specific = eligible.filter((r: any) => {
     const rid = r.subProduct?._id
       ? String(r.subProduct._id)
@@ -116,98 +125,132 @@ export function findBestPricelistRule(rules: any[], productId: string, qty: numb
     return rid && rid === pid;
   });
 
+  // Product-specific rules shadow all-products rules (Odoo specificity)
   const pool = specific.length > 0 ? specific : eligible.filter((r: any) => !r.subProduct);
-  if (!pool.length) return null;
+  if (!pool.length) return [];
 
-  // Step 3 — highest minQuantity that still qualifies = best volume tier
+  // Lower sequence = higher priority; higher minQuantity = better volume tier
   return pool.sort((a: any, b: any) => {
-    const minQtyDiff = (Number(b.minQuantity) || 0) - (Number(a.minQuantity) || 0);
-    if (minQtyDiff !== 0) return minQtyDiff;
-    // Same minQuantity tier: lower sequence = higher priority (Odoo convention)
-    return (Number(a.sequence) || 0) - (Number(b.sequence) || 0);
-  })[0];
+    const seqDiff = (Number(a.sequence) || 0) - (Number(b.sequence) || 0);
+    if (seqDiff !== 0) return seqDiff;
+    return (Number(b.minQuantity) || 0) - (Number(a.minQuantity) || 0);
+  });
 }
 
+/**
+ * Backward-compatible: returns the single best matching rule.
+ * Use findMatchingPricelistRules for sequential multi-rule application.
+ */
+export function findBestPricelistRule(rules: any[], productId: string, qty: number): any | null {
+  return findMatchingPricelistRules(rules, productId, qty, 'all')[0] ?? null;
+}
+
+/**
+ * Applies all matching pricelist rules to a product for display on the grid.
+ *
+ * Fixes two bugs from the previous single-rule approach:
+ *   1. Bundle + price rules both apply — no more early-return after bundle injection.
+ *   2. Multiple price rules apply sequentially: base → rule1 → rule2 → ...
+ *      e.g. fixed price rule → then 10% discount rule → then 5% volume tier.
+ *
+ * qty=1 for card display (base tier pricing).
+ * Cart uses actual item.quantity via computeItemPriceWithPricelist in the store.
+ */
 export function applyPricelistToProduct(product: any, pricelist: any): any {
   if (!pricelist?.rules?.length) return product;
 
-  // Use qty=1 for card display (base tier). Cart uses actual item.quantity.
-  const rule = findBestPricelistRule(pricelist.rules, product._id, 1);
-  if (!rule) return product;
+  const productCost = Number(product.costPrice) || 0;
+  let result = { ...product };
 
-  // ── Bundle rule: inject into activeBundles for card hint display.
-  // Tagged fromPricelist:true so the cart can filter them out and re-apply
-  // dynamically when the selected pricelist changes.
-  if (rule.priceType === 'bundle') {
-    const qty  = Math.max(2, Number(rule.bundleQuantity) || 2);
-    const disc = Number(rule.bundleDiscount) || 0;
-    const dt   = rule.bundleDiscountType || 'percentage';
-    if (dt !== 'no_discount' && !disc) return product;
+  // ── 1. Apply all price rules sequentially ────────────────────────────────────
+  const priceRules = findMatchingPricelistRules(pricelist.rules, product._id, 1, 'price');
 
-    const name = rule.bundleName || (
-      dt === 'markup_on_cost' ? `Buy ${qty}+ · Cost +${disc}% markup`
-      : dt === 'no_discount'  ? `Buy ${qty}+ · No discount`
-      : dt === 'fixed'        ? `Buy ${qty}+ · ₦${disc} off`
-      : `Buy ${qty}+ · ${disc}% off`
-    );
+  if (priceRules.length > 0) {
+    const oldBase = Number(product.baseSellingPrice) || 0;
+    let   newBase = oldBase;
 
-    const entry = {
-      name,
-      quantity:      qty,
-      discount:      dt === 'no_discount' ? 0 : disc,
-      discountType:  dt as 'percentage' | 'fixed' | 'markup_on_cost' | 'no_discount',
-      active:        true,
-      validUntil:    rule.endDate ?? null,
-      fromPricelist: true, // filtered out when storing in cart items
+    const appliedSteps: any[] = [];
+    for (const rule of priceRules) {
+      const before = newBase;
+      newBase = applyRuleTransform(newBase, rule, productCost);
+      if (Math.abs(newBase - before) > 0.001) {
+        appliedSteps.push({ rule, fromPrice: before, toPrice: newBase, saving: before - newBase });
+      }
+    }
+
+    const baseChanged = Math.abs(newBase - oldBase) > 0.001;
+    const lastRule    = priceRules[priceRules.length - 1];
+
+    const newSizes = product.sizes?.map((s: any) => {
+      const sizeCost = Number(s.costPrice) > 0 ? Number(s.costPrice) : productCost;
+      let   sizePrice = Number(s.sellingPrice) || 0;
+      for (const rule of priceRules) {
+        sizePrice = applyRuleTransform(sizePrice, rule, sizeCost);
+      }
+      const sizeChanged = Math.abs(sizePrice - Number(s.sellingPrice)) > 0.001;
+      return {
+        ...s,
+        sellingPrice:          sizePrice,
+        _priceBeforePricelist: Number(s.sellingPrice) || 0,
+        originalPrice: sizeChanged
+          ? (s.originalPrice != null ? s.originalPrice : Number(s.sellingPrice))
+          : s.originalPrice,
+      };
+    });
+
+    result = {
+      ...result,
+      baseSellingPrice:       newBase,
+      _priceBeforePricelist:  oldBase,
+      _appliedPricelistSteps: appliedSteps,
+      _appliedPricelist:      { _id: pricelist._id, name: pricelist.name },
+      originalPrice: baseChanged
+        ? (product.originalPrice != null ? product.originalPrice : oldBase)
+        : product.originalPrice,
+      isOnSale:    baseChanged && newBase < oldBase ? true : product.isOnSale,
+      isFlashSale: lastRule?.priceType === 'flash_sale'  ? true : product.isFlashSale,
+      sizes: newSizes || product.sizes,
     };
-
-    // Keep only non-pricelist (DB) bundles + this new one for display
-    const dbBundles: any[] = (product.activeBundles || []).filter((b: any) => !b.fromPricelist);
-    const merged = [entry, ...dbBundles.filter((b: any) => b.name !== name)]
-      .sort((a: any, b: any) => (b.discount || 0) - (a.discount || 0));
-
-    return { ...product, activeBundles: merged };
   }
 
-  // ── Price-changing rules ────────────────────────────────────────────────────
-  const productCost = Number(product.costPrice) || 0;
-  const oldBase     = Number(product.baseSellingPrice) || 0;
+  // ── 2. Inject ALL matching bundle rules into activeBundles for card hints ────
+  const bundleRules = findMatchingPricelistRules(pricelist.rules, product._id, 1, 'bundle');
 
-  // Apply pricelist rule to the product's current effective price (which already
-  // includes any direct product promotions — flash sale, regular sale).
-  // Stacking is intentional: a "10% off" pricelist on a sale product gives an
-  // additional 10% on top of the existing sale, always benefiting the customer.
-  // Cross-pricelist creep is prevented separately: Apply no longer writes
-  // discount/flash_sale/bundle fields to products.
-  const newBase     = applyRuleTransform(oldBase, rule, productCost);
-  const baseChanged = Math.abs(newBase - oldBase) > 0.001;
+  if (bundleRules.length > 0) {
+    const dbBundles: any[] = (result.activeBundles || []).filter((b: any) => !b.fromPricelist);
 
-  const newSizes = product.sizes?.map((s: any) => {
-    const sizeCost     = Number(s.costPrice) > 0 ? Number(s.costPrice) : productCost;
-    const oldSizePrice = Number(s.sellingPrice) || 0;
-    const newSizePrice = applyRuleTransform(oldSizePrice, rule, sizeCost);
-    const sizeChanged  = Math.abs(newSizePrice - oldSizePrice) > 0.001;
-    return {
-      ...s,
-      sellingPrice:          newSizePrice,
-      _priceBeforePricelist: oldSizePrice, // raw server size price for cart storage
-      originalPrice: sizeChanged
-        ? (s.originalPrice != null ? s.originalPrice : oldSizePrice)
-        : s.originalPrice,
-    };
-  });
+    const plEntries = bundleRules.map((rule: any) => {
+      const qty  = Math.max(2, Number(rule.bundleQuantity) || 2);
+      const disc = Number(rule.bundleDiscount) || 0;
+      const dt   = rule.bundleDiscountType || 'percentage';
+      if (dt !== 'no_discount' && !disc) return null;
 
-  return {
-    ...product,
-    baseSellingPrice:      newBase,
-    _priceBeforePricelist: oldBase, // raw server price before this pricelist adjustment
-    originalPrice: baseChanged
-      ? (product.originalPrice != null ? product.originalPrice : oldBase)
-      : product.originalPrice,
-    isOnSale:    baseChanged && newBase < oldBase ? true : product.isOnSale,
-    isFlashSale: rule.priceType === 'flash_sale'  ? true : product.isFlashSale,
-    sizes: newSizes || product.sizes,
-  };
+      const name = rule.bundleName || (
+        dt === 'markup_on_cost' ? `Buy ${qty}+ · Cost +${disc}% markup`
+        : dt === 'no_discount'  ? `Buy ${qty}+ · No discount`
+        : dt === 'fixed'        ? `Buy ${qty}+ · ₦${disc} off`
+        : `Buy ${qty}+ · ${disc}% off`
+      );
+      return {
+        name,
+        quantity:      qty,
+        discount:      dt === 'no_discount' ? 0 : disc,
+        discountType:  dt as any,
+        active:        true,
+        validUntil:    rule.endDate ?? null,
+        fromPricelist: true,
+      };
+    }).filter(Boolean);
+
+    const merged = [
+      ...plEntries,
+      ...dbBundles.filter((b: any) => !plEntries.some((e: any) => e?.name === b.name)),
+    ].sort((a: any, b: any) => (b.discount || 0) - (a.discount || 0));
+
+    result = { ...result, activeBundles: merged };
+  }
+
+  return result;
 }
 
 export const PAYMENT_METHODS = [

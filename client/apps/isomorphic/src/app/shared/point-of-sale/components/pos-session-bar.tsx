@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { posApi } from '@/app/shared/point-of-sale/api';
-import { usePOSAuth, usePOSSaleSignal, usePOSPricelist } from '@/app/shared/point-of-sale/store';
+import { usePOSAuth, usePOSSaleSignal, usePOSPricelist, usePOSAvailablePricelists } from '@/app/shared/point-of-sale/store';
 import { POSSession, POSCashMovement } from '@/app/shared/point-of-sale/types';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import { routes } from '@/config/routes';
@@ -231,19 +231,12 @@ function HamburgerMenu({
 // ── Pricelist picker ──────────────────────────────────────────────────────────
 function PricelistPicker({ token }: { token: string }) {
   const { selectedPricelist, setSelectedPricelist } = usePOSPricelist();
-  const [pricelists, setPricelists] = useState<any[]>([]);
-  const [open, setOpen]             = useState(false);
-  const [loading, setLoading]       = useState(false);
+  const { pricelists, loaded, load }                = usePOSAvailablePricelists();
+  const [open, setOpen]                             = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!token) return;
-    setLoading(true);
-    posApi.getPricelists(token)
-      .then(d => setPricelists(d.pricelists || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [token]);
+  // Load once — cached across session
+  useEffect(() => { if (token) load(token); }, [token, load]);
 
   useEffect(() => {
     function onOut(e: MouseEvent) {
@@ -253,7 +246,7 @@ function PricelistPicker({ token }: { token: string }) {
     return () => document.removeEventListener('mousedown', onOut);
   }, []);
 
-  if (loading || pricelists.length === 0) return null;
+  if (!loaded || pricelists.length === 0) return null;
 
   return (
     <div className="relative" ref={menuRef}>
@@ -274,15 +267,12 @@ function PricelistPicker({ token }: { token: string }) {
       {open && (
         <div className="absolute left-0 top-full z-50 mt-1.5 min-w-[200px] overflow-hidden rounded-2xl bg-white py-1 shadow-xl ring-1 ring-black/8">
           <p className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">Select Pricelist</p>
-          {/* No pricelist option */}
           <button
             type="button"
             onClick={() => { setSelectedPricelist(null); setOpen(false); }}
             className={`flex w-full items-center gap-3 px-4 py-2.5 text-sm transition-colors ${!selectedPricelist ? 'bg-[#b20202]/5 font-semibold text-[#b20202]' : 'text-gray-500 hover:bg-gray-50'}`}
           >
-            {!selectedPricelist
-              ? <PiCheckCircle className="h-4 w-4 shrink-0 text-[#b20202]" />
-              : <span className="h-4 w-4 shrink-0" />}
+            {!selectedPricelist ? <PiCheckCircle className="h-4 w-4 shrink-0 text-[#b20202]" /> : <span className="h-4 w-4 shrink-0" />}
             Standard Price
           </button>
           <div className="mx-3 my-1 border-t border-gray-100" />
@@ -293,13 +283,9 @@ function PricelistPicker({ token }: { token: string }) {
               onClick={() => { setSelectedPricelist(pl); setOpen(false); }}
               className={`flex w-full items-center gap-3 px-4 py-2.5 text-sm transition-colors ${selectedPricelist?._id === pl._id ? 'bg-[#b20202]/5 font-semibold text-[#b20202]' : 'text-gray-700 hover:bg-gray-50'}`}
             >
-              {selectedPricelist?._id === pl._id
-                ? <PiCheckCircle className="h-4 w-4 shrink-0 text-[#b20202]" />
-                : <PiTag className="h-4 w-4 shrink-0 text-gray-300" />}
+              {selectedPricelist?._id === pl._id ? <PiCheckCircle className="h-4 w-4 shrink-0 text-[#b20202]" /> : <PiTag className="h-4 w-4 shrink-0 text-gray-300" />}
               <span className="flex-1 truncate text-left">{pl.name}</span>
-              {pl.currency && pl.currency !== 'NGN' && (
-                <span className="shrink-0 text-[10px] font-medium text-gray-400">{pl.currency}</span>
-              )}
+              {pl.currency && pl.currency !== 'NGN' && <span className="shrink-0 text-[10px] font-medium text-gray-400">{pl.currency}</span>}
             </button>
           ))}
         </div>

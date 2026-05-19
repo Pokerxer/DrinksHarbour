@@ -53,6 +53,14 @@ const orderItemSchema = new Schema({
     default: 0,
   },
 
+  // Snapshot of which pricelist rule(s) contributed to the price for this line
+  appliedPricelistRule: {
+    ruleId:        { type: Schema.Types.ObjectId },
+    priceType:     { type: String },
+    sequence:      { type: Number },
+    discountAmount: { type: Number, default: 0 },
+  },
+
   // ── Revenue snapshot (all amounts are per-LINE, not per-unit) ──────────────
   // tenantRevenueShare = what the platform owes the vendor for this line
   //   markup model  → costPriceAtPurchase × quantity
@@ -345,6 +353,12 @@ const orderSchema = new Schema(
     voidedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     voidReason: { type: String, default: '' },
     isVoided:   { type: Boolean, default: false },
+
+    // Pricelist selected during this POS session
+    appliedPricelist: {
+      pricelistId:   { type: Schema.Types.ObjectId, ref: 'Pricelist' },
+      pricelistName: { type: String, default: '' },
+    },
     refunds: [{
       receiptNumber:    String,
       items: [{

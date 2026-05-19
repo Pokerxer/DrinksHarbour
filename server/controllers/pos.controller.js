@@ -1388,17 +1388,16 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         }).catch(() => {});
       }
 
-      // ── Apply selected pricelist rule to finalPrice ───────────────────────────
-      // Pricelist rules are the authoritative price for this session. For
-      // discount/flash_sale rules the base is the pre-promotion (original) price
-      // so the pricelist does not stack on top of the product's own sale.
+      // ── Apply pricelist price rules sequentially (mirrors client findMatchingPricelistRules) ──
+      // Multiple rules can apply in sequence order: base → rule1 → rule2 → ...
+      // e.g. fixed price rule, then percentage discount, then volume tier discount.
+      let appliedPlRuleSnapshot = null;
       if (selectedPricelist?.rules?.length) {
         const plNow = new Date();
         const pid   = String(subProductId);
 
-        // Mirror client-side findBestPricelistRule:
-        // 1) active dates  2) minQuantity <= line qty  3) specific > global  4) highest tier wins
         const eligible = selectedPricelist.rules.filter(r =>
+          r.priceType !== 'bundle' &&
           !(r.endDate   && new Date(r.endDate)   < plNow) &&
           !(r.startDate && new Date(r.startDate) > plNow) &&
           (Number(r.minQuantity) || 0) <= quantity
@@ -1411,13 +1410,14 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         const global = eligible.filter(r => !r.subProduct);
         const pool   = specific.length > 0 ? specific : global;
 
-        // Highest qualifying minQuantity = best volume tier
-        const plRule = pool.sort((a, b) => (Number(b.minQuantity) || 0) - (Number(a.minQuantity) || 0))[0];
+        // Sort: ascending sequence, then descending minQuantity (volume tier)
+        const sortedRules = pool.sort((a, b) => {
+          const seqDiff = (Number(a.sequence) || 0) - (Number(b.sequence) || 0);
+          return seqDiff !== 0 ? seqDiff : (Number(b.minQuantity) || 0) - (Number(a.minQuantity) || 0);
+        });
 
-        if (plRule && plRule.priceType !== 'bundle') {
-          // Apply pricelist rule to the current finalPrice (which already includes
-          // any direct product promotions). Stacking is intentional — the pricelist
-          // gives an additional reduction on top of the product's own sale/flash.
+        // Apply each rule sequentially — each transforms the result of the previous
+        for (const plRule of sortedRules) {
           if (plRule.priceType === 'fixed') {
             const fp = Number(plRule.fixedPrice);
             if (fp > 0) finalPrice = fp;
@@ -1438,6 +1438,15 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
             const pct = Number(plRule.flashSalePercentage || 0);
             if (pct > 0) finalPrice = Math.max(0, finalPrice * (1 - pct / 100));
           }
+        }
+
+        // Record the first applied rule for the audit trail
+        if (sortedRules.length > 0) {
+          appliedPlRuleSnapshot = {
+            ruleId:    sortedRules[0]._id,
+            priceType: sortedRules[0].priceType,
+            sequence:  sortedRules[0].sequence,
+          };
         }
       }
 
@@ -1543,6 +1552,10 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         priceAtPurchase:       effectivePrice,
         itemSubtotal:          lineSubtotal,
         discountAmount:        itemDiscountAmount,
+        appliedPricelistRule: appliedPlRuleSnapshot ? {
+          ...appliedPlRuleSnapshot,
+          discountAmount: itemDiscountAmount,
+        } : undefined,
         vendorPriceAtPurchase: sizePricing.costPrice,
         tenantRevenueShare:    tenantRevShare,
         platformCommission:    parseFloat((lineSubtotal - tenantRevShare).toFixed(2)),
@@ -1622,6 +1635,10 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     status:                  'confirmed',
     ageVerifiedAtOrderTime:  true,
     placedAt:                new Date(),
+    appliedPricelist: selectedPricelist ? {
+      pricelistId:   selectedPricelist._id,
+      pricelistName: selectedPricelist.name || '',
+    } : undefined,
   });
 
   // Back-link InventoryMovement records to this order (non-blocking)
@@ -1709,6 +1726,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         note:          note || '',
         placedAt:      order.placedAt,
         posStaff:      staffId,
+        appliedPricelist: order.appliedPricelist,
       },
     },
   });

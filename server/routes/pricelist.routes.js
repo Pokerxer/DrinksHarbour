@@ -103,6 +103,7 @@ router.post('/:id/rules', tenantAdminOrSuperAdmin, async (req, res, next) => {
     pl.rules.push({
       subProduct, appliedOn, priceType,
       sequence: pl.rules.length, // append to end; lower = higher priority
+      ruleCategory: ['fixed', 'formula'].includes(priceType) ? 'permanent' : 'dynamic',
       fixedPrice:          Number(fixedPrice)          || 0,
       markupPercentage:    Number(markupPercentage)    || 0,
       discountType:        discountType                || 'percentage',
@@ -212,15 +213,17 @@ router.get('/coverage/:subProductId', tenantAdminOrSuperAdmin, async (req, res, 
 // ── Reorder rules (drag-to-sequence) ─────────────────────────────────────────
 router.patch('/:id/rules/reorder', tenantAdminOrSuperAdmin, async (req, res, next) => {
   try {
-    const { orderedIds } = req.body; // array of rule _ids in new sequence order
+    const { orderedIds } = req.body;
     if (!Array.isArray(orderedIds)) return res.status(400).json({ success: false, message: 'orderedIds array required' });
 
     const pl = await Pricelist.findById(req.params.id);
     if (!pl) return res.status(404).json({ success: false, message: 'Pricelist not found' });
 
-    orderedIds.forEach((ruleId, index) => {
-      const rule = pl.rules.id(ruleId);
-      if (rule) rule.sequence = index;
+    // Atomic batch: assign all sequences in one save to prevent duplicate sequences
+    const sequenceMap = new Map(orderedIds.map((id, i) => [String(id), i]));
+    pl.rules.forEach(rule => {
+      const seq = sequenceMap.get(String(rule._id));
+      if (seq !== undefined) rule.sequence = seq;
     });
 
     await pl.save();

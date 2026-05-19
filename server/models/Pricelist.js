@@ -43,7 +43,14 @@ const priceRuleSchema = new Schema({
   minQuantity: { type: Number, default: 0, min: 0 },
   startDate:   { type: Date },
   endDate:     { type: Date },
-  sequence:    { type: Number, default: 0, min: 0 },
+  sequence:     { type: Number, default: 0, min: 0 },
+  ruleCategory: {
+    type: String,
+    enum: ['permanent', 'dynamic'],
+    default: function() {
+      return ['fixed', 'formula'].includes(this.priceType) ? 'permanent' : 'dynamic';
+    },
+  },
 }, { _id: true });
 
 const pricelistSchema = new Schema({

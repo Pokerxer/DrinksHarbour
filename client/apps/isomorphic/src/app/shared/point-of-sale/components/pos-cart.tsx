@@ -10,9 +10,10 @@ import {
   PiCheckCircle, PiSpinner,
 } from 'react-icons/pi';
 import {
-  usePOSCart, usePOSUI, usePOSAuth, usePOSPricelist,
+  usePOSCart, usePOSUI, usePOSAuth, usePOSPricelist, usePOSAvailablePricelists,
   getBestBundle, getEffectiveBundlePrice,
   getBestBundleForItem, getEffectiveBundlePriceForItem,
+  computeItemPriceChain,
 } from '@/app/shared/point-of-sale/store';
 import { POSCartItem } from '@/app/shared/point-of-sale/types';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
@@ -29,15 +30,10 @@ type DialMode = 'qty' | 'disc' | 'price';
 // ── Pricelist modal ────────────────────────────────────────────────────────────
 function PricelistModal({ token, onClose }: { token: string; onClose: () => void }) {
   const { selectedPricelist, setSelectedPricelist } = usePOSPricelist();
-  const [pricelists, setPricelists] = useState<any[]>([]);
-  const [loading, setLoading]       = useState(true);
+  const { pricelists, loaded, load } = usePOSAvailablePricelists();
+  const loading = !loaded;
 
-  useEffect(() => {
-    posApi.getPricelists(token)
-      .then(d => setPricelists(d.pricelists || []))
-      .catch(() => toast.error('Could not load pricelists'))
-      .finally(() => setLoading(false));
-  }, [token]);
+  useEffect(() => { if (token) load(token); }, [token, load]);
 
   function select(pl: any) {
     setSelectedPricelist(pl);
@@ -744,6 +740,35 @@ export default function POSCart() {
             >
               <PiX className="h-3 w-3" />
             </button>
+          </div>
+        )}
+
+        {/* ── Pricelist price breakdown (shown when pricelist is active) ── */}
+        {selectedPricelist && items.some(item => {
+          const { steps } = computeItemPriceChain(item, selectedPricelist);
+          return steps.length > 0;
+        }) && (
+          <div className="shrink-0 border-t border-gray-100 bg-gray-50/50 px-4 py-2">
+            <p className="mb-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-400">Price adjustments from {selectedPricelist.name}</p>
+            <div className="space-y-0.5">
+              {items.map(item => {
+                const { steps } = computeItemPriceChain(item, selectedPricelist);
+                if (!steps.length) return null;
+                return (
+                  <div key={item.subProductId + (item.sizeId || '')} className="flex items-start gap-2 text-[10px]">
+                    <span className="text-gray-500 truncate max-w-[100px]">{item.name}{item.variant ? ` (${item.variant})` : ''}</span>
+                    <span className="shrink-0 text-gray-400">×{item.quantity}</span>
+                    <div className="flex flex-wrap gap-1">
+                      {steps.map((s, i) => (
+                        <span key={i} className="rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-700 font-semibold">
+                          {s.label}: -{formatCurrency(s.saving * item.quantity)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 

@@ -3,7 +3,7 @@
 import { atom, useAtom, useAtomValue } from 'jotai';
 import { atomWithStorage } from 'jotai/utils';
 import { POSCartItem, POSBundleDeal, POSStaff, POSTenant } from '@/app/shared/point-of-sale/types';
-import { findBestPricelistRule } from '@/app/shared/point-of-sale/utils';
+import { findBestPricelistRule, findMatchingPricelistRules, applyRuleTransform } from '@/app/shared/point-of-sale/utils';
 import { useCallback, useMemo } from 'react';
 
 // ─── Auth (persisted) ────────────────────────────────────────────────────────
@@ -100,45 +100,58 @@ function makeCartRef(existingCount: number) {
 // ── Pricelist-aware helpers ───────────────────────────────────────────────────
 
 /**
- * Apply a pricelist's matching rule to an item's raw price.
- * Uses the item's actual quantity so volume/tiered pricing snaps in real time
- * as the cashier changes qty (e.g., buy 10+ → 20% off kicks in automatically).
+ * Applies ALL matching pricelist price rules to an item's raw price sequentially.
+ * Uses the item's actual quantity so volume tiers snap in real-time as the cashier changes qty.
+ * e.g. base ₦5000 → -10% (discount rule) → -5% (qty 6+ rule) → ₦4275
  */
 export function computeItemPriceWithPricelist(item: POSCartItem, pricelist: any): number {
   if (!pricelist?.rules?.length) return item.price;
 
-  // findBestPricelistRule handles: date check, minQuantity threshold, specificity priority,
-  // and highest-qualifying-tier selection — matching Odoo's rule resolution order.
-  const rule = findBestPricelistRule(pricelist.rules, item.subProductId, item.quantity);
-  if (!rule || rule.priceType === 'bundle') return item.price;
+  const rules = findMatchingPricelistRules(pricelist.rules, item.subProductId, item.quantity, 'price');
+  if (!rules.length) return item.price;
 
-  const p    = item.price;
+  let price = item.price;
   const cost = Number(item.costPrice) || 0;
-  switch (rule.priceType) {
-    case 'fixed': {
-      const fp = Number(rule.fixedPrice);
-      return fp > 0 ? fp : p;
-    }
-    case 'formula': {
-      if (!cost || !rule.markupPercentage) return p;
-      return Math.round(cost * (1 + Number(rule.markupPercentage) / 100) * 100) / 100;
-    }
-    case 'discount': {
-      // Stack on the item's current price (which already includes any product-level
-      // promotions). The pricelist gives an additional discount on top.
-      if (rule.discountType === 'fixed') {
-        const amt = Number(rule.discountAmount || 0);
-        return amt > 0 ? Math.max(0, p - amt) : p;
-      }
-      const pct = Number(rule.discountPercentage || 0);
-      return pct > 0 ? Math.max(0, p * (1 - pct / 100)) : p;
-    }
-    case 'flash_sale': {
-      const pct = Number(rule.flashSalePercentage || 0);
-      return pct > 0 ? Math.max(0, p * (1 - pct / 100)) : p;
-    }
-    default: return p;
+  for (const rule of rules) {
+    price = applyRuleTransform(price, rule, cost);
   }
+  return price;
+}
+
+/**
+ * Returns the full price chain for cart breakdown display.
+ * Each step shows what rule reduced the price and by how much.
+ */
+export function computeItemPriceChain(
+  item: POSCartItem,
+  pricelist: any,
+): { finalPrice: number; steps: Array<{ label: string; saving: number; toPrice: number }> } {
+  const steps: Array<{ label: string; saving: number; toPrice: number }> = [];
+  if (!pricelist?.rules?.length) return { finalPrice: item.price, steps };
+
+  const rules = findMatchingPricelistRules(pricelist.rules, item.subProductId, item.quantity, 'price');
+  let price = item.price;
+  const cost = Number(item.costPrice) || 0;
+
+  for (const rule of rules) {
+    const before = price;
+    price = applyRuleTransform(price, rule, cost);
+    const saving = before - price;
+    if (saving > 0.001) {
+      let label = '';
+      if (rule.priceType === 'fixed')      label = `Fixed price`;
+      else if (rule.priceType === 'formula')    label = `Cost +${rule.markupPercentage}% markup`;
+      else if (rule.priceType === 'flash_sale') label = `⚡ ${rule.flashSalePercentage}% flash`;
+      else if (rule.priceType === 'discount') {
+        label = rule.discountType === 'fixed'
+          ? `-₦${rule.discountAmount} off`
+          : `-${rule.discountPercentage}%${rule.minQuantity > 0 ? ` (qty ${rule.minQuantity}+)` : ''}`;
+      }
+      steps.push({ label, saving, toPrice: price });
+    }
+  }
+
+  return { finalPrice: price, steps };
 }
 
 /**
@@ -220,55 +233,14 @@ export function getEffectiveBundlePriceForItem(
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Returns the best qualifying bundle deal for a cart item at its current quantity. */
+/** @deprecated Use getBestBundleForItem(item, null) — canonical implementation. */
 export function getBestBundle(item: POSCartItem): POSBundleDeal | null {
-  if (!item.activeBundles?.length) return null;
-  const now = new Date();
-  const qualifying = item.activeBundles.filter(b =>
-    b.active !== false &&
-    (!b.validUntil || new Date(b.validUntil) >= now) &&
-    item.quantity >= (b.quantity ?? 2)
-  );
-  if (!qualifying.length) return null;
-  // Pick the deal with the most absolute savings at current qty × price
-  return qualifying.sort((a, b) => {
-    const savings = (bd: POSBundleDeal) => {
-      const dt = bd.discountType ?? 'percentage';
-      const lineGross = item.price * item.quantity;
-      if (dt === 'fixed')          return (bd.discount ?? 0) * item.quantity;
-      if (dt === 'markup_on_cost') return Math.max(0, item.price - (item.costPrice ?? 0) * (1 + (bd.discount ?? 0) / 100)) * item.quantity;
-      if (dt === 'no_discount')    return 0;
-      return lineGross * Math.min(100, bd.discount ?? 0) / 100;
-    };
-    return savings(b) - savings(a);
-  })[0];
+  return getBestBundleForItem(item, null);
 }
 
-/**
- * Returns the effective unit price after a price-override bundle (markup_on_cost or no_discount).
- * For discount-type bundles (percentage/fixed) the unit price is unchanged — the discount is
- * applied as a separate deduction.
- */
+/** @deprecated Use getEffectiveBundlePriceForItem(item, null) — canonical implementation. */
 export function getEffectiveBundlePrice(item: POSCartItem): { price: number; overrides: boolean } {
-  const best = getBestBundle(item);
-  if (!best) return { price: item.price, overrides: false };
-
-  if (best.discountType === 'markup_on_cost') {
-    const cost   = item.costPrice ?? 0;
-    const markup = best.discount  ?? 0;
-    if (cost > 0) {
-      return { price: Math.round(cost * (1 + markup / 100) * 100) / 100, overrides: true };
-    }
-  }
-
-  if (best.discountType === 'no_discount') {
-    const orig = item.originalPrice;
-    if (orig && orig > item.price) {
-      return { price: orig, overrides: true };
-    }
-  }
-
-  return { price: item.price, overrides: false };
+  return getEffectiveBundlePriceForItem(item, null);
 }
 
 function computeSubtotal(items: POSCartItem[], pricelist?: any) {
@@ -540,9 +512,36 @@ export const usePOSPermissions = () => {
 
 const posSelectedPricelistAtom = atomWithStorage<any | null>('dh-pos-pricelist', null);
 
+// Cached list of available pricelists (fetched once per session, shared by PricelistPicker + PricelistModal)
+const posAvailablePricelistsAtom   = atomWithStorage<any[]>('dh-pos-available-pricelists', []);
+const posAvailablePricelistsLoadedAtom = atom<boolean>(false);
+
 export const usePOSPricelist = () => {
   const [selectedPricelist, setSelectedPricelist] = useAtom(posSelectedPricelistAtom);
   return { selectedPricelist, setSelectedPricelist };
+};
+
+/** Shared cache of selectable pricelists — avoids duplicate fetches from PricelistPicker and PricelistModal */
+export const usePOSAvailablePricelists = () => {
+  const [pricelists, setPricelists] = useAtom(posAvailablePricelistsAtom);
+  const [loaded,     setLoaded]     = useAtom(posAvailablePricelistsLoadedAtom);
+
+  const load = useCallback(
+    async (token: string) => {
+      if (loaded) return;
+      try {
+        const { posApi } = await import('@/app/shared/point-of-sale/api');
+        const data = await posApi.getPricelists(token);
+        setPricelists(data.pricelists || []);
+        setLoaded(true);
+      } catch { /* silent — picker shows empty gracefully */ }
+    },
+    [loaded, setPricelists, setLoaded],
+  );
+
+  const invalidate = useCallback(() => setLoaded(false), [setLoaded]);
+
+  return { pricelists, loaded, load, invalidate };
 };
 
 // ─── Sale refresh signal ──────────────────────────────────────────────────────
