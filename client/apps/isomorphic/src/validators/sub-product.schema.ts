@@ -61,15 +61,15 @@ export const sizeOptionSchema = z.object({
   ),
   salePrice: optionalNumber,
   stock: z.preprocess(
-    (val) => (val === '' || val === null || val === undefined) ? 0 : Number(val),
+    (val) => (val === '' || val === null || val === undefined) ? 0 : Math.max(0, Number(val) || 0),
     z.number().min(0).default(0)
   ),
   reservedStock: z.preprocess(
-    (val) => (val === '' || val === null || val === undefined) ? 0 : Number(val),
+    (val) => (val === '' || val === null || val === undefined) ? 0 : Math.max(0, Number(val) || 0),
     z.number().min(0).default(0)
   ),
   availableStock: z.preprocess(
-    (val) => (val === '' || val === null || val === undefined) ? 0 : Number(val),
+    (val) => (val === '' || val === null || val === undefined) ? 0 : Math.max(0, Number(val) || 0),
     z.number().min(0).default(0)
   ),
   lowStockThreshold: z.preprocess(
@@ -201,15 +201,15 @@ const subProductDataSchema = z.object({
   // Inventory Management
   stockStatus: z.enum(['in_stock', 'low_stock', 'out_of_stock', 'pre_order', 'discontinued']).catch('in_stock'),
   totalStock: z.preprocess(
-    (val) => (val === '' || val === null || val === undefined) ? 0 : Number(val),
+    (val) => (val === '' || val === null || val === undefined) ? 0 : Math.max(0, Number(val) || 0),
     z.number().min(0).default(0)
   ),
   reservedStock: z.preprocess(
-    (val) => (val === '' || val === null || val === undefined) ? 0 : Number(val),
+    (val) => (val === '' || val === null || val === undefined) ? 0 : Math.max(0, Number(val) || 0),
     z.number().min(0).default(0)
   ),
   availableStock: z.preprocess(
-    (val) => (val === '' || val === null || val === undefined) ? 0 : Number(val),
+    (val) => (val === '' || val === null || val === undefined) ? 0 : Math.max(0, Number(val) || 0),
     z.number().min(0).default(0)
   ),
   lowStockThreshold: z.preprocess(
