@@ -258,10 +258,13 @@ const getPurchaseOrders = asyncHandler(async (req, res) => {
   const status = req.query.status;
   const vendor = req.query.vendor;
 
+  const subProductId = req.query.subProductId;
+
   // Build filter
   const filter = { tenant: tenantId };
   if (status) filter.status = status;
   if (vendor) filter.vendor = vendor;
+  if (subProductId) filter['items.subProductId'] = subProductId;
 
   const purchaseOrders = await PurchaseOrder.find(filter)
     .sort({ createdAt: -1 })
@@ -1329,6 +1332,152 @@ const sendPOToVendor = asyncHandler(async (req, res) => {
   });
 });
 
+// ─── Return items to vendor ───────────────────────────────────────────────────
+/**
+ * POST /api/purchase-orders/:id/return
+ * Body: { items: [{ subProductId, quantity, reason? }], reason?, isExchange? }
+ * Decrements stock, creates InventoryMovement records (type:'return', category:'out'),
+ * and updates PO receivedQty / status flags.
+ */
+const returnPurchaseOrder = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { items: returnItems = [], reason = '', isExchange = false } = req.body;
+  const tenantId = await resolveTenantId(req);
+
+  const InventoryMovement = require('../models/InventoryMovement');
+
+  if (!returnItems.length) {
+    return res.status(400).json({ success: false, message: 'No items provided for return' });
+  }
+
+  const po = await PurchaseOrder.findOne({ _id: id, tenant: tenantId });
+  if (!po) throw new NotFoundError('Purchase order not found');
+  if (po.status === 'cancelled') {
+    return res.status(400).json({ success: false, message: 'Cannot return items from a cancelled PO' });
+  }
+
+  const errors   = [];
+  const movementIds = [];
+
+  for (const retItem of returnItems) {
+    const { subProductId, quantity, reason: lineReason } = retItem;
+    if (!quantity || quantity <= 0) continue;
+
+    // Match against PO line by subProductId
+    const poLine = po.items.find(it => it.subProductId?.toString() === subProductId);
+    if (!poLine) {
+      errors.push(`Product not found in this PO: ${subProductId}`);
+      continue;
+    }
+
+    const availableToReturn = poLine.receivedQty ?? 0;
+    if (quantity > availableToReturn) {
+      errors.push(
+        `Cannot return ${quantity} of "${poLine.subProductName || subProductId}" — only ${availableToReturn} received`
+      );
+      continue;
+    }
+
+    const effSizeId = poLine.sizeId?.toString() || null;
+    let quantityBefore = 0;
+    let quantityAfter  = 0;
+
+    try {
+      if (effSizeId) {
+        const sizeAfter = await Size.findByIdAndUpdate(
+          effSizeId,
+          { $inc: { availableStock: -quantity, stock: -quantity } },
+          { new: true }
+        );
+        quantityBefore = (sizeAfter?.availableStock ?? 0) + quantity;
+        quantityAfter  = sizeAfter?.availableStock ?? 0;
+
+        if (sizeAfter) {
+          await Size.findByIdAndUpdate(effSizeId, {
+            availability: sizeAfter.availableStock <= 0 ? 'out_of_stock'
+                        : sizeAfter.availableStock <= (sizeAfter.lowStockThreshold || 5) ? 'low_stock'
+                        : 'in_stock',
+          });
+        }
+
+        await SubProduct.findByIdAndUpdate(subProductId, {
+          $inc: { availableStock: -quantity, totalStock: -quantity },
+        });
+      } else {
+        const spAfter = await SubProduct.findByIdAndUpdate(
+          subProductId,
+          { $inc: { availableStock: -quantity, totalStock: -quantity } },
+          { new: true }
+        );
+        quantityBefore = (spAfter?.availableStock ?? 0) + quantity;
+        quantityAfter  = spAfter?.availableStock ?? 0;
+      }
+    } catch (stockErr) {
+      errors.push(`Stock update failed for "${poLine.subProductName}": ${stockErr.message}`);
+      continue;
+    }
+
+    try {
+      const movement = await InventoryMovement.create({
+        subProduct:          subProductId,
+        tenant:              tenantId,
+        size:                effSizeId || undefined,
+        type:                'return',
+        category:            'out',
+        quantity,
+        quantityBefore,
+        quantityAfter,
+        reference:           po.poNumber,
+        referenceType:       'purchase_order_return',
+        relatedPurchaseOrder: po._id,
+        reason:              lineReason || reason || (isExchange ? 'Return for exchange' : 'Return to vendor'),
+        unitCost:            poLine.unitCost || 0,
+        supplierName:        po.vendorName   || undefined,
+        performedBy:         req.user._id,
+        performedAt:         new Date(),
+        source:              'manual',
+        status:              'confirmed',
+        notes:               `Vendor return — PO ${po.poNumber}${isExchange ? ' (Exchange)' : ''}`,
+      });
+      movementIds.push(movement._id);
+    } catch (mvErr) {
+      errors.push(`Movement record failed for "${poLine.subProductName}": ${mvErr.message}`);
+      continue;
+    }
+
+    // Decrement received qty on the PO line in-memory (saved below)
+    poLine.receivedQty = Math.max(0, availableToReturn - quantity);
+  }
+
+  if (errors.length && movementIds.length === 0) {
+    return res.status(400).json({ success: false, message: errors.join('; ') });
+  }
+
+  // Re-evaluate PO receipt flags
+  const totalOrdered  = po.items.reduce((s, it) => s + (it.quantity    || 0), 0);
+  const totalReceived = po.items.reduce((s, it) => s + (it.receivedQty || 0), 0);
+
+  if (totalReceived <= 0) {
+    po.isPartiallyReceived = false;
+    po.fullyReceivedDate   = undefined;
+    if (po.status === 'received' || po.status === 'validated') po.status = 'confirmed';
+  } else if (totalReceived < totalOrdered) {
+    po.isPartiallyReceived = true;
+    po.fullyReceivedDate   = undefined;
+    if (po.status === 'validated') po.status = 'received';
+  }
+
+  await po.save();
+
+  res.json({
+    success: true,
+    data: {
+      movements: movementIds,
+      warnings:  errors.length ? errors : undefined,
+    },
+  });
+});
+
 module.exports = {
   createPurchaseOrder,
   getPurchaseOrder,
@@ -1342,6 +1491,7 @@ module.exports = {
   unlockPO,
   createBillFromPO,
   sendPOToVendor,
+  returnPurchaseOrder,
   getPurchaseAnalyticsSummary,
   getPurchaseAnalyticsByVendor,
 };

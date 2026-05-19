@@ -1,39 +1,115 @@
+import { headers } from 'next/headers';
 import SignInForm from '@/app/signin/sign-in-form';
 import AuthWrapperOne from '@/app/shared/auth-layout/auth-wrapper-one';
 import Image from 'next/image';
 import { metaObject } from '@/config/site.config';
+import type { AdminTenantData } from '@/context/TenantContext';
 
 export const metadata = {
   ...metaObject('Admin Sign In'),
 };
 
-export default function SignIn() {
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+
+async function fetchTenantBySlug(slug: string): Promise<AdminTenantData | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/tenants/slug/${slug}`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const json = await res.json() as { data?: { tenant?: AdminTenantData } };
+    return json?.data?.tenant ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export default async function SignIn({
+  searchParams,
+}: {
+  searchParams: Promise<{ _tenant?: string }>;
+}) {
+  const [headersList, params] = await Promise.all([headers(), searchParams]);
+
+  // 1. Prefer x-tenant-slug injected by middleware (for authenticated subdomain visits)
+  let tenantSlug: string | null = headersList.get('x-tenant-slug');
+
+  // 2. Extract from actual host header (for unauthenticated subdomain visits)
+  if (!tenantSlug) {
+    const host = (headersList.get('host') || '').split(':')[0];
+    const match = host.match(/^([a-z0-9-]+)\.drinksharbour\.com$/i);
+    if (match && !['admin', 'www'].includes(match[1])) {
+      tenantSlug = match[1];
+    }
+  }
+
+  // 3. Local dev fallback: ?_tenant=acme
+  if (!tenantSlug && params._tenant) {
+    tenantSlug = params._tenant;
+  }
+
+  const tenant = tenantSlug ? await fetchTenantBySlug(tenantSlug) : null;
+
   return (
     <AuthWrapperOne
+      tenant={tenant}
       title={
-        <>
-          Welcome back,{' '}
-          <span className="relative inline-block">
-            Admin
-            <svg 
-              className="absolute -bottom-2 start-0 w-full h-3 text-blue-500" 
-              viewBox="0 0 100 12" 
-              preserveAspectRatio="none"
-            >
-              <path 
-                d="M0,8 Q50,0 100,8" 
-                fill="none" 
-                stroke="currentColor" 
-                strokeWidth="3"
-                strokeLinecap="round"
-              />
-            </svg>
-          </span>
-        </>
+        tenant ? (
+          <>
+            Welcome to{' '}
+            <span className="relative inline-block">
+              {tenant.name}
+              <svg
+                className="absolute -bottom-2 start-0 w-full h-3"
+                style={{ color: tenant.primaryColor || '#dc2626' }}
+                viewBox="0 0 100 12"
+                preserveAspectRatio="none"
+              >
+                <path
+                  d="M0,8 Q50,0 100,8"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </span>
+          </>
+        ) : (
+          <>
+            Welcome back,{' '}
+            <span className="relative inline-block">
+              Admin
+              <svg
+                className="absolute -bottom-2 start-0 w-full h-3 text-blue-500"
+                viewBox="0 0 100 12"
+                preserveAspectRatio="none"
+              >
+                <path
+                  d="M0,8 Q50,0 100,8"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </span>
+          </>
+        )
       }
-      description="Sign in to access your admin dashboard, manage products, orders, and monitor your business analytics in real-time."
-      bannerTitle="Powerful Admin Dashboard for Your Business"
-      bannerDescription="Manage your entire e-commerce operation from one centralized dashboard. Track sales, manage inventory, and grow your business with data-driven insights."
+      description={
+        tenant
+          ? `Sign in to manage ${tenant.name}'s products, orders, and business analytics.`
+          : 'Sign in to access your admin dashboard, manage products, orders, and monitor your business analytics in real-time.'
+      }
+      bannerTitle={
+        tenant
+          ? `${tenant.name} Admin Dashboard`
+          : 'Powerful Admin Dashboard for Your Business'
+      }
+      bannerDescription={
+        tenant
+          ? `Manage ${tenant.name}'s entire operation from one centralized dashboard. Track sales, manage inventory, and grow with data-driven insights.`
+          : 'Manage your entire e-commerce operation from one centralized dashboard. Track sales, manage inventory, and grow your business with data-driven insights.'
+      }
       isSocialLoginActive={false}
       pageImage={
         <div className="relative mx-auto aspect-[4/3] w-[480px] xl:w-[600px] 2xl:w-[750px]">
@@ -48,7 +124,7 @@ export default function SignIn() {
               className="object-cover rounded-2xl shadow-2xl"
             />
           </div>
-          
+
           {/* Floating Stats Card */}
           <div className="absolute -bottom-6 -left-6 bg-white rounded-xl shadow-xl p-4 border border-gray-100">
             <div className="flex items-center gap-3">
@@ -63,7 +139,7 @@ export default function SignIn() {
               </div>
             </div>
           </div>
-          
+
           {/* Floating Users Card */}
           <div className="absolute -top-4 -right-4 bg-white rounded-xl shadow-xl p-4 border border-gray-100">
             <div className="flex items-center gap-3">
@@ -81,7 +157,7 @@ export default function SignIn() {
         </div>
       }
     >
-      <SignInForm />
+      <SignInForm tenant={tenant} />
     </AuthWrapperOne>
   );
 }

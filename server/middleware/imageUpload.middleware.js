@@ -21,7 +21,7 @@ const ALLOWED_IMAGE_TYPES = [
 
 // Maximum file sizes
 const MAX_FILE_SIZE = {
-  image: 10 * 1024 * 1024, // 10MB for images
+  image: 20 * 1024 * 1024, // 20MB for images
   document: 5 * 1024 * 1024, // 5MB for documents
 };
 
@@ -293,6 +293,32 @@ const uploadMixedFields = multer({
   { name: 'gallery', maxCount: 10 },
 ]);
 
+/**
+ * Category multi-image upload (thumbnail, featured, banner)
+ */
+const uploadCategoryImages = multer({
+  storage,
+  fileFilter: imageFileFilter,
+  limits: { fileSize: MAX_FILE_SIZE.image, files: 3 },
+}).fields([
+  { name: 'thumbnailImage', maxCount: 1 },
+  { name: 'featuredImage', maxCount: 1 },
+  { name: 'bannerImage', maxCount: 1 },
+]);
+
+/**
+ * Brand multi-image upload (logo, featured, banner)
+ */
+const uploadBrandImages = multer({
+  storage,
+  fileFilter: imageFileFilter,
+  limits: { fileSize: MAX_FILE_SIZE.image, files: 3 },
+}).fields([
+  { name: 'logo', maxCount: 1 },
+  { name: 'featuredImage', maxCount: 1 },
+  { name: 'bannerImage', maxCount: 1 },
+]);
+
 // ============================================================
 // MIDDLEWARE WRAPPERS (with better error handling)
 // ============================================================
@@ -500,6 +526,8 @@ module.exports = {
   uploadProductGallery: wrapMulterMiddleware(uploadProductGallery),
   uploadBrandLogo: wrapMulterMiddleware(uploadBrandLogo),
   uploadCategoryImage: wrapMulterMiddleware(uploadCategoryImage),
+  uploadCategoryImages: wrapMulterMiddleware(uploadCategoryImages),
+  uploadBrandImages: wrapMulterMiddleware(uploadBrandImages),
   uploadReviewImages: wrapMulterMiddleware(uploadReviewImages),
   uploadAvatar: wrapMulterMiddleware(uploadAvatar),
   uploadMixedFields: wrapMulterMiddleware(uploadMixedFields),

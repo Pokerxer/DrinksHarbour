@@ -3,19 +3,10 @@
 import React from "react";
 import Link from "next/link";
 import Image from "next/image";
-
-interface Tenant {
-  name: string;
-  subdomain?: string;
-  logo?: string;
-  branding?: {
-    primaryColor?: string;
-    secondaryColor?: string;
-  };
-}
+import { TenantData } from "@/context/TenantContext";
 
 interface HeaderLogoProps {
-  tenant?: Tenant;
+  tenant?: TenantData | null;
   isMainSite: boolean;
   variant: "default" | "transparent" | "dark";
   isScrolled: boolean;
@@ -31,14 +22,15 @@ export const HeaderLogo: React.FC<HeaderLogoProps> = ({
     ? "DrinksHarbour"
     : tenant?.name || "DrinksHarbour";
 
-  const tenantLogo = !isMainSite && tenant?.logo;
+  const tenantLogoUrl = !isMainSite && tenant?.logo?.url ? tenant.logo.url : null;
+  const tenantLogoAlt = tenant?.logo?.alt || displayName;
 
   return (
     <Link href="/" className="flex items-center">
-      {tenantLogo ? (
+      {tenantLogoUrl ? (
         <Image
-          src={tenantLogo}
-          alt={displayName}
+          src={tenantLogoUrl}
+          alt={tenantLogoAlt}
           width={160}
           height={48}
           className="h-10 md:h-12 w-auto object-contain"

@@ -200,6 +200,34 @@ function ZReport({ session, onDone }: { session: POSSession; onDone: () => void 
             </div>
           </div>
 
+          {/* Cash movements summary */}
+          {(session as any).cashMovements?.length > 0 && (() => {
+            const moves = (session as any).cashMovements as Array<{ type: string; amount: number; reason?: string; performedAt: string }>;
+            const totalIn  = moves.filter(m => m.type === 'in').reduce((s, m) => s + m.amount, 0);
+            const totalOut = moves.filter(m => m.type === 'out').reduce((s, m) => s + m.amount, 0);
+            return (
+              <div className="border-t border-gray-100 px-5 py-3">
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">Cash Movements</p>
+                <div className="space-y-1.5">
+                  {moves.map((m, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500 truncate max-w-[200px]">{m.reason || (m.type === 'in' ? 'Cash In' : 'Cash Out')}</span>
+                      <span className={`font-semibold tabular-nums ${m.type === 'in' ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {m.type === 'in' ? '+' : '−'}{formatCurrency(m.amount)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 flex justify-between border-t border-dashed border-gray-200 pt-2 text-xs font-semibold">
+                  <span className="text-gray-500">Net cash movement</span>
+                  <span className={totalIn - totalOut >= 0 ? 'text-emerald-600' : 'text-red-600'}>
+                    {totalIn - totalOut >= 0 ? '+' : '−'}{formatCurrency(Math.abs(totalIn - totalOut))}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Difference warning */}
           {hasDiff && (
             <div className="mx-5 mb-4 mt-3 flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
@@ -247,6 +275,7 @@ function ZReport({ session, onDone }: { session: POSSession; onDone: () => void 
 export default function POSCloseSessionModal({ session, onSessionClosed, onCancel }: Props) {
   const { token, terminal } = usePOSAuth();
   const { tenant }          = useTenant();
+  const router              = useRouter();
 
   const [control,        setControl]        = useState<POSClosingControl | null>(null);
   const [loadingControl, setLoadingControl] = useState(true);
@@ -334,6 +363,9 @@ export default function POSCloseSessionModal({ session, onSessionClosed, onCance
       const result = await posApi.closeSession(token, session._id, countedBalances, closingNotes);
       setClosedSession(result);
       onSessionClosed();
+      // Always return to the POS dashboard after closing — ZReport will show first,
+      // but we pre-navigate so the back button and auto-redirect both land correctly.
+      router.push(routes.pos.index);
     } catch (err: any) {
       setError(err.message || 'Failed to close session');
     } finally {
@@ -408,6 +440,27 @@ export default function POSCloseSessionModal({ session, onSessionClosed, onCance
                 ))}
               </div>
             </div>
+
+            {/* Cash movements summary (if any) */}
+            {control.cashMovements?.length > 0 && (
+              <div className="shrink-0 border-b border-gray-100 bg-amber-50/40 px-5 py-3">
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-amber-600">
+                  Cash Movements · Net {formatCurrency(Math.abs(control.netCashMove))} {control.netCashMove >= 0 ? 'in' : 'out'}
+                </p>
+                <div className="space-y-1">
+                  {control.cashMovements.map((m) => (
+                    <div key={m._id} className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500 truncate max-w-[180px]">
+                        {m.reason || (m.type === 'in' ? 'Cash In' : 'Cash Out')}
+                      </span>
+                      <span className={`font-semibold tabular-nums ${m.type === 'in' ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {m.type === 'in' ? '+' : '−'}{formatCurrency(m.amount)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Payment method rows */}
             <div className="flex-1 overflow-y-auto">

@@ -7,6 +7,7 @@ declare module 'next-auth' {
       id: string;
       role: string;
       tenantId: string | null;
+      tenantSlug: string | null;
       token: string;
       firstName?: string;
       lastName?: string;
@@ -17,6 +18,7 @@ declare module 'next-auth' {
     id: string;
     role: string;
     tenantId?: string | null;
+    tenantSlug?: string | null;
     token: string;
     firstName?: string;
     lastName?: string;
@@ -24,11 +26,11 @@ declare module 'next-auth' {
 }
 
 declare module 'next-auth/jwt' {
-  /** Returned by the `jwt` callback and `getToken`, when using JWT sessions */
   interface JWT {
     id?: string;
     role?: string;
     tenantId?: string | null;
+    tenantSlug?: string | null;
     accessToken?: string;
     idToken?: string;
     refreshToken?: string;

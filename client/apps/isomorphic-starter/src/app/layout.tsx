@@ -15,6 +15,7 @@ import ChatbotWidget from "@/components/Chatbot/ChatbotWidget";
 import WhatsAppButton from "@/components/WhatsApp/WhatsAppButton";
 import AgeGate from "@/components/AgeGate/AgeGate";
 import PopupBanner from "@/components/Banner/PopupBanner";
+import AnalyticsTracker from "@/components/Analytics/AnalyticsTracker";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -133,6 +134,7 @@ export default function RootLayout({
             type="application/ld+json"
             dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
           />
+          <AnalyticsTracker />
           <AgeGate />
           <Header variant="default" showAnnouncement={false} />
           {children}

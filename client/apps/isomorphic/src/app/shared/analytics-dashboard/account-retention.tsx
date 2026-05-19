@@ -14,45 +14,32 @@ import {
   CartesianGrid,
 } from 'recharts';
 import { CustomTooltip } from '@core/components/charts/custom-tooltip';
+import { useWebAnalytics } from '@/context/WebAnalyticsContext';
 
-const data = [
-  {
-    day: 'Mon',
-    expansions: 2,
-    cancellations: 13,
-  },
-  {
-    day: 'Tue',
-    expansions: 27,
-    cancellations: 39,
-  },
-  {
-    day: 'Thu',
-    expansions: 21,
-    cancellations: 32,
-  },
-  {
-    day: 'Wed',
-    expansions: 45,
-    cancellations: 25,
-  },
-  {
-    day: 'Fri',
-    expansions: 36,
-    cancellations: 25,
-  },
-  {
-    day: 'Sun',
-    expansions: 50,
-    cancellations: 31,
-  },
+const staticData = [
+  { day: 'Mon', expansions: 2,  cancellations: 13 },
+  { day: 'Tue', expansions: 27, cancellations: 39 },
+  { day: 'Thu', expansions: 21, cancellations: 32 },
+  { day: 'Wed', expansions: 45, cancellations: 25 },
+  { day: 'Fri', expansions: 36, cancellations: 25 },
+  { day: 'Sun', expansions: 50, cancellations: 31 },
 ];
+
+const staticSummary = {
+  expansions: 1680,
+  cancellations: 1520,
+};
 
 export default function AccountRetention({
   className,
 }: {
   className?: string;
 }) {
+  const { data } = useWebAnalytics();
+
+  const chartData = data?.retention?.data ?? staticData;
+  const summary = data?.retention?.summary ?? staticSummary;
+
   return (
     <WidgetCard
       title={'Account Retention'}
@@ -64,7 +51,7 @@ export default function AccountRetention({
       <div className="h-72 w-full @sm:pt-3 @lg:pt-4 @xl:pt-5">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
-            data={data}
+            data={chartData}
             margin={{
               left: -30,
             }}
@@ -94,12 +81,12 @@ export default function AccountRetention({
       </div>
       <div className="mt-5 grid grid-cols-2 gap-3">
         <div>
-          <Title as="h6">1,680</Title>
+          <Title as="h6">{summary.expansions.toLocaleString()}</Title>
           <Text className="mb-4 mt-0.5 text-xs">Expansions</Text>
           <Text>Customers who have upgraded their subscription with you.</Text>
         </div>
         <div>
-          <Title as="h6">1,520</Title>
+          <Title as="h6">{summary.cancellations.toLocaleString()}</Title>
           <Text className="mb-4 mt-0.5 text-xs">Cancellations</Text>
           <Text>Customers who have ended their subscription with you.</Text>
         </div>

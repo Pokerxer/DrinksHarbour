@@ -55,6 +55,10 @@ const subProductSchema = new Schema(
       min: 0,
       required: true,
     },
+    basePriceBeforePricelist: {
+      type: Number,
+      min: 0,
+    },
     costPrice: {
       type: Number,
       min: 0,

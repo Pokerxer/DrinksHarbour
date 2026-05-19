@@ -19,6 +19,7 @@ const {
   validate 
 } = require('../middleware/validation.middleware');
 const { body, param } = require('express-validator');
+const SubProduct = require('../models/SubProduct');
 // All SubProduct routes require authentication
 router.use(authenticate);
 router.use(attachTenant);
@@ -82,6 +83,27 @@ router.patch(
  * @access  Private (Tenant admin or Super admin)
  */
 router.delete('/:id', tenantAdminOrSuperAdmin, subProductController.deleteSubProduct);
+
+/**
+ * @route   POST /api/subproducts/:id/duplicate
+ * @desc    Duplicate a SubProduct (and its sizes)
+ * @access  Private (Tenant admin or Super admin)
+ */
+router.post('/:id/duplicate', tenantAdminOrSuperAdmin, subProductController.duplicate);
+
+/**
+ * @route   PATCH /api/subproducts/:id/archive
+ * @desc    Archive a SubProduct (soft delete)
+ * @access  Private (Tenant admin or Super admin)
+ */
+router.patch('/:id/archive', tenantAdminOrSuperAdmin, subProductController.archive);
+
+/**
+ * @route   PATCH /api/subproducts/:id/restore
+ * @desc    Restore an archived SubProduct
+ * @access  Private (Tenant admin or Super admin)
+ */
+router.patch('/:id/restore', tenantAdminOrSuperAdmin, subProductController.restore);
 
 /**
  * @route   PATCH /api/subproducts/stock/bulk
@@ -1356,6 +1378,72 @@ router.post(
   removeDiscountValidation,
   validate,
   subProductController.removeDiscount
+);
+
+// ── Pricelist bulk-promote / bulk-unpromote ───────────────────────────────────
+// Applies saleDiscountValue/saleType/isOnSale directly on SubProduct documents
+// (the fields read by computePOSPricing and computeStorePricing)
+router.patch(
+  '/bulk-promote',
+  protect,
+  authorize('tenant_admin', 'super_admin'),
+  async (req, res, next) => {
+    try {
+      const { ids, saleType, saleDiscountValue, saleStartDate, saleEndDate, applyToAll } = req.body;
+      const tenantId = req.tenant?._id;
+
+      if (!saleType || !saleDiscountValue || saleDiscountValue <= 0) {
+        return res.status(400).json({ success: false, message: 'saleType and saleDiscountValue are required' });
+      }
+
+      const filter = tenantId ? { tenant: tenantId } : {};
+      if (!applyToAll) {
+        if (!Array.isArray(ids) || ids.length === 0) {
+          return res.status(400).json({ success: false, message: 'ids required when applyToAll is false' });
+        }
+        filter._id = { $in: ids };
+      }
+
+      const update = {
+        $set: {
+          saleType,
+          saleDiscountValue: Number(saleDiscountValue),
+          isOnSale: true,
+          ...(saleStartDate && { saleStartDate: new Date(saleStartDate) }),
+          ...(saleEndDate   && { saleEndDate:   new Date(saleEndDate) }),
+        },
+      };
+
+      const result = await SubProduct.updateMany(filter, update);
+      res.json({ success: true, data: { modifiedCount: result.modifiedCount } });
+    } catch (err) { next(err); }
+  }
+);
+
+router.patch(
+  '/bulk-unpromote',
+  protect,
+  authorize('tenant_admin', 'super_admin'),
+  async (req, res, next) => {
+    try {
+      const { ids, applyToAll } = req.body;
+      const tenantId = req.tenant?._id;
+
+      const filter = tenantId ? { tenant: tenantId } : {};
+      if (!applyToAll) {
+        if (!Array.isArray(ids) || ids.length === 0) {
+          return res.status(400).json({ success: false, message: 'ids required when applyToAll is false' });
+        }
+        filter._id = { $in: ids };
+      }
+
+      const result = await SubProduct.updateMany(filter, {
+        $set:   { isOnSale: false, saleDiscountValue: 0 },
+        $unset: { saleType: '', saleStartDate: '', saleEndDate: '' },
+      });
+      res.json({ success: true, data: { modifiedCount: result.modifiedCount } });
+    } catch (err) { next(err); }
+  }
 );
 
 // Price history

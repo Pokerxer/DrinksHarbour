@@ -82,6 +82,8 @@ const config: Omit<Config, "content"> = {
         skeleton: "skeletonWave 1.6s linear 0.5s infinite",
         "spinner-ease-spin": "spinnerSpin 0.8s ease infinite",
         "spinner-linear-spin": "spinnerSpin 0.8s linear infinite",
+        "slide-up": "slideUp 300ms ease-out",
+        shake: "shake 500ms ease-in-out",
       },
       backgroundImage: {
         skeleton: `linear-gradient(90deg,transparent,#ecebeb,transparent)`,
@@ -115,12 +117,20 @@ const config: Omit<Config, "content"> = {
           },
         },
         spinnerSpin: {
-          "0%": {
-            transform: "rotate(0deg)",
-          },
-          "100%": {
-            transform: "rotate(360deg)",
-          },
+          "0%": { transform: "rotate(0deg)" },
+          "100%": { transform: "rotate(360deg)" },
+        },
+        slideUp: {
+          "0%": { transform: "translateY(100%)" },
+          "100%": { transform: "translateY(0)" },
+        },
+        shake: {
+          "0%":   { transform: "translateX(0)" },
+          "15%":  { transform: "translateX(-6px)" },
+          "35%":  { transform: "translateX(6px)" },
+          "55%":  { transform: "translateX(-6px)" },
+          "75%":  { transform: "translateX(6px)" },
+          "100%": { transform: "translateX(0)" },
         },
       },
       content: {

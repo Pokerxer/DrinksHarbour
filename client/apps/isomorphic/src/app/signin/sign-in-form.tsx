@@ -1,18 +1,20 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  PiArrowRightBold, 
-  PiEye, 
-  PiEyeSlash, 
-  PiEnvelope, 
-  PiLockKey, 
+import {
+  PiArrowRightBold,
+  PiEye,
+  PiEyeSlash,
+  PiEnvelope,
+  PiLockKey,
   PiWarningCircle,
   PiShieldCheck,
-  PiSpinner
+  PiSpinner,
+  PiStorefrontDuotone,
 } from 'react-icons/pi';
 import { Button, Text } from 'rizzui';
 import { Form } from '@core/ui/form';
@@ -20,6 +22,15 @@ import { routes } from '@/config/routes';
 import { loginSchema, LoginSchema } from '@/validators/login.schema';
 import toast from 'react-hot-toast';
 import { SubmitHandler } from 'react-hook-form';
+
+interface TenantInfo {
+  name: string;
+  slug?: string;
+  logo?: { url: string; alt?: string };
+  primaryColor?: string;
+  plan?: string;
+  contactEmail?: string;
+}
 
 const initialValues: LoginSchema = {
   email: '',
@@ -84,12 +95,13 @@ const shakeVariants = {
   }
 };
 
-export default function SignInForm() {
+export default function SignInForm({ tenant }: { tenant?: TenantInfo | null }) {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [shake, setShake] = useState(false);
   const [reset, setReset] = useState({});
+  const accentColor = tenant?.primaryColor || '#3b82f6';
 
   const onSubmit: SubmitHandler<LoginSchema> = async (data) => {
     setIsLoading(true);
@@ -100,7 +112,10 @@ export default function SignInForm() {
         email: data.email,
         password: data.password,
         redirect: false,
-        callbackUrl: routes.dashboard,
+        // Must be an absolute URL — new URL('/relative') throws in some browsers
+        callbackUrl: typeof window !== 'undefined'
+          ? `${window.location.origin}${routes.dashboard}`
+          : routes.dashboard,
       });
 
       if (result?.error) {
@@ -141,6 +156,39 @@ export default function SignInForm() {
       initial="hidden"
       animate="visible"
     >
+      {/* Tenant Context Banner */}
+      {tenant && (
+        <motion.div
+          variants={itemVariants}
+          className="mb-5 flex items-center gap-3 rounded-xl border p-3"
+          style={{ borderColor: `${accentColor}30`, background: `${accentColor}08` }}
+        >
+          {tenant.logo?.url ? (
+            <div className="relative h-9 w-9 flex-shrink-0 overflow-hidden rounded-lg border border-gray-200">
+              <Image src={tenant.logo.url} alt={tenant.logo.alt || tenant.name} fill className="object-contain" />
+            </div>
+          ) : (
+            <div
+              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-sm font-bold text-white"
+              style={{ backgroundColor: accentColor }}
+            >
+              {tenant.name.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-gray-900">{tenant.name}</p>
+            {tenant.slug && (
+              <p className="truncate text-xs text-gray-500">
+                {tenant.slug}.drinksharbour.com
+              </p>
+            )}
+          </div>
+          <div className="flex-shrink-0">
+            <PiStorefrontDuotone className="h-5 w-5" style={{ color: accentColor }} />
+          </div>
+        </motion.div>
+      )}
+
       {/* Error Alert */}
       <AnimatePresence>
         {authError && (
@@ -464,48 +512,56 @@ export default function SignInForm() {
       </Form>
 
       {/* Security Notice */}
-      <motion.div 
+      <motion.div
         variants={itemVariants}
         initial="hidden"
         animate="visible"
-        className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100"
+        className="mt-6 rounded-xl border p-4"
+        style={tenant
+          ? { background: `${accentColor}08`, borderColor: `${accentColor}25` }
+          : { background: 'linear-gradient(to right, #eff6ff, #eef2ff)', borderColor: '#bfdbfe' }
+        }
       >
         <div className="flex items-start gap-3">
-          <motion.div 
-            className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0"
-            animate={{ 
-              scale: [1, 1.1, 1],
-              rotate: [0, 5, -5, 0]
-            }}
+          <motion.div
+            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg"
+            style={tenant
+              ? { backgroundColor: `${accentColor}20` }
+              : { backgroundColor: '#dbeafe' }
+            }
+            animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }}
             transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
           >
-            <PiShieldCheck className="w-5 h-5 text-blue-600" />
+            <PiShieldCheck className="w-5 h-5" style={{ color: tenant ? accentColor : '#2563eb' }} />
           </motion.div>
           <div>
-            <p className="text-sm font-semibold text-gray-900">Secure Admin Access</p>
+            <p className="text-sm font-semibold text-gray-900">
+              {tenant ? `${tenant.name} Admin Access` : 'Secure Admin Access'}
+            </p>
             <p className="text-sm text-gray-600 mt-1">
-              This is a secure area. Only authorized administrators can access this dashboard.
+              {tenant
+                ? `Sign in with your ${tenant.name} account credentials to access the dashboard.`
+                : 'This is a secure area. Only authorized administrators can access this dashboard.'
+              }
             </p>
           </div>
         </div>
       </motion.div>
 
       {/* Footer */}
-      <motion.div 
+      <motion.div
         variants={itemVariants}
         initial="hidden"
         animate="visible"
-        className="mt-6 pt-6 border-t border-gray-100"
+        className="mt-6 border-t border-gray-100 pt-6"
       >
         <Text className="text-center text-sm text-gray-500">
           Need help?{' '}
-          <motion.span
-            whileHover={{ scale: 1.05 }}
-            className="inline-block"
-          >
+          <motion.span whileHover={{ scale: 1.05 }} className="inline-block">
             <Link
-              href="mailto:support@drinksharbour.com"
-              className="font-semibold text-blue-600 hover:text-blue-700 transition-colors"
+              href={`mailto:${tenant?.contactEmail || 'support@drinksharbour.com'}`}
+              className="font-semibold transition-colors hover:underline underline-offset-2"
+              style={{ color: accentColor }}
             >
               Contact Support
             </Link>
@@ -513,29 +569,31 @@ export default function SignInForm() {
         </Text>
       </motion.div>
 
-      {/* Demo Credentials */}
-      <motion.div 
-        variants={itemVariants}
-        initial="hidden"
-        animate="visible"
-        className="mt-4 p-3 bg-amber-50 rounded-lg border border-amber-200"
-        whileHover={{ scale: 1.02, y: -2 }}
-        transition={{ type: 'spring', stiffness: 400 }}
-      >
-        <p className="text-xs text-amber-800 text-center flex items-center justify-center gap-2">
-          <motion.svg 
-            className="w-4 h-4" 
-            fill="none" 
-            viewBox="0 0 24 24" 
-            stroke="currentColor"
-            animate={{ rotate: [0, 15, -15, 0] }}
-            transition={{ duration: 0.5, repeat: Infinity, repeatDelay: 5 }}
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </motion.svg>
-          <span><strong>Demo:</strong> testadmin@drinksharbour.com / Admin@123!</span>
-        </p>
-      </motion.div>
+      {/* Demo Credentials — platform only */}
+      {!tenant && (
+        <motion.div
+          variants={itemVariants}
+          initial="hidden"
+          animate="visible"
+          className="mt-4 p-3 bg-amber-50 rounded-lg border border-amber-200"
+          whileHover={{ scale: 1.02, y: -2 }}
+          transition={{ type: 'spring', stiffness: 400 }}
+        >
+          <p className="text-xs text-amber-800 text-center flex items-center justify-center gap-2">
+            <motion.svg
+              className="w-4 h-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              animate={{ rotate: [0, 15, -15, 0] }}
+              transition={{ duration: 0.5, repeat: Infinity, repeatDelay: 5 }}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </motion.svg>
+            <span><strong>Demo:</strong> testadmin@drinksharbour.com / Admin@123!</span>
+          </p>
+        </motion.div>
+      )}
     </motion.div>
   );
 }

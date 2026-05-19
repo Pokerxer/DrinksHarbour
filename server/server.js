@@ -8,6 +8,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const { connectDB, disconnectDB } = require('./config/db');
+const { resolveTenant } = require('./middleware/tenant.middleware');
 
 // Route imports
 const orderRoutes = require('./routes/order.routes');
@@ -31,7 +32,8 @@ const subproductRoutes = require('./routes/subproduct.routes');
 const inventoryRoutes = require('./routes/inventory.routes');
 const warehouseRoutes = require('./routes/warehouse.routes');
 const reorderRoutes = require('./routes/reorder.routes');
-const promotionRoutes = require('./routes/promotion.routes');
+const promotionRoutes  = require('./routes/promotion.routes');
+const pricelistRoutes  = require('./routes/pricelist.routes');
 const vendorRoutes = require('./routes/vendor.routes');
 const purchaseOrderRoutes = require('./routes/purchaseOrder.routes');
 const vendorBillRoutes = require('./routes/vendorBill.routes');
@@ -88,6 +90,8 @@ const corsOptions = {
     'Accept',
     'Origin',
     'x-tenant-id',
+    'x-tenant-slug',
+    'x-is-tenant-site',
   ],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
   maxAge: 86400,
@@ -96,6 +100,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+app.use(resolveTenant); // Resolve tenant from x-tenant-slug header (non-blocking)
 
 // ────────────────────────────────────────────────
 // Request Logger
@@ -165,7 +170,8 @@ app.use('/api/subproducts', subproductRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/warehouses', warehouseRoutes);
 app.use('/api/reorder', reorderRoutes);
-app.use('/api/promotions', promotionRoutes);
+app.use('/api/promotions',  promotionRoutes);
+app.use('/api/pricelists',  pricelistRoutes);
 app.use('/api/vendors', vendorRoutes);
 app.use('/api/stores', require('./routes/store.routes'));
 app.use('/api/purchase-orders', purchaseOrderRoutes);
@@ -183,6 +189,8 @@ app.use('/api/banner-ai', bannerGeminiRoutes);
 app.use('/api/shipping', shippingRoutes);
 app.use('/api/places',  placesRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/tenants', require('./routes/tenant.routes'));
+app.use('/api/pos',     require('./routes/pos.routes'));
 
 // ────────────────────────────────────────────────
  // Health Check Endpoint

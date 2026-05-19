@@ -14,63 +14,46 @@ import {
   ComposedChart,
   ResponsiveContainer,
 } from 'recharts';
+import { useWebAnalytics } from '@/context/WebAnalyticsContext';
 
-const data = [
-  {
-    day: 'Mon',
-    mobile: 32,
-    desktop: 100,
-    others: 100,
-  },
-  {
-    day: 'Tue',
-    mobile: 90,
-    desktop: 50,
-    others: 50,
-  },
-  {
-    day: 'Thu',
-    mobile: 86,
-    desktop: 63,
-    others: 63,
-  },
-  {
-    day: 'Wed',
-    mobile: 99,
-    desktop: 50,
-    others: 50,
-  },
-  {
-    day: 'Fri',
-    mobile: 56,
-    desktop: 90,
-    others: 90,
-  },
-  {
-    day: 'Sun',
-    mobile: 60,
-    desktop: 85,
-    others: 85,
-  },
+const staticChartData = [
+  { day: 'Mon', mobile: 32, desktop: 100, others: 100 },
+  { day: 'Tue', mobile: 90, desktop: 50,  others: 50  },
+  { day: 'Thu', mobile: 86, desktop: 63,  others: 63  },
+  { day: 'Wed', mobile: 99, desktop: 50,  others: 50  },
+  { day: 'Fri', mobile: 56, desktop: 90,  others: 90  },
+  { day: 'Sun', mobile: 60, desktop: 85,  others: 85  },
 ];
 
-const deviceData = [
-  { name: 'Mobile', value: 9690 },
+const staticDeviceData = [
+  { name: 'Mobile',  value: 9690 },
   { name: 'Desktop', value: 6780 },
-  { name: 'Others', value: 2150 },
+  { name: 'Others',  value: 2150 },
 ];
+
 const COLORS = ['#422F8A', '#b5adec', '#d4dcfa'];
 
 export default function DeviceSessions({ className }: { className?: string }) {
+  const { data } = useWebAnalytics();
+
+  const chartData = data?.devices?.byDay ?? staticChartData;
+
+  const deviceData = data?.devices?.totals
+    ? [
+        { name: 'Mobile',  value: data.devices.totals.mobile  ?? 0 },
+        { name: 'Desktop', value: data.devices.totals.desktop ?? 0 },
+        { name: 'Others',  value: data.devices.totals.others  ?? 0 },
+      ]
+    : staticDeviceData;
+
   return (
     <WidgetCard
       title={'Device Sessions'}
       description={
-        'Tells you regarding your visitor’s devices. It will show what devices has been used. Smartphones, laptops or others.'
+        'Tells you regarding your visitor\u2019s devices. It will show what devices has been used. Smartphones, laptops or others.'
       }
       descriptionClassName="text-gray-500 mt-0.5 leading-relaxed"
       rounded="lg"
-      // action={}
       className={className}
     >
       <div className="mb-2.5 mt-4 flex items-start">
@@ -83,7 +66,7 @@ export default function DeviceSessions({ className }: { className?: string }) {
               />
               <Text as="span">{item.name}</Text>
             </div>
-            <Title as="h5">{item.value}</Title>
+            <Title as="h5">{item.value.toLocaleString()}</Title>
           </div>
         ))}
       </div>
@@ -91,7 +74,7 @@ export default function DeviceSessions({ className }: { className?: string }) {
       <div className="h-80 w-full @sm:pt-3 @lg:pt-8">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
-            data={data}
+            data={chartData}
             margin={{
               left: -28,
             }}

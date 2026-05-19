@@ -23,6 +23,7 @@ const { generateDynamicPriceRanges, buildPagination, applyPostFilters, processPr
 const { createSlug, generateUniqueSlug } = require('../utils/slugify');
 const { parseCSV, generateCSV } = require('../utils/csvParser');
 const { generateEmbedding } = require('../utils/embeddings');
+const { buildExpandedTextQuery, detectIntents, buildRelevanceScore } = require('./semanticSearch.service');
 const {
   resolveCategoryToObjectIds,
   resolveSubCategoryToObjectIds,
@@ -3862,30 +3863,36 @@ const searchProducts = async (searchParams = {}) => {
     }
   }
 
-  // Text search query - Enhanced for better product name search
+  // Text search — semantic expansion + synonym-aware regex
+  let effectiveSortBy = sortBy;
+  let effectiveOnSale = onSale;
+  let effectiveMinRating = minRating;
+  let effectiveMinAbv = minAbv;
+  let effectiveMaxAbv = maxAbv;
   let textSearchQuery = null;
   if (query && query.trim()) {
-    const searchTerm = query.trim();
-    const searchRegex = new RegExp(searchTerm, 'i');
-    
-    textSearchQuery = {
-      $or: [
-        { name: searchRegex },
-        { shortDescription: searchRegex },
-        { description: searchRegex },
-        { type: searchRegex },
-        { subType: searchRegex },
-        { originCountry: searchRegex },
-        { region: searchRegex },
-        { producer: searchRegex },
-        { flavorProfile: searchRegex },
-        { metaKeywords: searchRegex },
-        { barcode: searchRegex },
-        { sku: searchRegex },
-        { upc: searchRegex },
-        { gtin: searchRegex },
-      ],
-    };
+    // detectIntents may add sort/filter modifiers based on the query phrasing
+    // (e.g. "cheap whiskey" → sortBy = price_low)
+    // We only apply them when the caller hasn't already set those params explicitly.
+    const intentOverrides = detectIntents(query);
+    if (intentOverrides.sortBy && sortBy === 'relevance') {
+      effectiveSortBy = intentOverrides.sortBy;
+    }
+    if (intentOverrides.onSale && !onSale) {
+      effectiveOnSale = intentOverrides.onSale;
+    }
+    if (intentOverrides.minRating && !minRating) {
+      effectiveMinRating = intentOverrides.minRating;
+    }
+    if (intentOverrides.minAbv && !minAbv) {
+      effectiveMinAbv = intentOverrides.minAbv;
+    }
+    if (intentOverrides.maxAbv && !maxAbv) {
+      effectiveMaxAbv = intentOverrides.maxAbv;
+    }
+
+    // Build synonym-expanded regex $or clause
+    textSearchQuery = buildExpandedTextQuery(query);
   }
 
   // Tags filter
@@ -3900,11 +3907,11 @@ const searchProducts = async (searchParams = {}) => {
     baseQuery.flavors = { $in: flavorArray };
   }
 
-  // ABV range
-  if (minAbv !== undefined || maxAbv !== undefined) {
+  // ABV range (may be overridden by intent detection)
+  if (effectiveMinAbv !== undefined || effectiveMaxAbv !== undefined) {
     baseQuery.abv = {};
-    if (minAbv !== undefined) baseQuery.abv.$gte = parseFloat(minAbv);
-    if (maxAbv !== undefined) baseQuery.abv.$lte = parseFloat(maxAbv);
+    if (effectiveMinAbv !== undefined) baseQuery.abv.$gte = parseFloat(effectiveMinAbv);
+    if (effectiveMaxAbv !== undefined) baseQuery.abv.$lte = parseFloat(effectiveMaxAbv);
   }
 
   // Alcoholic filter
@@ -3953,9 +3960,9 @@ const searchProducts = async (searchParams = {}) => {
     baseQuery.isFeatured = isFeatured === 'true' || isFeatured === true;
   }
 
-  // Rating filter
-  if (minRating) {
-    baseQuery.averageRating = { $gte: parseFloat(minRating) };
+  // Rating filter (may be overridden by intent detection)
+  if (effectiveMinRating) {
+    baseQuery.averageRating = { $gte: parseFloat(effectiveMinRating) };
   }
 
   // Merge text search with base query
@@ -4328,44 +4335,11 @@ const searchProducts = async (searchParams = {}) => {
             },
           },
         },
-        // Calculate relevance score
-        relevanceScore: {
-          $add: [
-            // Text match score (if text search was used)
-            ...(textSearchQuery ? [
-              {
-                $cond: [
-                  { $regexMatch: { input: '$name', regex: query, options: 'i' } },
-                  15,
-                  0,
-                ],
-              },
-              {
-                $cond: [
-                  { $regexMatch: { input: { $ifNull: ['$shortDescription', ''] }, regex: query, options: 'i' } },
-                  8,
-                  0,
-                ],
-              },
-              {
-                $cond: [
-                  { $regexMatch: { input: { $ifNull: ['$type', ''] }, regex: query, options: 'i' } },
-                  5,
-                  0,
-                ],
-              },
-            ] : [0]),
-            // Semantic similarity score (if available)
-            ...(Object.keys(semanticBoost).length > 0 ? [
-              { $multiply: [{ $ifNull: ['$vectorSimilarity', 0] }, 20] },
-            ] : [0]),
-            // Popularity boost
-            { $multiply: [{ $ifNull: ['$averageRating', 0] }, 2] },
-            { $divide: [{ $ifNull: ['$totalSold', 0] }, 10] },
-            // Featured boost
-            { $cond: [{ $eq: ['$isFeatured', true] }, 5, 0] },
-          ],
-        },
+        // Calculate relevance score (via semanticSearch.service)
+        relevanceScore: buildRelevanceScore(
+          query,
+          Object.keys(semanticBoost).length > 0,
+        ),
       },
     },
   ];
@@ -4380,8 +4354,8 @@ const searchProducts = async (searchParams = {}) => {
   // STEP 5: Apply Sorting
   // ============================================================
   let sortStage = {};
-  
-  switch (sortBy) {
+
+  switch (effectiveSortBy) {
     case 'relevance':
       sortStage = { relevanceScore: -1, averageRating: -1, totalSold: -1 };
       break;
@@ -4685,7 +4659,8 @@ const searchProducts = async (searchParams = {}) => {
   }
 
   // Filter products on sale — sp.isOnSale is now date-validated (saleActive)
-  if (onSale === true || onSale === 'true') {
+  // effectiveOnSale may be set by intent detection (e.g. "cheap whiskey on sale")
+  if (effectiveOnSale === true || effectiveOnSale === 'true') {
     filteredProducts = filteredProducts.filter(({ processedSubProducts }) => {
       return processedSubProducts.some(sp =>
         sp.sizes.some(size => size.discount && size.discount.hasDiscount) ||
@@ -11676,43 +11651,76 @@ const getSearchSuggestions = async (query, limit = 8) => {
     return [];
   }
 
-  const searchTerm = query.trim().toLowerCase();
-  
+  const searchTerm = query.trim();
+  const lowerTerm  = searchTerm.toLowerCase();
+
   try {
-    // Get suggestions from product names
-    const productSuggestions = await Product.aggregate([
-      {
-        $match: {
+    // Use MongoDB $text index (name + description + tastingNotes) for relevant product names
+    const [textProducts, regexProducts, brandSuggestions, categorySuggestions] = await Promise.all([
+      // 1. $text index search — highest quality matches
+      Product.find(
+        { status: 'approved', $text: { $search: searchTerm } },
+        { score: { $meta: 'textScore' }, name: 1 },
+      )
+        .sort({ score: { $meta: 'textScore' } })
+        .limit(limit)
+        .lean(),
+
+      // 2. Regex search — catches prefix/substring matches the text index may miss
+      Product.find(
+        {
           status: 'approved',
           $or: [
             { name: { $regex: searchTerm, $options: 'i' } },
-            { type: { $regex: searchTerm, $options: 'i' } },
+            { type: { $regex: lowerTerm,  $options: 'i' } },
           ],
         },
-      },
-      { $limit: limit },
-      { $project: { name: 1, _id: 0 } },
+        { name: 1 },
+      )
+        .sort({ averageRating: -1 })
+        .limit(limit)
+        .lean(),
+
+      // 3. Brand names
+      Brand.find(
+        { name: { $regex: searchTerm, $options: 'i' } },
+        { name: 1 },
+      )
+        .limit(Math.ceil(limit / 2))
+        .lean(),
+
+      // 4. Category names
+      (async () => {
+        try {
+          const Category = require('../models/Category');
+          return Category.find(
+            { name: { $regex: searchTerm, $options: 'i' }, status: 'published' },
+            { name: 1 },
+          ).limit(4).lean();
+        } catch { return []; }
+      })(),
     ]);
 
-    // Get suggestions from brands
-    const brandSuggestions = await Brand.aggregate([
-      {
-        $match: {
-          name: { $regex: searchTerm, $options: 'i' },
-        },
-      },
-      { $limit: Math.floor(limit / 2) },
-      { $project: { name: 1, _id: 0 } },
-    ]);
+    // Merge: text-index results first (best relevance), then regex, brands, categories
+    const seen = new Set();
+    const merged = [];
 
-    // Combine and deduplicate
-    const allSuggestions = [
-      ...productSuggestions.map(p => p.name),
+    for (const item of [
+      ...textProducts.map(p => p.name),
+      ...regexProducts.map(p => p.name),
       ...brandSuggestions.map(b => b.name),
-    ];
+      ...categorySuggestions.map(c => c.name),
+    ]) {
+      if (!item) continue;
+      const key = item.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push(item);
+      }
+      if (merged.length >= limit) break;
+    }
 
-    // Remove duplicates and return
-    return [...new Set(allSuggestions)].slice(0, limit);
+    return merged;
   } catch (error) {
     console.error('Error getting search suggestions:', error);
     return [];
@@ -11792,13 +11800,28 @@ const getPersonalizedRecommendations = async (userId, limit = 10) => {
  * Admin-only: fetch ALL products directly from the database
  * (no tenant/stock filtering, all statuses)
  */
-const getAdminProductList = async ({ page = 1, limit = 500, search, status } = {}) => {
+const getAdminProductList = async ({ page = 1, limit = 500, search, status, category, subCategory, brand } = {}) => {
   const pageNum = Math.max(1, parseInt(page, 10));
   const limitNum = Math.min(Math.max(1, parseInt(limit, 10)), 1000);
   const skip = (pageNum - 1) * limitNum;
 
   const query = {};
   if (status) query.status = status;
+  if (category) {
+    query.category = mongoose.Types.ObjectId.isValid(category)
+      ? new mongoose.Types.ObjectId(category)
+      : category;
+  }
+  if (subCategory) {
+    query.subCategory = mongoose.Types.ObjectId.isValid(subCategory)
+      ? new mongoose.Types.ObjectId(subCategory)
+      : subCategory;
+  }
+  if (brand) {
+    query.brand = mongoose.Types.ObjectId.isValid(brand)
+      ? new mongoose.Types.ObjectId(brand)
+      : brand;
+  }
   if (search) {
     query.$or = [
       { name: { $regex: search, $options: 'i' } },
@@ -11811,7 +11834,7 @@ const getAdminProductList = async ({ page = 1, limit = 500, search, status } = {
     Product.find(query)
       .populate('brand', 'name slug')
       .populate('category', 'name slug')
-      .select('_id name slug type description images isAlcoholic abv volumeMl originCountry brand category status publishedAt createdAt updatedAt')
+      .select('_id name slug type description images isAlcoholic abv volumeMl originCountry brand category status isPublished publishedAt totalStockAvailable createdAt updatedAt')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limitNum)

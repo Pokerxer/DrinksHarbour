@@ -11,12 +11,17 @@ import TablePagination from '@core/components/table/pagination';
 import { Input } from 'rizzui';
 import { PiMagnifyingGlassBold } from 'react-icons/pi';
 import { websiteMetricColumns } from './columns';
+import { useWebAnalytics } from '@/context/WebAnalyticsContext';
 
 export type websiteMetricDataType = (typeof websiteMetricData)[number];
 
 export default function WebsiteMetrics({ className }: { className?: string }) {
+  const { data } = useWebAnalytics();
+
+  const tableData = data?.channels ?? websiteMetricData;
+
   const { table } = useTanStackTable<websiteMetricDataType>({
-    tableData: websiteMetricData,
+    tableData,
     columnConfig: websiteMetricColumns,
     options: {
       initialState: {

@@ -342,14 +342,8 @@ export default function POSHistory() {
   const fetchOrders = useCallback(() => {
     if (!token) return;
     setLoading(true);
-    // Get the current open session, then load its orders
-    posApi.getSessionInfo(token)
-      .then(async (info) => {
-        const sessionId = info.currentSession?._id;
-        if (!sessionId) { setOrders([]); return; }
-        const data = await posApi.getSessionOrders(token, sessionId);
-        setOrders((data || []) as HistoryOrder[]);
-      })
+    posApi.getAllOrders(token)
+      .then((data) => setOrders((data || []) as HistoryOrder[]))
       .catch(() => setOrders([]))
       .finally(() => setLoading(false));
   }, [token]);

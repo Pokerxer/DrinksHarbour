@@ -10,8 +10,32 @@ interface NextAuthRequest extends NextRequest {
     token: {
       role?: string;
       tenantId?: string;
+      tenantSlug?: string;
     } | null;
   };
+}
+
+/** Extract tenant slug from hostname or ?_tenant= query param (for local dev). */
+function extractTenantSlug(req: NextRequest): string | null {
+  // Local dev fallback: ?_tenant=acme
+  const devSlug = req.nextUrl.searchParams.get('_tenant');
+  if (devSlug) return devSlug;
+
+  const hostname = req.headers.get('host') || req.nextUrl.hostname;
+  // Strip port for local dev
+  const host = hostname.split(':')[0];
+
+  // Known non-tenant hostnames
+  const rootHosts = ['admin.drinksharbour.com', 'localhost', '127.0.0.1'];
+  if (rootHosts.includes(host)) return null;
+
+  // Match <slug>.drinksharbour.com
+  const match = host.match(/^([a-z0-9-]+)\.drinksharbour\.com$/);
+  if (match && match[1] !== 'admin' && match[1] !== 'www') {
+    return match[1];
+  }
+
+  return null;
 }
 
 export default withAuth(
@@ -22,25 +46,64 @@ export default withAuth(
     const role = (token?.role as UserRole) ?? 'viewer';
     const tenantId = token?.tenantId as string | undefined;
 
+    // ── Subdomain detection ──────────────────────────────────────────────────
+    const tenantSlug = extractTenantSlug(req);
+
+    // Build response with x-tenant-slug header so server components can read it
+    const requestHeaders = new Headers(req.headers);
+    if (tenantSlug) {
+      requestHeaders.set('x-tenant-slug', tenantSlug);
+    } else {
+      requestHeaders.delete('x-tenant-slug');
+    }
+
+    // If a tenant-role user visits a subdomain that isn't theirs, redirect them
+    // (We compare by slug; the token stores tenantId so we rely on the slug
+    //  being set in the token as well, or fall back to blocking unknown subdomains.)
+    if (tenantSlug && TENANT_ROLES.includes(role)) {
+      const tokenSlug = (token as any)?.tenantSlug as string | undefined;
+      // If we have a slug in the token and it doesn't match, send to access-denied
+      if (tokenSlug && tokenSlug !== tenantSlug) {
+        return NextResponse.redirect(new URL('/access-denied', req.url));
+      }
+    }
+
+    // ── Role-based access control ────────────────────────────────────────────
+
+    // Platform-only sections — tenant roles cannot access these at all
     if (path.startsWith('/executive') || path.startsWith('/financial')) {
       if (!PLATFORM_ROLES.includes(role)) {
         return NextResponse.redirect(new URL('/access-denied', req.url));
       }
     }
 
+    // Platform-only ecommerce pages — tenant management, brand management
+    // Tenant roles should only manage their own data via the tenant sidebar
+    const PLATFORM_ONLY_PATHS = [
+      '/ecommerce/tenants',
+      '/ecommerce/products',  // main product catalog is platform-only; tenants use /ecommerce/sub-products
+    ];
+    if (TENANT_ROLES.includes(role) && PLATFORM_ONLY_PATHS.some((p) => path.startsWith(p))) {
+      return NextResponse.redirect(new URL('/access-denied', req.url));
+    }
+
+    // General ecommerce/logistics — require tenantId for tenant roles
     if (path.startsWith('/ecommerce') || path.startsWith('/logistics')) {
       if (TENANT_ROLES.includes(role) && !tenantId) {
         return NextResponse.redirect(new URL('/access-denied', req.url));
       }
     }
 
+    // User/role management — platform admins + tenant owners/admins only
     if (path.startsWith('/roles-permissions') || path.startsWith('/users')) {
       if (!PLATFORM_ROLES.includes(role) && role !== 'tenant_admin' && role !== 'tenant_owner') {
         return NextResponse.redirect(new URL('/access-denied', req.url));
       }
     }
 
-    return NextResponse.next();
+    return NextResponse.next({
+      request: { headers: requestHeaders },
+    });
   },
   {
     pages: {
@@ -69,5 +132,9 @@ export const config = {
     '/forms/profile-settings/:path*',
     '/roles-permissions/:path*',
     '/users/:path*',
+    '/point-of-sale/:path*',
+    '/pos/sell',
+    '/pos/orders',
+    '/pos/sessions',
   ],
 };

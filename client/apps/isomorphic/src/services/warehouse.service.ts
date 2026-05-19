@@ -5,7 +5,16 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 export interface Warehouse {
   _id: string;
   tenant: string;
-  subProduct?: string;
+  subProduct?: {
+    _id: string;
+    sku?: string;
+    name?: string;
+    totalStock?: number;
+    availableStock?: number;
+    reservedStock?: number;
+    lowStockThreshold?: number;
+    stockStatus?: string;
+  } | string | null;
   product?: any;
   location: string;
   locationType: string;

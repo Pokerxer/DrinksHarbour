@@ -3,6 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const orderController = require('../controllers/order.controller');
+const posController   = require('../controllers/pos.controller');
 const { protect, optionalProtect, attachTenant, superAdminOnly, tenantAdminOrSuperAdmin } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validation.middleware');
 const { body, param, query } = require('express-validator');
@@ -123,6 +124,15 @@ router.put(
   body('amount').optional().isFloat({ min: 0 }),
   validate,
   orderController.updatePaymentStatus
+);
+
+// Admin-initiated POS order refund (uses regular admin JWT, not POS token)
+router.post(
+  '/:id/pos-refund',
+  tenantAdminOrSuperAdmin,
+  param('id').isMongoId(),
+  validate,
+  posController.refundPOSOrder
 );
 
 router.put(

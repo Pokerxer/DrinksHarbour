@@ -261,6 +261,22 @@ router.post('/:id/apply', tenantAdminOrSuperAdmin, async (req, res, next) => {
         // so the pricing engine shows only the new base price.
         if (rule.priceType === 'fixed') {
           if (!rule.fixedPrice || rule.fixedPrice <= 0) { results.skipped++; continue; }
+
+          // Save original prices before overwriting (skip already-saved)
+          const needBackup = await SubProduct.find(
+            { ...spFilter, basePriceBeforePricelist: { $exists: false } },
+          ).select('_id baseSellingPrice').lean();
+          if (needBackup.length > 0) {
+            await SubProduct.bulkWrite(
+              needBackup.map(sp => ({
+                updateOne: {
+                  filter: { _id: sp._id },
+                  update: { $set: { basePriceBeforePricelist: sp.baseSellingPrice } },
+                },
+              }))
+            );
+          }
+
           const r = await SubProduct.updateMany(spFilter, {
             $set: {
               baseSellingPrice: rule.fixedPrice,
@@ -278,10 +294,16 @@ router.post('/:id/apply', tenantAdminOrSuperAdmin, async (req, res, next) => {
         } else if (rule.priceType === 'formula') {
           if (!rule.markupPercentage || rule.markupPercentage <= 0) { results.skipped++; continue; }
 
-          const products = await SubProduct.find(spFilter).select('_id costPrice').lean();
+          const products = await SubProduct.find(spFilter).select('_id costPrice baseSellingPrice basePriceBeforePricelist').lean();
           let changed = 0;
           for (const sp of products) {
             if (!sp.costPrice || sp.costPrice <= 0) continue;
+            // Save original price on first apply
+            if (!sp.basePriceBeforePricelist && sp.baseSellingPrice > 0) {
+              await SubProduct.findByIdAndUpdate(sp._id, {
+                $set: { basePriceBeforePricelist: sp.baseSellingPrice },
+              });
+            }
             await SubProduct.findByIdAndUpdate(sp._id, {
               $set: {
                 baseSellingPrice: Math.round(sp.costPrice * (1 + rule.markupPercentage / 100) * 100) / 100,
@@ -334,6 +356,50 @@ router.post('/:id/apply', tenantAdminOrSuperAdmin, async (req, res, next) => {
         errors:   results.errors,
         total:    pl.rules.length,
         message:  `${results.modified} product${results.modified !== 1 ? 's' : ''} updated${skippedNote}${dynamicNote}`,
+      },
+    });
+  } catch (err) { next(err); }
+});
+
+// ── Revert applied pricelist prices ─────────────────────────────────────────
+// Restores baseSellingPrice from basePriceBeforePricelist for all products
+// that had a pricelist applied. Clears the backup field after restore so
+// future applies will save the current price as the new original.
+router.post('/revert-applied', tenantAdminOrSuperAdmin, async (req, res, next) => {
+  try {
+    const tenantId = req.tenant?._id;
+    const filter = tenantId
+      ? { tenant: tenantId, basePriceBeforePricelist: { $exists: true, $gt: 0 } }
+      : { basePriceBeforePricelist: { $exists: true, $gt: 0 } };
+
+    const toRevert = await SubProduct.find(filter)
+      .select('_id baseSellingPrice basePriceBeforePricelist')
+      .lean();
+
+    if (toRevert.length === 0) {
+      return res.json({
+        success: true,
+        data: { modified: 0, message: 'No applied pricelist prices to revert' },
+      });
+    }
+
+    const bulkOps = toRevert.map(sp => ({
+      updateOne: {
+        filter: { _id: sp._id },
+        update: {
+          $set: { baseSellingPrice: sp.basePriceBeforePricelist },
+          $unset: { basePriceBeforePricelist: '' },
+        },
+      },
+    }));
+
+    await SubProduct.bulkWrite(bulkOps);
+
+    res.json({
+      success: true,
+      data: {
+        modified: toRevert.length,
+        message: `${toRevert.length} product${toRevert.length !== 1 ? 's' : ''} reverted to original prices`,
       },
     });
   } catch (err) { next(err); }

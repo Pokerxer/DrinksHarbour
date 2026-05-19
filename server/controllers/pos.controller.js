@@ -226,7 +226,7 @@ function computePOSPricing(sp, sizeDoc, tenant) {
 
   // Size values fall back to subproduct when 0 (0 means "not set")
   const rawCost    = (sizeDoc?.costPrice    > 0 ? sizeDoc.costPrice    : null) ?? sp.costPrice        ?? 0;
-  const rawSelling = (sizeDoc?.sellingPrice > 0 ? sizeDoc.sellingPrice : null) ?? sp.baseSellingPrice ?? 0;
+  const rawSelling = (sizeDoc?.sellingPrice > 0 ? sizeDoc.sellingPrice : null) ?? sp.basePriceBeforePricelist ?? sp.baseSellingPrice ?? 0;
 
   if (rawCost <= 0 && rawSelling <= 0) {
     return { sellingPrice: 0, costPrice: 0, revenueModel, markupPct, commissionPct };
@@ -1200,7 +1200,7 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
   const subProducts = await SubProduct.find(query)
     .select([
       'sku', 'product', 'tenant', 'vendor',
-      'baseSellingPrice', 'costPrice',
+      'baseSellingPrice', 'basePriceBeforePricelist', 'costPrice',
       'isOnSale', 'saleType', 'saleStartDate', 'saleEndDate', 'saleDiscountValue',
       'flashSale', 'bundleDeals',
       'availableStock', 'totalStock', 'stockStatus', 'status',

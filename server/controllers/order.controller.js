@@ -353,8 +353,9 @@ exports.getAllOrders = asyncHandler(async (req, res) => {
     payment  = '',
     from,
     to,
-    sort     = 'placedAt',
+    sort       = 'placedAt',
     order: sortDir = 'desc',
+    subProductId,
   } = req.query;
 
   const pageNum  = Math.max(1, parseInt(page));
@@ -363,8 +364,9 @@ exports.getAllOrders = asyncHandler(async (req, res) => {
 
   const filter = {};
 
-  if (status)  filter.status        = status;
-  if (payment) filter.paymentStatus = payment;
+  if (status)        filter.status                = status;
+  if (payment)       filter.paymentStatus         = payment;
+  if (subProductId)  filter['items.subproduct']   = subProductId;
 
   if (from || to) {
     filter.placedAt = {};

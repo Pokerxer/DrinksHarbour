@@ -228,6 +228,25 @@ const tenantSchema = new Schema(
     contactPhone: String,
 
     // ────────────────────────────────────────────────
+    // Bank / Payment Accounts (shown on POS invoices)
+    // ────────────────────────────────────────────────
+    bankAccounts: [
+      {
+        bankName:      { type: String, trim: true },
+        accountNumber: { type: String, trim: true },
+        accountName:   { type: String, trim: true },
+      },
+    ],
+
+    // ────────────────────────────────────────────────
+    // POS Settings
+    // ────────────────────────────────────────────────
+    posSettings: {
+      // Allow adding out-of-stock products to cart and processing the order
+      allowOverselling: { type: Boolean, default: false },
+    },
+
+    // ────────────────────────────────────────────────
     // Purchase Settings (Odoo-style)
     // ────────────────────────────────────────────────
     purchaseSettings: {
@@ -355,7 +374,7 @@ async function geocodeAddress(tenant) {
 
 // ── Pre-save: normalise state + geocode if address changed ───────────────────
 
-tenantSchema.pre('save', async function (next) {
+tenantSchema.pre('save', async function () {
   // Always keep normalizedState in sync with address.state
   if (this.address?.state) {
     this.normalizedState = normaliseState(this.address.state);
@@ -368,8 +387,6 @@ tenantSchema.pre('save', async function (next) {
   if (addressChanged) {
     await geocodeAddress(this);
   }
-
-  next();
 });
 
 // ── Pre-findOneAndUpdate: normalise state in $set operations ─────────────────

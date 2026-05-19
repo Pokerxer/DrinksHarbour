@@ -7,17 +7,12 @@ import { useModalCartContext } from "@/context/ModalCartContext";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
 import { UserDropdown } from "./UserDropdown";
-
-interface Tenant {
-  id: string;
-  name: string;
-  subdomain?: string;
-}
+import { TenantData } from "@/context/TenantContext";
 
 interface HeaderActionsProps {
   variant: "default" | "transparent" | "dark";
   getTextColor: () => string;
-  tenant?: Tenant | null;
+  tenant?: TenantData | null;
   mobile?: boolean;
 }
 
@@ -65,35 +60,8 @@ export const HeaderActions: React.FC<HeaderActionsProps> = ({
       : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
   }`;
 
-  if (mobile) {
-    return (
-      <>
-        <button onClick={openModalCart} className={iconBtn}>
-          <Icon.PiShoppingCart size={22} />
-          {cartCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white">
-              {cartCount > 99 ? "99+" : cartCount}
-            </span>
-          )}
-        </button>
-        <div className="relative" ref={userDropdownRef}>
-          <button
-            onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-            className={iconBtn}
-          >
-            <Icon.PiUser size={22} />
-          </button>
-          <UserDropdown
-            isOpen={userDropdownOpen}
-            isLoggedIn={isLoggedIn}
-            tenant={tenant}
-            onLogout={handleLogout}
-            onClose={() => setUserDropdownOpen(false)}
-          />
-        </div>
-      </>
-    );
-  }
+  // On mobile, cart and account are available in the bottom nav — nothing to render here.
+  if (mobile) return null;
 
   return (
     <div className="hidden lg:flex items-center gap-1 flex-shrink-0">

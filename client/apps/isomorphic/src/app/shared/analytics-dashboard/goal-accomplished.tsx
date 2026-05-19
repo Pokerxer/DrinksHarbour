@@ -1,27 +1,16 @@
+// @ts-nocheck
+'use client';
+
 import { Title, Text } from 'rizzui/typography';
 import cn from '@core/utils/class-names';
 import WidgetCard from '@core/components/cards/widget-card';
 import CircleProgressBar from '@core/components/charts/circle-progressbar';
+import { useWebAnalytics } from '@/context/WebAnalyticsContext';
 
-const data = [
-  {
-    name: 'New Customers',
-    value: '30,000',
-    percentage: 45,
-    color: '#3872FA',
-  },
-  {
-    name: 'Convention Rate',
-    value: '75%',
-    percentage: 75,
-    color: '#f1416c',
-  },
-  {
-    name: 'Page Session',
-    value: '67%',
-    percentage: 67,
-    color: '#7928ca',
-  },
+const staticData = [
+  { name: 'New Customers',   value: '30,000', percentage: 45, color: '#3872FA' },
+  { name: 'Conversion Rate', value: '75%',    percentage: 75, color: '#f1416c' },
+  { name: 'Page Session',    value: '67%',    percentage: 67, color: '#7928ca' },
 ];
 
 export default function GoalAccomplished({
@@ -29,16 +18,47 @@ export default function GoalAccomplished({
 }: {
   className?: string;
 }) {
+  const { data } = useWebAnalytics();
+
+  const goals = data?.goals;
+
+  const cardData = goals
+    ? [
+        {
+          name: 'New Customers',
+          value: goals.newCustomers.value.toLocaleString(),
+          percentage: Math.min(goals.newCustomers.percentage, 100),
+          color: '#3872FA',
+        },
+        {
+          name: 'Conversion Rate',
+          value: `${goals.conversionRate.value}%`,
+          percentage: Math.min(goals.conversionRate.percentage, 100),
+          color: '#f1416c',
+        },
+        {
+          name: 'Page Session',
+          value: `${goals.pageSession.value}%`,
+          percentage: Math.min(goals.pageSession.percentage, 100),
+          color: '#7928ca',
+        },
+      ]
+    : staticData;
+
+  const descriptionPct = goals
+    ? `${goals.pageSession.percentage}% acquired this month`
+    : '67% acquired this month';
+
   return (
     <WidgetCard
       title={'Goal Accomplished'}
-      description={'67% acquired this month'}
+      description={descriptionPct}
       rounded="lg"
       descriptionClassName="text-gray-500 mt-1.5"
       className={cn('grid', className)}
     >
       <div className="mt-5 grid w-full grid-cols-3 justify-around gap-6 @sm:py-3 @md:mt-3 @xl:mt-4 @7xl:gap-8">
-        {data.map((item) => (
+        {cardData.map((item) => (
           <div key={item.name} className="grid grid-cols-1 gap-6 text-center">
             <CircleProgressBar
               percentage={item.percentage}

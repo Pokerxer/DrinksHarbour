@@ -13,41 +13,34 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { CustomTooltip } from '@core/components/charts/custom-tooltip';
+import { useWebAnalytics } from '@/context/WebAnalyticsContext';
 
-const data = [
-  {
-    day: 'Mon',
-    bounceRate: 40,
-    pageSession: 40,
-  },
-  {
-    day: 'Tue',
-    bounceRate: 90,
-    pageSession: 30,
-  },
-  {
-    day: 'Thu',
-    bounceRate: 64,
-    pageSession: 43,
-  },
-  {
-    day: 'Wed',
-    bounceRate: 99,
-    pageSession: 50,
-  },
-  {
-    day: 'Fri',
-    bounceRate: 50,
-    pageSession: 70,
-  },
-  {
-    day: 'Sun',
-    bounceRate: 70,
-    pageSession: 80,
-  },
+const staticData = [
+  { day: 'Mon', bounceRate: 40, pageSession: 40 },
+  { day: 'Tue', bounceRate: 90, pageSession: 30 },
+  { day: 'Thu', bounceRate: 64, pageSession: 43 },
+  { day: 'Wed', bounceRate: 99, pageSession: 50 },
+  { day: 'Fri', bounceRate: 50, pageSession: 70 },
+  { day: 'Sun', bounceRate: 70, pageSession: 80 },
 ];
 
 export default function Acquisition({ className }: { className?: string }) {
+  const { data } = useWebAnalytics();
+
+  const chartData = data?.acquisition ?? staticData;
+
+  const avgBounceRate =
+    chartData.length > 0
+      ? (
+          chartData.reduce((sum, d) => sum + (d.bounceRate ?? 0), 0) /
+          chartData.length
+        ).toFixed(2) + '%'
+      : '13.89%';
+
+  const totalPageSession = data?.acquisition
+    ? chartData.reduce((sum, d) => sum + (d.pageSession ?? 0), 0).toLocaleString()
+    : '19,065';
+
   return (
     <WidgetCard
       title={'Acquisition'}
@@ -65,7 +58,7 @@ export default function Acquisition({ className }: { className?: string }) {
           </div>
           <div>
             <Title as="h6" className="font-semibold">
-              13.89%
+              {avgBounceRate}
             </Title>
             <Text className="text-gray-500">Bounce Rate</Text>
           </div>
@@ -76,7 +69,7 @@ export default function Acquisition({ className }: { className?: string }) {
           </div>
           <div>
             <Title as="h6" className="font-semibold">
-              19,065
+              {totalPageSession}
             </Title>
             <Text className="text-gray-500">Page Session</Text>
           </div>
@@ -86,7 +79,7 @@ export default function Acquisition({ className }: { className?: string }) {
       <div className="h-80 w-full @sm:pt-3">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
-            data={data}
+            data={chartData}
             margin={{
               left: -30,
             }}

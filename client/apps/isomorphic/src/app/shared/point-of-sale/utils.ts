@@ -166,8 +166,10 @@ export function applyPricelistToProduct(product: any, pricelist: any): any {
   const priceRules = findMatchingPricelistRules(pricelist.rules, product._id, 1, 'price');
 
   if (priceRules.length > 0) {
-    const oldBase = Number(product.baseSellingPrice) || 0;
-    let   newBase = oldBase;
+    // Use the true original base price — NOT the DB-sale-discounted baseSellingPrice.
+    // This keeps pricelist logic independent of DB-level flash/sale promotions.
+    const trueBase = Number(product.originalPrice) || Number(product.baseSellingPrice) || 0;
+    let   newBase  = trueBase;
 
     const appliedSteps: any[] = [];
     for (const rule of priceRules) {
@@ -178,37 +180,34 @@ export function applyPricelistToProduct(product: any, pricelist: any): any {
       }
     }
 
-    const baseChanged = Math.abs(newBase - oldBase) > 0.001;
+    const baseChanged = Math.abs(newBase - trueBase) > 0.001;
     const lastRule    = priceRules[priceRules.length - 1];
 
     const newSizes = product.sizes?.map((s: any) => {
-      const sizeCost = Number(s.costPrice) > 0 ? Number(s.costPrice) : productCost;
-      let   sizePrice = Number(s.sellingPrice) || 0;
+      const sizeCost    = Number(s.costPrice) > 0 ? Number(s.costPrice) : productCost;
+      const trueSzBase  = Number(s.originalPrice) || Number(s.sellingPrice) || 0;
+      let   sizePrice   = trueSzBase;
       for (const rule of priceRules) {
         sizePrice = applyRuleTransform(sizePrice, rule, sizeCost);
       }
-      const sizeChanged = Math.abs(sizePrice - Number(s.sellingPrice)) > 0.001;
+      const sizeChanged = Math.abs(sizePrice - trueSzBase) > 0.001;
       return {
         ...s,
         sellingPrice:          sizePrice,
-        _priceBeforePricelist: Number(s.sellingPrice) || 0,
-        originalPrice: sizeChanged
-          ? (s.originalPrice != null ? s.originalPrice : Number(s.sellingPrice))
-          : s.originalPrice,
+        _priceBeforePricelist: trueSzBase,
+        originalPrice: sizeChanged ? trueSzBase : null,
       };
     });
 
     result = {
       ...result,
       baseSellingPrice:       newBase,
-      _priceBeforePricelist:  oldBase,
+      _priceBeforePricelist:  trueBase,
       _appliedPricelistSteps: appliedSteps,
       _appliedPricelist:      { _id: pricelist._id, name: pricelist.name },
-      originalPrice: baseChanged
-        ? (product.originalPrice != null ? product.originalPrice : oldBase)
-        : product.originalPrice,
-      isOnSale:    baseChanged && newBase < oldBase ? true : product.isOnSale,
-      isFlashSale: lastRule?.priceType === 'flash_sale'  ? true : product.isFlashSale,
+      originalPrice: baseChanged ? trueBase : null,
+      isOnSale:    baseChanged && newBase < trueBase,
+      isFlashSale: lastRule?.priceType === 'flash_sale',
       sizes: newSizes || product.sizes,
     };
   }

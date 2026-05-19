@@ -2,289 +2,159 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 
 interface AgeGateProps {
   productId?: string;
-  productName?: string;
   minimumAge?: number;
 }
 
-const AgeGate: React.FC<AgeGateProps> = ({ 
-  productId, 
-  productName = 'this product',
-  minimumAge = 18 
+const STORAGE_KEY = 'drinksharbour_age_verified';
+
+const AgeGate: React.FC<AgeGateProps> = ({
+  productId,
+  minimumAge = 18,
 }) => {
   const [isVerified, setIsVerified] = useState<boolean | null>(null);
-  const [birthYear, setBirthYear] = useState<string>('');
-  const [birthMonth, setBirthMonth] = useState<string>('');
-  const [birthDay, setBirthDay] = useState<string>('');
-  const [error, setError] = useState<string>('');
-  const [selectedCountry, setSelectedCountry] = useState<'NG' | 'US'>('NG');
-
-  const STORAGE_KEY = 'drinksharbour_age_verified';
 
   useEffect(() => {
-    const stored = sessionStorage.getItem(`${STORAGE_KEY}_${productId}`);
-    const globalStored = sessionStorage.getItem(STORAGE_KEY);
-    
-    if (stored === 'true' || globalStored === 'true') {
-      setIsVerified(true);
-    } else {
-      setIsVerified(false);
-    }
+    const global  = sessionStorage.getItem(STORAGE_KEY);
+    const product = productId ? sessionStorage.getItem(`${STORAGE_KEY}_${productId}`) : null;
+    setIsVerified(global === 'true' || product === 'true');
   }, [productId]);
 
-  const calculateAge = useCallback((year: number, month: number, day: number): number => {
-    const today = new Date();
-    const birthDate = new Date(year, month - 1, day);
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-    }
-    
-    return age;
-  }, []);
-
-  const handleVerify = useCallback(() => {
-    setError('');
-
-    if (!birthYear || !birthMonth || !birthDay) {
-      setError('Please enter your complete date of birth');
-      return;
-    }
-
-    const year = parseInt(birthYear, 10);
-    const month = parseInt(birthMonth, 10);
-    const day = parseInt(birthDay, 10);
-
-    if (isNaN(year) || year < 1900 || year > new Date().getFullYear()) {
-      setError('Please enter a valid year');
-      return;
-    }
-
-    if (isNaN(month) || month < 1 || month > 12) {
-      setError('Please enter a valid month (1-12)');
-      return;
-    }
-
-    if (isNaN(day) || day < 1 || day > 31) {
-      setError('Please enter a valid day (1-31)');
-      return;
-    }
-
-    const age = calculateAge(year, month, day);
-
-    if (age < 0) {
-      setError('Date of birth cannot be in the future');
-      return;
-    }
-
-    if (age < minimumAge) {
-      setError(`You must be at least ${minimumAge} years old to view this product`);
-      return;
-    }
-
+  const verify = useCallback(() => {
     sessionStorage.setItem(STORAGE_KEY, 'true');
-    if (productId) {
-      sessionStorage.setItem(`${STORAGE_KEY}_${productId}`, 'true');
-    }
+    if (productId) sessionStorage.setItem(`${STORAGE_KEY}_${productId}`, 'true');
     setIsVerified(true);
-  }, [birthYear, birthMonth, birthDay, calculateAge, minimumAge, productId]);
+  }, [productId]);
 
-  const handleExit = useCallback(() => {
+  const leave = useCallback(() => {
     window.history.back();
   }, []);
 
-  const handleSimpleVerify = useCallback(() => {
-    sessionStorage.setItem(STORAGE_KEY, 'true');
-    if (productId) {
-      sessionStorage.setItem(`${STORAGE_KEY}_${productId}`, 'true');
-    }
-    setIsVerified(true);
-  }, [productId]);
-
-  if (isVerified === null) {
-    return (
-      <div className="fixed inset-0 bg-white z-[200]" />
-    );
-  }
-
-  if (isVerified) {
-    return null;
-  }
+  // Loading flicker guard
+  if (isVerified === null) return <div className="fixed inset-0 z-[200]" style={{ backgroundColor: '#0d0d0d' }} />;
+  if (isVerified) return null;
 
   return (
     <AnimatePresence>
       <motion.div
+        key="age-gate"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[200] bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900"
+        className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+        style={{
+          background: `
+            radial-gradient(ellipse at 20% 50%, rgba(178,2,2,0.18) 0%, transparent 60%),
+            radial-gradient(ellipse at 80% 20%, rgba(178,2,2,0.12) 0%, transparent 55%),
+            linear-gradient(135deg, #0a0a0a 0%, #1a0505 40%, #0d0d0d 100%)
+          `,
+        }}
       >
-        <div className="min-h-screen flex items-center justify-center p-4">
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ delay: 0.1, duration: 0.4 }}
-            className="w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden"
+        {/* Subtle noise texture overlay */}
+        <div
+          className="absolute inset-0 pointer-events-none opacity-30"
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.08'/%3E%3C/svg%3E")`,
+          }}
+        />
+
+        {/* Decorative red glow orbs */}
+        <div className="absolute top-[-120px] left-[-80px] w-[400px] h-[400px] rounded-full pointer-events-none"
+          style={{ background: 'radial-gradient(circle, rgba(178,2,2,0.15) 0%, transparent 70%)' }} />
+        <div className="absolute bottom-[-100px] right-[-60px] w-[350px] h-[350px] rounded-full pointer-events-none"
+          style={{ background: 'radial-gradient(circle, rgba(178,2,2,0.10) 0%, transparent 70%)' }} />
+
+        {/* Card */}
+        <motion.div
+          initial={{ scale: 0.92, opacity: 0, y: 20 }}
+          animate={{ scale: 1,    opacity: 1, y: 0  }}
+          transition={{ delay: 0.08, duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+          className="relative w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl"
+          style={{ backgroundColor: '#ffffff' }}
+        >
+          {/* Top brand stripe */}
+          <div className="h-1" style={{ background: 'linear-gradient(to right, #b20202, #ff3232, #b20202)' }} />
+
+          {/* Hero section */}
+          <div
+            className="px-8 pt-10 pb-8 text-center relative overflow-hidden"
+            style={{ background: 'linear-gradient(160deg, #1a0505 0%, #0d0d0d 100%)' }}
           >
-            {/* Header */}
-            <div className="relative bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-8 text-center">
-              <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4 backdrop-blur">
-                <Icon.PiWine size={40} className="text-white" />
-              </div>
-              <h1 className="text-2xl font-bold text-white mb-2">
-                Age Verification Required
-              </h1>
-              <p className="text-amber-100 text-sm">
-                You must be {minimumAge}+ to view alcoholic products
-              </p>
-              <p className="text-white/80 text-xs mt-2">
-                Restricted product: {productName}
-              </p>
+            {/* Subtle inner glow */}
+            <div className="absolute inset-0 pointer-events-none"
+              style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(178,2,2,0.25) 0%, transparent 70%)' }} />
+
+            {/* Logo */}
+            <div className="relative flex justify-center mb-6">
+              <Image
+                src="/images/logo.svg"
+                alt="DrinksHarbour"
+                width={170}
+                height={60}
+                priority
+                style={{ filter: 'brightness(0) invert(1)' }}
+              />
             </div>
 
-            {/* Content */}
-            <div className="p-6 space-y-6">
-              {/* Country Selection */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Select your country
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setSelectedCountry('NG')}
-                    className={`px-4 py-3 rounded-xl border-2 font-medium transition-all ${
-                      selectedCountry === 'NG'
-                        ? 'border-amber-500 bg-amber-50 text-amber-700'
-                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                    }`}
-                  >
-                    🇳🇬 Nigeria (18+)
-                  </button>
-                  <button
-                    onClick={() => setSelectedCountry('US')}
-                    className={`px-4 py-3 rounded-xl border-2 font-medium transition-all ${
-                      selectedCountry === 'US'
-                        ? 'border-amber-500 bg-amber-50 text-amber-700'
-                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                    }`}
-                  >
-                    🇺🇸 United States (21+)
-                  </button>
-                </div>
-              </div>
-
-              {/* Date of Birth Input */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Enter your date of birth
-                </label>
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <input
-                      type="number"
-                      placeholder="Day"
-                      min="1"
-                      max="31"
-                      value={birthDay}
-                      onChange={(e) => setBirthDay(e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-center font-medium focus:border-amber-500 focus:outline-none transition-colors"
-                    />
-                    <span className="block text-center text-xs text-gray-400 mt-1">Day</span>
-                  </div>
-                  <div>
-                    <input
-                      type="number"
-                      placeholder="Month"
-                      min="1"
-                      max="12"
-                      value={birthMonth}
-                      onChange={(e) => setBirthMonth(e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-center font-medium focus:border-amber-500 focus:outline-none transition-colors"
-                    />
-                    <span className="block text-center text-xs text-gray-400 mt-1">Month</span>
-                  </div>
-                  <div>
-                    <input
-                      type="number"
-                      placeholder="Year"
-                      min="1900"
-                      max={new Date().getFullYear()}
-                      value={birthYear}
-                      onChange={(e) => setBirthYear(e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-center font-medium focus:border-amber-500 focus:outline-none transition-colors"
-                    />
-                    <span className="block text-center text-xs text-gray-400 mt-1">Year</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Error Message */}
-              <AnimatePresence>
-                {error && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm"
-                  >
-                    <Icon.PiWarningCircle size={20} className="flex-shrink-0" />
-                    {error}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Verify Button */}
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={handleVerify}
-                className="w-full py-4 px-6 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition-all"
-              >
-                Verify Age
-              </motion.button>
-
-              {/* Divider */}
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-200"></div>
-                </div>
-                <div className="relative flex justify-center">
-                  <span className="px-4 bg-white text-sm text-gray-500">or</span>
-                </div>
-              </div>
-
-              {/* Skip Verification (Exit) */}
-              <div className="space-y-3">
-                <button
-                  onClick={handleSimpleVerify}
-                  className="w-full py-3 px-6 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200 transition-colors"
-                >
-                  I am {selectedCountry === 'NG' ? '18+' : '21+'}, Enter Site
-                </button>
-                
-                <button
-                  onClick={handleExit}
-                  className="w-full py-3 px-6 border-2 border-gray-200 text-gray-600 font-medium rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-colors"
-                >
-                  I am under {selectedCountry === 'NG' ? '18' : '21'}, Leave Site
-                </button>
-              </div>
-
-              {/* Legal Notice */}
-              <p className="text-center text-xs text-gray-400 leading-relaxed">
-                By entering this site, you agree to our Terms of Service and Privacy Policy. 
-                This site contains information about alcoholic beverages. 
-                You must be of legal drinking age to purchase alcohol.
-              </p>
+            {/* Wine glass icon */}
+            <div
+              className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5"
+              style={{ backgroundColor: 'rgba(178,2,2,0.2)', border: '1px solid rgba(178,2,2,0.35)' }}
+            >
+              <Icon.PiWineFill size={30} style={{ color: '#ff6060' }} />
             </div>
-          </motion.div>
-        </div>
+
+            <h1 className="text-xl font-black text-white mb-2 leading-tight">
+              Age Verification
+            </h1>
+            <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>
+              This site sells alcoholic beverages.<br />
+              You must be <span className="font-bold text-white">{minimumAge}+</span> to enter.
+            </p>
+          </div>
+
+          {/* Body */}
+          <div className="px-7 py-7 space-y-4">
+
+            {/* 18+ confirm */}
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              onClick={verify}
+              className="w-full py-3.5 px-6 rounded-2xl font-black text-white text-base flex items-center justify-center gap-2.5 shadow-lg transition-opacity hover:opacity-90"
+              style={{ background: 'linear-gradient(135deg, #b20202 0%, #8b0000 100%)' }}
+            >
+              <Icon.PiCheckCircleFill size={20} />
+              Yes, I am {minimumAge} or older
+            </motion.button>
+
+            {/* Leave */}
+            <button
+              onClick={leave}
+              className="w-full py-3.5 px-6 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 transition-colors"
+              style={{ backgroundColor: '#f9fafb', color: '#6b7280', border: '1.5px solid #e5e7eb' }}
+            >
+              <Icon.PiArrowLeft size={16} />
+              No, take me back
+            </button>
+
+            {/* Legal */}
+            <p className="text-center text-xs leading-relaxed pt-1" style={{ color: '#9ca3af' }}>
+              By entering you confirm you are of legal drinking age and agree to our{' '}
+              <Link href="/terms" className="underline hover:text-gray-600 transition-colors">Terms</Link>
+              {' & '}
+              <Link href="/privacy-policy" className="underline hover:text-gray-600 transition-colors">Privacy Policy</Link>.
+            </p>
+
+          </div>
+
+          {/* Bottom brand strip */}
+          <div className="h-0.5" style={{ background: 'linear-gradient(to right, transparent, #b20202, transparent)' }} />
+        </motion.div>
       </motion.div>
     </AnimatePresence>
   );

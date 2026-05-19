@@ -5,10 +5,6 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  reactCompiler: false,
-  turbopack: {
-    root: '../..',
-  },
   images: {
     remotePatterns: [
       {

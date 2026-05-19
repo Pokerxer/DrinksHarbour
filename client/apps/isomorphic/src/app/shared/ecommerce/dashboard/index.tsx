@@ -6,6 +6,7 @@ import { Button } from 'rizzui/button';
 import WelcomeBanner from '@core/components/banners/welcome';
 import StatCards from '@/app/shared/ecommerce/dashboard/stat-cards';
 import ProfitWidget from '@/app/shared/ecommerce/dashboard/profit-widget';
+import TenantRevenueWidget from '@/app/shared/ecommerce/dashboard/tenant-revenue-widget';
 import SalesReport from '@/app/shared/ecommerce/dashboard/sales-report';
 import BestSellers from '@/app/shared/ecommerce/dashboard/best-sellers';
 import RepeatCustomerRate from '@/app/shared/ecommerce/dashboard/repeat-customer-rate';
@@ -20,16 +21,20 @@ import welcomeImg from '@public/shop-illustration.png';
 import HandWaveIcon from '@core/components/icons/hand-wave';
 import { getAuthenticatedUser } from '@/lib/server-auth';
 import { getDashboardData } from '@/services/dashboard.service';
+import TenantBanner from '@/app/shared/ecommerce/dashboard/tenant-banner';
+import { TENANT_ROLES } from '@/types/authorization';
 
 export default async function EcommerceDashboard() {
   let dashboardData = null;
   let userName = 'Admin';
+  let isTenantUser = false;
 
   try {
     const user = await getAuthenticatedUser();
     if (user?.token) {
       dashboardData = await getDashboardData(user.token as string);
       if (user.name) userName = user.name.split(' ')[0];
+      isTenantUser = TENANT_ROLES.includes(user.role as any);
     }
   } catch {
     // Widgets show skeleton fallback states
@@ -47,8 +52,14 @@ export default async function EcommerceDashboard() {
     return `₦${n}`;
   }
 
+  // Quick action links depend on role
+  const addProductHref = isTenantUser
+    ? routes.eCommerce.createSubProduct
+    : routes.eCommerce.createProduct;
+
   return (
     <div className="@container">
+      <TenantBanner />
       <DashboardProvider data={dashboardData}>
         <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @7xl:grid-cols-12 3xl:gap-8">
 
@@ -80,7 +91,7 @@ export default async function EcommerceDashboard() {
             className="border border-muted bg-gray-0 pb-8 @4xl:col-span-2 @7xl:col-span-8 dark:bg-gray-100/30 lg:pb-9"
           >
             <div className="flex items-center gap-3">
-              <Link href={routes.eCommerce.createProduct} className="inline-flex">
+              <Link href={addProductHref} className="inline-flex">
                 <Button as="span" className="h-[38px] shadow md:h-10">
                   <PiPlusBold className="me-1 h-4 w-4" /> Add Product
                 </Button>
@@ -93,11 +104,15 @@ export default async function EcommerceDashboard() {
             </div>
           </WelcomeBanner>
 
-          {/* Stat cards (4 cards) */}
+          {/* Stat cards */}
           <StatCards className="@2xl:grid-cols-2 @3xl:grid-cols-4 @3xl:gap-6 @4xl:col-span-2 @7xl:col-span-8" />
 
-          {/* Profit / Revenue widget — tall, spans rows 1-3 on wide screens */}
-          <ProfitWidget className="h-[464px] @sm:h-[520px] @7xl:col-span-4 @7xl:col-start-9 @7xl:row-start-1 @7xl:row-end-3 @7xl:h-full" />
+          {/* Revenue/profit widget — tall right column */}
+          {isTenantUser ? (
+            <TenantRevenueWidget className="h-[464px] @sm:h-[520px] @7xl:col-span-4 @7xl:col-start-9 @7xl:row-start-1 @7xl:row-end-3 @7xl:h-full" />
+          ) : (
+            <ProfitWidget className="h-[464px] @sm:h-[520px] @7xl:col-span-4 @7xl:col-start-9 @7xl:row-start-1 @7xl:row-end-3 @7xl:h-full" />
+          )}
 
           {/* Sales chart */}
           <SalesReport className="@4xl:col-span-2 @7xl:col-span-8" />
@@ -112,13 +127,15 @@ export default async function EcommerceDashboard() {
           <RepeatCustomerRate className="@4xl:col-span-2 @7xl:col-span-12 @[90rem]:col-span-8" />
 
           {/* Best sellers */}
-          <BestSellers className="@7xl:col-span-4" />
+          <BestSellers className={isTenantUser ? '@7xl:col-span-6' : '@7xl:col-span-4'} />
 
-          {/* Top vendors */}
-          <TopVendors className="@7xl:col-span-4" />
+          {/* Top vendors — platform admins only */}
+          {!isTenantUser && (
+            <TopVendors className="@7xl:col-span-4" />
+          )}
 
-          {/* Payment methods breakdown */}
-          <PaymentMethods className="@7xl:col-span-4" />
+          {/* Payment methods */}
+          <PaymentMethods className={isTenantUser ? '@7xl:col-span-6' : '@7xl:col-span-4'} />
 
           {/* Stock report table */}
           <StockReport className="@4xl:col-span-2 @7xl:col-span-12" />

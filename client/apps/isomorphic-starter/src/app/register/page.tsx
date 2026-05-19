@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
+import { useAuth } from '@/context/AuthContext';
 
 interface FormData {
   firstName: string;
@@ -17,26 +18,18 @@ interface FormData {
   agreeAge: boolean;
 }
 
-interface ApiResponse {
-  success: boolean;
-  message: string;
-  data?: {
-    user: {
-      _id: string;
-      email: string;
-      firstName: string;
-      lastName: string;
-      role: string;
-      isEmailVerified: boolean;
-      isAgeVerified: boolean;
-    };
-    token: string;
-    verificationToken?: string;
-  };
+/** Convert Nigerian local / short numbers to E.164 (+234XXXXXXXXXX) */
+function normalizePhone(raw: string): string {
+  const digits = raw.replace(/[\s\-().+]/g, '');
+  if (digits.startsWith('234')) return `+${digits}`;          // already international
+  if (digits.startsWith('0'))   return `+234${digits.slice(1)}`; // 0XXXXXXXXXX → +234XXXXXXXXXX
+  if (/^[7-9]/.test(digits))   return `+234${digits}`;        // XXXXXXXXXX  → +234XXXXXXXXXX
+  return raw; // fallback — return as-is
 }
 
 const Register = () => {
   const router = useRouter();
+  const { register } = useAuth();
   const [formData, setFormData] = useState<FormData>({
     firstName: '',
     lastName: '',
@@ -109,11 +102,15 @@ const Register = () => {
     }
 
     // Phone number validation (optional)
+    // Accepts: 07035609301 · 7035609301 · +2347035609301 · 2347035609301
     if (formData.phoneNumber) {
-      const phoneRegex = /^\+?[1-9]\d{1,14}$/;
-      if (!phoneRegex.test(formData.phoneNumber)) {
-        newErrors.phoneNumber =
-          'Please provide a valid phone number (E.164 format, e.g., +1234567890)';
+      const raw = formData.phoneNumber.replace(/[\s\-().]/g, '');
+      const isValid =
+        /^0[7-9][01]\d{8}$/.test(raw) ||          // Nigerian local:  0XXXXXXXXXX (11 digits)
+        /^[7-9][01]\d{8}$/.test(raw)  ||          // Without leading 0: XXXXXXXXXX (10 digits)
+        /^\+?234[7-9][01]\d{8}$/.test(raw);       // E.164 international: +234XXXXXXXXXX
+      if (!isValid) {
+        newErrors.phoneNumber = 'Enter a valid Nigerian number, e.g. 07035609301 or +2347035609301';
       }
     }
 
@@ -172,82 +169,39 @@ const Register = () => {
     setGeneralError('');
     setSuccessMessage('');
 
-    if (!validateForm()) {
-      return;
-    }
+    if (!validateForm()) return;
 
     setIsLoading(true);
 
-    try {
-      const requestBody = {
-        firstName: formData.firstName.trim(),
-        lastName: formData.lastName.trim(),
-        email: formData.email.trim().toLowerCase(),
-        password: formData.password,
-        ...(formData.phoneNumber && { phoneNumber: formData.phoneNumber }),
-        ...(formData.dateOfBirth && { dateOfBirth: formData.dateOfBirth }),
-      };
+    const result = await register({
+      firstName:   formData.firstName.trim(),
+      lastName:    formData.lastName.trim(),
+      email:       formData.email.trim().toLowerCase(),
+      password:    formData.password,
+      agreeTerms:  formData.agreeTerms,
+      agreeAge:    formData.agreeAge,
+      ...(formData.phoneNumber && { phoneNumber: normalizePhone(formData.phoneNumber) }),
+      ...(formData.dateOfBirth && { dateOfBirth: formData.dateOfBirth }),
+    });
 
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || ''}/api/users/register`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody),
-        }
-      );
+    setIsLoading(false);
 
-      const data: ApiResponse = await response.json();
-
-      if (!response.ok) {
-        // Handle validation errors from backend
-        if (data.message) {
-          throw new Error(data.message);
-        } else {
-          throw new Error('Registration failed. Please try again.');
-        }
-      }
-
-      // Success - store token and user data
-      if (data.success && data.data) {
-        const { token, user } = data.data;
-
-        // Store authentication data
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('token', token);
-          localStorage.setItem('user', JSON.stringify(user));
-        }
-
-        // Show success message
-        setSuccessMessage(
-          'Account created successfully! Please check your email to verify your account.'
-        );
-
-        // Redirect to login or dashboard after 2 seconds
-        setTimeout(() => {
-          if (user.isEmailVerified) {
-            router.push('/dashboard');
-          } else {
-            router.push('/login?registered=true&verify=pending');
-          }
-        }, 2000);
-      } else {
-        throw new Error('Registration successful but unable to log in automatically.');
-      }
-    } catch (error: unknown) {
-      console.error('Registration error:', error);
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'An unexpected error occurred during registration. Please try again.';
-      setGeneralError(message);
-
-      // Scroll to error message
+    if (!result.success) {
+      setGeneralError(result.error || 'Registration failed. Please try again.');
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    } finally {
-      setIsLoading(false);
+      return;
+    }
+
+    if (result.requiresEmailVerification) {
+      setSuccessMessage(
+        'Account created! Please check your email and click the verification link before signing in.'
+      );
+      setTimeout(() => {
+        router.push(`/verify-email?email=${encodeURIComponent(formData.email)}`);
+      }, 2500);
+    } else {
+      // Email pre-verified (rare) — go straight to account
+      router.push('/my-account');
     }
   };
 
@@ -431,7 +385,7 @@ const Register = () => {
                       name="phoneNumber"
                       value={formData.phoneNumber}
                       onChange={handleChange}
-                      placeholder="+1234567890"
+                      placeholder="e.g. 07035609301"
                       autoComplete="tel"
                       className={`w-full px-4 py-3 pr-12 rounded-lg border ${
                         errors.phoneNumber
@@ -450,9 +404,9 @@ const Register = () => {
                       {errors.phoneNumber}
                     </p>
                   )}
-                  {!errors.phoneNumber && formData.phoneNumber && (
-                    <p className="mt-1 text-xs text-gray-500">
-                      Format: E.164 (e.g., +1234567890)
+                  {!errors.phoneNumber && !formData.phoneNumber && (
+                    <p className="mt-1 text-xs text-gray-400">
+                      Nigerian format: 07035609301 or +2347035609301
                     </p>
                   )}
                 </div>

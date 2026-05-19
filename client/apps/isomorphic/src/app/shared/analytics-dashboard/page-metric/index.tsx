@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import ButtonGroupAction from '@core/components/charts/button-group-action';
 import { DatePicker } from '@core/ui/datepicker';
 import { Flex, Title } from 'rizzui';
@@ -11,6 +11,7 @@ import { pageMetricsColumns } from '@/app/shared/analytics-dashboard/page-metric
 import Table from '@core/components/table';
 import { useTanStackTable } from '@core/components/table/custom/use-TanStack-Table';
 import TablePagination from '@core/components/table/pagination';
+import { useWebAnalytics } from '@/context/WebAnalyticsContext';
 
 export type PageMetricDataType = (typeof pageMetricData)[number];
 
@@ -18,9 +19,22 @@ const filterOptions = ['Top Pages', 'Top Folders', 'Top Subfolders'];
 
 export default function PageMetrics({ className }: { className?: string }) {
   const [startDate, setStartDate] = useState<Date | null>(new Date());
+  const { data } = useWebAnalytics();
+
+  const tableData = data?.pages ?? pageMetricData;
+
+  const filteredData = useMemo(() => {
+    if (!startDate || !tableData.length) return tableData;
+    const y = startDate.getFullYear();
+    const m = startDate.getMonth();
+    return tableData.filter(row => {
+      const d = new Date(row.updatedAt);
+      return d.getFullYear() === y && d.getMonth() === m;
+    });
+  }, [tableData, startDate]);
 
   const { table } = useTanStackTable<PageMetricDataType>({
-    tableData: pageMetricData,
+    tableData: filteredData,
     columnConfig: pageMetricsColumns,
     options: {
       initialState: {

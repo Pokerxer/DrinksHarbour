@@ -8,6 +8,14 @@ import { Title, Text } from 'rizzui';
 import { PiArrowLeftBold, PiShieldCheck, PiSparkle } from 'react-icons/pi';
 import { motion } from 'framer-motion';
 
+interface TenantBranding {
+  name: string;
+  slug?: string;
+  logo?: { url: string; alt?: string };
+  primaryColor?: string;
+  plan?: string;
+}
+
 interface AuthWrapperOneProps {
   children: React.ReactNode;
   title: React.ReactNode;
@@ -17,6 +25,7 @@ interface AuthWrapperOneProps {
   pageImage?: React.ReactNode;
   isSocialLoginActive?: boolean;
   isSignIn?: boolean;
+  tenant?: TenantBranding | null;
 }
 
 // Animation variants
@@ -86,7 +95,9 @@ export default function AuthWrapperOne({
   pageImage,
   isSocialLoginActive = false,
   isSignIn = false,
+  tenant,
 }: AuthWrapperOneProps) {
+  const accentColor = tenant?.primaryColor || '#3b82f6';
   return (
     <motion.div
       variants={pageVariants}
@@ -165,28 +176,59 @@ export default function AuthWrapperOne({
                 whileHover={{ scale: 1.05 }}
                 transition={{ type: 'spring', stiffness: 400 }}
               >
-                <Link
-                  href={'/'}
-                  className="mb-6 inline-flex max-w-[168px] xl:mb-8 hover:opacity-80 transition-opacity"
-                >
-                  <motion.div
-                    initial={{ rotate: -10, opacity: 0 }}
-                    animate={{ rotate: 0, opacity: 1 }}
-                    transition={{ delay: 0.3, type: 'spring', stiffness: 200 }}
+                {tenant ? (
+                  /* Tenant branding */
+                  <Link href={'/'} className="mb-6 inline-flex items-center gap-3 hover:opacity-80 transition-opacity">
+                    <motion.div
+                      initial={{ rotate: -10, opacity: 0 }}
+                      animate={{ rotate: 0, opacity: 1 }}
+                      transition={{ delay: 0.3, type: 'spring', stiffness: 200 }}
+                    >
+                      {tenant.logo?.url ? (
+                        <div className="relative h-10 w-10 overflow-hidden rounded-xl border border-gray-200">
+                          <Image src={tenant.logo.url} alt={tenant.logo.alt || tenant.name} fill className="object-contain" />
+                        </div>
+                      ) : (
+                        <div
+                          className="flex h-10 w-10 items-center justify-center rounded-xl text-lg font-bold text-white shadow"
+                          style={{ backgroundColor: accentColor }}
+                        >
+                          {tenant.name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                    </motion.div>
+                    <span className="text-xl font-bold text-gray-900">{tenant.name}</span>
+                  </Link>
+                ) : (
+                  /* DrinksHarbour logo */
+                  <Link
+                    href={'/'}
+                    className="mb-6 inline-flex max-w-[168px] xl:mb-8 hover:opacity-80 transition-opacity"
                   >
-                    <Image src={logoImg} alt="Drinksharbour" />
-                  </motion.div>
-                  <Image
-                    src={logoImgText}
-                    alt="Drinksharbour"
-                    className="ps-2.5 dark:invert"
-                  />
-                </Link>
+                    <motion.div
+                      initial={{ rotate: -10, opacity: 0 }}
+                      animate={{ rotate: 0, opacity: 1 }}
+                      transition={{ delay: 0.3, type: 'spring', stiffness: 200 }}
+                    >
+                      <Image src={logoImg} alt="Drinksharbour" />
+                    </motion.div>
+                    <Image
+                      src={logoImgText}
+                      alt="Drinksharbour"
+                      className="ps-2.5 dark:invert"
+                    />
+                  </Link>
+                )}
               </motion.div>
 
-              {/* Admin Badge */}
-              <motion.div 
-                className="inline-flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-full mb-4"
+              {/* Admin Portal / Tenant badge */}
+              <motion.div
+                className={
+                  tenant
+                    ? 'inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-4 border'
+                    : 'inline-flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-full mb-4'
+                }
+                style={tenant ? { background: `${accentColor}15`, borderColor: `${accentColor}40` } : undefined}
                 initial={{ opacity: 0, scale: 0.8, y: 10 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 transition={{ delay: 0.4, type: 'spring', stiffness: 200 }}
@@ -196,19 +238,25 @@ export default function AuthWrapperOne({
                   animate={{ rotate: [0, 15, -15, 0] }}
                   transition={{ duration: 0.5, delay: 0.8 }}
                 >
-                  <PiShieldCheck className="w-4 h-4 text-blue-600" />
+                  <PiShieldCheck
+                    className="w-4 h-4"
+                    style={{ color: tenant ? accentColor : '#2563eb' }}
+                  />
                 </motion.div>
-                <span className="text-xs font-bold text-blue-700 uppercase tracking-wider">
-                  Admin Portal
+                <span
+                  className="text-xs font-bold uppercase tracking-wider"
+                  style={{ color: tenant ? accentColor : '#1d4ed8' }}
+                >
+                  {tenant ? `${tenant.name} Portal` : 'Admin Portal'}
                 </span>
                 <motion.div
-                  animate={{ 
-                    opacity: [0, 1, 0],
-                    scale: [0.5, 1, 0.5]
-                  }}
+                  animate={{ opacity: [0, 1, 0], scale: [0.5, 1, 0.5] }}
                   transition={{ duration: 2, repeat: Infinity, delay: 1 }}
                 >
-                  <PiSparkle className="w-3 h-3 text-blue-400" />
+                  <PiSparkle
+                    className="w-3 h-3"
+                    style={{ color: tenant ? `${accentColor}99` : '#93c5fd' }}
+                  />
                 </motion.div>
               </motion.div>
 
@@ -276,8 +324,9 @@ export default function AuthWrapperOne({
         </motion.div>
 
         {/* Right Side - Banner */}
-        <motion.div 
+        <motion.div
           className="hidden w-7/12 items-center justify-center rounded-[20px] bg-gradient-to-br from-blue-50 via-white to-indigo-50 px-6 dark:bg-gray-100/40 lg:flex xl:justify-start 2xl:px-16 relative overflow-hidden"
+          style={tenant ? { background: `linear-gradient(135deg, ${accentColor}12 0%, #ffffff 50%, ${accentColor}20 100%)` } : undefined}
           variants={rightPanelVariants}
         >
           {/* Animated background shapes */}

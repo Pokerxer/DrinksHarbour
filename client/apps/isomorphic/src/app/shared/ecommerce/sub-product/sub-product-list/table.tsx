@@ -2,7 +2,9 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { routes } from '@/config/routes';
 import Table from '@core/components/table';
 import { useTanStackTable } from '@core/components/table/custom/use-TanStack-Table';
 import TablePagination from '@core/components/table/pagination';
@@ -1166,6 +1168,7 @@ export default function SubProductsTable({
   paginationClassName?: string;
 }) {
   const { data: session, status: sessionStatus } = useSession();
+  const router = useRouter();
   
   // State - Raw data from API
   const [allSubProducts, setAllSubProducts] = useState<SubProductListItem[]>([]);
@@ -1918,11 +1921,24 @@ export default function SubProductsTable({
 
       {/* ── Toolbar ── */}
       <div className="rounded-2xl border border-gray-200 bg-white">
-        {/* Row 1: search + actions */}
-        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100">
+        {/* Row 1: new | search | actions */}
+        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-gray-100">
+          {/* ── New product button ── */}
+          <button
+            type="button"
+            onClick={() => router.push(routes.eCommerce.createSubProduct)}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-gray-900 px-3.5 h-9 text-xs font-semibold text-white transition-colors hover:bg-gray-700"
+          >
+            <PiPlus className="h-3.5 w-3.5" />
+            <span>New</span>
+          </button>
+
+          {/* ── Separator ── */}
+          <div className="h-5 w-px shrink-0 bg-gray-200" />
+
           {/* Odoo search bar */}
-          <div className="relative flex-1" ref={searchPanelRef}>
-            <div className={`flex flex-wrap items-center gap-1 rounded-xl border bg-white px-2 py-1.5 transition-all ${showSearchPanel || showSearchDropdown ? 'border-[#b20202] ring-1 ring-[#b20202]/10' : 'border-gray-200'}`}>
+          <div className="relative w-[44rem]" ref={searchPanelRef}>
+            <div className={`flex h-9 flex-wrap items-center gap-1 rounded-lg border bg-white px-3 transition-all ${showSearchPanel || showSearchDropdown ? 'border-[#b20202] ring-2 ring-[#b20202]/10' : 'border-gray-200 hover:border-gray-300'}`}>
               <PiMagnifyingGlass className="h-4 w-4 shrink-0 text-gray-400" />
 
               {/* Filter panel chips */}
@@ -1971,14 +1987,14 @@ export default function SubProductsTable({
                   if (e.key === 'Escape') { setShowSearchPanel(false); setShowSearchDropdown(false); }
                 }}
                 placeholder={spActiveFilters.size === 0 && !spGroupBy && searchChips.length === 0 ? 'Search products, SKU…' : 'Search…'}
-                className="flex-1 min-w-[100px] bg-transparent text-sm outline-none py-0.5"
+                className="flex-1 min-w-[80px] bg-transparent text-sm text-gray-700 outline-none placeholder:text-gray-400"
               />
 
               {(searchQuery || spActiveFilters.size > 0 || spGroupBy || searchChips.length > 0) && (
-                <button type="button" onClick={clearAll} className="text-gray-400 hover:text-gray-600"><PiX className="h-3.5 w-3.5"/></button>
+                <button type="button" onClick={clearAll} className="shrink-0 text-gray-400 hover:text-gray-600 transition-colors"><PiX className="h-3.5 w-3.5"/></button>
               )}
               <button type="button" onClick={() => { setShowSearchPanel(v => !v); setShowSearchDropdown(false); }}
-                className={`flex items-center border-l border-gray-200 pl-2 text-xs font-semibold transition-colors ${showSearchPanel ? 'text-[#b20202]' : 'text-gray-500 hover:text-gray-700'}`}>
+                className={`shrink-0 ml-1 transition-colors ${showSearchPanel ? 'text-[#b20202]' : 'text-gray-400 hover:text-gray-600'}`}>
                 {showSearchPanel ? <PiCaretUp className="h-3.5 w-3.5"/> : <PiCaretDown className="h-3.5 w-3.5"/>}
               </button>
             </div>
@@ -2032,25 +2048,30 @@ export default function SubProductsTable({
             )}
           </div>
 
-          {/* Visibility */}
-          <select
-            value={visibilityFilter}
-            onChange={e => setVisibilityFilter(e.target.value as any)}
-            className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-2.5 text-sm text-gray-600 outline-none focus:border-gray-400 focus:bg-white transition-colors"
-          >
-            <option value="all">All visibility</option>
-            <option value="published">Published ({stats.published || 0})</option>
-            <option value="draft">Draft ({stats.draft || 0})</option>
-          </select>
+          {/* ── Right controls — pushed to end ── */}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {/* Visibility */}
+            <select
+              value={visibilityFilter}
+              onChange={e => setVisibilityFilter(e.target.value as any)}
+              className="h-9 rounded-lg border border-gray-200 bg-white px-2.5 text-sm text-gray-600 outline-none hover:border-gray-300 focus:border-gray-400 transition-colors cursor-pointer"
+            >
+              <option value="all">All visibility</option>
+              <option value="published">Published ({stats.published || 0})</option>
+              <option value="draft">Draft ({stats.draft || 0})</option>
+            </select>
 
+            {/* Separator */}
+            <div className="h-5 w-px bg-gray-200" />
 
-
-          <div className="ml-auto flex items-center gap-2">
             {/* Column toggle (list only) */}
             {viewMode === 'list' && <ColumnToggle table={table} />}
 
             {/* View toggle */}
             <ViewToggle currentView={viewMode} onViewChange={handleViewModeChange} />
+
+            {/* Separator */}
+            <div className="h-5 w-px bg-gray-200" />
 
             {/* Refresh */}
             <button
@@ -2058,7 +2079,7 @@ export default function SubProductsTable({
               onClick={handleRefresh}
               disabled={isRefreshing}
               title="Refresh"
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40 transition-colors"
             >
               <PiArrowsClockwiseBold className={cn('h-4 w-4', isRefreshing && 'animate-spin')} />
             </button>

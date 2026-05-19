@@ -1,6 +1,7 @@
 // @ts-nocheck
 'use client';
 
+import { useState, useEffect } from 'react';
 import WidgetCard from '@core/components/cards/widget-card';
 import ButtonGroupAction from '@core/components/charts/button-group-action';
 import { CustomTooltip } from '@core/components/charts/custom-tooltip';
@@ -17,89 +18,72 @@ import {
   YAxis,
 } from 'recharts';
 import { Badge } from 'rizzui';
+import { useWebAnalytics } from '@/context/WebAnalyticsContext';
+import { useSession } from 'next-auth/react';
 
-const data = [
-  {
-    month: 'Jan',
-    newUser: 5000,
-    user: 1600,
-    sessions: 4000,
-  },
-  {
-    month: 'Feb',
-    newUser: 8500,
-    user: 2000,
-    sessions: 5798,
-  },
-  {
-    month: 'Mar',
-    newUser: 7000,
-    user: 3000,
-    sessions: 8300,
-  },
-  {
-    month: 'Apr',
-    newUser: 5780,
-    user: 3908,
-    sessions: 6798,
-  },
-  {
-    month: 'May',
-    newUser: 4890,
-    user: 2500,
-    sessions: 5000,
-  },
-  {
-    month: 'Jun',
-    newUser: 8000,
-    user: 3200,
-    sessions: 7800,
-  },
-  {
-    month: 'Jul',
-    newUser: 4890,
-    user: 2500,
-    sessions: 8500,
-  },
-  {
-    month: 'Aug',
-    newUser: 3780,
-    user: 3908,
-    sessions: 9908,
-  },
-  {
-    month: 'Sep',
-    newUser: 7800,
-    user: 2800,
-    sessions: 8500,
-  },
-  {
-    month: 'Oct',
-    newUser: 5780,
-    user: 1908,
-    sessions: 7208,
-  },
-  {
-    month: 'Nov',
-    newUser: 4780,
-    user: 1908,
-    sessions: 4908,
-  },
-  {
-    month: 'Dec',
-    newUser: 7500,
-    user: 3000,
-    sessions: 9000,
-  },
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
+const staticData = [
+  { month: 'Jan', newUser: 5000, user: 1600, sessions: 4000  },
+  { month: 'Feb', newUser: 8500, user: 2000, sessions: 5798  },
+  { month: 'Mar', newUser: 7000, user: 3000, sessions: 8300  },
+  { month: 'Apr', newUser: 5780, user: 3908, sessions: 6798  },
+  { month: 'May', newUser: 4890, user: 2500, sessions: 5000  },
+  { month: 'Jun', newUser: 8000, user: 3200, sessions: 7800  },
+  { month: 'Jul', newUser: 4890, user: 2500, sessions: 8500  },
+  { month: 'Aug', newUser: 3780, user: 3908, sessions: 9908  },
+  { month: 'Sep', newUser: 7800, user: 2800, sessions: 8500  },
+  { month: 'Oct', newUser: 5780, user: 1908, sessions: 7208  },
+  { month: 'Nov', newUser: 4780, user: 1908, sessions: 4908  },
+  { month: 'Dec', newUser: 7500, user: 3000, sessions: 9000  },
 ];
 
 const filterOptions = ['Week', 'Month', 'Year'];
 
+const periodMap: Record<string, 'week' | 'month' | 'year'> = {
+  Week: 'week',
+  Month: 'month',
+  Year: 'year',
+};
+
 export default function UserMetrics({ className }: { className?: string }) {
   const isMediumScreen = useMedia('(max-width: 1200px)', false);
   const isTablet = useMedia('(max-width: 800px)', false);
-  function handleFilterBy(data: string) {
-    console.log('Audience Metrics Filter:', data);
+  const { data } = useWebAnalytics();
+  const { data: session } = useSession();
+  const token = (session?.user as any)?.token;
+
+  const initialData = data?.audience ?? staticData;
+  const [chartData, setChartData] = useState(initialData);
+  const [activeFilter, setActiveFilter] = useState<string>('Year');
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Sync with context data when it first loads
+  useEffect(() => {
+    if (data?.audience) {
+      setChartData(data.audience);
+    }
+  }, [data?.audience]);
+
+  async function handleFilterBy(filter: string) {
+    setActiveFilter(filter);
+    const period = periodMap[filter] ?? 'year';
+
+    setIsLoading(true);
+    try {
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`${API_URL}/api/analytics/audience?period=${period}`, { headers });
+      const json = await res.json();
+      if (json?.data) {
+        setChartData(json.data);
+      }
+    } catch {
+      // Silently fall back to existing data on error
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
@@ -128,7 +112,10 @@ export default function UserMetrics({ className }: { className?: string }) {
       rounded="lg"
       className={className}
     >
-      <div className="custom-scrollbar overflow-x-auto scroll-smooth">
+      <div
+        className="custom-scrollbar overflow-x-auto scroll-smooth"
+        style={{ opacity: isLoading ? 0.6 : 1, transition: 'opacity 0.2s' }}
+      >
         <div className={cn('h-[420px] w-full pt-9 @7xl:h-[480px]')}>
           <ResponsiveContainer
             width="100%"
@@ -136,7 +123,7 @@ export default function UserMetrics({ className }: { className?: string }) {
             height="100%"
           >
             <ComposedChart
-              data={data}
+              data={chartData}
               barSize={isMediumScreen ? 20 : 28}
               className="[&_.recharts-cartesian-axis-tick-value]:fill-gray-500 [&_.recharts-cartesian-axis.yAxis]:-translate-y-3 rtl:[&_.recharts-cartesian-axis.yAxis]:-translate-x-12"
             >

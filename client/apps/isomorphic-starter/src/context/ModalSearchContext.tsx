@@ -93,7 +93,7 @@ function buildSearchParams(
   query: string,
   filters: SearchFilters,
   page: number,
-  limit = 12,
+  limit = 8,
 ): URLSearchParams {
   const p = new URLSearchParams();
   if (query.trim()) p.set('q', query.trim());

@@ -1,6 +1,25 @@
 const SubCategory = require('../models/SubCategory');
 const Product = require('../models/Product');
 const asyncHandler = require('../utils/asyncHandler');
+const cloudinaryService = require('../services/cloudinary.service');
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function toBool(v, fallback = false) {
+  if (v === undefined || v === null) return fallback;
+  if (typeof v === 'boolean') return v;
+  return v === 'true' || v === '1';
+}
+
+async function uploadSubCategoryFile(file, altText) {
+  const result = await cloudinaryService.uploadImage(file.buffer, {
+    folder: 'subcategories',
+    tags: ['subcategory'],
+  });
+  return { url: result.url, publicId: result.publicId, alt: altText };
+}
+
+// ─── Public routes ────────────────────────────────────────────────────────────
 
 /**
  * Get all subcategories with optional filtering
@@ -207,10 +226,350 @@ const getFeaturedSubCategories = asyncHandler(async (req, res) => {
   });
 });
 
+// ─── Admin routes ─────────────────────────────────────────────────────────────
+
+/**
+ * Get all subcategories for admin (all statuses)
+ * @route GET /api/subcategories/admin
+ * @access Private (admin)
+ */
+const getAdminSubCategories = asyncHandler(async (req, res) => {
+  const subcategories = await SubCategory.find()
+    .select('name slug type style status thumbnailImage description displayOrder isFeatured parent createdAt')
+    .sort({ displayOrder: 1, name: 1 })
+    .populate('parent', 'name slug')
+    .lean();
+
+  const subcategoriesWithCount = await Promise.all(
+    subcategories.map(async (subcategory) => {
+      try {
+        const productCount = await Product.countDocuments({ subCategory: subcategory._id });
+        return { ...subcategory, productCount };
+      } catch (e) {
+        return { ...subcategory, productCount: 0 };
+      }
+    })
+  );
+
+  res.status(200).json({
+    success: true,
+    data: {
+      subcategories: subcategoriesWithCount,
+      total: subcategoriesWithCount.length,
+    },
+  });
+});
+
+/**
+ * Create a new subcategory
+ * @route POST /api/subcategories/admin
+ * @access Private (admin)
+ */
+const createSubCategory = asyncHandler(async (req, res) => {
+  const {
+    name,
+    slug,
+    type,
+    subType,
+    style,
+    displayName,
+    tagline,
+    description,
+    shortDescription,
+    status = 'draft',
+    displayOrder,
+    parent,
+    isFeatured,
+    isTrending,
+    isPopular,
+    showInMenu,
+    color,
+    icon,
+    metaTitle,
+    metaDescription,
+    metaKeywords,
+    canonicalUrl,
+    notes,
+    typicalFlavors,
+    commonPairings,
+    seasonalSpring,
+    seasonalSummer,
+    seasonalFall,
+    seasonalWinter,
+  } = req.body;
+
+  const safeDisplayOrder = displayOrder !== undefined && !isNaN(Number(displayOrder))
+    ? Number(displayOrder)
+    : 999;
+
+  const subcategoryData = {
+    name,
+    slug,
+    parent,
+    status,
+    displayOrder: safeDisplayOrder,
+    isFeatured: toBool(isFeatured, false),
+    isTrending: toBool(isTrending, false),
+    isPopular: toBool(isPopular, false),
+    showInMenu: toBool(showInMenu, true),
+    seasonal: {
+      spring: toBool(seasonalSpring, false),
+      summer: toBool(seasonalSummer, false),
+      fall: toBool(seasonalFall, false),
+      winter: toBool(seasonalWinter, false),
+    },
+    createdBy: req.user?._id,
+  };
+
+  if (type) subcategoryData.type = type;
+  if (subType) subcategoryData.subType = subType;
+  if (style) subcategoryData.style = style;
+  if (displayName) subcategoryData.displayName = displayName;
+  if (tagline) subcategoryData.tagline = tagline;
+  if (description) subcategoryData.description = description;
+  if (shortDescription) subcategoryData.shortDescription = shortDescription;
+  if (color && /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(color)) subcategoryData.color = color;
+  if (icon) subcategoryData.icon = icon;
+  if (notes) subcategoryData.notes = notes;
+  if (metaTitle) subcategoryData.metaTitle = metaTitle;
+  if (metaDescription) subcategoryData.metaDescription = metaDescription;
+  if (metaKeywords) subcategoryData.metaKeywords = String(metaKeywords).split(',').map((k) => k.trim()).filter(Boolean);
+  if (canonicalUrl) subcategoryData.canonicalUrl = canonicalUrl;
+  if (typicalFlavors) subcategoryData.typicalFlavors = String(typicalFlavors).split(',').map((f) => f.trim()).filter(Boolean);
+  if (commonPairings) subcategoryData.commonPairings = String(commonPairings).split(',').map((p) => p.trim()).filter(Boolean);
+
+  if (status === 'published') {
+    subcategoryData.publishedAt = new Date();
+    subcategoryData.publishedBy = req.user?._id;
+  }
+
+  if (req.files?.thumbnailImage?.[0]) {
+    subcategoryData.thumbnailImage = await uploadSubCategoryFile(req.files.thumbnailImage[0], name);
+  }
+  if (req.files?.featuredImage?.[0]) {
+    subcategoryData.featuredImage = await uploadSubCategoryFile(req.files.featuredImage[0], name);
+  }
+  if (req.files?.bannerImage?.[0]) {
+    subcategoryData.bannerImage = await uploadSubCategoryFile(req.files.bannerImage[0], name);
+  }
+
+  const subcategory = new SubCategory(subcategoryData);
+  await subcategory.save();
+
+  res.status(201).json({
+    success: true,
+    data: { subcategory },
+  });
+});
+
+/**
+ * Update an existing subcategory
+ * @route PUT /api/subcategories/admin/:id
+ * @access Private (admin)
+ */
+const updateSubCategory = asyncHandler(async (req, res) => {
+  const {
+    name,
+    slug,
+    type,
+    subType,
+    style,
+    displayName,
+    tagline,
+    description,
+    shortDescription,
+    status,
+    displayOrder,
+    parent,
+    isFeatured,
+    isTrending,
+    isPopular,
+    showInMenu,
+    color,
+    icon,
+    metaTitle,
+    metaDescription,
+    metaKeywords,
+    canonicalUrl,
+    notes,
+    typicalFlavors,
+    commonPairings,
+    seasonalSpring,
+    seasonalSummer,
+    seasonalFall,
+    seasonalWinter,
+  } = req.body;
+
+  const updateData = {};
+
+  if (name !== undefined) updateData.name = name;
+  if (slug !== undefined) updateData.slug = slug;
+  if (type !== undefined) updateData.type = type;
+  if (subType !== undefined) updateData.subType = subType;
+  if (style !== undefined) updateData.style = style;
+  if (displayName !== undefined) updateData.displayName = displayName;
+  if (tagline !== undefined) updateData.tagline = tagline;
+  if (description !== undefined) updateData.description = description;
+  if (shortDescription !== undefined) updateData.shortDescription = shortDescription;
+  if (color !== undefined && /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(color)) updateData.color = color;
+  if (icon !== undefined) updateData.icon = icon;
+  if (notes !== undefined) updateData.notes = notes;
+  if (metaTitle !== undefined) updateData.metaTitle = metaTitle;
+  if (metaDescription !== undefined) updateData.metaDescription = metaDescription;
+  if (metaKeywords !== undefined) updateData.metaKeywords = String(metaKeywords).split(',').map((k) => k.trim()).filter(Boolean);
+  if (canonicalUrl !== undefined) updateData.canonicalUrl = canonicalUrl;
+  if (typicalFlavors !== undefined) updateData.typicalFlavors = String(typicalFlavors).split(',').map((f) => f.trim()).filter(Boolean);
+  if (commonPairings !== undefined) updateData.commonPairings = String(commonPairings).split(',').map((p) => p.trim()).filter(Boolean);
+
+  if (displayOrder !== undefined) {
+    const n = Number(displayOrder);
+    updateData.displayOrder = isNaN(n) ? 999 : n;
+  }
+
+  if (parent !== undefined) updateData.parent = parent;
+
+  updateData.isFeatured = toBool(isFeatured, false);
+  updateData.isTrending = toBool(isTrending, false);
+  updateData.isPopular = toBool(isPopular, false);
+  updateData.showInMenu = toBool(showInMenu, true);
+  updateData.updatedBy = req.user?._id;
+
+  if (seasonalSpring !== undefined || seasonalSummer !== undefined || seasonalFall !== undefined || seasonalWinter !== undefined) {
+    updateData['seasonal.spring'] = toBool(seasonalSpring, false);
+    updateData['seasonal.summer'] = toBool(seasonalSummer, false);
+    updateData['seasonal.fall'] = toBool(seasonalFall, false);
+    updateData['seasonal.winter'] = toBool(seasonalWinter, false);
+  }
+
+  if (status !== undefined) {
+    updateData.status = status;
+    if (status === 'published') {
+      const existing = await SubCategory.findById(req.params.id).select('status publishedAt').lean();
+      if (existing && existing.status !== 'published' && !existing.publishedAt) {
+        updateData.publishedAt = new Date();
+        updateData.publishedBy = req.user?._id;
+      }
+    }
+  }
+
+  if (req.files?.thumbnailImage?.[0]) {
+    updateData.thumbnailImage = await uploadSubCategoryFile(req.files.thumbnailImage[0], name || 'SubCategory image');
+  }
+  if (req.files?.featuredImage?.[0]) {
+    updateData.featuredImage = await uploadSubCategoryFile(req.files.featuredImage[0], name || 'SubCategory image');
+  }
+  if (req.files?.bannerImage?.[0]) {
+    updateData.bannerImage = await uploadSubCategoryFile(req.files.bannerImage[0], name || 'SubCategory image');
+  }
+
+  const subcategory = await SubCategory.findByIdAndUpdate(
+    req.params.id,
+    updateData,
+    { new: true, runValidators: true }
+  );
+
+  if (!subcategory) {
+    return res.status(404).json({ success: false, message: 'SubCategory not found' });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: { subcategory },
+  });
+});
+
+/**
+ * Delete a subcategory
+ * @route DELETE /api/subcategories/admin/:id
+ * @access Private (admin)
+ */
+const deleteSubCategory = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const productCount = await Product.countDocuments({ subCategory: id });
+  if (productCount > 0) {
+    return res.status(400).json({
+      success: false,
+      message: `Cannot delete subcategory with ${productCount} product(s). Reassign them first.`,
+    });
+  }
+
+  const subcategory = await SubCategory.findByIdAndDelete(id);
+  if (!subcategory) {
+    return res.status(404).json({ success: false, message: 'SubCategory not found' });
+  }
+
+  res.status(200).json({
+    success: true,
+    message: 'SubCategory deleted',
+  });
+});
+
+/**
+ * Fill subcategory fields with AI suggestions
+ * @route POST /api/subcategories/admin/ai-fill
+ * @access Private (admin)
+ */
+const Groq = require('groq-sdk');
+
+const fillWithAI = asyncHandler(async (req, res) => {
+  const { name, type, parentName } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ success: false, message: 'name is required' });
+  }
+
+  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+  const prompt = `You are a content assistant for DrinksHarbour, Nigeria's premier online premium beverages store.
+
+Generate subcategory content for:
+- Name: "${name}"${parentName ? `\n- Parent Category: ${parentName}` : ''}${type ? `\n- Type: ${type}` : ''}
+
+Return ONLY a valid JSON object with these fields (no markdown, no explanation):
+{
+  "displayName": "display-friendly name, plural if appropriate (max 120 chars)",
+  "tagline": "short punchy tagline that sells the subcategory (max 150 chars)",
+  "shortDescription": "2 sentences for listings and cards (max 280 chars)",
+  "description": "3-4 paragraphs as plain text, compelling and informative (max 2000 chars)",
+  "typicalFlavors": "comma-separated list of 4-8 typical flavors/tasting notes",
+  "commonPairings": "comma-separated list of 4-6 food or occasion pairings",
+  "metaTitle": "SEO page title with brand context for Nigeria market (max 100 chars)",
+  "metaDescription": "SEO meta description (max 320 chars)",
+  "metaKeywords": "8-12 comma-separated search keywords",
+  "color": "hex color that fits the subcategory mood (e.g. #C0812A for whiskey, #722F37 for wine)",
+  "icon": "single most relevant emoji"
+}`;
+
+  const completion = await groq.chat.completions.create({
+    model: process.env.GROQ_MODEL || 'llama-3.1-8b-instant',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.7,
+    max_tokens: 1024,
+  });
+
+  const raw = completion.choices[0]?.message?.content || '{}';
+  const clean = raw.replace(/```json\n?|\n?```/g, '').trim();
+
+  let data;
+  try {
+    data = JSON.parse(clean);
+  } catch {
+    return res.status(500).json({ success: false, message: 'AI returned invalid JSON' });
+  }
+
+  res.json({ success: true, data });
+});
+
 module.exports = {
   getSubCategories,
   getSubCategoriesByCategory,
   getSubCategoryById,
   getSubCategoryBySlug,
   getFeaturedSubCategories,
+  getAdminSubCategories,
+  createSubCategory,
+  updateSubCategory,
+  deleteSubCategory,
+  fillWithAI,
 };

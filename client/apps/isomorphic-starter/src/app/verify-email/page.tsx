@@ -4,6 +4,7 @@ import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
+import { API_URL } from '@/lib/api';
 
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
@@ -16,27 +17,33 @@ function VerifyEmailContent() {
 
   useEffect(() => {
     const token = searchParams.get('token');
+    const prefillEmail = searchParams.get('email') || '';
+    if (prefillEmail) setEmail(decodeURIComponent(prefillEmail));
+
     if (token) {
       verifyEmail(token);
     } else {
+      // Arrived here without a token (e.g. after registration redirect)
       setStatus('error');
-      setMessage('No verification token provided. Please check your email for the verification link.');
+      setMessage('Check your inbox — we sent you a verification link. Click it to activate your account.');
     }
   }, [searchParams]);
 
   const verifyEmail = async (token: string) => {
     try {
-      const response = await fetch(`/api/users/verify-email/${token}`);
+      const response = await fetch(`${API_URL}/api/users/verify-email/${token}`);
       const data = await response.json();
 
-      if (response.ok) {
+      if (response.ok && data.success) {
         setStatus('success');
         setMessage(data.message || 'Your email has been verified successfully!');
+        // Auto-redirect to login after 3 s
+        setTimeout(() => router.push('/login'), 3000);
       } else {
         setStatus('error');
         setMessage(data.message || 'Failed to verify email. The link may be expired or invalid.');
       }
-    } catch (error) {
+    } catch {
       setStatus('error');
       setMessage('An error occurred while verifying your email. Please try again.');
     }
@@ -53,21 +60,21 @@ function VerifyEmailContent() {
     setResendMessage('');
 
     try {
-      const response = await fetch('/api/users/resend-verification', {
+      const response = await fetch(`${API_URL}/api/users/resend-verification`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
       });
 
       const data = await response.json();
 
-      if (response.ok) {
+      if (response.ok && data.success) {
         setResendMessage('Verification email sent! Please check your inbox.');
       } else {
-        setResendMessage(data.message || 'Failed to send verification email');
+        setResendMessage(data.message || 'Failed to send verification email. Please try again.');
       }
-    } catch (error) {
-      setResendMessage('An error occurred. Please try again.');
+    } catch {
+      setResendMessage('An error occurred. Please check your connection and try again.');
     } finally {
       setResending(false);
     }
@@ -95,10 +102,11 @@ function VerifyEmailContent() {
                     <Icon.PiCheckCircle className="text-4xl text-green-600" />
                   </div>
                   <h1 className="text-2xl font-bold text-gray-900 mb-2">Email Verified!</h1>
-                  <p className="text-gray-500 mb-6">{message}</p>
+                  <p className="text-gray-500 mb-2">{message}</p>
+                  <p className="text-xs text-gray-400 mb-6">Redirecting you to login…</p>
                   <div className="flex flex-col gap-3">
-                    <Link href="/my-account" className="px-6 py-3 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-colors">
-                      Go to My Account
+                    <Link href="/login" className="px-6 py-3 bg-gradient-to-br from-[#b20202] to-[#8b0000] text-white rounded-xl hover:opacity-90 transition-opacity">
+                      Sign In Now
                     </Link>
                     <Link href="/" className="px-6 py-3 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors">
                       Return to Home

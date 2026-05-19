@@ -78,10 +78,21 @@ const INITIAL_CART: CartData = {
   note: '',
 };
 
-// ─── Multi-cart atoms (persisted) ─────────────────────────────────────────────
+// ─── Terminal-scoped storage ───────────────────────────────────────────────────
+// Retail and wholesale each have their own cart, active cart ID, and pricelist
+// selection so they operate as independent closed systems.
 
-const cartsAtom       = atomWithStorage<CartData[]>('dh-pos-carts', [INITIAL_CART]);
-const activeCartIdAtom = atomWithStorage<string>('dh-pos-active-cart', INITIAL_CART_ID);
+function termAtoms<T>(baseKey: string, fallback: T) {
+  return {
+    retail:    atomWithStorage<T>(`${baseKey}-retail`, fallback),
+    wholesale: atomWithStorage<T>(`${baseKey}-wholesale`, fallback),
+  };
+}
+
+// ─── Multi-cart atoms (persisted, terminal-scoped) ────────────────────────────
+
+const cartsAtoms          = termAtoms<CartData[]>('dh-pos-carts', [INITIAL_CART]);
+const activeCartIdAtoms   = termAtoms<string>('dh-pos-active-cart', INITIAL_CART_ID);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -277,8 +288,13 @@ function computeDiscountAmount(subtotal: number, type: 'percent' | 'fixed', valu
 // ─── usePOSCart ───────────────────────────────────────────────────────────────
 
 export const usePOSCart = () => {
-  const [carts, setCarts] = useAtom(cartsAtom);
-  const [activeCartId, setActiveCartId] = useAtom(activeCartIdAtom);
+  const { terminal } = usePOSAuth();
+  const cartAtom         = terminal === 'wholesale' ? cartsAtoms.wholesale        : cartsAtoms.retail;
+  const activeCartAtom   = terminal === 'wholesale' ? activeCartIdAtoms.wholesale : activeCartIdAtoms.retail;
+  const pricelistAtom    = terminal === 'wholesale' ? posSelectedPricelistAtoms.wholesale : posSelectedPricelistAtoms.retail;
+
+  const [carts, setCarts] = useAtom(cartAtom);
+  const [activeCartId, setActiveCartId] = useAtom(activeCartAtom);
 
   // Always resolve to a valid cart
   const activeCart = useMemo(
@@ -289,7 +305,7 @@ export const usePOSCart = () => {
   const { items, customer, discountType, discountValue, note, ref } = activeCart;
 
   // Pricelist is applied dynamically so the total stays live as selection changes
-  const [selectedPricelist] = useAtom(posSelectedPricelistAtom);
+  const [selectedPricelist] = useAtom(pricelistAtom);
 
   // Derived values
   const subtotal = useMemo(
@@ -363,10 +379,9 @@ export const usePOSCart = () => {
           if (existing) {
             return activeCart.items.map((i) => {
               if (getItemKey(i.subProductId, i.sizeId) !== key) return i;
-              const newQty = Math.min(i.quantity + item.quantity, i.stock);
               return {
                 ...i,
-                quantity: newQty,
+                quantity: i.quantity + item.quantity,
                 // Always refresh activeBundles so pricelist changes and DB updates are picked up
                 activeBundles: item.activeBundles ?? i.activeBundles,
               };
@@ -395,7 +410,7 @@ export const usePOSCart = () => {
       patchActive({
         items: activeCart.items.map((i) =>
           getItemKey(i.subProductId, i.sizeId) === getItemKey(subProductId, sizeId)
-            ? { ...i, quantity: Math.max(1, Math.min(quantity, i.stock)) }
+            ? { ...i, quantity: Math.max(1, Math.round(quantity)) }
             : i
         ),
       });
@@ -513,22 +528,26 @@ export const usePOSPermissions = () => {
 
 // ─── Pricelist (persisted — survives page refresh) ────────────────────────────
 
-const posSelectedPricelistAtom = atomWithStorage<any | null>('dh-pos-pricelist', null);
+const posSelectedPricelistAtoms = termAtoms<any | null>('dh-pos-pricelist', null);
 
 // Cached list of available pricelists (fetched once per session, shared by PricelistPicker + PricelistModal)
 const posAvailablePricelistsAtom   = atomWithStorage<any[]>('dh-pos-available-pricelists', []);
 const posAvailablePricelistsLoadedAtom = atom<boolean>(false);
 
 export const usePOSPricelist = () => {
-  const [selectedPricelist, setSelectedPricelist] = useAtom(posSelectedPricelistAtom);
+  const { terminal } = usePOSAuth();
+  const pricelistAtom = terminal === 'wholesale' ? posSelectedPricelistAtoms.wholesale : posSelectedPricelistAtoms.retail;
+  const [selectedPricelist, setSelectedPricelist] = useAtom(pricelistAtom);
   return { selectedPricelist, setSelectedPricelist };
 };
 
 /** Shared cache of selectable pricelists — avoids duplicate fetches from PricelistPicker and PricelistModal */
 export const usePOSAvailablePricelists = () => {
+  const { terminal } = usePOSAuth();
+  const pricelistAtom = terminal === 'wholesale' ? posSelectedPricelistAtoms.wholesale : posSelectedPricelistAtoms.retail;
   const [pricelists, setPricelists]   = useAtom(posAvailablePricelistsAtom);
   const [loaded,     setLoaded]       = useAtom(posAvailablePricelistsLoadedAtom);
-  const [selectedPricelist, setSelectedPricelist] = useAtom(posSelectedPricelistAtom);
+  const [selectedPricelist, setSelectedPricelist] = useAtom(pricelistAtom);
 
   const load = useCallback(
     async (token: string) => {

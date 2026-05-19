@@ -39,24 +39,40 @@ function computeStorePricing(subProduct, sizeDocs, tenant, product) {
       }
     : null;
 
-  // SubProduct sale validity
-  const now        = new Date();
+  const now = new Date();
+
+  // ── Flash sale validity ──────────────────────────────────────────────────────
+  const fs          = subProduct.flashSale;
+  const flashStart  = fs?.startDate ? new Date(fs.startDate) : null;
+  const flashEnd    = fs?.endDate   ? new Date(fs.endDate)   : null;
+  const flashActive =
+    fs?.isActive === true &&
+    (fs?.discountPercentage ?? 0) > 0 &&
+    (!flashStart || now >= flashStart) &&
+    (!flashEnd   || now <= flashEnd)   &&
+    (fs?.remainingQuantity == null || fs.remainingQuantity > 0);
+
+  // ── Regular sale validity ────────────────────────────────────────────────────
   const saleStart  = subProduct.saleStartDate ? new Date(subProduct.saleStartDate) : null;
   const saleEnd    = subProduct.saleEndDate   ? new Date(subProduct.saleEndDate)   : null;
-  const saleActive = subProduct.isOnSale &&
+  const saleActive = !flashActive &&
+    subProduct.isOnSale &&
+    (subProduct.saleDiscountValue ?? 0) > 0 &&
     (!saleStart || now >= saleStart) &&
     (!saleEnd   || now <= saleEnd);
 
   /**
    * Compute websitePrice for a single (costPrice, sellingPrice) pair,
-   * then apply sale discount if active.
+   * then apply whichever discount is active (flash > regular).
    */
   function priceForVariant(costPrice, sellingPrice) {
     const platformCostPrice    = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
     let   platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
     const priceBeforeSale      = platformSellingPrice;
 
-    if (saleActive && subProduct.saleDiscountValue > 0) {
+    if (flashActive) {
+      platformSellingPrice = parseFloat((platformSellingPrice * (1 - fs.discountPercentage / 100)).toFixed(2));
+    } else if (saleActive) {
       const discountType = subProduct.saleType || 'percentage';
       if (discountType === 'percentage' || discountType === 'flash_sale') {
         platformSellingPrice = parseFloat((platformSellingPrice * (1 - subProduct.saleDiscountValue / 100)).toFixed(2));
@@ -111,8 +127,9 @@ function computeStorePricing(subProduct, sizeDocs, tenant, product) {
     originalMinPrice : (saleActive && subProduct.saleDiscountValue > 0) || isDiscountActive(productDiscount)
       ? originalMinPrice
       : null,
-    isOnSale : saleActive && subProduct.saleDiscountValue > 0,
-    hasProductDiscount : isDiscountActive(productDiscount),
+    isOnSale:           flashActive || (saleActive && subProduct.saleDiscountValue > 0),
+    isFlashSale:        flashActive,
+    hasProductDiscount: isDiscountActive(productDiscount),
   };
 }
 
@@ -145,7 +162,7 @@ router.get('/', asyncHandler(async (req, res) => {
   // Count distinct approved products that have at least one active/low_stock subProduct per tenant
   const tenantIds = stores.map(s => s._id);
   const availableCounts = await SubProduct.aggregate([
-    { $match: { tenant: { $in: tenantIds }, status: { $in: ['active', 'low_stock'] } } },
+    { $match: { tenant: { $in: tenantIds }, status: { $in: ['active', 'low_stock'] }, isPublished: true, visibleInOnlineStore: true } },
     { $lookup: { from: 'products', localField: 'product', foreignField: '_id', as: '_prod' } },
     { $unwind: '$_prod' },
     { $match: { '_prod.status': 'approved' } },
@@ -182,7 +199,7 @@ router.get('/:slug', asyncHandler(async (req, res) => {
 
   // Count the real number of distinct approved products available from this store
   const availableCountAgg = await SubProduct.aggregate([
-    { $match: { tenant: store._id, status: { $in: ['active', 'low_stock'] } } },
+    { $match: { tenant: store._id, status: { $in: ['active', 'low_stock'] }, isPublished: true, visibleInOnlineStore: true } },
     { $lookup: { from: 'products', localField: 'product', foreignField: '_id', as: '_prod' } },
     { $unwind: '$_prod' },
     { $match: { '_prod.status': 'approved' } },
@@ -191,12 +208,14 @@ router.get('/:slug', asyncHandler(async (req, res) => {
   ]);
   store.productCount = availableCountAgg[0]?.total ?? 0;
 
-  // Fetch active subProducts, including the fields needed for pricing
+  // Fetch active published subProducts, including the fields needed for pricing
   const subProducts = await SubProduct.find({
     tenant: store._id,
     status: { $in: ['active', 'low_stock'] },
+    isPublished: true,
+    visibleInOnlineStore: true,
   })
-    .select('product costPrice baseSellingPrice salePrice isOnSale saleType saleDiscountValue saleStartDate saleEndDate sizes')
+    .select('product costPrice baseSellingPrice salePrice isOnSale saleType saleDiscountValue saleStartDate saleEndDate flashSale bundleDeals sizes')
     .populate({
       path   : 'product',
       select : 'name slug images primaryImage status platformMarkup platformDiscount abv originCountry',

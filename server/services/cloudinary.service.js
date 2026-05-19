@@ -35,7 +35,7 @@ const uploadImage = async (fileBuffer, options = {}) => {
         tags: ['drinksharbour', ...tags],
         context,
         allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
-        max_file_size: 10485760, // 10MB
+        max_file_size: 20971520, // 20MB
         ...transformation,
       },
       (error, result) => {

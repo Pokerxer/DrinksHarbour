@@ -1656,6 +1656,9 @@ const getAdminProductList = asyncHandler(async (req, res) => {
     limit: req.query.limit,
     search: req.query.search,
     status: req.query.status,
+    category: req.query.category,
+    subCategory: req.query.subCategory,
+    brand: req.query.brand,
   });
   res.status(200).json({ success: true, data: result });
 });

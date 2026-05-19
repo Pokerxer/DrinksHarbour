@@ -6,855 +6,644 @@ import Image from 'next/image';
 import * as Icon from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useModalSearchContext } from '@/context/ModalSearchContext';
-import { useCart } from '@/context/CartContext';
-import { useModalCartContext } from '@/context/ModalCartContext';
 import { useModalQuickviewContext } from '@/context/ModalQuickviewContext';
 import { ProductType } from '@/types/product.types';
 
-type Product = ProductType & {
-  vendorName?: string;
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type Product = ProductType & { vendorName?: string };
+
+// ─── Brand palette ────────────────────────────────────────────────────────────
+// DrinksHarbour: deep red #b20202, bright red #ff3232, black
+
+const BRAND = {
+  ring:       'focus:border-[#b20202]',
+  spinner:    'border-t-[#b20202]',
+  text:       'text-[#b20202]',
+  textHover:  'hover:text-[#b20202]',
+  bg:         'bg-[#b20202]',
+  bgHover:    'hover:bg-[#b20202]',
+  bgLight:    'bg-[#b20202]/8',
+  bgLighter:  'bg-[#b20202]/5',
+  border:     'border-[#b20202]',
+  selected:   'bg-[#b20202]/8 border-[#b20202]',
+  badge:      'bg-[#b20202]/10 text-[#b20202]',
 };
 
-interface SearchResult {
-  products: Product[];
-  total: number;
-  page: number;
-  totalPages: number;
+// ─── Static data ──────────────────────────────────────────────────────────────
+
+const QUICK_ACTIONS = [
+  {
+    label: 'On Sale',
+    icon: Icon.PiTag,
+    href: '/shop?sale=true',
+    gradient: 'from-red-500 to-red-700',
+    bg: 'bg-red-50',
+    text: 'text-red-700',
+    border: 'border-red-100',
+    iconColor: 'text-red-600',
+  },
+  {
+    label: 'New Arrivals',
+    icon: Icon.PiSparkle,
+    href: '/shop?sort=newest',
+    gradient: 'from-emerald-500 to-teal-600',
+    bg: 'bg-emerald-50',
+    text: 'text-emerald-700',
+    border: 'border-emerald-100',
+    iconColor: 'text-emerald-600',
+  },
+  {
+    label: 'Bestsellers',
+    icon: Icon.PiTrendUp,
+    href: '/shop?sort=popular',
+    gradient: 'from-orange-500 to-amber-600',
+    bg: 'bg-orange-50',
+    text: 'text-orange-700',
+    border: 'border-orange-100',
+    iconColor: 'text-orange-600',
+  },
+  {
+    label: 'Top Rated',
+    icon: Icon.PiStarFill,
+    href: '/shop?minRating=4',
+    gradient: 'from-yellow-400 to-amber-500',
+    bg: 'bg-yellow-50',
+    text: 'text-yellow-700',
+    border: 'border-yellow-100',
+    iconColor: 'text-yellow-600',
+  },
+];
+
+const CATEGORIES = [
+  { name: 'Whiskey',    emoji: '🥃', slug: 'whiskey',   color: 'bg-amber-50   border-amber-200',  text: 'text-amber-800'  },
+  { name: 'Wine',       emoji: '🍷', slug: 'wine',      color: 'bg-rose-50    border-rose-200',   text: 'text-rose-800'   },
+  { name: 'Beer',       emoji: '🍺', slug: 'beer',      color: 'bg-yellow-50  border-yellow-200', text: 'text-yellow-800' },
+  { name: 'Champagne',  emoji: '🍾', slug: 'champagne', color: 'bg-amber-50   border-amber-200',  text: 'text-amber-800'  },
+  { name: 'Vodka',      emoji: '🫗', slug: 'vodka',     color: 'bg-sky-50     border-sky-200',    text: 'text-sky-800'    },
+  { name: 'Gin',        emoji: '🍸', slug: 'gin',       color: 'bg-teal-50    border-teal-200',   text: 'text-teal-800'   },
+  { name: 'Rum',        emoji: '🌴', slug: 'rum',       color: 'bg-orange-50  border-orange-200', text: 'text-orange-800' },
+  { name: 'Spirits',    emoji: '✨', slug: 'spirit',    color: 'bg-purple-50  border-purple-200', text: 'text-purple-800' },
+];
+
+// ─── Small helpers ────────────────────────────────────────────────────────────
+
+function getProductImage(product: Product): string {
+  if (product.primaryImage?.url) return product.primaryImage.url;
+  const imgs = product.thumbImage ?? product.images ?? [];
+  const first = imgs[0];
+  if (!first) return '/images/product/1000x1000.png';
+  return typeof first === 'string' ? first : (first as any).url ?? '/images/product/1000x1000.png';
 }
 
-const ModalSearch: React.FC = () => {
-  const router = useRouter();
-  const inputRef = useRef<HTMLInputElement>(null);
-  const modalRef = useRef<HTMLDivElement>(null);
-  const resultsRef = useRef<HTMLDivElement>(null);
-  const [selectedIndex, setSelectedIndex] = useState(-1);
-  const [highlightedText, setHighlightedText] = useState('');
-  const [isListening, setIsListening] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<string | null>(null);
-  const [showFullDetails, setShowFullDetails] = useState<string | null>(null);
+function formatNGN(n: number) {
+  return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(n);
+}
 
-  const { addToCart } = useCart();
-  const { openModalCart } = useModalCartContext();
+function getPrice(product: Product) {
+  const pr = product.priceRange;
+  if (pr) return { price: pr.min ?? 0, original: pr.max !== pr.min ? pr.max : undefined };
+  return { price: 0, original: undefined };
+}
+
+function timeAgo(ts: number) {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60)   return 'Just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
+function escapeRe(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+function Highlight({ text, query }: { text: string; query: string }) {
+  if (!query.trim()) return <>{text}</>;
+  const parts = text.split(new RegExp(`(${escapeRe(query)})`, 'gi'));
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.toLowerCase() === query.toLowerCase()
+          ? <mark key={i} className="bg-[#b20202]/15 text-[#b20202] rounded-sm not-italic font-semibold">{p}</mark>
+          : p,
+      )}
+    </>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+const ModalSearch: React.FC = () => {
+  const router    = useRouter();
+  const inputRef  = useRef<HTMLInputElement>(null);
+  const listRef   = useRef<HTMLDivElement>(null);
+
+  const [selectedIdx,   setSelectedIdx]   = useState(-1);
+  const [isListening,   setIsListening]   = useState(false);
+  const [expandedId,    setExpandedId]    = useState<string | null>(null);
+
   const { openQuickview } = useModalQuickviewContext() || {};
 
   const {
-    isModalOpen,
-    closeModalSearch,
-    searchQuery,
-    setSearchQuery,
-    searchResults,
-    isSearching,
-    searchError,
-    recentSearches,
-    removeRecentSearch,
-    clearRecentSearches,
-    popularSearches,
-    performSearch,
+    isModalOpen, closeModalSearch,
+    searchQuery,  setSearchQuery,
+    searchResults, isSearching, searchError,
+    recentSearches, removeRecentSearch, clearRecentSearches,
+    popularSearches, performSearch,
   } = useModalSearchContext();
 
-  const categories = useMemo(() => [
-    { name: 'Spirits', icon: '🥃', href: '/shop?category=spirit', count: 45 },
-    { name: 'Wine', icon: '🍷', href: '/shop?category=wine', count: 128 },
-    { name: 'Beer', icon: '🍺', href: '/shop?category=beer', count: 67 },
-    { name: 'Champagne', icon: '🍾', href: '/shop?category=champagne', count: 23 },
-    { name: 'Vodka', icon: '❄️', href: '/shop?category=vodka', count: 34 },
-    { name: 'Whiskey', icon: '🥃', href: '/shop?category=whiskey', count: 56 },
-    { name: 'Gin', icon: '🍸', href: '/shop?category=gin', count: 29 },
-    { name: 'Rum', icon: '🏝️', href: '/shop?category=rum', count: 41 },
-  ], []);
+  // ── Derived ────────────────────────────────────────────────────────────────
+  const products  = useMemo(() => searchResults?.products ?? [], [searchResults]);
+  const hasResults = products.length > 0;
+  const showDefault = !searchQuery.trim() && !isSearching;
+  const showNoResults = !hasResults && !isSearching && !searchError && searchQuery.trim().length > 0;
 
-  const quickActions = useMemo(() => [
-    { label: 'On Sale', icon: Icon.PiTag, href: '/shop?onSale=true', color: 'text-red-500' },
-    { label: 'New Arrivals', icon: Icon.PiSparkle, href: '/shop?sort=newest', color: 'text-emerald-500' },
-    { label: 'Bestsellers', icon: Icon.PiTrendUp, href: '/shop?sort=popular', color: 'text-orange-500' },
-    { label: 'Top Rated', icon: Icon.PiStar, href: '/shop?minRating=4', color: 'text-yellow-500' },
-  ], []);
-
-  const searchFilters = useMemo(() => [
-    { id: 'inStock', label: 'In Stock', icon: Icon.PiCheckCircle },
-    { id: 'onSale', label: 'On Sale', icon: Icon.PiTag },
-    { id: 'newArrival', label: 'New', icon: Icon.PiSparkle },
-  ], []);
-
-  // Handle clear search - reset everything
-  const handleClearSearch = useCallback(() => {
-    setSearchQuery('');
-    setHighlightedText('');
-    setShowFullDetails(null);
-    setSelectedIndex(-1);
-    setShowFilters(false);
-    setActiveFilter(null);
-  }, [setSearchQuery]);
-
-  // Handle voice search
-  const startVoiceSearch = useCallback(() => {
-    if (typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      const recognition = new SpeechRecognition();
-      
-      recognition.lang = 'en-US';
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
-      
-      recognition.onstart = () => setIsListening(true);
-      recognition.onend = () => setIsListening(false);
-      recognition.onerror = () => setIsListening(false);
-      
-      recognition.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setSearchQuery(transcript);
-        performSearch(transcript);
-      };
-      
-      recognition.start();
-    }
-  }, [performSearch, setSearchQuery]);
-
-  // Handle filter toggle
-  const handleFilterToggle = useCallback((filterId: string) => {
-    setActiveFilter(prev => prev === filterId ? null : filterId);
-    setShowFilters(false);
-  }, []);
-
-  // Quick add to cart from search - opens quickview instead
-  const handleQuickAdd = useCallback((product: Product, e: React.MouseEvent) => {
-    e.stopPropagation();
-    closeModalSearch();
-    if (openQuickview) {
-      openQuickview(product);
-    }
-  }, [openQuickview, closeModalSearch]);
-
-  // Format timestamp
-  const formatTimeAgo = (timestamp: number): string => {
-    const seconds = Math.floor((Date.now() - timestamp) / 1000);
-    if (seconds < 60) return 'Just now';
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
-  };
-
-  // Handle real-time search with debounce
+  // ── Debounced search ───────────────────────────────────────────────────────
   useEffect(() => {
-    const query = searchQuery.trim();
-    
-    if (query.length >= 1) {
-      const debounceTimer = setTimeout(() => {
-        performSearch(query);
-        setHighlightedText(query);
-      }, 150);
-      return () => clearTimeout(debounceTimer);
-    } else {
-      setHighlightedText('');
-      setShowFullDetails(null);
-    }
+    const q = searchQuery.trim();
+    if (!q) return;
+    const t = setTimeout(() => performSearch(q), 120);
+    return () => clearTimeout(t);
   }, [searchQuery, performSearch]);
 
-  // Focus input when modal opens and reset state
+  // ── Focus on open ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (isModalOpen) {
-      setTimeout(() => inputRef.current?.focus(), 100);
-      setSelectedIndex(-1);
-      setShowFilters(false);
-      // Reset search results if no query
-      if (!searchQuery.trim()) {
-        setHighlightedText('');
-        setShowFullDetails(null);
-      }
+      setTimeout(() => inputRef.current?.focus(), 80);
+      setSelectedIdx(-1);
+      setExpandedId(null);
     }
-  }, [isModalOpen, searchQuery]);
+  }, [isModalOpen]);
 
-  // Handle keyboard navigation
+  // ── Keyboard navigation ────────────────────────────────────────────────────
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handler = (e: KeyboardEvent) => {
       if (!isModalOpen) return;
-
-      const results = searchResults?.products || [];
-      const totalItems = results.length;
-
-      switch (e.key) {
-        case 'Escape':
-          closeModalSearch();
-          break;
-        case 'ArrowDown':
-          e.preventDefault();
-          if (totalItems > 0) {
-            setSelectedIndex((prev) => (prev + 1) % totalItems);
-            scrollToSelected();
-          }
-          break;
-        case 'ArrowUp':
-          e.preventDefault();
-          if (totalItems > 0) {
-            setSelectedIndex((prev) => (prev - 1 + totalItems) % totalItems);
-            scrollToSelected();
-          }
-          break;
-        case 'Enter':
-          e.preventDefault();
-          if (selectedIndex >= 0 && results[selectedIndex]) {
-            handleResultClick(results[selectedIndex]);
-          } else if (searchQuery.trim()) {
-            performSearch();
-          }
-          break;
-        case 'Tab':
-          if (e.shiftKey) {
-            e.preventDefault();
-            if (totalItems > 0) {
-              setSelectedIndex((prev) => (prev - 1 + totalItems) % totalItems);
-            }
-          } else {
-            e.preventDefault();
-            if (totalItems > 0) {
-              setSelectedIndex((prev) => (prev + 1) % totalItems);
-            }
-          }
-          scrollToSelected();
-          break;
+      const len = products.length;
+      if (e.key === 'Escape')     { closeModalSearch(); return; }
+      if (e.key === 'ArrowDown')  { e.preventDefault(); setSelectedIdx(p => (p + 1) % len); scrollSel(); }
+      if (e.key === 'ArrowUp')    { e.preventDefault(); setSelectedIdx(p => (p - 1 + len) % len); scrollSel(); }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (selectedIdx >= 0 && products[selectedIdx]) goProduct(products[selectedIdx]);
+        else if (searchQuery.trim()) performSearch();
       }
     };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isModalOpen, products, selectedIdx, searchQuery]);
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isModalOpen, searchResults, selectedIndex, searchQuery, closeModalSearch, performSearch]);
-
-  // Scroll selected item into view
-  const scrollToSelected = () => {
+  function scrollSel() {
     setTimeout(() => {
-      const selectedElement = resultsRef.current?.querySelector('[data-selected="true"]');
-      selectedElement?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }, 50);
-  };
+      listRef.current?.querySelector('[data-sel="true"]')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 40);
+  }
 
-  const handleSearch = useCallback((value: string) => {
-    if (value.trim()) {
-      performSearch(value.trim());
-      setSelectedIndex(-1);
-    }
-  }, [performSearch]);
-
-  const handleResultClick = useCallback((product: Product) => {
-    const slug = product.slug || product._id || product.id;
-    if (slug) {
-      router.push(`/product/${slug}`);
-      closeModalSearch();
-    }
+  // ── Actions ────────────────────────────────────────────────────────────────
+  const goProduct = useCallback((p: Product) => {
+    const slug = p.slug || p._id || (p as any).id;
+    if (slug) { router.push(`/product/${slug}`); closeModalSearch(); }
   }, [router, closeModalSearch]);
 
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      closeModalSearch();
-    }
-  };
+  const handleQuickAdd = useCallback((p: Product, e: React.MouseEvent) => {
+    e.stopPropagation();
+    closeModalSearch();
+    openQuickview?.(p);
+  }, [openQuickview, closeModalSearch]);
 
-  const getProductImage = (product: Product): string => {
-    if (product.primaryImage?.url) return product.primaryImage.url;
-    if (product.thumbImage && product.thumbImage.length > 0) {
-      const img = product.thumbImage[0] as string | { url: string };
-      if (typeof img === 'string') return img;
-      if (img && 'url' in img) return img.url;
-      return '/images/images/product/1000x1000.png';
-    }
-    if (product.images && product.images.length > 0) {
-      const img = product.images[0] as string | { url: string };
-      if (typeof img === 'string') return img;
-      if (img && 'url' in img) return img.url;
-      return '/images/images/product/1000x1000.png';
-    }
-    return '/images/images/product/1000x1000.png';
-  };
-
-  const formatPrice = (price: number, currency: string = 'NGN'): string => {
-    return new Intl.NumberFormat('en-NG', {
-      style: 'currency',
-      currency: currency,
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(price);
-  };
-
-  const getProductPrice = (product: Product): { price: number; originalPrice?: number; hasDiscount: boolean } => {
-    if (product.priceRange) {
-      const hasDiscount = product.priceRange.max > product.priceRange.min;
-      return {
-        price: product.priceRange.min || 0,
-        originalPrice: hasDiscount ? product.priceRange.max : undefined,
-        hasDiscount,
-      };
-    }
-    return {
-      price: 0,
-      hasDiscount: false,
+  const startVoice = useCallback(() => {
+    const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+    const rec = new SR();
+    rec.lang = 'en-US';
+    rec.onstart = () => setIsListening(true);
+    rec.onend   = () => setIsListening(false);
+    rec.onerror = () => setIsListening(false);
+    rec.onresult = (ev: any) => {
+      const t = ev.results[0][0].transcript;
+      setSearchQuery(t);
+      performSearch(t);
     };
-  };
+    rec.start();
+  }, [setSearchQuery, performSearch]);
 
-  // Highlight search term in text
-  const highlightMatch = (text: string, query: string): React.ReactNode => {
-    if (!query.trim()) return text;
-    const parts = text.split(new RegExp(`(${escapeRegex(query)})`, 'gi'));
-    return parts.map((part, i) => 
-      part.toLowerCase() === query.toLowerCase() ? (
-        <span key={i} className="bg-yellow-200 font-semibold">{part}</span>
-      ) : (
-        part
-      )
-    );
-  };
-
-  const escapeRegex = (string: string): string => {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  };
+  const goAndClose = (href: string) => { router.push(href); closeModalSearch(); };
 
   if (!isModalOpen) return null;
 
-  const hasResults = searchResults && searchResults.products.length > 0;
-  const hasError = !!searchError;
-  const isSearchingWithQuery = isSearching && searchQuery.length > 0;
-  const totalResults = searchResults?.total || 0;
-  const totalInStock = searchResults?.products.filter(p => p.availability?.status !== 'out_of_stock').length || 0;
-
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <motion.div
-      ref={modalRef}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-      className="fixed inset-0 z-[9999] flex items-start justify-center pt-12 md:pt-16 px-2 md:px-4"
-      onClick={handleBackdropClick}
-    >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-
-      {/* Modal */}
+    <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0, y: -20, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: -20, scale: 0.95 }}
-        transition={{ duration: 0.25, ease: 'easeOut' }}
-        className="relative w-full max-w-2xl bg-white rounded-2xl md:rounded-3xl shadow-2xl overflow-hidden max-h-[85vh] md:max-h-[80vh] flex flex-col"
+        key="overlay"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.18 }}
+        className="fixed inset-0 z-[9999] flex items-start justify-center pt-10 md:pt-16 px-3 md:px-4"
+        onClick={(e) => { if (e.target === e.currentTarget) closeModalSearch(); }}
       >
-        {/* Search Input */}
-        <div className="p-4 md:p-5 border-b border-gray-100">
-          <div className="relative">
-            <Icon.PiMagnifyingGlass
-              className="absolute left-3 md:left-4 top-1/2 -translate-y-1/2 text-gray-400"
-              size={20}
-            />
-            
-            <input
-              ref={inputRef}
-              type="text"
-              placeholder="Search products, brands, categories..."
-              className="w-full h-12 md:h-14 pl-10 md:pl-12 pr-10 md:pr-16 bg-gray-50 border-2 border-transparent focus:border-green-500 rounded-xl md:rounded-2xl text-base md:text-lg outline-none transition-all placeholder:text-gray-400"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              aria-label="Search products"
-              aria-autocomplete="list"
-              aria-controls="search-results"
-            />
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
-              {/* Voice Search Button */}
+        {/* Backdrop */}
+        <div className="absolute inset-0 bg-black/65 backdrop-blur-[3px]" />
+
+        {/* Panel */}
+        <motion.div
+          key="panel"
+          initial={{ opacity: 0, y: -16, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -16, scale: 0.97 }}
+          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden max-h-[88vh] flex flex-col ring-1 ring-black/5"
+        >
+          {/* ── Top bar with brand stripe / loading progress ── */}
+          <div className="relative h-[3px] overflow-hidden">
+            {/* Static brand stripe — always visible */}
+            <div className="absolute inset-0 bg-gradient-to-r from-[#b20202] via-[#ff3232] to-[#b20202] opacity-40" />
+            {/* Animated sweep when searching */}
+            <AnimatePresence>
+              {isSearching && (
+                <motion.div
+                  key="search-bar"
+                  className="absolute inset-y-0 left-0"
+                  style={{ width: '35%', background: 'linear-gradient(to right, #b20202, #ff3232)' }}
+                  animate={{ x: ['-35%', '320%'] }}
+                  transition={{ duration: 0.9, ease: 'easeInOut', repeat: Infinity }}
+                />
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* ── Search input ── */}
+          <div className="px-4 md:px-5 pt-4 pb-3 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+
+              {/* Mic button — left side */}
               {typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) && (
                 <button
-                  onClick={startVoiceSearch}
-                  className={`p-1.5 rounded-lg transition-colors ${isListening ? 'bg-red-100 text-red-500 animate-pulse' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
-                  aria-label="Voice search"
-                >
-                  {isListening ? <Icon.PiMicrophoneFill size={16} /> : <Icon.PiMicrophone size={16} />}
-                </button>
-              )}
-              {isSearching ? (
-                <div className="w-5 h-5 border-2 border-gray-200 border-t-green-500 rounded-full animate-spin" />
-              ) : searchQuery ? (
-                <button
-                  onClick={handleClearSearch}
-                  className="p-1 rounded-lg bg-gray-200 hover:bg-gray-300 transition-colors"
-                  aria-label="Clear search"
-                >
-                  <Icon.PiX size={14} className="text-gray-600" />
-                </button>
-              ) : null}
-            </div>
-            </div>
-
-          {/* Search Stats - Show total quantity prominently */}
-          {hasResults && (
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-              {/* Filter Pills */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowFilters(!showFilters)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                    showFilters || activeFilter 
-                      ? 'bg-green-100 text-green-700 border border-green-300' 
-                      : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
+                  onClick={startVoice}
+                  title={isListening ? 'Listening…' : 'Voice search'}
+                  className={`flex-shrink-0 w-11 h-11 md:w-12 md:h-12 rounded-xl flex items-center justify-center transition-all ${
+                    isListening
+                      ? 'bg-red-100 text-[#b20202] ring-2 ring-[#b20202]/30 animate-pulse'
+                      : 'bg-gray-100 text-gray-400 hover:bg-[#b20202]/8 hover:text-[#b20202]'
                   }`}
                 >
-                  <Icon.PiFunnel size={14} />
-                  Filter
+                  {isListening ? <Icon.PiMicrophoneFill size={20} /> : <Icon.PiMicrophone size={20} />}
                 </button>
-                
-                {/* Filter Dropdown */}
-                {showFilters && (
-                  <div className="absolute top-full left-0 mt-2 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-10 min-w-[140px]">
-                    {searchFilters.map(filter => (
-                      <button
-                        key={filter.id}
-                        onClick={() => handleFilterToggle(filter.id)}
-                        className={`w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 transition-colors ${
-                          activeFilter === filter.id ? 'text-green-600 bg-green-50' : 'text-gray-700'
-                        }`}
-                      >
-                        <filter.icon size={16} />
-                        {filter.label}
-                        {activeFilter === filter.id && <Icon.PiCheck size={14} className="ml-auto" />}
-                      </button>
-                    ))}
-                  </div>
+              )}
+
+              {/* Input wrapper */}
+              <div className="relative flex-1">
+                <Icon.PiMagnifyingGlass
+                  className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                  size={18}
+                />
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search products, brands, categories…"
+                  aria-label="Search products"
+                  className={`w-full h-11 md:h-12 pl-10 pr-10 bg-gray-50 border-2 border-gray-200 ${BRAND.ring} rounded-xl text-sm md:text-base outline-none transition-all placeholder:text-gray-400 focus:bg-white`}
+                />
+                {/* Spinner / Clear — inside input right */}
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center">
+                  {isSearching ? (
+                    <div className="w-5 h-5 rounded-full border-[2.5px] border-gray-200 border-t-[#b20202] animate-spin" />
+                  ) : searchQuery ? (
+                    <button
+                      onClick={() => { setSearchQuery(''); setExpandedId(null); setSelectedIdx(-1); }}
+                      className="w-5 h-5 flex items-center justify-center rounded-full bg-gray-300 hover:bg-gray-400 transition-colors"
+                      aria-label="Clear search"
+                    >
+                      <Icon.PiX size={10} className="text-gray-700" />
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+            </div>
+
+            {/* Result count strip */}
+            {(hasResults || (isSearching && searchResults)) && (
+              <div className="flex items-center justify-between mt-2.5">
+                <span className="text-xs text-gray-500 flex items-center gap-1.5">
+                  {isSearching ? (
+                    <>
+                      <span className="w-3.5 h-3.5 rounded-full border-2 border-gray-200 border-t-[#b20202] animate-spin inline-block" />
+                      <span className="text-gray-400">Searching…</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-semibold text-gray-800">{searchResults!.total}</span>
+                      {' '}product{searchResults!.total !== 1 ? 's' : ''} found
+                      {searchResults!.totalPages > 1 && (
+                        <span className="text-gray-400 ml-1">· page {searchResults!.page}/{searchResults!.totalPages}</span>
+                      )}
+                    </>
+                  )}
+                </span>
+                {!isSearching && (
+                  <button
+                    onClick={() => goAndClose(`/shop?search=${encodeURIComponent(searchQuery)}`)}
+                    className={`flex items-center gap-1 text-xs font-semibold ${BRAND.text} ${BRAND.textHover} transition-colors`}
+                  >
+                    View all <Icon.PiArrowRight size={12} />
+                  </button>
                 )}
               </div>
+            )}
+          </div>
 
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 rounded-full">
-                <Icon.PiPackage size={16} className="text-green-600" />
-                <span className="font-semibold text-green-700">
-                  {totalResults} {totalResults === 1 ? 'product' : 'products'} found
-                </span>
-              </div>
-              {totalInStock > 0 && (
-                <div className="flex items-center gap-1.5 text-gray-500">
-                  <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                  <span>{totalInStock} available</span>
-                </div>
-              )}
-              {searchResults.totalPages > 1 && (
-                <span className="text-gray-400 text-xs">
-                  Page {searchResults.page} of {searchResults.totalPages}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
+          {/* ── Scrollable body ── */}
+          <div ref={listRef} className="flex-1 overflow-y-auto overscroll-contain" id="search-results">
+            <AnimatePresence mode="wait">
 
-        {/* Content */}
-        <div 
-          ref={resultsRef}
-          className="flex-1 overflow-y-auto"
-          id="search-results"
-          role="listbox"
-        >
-          <AnimatePresence mode="wait">
-            {/* Search Results */}
-            {hasResults ? (
-              <motion.div
-                key="results"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="p-4 md:p-5"
-              >
-                <div className="flex items-center justify-between mb-3 md:mb-4">
-                  <h3 className="text-xs md:text-sm font-semibold text-gray-500 uppercase tracking-wide">
-                    Products
-                  </h3>
-                  <button
-                    onClick={() => {
-                      // Build URL with search query and filters
-                      let url = `/shop?search=${encodeURIComponent(searchQuery)}`;
-                      if (activeFilter === 'inStock') url += '&inStock=true';
-                      if (activeFilter === 'onSale') url += '&onSale=true';
-                      if (activeFilter === 'newArrival') url += '&sort=newest';
-                      router.push(url);
-                      closeModalSearch();
-                    }}
-                    className="flex items-center gap-1 text-xs md:text-sm text-green-600 font-medium hover:text-green-700 transition-colors"
-                  >
-                    <span>View all</span>
-                    <Icon.PiArrowRight size={14} />
-                  </button>
-                </div>
+              {/* ─ Results ─ */}
+              {hasResults && (
+                <motion.div
+                  key="results"
+                  {...fade}
+                  className="p-4 md:p-5 space-y-2 relative"
+                  style={{ opacity: isSearching ? 0.55 : 1, transition: 'opacity 0.2s' }}
+                >
+                  {products.map((product, idx) => {
+                    const { price, original } = getPrice(product);
+                    const id        = (product as any).id ?? product._id ?? '';
+                    const inStock   = product.availability?.status !== 'out_of_stock';
+                    const stock     = product.availability?.totalStock ?? 0;
+                    const isSel     = idx === selectedIdx;
+                    const isExpanded= expandedId === id;
+                    const rating    = product.stats?.averageRating ?? (product as any).rate ?? 0;
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
-                  {searchResults.products.map((product, index) => {
-                    const { price, originalPrice, hasDiscount } = getProductPrice(product);
-                    const isSelected = index === selectedIndex;
-                    const inStock = product.availability?.status !== 'out_of_stock';
-                    const stockCount = product.availability?.totalStock || 0;
-                    const isExpanded = showFullDetails === (product.id || product._id);
-                    
                     return (
                       <motion.div
-                        key={product.id || product._id}
-                        data-selected={isSelected}
-                        whileHover={{ scale: 1.01 }}
-                        onClick={() => {
-                          if (isExpanded) {
-                            handleResultClick(product);
-                          } else {
-                            setShowFullDetails(product.id || product._id || null);
-                          }
-                        }}
-                        className={`flex gap-2 md:gap-3 p-2 md:p-3 rounded-xl cursor-pointer transition-all ${
-                          isSelected 
-                            ? 'bg-green-50 border-2 border-green-500' 
-                            : 'hover:bg-gray-50 border-2 border-transparent'
-                        }`}
+                        key={id}
+                        data-sel={isSel}
+                        layout
+                        whileHover={{ scale: 1.005 }}
+                        onClick={() => isExpanded ? goProduct(product) : setExpandedId(id)}
+                        className={`flex gap-3 p-3 rounded-xl cursor-pointer border-2 transition-all ${isSel ? BRAND.selected : 'border-transparent hover:bg-gray-50 hover:border-gray-100'}`}
                         role="option"
-                        aria-selected={isSelected}
-                        tabIndex={0}
+                        aria-selected={isSel}
                       >
-                        {/* Product Image */}
-                        <div className="relative w-16 h-16 md:w-20 md:h-20 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
-                          <Image
-                            src={getProductImage(product)}
-                            alt={product.name}
-                            fill
-                            className="object-cover"
-                            sizes="80px"
-                          />
-                          {hasDiscount && (
-                            <span className="absolute top-0.5 left-0.5 px-1.5 py-0.5 bg-red-500 text-white text-[9px] font-bold rounded">
+                        {/* Image */}
+                        <div className="relative w-16 h-16 md:w-[72px] md:h-[72px] rounded-lg overflow-hidden bg-gray-100 shrink-0">
+                          <Image src={getProductImage(product)} alt={product.name} fill sizes="72px" className="object-cover" />
+                          {original && (
+                            <span className="absolute top-0.5 left-0.5 px-1 py-[1px] bg-[#b20202] text-white text-[9px] font-bold rounded leading-tight">
                               SALE
                             </span>
                           )}
                           {!inStock && (
                             <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                              <span className="text-white text-xs font-bold">Out of Stock</span>
+                              <span className="text-white text-[9px] font-bold text-center px-1 leading-tight">Out of Stock</span>
                             </div>
                           )}
                         </div>
 
-                        {/* Product Info */}
+                        {/* Info */}
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-medium text-sm md:text-base text-gray-900 truncate">
-                            {highlightMatch(product.name, highlightedText)}
-                          </h4>
-                          
+                          <p className="font-medium text-sm text-gray-900 truncate">
+                            <Highlight text={product.name} query={searchQuery} />
+                          </p>
                           {product.category && (
-                            <p className="text-xs text-gray-500 mt-0.5 hidden md:block">
-                              {product.category.name}
-                              {product.brand && ` • ${product.brand.name}`}
+                            <p className="text-[11px] text-gray-400 mt-0.5 truncate">
+                              {product.category.name}{product.brand ? ` · ${product.brand.name}` : ''}
                             </p>
                           )}
-
-                          {/* Rating */}
-                          {(product.stats?.averageRating || product.rate) && (product.stats?.averageRating || product.rate)! > 0 && (
-                            <div className="flex items-center gap-1 mt-1">
-                              <Icon.PiStar size={12} className="text-yellow-400 fill-yellow-400" />
-                              <span className="text-xs text-gray-600">
-                                {(product.stats?.averageRating || product.rate || 0).toFixed(1)}
-                              </span>
+                          {rating > 0 && (
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <Icon.PiStarFill size={10} className="text-amber-400" />
+                              <span className="text-[11px] text-gray-500">{rating.toFixed(1)}</span>
                             </div>
                           )}
-
-                          {/* Price & Stock Row */}
-                          <div className="flex items-center justify-between mt-1">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-green-600 text-sm md:text-base">
-                                {formatPrice(price)}
-                              </span>
-                              {hasDiscount && originalPrice && (
-                                <span className="text-xs text-gray-400 line-through hidden md:inline">
-                                  {formatPrice(originalPrice)}
-                                </span>
-                              )}
-                            </div>
-                            
-                            {/* Stock Badge */}
-                            {inStock && stockCount > 0 && (
-                              <span className={`text-[10px] md:text-xs px-1.5 py-0.5 rounded-full ${
-                                stockCount > 10 
-                                  ? 'bg-green-100 text-green-700' 
-                                  : 'bg-amber-100 text-amber-700'
-                              }`}>
-                                {stockCount} left
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className={`font-bold text-sm ${BRAND.text}`}>{formatNGN(price)}</span>
+                            {original && (
+                              <span className="text-xs text-gray-400 line-through">{formatNGN(original)}</span>
+                            )}
+                            {inStock && stock > 0 && stock <= 10 && (
+                              <span className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded-full border border-amber-200">
+                                {stock} left
                               </span>
                             )}
                           </div>
 
-                          {/* Expanded: Quick Add Button */}
+                          {/* Expanded quick-add */}
                           {isExpanded && inStock && (
                             <motion.button
                               initial={{ opacity: 0, height: 0 }}
                               animate={{ opacity: 1, height: 'auto' }}
                               onClick={(e) => handleQuickAdd(product, e)}
-                              className="mt-2 w-full py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                              className={`mt-2 w-full py-1.5 ${BRAND.bg} text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 hover:opacity-90 transition-opacity`}
                             >
-                              <Icon.PiShoppingCart size={16} />
-                              Quick Add to Cart
+                              <Icon.PiShoppingCart size={14} />
+                              Quick View
                             </motion.button>
                           )}
                         </div>
 
-                        {/* Arrow indicator for selected item */}
-                        {isSelected && (
-                          <div className="flex items-center">
-                            <Icon.PiArrowRight size={18} className="text-green-600" />
-                          </div>
-                        )}
+                        {isSel && <Icon.PiArrowRight size={16} className={`shrink-0 self-center ${BRAND.text}`} />}
                       </motion.div>
                     );
                   })}
-                </div>
 
-                {/* Keyboard Navigation Help */}
-                <div className="mt-4 flex items-center justify-center gap-4 text-xs text-gray-400">
-                  <span className="flex items-center gap-1">
-                    <kbd className="px-1.5 py-0.5 bg-gray-100 rounded">↑</kbd>
-                    <kbd className="px-1.5 py-0.5 bg-gray-100 rounded">↓</kbd>
-                    to navigate
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <kbd className="px-1.5 py-0.5 bg-gray-100 rounded">Enter</kbd>
-                    to select
-                  </span>
-                </div>
-              </motion.div>
-            ) : hasError ? (
-              /* Error State */
-              <motion.div
-                key="error"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="p-8 md:p-10 text-center"
-              >
-                <div className="w-14 h-14 md:w-16 md:h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
-                  <Icon.PiWarning size={28} className="text-red-400" />
-                </div>
-                <p className="text-gray-600 font-medium text-sm md:text-base">{searchError}</p>
-                <button
-                  onClick={() => performSearch()}
-                  className="mt-4 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
-                >
-                  Try Again
-                </button>
-              </motion.div>
-            ) : isSearchingWithQuery ? (
-              /* Loading State with Skeletons */
-              <motion.div
-                key="loading"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="p-4 md:p-5"
-              >
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
-                  {[1, 2, 3, 4].map((i) => (
-                    <div key={i} className="flex gap-2 md:gap-3 p-2 md:p-3 rounded-xl">
-                      <div className="w-16 h-16 md:w-20 md:h-20 rounded-lg md:rounded-xl bg-gray-200 animate-pulse" />
-                      <div className="flex-1 space-y-2">
-                        <div className="h-3 md:h-4 bg-gray-200 rounded w-3/4 animate-pulse" />
-                        <div className="h-2 md:h-3 bg-gray-200 rounded w-1/2 animate-pulse" />
-                        <div className="h-3 md:h-4 bg-gray-200 rounded w-1/4 animate-pulse" />
+                  <p className="pt-1 text-center text-[11px] text-gray-300">
+                    <kbd className="px-1 py-0.5 bg-gray-100 rounded text-[10px]">↑↓</kbd> navigate &nbsp;
+                    <kbd className="px-1 py-0.5 bg-gray-100 rounded text-[10px]">↵</kbd> open
+                  </p>
+                </motion.div>
+              )}
+
+              {/* ─ Loading skeletons ─ */}
+              {isSearching && !hasResults && (
+                <motion.div key="loading" {...fade} className="p-4 md:p-5 space-y-2">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="flex gap-3 p-3 rounded-xl">
+                      <div className="w-16 h-16 rounded-lg bg-gray-100 animate-pulse shrink-0" />
+                      <div className="flex-1 space-y-2 py-1">
+                        <div className="h-3.5 bg-gray-100 rounded-full w-3/4 animate-pulse" />
+                        <div className="h-2.5 bg-gray-100 rounded-full w-1/2 animate-pulse" />
+                        <div className="h-3 bg-gray-100 rounded-full w-1/4 animate-pulse" />
                       </div>
                     </div>
                   ))}
-                </div>
-              </motion.div>
-            ) : searchQuery.length > 0 ? (
-              /* No Results with Suggestions */
-              <motion.div
-                key="no-results"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="p-8 md:p-10 text-center"
-              >
-                <div className="w-16 h-16 md:w-20 md:h-20 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
-                  <Icon.PiMagnifyingGlass size={36} className="text-gray-300" />
-                </div>
-                <p className="text-gray-600 font-medium text-sm md:text-lg">
-                  No products found for &quot;{searchQuery}&quot;
-                </p>
-                <p className="text-xs md:text-sm text-gray-400 mt-2 mb-5 md:mb-6">
-                  Try adjusting your search or browse categories below
-                </p>
-                
-                {/* Alternative Suggestions */}
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-xs md:text-sm font-medium text-gray-600 mb-2 md:mb-3">Try searching for:</p>
-                    <div className="flex flex-wrap justify-center gap-2">
-                      {['Red Wine', 'Whiskey', 'Beer', 'Vodka', 'Champagne'].map((term) => (
-                        <button
-                          key={term}
-                          onClick={() => {
-                            setSearchQuery(term);
-                            performSearch(term);
-                          }}
-                          className="px-3 py-1.5 md:py-2 bg-gray-100 hover:bg-gray-200 rounded-full text-xs md:text-sm text-gray-700 transition-colors"
-                        >
-                          {term}
-                        </button>
-                      ))}
-                    </div>
+                </motion.div>
+              )}
+
+              {/* ─ Error ─ */}
+              {searchError && (
+                <motion.div key="error" {...fade} className="py-12 px-6 text-center">
+                  <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-red-50 flex items-center justify-center">
+                    <Icon.PiWarning size={28} className="text-red-400" />
                   </div>
-                </div>
-              </motion.div>
-            ) : (
-              /* Default State - Categories, Recent Searches, Popular, Quick Actions */
-              <motion.div
-                key="default"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="p-4 md:p-5"
-              >
-                {/* Quick Actions */}
-                <div className="mb-5">
-                  <h3 className="text-xs md:text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                    Quick Actions
-                  </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    {quickActions.map((action) => (
-                      <button
-                        key={action.label}
-                        onClick={() => {
-                          router.push(action.href);
-                          closeModalSearch();
-                        }}
-                        className="flex items-center gap-2 p-2 md:p-3 rounded-xl hover:bg-gray-50 transition-colors border border-gray-100 hover:border-gray-200"
-                      >
-                        <action.icon size={18} className={action.color} />
-                        <span className="text-xs md:text-sm font-medium text-gray-700">{action.label}</span>
+                  <p className="text-sm text-gray-600 font-medium mb-4">{searchError}</p>
+                  <button onClick={() => performSearch()} className={`px-5 py-2 ${BRAND.bg} text-white rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity`}>
+                    Try Again
+                  </button>
+                </motion.div>
+              )}
+
+              {/* ─ No results ─ */}
+              {showNoResults && !searchError && (
+                <motion.div key="no-results" {...fade} className="py-10 px-6 text-center">
+                  <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center">
+                    <Icon.PiMagnifyingGlass size={30} className="text-gray-300" />
+                  </div>
+                  <p className="font-semibold text-gray-700 mb-1">No results for &ldquo;{searchQuery}&rdquo;</p>
+                  <p className="text-xs text-gray-400 mb-5">Try a different spelling or browse a category below</p>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {['Whiskey', 'Red Wine', 'Beer', 'Gin', 'Vodka'].map((t) => (
+                      <button key={t} onClick={() => { setSearchQuery(t); performSearch(t); }}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 hover:${BRAND.bg} hover:text-white transition-all`}>
+                        {t}
                       </button>
                     ))}
                   </div>
-                </div>
+                </motion.div>
+              )}
 
-                {/* Recent Searches */}
-                {recentSearches.length > 0 && (
-                  <div className="mb-5">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-xs md:text-sm font-semibold text-gray-500 uppercase tracking-wide">
-                        Recent Searches
-                      </h3>
-                      <button
-                        onClick={clearRecentSearches}
-                        className="text-xs text-gray-400 hover:text-red-500 transition-colors"
-                      >
-                        Clear all
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {recentSearches.slice(0, 6).map((search) => (
+              {/* ─ Default (empty query) ─ */}
+              {showDefault && (
+                <motion.div key="default" {...fade} className="p-4 md:p-5 space-y-5">
+
+                  {/* Quick Actions */}
+                  <section>
+                    <SectionTitle>Quick Actions</SectionTitle>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      {QUICK_ACTIONS.map((a) => (
                         <button
-                          key={search.query}
-                          onClick={() => {
-                            setSearchQuery(search.query);
-                            performSearch(search.query);
-                          }}
-                          className="group flex items-center gap-1.5 px-3 py-1.5 md:py-2 bg-gray-100 hover:bg-gray-200 rounded-full text-xs md:text-sm text-gray-700 transition-colors"
+                          key={a.label}
+                          onClick={() => goAndClose(a.href)}
+                          className={`group flex flex-col items-center gap-1.5 p-3 md:p-3.5 rounded-xl border ${a.border} ${a.bg} hover:shadow-sm transition-all hover:-translate-y-0.5`}
                         >
-                          <Icon.PiClock size={12} className="text-gray-400" />
-                          <span className="max-w-[100px] md:max-w-[120px] truncate">{search.query}</span>
-                          <span className="text-[10px] text-gray-400 hidden md:inline">{formatTimeAgo(search.timestamp)}</span>
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              removeRecentSearch(search.query);
-                            }}
-                            className="ml-1 p-0.5 rounded-full hover:bg-gray-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                          <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${a.gradient} flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform`}>
+                            <a.icon size={18} className="text-white" />
+                          </div>
+                          <span className={`text-xs font-semibold ${a.text}`}>{a.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+
+                  {/* Recent Searches */}
+                  {recentSearches.length > 0 && (
+                    <section>
+                      <div className="flex items-center justify-between mb-2.5">
+                        <SectionTitle inline>Recent</SectionTitle>
+                        <button onClick={clearRecentSearches} className="text-[11px] text-gray-400 hover:text-red-500 transition-colors">
+                          Clear all
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {recentSearches.slice(0, 6).map((s) => (
+                          <button
+                            key={s.query}
+                            onClick={() => { setSearchQuery(s.query); performSearch(s.query); }}
+                            className="group flex items-center gap-1.5 pl-2.5 pr-1.5 py-1.5 bg-gray-100 hover:bg-[#b20202]/8 rounded-full text-xs text-gray-700 hover:text-[#b20202] transition-all"
                           >
-                            <Icon.PiX size={10} className="text-gray-500" />
+                            <Icon.PiClock size={11} className="text-gray-400 group-hover:text-[#b20202]/60 shrink-0" />
+                            <span className="max-w-[90px] truncate">{s.query}</span>
+                            <span className="text-[10px] text-gray-400 hidden md:inline shrink-0">{timeAgo(s.timestamp)}</span>
+                            <span
+                              onClick={(e) => { e.stopPropagation(); removeRecentSearch(s.query); }}
+                              className="w-4 h-4 flex items-center justify-center rounded-full opacity-0 group-hover:opacity-100 hover:bg-gray-300 transition-all ml-0.5"
+                            >
+                              <Icon.PiX size={9} className="text-gray-500" />
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  {/* Categories */}
+                  <section>
+                    <SectionTitle>Browse Categories</SectionTitle>
+                    <div className="grid grid-cols-4 gap-2">
+                      {CATEGORIES.map((cat) => (
+                        <button
+                          key={cat.slug}
+                          onClick={() => goAndClose(`/shop?category=${cat.slug}`)}
+                          className={`flex flex-col items-center gap-1.5 p-2.5 md:p-3 rounded-xl border ${cat.color} hover:shadow-md hover:-translate-y-0.5 transition-all group`}
+                        >
+                          <span className="text-2xl md:text-3xl leading-none group-hover:scale-110 transition-transform">
+                            {cat.emoji}
+                          </span>
+                          <span className={`text-[10px] md:text-xs font-semibold ${cat.text} text-center leading-tight`}>
+                            {cat.name}
                           </span>
                         </button>
                       ))}
                     </div>
-                  </div>
-                )}
+                  </section>
 
-                {/* Categories */}
-                <div className="mb-5">
-                  <h3 className="text-xs md:text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                    Browse Categories
-                  </h3>
-                  <div className="grid grid-cols-4 gap-2">
-                    {categories.map((cat) => (
-                      <button
-                        key={cat.name}
-                        onClick={() => {
-                          router.push(cat.href);
-                          closeModalSearch();
-                        }}
-                        className="flex flex-col items-center gap-1 md:gap-2 p-2 md:p-3 rounded-xl hover:bg-green-50 transition-colors group"
-                      >
-                        <span className="text-xl md:text-2xl">{cat.icon}</span>
-                        <span className="text-[10px] md:text-xs font-medium text-gray-600 group-hover:text-green-700 text-center">
-                          {cat.name}
-                        </span>
-                        <span className="text-[9px] md:text-xs text-gray-400 hidden md:block">{cat.count}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                  {/* Popular Searches */}
+                  <section>
+                    <div className="flex items-center gap-1.5 mb-2.5">
+                      <SectionTitle inline>Trending Searches</SectionTitle>
+                      <Icon.PiFire size={14} className="text-[#b20202] mb-[1px]" />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {popularSearches.map((term, i) => (
+                        <button
+                          key={term}
+                          onClick={() => { setSearchQuery(term); performSearch(term); }}
+                          className="group flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 bg-white hover:border-[#b20202] hover:bg-[#b20202]/5 transition-all text-xs font-medium text-gray-600 hover:text-[#b20202]"
+                        >
+                          <span className="w-4 h-4 rounded-full bg-gray-100 group-hover:bg-[#b20202]/10 flex items-center justify-center text-[10px] font-bold text-gray-400 group-hover:text-[#b20202] transition-colors shrink-0">
+                            {i + 1}
+                          </span>
+                          {term}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
 
-                {/* Popular Searches */}
-                <div>
-                  <h3 className="flex items-center gap-2 text-xs md:text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                    <Icon.PiFire className="text-orange-500" size={14} />
-                    Popular Searches
-                  </h3>
-                  <div className="flex flex-wrap gap-2">
-                    {popularSearches.map((term) => (
-                      <button
-                        key={term}
-                        onClick={() => {
-                          setSearchQuery(term);
-                          performSearch(term);
-                        }}
-                        className="px-3 py-1.5 md:py-2 bg-gray-100 hover:bg-orange-50 rounded-full text-xs md:text-sm font-medium text-gray-700 hover:text-orange-700 transition-colors"
-                      >
-                        {term}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+                </motion.div>
+              )}
 
-        {/* Footer */}
-        <div className="flex items-center justify-between px-4 py-3 md:py-4 bg-gray-50 border-t border-gray-100">
-          <div className="flex items-center gap-3 md:gap-4">
-            <button
-              onClick={closeModalSearch}
-              className="flex items-center gap-1.5 md:gap-2 text-xs md:text-sm text-gray-500 hover:text-gray-700 transition-colors"
-            >
-              <Icon.PiXBold size={14} />
+            </AnimatePresence>
+          </div>
+
+          {/* ── Footer ── */}
+          <div className="flex items-center justify-between px-4 md:px-5 py-3 bg-gray-50/80 border-t border-gray-100">
+            <button onClick={closeModalSearch} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+              <Icon.PiXBold size={13} />
               <span className="hidden md:inline">Close</span>
+              <kbd className="hidden md:inline px-1 py-0.5 bg-gray-200 rounded text-[10px] ml-1">ESC</kbd>
             </button>
+            <div className="hidden md:flex items-center gap-3 text-[11px] text-gray-400">
+              <span><kbd className="px-1.5 py-0.5 bg-gray-200 rounded font-mono">↑↓</kbd> navigate</span>
+              <span><kbd className="px-1.5 py-0.5 bg-gray-200 rounded font-mono">↵</kbd> open</span>
+            </div>
+            <div className="flex items-center gap-1 text-[11px] text-gray-400">
+              <span className="hidden md:inline">Powered by</span>
+              <span className="font-bold text-[#b20202]">DrinksHarbour</span>
+            </div>
           </div>
-          <div className="hidden md:flex items-center gap-4 text-xs text-gray-400">
-            <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 bg-gray-200 rounded text-xs font-mono">↑↓</kbd>
-              navigate
-            </span>
-            <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 bg-gray-200 rounded text-xs font-mono">Enter</kbd>
-              select
-            </span>
-            <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 bg-gray-200 rounded text-xs font-mono">ESC</kbd>
-              close
-            </span>
-          </div>
-          {/* Mobile shortcuts */}
-          <div className="flex md:hidden items-center gap-2 text-xs text-gray-400">
-            <kbd className="px-1 py-0.5 bg-gray-200 rounded">↑↓</kbd>
-            <kbd className="px-1 py-0.5 bg-gray-200 rounded">↵</kbd>
-          </div>
-        </div>
+        </motion.div>
       </motion.div>
-    </motion.div>
+    </AnimatePresence>
   );
 };
+
+// ─── Micro components ─────────────────────────────────────────────────────────
+
+const fade = {
+  initial: { opacity: 0, y: 6 },
+  animate: { opacity: 1, y: 0 },
+  exit:    { opacity: 0, y: -6 },
+  transition: { duration: 0.15 },
+};
+
+function SectionTitle({ children, inline }: { children: React.ReactNode; inline?: boolean }) {
+  return (
+    <h3 className={`text-[10px] md:text-[11px] font-bold uppercase tracking-widest text-gray-400 ${inline ? '' : 'mb-2.5'}`}>
+      {children}
+    </h3>
+  );
+}
 
 export default ModalSearch;

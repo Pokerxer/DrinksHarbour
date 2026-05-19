@@ -14,6 +14,7 @@ const {
   unlockPO,
   createBillFromPO,
   sendPOToVendor,
+  returnPurchaseOrder,
   // Analytics
   getPurchaseAnalyticsSummary,
   getPurchaseAnalyticsByVendor,
@@ -62,6 +63,9 @@ router.post("/:id/create-bill", tenantAdminOrSuperAdmin, createBillFromPO);
 
 // Send PO to Vendor
 router.post("/:id/send-to-vendor", tenantAdminOrSuperAdmin, sendPOToVendor);
+
+// Return items to vendor
+router.post("/:id/return", tenantAdminOrSuperAdmin, returnPurchaseOrder);
 
 // Analytics routes
 router.get("/analytics/summary", tenantAdminOrSuperAdmin, getPurchaseAnalyticsSummary);

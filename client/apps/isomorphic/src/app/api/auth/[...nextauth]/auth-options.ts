@@ -17,7 +17,7 @@ interface LoginResponse {
       firstName: string;
       lastName: string;
       role: UserRole;
-      tenant?: string | { _id: string };
+      tenant?: string | { _id: string; slug?: string };
       tenantId?: string;
       avatar?: { url: string };
     };
@@ -25,6 +25,11 @@ interface LoginResponse {
     refreshToken?: string;
   };
   message?: string;
+}
+
+interface TenantSlugResponse {
+  success: boolean;
+  data?: { tenant?: { slug?: string } };
 }
 
 interface RefreshTokenResponse {
@@ -119,6 +124,7 @@ export const authOptions: NextAuthOptions = {
           id: token.id as string,
           role: token.role as string,
           tenantId: token.tenantId as string | null,
+          tenantSlug: token.tenantSlug as string | null,
           token: token.accessToken as string,
         },
         error: token.error,
@@ -129,6 +135,7 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.role = user.role;
         token.tenantId = user.tenantId;
+        token.tenantSlug = (user as { tenantSlug?: string | null }).tenantSlug ?? null;
         token.accessToken = user.token;
         token.refreshToken = (user as { refreshToken?: string }).refreshToken;
       }
@@ -207,9 +214,25 @@ export const authOptions: NextAuthOptions = {
           }
 
           const tenantValue = data.data.user.tenant;
-          const tenantId = typeof tenantValue === 'object' && tenantValue !== null 
-            ? tenantValue._id 
+          const tenantId = typeof tenantValue === 'object' && tenantValue !== null
+            ? tenantValue._id
             : tenantValue || data.data.user.tenantId || null;
+
+          // Resolve tenant slug from populated tenant object or via API
+          let tenantSlug: string | null = null;
+          if (typeof tenantValue === 'object' && tenantValue !== null && tenantValue.slug) {
+            tenantSlug = tenantValue.slug;
+          } else if (tenantId) {
+            try {
+              const tenantRes = await fetch(`${API_URL}/api/tenants/${tenantId}`, {
+                headers: { Authorization: `Bearer ${data.data.token}` },
+              });
+              if (tenantRes.ok) {
+                const tenantJson = await tenantRes.json() as TenantSlugResponse;
+                tenantSlug = tenantJson?.data?.tenant?.slug ?? null;
+              }
+            } catch { /* non-blocking — slug stays null */ }
+          }
 
           return {
             id: data.data.user._id || data.data.user.id,
@@ -219,6 +242,7 @@ export const authOptions: NextAuthOptions = {
             lastName: data.data.user.lastName,
             role: userRole,
             tenantId,
+            tenantSlug,
             image: data.data.user.avatar?.url || null,
             token: data.data.token,
             refreshToken: data.data.refreshToken,
@@ -232,6 +256,52 @@ export const authOptions: NextAuthOptions = {
           }
           
           const message = error instanceof Error ? error.message : 'Authentication failed';
+          throw new Error(message);
+        }
+      },
+    }),
+    CredentialsProvider({
+      id: 'pos-pin',
+      name: 'POS PIN',
+      credentials: {
+        tenantSlug: { label: 'Tenant Slug', type: 'text' },
+        pin: { label: 'PIN', type: 'password' },
+      },
+      async authorize(credentials) {
+        if (!credentials?.tenantSlug || !credentials?.pin) {
+          throw new Error('Tenant and PIN are required');
+        }
+        try {
+          const response = await fetch(`${API_URL}/api/pos/auth/pin-login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tenantSlug: credentials.tenantSlug, pin: credentials.pin }),
+          });
+          const data = await response.json() as LoginResponse;
+          if (!response.ok || !data.success) {
+            throw new Error(data.message || 'Invalid PIN');
+          }
+          const user = data.data.user;
+          const tenantValue = user.tenant;
+          const tenantId = typeof tenantValue === 'object' && tenantValue !== null
+            ? tenantValue._id : tenantValue || null;
+          const tenantSlug = typeof tenantValue === 'object' && tenantValue !== null
+            ? (tenantValue as any).slug ?? null : null;
+          return {
+            id: String(user._id || user.id),
+            email: user.email,
+            name: (user as any).posName || `${user.firstName} ${user.lastName}`,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            role: user.role,
+            tenantId,
+            tenantSlug,
+            image: null,
+            token: data.data.token,
+            refreshToken: data.data.refreshToken,
+          };
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : 'PIN authentication failed';
           throw new Error(message);
         }
       },

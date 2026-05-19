@@ -50,21 +50,25 @@ export const pageMetricsColumns = [
       <span className="font-medium">{formatter.format(info.getValue())}</span>
     ),
   }),
-  columnHelper.display({
+  columnHelper.accessor('createdAt', {
     id: 'createdAt',
     size: 250,
     header: 'AVG. SESSION DURATION',
-    cell: (info) => (
-      <div>
-        <Text className="mb-1 font-medium text-gray-700">
-          {dayjs(info.getValue() as string).format('mm')}m{' '}
-          {dayjs(info.getValue() as string).format('ss')}s
-        </Text>
-        <Text className="text-[13px] text-gray-500">
-          {dayjs(info.getValue() as string).format('DD MMM YYYY')}
-        </Text>
-      </div>
-    ),
+    cell: (info) => {
+      const iso = info.getValue() as string;
+      if (!iso) return <Text className="text-gray-400">—</Text>;
+      const d = dayjs(iso);
+      return (
+        <div>
+          <Text className="mb-1 font-medium text-gray-700">
+            {d.format('mm')}m {d.format('ss')}s
+          </Text>
+          <Text className="text-[13px] text-gray-500">
+            {d.format('DD MMM YYYY')}
+          </Text>
+        </div>
+      );
+    },
   }),
   columnHelper.display({
     id: 'chart',

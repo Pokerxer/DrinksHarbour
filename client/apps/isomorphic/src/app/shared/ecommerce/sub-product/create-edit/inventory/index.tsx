@@ -3,8 +3,6 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useFormContext } from 'react-hook-form';
-import { Button } from 'rizzui';
-import { motion } from 'framer-motion';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import {
@@ -15,11 +13,8 @@ import {
   PiRecycle,
   PiBell,
   PiGear,
-  PiArrowUUpLeft,
-  PiSpinner,
+  PiPlus,
 } from 'react-icons/pi';
-
-import { containerVariants } from '../animations';
 import { inventoryService, type InventoryMovement, type InventorySummary } from '@/services/inventory.service';
 import { warehouseService, type Warehouse } from '@/services/warehouse.service';
 import { subproductService } from '@/services/subproduct.service';
@@ -35,6 +30,7 @@ import { SettingsTab } from './SettingsTab';
 
 // Modals
 import { AdjustmentModal, TransferModal, ServerAdjustmentModal } from './modals';
+import { LocationFormModal } from './LocationsTab/LocationFormModal';
 
 // Shared utilities
 import {
@@ -120,6 +116,7 @@ export default function SubProductInventory() {
 
   // Server Adjustment Modal State
   const [showServerAdjustmentModal, setShowServerAdjustmentModal] = useState(false);
+  const [serverAdjustmentInitialType, setServerAdjustmentInitialType] = useState<string>('received');
   const [serverAdjustmentType, setServerAdjustmentType] = useState<'received' | 'adjustment_in' | 'adjustment_out'>('received');
   const [serverAdjustmentQuantity, setServerAdjustmentQuantity] = useState(0);
   const [serverAdjustmentReason, setServerAdjustmentReason] = useState('');
@@ -150,9 +147,11 @@ export default function SubProductInventory() {
   const [isLoadingMovements, setIsLoadingMovements] = useState(false);
   const [isLoadingWarehouses, setIsLoadingWarehouses] = useState(false);
 
-  // Locations State - fetch from server
+  // Locations State
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [inventoryQuants, setInventoryQuants] = useState<InventoryQuant[]>([]);
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [editingWarehouse, setEditingWarehouse] = useState<Warehouse | null>(null);
 
   // Stock Moves State
   const [stockMoves, setStockMoves] = useState<StockMove[]>([]);
@@ -287,8 +286,8 @@ export default function SubProductInventory() {
   // Fetch data when tab changes
   useEffect(() => {
     if (!session?.user?.token || !subProductId) return;
-    
-    if (activeTab === 'history' || activeTab === 'overview') {
+
+    if (activeTab === 'history' || activeTab === 'overview' || activeTab === 'moves') {
       fetchInventoryData();
     }
     if (activeTab === 'locations') {
@@ -354,14 +353,13 @@ export default function SubProductInventory() {
       console.log('📦 Recording inventory movement:', { subProductId, quantity, type, reason });
       
       if (type === 'add' && quantity > 0) {
-        const result = await inventoryService.recordReceived(subProductId, quantity, session.user.token, {
-          reason,
-          notes,
-        });
-        console.log('✅ Movement recorded (received):', result);
+        // Quick-add is a manual adjustment, NOT a supplier receipt.
+        // Using recordReceived would create type:'received' and inflate the "Received" total.
+        const result = await inventoryService.adjustInventory(subProductId, quantity, reason, session.user.token, notes);
+        console.log('✅ Movement recorded (adjustment_in):', result);
       } else if (type === 'remove' && quantity > 0) {
         const result = await inventoryService.adjustInventory(subProductId, -quantity, reason, session.user.token, notes);
-        console.log('✅ Movement recorded (adjustment out):', result);
+        console.log('✅ Movement recorded (adjustment_out):', result);
       } else if (type === 'set') {
         // For set, we need current stock to calculate delta
         const delta = quantity - (totalStock || 0);
@@ -554,27 +552,84 @@ export default function SubProductInventory() {
     type: string; quantity: number; reason: string; notes: string;
     sizeId?: string; sizeName?: string; reference?: string;
     unitCost?: number; supplierName?: string;
+    sourceWarehouseId?: string; destinationWarehouseId?: string;
   }) => {
     if (!subProductId || !session?.user?.token) return;
     setIsProcessing(true);
     try {
-      if (data.type === 'received') {
-        await inventoryService.recordReceived(subProductId, data.quantity, session.user.token, {
-          reason: data.reason,
-          notes: data.notes,
-          reference: data.reference,
-          unitCost: data.unitCost,
-          supplierName: data.supplierName,
-          sizeId: data.sizeId,
-          sizeName: data.sizeName,
-        });
-      } else {
-        const delta = data.type === 'adjustment_out' ? -data.quantity : data.quantity;
-        await inventoryService.adjustInventory(subProductId, delta, data.reason, session.user.token, data.notes, data.reference);
+      const token = session.user.token;
+
+      switch (data.type) {
+        case 'received':
+          await inventoryService.recordReceived(subProductId, data.quantity, token, {
+            reason: data.reason,
+            notes: data.notes,
+            reference: data.reference,
+            unitCost: data.unitCost,
+            supplierName: data.supplierName,
+            sizeId: data.sizeId,
+            sizeName: data.sizeName,
+          });
+          break;
+
+        case 'adjustment_in':
+          await inventoryService.adjustInventory(subProductId, data.quantity, data.reason, token, data.notes, data.reference);
+          break;
+
+        case 'adjustment_out':
+          await inventoryService.adjustInventory(subProductId, -data.quantity, data.reason, token, data.notes, data.reference);
+          break;
+
+        case 'return':
+          await inventoryService.recordReturn(subProductId, data.quantity, token, {
+            reason: data.reason,
+            notes: data.notes,
+            reference: data.reference,
+          });
+          break;
+
+        case 'transfer':
+          if (!data.sourceWarehouseId || !data.destinationWarehouseId) {
+            toast.error('Please select both source and destination locations');
+            return;
+          }
+          await warehouseService.transferStock({
+            subProductId,
+            sourceWarehouseId: data.sourceWarehouseId,
+            destinationWarehouseId: data.destinationWarehouseId,
+            quantity: data.quantity,
+            notes: data.notes,
+            reference: data.reference,
+          }, token);
+          await fetchWarehouses();
+          break;
+
+        case 'shipped':
+          await inventoryService.adjustInventory(subProductId, -data.quantity, data.reason || 'Shipped', token, data.notes, data.reference);
+          break;
+
+        case 'damaged':
+        case 'expired':
+        case 'written_off':
+          await inventoryService.createMovement({
+            subProduct: subProductId,
+            type: data.type,
+            category: 'out',
+            quantity: data.quantity,
+            reason: data.reason,
+            notes: data.notes,
+            reference: data.reference,
+            source: 'manual',
+            status: 'confirmed',
+          }, token);
+          break;
+
+        default:
+          // Generic adjustment fallback
+          await inventoryService.adjustInventory(subProductId, data.quantity, data.reason, token, data.notes, data.reference);
       }
+
       await fetchInventoryData();
-      // Update form values from summary
-      // (done in fetchInventoryData via useEffect watching inventorySummary)
       toast.success('Stock movement recorded');
       setShowServerAdjustmentModal(false);
     } catch (error: any) {
@@ -685,35 +740,82 @@ export default function SubProductInventory() {
   const handleExportJSON = () => exportStockReportJSON(totalStock, finalAvailableStock, reservedStock, adjustmentHistory);
   const handleExportCSV = () => exportStockReportCSV(adjustmentHistory);
 
-  return (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
-      {/* Tab Navigation */}
-      <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-3">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-              activeTab === tab.id ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            <tab.icon className="h-4 w-4" />
-            {tab.label}
-          </button>
-        ))}
+  // Stock status for header badge
+  const currentStatus = getCurrentStockStatus(stockStatus, finalAvailableStock, lowStockThreshold);
+  const statusMeta: Record<string, { label: string; cls: string }> = {
+    in_stock:     { label: 'In Stock',     cls: 'bg-green-100 text-green-700' },
+    low_stock:    { label: 'Low Stock',    cls: 'bg-amber-100 text-amber-700' },
+    out_of_stock: { label: 'Out of Stock', cls: 'bg-red-100 text-red-700' },
+    pre_order:    { label: 'Pre-Order',    cls: 'bg-blue-100 text-blue-700' },
+    discontinued: { label: 'Discontinued', cls: 'bg-gray-100 text-gray-500' },
+  };
+  const sm = statusMeta[currentStatus] || statusMeta.out_of_stock;
 
-        {lastAdjustment && lastAdjustment.canUndo && (
+  return (
+    <div className="space-y-0">
+      {/* ── Inventory header ── */}
+      <div className="rounded-t-2xl border border-gray-200 bg-white overflow-hidden">
+
+        {/* Stock status strip */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Total</span>
+              <span className="text-sm font-black tabular-nums text-gray-900">{totalStock || 0}</span>
+            </div>
+            <div className="h-3 w-px bg-gray-200" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Available</span>
+              <span className="text-sm font-black tabular-nums text-green-600">{finalAvailableStock}</span>
+            </div>
+            <div className="h-3 w-px bg-gray-200" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Reserved</span>
+              <span className="text-sm font-black tabular-nums text-amber-600">{reservedStock || 0}</span>
+            </div>
+            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold capitalize ${sm.cls}`}>
+              {sm.label}
+            </span>
+          </div>
+
           <button
             type="button"
-            onClick={undoLastAdjustment}
-            className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-amber-600 hover:bg-amber-50"
+            onClick={() => {
+              setServerAdjustmentInitialType('received');
+              setShowServerAdjustmentModal(true);
+            }}
+            className="flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-700 transition-colors"
           >
-            <PiArrowUUpLeft className="h-4 w-4" />
-            Undo
+            <PiPlus className="h-3.5 w-3.5" />
+            New Move
           </button>
-        )}
+        </div>
+
+        {/* Tab bar */}
+        <div className="flex overflow-x-auto px-1">
+          {TABS.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex shrink-0 items-center gap-1.5 border-b-2 px-4 py-3 text-xs font-semibold transition-colors whitespace-nowrap ${
+                  isActive
+                    ? 'border-gray-900 text-gray-900'
+                    : 'border-transparent text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                <tab.icon className="h-3.5 w-3.5" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
+
+      {/* Tab content */}
+      <div className="rounded-b-2xl border border-t-0 border-gray-200 bg-white p-5">
 
       {/* Tab Content */}
       {activeTab === 'overview' && (
@@ -734,23 +836,7 @@ export default function SubProductInventory() {
           selectedSize={selectedSize}
           sizeStockMap={sizeStockMap}
           currentSizeStock={currentSizeStock}
-          autoCalculateAvailable={autoCalculateAvailable}
-          stockAdjustAmount={stockAdjustAmount}
-          onStockAdjust={handleStockAdjust}
-          onReservedAdjust={handleReservedAdjust}
-          onStockAdjustAmountChange={setStockAdjustAmount}
           onSelectSize={setSelectedSize}
-          onOpenAdjustmentModal={openAdjustmentModal}
-          onTransferClick={() => setShowTransferModal(true)}
-          onBatchClick={() => setShowBatchModal(true)}
-          onAddStock={handleAddStock}
-          onSetOutOfStock={handleSetOutOfStock}
-          onSetPreOrder={handleSetPreOrder}
-          onDiscontinue={handleDiscontinue}
-          onAutoCalculateChange={setAutoCalculateAvailable}
-          onLowStockThresholdChange={(v) => setValue?.('subProductData.lowStockThreshold', v)}
-          onReorderPointChange={(v) => setValue?.('subProductData.reorderPoint', v)}
-          onReorderQuantityChange={(v) => setValue?.('subProductData.reorderQuantity', v)}
           onExportJSON={handleExportJSON}
           onExportCSV={handleExportCSV}
         />
@@ -768,60 +854,39 @@ export default function SubProductInventory() {
             await fetchInventoryData();
           }}
           onRecordStock={() => setShowServerAdjustmentModal(true)}
-          filteredHistory={filteredHistory}
-          paginatedHistory={paginatedHistory}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          historyFilter={historyFilter}
-          onHistoryFilterChange={setHistoryFilter}
-          statusFilter={statusFilter}
-          onStatusFilterChange={setStatusFilter}
-          dateRange={historyDateRange}
-          onDateRangeChange={setHistoryDateRange}
-          sizeFilter={sizeFilter}
-          onSizeFilterChange={setSizeFilter}
-          currentPage={currentPage}
-          totalPages={totalPages}
-          itemsPerPage={itemsPerPage}
-          onPageChange={setCurrentPage}
-          onItemsPerPageChange={(count) => { setItemsPerPage(count); setCurrentPage(1); }}
-          selectedItems={selectedItems}
-          onToggleSelect={(id) => setSelectedItems(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id])}
-          onSelectAll={() => setSelectedItems(prev => prev.length === paginatedHistory.length ? [] : paginatedHistory.map(h => h.id))}
-          onClearSelection={() => setSelectedItems([])}
-          onItemClick={setSelectedHistoryItem}
-          hasSizeVariants={hasSizeVariants}
-          sizes={sizes}
-          onExportCSV={handleExportCSV}
         />
       )}
 
       {activeTab === 'locations' && (
         <LocationsTab
-          inventoryQuants={inventoryQuants}
-          totalStock={totalStock}
-          totalReserved={totalReserved}
-          totalAvailable={totalAvailable}
-          hasSizeVariants={hasSizeVariants}
-          sizes={sizes}
-          sizeStockMap={sizeStockMap}
-          isLoading={isLoadingWarehouses}
           warehouses={warehouses}
-          onAddLocation={async () => {
-            // TODO: Open modal to add new warehouse
-            toast.success('Add warehouse feature coming soon');
+          totalStock={totalStock}
+          isLoading={isLoadingWarehouses}
+          token={session?.user?.token}
+          onAddLocation={() => {
+            setEditingWarehouse(null);
+            setShowLocationModal(true);
           }}
-          onEditLocation={(quant) => {
-            // TODO: Open modal to edit warehouse
-            toast.success('Edit warehouse feature coming soon');
+          onEditLocation={(wh) => {
+            setEditingWarehouse(wh);
+            setShowLocationModal(true);
           }}
-          onAdjustLocation={(quant) => {
-            // Open transfer modal for this location
-            setTransferFromWarehouse(quant.id);
+          onDeleteLocation={async (wh) => {
+            if (!session?.user?.token) return;
+            if (!confirm(`Delete location "${wh.location}"? This cannot be undone.`)) return;
+            try {
+              await warehouseService.deleteWarehouse(wh._id, session.user.token);
+              toast.success('Location deleted');
+              fetchWarehouses();
+            } catch (e: any) {
+              toast.error(e.message || 'Failed to delete location');
+            }
+          }}
+          onAdjustLocation={(wh) => {
+            setTransferFromWarehouse(wh._id);
             setShowTransferModal(true);
           }}
           onRefresh={fetchWarehouses}
-          onExport={handleExportJSON}
         />
       )}
 
@@ -834,7 +899,10 @@ export default function SubProductInventory() {
           selectedSize={selectedSize}
           isLoading={isLoadingMovements}
           onRefresh={fetchInventoryData}
-          onNewMove={() => setShowServerAdjustmentModal(true)}
+          onNewMove={(type) => {
+            setServerAdjustmentInitialType(type || 'received');
+            setShowServerAdjustmentModal(true);
+          }}
         />
       )}
 
@@ -851,12 +919,15 @@ export default function SubProductInventory() {
       {activeTab === 'alerts' && (
         <AlertsTab
           availableStock={finalAvailableStock}
+          totalStock={totalStock}
           lowStockThreshold={lowStockThreshold}
           reorderPoint={reorderPoint}
           daysUntilStockout={daysUntilStockout}
           recommendedOrderQty={recommendedOrderQty}
           dailySalesRate={dailySalesRate}
           onDailySalesRateChange={setDailySalesRate}
+          onLowStockThresholdChange={v => setValue?.('subProductData.lowStockThreshold', v)}
+          onReorderPointChange={v => setValue?.('subProductData.reorderPoint', v)}
           alertSettings={alertSettings}
           onAlertSettingsChange={setAlertSettings}
         />
@@ -869,8 +940,15 @@ export default function SubProductInventory() {
           routes={routes}
           standardPrice={standardPrice}
           costPrice={costPrice}
+          lowStockThreshold={lowStockThreshold}
+          reorderPoint={reorderPoint}
+          reorderQuantity={reorderQuantity}
+          currency={currency}
           onToggleRoute={toggleRoute}
           onStandardPriceChange={(v) => setValue?.('subProductData.standardPrice', v)}
+          onLowStockThresholdChange={(v) => setValue?.('subProductData.lowStockThreshold', v)}
+          onReorderPointChange={(v) => setValue?.('subProductData.reorderPoint', v)}
+          onReorderQuantityChange={(v) => setValue?.('subProductData.reorderQuantity', v)}
         />
       )}
 
@@ -923,7 +1001,22 @@ export default function SubProductInventory() {
         isSubmitting={isProcessing}
         sizes={hasSizeVariants ? sizes : []}
         hasSizes={hasSizeVariants}
+        initialType={serverAdjustmentInitialType}
+        warehouses={warehouses}
       />
-    </motion.div>
+
+      {/* Location add/edit modal */}
+      {showLocationModal && subProductId && session?.user?.token && (
+        <LocationFormModal
+          subProductId={subProductId}
+          token={session.user.token}
+          warehouse={editingWarehouse}
+          onClose={() => { setShowLocationModal(false); setEditingWarehouse(null); }}
+          onSuccess={() => { setShowLocationModal(false); setEditingWarehouse(null); fetchWarehouses(); toast.success(editingWarehouse ? 'Location updated' : 'Location added'); }}
+        />
+      )}
+
+      </div>
+    </div>
   );
 }

@@ -42,6 +42,8 @@ interface DetailOrder {
   receiptNumber?: string;
   orderNumber?: string;
   total: number;
+  subtotal?: number;
+  discountTotal?: number;
   paymentMethod: string;
   customer?: { firstName?: string; lastName?: string; phone?: string } | null;
   placedAt: string;
@@ -49,6 +51,11 @@ interface DetailOrder {
   posStaff?: { _id: string; firstName: string; lastName: string; posName?: string };
   isVoided?: boolean;
   paymentStatus?: string;
+  paymentDetails?: {
+    splitPayments?: { method: string; amount: number }[];
+    change?: number;
+    amount?: number;
+  };
   // Use a looser type so both POSRefundRecord and HistoryRefund are accepted
   refunds?: (POSRefundRecord & { paymentMethod?: string })[];
   items?: HistoryItem[];
@@ -542,7 +549,7 @@ export default function POSOrderDetail({
   onLoadOrder: (order: DetailOrder) => void;
   onClose: () => void;
 }) {
-  const { token } = usePOSAuth();
+  const { token, tenant } = usePOSAuth();
 
   const [activeTab, setActiveTab] = useState<'details' | 'invoice' | 'returns'>('details');
   const [refundData, setRefundData] = useState<Record<number, RefundLine>>({});
@@ -699,62 +706,203 @@ export default function POSOrderDetail({
     applyInput(activeIdx, next);
   }
 
+  // ── Shared invoice HTML builder (used by both print and preview) ─────────
+
+  function buildInvoiceHTML(forPrint = false) {
+    const _cashierName  = order.posStaff
+      ? (order.posStaff.posName || `${order.posStaff.firstName} ${order.posStaff.lastName}`)
+      : '—';
+    const _hasCustomer  = order.customer?.firstName && order.customer.firstName !== 'Walk-in';
+    const _customerName = _hasCustomer
+      ? `${order.customer!.firstName} ${order.customer!.lastName || ''}`.trim()
+      : 'Walk-in Customer';
+    const _customerPhone = _hasCustomer && order.customer?.phone ? order.customer.phone : '';
+    const _subtotal  = order.subtotal ?? order.total;
+    const _discount  = order.discountTotal ?? 0;
+    const _splitPmts = order.paymentDetails?.splitPayments ?? [];
+    const _change    = order.paymentDetails?.change ?? 0;
+    const _orderDate = new Date(order.placedAt || order.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const _storeName = (tenant?.name || 'DRINKS HARBOUR').toUpperCase();
+    const _rawLogo   = tenant?.logo;
+    const _logoSrc   = (typeof _rawLogo === 'string' ? _rawLogo?.trim() : (_rawLogo as any)?.url?.trim()) || '/logo.png';
+
+    const ng = (v: number) => `₦${v.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    const statusLabel = order.isVoided ? 'VOID'
+      : isFullyRefundedStatus ? 'REFUNDED'
+      : isPartiallyRefunded   ? 'PART. REFUNDED'
+      : 'PAID';
+    const statusColor = order.isVoided ? '#64748b'
+      : isFullyRefundedStatus ? '#dc2626'
+      : isPartiallyRefunded   ? '#d97706'
+      : '#16a34a';
+
+    const paymentLabel = _splitPmts.length > 0
+      ? _splitPmts.map((sp: { method: string; amount: number }) =>
+          `${sp.method.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())} ${ng(sp.amount)}`
+        ).join(' + ')
+      : (order.paymentMethod || '').replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+
+    const itemRowsHtml = items.map((it, i) => {
+      const ret     = refundedMap[i] || 0;
+      const crossed = ret >= it.quantity;
+      const rowBg   = i % 2 === 1 ? 'background:#fafafa;' : '';
+      return `
+        <tr style="${rowBg}border-bottom:1px solid #f0f0f0;${crossed ? 'opacity:0.38;' : ''}">
+          <td style="padding:10px 16px;font-size:13px;color:#111;${crossed ? 'text-decoration:line-through;' : ''}">
+            <span style="font-weight:500">${it.name}</span>${it.variant ? `<span style="color:#888;font-size:11px"> · ${it.variant}</span>` : ''}
+            ${ret > 0 && !crossed ? `<div style="font-size:10px;color:#dc2626;margin-top:2px;font-weight:600">↩ ${ret} returned</div>` : ''}
+          </td>
+          <td style="padding:10px 16px;text-align:right;font-size:13px;color:#374151;white-space:nowrap">${it.quantity}.00 Units</td>
+          <td style="padding:10px 16px;text-align:right;font-size:13px;color:#374151;font-variant-numeric:tabular-nums">${ng(it.priceAtPurchase)}</td>
+          <td style="padding:10px 16px;text-align:right;font-size:12px;color:#d1d5db">—</td>
+          <td style="padding:10px 16px;text-align:right;font-size:13px;font-weight:700;color:#111;font-variant-numeric:tabular-nums">${ng(it.itemSubtotal)}</td>
+        </tr>`;
+    }).join('');
+
+    const scaleStyle = forPrint ? '' : `transform:scale(0.68);transform-origin:top left;width:147%;`;
+    const bodyPad    = forPrint ? '0' : '0';
+
+    return `<!DOCTYPE html><html lang="en"><head>
+      <meta charset="UTF-8">
+      <title>Invoice · ${order.receiptNumber || order.orderNumber || ''}</title>
+      <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        html,body{height:100%;background:#fff}
+        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#111;padding:${bodyPad};${scaleStyle}}
+        @media print{body{transform:none!important;width:100%!important}@page{size:A4;margin:14mm 16mm}}
+        table{width:100%;border-collapse:collapse}
+      </style>
+    </head><body>
+
+      <!-- ════ Page wrapper ════ -->
+      <div style="max-width:820px;margin:0 auto;padding:${forPrint ? '44px 52px 120px' : '36px 42px 80px'}">
+
+        <!-- ── Brand accent bar ── -->
+        <div style="height:5px;background:linear-gradient(90deg,#b20202,#7f1d1d);border-radius:3px;margin-bottom:32px"></div>
+
+        <!-- ── Header: logo ↔ company ── -->
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px">
+          <img src="${_logoSrc}" alt="${_storeName}" style="height:54px;object-fit:contain;object-position:left center">
+          <div style="text-align:right;font-size:12px;line-height:1.9;color:#4b5563;max-width:300px">
+            <div style="font-size:14px;font-weight:800;color:#111;letter-spacing:0.03em;margin-bottom:2px">${_storeName}</div>
+            <div>Nigeria</div>
+            ${(tenant?.bankAccounts ?? []).map((b: { bankName: string; accountNumber: string; accountName?: string }) =>
+              `<div style="margin-top:2px">${b.bankName}${b.accountNumber ? ` - ${b.accountNumber}` : ''}${b.accountName ? `<span style="color:#9ca3af;font-size:11px"> · ${b.accountName}</span>` : ''}</div>`
+            ).join('')}
+            <div style="margin-top:2px">ADDRESS - 39 GANA STREET MAITAMA, ABUJA</div>
+          </div>
+        </div>
+
+        <!-- ── Thin separator ── -->
+        <div style="border-top:1px solid #e5e7eb;margin-bottom:24px"></div>
+
+        <!-- ── Invoice label + order number + status ── -->
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+          <div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#9ca3af;margin-bottom:6px">Invoice</div>
+            <div style="font-size:28px;font-weight:900;color:#b20202;letter-spacing:-0.5px;line-height:1">${order.receiptNumber || order.orderNumber || '—'}</div>
+            ${order.orderNumber && order.receiptNumber ? `<div style="font-size:11px;color:#9ca3af;margin-top:4px">Order # ${order.orderNumber}</div>` : ''}
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;padding-top:4px">
+            <span style="display:inline-block;padding:4px 12px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:0.06em;background:${statusColor}18;color:${statusColor};border:1px solid ${statusColor}40">
+              ${statusLabel}
+            </span>
+          </div>
+        </div>
+
+        <!-- ── Meta strip ── -->
+        <div style="display:flex;gap:0;margin:22px 0;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
+          <div style="flex:1;padding:12px 16px;border-right:1px solid #e5e7eb">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#b20202;margin-bottom:4px">Order Date</div>
+            <div style="font-size:13px;font-weight:600;color:#111">${_orderDate}</div>
+          </div>
+          <div style="flex:1;padding:12px 16px;border-right:1px solid #e5e7eb">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#b20202;margin-bottom:4px">Cashier</div>
+            <div style="font-size:13px;font-weight:600;color:#111">${_cashierName}</div>
+          </div>
+          <div style="flex:1;padding:12px 16px;border-right:1px solid #e5e7eb">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#b20202;margin-bottom:4px">Payment</div>
+            <div style="font-size:13px;font-weight:600;color:#111;text-transform:capitalize">${paymentLabel}</div>
+            ${_change > 0 ? `<div style="font-size:10px;color:#6b7280;margin-top:1px">Change: ${ng(_change)}</div>` : ''}
+          </div>
+          <div style="flex:1;padding:12px 16px">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#b20202;margin-bottom:4px">Customer</div>
+            <div style="font-size:13px;font-weight:600;color:#111">${_customerName}</div>
+            ${_customerPhone ? `<div style="font-size:10px;color:#6b7280;margin-top:1px">${_customerPhone}</div>` : ''}
+          </div>
+        </div>
+
+        <!-- ── Items table ── -->
+        <table style="margin-bottom:0;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
+          <thead>
+            <tr style="background:#f9fafb">
+              <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#6b7280;border-bottom:1px solid #e5e7eb">Description</th>
+              <th style="padding:10px 16px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#6b7280;border-bottom:1px solid #e5e7eb;white-space:nowrap">Quantity</th>
+              <th style="padding:10px 16px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#6b7280;border-bottom:1px solid #e5e7eb;white-space:nowrap">Unit Price</th>
+              <th style="padding:10px 16px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#6b7280;border-bottom:1px solid #e5e7eb">Taxes</th>
+              <th style="padding:10px 16px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#6b7280;border-bottom:1px solid #e5e7eb">Amount</th>
+            </tr>
+          </thead>
+          <tbody>${itemRowsHtml}</tbody>
+        </table>
+
+        <!-- ── Totals ── -->
+        <div style="display:flex;justify-content:flex-end;margin-top:0;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;overflow:hidden">
+          <div style="width:340px">
+            ${_discount > 0 ? `
+            <div style="display:flex;justify-content:space-between;padding:10px 16px;border-bottom:1px solid #f3f4f6;font-size:13px">
+              <span style="color:#6b7280">Discount</span>
+              <span style="color:#dc2626;font-weight:600">−${ng(_discount)}</span>
+            </div>` : ''}
+            <div style="display:flex;justify-content:space-between;padding:10px 16px;border-bottom:1px solid #f3f4f6;font-size:13px">
+              <span style="color:#6b7280">Untaxed Amount</span>
+              <span style="font-weight:600;color:#111">${ng(_subtotal)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:13px 16px;background:#b20202">
+              <span style="font-size:14px;font-weight:800;color:#fff;letter-spacing:0.02em">Total</span>
+              <span style="font-size:14px;font-weight:800;color:#fff">${ng(order.total)}</span>
+            </div>
+            ${totalRefunded > 0 ? `
+            <div style="display:flex;justify-content:space-between;padding:9px 16px;border-top:1px solid #fee2e2;background:#fff5f5;font-size:12px">
+              <span style="color:#dc2626">Total Returned</span>
+              <span style="color:#dc2626;font-weight:700">−${ng(totalRefunded)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:9px 16px;background:#fff5f5;border-top:1px dashed #fecaca;font-size:12px">
+              <span style="color:#6b7280">Net Paid</span>
+              <span style="font-weight:700;color:#111">${ng(Math.max(0, order.total - totalRefunded))}</span>
+            </div>` : ''}
+          </div>
+        </div>
+
+        <!-- ── Terms ── -->
+        <div style="margin-top:28px;font-size:12px;color:#6b7280">
+          <span style="font-weight:600;color:#374151">Terms &amp; Conditions: </span>
+          <span style="color:#b20202">https://www.drinksharbour.com/terms</span>
+        </div>
+
+      </div><!-- end page wrapper -->
+
+      <!-- ── Footer ── -->
+      <div style="position:${forPrint ? 'fixed' : 'static'};bottom:0;left:0;right:0;${!forPrint ? 'margin-top:auto;' : ''}">
+        <div style="max-width:820px;margin:0 auto;padding:14px 52px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#9ca3af;background:#fff">
+          <span>No Return Of Drinks</span>
+          <span>Page 1 / 1</span>
+        </div>
+      </div>
+
+    </body></html>`;
+  }
+
   // ── Print ─────────────────────────────────────────────────────────────────
 
   function handlePrint() {
-    const cashierName = order.posStaff
-      ? (order.posStaff.posName || `${order.posStaff.firstName} ${order.posStaff.lastName}`)
-      : '—';
-    const customerName = (order.customer?.firstName && order.customer.firstName !== 'Walk-in')
-      ? `${order.customer.firstName} ${order.customer.lastName || ''}`.trim()
-      : 'Walk-in';
-    const win = window.open('', '_blank', 'width=400,height=700,scrollbars=yes');
+    const win = window.open('', '_blank', 'width=900,height=1100,scrollbars=yes');
     if (!win) return;
-    const rows = items.map(it =>
-      `<tr>
-        <td style="padding:4px 0;border-bottom:1px solid #eee">${it.name}${it.variant ? ` · ${it.variant}` : ''}</td>
-        <td style="text-align:right;padding:4px 8px;border-bottom:1px solid #eee">${it.quantity}</td>
-        <td style="text-align:right;padding:4px 0;border-bottom:1px solid #eee">${it.priceAtPurchase?.toLocaleString('en-NG',{style:'currency',currency:'NGN'})}</td>
-        <td style="text-align:right;padding:4px 0;border-bottom:1px solid #eee">${it.itemSubtotal?.toLocaleString('en-NG',{style:'currency',currency:'NGN'})}</td>
-      </tr>`
-    ).join('');
-    win.document.write(`<!DOCTYPE html><html><head><title>${order.receiptNumber}</title>
-      <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Courier New',monospace;font-size:12px;padding:16px;width:380px;margin:0 auto}</style>
-    </head><body>
-      <div style="text-align:center;margin-bottom:12px">
-        <strong style="font-size:14px;letter-spacing:2px">DRINKS HARBOUR</strong><br>
-        <span style="font-size:10px;color:#555">39 Gana St, Maitama, Abuja</span>
-      </div>
-      <hr style="border:1px dashed #ccc;margin:8px 0">
-      <table style="width:100%;font-size:11px;margin-bottom:8px">
-        <tr><td style="color:#555;width:90px">Receipt</td><td><strong>${order.receiptNumber || '—'}</strong></td></tr>
-        <tr><td style="color:#555">Order</td><td>${order.orderNumber || '—'}</td></tr>
-        <tr><td style="color:#555">Date</td><td>${new Date(order.placedAt).toLocaleString('en-GB')}</td></tr>
-        <tr><td style="color:#555">Cashier</td><td>${cashierName}</td></tr>
-        ${customerName !== 'Walk-in' ? `<tr><td style="color:#555">Customer</td><td>${customerName}</td></tr>` : ''}
-      </table>
-      <hr style="border:1px dashed #ccc;margin:8px 0">
-      <table style="width:100%;font-size:11px">
-        <thead><tr style="color:#888"><th style="text-align:left">Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <hr style="border:2px solid #333;margin:8px 0">
-      <div style="display:flex;justify-content:space-between;font-weight:bold;font-size:14px">
-        <span>TOTAL</span><span>${order.total?.toLocaleString('en-NG',{style:'currency',currency:'NGN'})}</span>
-      </div>
-      ${refunds.length > 0 ? `
-      <hr style="border:1px dashed #ccc;margin:8px 0">
-      <div style="font-size:10px;color:#b20202;margin-top:4px">
-        ${refunds.map(r => `${r.receiptNumber}: −${r.totalRefunded.toLocaleString('en-NG',{style:'currency',currency:'NGN'})}`).join('<br>')}
-      </div>` : ''}
-      <hr style="border:1px dashed #ccc;margin:8px 0">
-      <div style="text-align:center;font-size:10px;color:#666;margin-top:8px">
-        Thank you for your purchase!<br>Goods not returnable unless defective.
-      </div>
-    </body></html>`);
+    win.document.write(buildInvoiceHTML(true));
     win.document.close();
     win.focus();
-    setTimeout(() => { win.print(); win.close(); }, 400);
+    setTimeout(() => { win.print(); win.close(); }, 500);
   }
 
   // ── Submit refund — Odoo flow: open dialog first ──────────────────────────
@@ -1113,115 +1261,32 @@ export default function POSOrderDetail({
 
       {/* ══ INVOICE TAB ══ */}
       {activeTab === 'invoice' && (
-        <div className="flex flex-1 flex-col overflow-y-auto">
-          {/* Order meta */}
-          <div className="border-b border-gray-100 px-5 py-4">
-            <div className="mb-3 flex flex-wrap gap-2">
-              {isFullyRefundedStatus ? (
-                <span className="rounded bg-red-100 px-3 py-1 text-xs font-bold text-red-700">Refunded</span>
-              ) : isPartiallyRefunded ? (
-                <span className="rounded bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">Partially Refunded</span>
-              ) : (
-                <span className="rounded bg-green-100 px-3 py-1 text-xs font-bold text-green-700">Paid</span>
-              )}
-              <span className="rounded bg-gray-100 px-3 py-1 text-xs font-bold text-gray-500">Posted</span>
-            </div>
-            <table className="w-full text-sm">
-              <tbody className="divide-y divide-gray-50">
-                {[
-                  ['Order Ref', order.orderNumber || '—'],
-                  ['Receipt', order.receiptNumber || '—'],
-                  ['Date', new Date(order.placedAt).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })],
-                  ['Cashier', cashierName],
-                  ['Customer', customerName || 'Walk-in Customer'],
-                  ['Payment', order.paymentMethod?.replace(/_/g, ' ')?.replace(/\b\w/g, c => c.toUpperCase()) || '—'],
-                ].map(([label, value]) => (
-                  <tr key={label}>
-                    <td className="py-1.5 pr-4 text-xs text-gray-500 w-24">{label}</td>
-                    <td className="py-1.5 text-xs font-medium text-gray-800">{value}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {/* Iframe preview — renders exact same HTML as the print output */}
+          <div className="flex-1 overflow-hidden bg-gray-300">
+            <iframe
+              srcDoc={buildInvoiceHTML(false)}
+              title="Invoice preview"
+              className="h-full w-full border-0"
+              sandbox="allow-same-origin"
+            />
           </div>
-
-          {/* Products table */}
-          <div className="flex-1 overflow-x-auto px-2">
-            <table className="w-full min-w-[480px] text-xs">
-              <thead>
-                <tr className="border-b border-gray-200 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400">
-                  <th className="px-3 py-2">Product</th>
-                  <th className="px-3 py-2 text-right">Qty</th>
-                  <th className="px-3 py-2 text-right">Returned</th>
-                  <th className="px-3 py-2 text-right">UoM</th>
-                  <th className="px-3 py-2 text-right">Unit Price</th>
-                  <th className="px-3 py-2 text-right">Disc.%</th>
-                  <th className="px-3 py-2 text-right">Tax Excl.</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item, i) => {
-                  const discPct = item.discountAmount && item.itemSubtotal
-                    ? ((item.discountAmount / (item.itemSubtotal + item.discountAmount)) * 100).toFixed(2)
-                    : '0.00';
-                  const refunded = refundedMap[i] || 0;
-                  return (
-                    <tr key={i} className={cn(
-                      'border-b border-gray-50',
-                      refunded >= item.quantity ? 'bg-red-50/50' : 'hover:bg-gray-50/50'
-                    )}>
-                      <td className={cn(
-                        'px-3 py-2 font-medium',
-                        refunded >= item.quantity ? 'text-gray-400 line-through' : 'text-gray-900'
-                      )}>
-                        {item.name}{item.variant ? ` - ${item.variant}` : ''}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-gray-700">{item.quantity}.00</td>
-                      <td className={cn(
-                        'px-3 py-2 text-right tabular-nums',
-                        refunded > 0 ? 'text-[#b20202] font-semibold' : 'text-gray-300'
-                      )}>
-                        {refunded > 0 ? `${refunded}.00` : '—'}
-                      </td>
-                      <td className="px-3 py-2 text-right text-gray-500">Units</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-gray-700">{formatCurrency(item.priceAtPurchase)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-gray-500">{discPct}</td>
-                      <td className="px-3 py-2 text-right tabular-nums font-semibold text-gray-900">{formatCurrency(item.itemSubtotal)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Summary */}
-          <div className="shrink-0 border-t border-gray-200 px-5 py-4 space-y-1.5">
-            <div className="flex justify-between text-xs text-gray-500">
-              <span>Taxes:</span><span className="tabular-nums">₦0.00</span>
-            </div>
-            <div className="flex justify-between text-sm font-bold text-gray-900">
-              <span>Total:</span><span className="tabular-nums">{formatCurrency(order.total)}</span>
-            </div>
-            {totalRefunded > 0 && (
-              <div className="flex justify-between text-xs text-[#b20202]">
-                <span>Total Refunded:</span><span className="tabular-nums">−{formatCurrency(totalRefunded)}</span>
-              </div>
-            )}
-            <div className="flex justify-between text-xs text-gray-600">
-              <span>Total Paid:</span><span className="tabular-nums">{formatCurrency(order.total)}</span>
-            </div>
-          </div>
-
-          {/* Invoice actions */}
-          <div className="flex shrink-0 gap-2 border-t border-gray-100 px-5 py-3">
-            <button type="button" onClick={handlePrint}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-              <PiPrinter className="h-4 w-4" /> Print
+          {/* Actions */}
+          <div className="flex shrink-0 gap-2 border-t border-gray-100 px-4 py-3">
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              <PiPrinter className="h-4 w-4" /> Print Invoice
             </button>
-            {isPaid && (
-              <button type="button" onClick={() => setActiveTab('details')}
+            {isPaid && !order.isVoided && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('details')}
                 className="flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold text-white hover:opacity-90"
-                style={{ backgroundColor: '#b20202' }}>
+                style={{ backgroundColor: '#b20202' }}
+              >
                 Return Products
               </button>
             )}

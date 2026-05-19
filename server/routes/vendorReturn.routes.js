@@ -10,11 +10,11 @@ const {
   deleteVendorReturn,
   createReturnFromBill,
 } = require("../controllers/vendorReturn.controller");
-const { protect } = require("../middleware/auth.middleware");
-const { tenantAdminOrSuperAdmin } = require("../middleware/auth.middleware");
+const { protect, attachTenant, tenantAdminOrSuperAdmin } = require("../middleware/auth.middleware");
 
-// All routes require authentication
+// All routes require authentication and tenant context
 router.use(protect);
+router.use(attachTenant);
 
 // CRUD routes
 router.route("/").post(tenantAdminOrSuperAdmin, createVendorReturn).get(getVendorReturns);

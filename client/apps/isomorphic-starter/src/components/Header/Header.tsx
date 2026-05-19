@@ -81,13 +81,15 @@ export const Header: React.FC<HeaderProps> = ({
                 <Icon.PiList size={22} />
               </button>
 
-              {/* Logo */}
-              <HeaderLogo
-                tenant={tenant}
-                isMainSite={isMainSite}
-                variant={variant}
-                isScrolled={isScrolled}
-              />
+              {/* Logo — hidden on mobile (search bar takes its place) */}
+              <div className="hidden lg:block">
+                <HeaderLogo
+                  tenant={tenant}
+                  isMainSite={isMainSite}
+                  variant={variant}
+                  isScrolled={isScrolled}
+                />
+              </div>
 
               {/* Nav — desktop */}
               <HeaderNav
@@ -107,23 +109,9 @@ export const Header: React.FC<HeaderProps> = ({
                 tenant={tenant}
               />
 
-              {/* Actions — mobile */}
-              <div className="flex lg:hidden items-center gap-1 ml-auto">
-                <HeaderActions
-                  variant={variant}
-                  getTextColor={getTextColor}
-                  tenant={tenant}
-                  mobile
-                />
-              </div>
 
             </div>
           </div>
-        </div>
-
-        {/* Mobile search bar */}
-        <div className={`md:hidden px-4 pb-3 ${variant === "dark" ? "bg-[#1A1A2E]" : "bg-white"}`}>
-          <HeaderSearch variant={variant} mobile />
         </div>
 
         {/* Bottom border */}

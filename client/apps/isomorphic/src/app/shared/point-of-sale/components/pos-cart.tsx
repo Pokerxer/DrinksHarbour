@@ -357,11 +357,8 @@ export default function POSCart() {
 
   const selectedItem = items.find((i) => itemKey(i) === selectedKey) ?? null;
 
-  function getInitialInput(item: POSCartItem, mode: DialMode) {
-    if (mode === 'qty') return String(item.quantity);
-    if (mode === 'disc') return String(item.discount);
-    if (mode === 'price') return String(item.price);
-    return '0';
+  function getInitialInput(_item: POSCartItem, _mode: DialMode) {
+    return '';
   }
 
   function selectItem(item: POSCartItem) {
@@ -381,9 +378,11 @@ export default function POSCart() {
     if (!selectedItem) return;
     let next: string;
     if (d === '.') {
-      next = dialInput.includes('.') ? dialInput : (dialInput || '0') + '.';
+      next = dialInput.includes('.') ? dialInput : (dialInput || '') + '.';
     } else {
-      next = dialInput === '0' ? d : dialInput.length >= 8 ? dialInput : dialInput + d;
+      // Empty or "0" means start fresh (first digit replaces).
+      // Otherwise append so multi-digit values like "15" work.
+      next = (!dialInput || dialInput === '0') ? d : dialInput.length >= 8 ? dialInput : dialInput + d;
     }
     setDialInput(next);
     applyDial(next, dialMode, selectedItem);

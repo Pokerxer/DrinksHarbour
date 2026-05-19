@@ -18,6 +18,9 @@ import {
   PiStack, PiStar, PiFloppyDisk, PiTrash, PiCalendar,
   PiStorefront,
 } from 'react-icons/pi';
+import { buildInvoice, printInvoices } from '@/utils/invoice';
+import InvoicePreview from '@/components/InvoicePreview';
+import { FilterItem, GroupItem, SortIcon } from '@/components/list-controls';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -92,9 +95,9 @@ function weekLabel(d: Date) {
   return `W${Math.ceil(d.getDate()/7)} · ${s.toLocaleDateString('en-GB',{month:'short',day:'2-digit'})}–${e.toLocaleDateString('en-GB',{month:'short',day:'2-digit'})}`;
 }
 
-// ── Invoice builder ───────────────────────────────────────────────────────────
+// ── Invoice builder (kept for tenant-aware variant; shared util used elsewhere) ─
 
-function buildInvoice(order: PosOrder, tenant?: POSTenant | null): string {
+function buildInvoiceWithTenant(order: PosOrder, tenant?: POSTenant | null): string {
   const ng = (v: number) => `₦${v.toLocaleString('en-NG',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const amt = order.total ?? 0; const sub = order.subtotal ?? amt; const disc = order.discountTotal ?? 0;
   const ref = (order.refunds||[]).reduce((s,r)=>s+r.totalRefunded,0);
@@ -118,14 +121,14 @@ function buildInvoice(order: PosOrder, tenant?: POSTenant | null): string {
 }
 
 function printOrders(orders: PosOrder[], tenant?: POSTenant | null) {
-  const win = window.open('', '_blank', 'width=900,height=1100,scrollbars=yes');
-  if (!win) return;
-  if (orders.length === 1) { win.document.write(buildInvoice(orders[0], tenant)); }
-  else {
-    const pages = orders.map((o,i) => `<div style="page-break-after:${i<orders.length-1?'always':'avoid'}">${buildInvoice(o,tenant).replace(/<!DOCTYPE[\s\S]*?<body[^>]*>/,'').replace(/<\/body>[\s\S]*/,'')}</div>`);
-    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif}@media print{@page{size:A4;margin:12mm}}</style></head><body>${pages.join('')}</body></html>`);
-  }
-  win.document.close(); win.focus(); setTimeout(() => { win.print(); win.close(); }, 500);
+  const rawLogo = tenant?.logo;
+  const store = {
+    name: tenant?.name || 'DRINKS HARBOUR',
+    logoSrc: ((typeof rawLogo === 'string' ? rawLogo : (rawLogo as any)?.url)?.trim()) || '/logo.png',
+    address: ['Nigeria', '39 Gana Street, Maitama, Abuja'],
+    bankAccounts: tenant?.bankAccounts ?? [],
+  };
+  printInvoices(orders, store);
 }
 
 // ── Search panel ──────────────────────────────────────────────────────────────
@@ -151,32 +154,6 @@ function OrderSearchPanel({
     return () => document.removeEventListener('mousedown', onOut);
   }, [onClose]);
 
-  function FilterItem({ fkey, label }: { fkey: FilterKey; label: string }) {
-    const on = activeFilters.has(fkey);
-    return (
-      <button type="button" onClick={() => onToggleFilter(fkey)}
-        className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${on ? 'bg-[#b20202]/8 text-[#b20202] font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}>
-        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${on ? 'border-[#b20202] bg-[#b20202]' : 'border-gray-300'}`}>
-          {on && <span className="h-2 w-2 rounded-sm bg-white" />}
-        </span>
-        {label}
-      </button>
-    );
-  }
-
-  function GroupItem({ gkey, label }: { gkey: GroupKey; label: string }) {
-    const on = groupBy === gkey;
-    return (
-      <button type="button" onClick={() => onSetGroupBy(on ? null : gkey)}
-        className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${on ? 'bg-[#b20202]/8 text-[#b20202] font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}>
-        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${on ? 'border-[#b20202]' : 'border-gray-300'}`}>
-          {on && <span className="h-2 w-2 rounded-full bg-[#b20202]" />}
-        </span>
-        {label}
-      </button>
-    );
-  }
-
   return (
     <div ref={ref} className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-black/8" style={{ minWidth: 660 }}>
       <div className="flex divide-x divide-gray-100">
@@ -187,9 +164,9 @@ function OrderSearchPanel({
             <PiFunnel className="h-3.5 w-3.5" /> Filters
           </div>
           <div className="space-y-0.5">
-            <FilterItem fkey="invoiced"  label="Invoiced" />
-            <FilterItem fkey="posted"    label="Posted" />
-            <FilterItem fkey="cancelled" label="Cancelled" />
+            <FilterItem fkey="invoiced"  label="Invoiced"   active={activeFilters.has('invoiced')}  onToggle={onToggleFilter} />
+            <FilterItem fkey="posted"    label="Posted"     active={activeFilters.has('posted')}    onToggle={onToggleFilter} />
+            <FilterItem fkey="cancelled" label="Cancelled"  active={activeFilters.has('cancelled')} onToggle={onToggleFilter} />
             <div>
               <button type="button" onClick={() => setOrderDateOpen(v => !v)}
                 className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
@@ -198,10 +175,10 @@ function OrderSearchPanel({
               </button>
               {orderDateOpen && (
                 <div className="ml-4 mt-0.5 space-y-0.5 border-l-2 border-gray-100 pl-3">
-                  <FilterItem fkey="order_today"      label="Today" />
-                  <FilterItem fkey="order_yesterday"  label="Yesterday" />
-                  <FilterItem fkey="order_this_week"  label="This Week" />
-                  <FilterItem fkey="order_this_month" label="This Month" />
+                  <FilterItem fkey="order_today"      label="Today"      active={activeFilters.has('order_today')}      onToggle={onToggleFilter} />
+                  <FilterItem fkey="order_yesterday"  label="Yesterday"  active={activeFilters.has('order_yesterday')}  onToggle={onToggleFilter} />
+                  <FilterItem fkey="order_this_week"  label="This Week"  active={activeFilters.has('order_this_week')}  onToggle={onToggleFilter} />
+                  <FilterItem fkey="order_this_month" label="This Month" active={activeFilters.has('order_this_month')} onToggle={onToggleFilter} />
                 </div>
               )}
             </div>
@@ -214,11 +191,11 @@ function OrderSearchPanel({
             <PiStack className="h-3.5 w-3.5" /> Group By
           </div>
           <div className="space-y-0.5">
-            <GroupItem gkey="session"  label="Session" />
-            <GroupItem gkey="cashier"  label="Cashier" />
-            <GroupItem gkey="terminal" label="Point of Sale" />
-            <GroupItem gkey="customer" label="Customer" />
-            <GroupItem gkey="status"   label="Status" />
+            <GroupItem gkey="session"  label="Session"       active={groupBy==='session'}  onToggle={onSetGroupBy} />
+            <GroupItem gkey="cashier"  label="Cashier"       active={groupBy==='cashier'}  onToggle={onSetGroupBy} />
+            <GroupItem gkey="terminal" label="Point of Sale" active={groupBy==='terminal'} onToggle={onSetGroupBy} />
+            <GroupItem gkey="customer" label="Customer"      active={groupBy==='customer'} onToggle={onSetGroupBy} />
+            <GroupItem gkey="status"   label="Status"        active={groupBy==='status'}   onToggle={onSetGroupBy} />
             <div>
               <button type="button" onClick={() => setGroupDateOpen(v => !v)}
                 className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
@@ -227,11 +204,11 @@ function OrderSearchPanel({
               </button>
               {groupDateOpen && (
                 <div className="ml-4 mt-0.5 space-y-0.5 border-l-2 border-gray-100 pl-3">
-                  <GroupItem gkey="order_day"     label="Day" />
-                  <GroupItem gkey="order_week"    label="Week" />
-                  <GroupItem gkey="order_month"   label="Month" />
-                  <GroupItem gkey="order_quarter" label="Quarter" />
-                  <GroupItem gkey="order_year"    label="Year" />
+                  <GroupItem gkey="order_day"     label="Day"     active={groupBy==='order_day'}     onToggle={onSetGroupBy} />
+                  <GroupItem gkey="order_week"    label="Week"    active={groupBy==='order_week'}    onToggle={onSetGroupBy} />
+                  <GroupItem gkey="order_month"   label="Month"   active={groupBy==='order_month'}   onToggle={onSetGroupBy} />
+                  <GroupItem gkey="order_quarter" label="Quarter" active={groupBy==='order_quarter'} onToggle={onSetGroupBy} />
+                  <GroupItem gkey="order_year"    label="Year"    active={groupBy==='order_year'}    onToggle={onSetGroupBy} />
                 </div>
               )}
             </div>
@@ -398,70 +375,19 @@ function OrderDetail({ order, tenant, onClose }: { order: PosOrder; tenant?: POS
       )}
 
       {/* Invoice */}
-      {tab === 'invoice' && (() => {
-        const dateStr = new Date(order.placedAt||order.createdAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
-        return (
-          <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="flex-1 overflow-y-auto bg-gray-200 p-4">
-              <div style={{background:'#fff',maxWidth:480,margin:'0 auto',boxShadow:'0 4px 20px rgba(0,0,0,.15)',fontFamily:'Arial,Helvetica,sans-serif',fontSize:12,color:'#111'}}>
-                <div style={{height:5,background:'linear-gradient(90deg,#b20202,#7f1d1d)'}} />
-                <div style={{padding:'24px 28px'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20}}>
-                    <img src={logoSrc} alt={store} style={{height:38,objectFit:'contain',objectPosition:'left'}} onError={e=>{(e.target as HTMLImageElement).style.display='none'}} />
-                    <div style={{textAlign:'right',fontSize:11,lineHeight:1.8,color:'#4b5563'}}>
-                      <div style={{fontWeight:800,fontSize:12,color:'#111'}}>{store}</div>
-                      <div>Nigeria</div><div>39 Gana St, Maitama, Abuja</div>
-                    </div>
-                  </div>
-                  <div style={{textAlign:'center',fontSize:11,fontWeight:600,color:'#555',marginBottom:14,letterSpacing:'.04em'}}>{(customerLabel(order.customer)||'WALK-IN CUSTOMER').toUpperCase()}</div>
-                  <div style={{fontSize:22,fontWeight:900,color:'#b20202',marginBottom:12}}>Order # {order.receiptNumber||order.orderNumber||'—'}</div>
-                  <div style={{display:'flex',gap:32,marginBottom:16,borderBottom:'1px solid #e5e7eb',paddingBottom:12}}>
-                    <div><div style={{fontSize:10,fontWeight:700,color:'#b20202',textTransform:'uppercase',marginBottom:2}}>Order Date</div><div>{dateStr}</div></div>
-                    <div><div style={{fontSize:10,fontWeight:700,color:'#b20202',textTransform:'uppercase',marginBottom:2}}>Cashier</div><div>{cashierLabel(order.posStaff)}</div></div>
-                  </div>
-                  <table style={{width:'100%',borderCollapse:'collapse',marginBottom:0}}>
-                    <thead>
-                      <tr style={{background:'#f5f5f5',borderTop:'1px solid #ddd',borderBottom:'1px solid #ddd'}}>
-                        {['Description','Qty','Unit Price','Taxes','Amount'].map((h,i)=>(
-                          <th key={h} style={{padding:'8px 10px',fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',textAlign:i===0?'left':'right',color:'#555'}}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(order.items||[]).map((it,i)=>(
-                        <tr key={i} style={{borderBottom:'1px solid #f0f0f0'}}>
-                          <td style={{padding:'8px 10px',fontWeight:500}}>{it.name}{it.variant?` · ${it.variant}`:''}</td>
-                          <td style={{padding:'8px 10px',textAlign:'right'}}>{it.quantity}.00</td>
-                          <td style={{padding:'8px 10px',textAlign:'right'}}>{ng(it.priceAtPurchase)}</td>
-                          <td style={{padding:'8px 10px',textAlign:'right',color:'#ccc'}}>—</td>
-                          <td style={{padding:'8px 10px',textAlign:'right',fontWeight:600}}>{ng(it.itemSubtotal)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <table style={{width:'100%',borderCollapse:'collapse',borderTop:'2px solid #e5e7eb'}}>
-                    <tbody>
-                      {discount>0&&<tr style={{borderBottom:'1px solid #e5e7eb'}}><td colSpan={4} style={{padding:'7px 10px'}}/><td style={{padding:'7px 10px',textAlign:'right',fontSize:12,color:'#b20202',fontWeight:600}}>Discount −{ng(discount)}</td></tr>}
-                      <tr style={{borderBottom:'1px solid #e5e7eb'}}><td colSpan={4} style={{padding:'7px 10px'}}/><td style={{padding:'7px 10px',textAlign:'right',fontSize:12,color:'#555'}}>Untaxed <strong style={{color:'#111'}}>{ng(subtotal)}</strong></td></tr>
-                      <tr style={{background:'#b20202'}}><td colSpan={4} style={{padding:'10px'}}/><td style={{padding:'10px',textAlign:'right',fontWeight:700,fontSize:13,color:'#fff'}}>Total &nbsp; {ng(amount)}</td></tr>
-                      {refunded>0&&<tr><td colSpan={4} style={{padding:'7px 10px'}}/><td style={{padding:'7px 10px',textAlign:'right',fontSize:11,color:'#b20202',fontWeight:600}}>Returned −{ng(refunded)}</td></tr>}
-                      <tr><td colSpan={4} style={{padding:'6px 10px'}}/><td style={{padding:'6px 10px',textAlign:'right',fontSize:11,color:'#555'}}>{payLabel}{change>0?` · Change ${ng(change)}`:''}</td></tr>
-                    </tbody>
-                  </table>
-                  <div style={{marginTop:20,borderTop:'1px solid #e5e7eb',paddingTop:10,fontSize:10,color:'#666'}}>Terms &amp; Conditions: <span style={{color:'#b20202'}}>www.drinksharbour.com/terms</span></div>
-                  <div style={{marginTop:14,display:'flex',justifyContent:'space-between',fontSize:10,color:'#888'}}><span>No Return Of Drinks</span><span>Page 1 / 1</span></div>
-                </div>
-              </div>
-            </div>
-            <div className="flex shrink-0 gap-2 border-t border-gray-100 px-4 py-3">
-              <button type="button" onClick={()=>printOrders([order],tenant)}
-                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                <PiPrinter className="h-4 w-4" /> Print Invoice
-              </button>
-            </div>
-          </div>
-        );
-      })()}
+      {tab === 'invoice' && (
+        <InvoicePreview
+          order={order}
+          store={{
+            name: store,
+            logoSrc,
+            address: ['Nigeria', '39 Gana St, Maitama, Abuja'],
+            bankAccounts: tenant?.bankAccounts ?? [],
+          }}
+          onPrint={() => printOrders([order], tenant)}
+          className="flex-1"
+        />
+      )}
 
       {/* Returns */}
       {tab === 'returns' && (
@@ -495,12 +421,6 @@ function OrderDetail({ order, tenant, onClose }: { order: PosOrder; tenant?: POS
   );
 }
 
-// ── Sort icon ─────────────────────────────────────────────────────────────────
-
-function SortIcon({ col, sortCol, sortDir }: { col: SortCol; sortCol: SortCol; sortDir: SortDir }) {
-  if (sortCol !== col) return <PiArrowsDownUp className="h-3 w-3 opacity-30" />;
-  return sortDir === 'asc' ? <PiArrowUp className="h-3 w-3 text-[#b20202]" /> : <PiArrowDown className="h-3 w-3 text-[#b20202]" />;
-}
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 

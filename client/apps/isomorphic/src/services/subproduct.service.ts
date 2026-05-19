@@ -498,16 +498,57 @@ export const subproductService = {
   async archiveSubProduct(id: string, token: string) {
     const response = await fetch(`${API_URL}/api/subproducts/${id}/archive`, {
       method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { Authorization: `Bearer ${token}` },
     });
-
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.message || 'Failed to archive subproduct');
     }
+    return response.json();
+  },
 
+  async bulkPromote(payload: {
+    ids?: string[];
+    applyToAll?: boolean;
+    saleType: 'percentage' | 'fixed';
+    saleDiscountValue: number;
+    saleStartDate?: string;
+    saleEndDate?: string;
+  }, token: string) {
+    const response = await fetch(`${API_URL}/api/subproducts/bulk-promote`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to apply promotion');
+    }
+    return response.json();
+  },
+
+  async bulkUnpromote(payload: { ids?: string[]; applyToAll?: boolean }, token: string) {
+    const response = await fetch(`${API_URL}/api/subproducts/bulk-unpromote`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to remove promotion');
+    }
+    return response.json();
+  },
+
+  async restoreSubProduct(id: string, token: string) {
+    const response = await fetch(`${API_URL}/api/subproducts/${id}/restore`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to restore subproduct');
+    }
     return response.json();
   },
 

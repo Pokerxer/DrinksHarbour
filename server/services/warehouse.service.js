@@ -117,7 +117,7 @@ const getWarehouses = async (tenantId, options = {}) => {
 
   const [warehouses, total] = await Promise.all([
     Warehouse.find(query)
-      .populate('subProduct', 'sku')
+      .populate('subProduct', 'sku name totalStock availableStock reservedStock lowStockThreshold stockStatus')
       .populate('product', 'name slug')
       .populate('createdBy', 'name email')
       .sort(sort)
@@ -146,7 +146,7 @@ const getWarehouseById = async (warehouseId, tenantId) => {
     _id: warehouseId,
     tenant: tenantId,
   })
-    .populate('subProduct', 'sku totalStock')
+    .populate('subProduct', 'sku name totalStock availableStock reservedStock lowStockThreshold stockStatus')
     .populate('product', 'name slug images')
     .populate('createdBy', 'name email')
     .lean();

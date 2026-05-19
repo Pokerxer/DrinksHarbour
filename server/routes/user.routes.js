@@ -35,8 +35,8 @@ const registerValidation = [
     .withMessage('Last name cannot exceed 50 characters'),
   body('phoneNumber')
     .optional()
-    .matches(/^\+?[1-9]\d{1,14}$/)
-    .withMessage('Please provide a valid phone number'),
+    .matches(/^(\+?234|0)[7-9][01]\d{8}$/)
+    .withMessage('Please provide a valid Nigerian phone number (e.g. 07035609301 or +2347035609301)'),
   body('role')
     .optional()
     .isIn(['customer', 'tenant_admin', 'admin', 'super_admin'])
@@ -66,8 +66,8 @@ const updateUserValidation = [
     .withMessage('Last name cannot exceed 50 characters'),
   body('phoneNumber')
     .optional()
-    .matches(/^\+?[1-9]\d{1,14}$/)
-    .withMessage('Please provide a valid phone number'),
+    .matches(/^(\+?234|0)[7-9][01]\d{8}$/)
+    .withMessage('Please provide a valid Nigerian phone number (e.g. 07035609301 or +2347035609301)'),
   body('email')
     .optional()
     .isEmail()

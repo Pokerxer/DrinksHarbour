@@ -193,6 +193,28 @@ const userSchema = new Schema(
       product: { type: ObjectId, ref: 'Product' },
       viewedAt: { type: Date, default: Date.now },
     }],
+
+    // ────────────────────────────────────────────────
+    // POS Cashier fields
+    // ────────────────────────────────────────────────
+    posAccess: {
+      type: Boolean,
+      default: false,
+    },
+    posPinHash: {
+      type: String,
+      select: false,
+    },
+    posName: {
+      type: String,
+      trim: true,
+      maxlength: 60,
+    },
+    posPermissions: {
+      type: [String],
+      enum: ['pos:sell', 'pos:refund', 'pos:void', 'pos:price_override', 'pos:discount', 'pos:terminal:retail', 'pos:terminal:wholesale'],
+      default: ['pos:sell', 'pos:terminal:retail', 'pos:terminal:wholesale'],
+    },
   },
   {
     timestamps: true,

@@ -70,31 +70,37 @@ export const menuItems = [
     name: 'File Manager',
     href: '/',
     icon: <PiFolderDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Appointment',
     href: routes.appointment.dashboard,
     icon: <PiCalendarDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Executive',
     href: routes.executive.dashboard,
     icon: <PiBriefcaseDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Project',
     href: routes.project.dashboard,
     icon: <PiClipboardTextDuotone />,
+    platformOnly: true,
   },
   {
     name: 'CRM',
     href: routes.crm.dashboard,
     icon: <PiFolderUserDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Affiliate',
     href: routes.affiliate.dashboard,
     icon: <PiChartPieSliceDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Store Analytics',
@@ -107,21 +113,25 @@ export const menuItems = [
     href: routes.bidding.dashboard,
     icon: <PiScalesDuotone />,
     badge: 'NEW',
+    platformOnly: true,
   },
   {
     name: 'Social Media',
     href: routes.socialMedia.dashboard,
     icon: <PiSparkleDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Job Board',
     href: routes.jobBoard.dashboard,
     icon: <PiShapesDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Financial',
     href: routes.financial.dashboard,
     icon: <PiCurrencyCircleDollarDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Logistics',
@@ -148,6 +158,7 @@ export const menuItems = [
     href: routes.podcast.dashboard,
     icon: <PiApplePodcastsLogoDuotone />,
     badge: 'NEW',
+    platformOnly: true,
   },
 
   // label start
@@ -164,14 +175,26 @@ export const menuItems = [
         name: 'Products',
         href: routes.eCommerce.products,
         badge: '',
+        platformOnly: true,
+      },
+      {
+        name: 'Brands',
+        href: routes.eCommerce.brands,
+      },
+      {
+        name: 'Tenants',
+        href: routes.eCommerce.tenants,
+        platformOnly: true,
       },
       {
         name: 'Product Details',
         href: routes.eCommerce.productDetails(DUMMY_ID),
+        platformOnly: true,
       },
       {
         name: 'Create Product',
         href: routes.eCommerce.createProduct,
+        platformOnly: true,
       },
       {
         name: 'Sub Products',
@@ -273,42 +296,50 @@ export const menuItems = [
   // label start
   {
     name: 'Search & Filters',
+    platformOnly: true,
   },
   {
     name: 'Real Estate',
     href: routes.searchAndFilter.realEstate,
     icon: <PiHouseLineDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Flight Booking',
     href: routes.searchAndFilter.flight,
     icon: <PiAirplaneTiltDuotone />,
+    platformOnly: true,
   },
   {
     name: 'NFT',
     href: routes.searchAndFilter.nft,
     icon: <PiCoinDuotone />,
+    platformOnly: true,
   },
   // label end
   // label start
   {
     name: 'Widgets',
+    platformOnly: true,
   },
   // label end
   {
     name: 'Cards',
     href: routes.widgets.cards,
     icon: <PiSquaresFourDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Icons',
     href: routes.widgets.icons,
     icon: <PiFeatherDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Charts',
     href: routes.widgets.charts,
     icon: <PiChartLineUpDuotone />,
+    platformOnly: true,
   },
   // {
   //   name: 'Banners',
@@ -319,11 +350,13 @@ export const menuItems = [
     name: 'Maps',
     href: routes.widgets.maps,
     icon: <PiMapPinLineDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Email Templates',
     href: routes.emailTemplates,
     icon: <PiEnvelopeDuotone />,
+    platformOnly: true,
   },
   // label start
   {
@@ -349,121 +382,145 @@ export const menuItems = [
     name: 'Newsletter',
     href: routes.forms.newsletter,
     icon: <PiEnvelopeSimpleOpenDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Multi Step',
     href: routes.multiStep,
     icon: <PiStepsDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Multi Step 2',
     href: routes.multiStep2,
     icon: <PiStairsDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Payment Checkout',
     href: routes.eCommerce.checkout,
     icon: <PiCreditCardDuotone />,
+    platformOnly: true,
   },
   // label start
   {
     name: 'Tables',
+    platformOnly: true,
   },
   // label end
   {
     name: 'Basic',
     href: routes.tables.basic,
     icon: <PiGridFourDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Collapsible',
     href: routes.tables.collapsible,
     icon: <PiCaretCircleUpDownDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Enhanced',
     href: routes.tables.enhanced,
     icon: <PiTableDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Sticky Header',
     href: routes.tables.stickyHeader,
     icon: <PiBrowserDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Pagination',
     href: routes.tables.pagination,
     icon: <PiListNumbersDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Search',
     href: routes.tables.search,
     icon: <PiHourglassSimpleDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Resizable',
     href: routes.tables.resizable,
     icon: <PiArrowsOutLineHorizontalDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Pinning',
     href: routes.tables.pinning,
     icon: <PiPushPinDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Drag & Drop',
     href: routes.tables.dnd,
     icon: <PiArrowsOutDuotone />,
+    platformOnly: true,
   },
   // label start
   {
     name: 'Pages',
+    platformOnly: true,
   },
   {
     name: 'Profile',
     href: routes.profile,
     icon: <PiUserCircleDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Welcome',
     href: routes.welcome,
     icon: <PiShootingStarDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Coming soon',
     href: routes.comingSoon,
     icon: <PiRocketLaunchDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Access Denied',
     href: routes.accessDenied,
     icon: <PiFolderLockDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Not Found',
     href: routes.notFound,
     icon: <PiBinocularsDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Maintenance',
     href: routes.maintenance,
     icon: <PiHammerDuotone />,
+    platformOnly: true,
   },
   {
     name: 'Blank',
     href: routes.blank,
     icon: <PiNoteBlankDuotone />,
+    platformOnly: true,
   },
 
   // label start
   {
     name: 'Authentication',
+    platformOnly: true,
   },
   // label end
   {
     name: 'Sign Up',
     href: '#',
     icon: <PiUserPlusDuotone />,
+    platformOnly: true,
     dropdownItems: [
       {
         name: 'Modern Sign up',
@@ -491,6 +548,7 @@ export const menuItems = [
     name: 'Sign In',
     href: '#',
     icon: <PiShieldCheckDuotone />,
+    platformOnly: true,
     dropdownItems: [
       {
         name: 'Modern Sign in',
@@ -518,6 +576,7 @@ export const menuItems = [
     name: 'Forgot Password',
     href: '#',
     icon: <PiLockKeyDuotone />,
+    platformOnly: true,
     dropdownItems: [
       {
         name: 'Modern Forgot password',
@@ -545,6 +604,7 @@ export const menuItems = [
     name: 'OTP Pages',
     href: '#',
     icon: <PiChatCenteredDotsDuotone />,
+    platformOnly: true,
     dropdownItems: [
       {
         name: 'Modern OTP page',
