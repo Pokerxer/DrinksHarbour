@@ -32,4 +32,24 @@ export const pricelistService = {
     req(`/api/pricelists/${id}/rules/${ruleId}`, token, { method: 'PATCH', body: JSON.stringify(rule) }),
   deleteRule: (id: string, ruleId: string, token: string) =>
     req(`/api/pricelists/${id}/rules/${ruleId}`, token, { method: 'DELETE' }),
+
+  async getCoverage(subProductId: string, token: string) {
+    const res = await fetch(`${API_URL}/api/pricelists/coverage/${subProductId}`, {
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    });
+    const body = await res.json();
+    if (!res.ok || !body.success) throw new Error(body.message || 'Failed to fetch pricelist coverage');
+    return body.data as { pricelists: any[] };
+  },
+
+  async reorderRules(pricelistId: string, orderedIds: string[], token: string) {
+    const res = await fetch(`${API_URL}/api/pricelists/${pricelistId}/rules/reorder`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ orderedIds }),
+    });
+    const body = await res.json();
+    if (!res.ok || !body.success) throw new Error(body.message || 'Reorder failed');
+    return body;
+  },
 };

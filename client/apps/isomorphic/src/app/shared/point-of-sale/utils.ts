@@ -120,7 +120,12 @@ export function findBestPricelistRule(rules: any[], productId: string, qty: numb
   if (!pool.length) return null;
 
   // Step 3 — highest minQuantity that still qualifies = best volume tier
-  return pool.sort((a: any, b: any) => (Number(b.minQuantity) || 0) - (Number(a.minQuantity) || 0))[0];
+  return pool.sort((a: any, b: any) => {
+    const minQtyDiff = (Number(b.minQuantity) || 0) - (Number(a.minQuantity) || 0);
+    if (minQtyDiff !== 0) return minQtyDiff;
+    // Same minQuantity tier: lower sequence = higher priority (Odoo convention)
+    return (Number(a.sequence) || 0) - (Number(b.sequence) || 0);
+  })[0];
 }
 
 export function applyPricelistToProduct(product: any, pricelist: any): any {

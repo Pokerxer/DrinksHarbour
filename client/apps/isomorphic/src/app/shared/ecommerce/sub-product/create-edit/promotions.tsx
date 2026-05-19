@@ -1,1785 +1,914 @@
 // @ts-nocheck
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
-import { Input, Text, Switch, Badge, Button, Textarea } from 'rizzui';
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  PiGift, PiPercent, PiLightning, PiCalendar, PiCurrencyNgn, PiTag, 
-  PiPackage, PiClock, PiWarningCircle, PiCheckCircle, PiXBold, PiPlus,
-  PiArrowsDownUp, PiTimer, PiStar, PiHeart, PiFire, PiTrendDown, PiCurrencyCircleDollar,
-  PiUsers, PiShoppingCart, PiMedal, PiTarget, PiCalendarPlus, PiFlask, 
-  PiCopy, PiEraser, PiInfo, PiWarning, PiTrophy, PiChartBar, PiCurrencyDollar,
-  PiCaretUp, PiCaretDown, PiEye, PiEyeClosed, PiThumbsUp
+import {
+  PiGift, PiPercent, PiLightning, PiCalendar, PiCurrencyNgn,
+  PiPackage, PiTimer, PiPlus, PiTrash, PiCaretDown, PiCaretUp,
+  PiTag, PiInfo, PiEraser, PiCopy,
 } from 'react-icons/pi';
-import { fieldStaggerVariants, containerVariants, toggleVariants, itemVariants } from './animations';
 import toast from 'react-hot-toast';
+import { useSession } from 'next-auth/react';
+import { useParams } from 'next/navigation';
+import { pricelistService } from '@/services/pricelist.service';
+import { PiListBullets, PiArrowSquareOut, PiCircleHalf } from 'react-icons/pi';
 
-const CURRENCY_SYMBOL = '₦';
+// ── Shared primitives ─────────────────────────────────────────────────────────
 
-const DISCOUNT_PRESETS = [
-  { value: 5, label: '5%', color: 'bg-green-100 text-green-700 border-green-200', description: 'Slight discount' },
-  { value: 10, label: '10%', color: 'bg-green-100 text-green-700 border-green-200', description: 'Popular choice' },
-  { value: 15, label: '15%', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', description: 'Good savings' },
-  { value: 20, label: '20%', color: 'bg-teal-100 text-teal-700 border-teal-200', description: 'Strong offer' },
-  { value: 25, label: '25%', color: 'bg-cyan-100 text-cyan-700 border-cyan-200', description: 'Great deal' },
-  { value: 50, label: '50%', color: 'bg-orange-100 text-orange-700 border-orange-200', description: 'Half price!' },
-];
+function Label({ children, required }: { children: React.ReactNode; required?: boolean }) {
+  return (
+    <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-gray-400">
+      {children}{required && <span className="ml-0.5 text-red-400">*</span>}
+    </label>
+  );
+}
 
-const BUNDLE_PRESETS = [
-  { 
-    label: 'Buy 2 Get 1 Free', 
-    quantity: 3, 
-    discount: 33, 
-    discountType: 'percentage',
-    description: 'Classic BOGO deal',
-    icon: PiGift
-  },
-  { 
-    label: 'Buy 3 Save 20%', 
-    quantity: 3, 
-    discount: 20, 
-    discountType: 'percentage',
-    description: 'Volume discount',
-    icon: PiPackage
-  },
-  { 
-    label: '6-Pack Special', 
-    quantity: 6, 
-    discount: 15, 
-    discountType: 'percentage',
-    description: 'Half case deal',
-    icon: PiShoppingCart
-  },
-  { 
-    label: 'Case Deal (12)', 
-    quantity: 12, 
-    discount: 25, 
-    discountType: 'percentage',
-    description: 'Full case savings',
-    icon: PiMedal
-  },
-];
+function TextInput({ icon, suffix, ...props }: {
+  icon?: React.ReactNode; suffix?: string;
+} & React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <div className="flex items-center overflow-hidden rounded-lg border border-gray-200 bg-white focus-within:border-gray-400 transition-colors">
+      {icon && <span className="ml-3 shrink-0 text-gray-400">{icon}</span>}
+      <input
+        {...props}
+        className="flex-1 border-0 bg-transparent px-3 py-2.5 text-sm outline-none placeholder-gray-300"
+      />
+      {suffix && (
+        <span className="mr-3 shrink-0 text-[11px] font-semibold text-gray-400">{suffix}</span>
+      )}
+    </div>
+  );
+}
 
-// Promotion type presets for beverages
-const PROMOTION_TYPES = {
-  seasonal: {
-    label: 'Seasonal Promotions',
-    icon: PiCalendarPlus,
-    color: 'from-amber-400 to-orange-500',
-    bgColor: 'bg-amber-50',
-    borderColor: 'border-amber-300',
-    options: [
-      { name: 'Summer Sale', discount: 20, duration: 30 },
-      { name: 'Holiday Special', discount: 25, duration: 14 },
-      { name: 'New Year Clearance', discount: 30, duration: 7 },
-      { name: 'Spring Fresh', discount: 15, duration: 21 },
-    ]
-  },
-  loyalty: {
-    label: 'Loyalty Rewards',
-    icon: PiStar,
-    color: 'from-purple-400 to-violet-500',
-    bgColor: 'bg-purple-50',
-    borderColor: 'border-purple-300',
-    options: [
-      { name: 'VIP Members Only', discount: 10, duration: 365 },
-      { name: 'Return Customer', discount: 8, duration: 60 },
-      { name: 'Premium Club', discount: 15, duration: 180 },
-      { name: 'Gold Tier Discount', discount: 12, duration: 90 },
-    ]
-  },
-  clearance: {
-    label: 'Clearance Sales',
-    icon: PiTarget,
-    color: 'from-red-400 to-rose-500',
-    bgColor: 'bg-red-50',
-    borderColor: 'border-red-300',
-    options: [
-      { name: 'End of Line', discount: 40, duration: 7 },
-      { name: 'Overstock Clear', discount: 35, duration: 14 },
-      { name: 'Best Before Sale', discount: 50, duration: 3 },
-      { name: 'Warehouse Clear', discount: 45, duration: 10 },
-    ]
-  },
-};
+function Section({
+  title, desc, children, toggle, open, onToggle, badge,
+}: {
+  title: string; desc?: string; children: React.ReactNode;
+  toggle?: boolean; open?: boolean; onToggle?: () => void;
+  badge?: React.ReactNode;
+}) {
+  const isCollapsible = toggle !== undefined;
+  return (
+    <div className="rounded-2xl border border-gray-200 overflow-hidden">
+      <div
+        className={`flex items-center justify-between border-b border-gray-100 bg-gray-50 px-4 py-3 ${isCollapsible ? 'cursor-pointer select-none' : ''}`}
+        onClick={isCollapsible ? onToggle : undefined}
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-bold text-gray-700">{title}</p>
+              {badge}
+            </div>
+            {desc && <p className="text-[10px] text-gray-400 mt-0.5">{desc}</p>}
+          </div>
+        </div>
+        {isCollapsible && (
+          <div className="flex items-center gap-2 shrink-0 ml-3">
+            {/* Toggle pill */}
+            <div className={`relative flex h-5 w-9 items-center rounded-full transition-colors ${
+              toggle ? 'bg-gray-900' : 'bg-gray-200'
+            }`}>
+              <span className={`absolute h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
+                toggle ? 'translate-x-[18px]' : 'translate-x-[3px]'
+              }`} />
+            </div>
+            {open
+              ? <PiCaretUp className="h-3.5 w-3.5 text-gray-400" />
+              : <PiCaretDown className="h-3.5 w-3.5 text-gray-400" />
+            }
+          </div>
+        )}
+      </div>
+      {(!isCollapsible || open) && <div className="p-4">{children}</div>}
+    </div>
+  );
+}
 
-// Advanced promotion features
-const ADVANCED_FEATURES = [
-  {
-    id: 'minOrderValue',
-    label: 'Minimum Order Value',
-    description: 'Set minimum purchase amount for discount',
-    icon: PiCurrencyDollar,
-    type: 'number',
-    suffix: CURRENCY_SYMBOL
-  },
-  {
-    id: 'maxUsagePerCustomer',
-    label: 'Usage Limit Per Customer',
-    description: 'Limit how many times each customer can use this promotion',
-    icon: PiUsers,
-    type: 'number',
-    suffix: 'uses'
-  },
-  {
-    id: 'totalUsageLimit',
-    label: 'Total Usage Limit',
-    description: 'Maximum total uses across all customers',
-    icon: PiTarget,
-    type: 'number',
-    suffix: 'total'
-  },
-  {
-    id: 'stackable',
-    label: 'Stackable with Other Offers',
-    description: 'Allow combining with other promotions',
-    icon: PiChartBar,
-    type: 'boolean'
-  }
-];
+// ── Percentage quick-pick chips ───────────────────────────────────────────────
 
-const cardHoverVariants = {
-  rest: { scale: 1, y: 0 },
-  hover: { scale: 1.02, y: -2 }
-};
+const PCT_PRESETS = [5, 10, 15, 20, 25, 30, 50];
 
-export default function SubProductPromotions() {
-  const methods = useFormContext();
-  const register = methods?.register;
-  const watch = methods?.watch;
-  const setValue = methods?.setValue;
-  const control = methods?.control;
-  const errors = methods?.formState?.errors || {};
+function PctChips({ value, onSelect }: { value: number; onSelect: (v: number) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-2">
+      {PCT_PRESETS.map((v) => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => onSelect(Number(value) === v ? 0 : v)}
+          className={`rounded-lg px-2.5 py-1 text-[10px] font-semibold transition-colors ${
+            Number(value) === v
+              ? 'bg-gray-900 text-white'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          {v}%
+        </button>
+      ))}
+    </div>
+  );
+}
 
-  const discount = watch?.('subProductData.discount') || 0;
-  const discountType = watch?.('subProductData.discountType') || 'percentage';
-  const discountStart = watch?.('subProductData.discountStart');
-  const discountEnd = watch?.('subProductData.discountEnd');
-  const baseSellingPrice = watch?.('subProductData.baseSellingPrice') || 0;
-  const flashSale = watch?.('subProductData.flashSale') || {};
-  const bundleDeals = watch?.('subProductData.bundleDeals') || [];
-  const loyaltyDiscount = watch?.('subProductData.loyaltyDiscount') || {};
-  const seasonalPromos = watch?.('subProductData.seasonalPromos') || [];
-  const advancedFeatures = watch?.('subProductData.advancedFeatures') || {};
-  const sizes = watch?.('subProductData.sizes') || [];
-  const sellWithoutSizeVariants = watch?.('subProductData.sellWithoutSizeVariants');
+// ── Savings preview strip ─────────────────────────────────────────────────────
 
-  const [showFlashSale, setShowFlashSale] = useState(flashSale?.isActive || false);
-  const [showBundleDeals, setShowBundleDeals] = useState(bundleDeals.length > 0);
-  const [showLoyaltyProgram, setShowLoyaltyProgram] = useState(loyaltyDiscount?.enabled || false);
-  const [showSeasonalPromos, setShowSeasonalPromos] = useState(seasonalPromos.length > 0);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [selectedPromoType, setSelectedPromoType] = useState<string | null>(null);
-  const [promotionHistory, setPromotionHistory] = useState([]);
-
-  const isDiscountActive = useMemo(() => {
-    const now = new Date();
-    if (!discountStart && !discountEnd) return discount > 0;
-    
-    const start = discountStart ? new Date(discountStart) : null;
-    const end = discountEnd ? new Date(discountEnd) : null;
-    
-    if (start && now < start) return false;
-    if (end && now > end) return false;
-    
-    return discount > 0;
-  }, [discountStart, discountEnd, discount]);
-
-  const flashSaleActive = () => {
-    if (!flashSale?.isActive) return false;
-    
-    const now = new Date();
-    const start = flashSale?.startDate ? new Date(flashSale.startDate) : null;
-    const end = flashSale?.endDate ? new Date(flashSale.endDate) : null;
-    
-    if (start && now < start) return false;
-    if (end && now > end) return false;
-    
-    return true;
+function SavingsStrip({
+  basePrice, discountedPrice, saving, label, color = 'green',
+}: {
+  basePrice: number; discountedPrice: number; saving: number;
+  label: string; color?: string;
+}) {
+  const pct = basePrice > 0 ? ((saving / basePrice) * 100).toFixed(1) : '0';
+  const colorMap = {
+    green:  { bg: 'bg-green-50',  border: 'border-green-200',  text: 'text-green-700',  sub: 'text-green-500'  },
+    amber:  { bg: 'bg-amber-50',  border: 'border-amber-200',  text: 'text-amber-700',  sub: 'text-amber-500'  },
+    purple: { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', sub: 'text-purple-500' },
   };
+  const c = colorMap[color] ?? colorMap.green;
+  return (
+    <div className={`mt-3 flex items-center justify-between rounded-xl border px-4 py-3 ${c.bg} ${c.border}`}>
+      <div>
+        <p className={`text-xs font-semibold ${c.text}`}>{label}</p>
+        <p className={`text-[10px] ${c.sub}`}>{pct}% off original price</p>
+      </div>
+      <div className="text-right">
+        <p className={`text-xl font-black tabular-nums ${c.text}`}>
+          ₦{discountedPrice.toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+        </p>
+        <p className={`text-[10px] line-through ${c.sub}`}>
+          ₦{basePrice.toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+        </p>
+      </div>
+    </div>
+  );
+}
 
-  // Helper to get selected sizes' prices
-  const getSelectedSizesPrices = (selectedSizes: string[]) => {
-    if (!sizes.length || selectedSizes.length === 0) return [];
-    return sizes
-      .filter((s: any) => selectedSizes.includes(s.size) || selectedSizes.includes(s._id))
-      .map((s: any) => ({
-        size: s.size || s._id,
-        basePrice: s.basePrice || baseSellingPrice,
-        salePrice: s.salePrice || s.basePrice || baseSellingPrice,
-      }));
-  };
+// ── Bundle row ────────────────────────────────────────────────────────────────
 
-  // Calculate average price for selected sizes
-  const getAveragePriceForSizes = (selectedSizes: string[]) => {
-    const selectedPrices = getSelectedSizesPrices(selectedSizes);
-    if (selectedPrices.length === 0) return baseSellingPrice;
-    const total = selectedPrices.reduce((sum, p) => sum + (p.salePrice || p.basePrice), 0);
-    return total / selectedPrices.length;
-  };
-
-  // Get total price for selected sizes (for bundles)
-  const getTotalPriceForSelectedSizes = (selectedSizes: string[], quantity: number = 1) => {
-    const selectedPrices = getSelectedSizesPrices(selectedSizes);
-    if (selectedPrices.length === 0) return baseSellingPrice * quantity;
-    const avgPrice = selectedPrices.reduce((sum, p) => sum + (p.salePrice || p.basePrice), 0);
-    return avgPrice * quantity;
-  };
-
-  const calculateDiscount = (price: number = baseSellingPrice) => {
-    if (!price || price <= 0 || !discount) return 0;
-    
-    if (discountType === 'percentage') {
-      return price * (discount / 100);
-    } else {
-      return Math.min(discount, price);
-    }
-  };
-
-  const calculateFlashDiscount = (price: number = baseSellingPrice) => {
-    if (!flashSale?.discountPercentage || !price) return 0;
-    return price * (flashSale.discountPercentage / 100);
-  };
-
-  const calculateTotalSavings = () => {
-    const price = baseSellingPrice;
-    let total = calculateDiscount(price);
-    if (flashSaleActive()) total += calculateFlashDiscount(price);
-    if (loyaltyDiscount?.enabled && loyaltyDiscount?.percentage) {
-      total += price * (loyaltyDiscount.percentage / 100);
-    }
-    return Math.min(total, price * 0.9); // Max 90% discount
-  };
-
-  const discountedPrice = baseSellingPrice - calculateDiscount();
-  const flashSalePrice = baseSellingPrice - calculateFlashDiscount();
-  const totalSavings = calculateTotalSavings();
-  const finalPrice = baseSellingPrice - totalSavings;
-
-  // Calculate prices based on selected sizes for flash sale
-  const flashSaleSelectedSizes = flashSale?.sizes || [];
-  const flashSalePriceForSelectedSizes = flashSaleSelectedSizes.length > 0 
-    ? getAveragePriceForSizes(flashSaleSelectedSizes)
-    : baseSellingPrice;
-  const flashSaleDiscountedPrice = flashSalePriceForSelectedSizes - calculateFlashDiscount(flashSalePriceForSelectedSizes);
-
-  // Calculate prices based on selected sizes for loyalty
-  const loyaltySelectedSizes = loyaltyDiscount?.sizes || [];
-  const loyaltyPriceForSelectedSizes = loyaltySelectedSizes.length > 0
-    ? getAveragePriceForSizes(loyaltySelectedSizes)
-    : baseSellingPrice;
-  const loyaltyDiscountedAmount = loyaltyPriceForSelectedSizes * ((loyaltyDiscount?.percentage || 0) / 100);
-
-  const activePromotionsCount = [
-    isDiscountActive,
-    flashSaleActive(),
-    bundleDeals.length > 0,
-    loyaltyDiscount?.enabled,
-    seasonalPromos?.filter(p => p?.active)?.length > 0
-  ].filter(Boolean).length;
-
-  const handleFlashSaleToggle = (checked: boolean) => {
-    setShowFlashSale(checked);
-    const currentFlashSale = watch('subProductData.flashSale') || {};
-    setValue('subProductData.flashSale', {
-      ...currentFlashSale,
-      isActive: checked,
-      ...(checked ? {} : { startDate: '', endDate: '', discountPercentage: 0, remainingQuantity: 0 })
-    });
-    toast.success(`Flash sale ${checked ? 'enabled' : 'disabled'}`);
-  };
-
-  const handleLoyaltyToggle = (checked: boolean) => {
-    setShowLoyaltyProgram(checked);
-    const currentLoyalty = watch('subProductData.loyaltyDiscount') || {};
-    setValue('subProductData.loyaltyDiscount', {
-      ...currentLoyalty,
-      enabled: checked,
-      ...(checked ? {} : { percentage: 0, tierRequirement: '' })
-    });
-    toast.success(`Loyalty program ${checked ? 'enabled' : 'disabled'}`);
-  };
-
-  const handleAddBundle = (preset?: typeof BUNDLE_PRESETS[0]) => {
-    const newBundle = {
-      id: Date.now(),
-      name: preset?.label || '',
-      description: preset?.description || '',
-      quantity: preset?.quantity || 2,
-      discount: preset?.discount || 10,
-      discountType: preset?.discountType || 'percentage',
-      active: true,
-      // Size-specific promotion - if sizes exist, default to all sizes
-      sizes: sizes.length > 0 ? sizes.map((s: any) => s.size).filter(Boolean) : [],
-      sizeVariants: sizes.length > 0 ? sizes.map((s: any) => s._id || s.size).filter(Boolean) : [],
-      createdAt: new Date().toISOString(),
-    };
-    setValue('subProductData.bundleDeals', [...bundleDeals, newBundle]);
-    setShowBundleDeals(true);
-    toast.success(`Added bundle deal: ${preset?.label || 'Custom bundle'}`);
-  };
-
-  const handleRemoveBundle = (index: number) => {
-    const updated = [...bundleDeals];
-    const removed = updated.splice(index, 1)[0];
-    setValue('subProductData.bundleDeals', updated);
-    toast.success(`Removed bundle: ${removed.name}`);
-  };
-
-  const handleDuplicateBundle = (index: number) => {
-    const bundle = bundleDeals[index];
-    const duplicated = {
-      ...bundle,
-      id: Date.now(),
-      name: `${bundle.name} (Copy)`
-    };
-    setValue('subProductData.bundleDeals', [...bundleDeals, duplicated]);
-    toast.success('Bundle duplicated successfully');
-  };
-
-  const handleClearDiscount = () => {
-    setValue('subProductData.discount', 0);
-    setValue('subProductData.discountStart', '');
-    setValue('subProductData.discountEnd', '');
-    toast.success('Discount cleared');
-  };
-
-  const handleClearAllPromotions = () => {
-    setValue('subProductData.discount', 0);
-    setValue('subProductData.discountStart', '');
-    setValue('subProductData.discountEnd', '');
-    setValue('subProductData.flashSale', {});
-    setValue('subProductData.bundleDeals', []);
-    setValue('subProductData.loyaltyDiscount', {});
-    setValue('subProductData.seasonalPromos', []);
-    setShowFlashSale(false);
-    setShowBundleDeals(false);
-    setShowLoyaltyProgram(false);
-    setShowSeasonalPromos(false);
-    toast.success('All promotions cleared');
-  };
-
-  const applyPromotionPreset = (type: string, option: any) => {
-    setValue('subProductData.discount', option.discount);
-    setValue('subProductData.discountType', 'percentage');
-    
-    const startDate = new Date();
-    const endDate = new Date();
-    endDate.setDate(endDate.getDate() + option.duration);
-    
-    setValue('subProductData.discountStart', startDate.toISOString().slice(0, 16));
-    setValue('subProductData.discountEnd', endDate.toISOString().slice(0, 16));
-    
-    setSelectedPromoType(null);
-    toast.success(`Applied ${option.name} promotion`);
-  };
-
-  const getPromotionEffectiveness = () => {
-    const savingsPercentage = (totalSavings / baseSellingPrice) * 100;
-    
-    if (savingsPercentage >= 30) return { level: 'Excellent', color: 'text-green-600', icon: PiTrophy };
-    if (savingsPercentage >= 20) return { level: 'Very Good', color: 'text-blue-600', icon: PiStar };
-    if (savingsPercentage >= 10) return { level: 'Good', color: 'text-amber-600', icon: PiThumbsUp };
-    return { level: 'Moderate', color: 'text-gray-600', icon: PiInfo };
-  };
-
-  const effectiveness = getPromotionEffectiveness();
+function BundleRow({
+  bundle, index, basePrice,
+  onChange, onRemove, onDuplicate,
+}: {
+  bundle: any; index: number; basePrice: number;
+  onChange: (idx: number, key: string, val: any) => void;
+  onRemove: (idx: number) => void;
+  onDuplicate: (idx: number) => void;
+}) {
+  const discountedTotal = bundle.discount > 0 && basePrice > 0
+    ? (basePrice * (bundle.quantity || 1)) * (1 - (bundle.discount || 0) / 100)
+    : null;
 
   return (
-    <motion.div 
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-      className="space-y-6"
-    >
-      {/* Header with Controls */}
-      <motion.div variants={fieldStaggerVariants} custom={0}>
-        <div className="relative overflow-hidden rounded-xl border-l-4 border-emerald-500 bg-gradient-to-r from-emerald-50 via-white to-teal-50 p-4">
-          <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-100/50" />
-          <div className="absolute -bottom-4 right-12 h-16 w-16 rounded-full bg-teal-100/50" />
-          
-          <div className="relative flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500 text-white shadow-lg">
-                <PiFire className="h-5 w-5" />
-              </div>
-              <div>
-                <Text className="font-semibold text-gray-900">Promotions & Discounts</Text>
-                <Text className="text-xs text-gray-500">
-                  Boost sales with compelling offers and bundles
-                </Text>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-3">
-              {activePromotionsCount > 0 && (
-                <Badge variant="flat" color="success" className="font-medium">
-                  {activePromotionsCount} Active
-                </Badge>
-              )}
-              {totalSavings > 0 && (
-                <Badge variant="flat" color="warning" className="font-medium">
-                  <effectiveness.icon className="mr-1 h-3 w-3" />
-                  {effectiveness.level}
-                </Badge>
-              )}
-              <Button
-                type="button"
-                variant="text"
-                size="sm"
-                onClick={handleClearAllPromotions}
-                className="text-red-600 hover:bg-red-50"
-              >
-                <PiEraser className="mr-1 h-4 w-4" />
-                Clear All
-              </Button>
-            </div>
+    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+      {/* Bundle header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-100">
+            <PiPackage className="h-3.5 w-3.5 text-purple-600" />
           </div>
+          <p className="text-xs font-bold text-gray-700">Bundle #{index + 1}</p>
         </div>
-      </motion.div>
-
-      {/* Enhanced Price Summary */}
-      {baseSellingPrice > 0 && (
-        <motion.div 
-          variants={fieldStaggerVariants}
-          className="relative overflow-hidden rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-6"
-        >
-          <div className="absolute right-0 top-0 h-32 w-32 translate-x-8 translate-y-[-50%] rounded-full bg-blue-100/50" />
-          
-          <div className="relative">
-            {/* Main Price Display */}
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <motion.div 
-                  whileHover={{ rotate: 360 }}
-                  transition={{ duration: 0.5 }}
-                  className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg"
-                >
-                  <PiCurrencyCircleDollar className="h-8 w-8 text-white" />
-                </motion.div>
-                <div>
-                  <Text className="text-sm font-medium text-blue-600">Original Price</Text>
-                  <Text className="text-3xl font-bold text-blue-900">
-                    {CURRENCY_SYMBOL}{baseSellingPrice.toLocaleString()}
-                  </Text>
-                </div>
-              </div>
-              
-              <div className="text-right">
-                <Text className="text-sm font-medium text-green-600">Final Price</Text>
-                <Text className="text-3xl font-bold text-green-700">
-                  {CURRENCY_SYMBOL}{finalPrice.toLocaleString()}
-                </Text>
-                {totalSavings > 0 && (
-                  <Text className="text-sm text-green-600">
-                    Save {CURRENCY_SYMBOL}{totalSavings.toLocaleString()} ({((totalSavings/baseSellingPrice)*100).toFixed(1)}%)
-                  </Text>
-                )}
-              </div>
-            </div>
-
-            {/* Savings Breakdown */}
-            {totalSavings > 0 && (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {isDiscountActive && discount > 0 && (
-                  <div className="rounded-lg bg-white/80 p-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      <PiGift className="h-4 w-4 text-emerald-600" />
-                      <Text className="text-xs font-medium text-emerald-800">Regular Discount</Text>
-                    </div>
-                    <Text className="font-bold text-emerald-700">
-                      -{CURRENCY_SYMBOL}{calculateDiscount().toLocaleString()}
-                    </Text>
-                  </div>
-                )}
-                
-                {flashSaleActive() && flashSale?.discountPercentage && (
-                  <div className="rounded-lg bg-white/80 p-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      <PiLightning className="h-4 w-4 text-amber-600" />
-                      <Text className="text-xs font-medium text-amber-800">Flash Sale</Text>
-                    </div>
-                    <Text className="font-bold text-amber-700">
-                      -{CURRENCY_SYMBOL}{calculateFlashDiscount().toLocaleString()}
-                    </Text>
-                  </div>
-                )}
-
-                {loyaltyDiscount?.enabled && loyaltyDiscount?.percentage && (
-                  <div className="rounded-lg bg-white/80 p-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      <PiStar className="h-4 w-4 text-purple-600" />
-                      <Text className="text-xs font-medium text-purple-800">
-                        Loyalty Bonus
-                        {loyaltySelectedSizes.length > 0 && ` (${loyaltySelectedSizes.length} size${loyaltySelectedSizes.length > 1 ? 's' : ''})`}
-                      </Text>
-                    </div>
-                    <Text className="font-bold text-purple-700">
-                      -{CURRENCY_SYMBOL}{loyaltyDiscountedAmount.toLocaleString()}
-                    </Text>
-                  </div>
-                )}
-
-                {bundleDeals.length > 0 && (
-                  <div className="rounded-lg bg-white/80 p-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      <PiPackage className="h-4 w-4 text-indigo-600" />
-                      <Text className="text-xs font-medium text-indigo-800">Bundle Deals</Text>
-                    </div>
-                    <Text className="font-bold text-indigo-700">
-                      {bundleDeals.length} active
-                    </Text>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </motion.div>
-      )}
-
-      {/* Promotion Type Presets */}
-      <motion.div variants={fieldStaggerVariants}>
-        <div className="mb-4 flex items-center justify-between">
-          <Text className="text-sm font-medium text-gray-700">Quick Setup by Type</Text>
-          <Button
-            type="button"
-            variant="text"
-            size="sm"
-            onClick={() => setSelectedPromoType(selectedPromoType ? null : 'seasonal')}
-            className="gap-1"
-          >
-            {selectedPromoType ? <PiEyeClosed className="h-4 w-4" /> : <PiEye className="h-4 w-4" />}
-            {selectedPromoType ? 'Hide' : 'Show'} Presets
-          </Button>
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={() => onDuplicate(index)}
+            className="rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600" title="Duplicate">
+            <PiCopy className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" onClick={() => onRemove(index)}
+            className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500" title="Remove">
+            <PiTrash className="h-3.5 w-3.5" />
+          </button>
         </div>
+      </div>
 
-        <div className="grid gap-2 sm:grid-cols-3">
-          {Object.entries(PROMOTION_TYPES).map(([key, type]) => {
-            const Icon = type.icon;
-            const isActive = selectedPromoType === key;
-            
-            return (
-              <motion.button
-                key={key}
-                type="button"
-                onClick={() => setSelectedPromoType(isActive ? null : key)}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className={`relative overflow-hidden rounded-xl border-2 p-3 text-left transition-all ${
-                  isActive
-                    ? `${type.borderColor} ${type.bgColor} shadow-md`
-                    : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <div className={`flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br ${type.color} text-white shadow-sm`}>
-                    <Icon className="h-4 w-4" />
-                  </div>
-                  <Text className="text-sm font-medium text-gray-700">{type.label}</Text>
-                </div>
-              </motion.button>
-            );
-          })}
+      {/* Fields */}
+      <div className="grid gap-3 sm:grid-cols-4">
+        <div className="sm:col-span-2">
+          <Label>Bundle Name</Label>
+          <TextInput
+            placeholder="e.g. Buy 2 Get 1 Free"
+            value={bundle.name || ''}
+            onChange={(e) => onChange(index, 'name', e.target.value)}
+          />
         </div>
+        <div>
+          <Label>Discount (%)</Label>
+          <TextInput
+            icon={<PiPercent className="h-4 w-4" />}
+            type="number" min="0" max="100" step="0.1"
+            placeholder="10"
+            value={bundle.discount ?? ''}
+            onChange={(e) => onChange(index, 'discount', parseFloat(e.target.value) || 0)}
+          />
+        </div>
+        <div>
+          <Label>Valid Until</Label>
+          <TextInput
+            icon={<PiCalendar className="h-4 w-4" />}
+            type="date"
+            value={bundle.validUntil ? bundle.validUntil.slice(0, 10) : ''}
+            onChange={(e) => onChange(index, 'validUntil', e.target.value || null)}
+          />
+        </div>
+      </div>
 
-        {/* Expanded Preset Options */}
-        <AnimatePresence>
-          {selectedPromoType && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mt-4 overflow-hidden"
-            >
-              <div className={`rounded-xl border p-4 ${PROMOTION_TYPES[selectedPromoType].borderColor} ${PROMOTION_TYPES[selectedPromoType].bgColor}`}>
-                <Text className="mb-3 font-medium text-gray-800">
-                  {PROMOTION_TYPES[selectedPromoType].label} Options
-                </Text>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {PROMOTION_TYPES[selectedPromoType].options.map((option, idx) => (
-                    <motion.button
-                      key={idx}
-                      type="button"
-                      onClick={() => applyPromotionPreset(selectedPromoType, option)}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className="rounded-lg border border-white/50 bg-white/80 p-3 text-left transition-all hover:bg-white"
-                    >
-                      <Text className="font-medium text-gray-800">{option.name}</Text>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Badge size="sm" variant="flat" color="success">
-                          {option.discount}% off
-                        </Badge>
-                        <Text className="text-xs text-gray-600">
-                          {option.duration} days
-                        </Text>
-                      </div>
-                    </motion.button>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
-
-      {/* Enhanced Discount Presets */}
-      <motion.div variants={fieldStaggerVariants}>
-        <div className="mb-3 flex items-center justify-between">
-          <Text className="text-sm font-medium text-gray-700">Quick Discount Presets</Text>
-          {discount > 0 && (
-            <Button
+      {/* Quantity quick-pick */}
+      <div>
+        <Label>Min Quantity (buy this many to qualify)</Label>
+        <div className="flex flex-wrap gap-1.5">
+          {[2, 3, 6, 12, 24].map((q) => (
+            <button
+              key={q}
               type="button"
-              variant="text"
-              size="sm"
-              onClick={handleClearDiscount}
-              className="text-red-600 hover:bg-red-50"
-            >
-              Clear Discount
-            </Button>
-          )}
-        </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          {DISCOUNT_PRESETS.map((preset, index) => (
-            <motion.button
-              key={preset.value}
-              type="button"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-              whileHover="hover"
-              whileTap={{ scale: 0.95 }}
-              variants={cardHoverVariants}
-              onClick={() => {
-                const newValue = discount === preset.value ? 0 : preset.value;
-                setValue('subProductData.discount', newValue);
-                setValue('subProductData.discountType', 'percentage');
-                toast.success(`${newValue > 0 ? 'Applied' : 'Removed'} ${preset.label} discount`);
-              }}
-              className={`rounded-lg border p-3 text-center font-medium transition-all ${
-                discount === preset.value
-                  ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
-                  : preset.color + ' border hover:shadow-md'
+              onClick={() => onChange(index, 'quantity', q)}
+              className={`rounded-lg px-2.5 py-1 text-[10px] font-semibold transition-colors ${
+                bundle.quantity === q
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
-              <PiTrendDown className={`mx-auto mb-1 h-5 w-5 ${discount === preset.value ? 'text-blue-600' : ''}`} />
-              <div className="text-sm font-bold">{preset.label}</div>
-              <div className="text-xs opacity-75">{preset.description}</div>
-              {baseSellingPrice > 0 && (
-                <div className="text-xs font-medium mt-1">
-                  Save {CURRENCY_SYMBOL}{(baseSellingPrice * (preset.value / 100)).toLocaleString()}
-                </div>
-              )}
-            </motion.button>
+              {q}
+            </button>
           ))}
         </div>
-      </motion.div>
+      </div>
 
-      {/* Regular Discount - Enhanced */}
-      <motion.div 
-        variants={fieldStaggerVariants} 
-        custom={1}
-        className="relative overflow-hidden rounded-lg border border-gray-200 bg-white p-4"
-      >
-        <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-blue-400 to-blue-600" />
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <PiGift className="h-5 w-5 text-blue-500" />
-            <Text className="font-medium">Regular Discount</Text>
-            {discount > 0 && (
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-              >
-                <Badge color={isDiscountActive ? 'success' : 'warning'}>
-                  {isDiscountActive ? 'Active' : 'Scheduled'}
-                </Badge>
-              </motion.div>
-            )}
+      {/* Preview */}
+      {discountedTotal !== null && (
+        <div className="flex items-center justify-between rounded-lg bg-purple-50 border border-purple-100 px-3 py-2">
+          <p className="text-[10px] font-semibold text-purple-700">
+            Buy {bundle.quantity || 1} · {bundle.discount}% off
+          </p>
+          <div className="text-right">
+            <p className="text-sm font-black tabular-nums text-purple-700">
+              ₦{discountedTotal.toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+            </p>
+            <p className="text-[9px] text-purple-400 line-through">
+              ₦{(basePrice * (bundle.quantity || 1)).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+            </p>
           </div>
-          {discount > 0 && (
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+const BUNDLE_PRESETS = [
+  { name: 'Buy 2 Get 1 Free', quantity: 3, discount: 33 },
+  { name: 'Buy 3 Save 20%',   quantity: 3, discount: 20 },
+  { name: '6-Pack Deal',      quantity: 6, discount: 15 },
+  { name: 'Case Deal (12)',   quantity: 12, discount: 25 },
+];
+
+const PROMO_PRESETS = [
+  { label: 'Summer Sale',        discount: 20, days: 30 },
+  { label: 'Holiday Special',    discount: 25, days: 14 },
+  { label: 'New Year Clearance', discount: 30, days: 7  },
+  { label: 'End of Line',        discount: 40, days: 7  },
+  { label: 'Overstock Clear',    discount: 35, days: 14 },
+];
+
+export default function SubProductPromotions() {
+  const { watch, setValue, register, control } = useFormContext();
+
+  const baseSellingPrice  = Number(watch('subProductData.baseSellingPrice'))  || 0;
+  // Use the correct backend fields: saleDiscountValue + saleType (not legacy discount/discountType)
+  const saleDiscountValue = Number(watch('subProductData.saleDiscountValue')) || 0;
+  const saleType          = watch('subProductData.saleType')                  || 'percentage';
+  const saleStartDate     = watch('subProductData.saleStartDate')             || '';
+  const saleEndDate       = watch('subProductData.saleEndDate')               || '';
+  const isOnSale          = watch('subProductData.isOnSale')                  ?? false;
+  const flashSale         = watch('subProductData.flashSale')                 || {};
+  const bundleDeals       = watch('subProductData.bundleDeals')               || [];
+
+  // aliases for readability
+  const discount     = saleDiscountValue;
+  const discountType = saleType;
+  const discountStart = saleStartDate;
+  const discountEnd   = saleEndDate;
+
+  const [showFlash,   setShowFlash]   = useState(!!flashSale?.isActive);
+  const [showBundles, setShowBundles] = useState(bundleDeals.length > 0);
+
+  const { data: session } = useSession();
+  const adminToken = (session?.user as any)?.token;
+  const params = useParams();
+  const subProductId = typeof params?.id === 'string' ? params.id : null;
+
+  const [pricelistCoverage, setPricelistCoverage] = useState<any[]>([]);
+  const [coverageLoading, setCoverageLoading]     = useState(false);
+
+  useEffect(() => {
+    if (!subProductId || !adminToken) return;
+    setCoverageLoading(true);
+    pricelistService.getCoverage(subProductId, adminToken)
+      .then(d => setPricelistCoverage(d.pricelists || []))
+      .catch(() => {})
+      .finally(() => setCoverageLoading(false));
+  }, [subProductId, adminToken]);
+
+  // ── Derived ────────────────────────────────────────────────────────────────
+
+  const discountAmount = useMemo(() => {
+    if (!discount || !baseSellingPrice) return 0;
+    return discountType === 'percentage'
+      ? baseSellingPrice * (discount / 100)
+      : Math.min(discount, baseSellingPrice);
+  }, [discount, discountType, baseSellingPrice]);
+
+  const discountedPrice = baseSellingPrice - discountAmount;
+
+  const isDiscountActive = useMemo(() => {
+    if (!saleDiscountValue) return false;
+    const now   = new Date();
+    const start = saleStartDate ? new Date(saleStartDate) : null;
+    const end   = saleEndDate   ? new Date(saleEndDate)   : null;
+    if (start && now < start) return false;
+    if (end   && now > end)   return false;
+    return true;
+  }, [saleDiscountValue, saleStartDate, saleEndDate]);
+
+  const flashPct        = Number(flashSale?.discountPercentage) || 0;
+  const flashPrice      = baseSellingPrice * (1 - flashPct / 100);
+  const isFlashActive   = !!flashSale?.isActive && flashPct > 0;
+
+  const activeCount = [
+    isDiscountActive && discount > 0,
+    isFlashActive,
+    bundleDeals.length > 0,
+  ].filter(Boolean).length;
+
+  // ── Handlers ───────────────────────────────────────────────────────────────
+
+  function toggleFlash() {
+    const next = !flashSale?.isActive;
+    setValue('subProductData.flashSale', { ...(flashSale || {}), isActive: next });
+    // isOnSale must be true while flash sale is active so backend models reflect it
+    if (next) setValue('subProductData.isOnSale', true);
+    setShowFlash(next);
+  }
+
+  function clearDiscount() {
+    setValue('subProductData.saleDiscountValue', 0);
+    setValue('subProductData.saleStartDate', '');
+    setValue('subProductData.saleEndDate', '');
+    setValue('subProductData.isOnSale', false);
+  }
+
+  function clearAll() {
+    clearDiscount();
+    setValue('subProductData.flashSale', {});
+    setValue('subProductData.bundleDeals', []);
+    setShowFlash(false);
+    setShowBundles(false);
+    toast.success('All promotions cleared');
+  }
+
+  function applyPreset(p: typeof PROMO_PRESETS[0]) {
+    setValue('subProductData.saleDiscountValue', p.discount);
+    setValue('subProductData.saleType', 'percentage');
+    setValue('subProductData.isOnSale', true);
+    const start = new Date();
+    const end   = new Date();
+    end.setDate(end.getDate() + p.days);
+    setValue('subProductData.saleStartDate', start.toISOString().slice(0, 16));
+    setValue('subProductData.saleEndDate',   end.toISOString().slice(0, 16));
+    toast.success(`Applied: ${p.label}`);
+  }
+
+  function addBundle(preset?: typeof BUNDLE_PRESETS[0]) {
+    const next = {
+      name:       preset?.name     || '',
+      discount:   preset?.discount || 10,
+      quantity:   preset?.quantity || 2,
+      validUntil: null,
+      products:   [],
+    };
+    setValue('subProductData.bundleDeals', [...bundleDeals, next]);
+    setShowBundles(true);
+  }
+
+  function updateBundle(idx: number, key: string, val: any) {
+    const updated = bundleDeals.map((b: any, i: number) => i === idx ? { ...b, [key]: val } : b);
+    setValue('subProductData.bundleDeals', updated);
+  }
+
+  function removeBundle(idx: number) {
+    setValue('subProductData.bundleDeals', bundleDeals.filter((_: any, i: number) => i !== idx));
+  }
+
+  function duplicateBundle(idx: number) {
+    const copy = { ...bundleDeals[idx], name: `${bundleDeals[idx].name} (Copy)` };
+    setValue('subProductData.bundleDeals', [...bundleDeals, copy]);
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="space-y-5">
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600">
+            <PiGift className="h-5 w-5 text-white" />
+          </div>
+          <div>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">
-                {discountType === 'percentage' ? `${discount}%` : `${CURRENCY_SYMBOL}${discount}`} off
-              </span>
-              <Button
-                type="button"
-                variant="text"
-                size="sm"
-                onClick={() => {
-                  const currentDiscount = { discount, discountType, discountStart, discountEnd };
-                  navigator.clipboard.writeText(JSON.stringify(currentDiscount));
-                  toast.success('Discount copied to clipboard');
-                }}
-              >
-                <PiCopy className="h-4 w-4" />
-              </Button>
+              <p className="text-sm font-bold text-gray-900">Promotions & Discounts</p>
+              {activeCount > 0 && (
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                  {activeCount} active
+                </span>
+              )}
             </div>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              Boost sales with time-bound offers, flash deals and bundles
+            </p>
+          </div>
+        </div>
+        {activeCount > 0 && (
+          <button
+            type="button"
+            onClick={clearAll}
+            className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors shrink-0"
+          >
+            <PiEraser className="h-3.5 w-3.5" />
+            Clear all
+          </button>
+        )}
+      </div>
+
+      {/* ── Price preview ── */}
+      {baseSellingPrice > 0 && (isDiscountActive || isFlashActive) && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {isDiscountActive && (
+            <SavingsStrip
+              basePrice={baseSellingPrice}
+              discountedPrice={discountedPrice}
+              saving={discountAmount}
+              label="After regular discount"
+              color="green"
+            />
+          )}
+          {isFlashActive && (
+            <SavingsStrip
+              basePrice={baseSellingPrice}
+              discountedPrice={flashPrice}
+              saving={baseSellingPrice - flashPrice}
+              label="After flash sale"
+              color="amber"
+            />
           )}
         </div>
-        
-        <div className="grid gap-6 md:grid-cols-2">
-          {/* Discount Type */}
-          <motion.div variants={fieldStaggerVariants} custom={2}>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">
-              Discount Type
-            </label>
+      )}
+
+      {/* ── Regular Discount ── */}
+      <Section
+        title="Regular Discount"
+        desc="Always-on discount applied to the selling price"
+        badge={
+          discount > 0 ? (
+            <span className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${
+              isDiscountActive ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-600'
+            }`}>
+              {isDiscountActive ? 'Active' : 'Scheduled'}
+            </span>
+          ) : null
+        }
+      >
+        {/* Presets */}
+        <div className="mb-4">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Quick presets</p>
+          <div className="flex flex-wrap gap-2">
+            {PROMO_PRESETS.map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => applyPreset(p)}
+                className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-[10px] font-semibold text-gray-600 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+              >
+                <PiTag className="h-3 w-3" />
+                {p.label} ({p.discount}% / {p.days}d)
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          {/* Type */}
+          <div>
+            <Label>Discount Type</Label>
             <Controller
-              name="subProductData.discountType"
+              name="subProductData.saleType"
               control={control}
               render={({ field }) => (
                 <select
                   {...field}
-                  className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  onChange={(e) => {
+                    field.onChange(e);
+                    // Keep isOnSale in sync
+                    if (saleDiscountValue > 0) setValue('subProductData.isOnSale', true);
+                  }}
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-gray-400"
                 >
                   <option value="percentage">Percentage (%)</option>
-                  <option value="fixed">Fixed Amount (₦)</option>
+                  <option value="fixed">Fixed amount (₦)</option>
                 </select>
               )}
             />
-          </motion.div>
+          </div>
 
-          {/* Discount Value */}
-          <motion.div variants={fieldStaggerVariants} custom={3} className="transition-transform duration-200 focus-within:scale-[1.01]">
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">
-              Discount Value {discountType === 'percentage' ? '(%)' : '(₦)'}
-            </label>
-            <div className="relative">
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                max={discountType === 'percentage' ? 100 : undefined}
-                placeholder={discountType === 'percentage' ? "10" : "500"}
-                {...register('subProductData.discount', { valueAsNumber: true })}
-                className="w-full pl-10"
+          {/* Value */}
+          <div>
+            <Label>
+              {discountType === 'percentage' ? 'Discount (%)' : 'Discount Amount (₦)'}
+            </Label>
+            <TextInput
+              icon={discountType === 'percentage'
+                ? <PiPercent className="h-4 w-4" />
+                : <PiCurrencyNgn className="h-4 w-4" />
+              }
+              type="number" step="0.01" min="0"
+              max={discountType === 'percentage' ? 100 : undefined}
+              placeholder={discountType === 'percentage' ? '10' : '500'}
+              {...register('subProductData.saleDiscountValue', {
+                valueAsNumber: true,
+                onChange: (e) => {
+                  const v = parseFloat(e.target.value) || 0;
+                  setValue('subProductData.isOnSale', v > 0);
+                },
+              })}
+            />
+            {discountType === 'percentage' && (
+              <PctChips
+                value={discount}
+                onSelect={(v) => {
+                  setValue('subProductData.saleDiscountValue', v);
+                  setValue('subProductData.saleType', 'percentage');
+                  setValue('subProductData.isOnSale', v > 0);
+                }}
               />
-              {discountType === 'percentage' ? (
-                <PiPercent className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              ) : (
-                <PiCurrencyNgn className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              )}
-              {discount > 0 && baseSellingPrice > 0 && (
-                <div className="mt-1 text-xs text-gray-500">
-                  Customer saves {CURRENCY_SYMBOL}{calculateDiscount().toLocaleString()}
-                </div>
-              )}
-            </div>
-          </motion.div>
-
-          {/* Discount Start */}
-          <motion.div variants={fieldStaggerVariants} custom={4}>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">
-              Start Date (Optional)
-            </label>
-            <div className="relative">
-              <Input
-                type="datetime-local"
-                {...register('subProductData.discountStart')}
-                className="w-full pl-9"
-              />
-              <PiCalendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            </div>
-          </motion.div>
-
-          {/* Discount End */}
-          <motion.div variants={fieldStaggerVariants} custom={5}>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">
-              End Date (Optional)
-            </label>
-            <div className="relative">
-              <Input
-                type="datetime-local"
-                {...register('subProductData.discountEnd')}
-                className="w-full pl-9"
-              />
-              <PiCalendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            </div>
-          </motion.div>
-        </div>
-
-        {/* Enhanced Savings Preview */}
-        <AnimatePresence>
-          {discount > 0 && (
-            <motion.div 
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mt-4 rounded-lg bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 p-4"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <PiArrowsDownUp className="h-5 w-5 text-green-600" />
-                  <div>
-                    <Text className="font-medium text-green-800">Customer Savings</Text>
-                    <Text className="text-xs text-green-600">
-                      {((calculateDiscount() / baseSellingPrice) * 100).toFixed(1)}% off original price
-                    </Text>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <Text className="font-bold text-green-700 text-xl">
-                    {CURRENCY_SYMBOL}{calculateDiscount().toLocaleString()}
-                  </Text>
-                  <Badge color="success" variant="flat" size="sm">
-                    {discount}{discountType === 'percentage' ? '%' : ''} discount
-                  </Badge>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
-
-      {/* Enhanced Flash Sale */}
-      <motion.div 
-        variants={fieldStaggerVariants} 
-        custom={6}
-        className="relative overflow-hidden rounded-lg border border-amber-200 bg-white p-4"
-      >
-        <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-amber-400 to-orange-500" />
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <motion.div
-              animate={flashSaleActive() ? { scale: [1, 1.2, 1] } : {}}
-              transition={{ repeat: Infinity, duration: 1.5 }}
-            >
-              <PiLightning className="h-5 w-5 text-amber-500" />
-            </motion.div>
-            <Text className="font-medium">Flash Sale</Text>
-            {flashSaleActive() && (
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-              >
-                <Badge color="warning">
-                  <PiTimer className="mr-1 h-3 w-3 animate-pulse" />
-                  Live Now
-                </Badge>
-              </motion.div>
+            )}
+            {discountAmount > 0 && baseSellingPrice > 0 && (
+              <p className="mt-1.5 text-[10px] text-gray-400">
+                Customer saves ₦{discountAmount.toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+              </p>
             )}
           </div>
-          <Switch
-            checked={showFlashSale}
-            onChange={(e) => handleFlashSaleToggle(e.target.checked)}
-          />
-        </div>
 
-        <AnimatePresence>
-          {showFlashSale && (
-            <motion.div
-              variants={toggleVariants}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              className="space-y-4"
-            >
-              <div className="grid gap-6 md:grid-cols-2">
-                {/* Flash Sale Start */}
-                <motion.div variants={fieldStaggerVariants}>
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                    Flash Sale Start
-                  </label>
-                  <div className="relative">
-                    <Input
-                      type="datetime-local"
-                      {...register('subProductData.flashSale.startDate')}
-                      className="w-full pl-9"
-                    />
-                    <PiCalendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                  </div>
-                </motion.div>
-
-                {/* Flash Sale End */}
-                <motion.div variants={fieldStaggerVariants}>
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                    Flash Sale End
-                  </label>
-                  <div className="relative">
-                    <Input
-                      type="datetime-local"
-                      {...register('subProductData.flashSale.endDate')}
-                      className="w-full pl-9"
-                    />
-                    <PiTimer className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                  </div>
-                </motion.div>
-
-                {/* Flash Discount Percentage */}
-                <motion.div className="transition-transform duration-200 focus-within:scale-[1.01]">
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                    Flash Discount (%)
-                  </label>
-                  <div className="relative">
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="100"
-                      placeholder="20"
-                      {...register('subProductData.flashSale.discountPercentage', { valueAsNumber: true })}
-                      className="w-full pl-10"
-                    />
-                    <PiPercent className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                  </div>
-                  {flashSale?.discountPercentage > 0 && baseSellingPrice > 0 && (
-                    <Text className="mt-1 text-xs text-gray-500">
-                      Flash price: {CURRENCY_SYMBOL}{(baseSellingPrice * (1 - flashSale.discountPercentage / 100)).toLocaleString()}
-                    </Text>
-                  )}
-                </motion.div>
-
-                {/* Remaining Quantity */}
-                <motion.div className="transition-transform duration-200 focus-within:scale-[1.01]">
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                    Limited Quantity (Optional)
-                  </label>
-                  <Input
-                    type="number"
-                    min="0"
-                    placeholder="100"
-                    {...register('subProductData.flashSale.remainingQuantity', { valueAsNumber: true })}
-                    className="w-full"
-                  />
-                  <Text className="mt-1 text-xs text-gray-500">
-                    Create urgency with limited stock
-                  </Text>
-                </motion.div>
-              </div>
-
-              {/* Flash Sale Size Selection */}
-              {sizes.length > 0 && !sellWithoutSizeVariants && (
-                <motion.div variants={fieldStaggerVariants}>
-                  <label className="mb-2 block text-sm font-medium text-gray-700">
-                    Apply Flash Sale to Sizes
-                  </label>
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const allSizes = sizes.map((s: any) => s.size || s._id).filter(Boolean);
-                        const currentSizes = flashSale?.sizes || [];
-                        if (currentSizes.length === allSizes.length) {
-                          setValue('subProductData.flashSale.sizes', []);
-                          setValue('subProductData.flashSale.sizeVariants', []);
-                        } else {
-                          setValue('subProductData.flashSale.sizes', allSizes);
-                          setValue('subProductData.flashSale.sizeVariants', sizes.map((s: any) => s._id || s.size).filter(Boolean));
-                        }
-                      }}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                        (flashSale?.sizes || []).length === sizes.length
-                          ? 'bg-amber-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      All Sizes
-                    </button>
-                    {sizes.map((size: any) => {
-                      const sizeName = size.size || size._id;
-                      const isSelected = (flashSale?.sizes || []).includes(sizeName);
-                      return (
-                        <button
-                          key={size._id || size.size}
-                          type="button"
-                          onClick={() => {
-                            const currentSizes = flashSale?.sizes || [];
-                            const currentVariantIds = flashSale?.sizeVariants || [];
-                            let newSizes = [];
-                            let newVariantIds = [];
-                            if (isSelected) {
-                              newSizes = currentSizes.filter((s: string) => s !== sizeName);
-                              newVariantIds = currentVariantIds.filter((id: string) => id !== (size._id || size.size));
-                            } else {
-                              newSizes = [...currentSizes, sizeName];
-                              newVariantIds = [...currentVariantIds, size._id || size.size];
-                            }
-                            setValue('subProductData.flashSale.sizes', newSizes);
-                            setValue('subProductData.flashSale.sizeVariants', newVariantIds);
-                          }}
-                          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                            isSelected
-                              ? 'bg-amber-100 text-amber-700 border border-amber-300'
-                              : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
-                          }`}
-                        >
-                          {size.size || size.displayName || sizeName}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <Text className="text-xs text-gray-500">
-                    {(flashSale?.sizes || []).length === 0 
-                      ? 'Applied to all sizes' 
-                      : `Applied to ${(flashSale?.sizes || []).length} size(s)`}
-                  </Text>
-                </motion.div>
-              )}
-
-              {/* Flash Sale Preview */}
-              {flashSale?.discountPercentage > 0 && (
-                <div className="rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <PiLightning className="h-5 w-5 text-amber-600" />
-                      <div>
-                        <Text className="font-medium text-amber-800">Flash Sale Preview</Text>
-                        <Text className="text-xs text-amber-600">
-                          {flashSale.discountPercentage}% off 
-                          {flashSaleSelectedSizes.length > 0 && sizes.length > 0 
-                            ? ` (${flashSaleSelectedSizes.length} size${flashSaleSelectedSizes.length > 1 ? 's' : ''})`
-                            : ' for all sizes'}
-                        </Text>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <Text className="font-bold text-amber-700 text-xl">
-                        {CURRENCY_SYMBOL}{flashSaleDiscountedPrice.toLocaleString()}
-                      </Text>
-                      <Text className="text-xs text-amber-600 line-through">
-                        {CURRENCY_SYMBOL}{flashSalePriceForSelectedSizes.toLocaleString()}
-                      </Text>
-                      {flashSaleSelectedSizes.length > 0 && flashSaleSelectedSizes.length < sizes.length && (
-                        <Text className="text-xs text-amber-500">
-                          (Selected sizes avg)
-                        </Text>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
-
-      {/* Enhanced Bundle Deals */}
-      <motion.div 
-        variants={fieldStaggerVariants} 
-        custom={7}
-        className="relative overflow-hidden rounded-lg border border-purple-200 bg-white p-4"
-      >
-        <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-purple-400 to-violet-600" />
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <PiPackage className="h-5 w-5 text-purple-500" />
-            <Text className="font-medium">Bundle Deals</Text>
-            {bundleDeals.length > 0 && (
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-              >
-                <Badge color="info">{bundleDeals.length} deal(s)</Badge>
-              </motion.div>
-            )}
+          {/* Dates */}
+          <div>
+            <Label>Start Date (optional)</Label>
+            <TextInput
+              icon={<PiCalendar className="h-4 w-4" />}
+              type="datetime-local"
+              {...register('subProductData.saleStartDate')}
+            />
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setShowBundleDeals(!showBundleDeals)}
-            >
-              {showBundleDeals ? <PiCaretUp className="h-4 w-4" /> : <PiCaretDown className="h-4 w-4" />}
-              {showBundleDeals ? 'Hide' : 'Show'} ({bundleDeals.length})
-            </Button>
+          <div>
+            <Label>End Date (optional)</Label>
+            <div className="space-y-1">
+              <TextInput
+                icon={<PiTimer className="h-4 w-4" />}
+                type="datetime-local"
+                {...register('subProductData.saleEndDate')}
+              />
+              {discountEnd && (
+                <p className="text-[10px] text-gray-400">
+                  Expires {new Date(discountEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Enhanced Bundle Presets */}
-        {!showBundleDeals && bundleDeals.length === 0 && (
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {BUNDLE_PRESETS.map((preset, index) => {
-              const Icon = preset.icon;
-              return (
-                <motion.button
-                  key={preset.label}
-                  type="button"
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: index * 0.05 }}
-                  whileHover={{ scale: 1.05, y: -2 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => handleAddBundle(preset)}
-                  className="rounded-lg border border-purple-200 bg-purple-50 p-3 text-left transition-all hover:bg-purple-100 hover:shadow-md"
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500 text-white">
-                      <Icon className="h-4 w-4" />
-                    </div>
-                    <Text className="font-medium text-purple-900">{preset.label}</Text>
-                  </div>
-                  <Text className="text-xs text-purple-700">{preset.description}</Text>
-                  <div className="mt-2 flex items-center gap-2">
-                    <Badge size="sm" variant="flat" color="info">
-                      {preset.discount}% off
-                    </Badge>
-                    <Text className="text-xs text-purple-600">
-                      Buy {preset.quantity}
-                    </Text>
-                  </div>
-                </motion.button>
-              );
-            })}
-          </div>
+        {/* Clear */}
+        {discount > 0 && (
+          <button type="button" onClick={clearDiscount}
+            className="mt-4 text-xs font-semibold text-red-500 hover:text-red-700">
+            × Remove discount
+          </button>
         )}
+      </Section>
 
-        <AnimatePresence>
-          {showBundleDeals && (
-            <motion.div
-              variants={toggleVariants}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              className="space-y-4"
-            >
-              {/* Bundle Presets Row */}
-              <div className="flex flex-wrap gap-2 pb-3 border-b border-gray-100">
-                <Text className="w-full text-xs font-medium text-gray-500 mb-1">Quick Add:</Text>
-                {BUNDLE_PRESETS.map((preset, index) => (
-                  <motion.button
-                    key={preset.label}
+      {/* ── Flash Sale ── */}
+      <Section
+        title="Flash Sale"
+        desc="Time-limited urgent discount — shown with a lightning badge"
+        toggle={!!flashSale?.isActive}
+        open={showFlash}
+        onToggle={() => { toggleFlash(); setShowFlash((v) => !v); }}
+        badge={
+          isFlashActive ? (
+            <span className="flex items-center gap-0.5 rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-bold text-amber-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+              Live
+            </span>
+          ) : null
+        }
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label>Start</Label>
+            <TextInput
+              icon={<PiCalendar className="h-4 w-4" />}
+              type="datetime-local"
+              {...register('subProductData.flashSale.startDate')}
+            />
+          </div>
+          <div>
+            <Label>End</Label>
+            <TextInput
+              icon={<PiTimer className="h-4 w-4" />}
+              type="datetime-local"
+              {...register('subProductData.flashSale.endDate')}
+            />
+          </div>
+          <div>
+            <Label>Flash Discount (%)</Label>
+            <TextInput
+              icon={<PiLightning className="h-4 w-4" />}
+              type="number" min="0" max="100" step="0.1"
+              placeholder="20"
+              {...register('subProductData.flashSale.discountPercentage', { valueAsNumber: true })}
+            />
+            {flashPct > 0 && baseSellingPrice > 0 && (
+              <p className="mt-1.5 text-[10px] text-gray-400">
+                Flash price: ₦{(baseSellingPrice * (1 - flashPct / 100)).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+              </p>
+            )}
+          </div>
+          <div>
+            <Label>Limited Qty (optional)</Label>
+            <TextInput
+              icon={<PiPackage className="h-4 w-4" />}
+              type="number" min="0"
+              placeholder="100"
+              {...register('subProductData.flashSale.remainingQuantity', { valueAsNumber: true })}
+            />
+            <p className="mt-1 text-[10px] text-gray-400">Leave blank for unlimited</p>
+          </div>
+        </div>
+      </Section>
+
+      {/* ── Bundle Deals ── */}
+      <div className="rounded-2xl border border-gray-200 overflow-hidden">
+        <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-4 py-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-bold text-gray-700">Bundle Deals</p>
+              {bundleDeals.length > 0 && (
+                <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[9px] font-bold text-purple-700">
+                  {bundleDeals.length} deal{bundleDeals.length !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-gray-400 mt-0.5">
+              Volume discounts — buy X items to get a lower price
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowBundles((v) => !v)}
+            className="flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-[10px] font-semibold text-gray-500 hover:bg-gray-100 transition-colors"
+          >
+            {showBundles ? <PiCaretUp className="h-3 w-3" /> : <PiCaretDown className="h-3 w-3" />}
+            {showBundles ? 'Hide' : 'Show'}
+          </button>
+        </div>
+
+        {showBundles && (
+          <div className="p-4 space-y-4">
+            {/* Presets row */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Quick add</p>
+              <div className="flex flex-wrap gap-2">
+                {BUNDLE_PRESETS.map((p) => (
+                  <button
+                    key={p.name}
                     type="button"
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.03 }}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => handleAddBundle(preset)}
-                    className="rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5 text-sm font-medium text-purple-700 transition-all hover:bg-purple-100"
+                    onClick={() => addBundle(p)}
+                    className="flex items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5 text-[10px] font-semibold text-purple-700 hover:bg-purple-100 transition-colors"
                   >
-                    + {preset.label}
-                  </motion.button>
+                    <PiPlus className="h-3 w-3" />
+                    {p.name}
+                  </button>
                 ))}
               </div>
+            </div>
 
-              {/* Enhanced Bundle Deals List */}
-              {bundleDeals.map((bundle: any, index: number) => (
-                <motion.div
-                  key={bundle.id || index}
-                  variants={itemVariants}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  className="group relative rounded-lg border border-gray-200 bg-gray-50 p-4 transition-all hover:border-purple-300 hover:shadow-md"
-                >
-                  <div className="space-y-4">
-                    {/* Bundle Header */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100">
-                          <PiPackage className="h-4 w-4 text-purple-600" />
-                        </div>
-                        <Text className="font-medium text-gray-900">Bundle #{index + 1}</Text>
-                        <Switch
-                          size="sm"
-                          checked={bundle.active !== false}
-                          onChange={(e) => {
-                            const updated = [...bundleDeals];
-                            updated[index].active = e.target.checked;
-                            setValue('subProductData.bundleDeals', updated);
-                          }}
-                        />
-                      </div>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button
-                          type="button"
-                          variant="text"
-                          size="sm"
-                          onClick={() => handleDuplicateBundle(index)}
-                          className="text-purple-600 hover:bg-purple-50"
-                        >
-                          <PiCopy className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="text"
-                          size="sm"
-                          onClick={() => handleRemoveBundle(index)}
-                          className="text-red-600 hover:bg-red-50"
-                        >
-                          <PiXBold className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Bundle Configuration */}
-                    <div className="grid gap-4 md:grid-cols-12">
-                      <div className="md:col-span-5">
-                        <label className="mb-1 block text-xs font-medium text-gray-700">Bundle Name</label>
-                        <Input
-                          placeholder="e.g., Buy 2 Get 1 Free"
-                          value={bundle.name}
-                          onChange={(e) => {
-                            const updated = [...bundleDeals];
-                            updated[index].name = e.target.value;
-                            setValue('subProductData.bundleDeals', updated);
-                          }}
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="mb-1 block text-xs font-medium text-gray-700">Quantity</label>
-                        <Input
-                          type="number"
-                          min="2"
-                          placeholder="3"
-                          value={bundle.quantity}
-                          onChange={(e) => {
-                            const updated = [...bundleDeals];
-                            updated[index].quantity = parseInt(e.target.value) || 2;
-                            setValue('subProductData.bundleDeals', updated);
-                          }}
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="mb-1 block text-xs font-medium text-gray-700">Discount</label>
-                        <Input
-                          type="number"
-                          min="0"
-                          placeholder="15"
-                          value={bundle.discount}
-                          onChange={(e) => {
-                            const updated = [...bundleDeals];
-                            updated[index].discount = parseFloat(e.target.value) || 0;
-                            setValue('subProductData.bundleDeals', updated);
-                          }}
-                        />
-                      </div>
-                      <div className="md:col-span-1">
-                        <label className="mb-1 block text-xs font-medium text-gray-700">Type</label>
-                        <Controller
-                          name={`subProductData.bundleDeals.${index}.discountType`}
-                          control={control}
-                          render={({ field }) => (
-                            <select
-                              {...field}
-                              className="w-full rounded-lg border border-gray-300 px-2 py-2 text-sm"
-                            >
-                              <option value="percentage">%</option>
-                              <option value="fixed">₦</option>
-                            </select>
-                          )}
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="mb-1 block text-xs font-medium text-gray-700">Savings</label>
-                        <div className="flex items-center h-10 px-3 rounded-lg bg-purple-50 border border-purple-200">
-                          <Text className="text-sm font-medium text-purple-700">
-                            {bundle.discountType === 'percentage' 
-                              ? `${bundle.discount}% off`
-                              : `${CURRENCY_SYMBOL}${bundle.discount} off`
-                            }
-                          </Text>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Bundle Description */}
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-700">Description (Optional)</label>
-                      <Textarea
-                        placeholder="e.g., Perfect for sharing with friends!"
-                        value={bundle.description || ''}
-                        onChange={(e) => {
-                          const updated = [...bundleDeals];
-                          updated[index].description = e.target.value;
-                          setValue('subProductData.bundleDeals', updated);
-                        }}
-                        rows={2}
-                      />
-                    </div>
-
-                    {/* Size Selection for Bundle */}
-                    {sizes.length > 0 && !sellWithoutSizeVariants && (
-                      <div>
-                        <label className="mb-2 block text-xs font-medium text-gray-700">
-                          Apply to Sizes
-                        </label>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const updated = [...bundleDeals];
-                              const allSizes = sizes.map((s: any) => s.size || s._id).filter(Boolean);
-                              const currentSizes = updated[index].sizes || [];
-                              // Toggle all sizes
-                              if (currentSizes.length === allSizes.length) {
-                                updated[index].sizes = [];
-                                updated[index].sizeVariants = [];
-                              } else {
-                                updated[index].sizes = allSizes;
-                                updated[index].sizeVariants = sizes.map((s: any) => s._id || s.size).filter(Boolean);
-                              }
-                              setValue('subProductData.bundleDeals', updated);
-                            }}
-                            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                              (bundle.sizes || []).length === sizes.length
-                                ? 'bg-purple-600 text-white'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                            }`}
-                          >
-                            All Sizes
-                          </button>
-                          {sizes.map((size: any) => {
-                            const sizeName = size.size || size._id;
-                            const isSelected = (bundle.sizes || []).includes(sizeName);
-                            return (
-                              <button
-                                key={size._id || size.size}
-                                type="button"
-                                onClick={() => {
-                                  const updated = [...bundleDeals];
-                                  const currentSizes = updated[index].sizes || [];
-                                  const currentVariantIds = updated[index].sizeVariants || [];
-                                  if (isSelected) {
-                                    updated[index].sizes = currentSizes.filter((s: string) => s !== sizeName);
-                                    updated[index].sizeVariants = currentVariantIds.filter((id: string) => id !== (size._id || size.size));
-                                  } else {
-                                    updated[index].sizes = [...currentSizes, sizeName];
-                                    updated[index].sizeVariants = [...currentVariantIds, size._id || size.size];
-                                  }
-                                  setValue('subProductData.bundleDeals', updated);
-                                }}
-                                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                                  isSelected
-                                    ? 'bg-purple-100 text-purple-700 border border-purple-300'
-                                    : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
-                                }`}
-                              >
-                                {size.size || size.displayName || sizeName}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        <Text className="mt-1 text-xs text-gray-500">
-                          {(bundle.sizes || []).length === 0 
-                            ? 'Applied to all sizes' 
-                            : `Applied to ${(bundle.sizes || []).length} size(s)`}
-                        </Text>
-                      </div>
-                    )}
-
-                    {/* Bundle Preview */}
-                    {baseSellingPrice > 0 && bundle.discount > 0 && (() => {
-                      const bundleSelectedSizes = bundle.sizes || [];
-                      const bundlePrice = bundleSelectedSizes.length > 0 
-                        ? getTotalPriceForSelectedSizes(bundleSelectedSizes, bundle.quantity)
-                        : baseSellingPrice * bundle.quantity;
-                      return (
-                        <div className="rounded-lg bg-purple-50 border border-purple-200 p-3">
-                          <Text className="text-xs font-medium text-purple-700 mb-1">
-                            Bundle Preview
-                            {bundleSelectedSizes.length > 0 && ` (${bundleSelectedSizes.length} size${bundleSelectedSizes.length > 1 ? 's' : ''})`}
-                          </Text>
-                          <div className="flex items-center justify-between">
-                            <Text className="text-sm text-purple-800">
-                              Buy {bundle.quantity} items
-                            </Text>
-                            <div className="text-right">
-                              <Text className="text-sm line-through text-purple-600">
-                                {CURRENCY_SYMBOL}{bundlePrice.toLocaleString()}
-                              </Text>
-                              <Text className="font-bold text-purple-800">
-                                {CURRENCY_SYMBOL}{
-                                  bundle.discountType === 'percentage'
-                                    ? (bundlePrice * (1 - bundle.discount / 100)).toLocaleString()
-                                    : (bundlePrice - bundle.discount).toLocaleString()
-                                }
-                              </Text>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </motion.div>
-              ))}
-
-              {/* Add Bundle Button */}
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => handleAddBundle()}
-                className="w-full border-dashed border-purple-300 text-purple-600 hover:bg-purple-50"
-              >
-                <PiPlus className="mr-2 h-4 w-4" />
-                Add Custom Bundle Deal
-              </Button>
-
-              {bundleDeals.length === 0 && (
-                <motion.div 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="text-center py-8 text-gray-500"
-                >
-                  <PiPackage className="mx-auto h-12 w-12 mb-3 text-gray-300" />
-                  <Text className="font-medium mb-1">No bundle deals yet</Text>
-                  <Text className="text-sm">Click a preset above or add a custom deal</Text>
-                </motion.div>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
-
-      {/* Loyalty Program */}
-      <motion.div 
-        variants={fieldStaggerVariants} 
-        custom={8}
-        className="relative overflow-hidden rounded-lg border border-yellow-200 bg-white p-4"
-      >
-        <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-yellow-400 to-amber-500" />
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <PiStar className="h-5 w-5 text-yellow-500" />
-            <Text className="font-medium">Loyalty Program</Text>
-            {loyaltyDiscount?.enabled && (
-              <Badge color="warning">
-                {loyaltyDiscount.percentage}% for {loyaltyDiscount.tierRequirement || 'members'}
-              </Badge>
-            )}
-          </div>
-          <Switch
-            checked={showLoyaltyProgram}
-            onChange={(e) => handleLoyaltyToggle(e.target.checked)}
-          />
-        </div>
-
-        <AnimatePresence>
-          {showLoyaltyProgram && (
-            <motion.div
-              variants={toggleVariants}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              className="grid gap-4 md:grid-cols-2"
-            >
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                  Loyalty Discount (%)
-                </label>
-                <div className="relative">
-                  <Input
-                    type="number"
-                    min="0"
-                    max="50"
-                    placeholder="5"
-                    {...register('subProductData.loyaltyDiscount.percentage', { valueAsNumber: true })}
-                    className="w-full pl-10"
+            {/* Bundle list */}
+            {bundleDeals.length > 0 ? (
+              <div className="space-y-3">
+                {bundleDeals.map((bundle: any, idx: number) => (
+                  <BundleRow
+                    key={idx}
+                    bundle={bundle}
+                    index={idx}
+                    basePrice={baseSellingPrice}
+                    onChange={updateBundle}
+                    onRemove={removeBundle}
+                    onDuplicate={duplicateBundle}
                   />
-                  <PiPercent className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                </div>
+                ))}
               </div>
-
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                  Required Tier
-                </label>
-                <Controller
-                  name="subProductData.loyaltyDiscount.tierRequirement"
-                  control={control}
-                  render={({ field }) => (
-                    <select
-                      {...field}
-                      className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm"
-                    >
-                      <option value="">All Members</option>
-                      <option value="bronze">Bronze Tier</option>
-                      <option value="silver">Silver Tier</option>
-                      <option value="gold">Gold Tier</option>
-                      <option value="platinum">Platinum Tier</option>
-                    </select>
-                  )}
-                />
+            ) : (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <PiPackage className="h-10 w-10 text-gray-200 mb-2" />
+                <p className="text-sm text-gray-400">No bundle deals yet</p>
+                <p className="text-[10px] text-gray-300 mt-0.5">Use the presets above or add a custom one</p>
               </div>
+            )}
 
-              {/* Loyalty Discount Size Selection */}
-              {sizes.length > 0 && !sellWithoutSizeVariants && (
-                <motion.div variants={fieldStaggerVariants}>
-                  <label className="mb-2 block text-sm font-medium text-gray-700">
-                    Apply to Sizes
-                  </label>
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const allSizes = sizes.map((s: any) => s.size || s._id).filter(Boolean);
-                        const currentSizes = loyaltyDiscount?.sizes || [];
-                        if (currentSizes.length === allSizes.length) {
-                          setValue('subProductData.loyaltyDiscount.sizes', []);
-                          setValue('subProductData.loyaltyDiscount.sizeVariants', []);
-                        } else {
-                          setValue('subProductData.loyaltyDiscount.sizes', allSizes);
-                          setValue('subProductData.loyaltyDiscount.sizeVariants', sizes.map((s: any) => s._id || s.size).filter(Boolean));
-                        }
-                      }}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                        (loyaltyDiscount?.sizes || []).length === sizes.length
-                          ? 'bg-violet-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      All Sizes
-                    </button>
-                    {sizes.map((size: any) => {
-                      const sizeName = size.size || size._id;
-                      const isSelected = (loyaltyDiscount?.sizes || []).includes(sizeName);
-                      return (
-                        <button
-                          key={size._id || size.size}
-                          type="button"
-                          onClick={() => {
-                            const currentSizes = loyaltyDiscount?.sizes || [];
-                            const currentVariantIds = loyaltyDiscount?.sizeVariants || [];
-                            let newSizes = [];
-                            let newVariantIds = [];
-                            if (isSelected) {
-                              newSizes = currentSizes.filter((s: string) => s !== sizeName);
-                              newVariantIds = currentVariantIds.filter((id: string) => id !== (size._id || size.size));
-                            } else {
-                              newSizes = [...currentSizes, sizeName];
-                              newVariantIds = [...currentVariantIds, size._id || size.size];
-                            }
-                            setValue('subProductData.loyaltyDiscount.sizes', newSizes);
-                            setValue('subProductData.loyaltyDiscount.sizeVariants', newVariantIds);
-                          }}
-                          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                            isSelected
-                              ? 'bg-violet-100 text-violet-700 border border-violet-300'
-                              : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
-                          }`}
-                        >
-                          {size.size || size.displayName || sizeName}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <Text className="text-xs text-gray-500">
-                    {(loyaltyDiscount?.sizes || []).length === 0 
-                      ? 'Applied to all sizes' 
-                      : `Applied to ${(loyaltyDiscount?.sizes || []).length} size(s)`}
-                  </Text>
-                </motion.div>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
-
-      {/* Advanced Features */}
-      <motion.div 
-        variants={fieldStaggerVariants} 
-        custom={9}
-        className="relative overflow-hidden rounded-lg border border-slate-200 bg-white p-4"
-      >
-        <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-slate-400 to-gray-600" />
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <PiFlask className="h-5 w-5 text-slate-500" />
-            <Text className="font-medium">Advanced Settings</Text>
-            <Badge variant="flat" color="secondary" size="sm">
-              Optional
-            </Badge>
-          </div>
-          <Button
-            type="button"
-            variant="text"
-            size="sm"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-          >
-            {showAdvanced ? <PiCaretUp className="h-4 w-4" /> : <PiCaretDown className="h-4 w-4" />}
-            {showAdvanced ? 'Hide' : 'Show'} Advanced
-          </Button>
-        </div>
-
-        <AnimatePresence>
-          {showAdvanced && (
-            <motion.div
-              variants={toggleVariants}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              className="space-y-4"
+            {/* Custom add */}
+            <button
+              type="button"
+              onClick={() => addBundle()}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 py-2.5 text-sm font-medium text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-600 transition-colors"
             >
-              {ADVANCED_FEATURES.map((feature, index) => {
-                const Icon = feature.icon;
-                return (
-                  <motion.div
-                    key={feature.id}
-                    variants={fieldStaggerVariants}
-                    custom={index}
-                    className="rounded-lg border border-gray-200 bg-gray-50 p-3"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100">
-                        <Icon className="h-4 w-4 text-slate-600" />
-                      </div>
-                      <div className="flex-grow">
-                        <Text className="font-medium text-gray-800 mb-1">{feature.label}</Text>
-                        <Text className="text-xs text-gray-600 mb-3">{feature.description}</Text>
-                        
-                        {feature.type === 'boolean' ? (
-                          <Switch
-                            size="sm"
-                            {...register(`subProductData.advancedFeatures.${feature.id}`)}
-                          />
-                        ) : (
-                          <div className="relative">
-                            <Input
-                              type={feature.type}
-                              placeholder="0"
-                              {...register(`subProductData.advancedFeatures.${feature.id}`, { 
-                                valueAsNumber: feature.type === 'number' 
-                              })}
-                              className="w-full"
-                            />
-                            {feature.suffix && (
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
-                                {feature.suffix}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
-
-      {/* Enhanced Active Promotions Summary */}
-      {activePromotionsCount > 0 && (
-        <motion.div 
-          variants={fieldStaggerVariants}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-xl bg-gradient-to-r from-slate-900 to-slate-800 p-6 text-white"
-        >
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/20">
-                <PiChartBar className="h-5 w-5" />
-              </div>
-              <div>
-                <Text className="font-semibold text-white">Active Promotions Summary</Text>
-                <Text className="text-xs text-gray-300">
-                  Total customer savings: {CURRENCY_SYMBOL}{totalSavings.toLocaleString()}
-                </Text>
-              </div>
-            </div>
-            <Badge variant="flat" className="bg-white/20 text-white">
-              {effectiveness.level} Impact
-            </Badge>
+              <PiPlus className="h-4 w-4" />
+              Add custom bundle
+            </button>
           </div>
+        )}
+      </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {/* ── Active summary ── */}
+      {activeCount > 0 && baseSellingPrice > 0 && (
+        <div className="rounded-2xl border border-gray-900 bg-gray-900 p-5">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">Active promotions</p>
+          <div className="grid gap-3 sm:grid-cols-3">
             {isDiscountActive && discount > 0 && (
-              <div className="rounded-lg bg-white/10 p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <PiGift className="h-5 w-5 text-green-400" />
-                  <Text className="font-medium">Regular Discount</Text>
+              <div className="rounded-xl bg-white/10 px-4 py-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <PiGift className="h-4 w-4 text-emerald-400" />
+                  <p className="text-[10px] font-bold text-white/60 uppercase">Regular</p>
                 </div>
-                <Text className="text-xl font-bold mb-1">{discount}{discountType === 'percentage' ? '%' : '₦'} off</Text>
-                <Text className="text-xs text-gray-400">
-                  Saves {CURRENCY_SYMBOL}{calculateDiscount().toLocaleString()}
-                </Text>
+                <p className="text-lg font-black text-white tabular-nums">
+                  {discount}{discountType === 'percentage' ? '%' : '₦'} off
+                </p>
+                <p className="text-[10px] text-white/40 mt-0.5">
+                  Saves ₦{discountAmount.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                </p>
               </div>
             )}
-
-            {flashSaleActive() && flashSale?.discountPercentage && (
-              <div className="rounded-lg bg-white/10 p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <PiLightning className="h-5 w-5 text-amber-400" />
-                  <Text className="font-medium">Flash Sale</Text>
+            {isFlashActive && (
+              <div className="rounded-xl bg-white/10 px-4 py-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <PiLightning className="h-4 w-4 text-amber-400" />
+                  <p className="text-[10px] font-bold text-white/60 uppercase">Flash</p>
                 </div>
-                <Text className="text-xl font-bold mb-1">{flashSale.discountPercentage}% off</Text>
-                <Text className="text-xs text-gray-400">
-                  Price: {CURRENCY_SYMBOL}{flashSaleDiscountedPrice.toLocaleString()}
-                  {flashSaleSelectedSizes.length > 0 && ` (${flashSaleSelectedSizes.length} size${flashSaleSelectedSizes.length > 1 ? 's' : ''})`}
-                </Text>
+                <p className="text-lg font-black text-white tabular-nums">{flashPct}% off</p>
+                <p className="text-[10px] text-white/40 mt-0.5">
+                  Price: ₦{flashPrice.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                </p>
               </div>
             )}
-
             {bundleDeals.length > 0 && (
-              <div className="rounded-lg bg-white/10 p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <PiPackage className="h-5 w-5 text-purple-400" />
-                  <Text className="font-medium">Bundle Deals</Text>
+              <div className="rounded-xl bg-white/10 px-4 py-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <PiPackage className="h-4 w-4 text-purple-400" />
+                  <p className="text-[10px] font-bold text-white/60 uppercase">Bundles</p>
                 </div>
-                <Text className="text-xl font-bold mb-1">{bundleDeals.length} active</Text>
-                <Text className="text-xs text-gray-400">
-                  Various quantity discounts
-                </Text>
-              </div>
-            )}
-
-            {loyaltyDiscount?.enabled && loyaltyDiscount?.percentage && (
-              <div className="rounded-lg bg-white/10 p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <PiStar className="h-5 w-5 text-yellow-400" />
-                  <Text className="font-medium">Loyalty Program</Text>
-                </div>
-                <Text className="text-xl font-bold mb-1">{loyaltyDiscount.percentage}% off</Text>
-                <Text className="text-xs text-gray-400">
-                  For {loyaltyDiscount.tierRequirement || 'all'} members
-                  {loyaltySelectedSizes.length > 0 && ` (${loyaltySelectedSizes.length} size${loyaltySelectedSizes.length > 1 ? 's' : ''})`}
-                </Text>
-                {loyaltySelectedSizes.length > 0 && (
-                  <Text className="text-xs text-gray-400 mt-1">
-                    Save: {CURRENCY_SYMBOL}{loyaltyDiscountedAmount.toLocaleString()}/unit
-                  </Text>
-                )}
+                <p className="text-lg font-black text-white tabular-nums">
+                  {bundleDeals.length} deal{bundleDeals.length !== 1 ? 's' : ''}
+                </p>
+                <p className="text-[10px] text-white/40 mt-0.5">Volume discounts active</p>
               </div>
             )}
           </div>
-
-          {/* Promotion Effectiveness Meter */}
-          <div className="mt-4 pt-4 border-t border-white/20">
-            <div className="flex items-center justify-between mb-2">
-              <Text className="text-sm font-medium text-gray-300">Promotion Effectiveness</Text>
-              <Text className={`text-sm font-semibold ${effectiveness.color.replace('text-', 'text-')}`}>
-                {effectiveness.level}
-              </Text>
-            </div>
-            <div className="h-2 bg-white/20 rounded-full overflow-hidden">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${Math.min((totalSavings / baseSellingPrice) * 100, 100)}%` }}
-                transition={{ duration: 1, ease: 'easeOut' }}
-                className="h-full bg-gradient-to-r from-green-400 to-emerald-500 rounded-full"
-              />
-            </div>
-            <Text className="text-xs text-gray-400 mt-1">
-              {((totalSavings / baseSellingPrice) * 100).toFixed(1)}% total savings on original price
-            </Text>
-          </div>
-        </motion.div>
+        </div>
       )}
 
-      {/* Tips and Best Practices */}
-      <motion.div 
-        variants={fieldStaggerVariants}
-        className="rounded-lg bg-blue-50 border border-blue-200 p-4"
-      >
-        <div className="flex items-start gap-2">
-          <PiInfo className="h-5 w-5 text-blue-500 mt-0.5 shrink-0" />
-          <div>
-            <Text className="font-medium text-blue-800 mb-1">Promotion Tips</Text>
-            <ul className="text-sm text-blue-700 space-y-1">
-              <li>• Use flash sales to create urgency and boost immediate sales</li>
-              <li>• Bundle deals work great for moving inventory and increasing order value</li>
-              <li>• Loyalty discounts help retain customers and encourage repeat purchases</li>
-              <li>• Test different discount percentages to find the sweet spot for your product</li>
-              <li>• Set clear start and end dates to create time-bound offers</li>
-            </ul>
+      {/* ── Pricelist Coverage ── */}
+      {subProductId && (
+        <div className="rounded-2xl border border-gray-200 overflow-hidden">
+          <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-4 py-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <PiListBullets className="h-4 w-4 text-gray-500" />
+                <p className="text-xs font-bold text-gray-700">Pricelist Rules</p>
+                {pricelistCoverage.length > 0 && (
+                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-bold text-blue-700">
+                    {pricelistCoverage.length} pricelist{pricelistCoverage.length !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                Pricelists that have rules affecting this product when selected in a POS session
+              </p>
+            </div>
+            {coverageLoading && (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-200 border-t-gray-500" />
+            )}
+          </div>
+
+          <div className="p-4">
+            {coverageLoading ? (
+              <div className="flex items-center justify-center py-6">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-gray-500" />
+              </div>
+            ) : pricelistCoverage.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <PiCircleHalf className="h-8 w-8 text-gray-200 mb-2" />
+                <p className="text-xs text-gray-400">No pricelist rules target this product</p>
+                <p className="text-[10px] text-gray-300 mt-0.5">
+                  Add rules in the Pricelists section to override pricing in POS sessions
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {pricelistCoverage.map((pl: any) => (
+                  <div key={pl._id} className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-bold text-gray-800">{pl.name}</p>
+                        <span className="text-[9px] font-semibold text-gray-400">{pl.currency || 'NGN'}</span>
+                        {pl.isSelectable && (
+                          <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">
+                            POS selectable
+                          </span>
+                        )}
+                      </div>
+                      <a
+                        href="/pos/pricelists"
+                        target="_blank"
+                        rel="noopener"
+                        className="flex items-center gap-1 text-[10px] font-semibold text-blue-600 hover:text-blue-800"
+                      >
+                        Manage <PiArrowSquareOut className="h-3 w-3" />
+                      </a>
+                    </div>
+                    <div className="space-y-1">
+                      {pl.rules.map((r: any, i: number) => {
+                        const typeColors: Record<string, string> = {
+                          discount:   'bg-emerald-50 text-emerald-700',
+                          flash_sale: 'bg-amber-50 text-amber-700',
+                          fixed:      'bg-blue-50 text-blue-700',
+                          formula:    'bg-indigo-50 text-indigo-700',
+                          bundle:     'bg-purple-50 text-purple-700',
+                        };
+                        const ruleDesc = (() => {
+                          if (r.priceType === 'fixed')      return `Fixed ₦${(r.fixedPrice || 0).toLocaleString()}`;
+                          if (r.priceType === 'formula')    return `Cost + ${r.markupPercentage || 0}% markup`;
+                          if (r.priceType === 'flash_sale') return `⚡ ${r.flashSalePercentage || 0}% flash sale`;
+                          if (r.priceType === 'discount')
+                            return r.discountType === 'fixed'
+                              ? `-₦${r.discountAmount || 0} off`
+                              : `${r.discountPercentage || 0}% off`;
+                          if (r.priceType === 'bundle') {
+                            const dt = r.bundleDiscountType;
+                            if (dt === 'markup_on_cost') return `📦 Buy ${r.bundleQuantity}+ → cost +${r.bundleDiscount}% markup`;
+                            if (dt === 'no_discount')    return `📦 Buy ${r.bundleQuantity}+ → no discount`;
+                            if (dt === 'fixed')          return `📦 Buy ${r.bundleQuantity}+ → -₦${r.bundleDiscount}/unit`;
+                            return `📦 Buy ${r.bundleQuantity}+ → ${r.bundleDiscount || 0}% off`;
+                          }
+                          return '—';
+                        })();
+                        const scope = r.subProduct ? 'This product' : 'All products';
+                        return (
+                          <div key={r._id || i}
+                            className="flex items-center gap-2 rounded-lg border border-gray-100 bg-white px-3 py-1.5">
+                            <span className="text-[9px] font-bold text-gray-400">#{(r.sequence ?? i) + 1}</span>
+                            <span className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold ${typeColors[r.priceType] || 'bg-gray-100 text-gray-500'}`}>
+                              {r.priceType.replace('_', ' ')}
+                            </span>
+                            <span className="flex-1 text-[10px] text-gray-700">{ruleDesc}</span>
+                            <span className="text-[9px] text-gray-400 italic">{scope}</span>
+                            {(r.minQuantity > 0) && (
+                              <span className="text-[9px] text-gray-400">min qty {r.minQuantity}</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+                <p className="text-[10px] text-gray-400 mt-1">
+                  Rules apply only when the pricelist is selected in a POS session. Lower # = higher priority.
+                </p>
+              </div>
+            )}
           </div>
         </div>
-      </motion.div>
-    </motion.div>
+      )}
+
+      {/* ── Tips ── */}
+      <div className="flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3">
+        <PiInfo className="h-4 w-4 shrink-0 text-blue-500 mt-0.5" />
+        <div className="space-y-0.5">
+          <p className="text-xs font-semibold text-blue-800">Tips</p>
+          <ul className="text-[10px] text-blue-700 space-y-0.5 list-disc list-inside">
+            <li>Flash sales create urgency — keep them short (24–72 hours)</li>
+            <li>Bundle deals increase average order value and move inventory faster</li>
+            <li>Set end dates on regular discounts to avoid forgetting to remove them</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
   );
 }

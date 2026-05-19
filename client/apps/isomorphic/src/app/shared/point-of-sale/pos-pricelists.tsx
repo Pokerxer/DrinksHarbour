@@ -730,9 +730,9 @@ function ruleDescription(rule: any): string {
   }
 }
 
-function RuleCard({ rule, onDelete, onEdit, deleting }: {
-  rule: any; deleting: boolean;
-  onDelete: () => void; onEdit: () => void;
+function RuleCard({ rule, onDelete, onEdit, deleting, sequenceIndex, totalRules, onMoveUp, onMoveDown }: {
+  rule: any; deleting: boolean; sequenceIndex: number; totalRules: number;
+  onDelete: () => void; onEdit: () => void; onMoveUp: () => void; onMoveDown: () => void;
 }) {
   const meta      = RULE_TYPE_META[rule.priceType] || RULE_TYPE_META.discount;
   const Icon      = meta.Icon;
@@ -777,6 +777,9 @@ function RuleCard({ rule, onDelete, onEdit, deleting }: {
       <div className="min-w-0 flex-1 space-y-1">
         {/* Row 1: type badge + product + status */}
         <div className="flex flex-wrap items-center gap-1.5">
+          <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold text-gray-500">
+            #{sequenceIndex + 1}
+          </span>
           <span className="rounded-md px-1.5 py-0.5 text-[10px] font-bold"
             style={{ backgroundColor: meta.bg, color: meta.color }}>
             {meta.label}
@@ -840,6 +843,16 @@ function RuleCard({ rule, onDelete, onEdit, deleting }: {
 
       {/* Hover actions */}
       <div className="flex shrink-0 items-start gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <button type="button" onClick={onMoveUp} disabled={sequenceIndex === 0}
+          title="Move up (higher priority)"
+          className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 disabled:opacity-20">
+          <PiArrowUp className="h-3.5 w-3.5" />
+        </button>
+        <button type="button" onClick={onMoveDown} disabled={sequenceIndex === totalRules - 1}
+          title="Move down (lower priority)"
+          className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 disabled:opacity-20">
+          <PiArrowDown className="h-3.5 w-3.5" />
+        </button>
         <button type="button" onClick={onEdit}
           className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700">
           <PiPencilSimple className="h-3.5 w-3.5" />
@@ -869,7 +882,8 @@ function PricelistPanel({ pl, token, onClose, onRefresh }) {
   const [products,  setProducts] = useState<any[]>([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [deleting,  setDeleting] = useState<string|null>(null);
-  const [editRule,  setEditRule]  = useState<any>(null); // rule being edited
+  const [editRule,  setEditRule]  = useState<any>(null);
+  const [reordering, setReordering] = useState(false);
   const [page,      setPage]     = useState(1);
   const PAGE = 40;
 
@@ -956,6 +970,25 @@ function PricelistPanel({ pl, token, onClose, onRefresh }) {
       onRefresh();
     } catch (e: any) { toast.error(e.message); }
     finally { setDeleting(null); }
+  }
+
+  async function moveRule(ruleId: string, direction: 'up' | 'down') {
+    const currentRules = [...(pl?.rules || [])];
+    const idx = currentRules.findIndex((r: any) => r._id === ruleId);
+    if (idx < 0) return;
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= currentRules.length) return;
+
+    // Swap
+    [currentRules[idx], currentRules[swapIdx]] = [currentRules[swapIdx], currentRules[idx]];
+    const orderedIds = currentRules.map((r: any) => r._id);
+
+    setReordering(true);
+    try {
+      await pricelistService.reorderRules(pl._id, orderedIds, token);
+      onRefresh();
+    } catch (e: any) { toast.error(e.message); }
+    finally { setReordering(false); }
   }
 
   const rules      = pl?.rules || [];
@@ -1055,10 +1088,15 @@ function PricelistPanel({ pl, token, onClose, onRefresh }) {
             <span className="text-[10px] text-gray-400" title="Fixed & formula rules update the product base price permanently. Discount, flash sale, and bundle rules are dynamic — they activate when this pricelist is selected in a POS session.">
               fixed & formula only · discount/bundle rules are session-dynamic
             </span>
+            <div className="ml-auto flex items-center gap-1 text-[10px] text-gray-400">
+              <PiArrowUp className="h-3 w-3" />
+              <PiArrowDown className="h-3 w-3" />
+              <span>drag priority</span>
+            </div>
 
             {/* Add rule */}
             <button type="button" onClick={() => setShowModal(true)}
-              className="ml-auto flex items-center gap-1 rounded-lg border border-dashed px-3 py-1.5 text-xs font-semibold text-gray-600 transition-colors hover:border-[#b20202] hover:text-[#b20202]"
+              className="flex items-center gap-1 rounded-lg border border-dashed px-3 py-1.5 text-xs font-semibold text-gray-600 transition-colors hover:border-[#b20202] hover:text-[#b20202]"
               style={{ borderColor: '#e5e7eb' }}>
               <PiPlus className="h-3.5 w-3.5" />
               Add rule
@@ -1104,11 +1142,15 @@ function PricelistPanel({ pl, token, onClose, onRefresh }) {
                   </div>
                 )}
                 <div>
-                  {pageRules.map((r: any) => (
+                  {pageRules.map((r: any, idx: number) => (
                     <RuleCard key={r._id} rule={r}
                       deleting={deleting === r._id}
+                      sequenceIndex={(page - 1) * PAGE + idx}
+                      totalRules={rules.length}
                       onDelete={() => deleteRule(r._id)}
                       onEdit={() => setEditRule(r)}
+                      onMoveUp={() => moveRule(r._id, 'up')}
+                      onMoveDown={() => moveRule(r._id, 'down')}
                     />
                   ))}
                 </div>

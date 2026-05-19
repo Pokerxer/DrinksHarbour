@@ -43,6 +43,7 @@ const priceRuleSchema = new Schema({
   minQuantity: { type: Number, default: 0, min: 0 },
   startDate:   { type: Date },
   endDate:     { type: Date },
+  sequence:    { type: Number, default: 0, min: 0 },
 }, { _id: true });
 
 const pricelistSchema = new Schema({

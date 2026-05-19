@@ -102,6 +102,7 @@ router.post('/:id/rules', tenantAdminOrSuperAdmin, async (req, res, next) => {
 
     pl.rules.push({
       subProduct, appliedOn, priceType,
+      sequence: pl.rules.length, // append to end; lower = higher priority
       fixedPrice:          Number(fixedPrice)          || 0,
       markupPercentage:    Number(markupPercentage)    || 0,
       discountType:        discountType                || 'percentage',
@@ -174,6 +175,54 @@ router.delete('/:id/rules/:ruleId', tenantAdminOrSuperAdmin, async (req, res, ne
     }
 
     pl.rules.pull({ _id: req.params.ruleId });
+    await pl.save();
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+// ── Coverage — pricelists affecting a specific sub-product ───────────────────
+router.get('/coverage/:subProductId', tenantAdminOrSuperAdmin, async (req, res, next) => {
+  try {
+    const tenantId = req.tenant?._id;
+    const filter   = tenantId ? { tenant: tenantId } : {};
+    const sid      = String(req.params.subProductId);
+
+    const all = await Pricelist.find(filter)
+      .select('name currency isSelectable rules')
+      .lean();
+
+    // Keep pricelists that have ≥1 rule matching this product or targeting all products
+    const coverage = all
+      .filter(pl => pl.rules.some(r => !r.subProduct || String(r.subProduct) === sid))
+      .map(pl => ({
+        _id:          pl._id,
+        name:         pl.name,
+        currency:     pl.currency,
+        isSelectable: pl.isSelectable,
+        // Only return the rules that actually apply to this product
+        rules: pl.rules
+          .filter(r => !r.subProduct || String(r.subProduct) === sid)
+          .sort((a, b) => (a.sequence || 0) - (b.sequence || 0)),
+      }));
+
+    res.json({ success: true, data: { pricelists: coverage } });
+  } catch (err) { next(err); }
+});
+
+// ── Reorder rules (drag-to-sequence) ─────────────────────────────────────────
+router.patch('/:id/rules/reorder', tenantAdminOrSuperAdmin, async (req, res, next) => {
+  try {
+    const { orderedIds } = req.body; // array of rule _ids in new sequence order
+    if (!Array.isArray(orderedIds)) return res.status(400).json({ success: false, message: 'orderedIds array required' });
+
+    const pl = await Pricelist.findById(req.params.id);
+    if (!pl) return res.status(404).json({ success: false, message: 'Pricelist not found' });
+
+    orderedIds.forEach((ruleId, index) => {
+      const rule = pl.rules.id(ruleId);
+      if (rule) rule.sequence = index;
+    });
+
     await pl.save();
     res.json({ success: true });
   } catch (err) { next(err); }
