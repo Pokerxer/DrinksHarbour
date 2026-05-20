@@ -273,6 +273,9 @@ async function recordReceived(subProductId, tenantId, data, performedBy) {
   sp.totalStock     = (sp.totalStock     ?? 0) + quantity;
   sp.availableStock = (sp.availableStock ?? 0) + quantity;
   sp.stockStatus    = computeStockStatus(sp.availableStock, sp.lowStockThreshold);
+  sp.status         = sp.availableStock <= 0 ? 'out_of_stock'
+                    : sp.availableStock <= (sp.lowStockThreshold ?? 10) ? 'low_stock'
+                    : 'active';
   await sp.save();
 
   const movement = await InventoryMovement.create({
@@ -328,6 +331,9 @@ async function adjustInventory(subProductId, tenantId, adjustment, reason, perfo
   sp.totalStock     = Math.max(0, (sp.totalStock     ?? 0) + adjustment);
   sp.availableStock = Math.max(0, (sp.availableStock ?? 0) + adjustment);
   sp.stockStatus    = computeStockStatus(sp.availableStock, sp.lowStockThreshold);
+  sp.status         = sp.availableStock <= 0 ? 'out_of_stock'
+                    : sp.availableStock <= (sp.lowStockThreshold ?? 10) ? 'low_stock'
+                    : 'active';
   await sp.save();
 
   const qAfter = sp.availableStock;
@@ -373,6 +379,9 @@ async function recordReturn(subProductId, tenantId, data, performedBy) {
   sp.totalStock     = (sp.totalStock     ?? 0) + quantity;
   sp.availableStock = (sp.availableStock ?? 0) + quantity;
   sp.stockStatus    = computeStockStatus(sp.availableStock, sp.lowStockThreshold);
+  sp.status         = sp.availableStock <= 0 ? 'out_of_stock'
+                    : sp.availableStock <= (sp.lowStockThreshold ?? 10) ? 'low_stock'
+                    : 'active';
   await sp.save();
 
   const movement = await InventoryMovement.create({
@@ -469,6 +478,9 @@ async function createMovement(data, performedBy, tenantId) {
     sp.totalStock     = Math.max(0, (sp.totalStock     ?? 0) + qty);
     sp.availableStock = Math.max(0, (sp.availableStock ?? 0) + qty);
     sp.stockStatus    = computeStockStatus(sp.availableStock, sp.lowStockThreshold);
+    sp.status         = sp.availableStock <= 0 ? 'out_of_stock'
+                      : sp.availableStock <= (sp.lowStockThreshold ?? 10) ? 'low_stock'
+                      : 'active';
     await sp.save();
   }
 
@@ -620,6 +632,9 @@ async function cancelMovement(movementId, tenantId, performedBy, reason) {
     sp.totalStock     = Math.max(0, (sp.totalStock     ?? 0) + reversal);
     sp.availableStock = Math.max(0, (sp.availableStock ?? 0) + reversal);
     sp.stockStatus    = computeStockStatus(sp.availableStock, sp.lowStockThreshold);
+    sp.status         = sp.availableStock <= 0 ? 'out_of_stock'
+                      : sp.availableStock <= (sp.lowStockThreshold ?? 10) ? 'low_stock'
+                      : 'active';
     await sp.save();
   }
 

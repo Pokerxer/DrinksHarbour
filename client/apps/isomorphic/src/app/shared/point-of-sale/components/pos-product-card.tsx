@@ -279,7 +279,7 @@ function ProductInfoModal({
   }, [onClose]);
 
   const stockLabel = hasSizes ? null : (() => {
-    if (product.availableStock <= 0 || product.status === 'out_of_stock')
+    if (product.availableStock <= 0)
       return { text: 'Out of stock', color: 'text-red-600', bg: 'bg-red-50', icon: <PiProhibit className="h-3.5 w-3.5" /> };
     if (product.availableStock <= 5)
       return { text: `Low stock — ${product.availableStock} left`, color: 'text-amber-600', bg: 'bg-amber-50', icon: <PiWarning className="h-3.5 w-3.5" /> };
@@ -725,7 +725,7 @@ export default function POSProductCard({ product, onAddToCart, className, flash 
   const allSizesOOS      = hasSizes && validSizes.every((s) => s.availableStock <= 0);
   const stockDepleted    = hasSizes
     ? allSizesOOS
-    : product.availableStock <= 0 || product.status === 'out_of_stock';
+    : product.availableStock <= 0;
   // When overselling is allowed, nothing is truly "blocked" — just flagged
   const isOutOfStock     = stockDepleted && !allowOverselling;
   const isOOSButAllowed  = stockDepleted &&  allowOverselling;
