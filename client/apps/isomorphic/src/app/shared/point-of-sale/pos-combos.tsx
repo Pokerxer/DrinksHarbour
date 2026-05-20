@@ -34,9 +34,8 @@ const createCombo   = (t: string, b: any) => apiReq('POST', '/api/pos-combos', t
 const updateCombo   = (t: string, id: string, b: any) => apiReq('PATCH', `/api/pos-combos/${id}`, t, b);
 const deleteCombo   = (t: string, id: string) => apiReq('DELETE', `/api/pos-combos/${id}`, t);
 const fetchProducts = async (t: string) => {
-  // Use the admin subproducts endpoint (accepts admin JWT, not POS-only token)
-  // Returns subProducts with product.name, product.images, sizes[]
-  const r = await fetch(`${API}/api/subproducts?limit=200&status=active`, {
+  // Admin endpoint accepts admin JWT (unlike /api/pos/products which needs POS token)
+  const r = await fetch(`${API}/api/subproducts?limit=200`, {
     headers: { Authorization: `Bearer ${t}` },
   });
   const json = await r.json();
@@ -87,17 +86,33 @@ type Combo = {
 
 const blankLine = (): ChoiceLine => ({ label: '', minSelect: 1, maxSelect: 1, required: true, items: [] });
 
-/** Normalise the server response (old format was products:[id], new is items:[{subProduct,allowedSizes}]) */
+/** Normalise server choiceLines to the ChoiceLine type used by the builder.
+ *  Each item in the DB has its own Mongoose _id (from the embedded array).
+ *  We must read item.subProduct (the referenced SubProduct), NOT item._id. */
 function normaliseLines(raw: any[]): ChoiceLine[] {
   return (raw || []).map(l => {
-    const items: ChoiceItem[] = (l.items || []).map((it: any) =>
-      typeof it === 'string' || it._id
-        ? { subProduct: it._id || it, allowedSizes: [] }
-        : { subProduct: it.subProduct?._id || it.subProduct, allowedSizes: (it.allowedSizes || []).map((s: any) => s._id || s) }
-    );
-    // backwards-compat: old combos stored products:[id]
+    const items: ChoiceItem[] = (l.items || []).map((it: any) => {
+      if (typeof it === 'string') {
+        return { subProduct: it, allowedSizes: [] };
+      }
+      // it is an embedded doc with its own _id + a subProduct reference
+      if (it.subProduct !== undefined) {
+        return {
+          subProduct: it.subProduct?._id
+            ? String(it.subProduct._id)
+            : String(it.subProduct),
+          allowedSizes: (it.allowedSizes || []).map((s: any) => s?._id ? String(s._id) : String(s)),
+        };
+      }
+      // Fallback: plain ObjectId or minimal object
+      return { subProduct: String(it._id || it), allowedSizes: [] };
+    });
+
+    // Backward-compat: old combos stored products:[ObjectId]
     if (!items.length && l.products?.length) {
-      l.products.forEach((p: any) => items.push({ subProduct: p._id || p, allowedSizes: [] }));
+      for (const p of l.products) {
+        items.push({ subProduct: String(p?._id || p), allowedSizes: [] });
+      }
     }
     return { ...l, required: l.required !== false, items };
   });
@@ -160,9 +175,21 @@ function ProductChip({ item, product, onRemove, onSizesChange }: {
     : formatCurrency(product.baseSellingPrice);
 
   function toggleSize(sid: string) {
-    onSizesChange(
-      selectedSizes.includes(sid) ? selectedSizes.filter(x => x !== sid) : [...selectedSizes, sid]
-    );
+    if (selectedSizes.length === 0) {
+      // "All sizes" mode — unchecking one size means we restrict to all EXCEPT this one
+      const remaining = product.sizes.map(s => String(s._id)).filter(id => id !== sid);
+      onSizesChange(remaining);
+    } else if (selectedSizes.includes(sid)) {
+      // Remove this size from the allowed list
+      const next = selectedSizes.filter(x => x !== sid);
+      // If none left, treat as "nothing allowed" (keep as empty — user should reset)
+      onSizesChange(next);
+    } else {
+      // Add this size back to the allowed list
+      const next = [...selectedSizes, sid];
+      // If all sizes are now included, auto-reset to "all allowed" (empty = unrestricted)
+      onSizesChange(next.length >= product.sizes.length ? [] : next);
+    }
   }
 
   return (
@@ -208,13 +235,14 @@ function ProductChip({ item, product, onRemove, onSizesChange }: {
           </p>
           <div className="flex flex-wrap gap-1.5">
             {product.sizes.map(size => {
-              const active = selectedSizes.length === 0 || selectedSizes.includes(size._id);
+              const sid    = String(size._id);
+              const active = selectedSizes.length === 0 || selectedSizes.includes(sid);
               const oos    = size.availableStock <= 0;
               return (
                 <button
                   key={size._id}
                   type="button"
-                  onClick={() => toggleSize(size._id)}
+                  onClick={() => toggleSize(sid)}
                   className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-all ${
                     active
                       ? 'border-blue-200 bg-blue-50 text-blue-800'
@@ -329,7 +357,7 @@ function POSPreview({ name, price, lines, allProducts }: {
   // selections[lineIdx] = array of { subProduct, size? }
   const [selections, setSelections] = useState<Record<number, Selection[]>>({});
 
-  const getProduct = (id: string) => allProducts.find(p => p._id === id);
+  const getProduct = (id: string) => allProducts.find(p => String(p._id) === String(id));
 
   function selectProduct(lineIdx: number, spId: string, maxSelect: number) {
     setSelections(prev => {
@@ -376,7 +404,7 @@ function POSPreview({ name, price, lines, allProducts }: {
     const prices = line.items.flatMap(it => {
       const p = getProduct(it.subProduct);
       if (!p) return [0];
-      const sizes = it.allowedSizes.length > 0 ? p.sizes?.filter(s => it.allowedSizes.includes(s._id)) : p.sizes;
+      const sizes = it.allowedSizes.length > 0 ? p.sizes?.filter(s => it.allowedSizes.includes(String(s._id))) : p.sizes;
       if (sizes?.length) return sizes.map(s => s.sellingPrice);
       return [p.baseSellingPrice];
     }).sort((a, b) => a - b);
@@ -439,7 +467,7 @@ function POSPreview({ name, price, lines, allProducts }: {
                     const hasSizes = (p.sizes?.length ?? 0) > 0 && !p.sellWithoutSizeVariants;
                     const availSizes = hasSizes
                       ? (item.allowedSizes.length > 0
-                          ? p.sizes.filter(s => item.allowedSizes.includes(s._id))
+                          ? p.sizes.filter(s => item.allowedSizes.includes(String(s._id)))
                           : p.sizes)
                       : [];
 
@@ -759,7 +787,7 @@ function ComboModal({ initial, products, onSave, onClose }: {
                           <div className="space-y-2">
                             {le.items && <p className="text-[11px] text-red-500">{le.items}</p>}
                             {line.items.map(item => {
-                              const p = products.find(pr => pr._id === item.subProduct);
+                              const p = products.find(pr => String(pr._id) === String(item.subProduct));
                               if (!p) return null;
                               return (
                                 <ProductChip key={item.subProduct}
@@ -915,9 +943,12 @@ export default function POSCombos() {
     if (!token) return;
     setLoading(true);
     try {
-      const [cd, pd] = await Promise.all([fetchCombos(token), fetchProducts(token)]);
-      setCombos(cd.combos || []);
-      setProducts(pd);
+      // Fetch independently so a products failure doesn't block showing combos
+      const [cd, pd] = await Promise.allSettled([fetchCombos(token), fetchProducts(token)]);
+      if (cd.status === 'fulfilled') setCombos(cd.value?.combos || []);
+      else toast.error('Could not load combos: ' + cd.reason?.message);
+      if (pd.status === 'fulfilled') setProducts(pd.value || []);
+      else toast.error('Could not load products: ' + pd.reason?.message);
     } catch (e: any) { toast.error(e.message || 'Failed to load'); }
     finally { setLoading(false); }
   }, [token]);
