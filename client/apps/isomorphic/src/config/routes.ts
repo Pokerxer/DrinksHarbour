@@ -158,6 +158,7 @@ export const routes = {
     settings: '/point-of-sale/settings',
     orders:      '/point-of-sale/orders',
     pricelists:  '/pos/pricelists',
+    combos:      '/point-of-sale/combos',
     // Standalone cashier POS (uses pos_token, not admin JWT)
     cashierLogin:     '/pos/login',
     cashierDashboard: '/pos/dashboard',
