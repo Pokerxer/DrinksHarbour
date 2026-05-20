@@ -12,7 +12,7 @@ import {
   PiCrown,
 } from 'react-icons/pi';
 import {
-  Bar, Line, ComposedChart, LineChart,
+  Bar, Line, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { CustomTooltip } from '@core/components/charts/custom-tooltip';
@@ -93,125 +93,85 @@ function SalesChart({ data }: { data: { date: string; sales: number; orders: num
         ))}
       </div>
 
-      {/* Recharts ComposedChart: Bar (revenue) + Line (orders) */}
-      <div className="h-52 w-full">
+      {/* Single ComposedChart: Bar (revenue, left axis) + Line (orders, right axis) */}
+      <div className="h-64 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={chartData}
             barSize={28}
-            margin={{ top: 4, right: 8, left: -8, bottom: 0 }}
-            className="[&_.recharts-cartesian-grid-vertical]:opacity-0 [&_.recharts-cartesian-axis-tick-value]:fill-gray-500 [&_.recharts-cartesian-axis-tick-value]:text-[11px]"
+            margin={{ top: 4, right: 40, left: -8, bottom: 0 }}
+            className="[&_.recharts-cartesian-grid-vertical]:opacity-0"
           >
             <defs>
               <linearGradient id="posSalesGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%"   stopColor="#b20202" stopOpacity={0.9} />
-                <stop offset="100%" stopColor="#d42b2b" stopOpacity={0.7} />
-              </linearGradient>
-              <linearGradient id="posOrdersArea" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%"   stopColor="#b20202" stopOpacity={0.15} />
-                <stop offset="95%"  stopColor="#b20202" stopOpacity={0}    />
+                <stop offset="100%" stopColor="#d42b2b" stopOpacity={0.65} />
               </linearGradient>
             </defs>
 
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+
             <XAxis
               dataKey="day"
               axisLine={false}
               tickLine={false}
               tick={{ fontSize: 11, fill: '#94a3b8' }}
             />
+
+            {/* Left Y-axis — revenue */}
             <YAxis
+              yAxisId="revenue"
+              orientation="left"
               axisLine={false}
               tickLine={false}
               tickFormatter={fmtYAxis}
               tick={{ fontSize: 10, fill: '#94a3b8' }}
               width={52}
             />
+
+            {/* Right Y-axis — order count */}
+            <YAxis
+              yAxisId="orders"
+              orientation="right"
+              axisLine={false}
+              tickLine={false}
+              allowDecimals={false}
+              tick={{ fontSize: 10, fill: '#64748b' }}
+              width={32}
+              tickFormatter={(v: number) => String(v)}
+            />
+
             <Tooltip
               content={<CustomTooltip />}
               cursor={{ fill: '#f8fafc', stroke: '#e2e8f0', strokeWidth: 1 }}
             />
             <Legend
-              iconType="circle"
               iconSize={8}
-              wrapperStyle={{ fontSize: 11, color: '#94a3b8', paddingTop: 8 }}
+              wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
             />
 
-            {/* Revenue bars */}
+            {/* Revenue bars — left axis */}
             <Bar
+              yAxisId="revenue"
               dataKey="sales"
               name="Revenue"
               fill="url(#posSalesGradient)"
               radius={[4, 4, 0, 0]}
             />
 
-            {/* Order count line (secondary axis feel via yAxisId right) */}
+            {/* Orders line — right axis */}
             <Line
+              yAxisId="orders"
               dataKey="orders"
               name="Orders"
               type="monotone"
-              stroke="#b20202"
+              stroke="#64748b"
               strokeWidth={2}
-              dot={{ r: 3, fill: '#b20202', strokeWidth: 0 }}
-              activeDot={{ r: 5 }}
-              yAxisId={0}
-              opacity={0.5}
+              dot={{ r: 3, fill: '#fff', stroke: '#64748b', strokeWidth: 2 }}
+              activeDot={{ r: 5, fill: '#64748b' }}
             />
           </ComposedChart>
         </ResponsiveContainer>
-      </div>
-
-      {/* Orders line chart */}
-      <div>
-        <div className="mb-2 flex items-center justify-between">
-          <p className="text-xs font-semibold text-gray-600">Order Count Trend</p>
-          <span className="text-[10px] text-gray-400">
-            Total {data.reduce((s, d) => s + d.orders, 0)} orders this week
-          </span>
-        </div>
-        <div className="h-32 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart
-              data={chartData}
-              margin={{ top: 4, right: 8, left: -8, bottom: 0 }}
-              className="[&_.recharts-cartesian-grid-vertical]:opacity-0"
-            >
-              <defs>
-                <linearGradient id="ordersLineGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="#b20202" stopOpacity={0.12} />
-                  <stop offset="95%" stopColor="#b20202" stopOpacity={0}    />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis
-                dataKey="day"
-                axisLine={false}
-                tickLine={false}
-                tick={{ fontSize: 10, fill: '#94a3b8' }}
-              />
-              <YAxis
-                axisLine={false}
-                tickLine={false}
-                allowDecimals={false}
-                tick={{ fontSize: 10, fill: '#94a3b8' }}
-                width={24}
-              />
-              <Tooltip
-                content={<CustomTooltip />}
-                cursor={{ stroke: '#e2e8f0', strokeWidth: 1 }}
-              />
-              <Line
-                type="monotone"
-                dataKey="orders"
-                name="Orders"
-                stroke="#b20202"
-                strokeWidth={2}
-                dot={{ r: 3, fill: '#fff', stroke: '#b20202', strokeWidth: 2 }}
-                activeDot={{ r: 5, fill: '#b20202' }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
       </div>
 
       {/* Trend footnote */}
