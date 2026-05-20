@@ -1225,7 +1225,8 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
     const basePrice     = basePricing.sellingPrice;
     const originalPrice = basePricing.originalPrice;
 
-    const enrichedSizes = (sp.sizes || []).filter(Boolean).map((size) => {
+    const rawSizes = (sp.sizes || []).filter(Boolean);
+    let enrichedSizes = rawSizes.map((size) => {
       const sizePricing = computePOSPricing(sp, size, tenant);
       return {
         ...size,
@@ -1233,6 +1234,24 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
         originalPrice: sizePricing.isOnSale ? sizePricing.originalPrice : null,
       };
     });
+
+    // If all size variants report 0 availableStock but the SubProduct aggregate
+    // has stock, the size-level stock is stale (e.g. stock was received at the
+    // product level without specifying a size). Distribute the aggregate stock
+    // evenly across sizes so the POS shows correct availability.
+    if (
+      enrichedSizes.length > 0 &&
+      !sp.sellWithoutSizeVariants &&
+      sp.availableStock > 0 &&
+      enrichedSizes.every(s => (s.availableStock || 0) <= 0)
+    ) {
+      const perSize   = Math.floor(sp.availableStock / enrichedSizes.length);
+      const remainder = sp.availableStock % enrichedSizes.length;
+      enrichedSizes = enrichedSizes.map((s, i) => ({
+        ...s,
+        availableStock: perSize + (i === 0 ? remainder : 0),
+      }));
+    }
 
     // Active bundle deals (not expired, sorted best discount first)
     const now = new Date();
