@@ -49,9 +49,16 @@ function PricelistBreakdown({
     0
   ), [product]);
 
-  const costPrice = Number((product as any).costPrice) || 0;
+  // Effective cost: prefer explicit DB costPrice; fall back to the
+  // platform-computed cost price exposed by the POS API so formula rules
+  // always have a real cost to work from.
+  const costPrice = useMemo(() => {
+    const raw      = Number((product as any).costPrice)            || 0;
+    const computed = Number((product as any).posComputedCostPrice) || 0;
+    return raw > 0 ? raw : computed;
+  }, [product]);
 
-  // Per-size true bases (raw prices before any pricelist)
+  // Per-size true bases and effective costs
   const sizeBases = useMemo<Record<string, number>>(() => {
     const map: Record<string, number> = {};
     for (const sz of validSizes) {
@@ -62,6 +69,16 @@ function PricelistBreakdown({
     }
     return map;
   }, [validSizes]);
+
+  const sizeCosts = useMemo<Record<string, number>>(() => {
+    const map: Record<string, number> = {};
+    for (const sz of validSizes) {
+      const raw      = Number((sz as any).costPrice)            || 0;
+      const computed = Number((sz as any).posComputedCostPrice) || 0;
+      map[sz._id] = raw > 0 ? raw : computed > 0 ? computed : costPrice;
+    }
+    return map;
+  }, [validSizes, costPrice]);
 
   type RuleStep = { priceType: string; label: string; meta: any };
 
@@ -109,7 +126,8 @@ function PricelistBreakdown({
     saving: number;
     pct: number;
     needsCost: boolean;
-    sizePrices: Record<string, { price: number; saving: number; pct: number }>;
+    effectiveCost: number;
+    sizePrices: Record<string, { price: number; saving: number; pct: number; cost: number }>;
     plRef: any;
   };
 
@@ -117,13 +135,13 @@ function PricelistBreakdown({
     const list: PlRow[] = [];
 
     // Standard row (no pricelist)
-    const stdSzPrices: Record<string, { price: number; saving: number; pct: number }> = {};
-    for (const sz of validSizes) stdSzPrices[sz._id] = { price: sizeBases[sz._id] || 0, saving: 0, pct: 0 };
+    const stdSzPrices: Record<string, { price: number; saving: number; pct: number; cost: number }> = {};
+    for (const sz of validSizes) stdSzPrices[sz._id] = { price: sizeBases[sz._id] || 0, saving: 0, pct: 0, cost: sizeCosts[sz._id] || 0 };
     list.push({
       id: '__standard__', name: 'Standard Price',
       isActive: !selectedPricelist,
       ruleSteps: [], bundleHints: [],
-      price: trueBase, saving: 0, pct: 0, needsCost: false,
+      price: trueBase, saving: 0, pct: 0, needsCost: false, effectiveCost: costPrice,
       sizePrices: stdSzPrices, plRef: null,
     });
 
@@ -131,22 +149,29 @@ function PricelistBreakdown({
       const priceRules  = findMatchingPricelistRules(pl.rules || [], product._id, 1, 'price');
       const bundleHints = buildBundleHints(pl);
 
-      // Detect if formula rules need a cost price we don't have
-      const needsCost = priceRules.some(r => r.priceType === 'formula') && costPrice <= 0;
+      // For sized products the relevant cost is the active size's cost;
+      // for no-size products it's the product-level cost.
+      const hasFormula  = priceRules.some(r => r.priceType === 'formula');
+      const needsCost   = hasFormula && costPrice <= 0 && Object.values(sizeCosts).every(c => c <= 0);
 
       let plPrice = trueBase;
       for (const rule of priceRules) plPrice = applyRuleTransform(plPrice, rule, costPrice);
       const saving = trueBase - plPrice;
       const pct    = trueBase > 0 ? Math.round(Math.abs(saving) / trueBase * 100) : 0;
 
-      const szPrices: Record<string, { price: number; saving: number; pct: number }> = {};
+      const szPrices: Record<string, { price: number; saving: number; pct: number; cost: number }> = {};
       for (const sz of validSizes) {
         const szBase = sizeBases[sz._id] || 0;
-        const szCost = Number((sz as any).costPrice) > 0 ? Number((sz as any).costPrice) : costPrice;
+        const szCost = sizeCosts[sz._id] || costPrice;
         let szP = szBase;
         for (const rule of priceRules) szP = applyRuleTransform(szP, rule, szCost);
         const szSaving = szBase - szP;
-        szPrices[sz._id] = { price: szP, saving: szSaving, pct: szBase > 0 ? Math.round(Math.abs(szSaving) / szBase * 100) : 0 };
+        szPrices[sz._id] = {
+          price: szP,
+          saving: szSaving,
+          pct: szBase > 0 ? Math.round(Math.abs(szSaving) / szBase * 100) : 0,
+          cost: szCost,
+        };
       }
 
       list.push({
@@ -155,12 +180,13 @@ function PricelistBreakdown({
         ruleSteps: buildRuleSteps(priceRules),
         bundleHints,
         price: plPrice, saving, pct, needsCost,
+        effectiveCost: costPrice,
         sizePrices: szPrices, plRef: pl,
       });
     }
 
     return list;
-  }, [pricelists, product, validSizes, sizeBases, trueBase, costPrice, selectedPricelist]);
+  }, [pricelists, product, validSizes, sizeBases, sizeCosts, trueBase, costPrice, selectedPricelist]);
 
   function applyPricelist(pl: any) {
     setSelectedPricelist(pl);
@@ -217,20 +243,17 @@ function PricelistBreakdown({
       {/* Pricelist rows */}
       <div className="divide-y divide-gray-100 overflow-hidden rounded-2xl border border-gray-200">
         {rows.map((row) => {
-          const dp = hasSizes && activeSizeId
-            ? (row.sizePrices[activeSizeId]?.price   ?? row.price)
-            : row.price;
-          const ds = hasSizes && activeSizeId
-            ? (row.sizePrices[activeSizeId]?.saving  ?? row.saving)
-            : row.saving;
-          const dp_pct = hasSizes && activeSizeId
-            ? (row.sizePrices[activeSizeId]?.pct     ?? row.pct)
-            : row.pct;
+          const szEntry   = hasSizes && activeSizeId ? row.sizePrices[activeSizeId] : null;
+          const dp        = szEntry?.price    ?? row.price;
+          const ds        = szEntry?.saving   ?? row.saving;
+          const dp_pct    = szEntry?.pct      ?? row.pct;
+          const usedCost  = szEntry?.cost     ?? row.effectiveCost;
 
           const isCheaper = ds > 0.5;
           const isMarkup  = ds < -0.5;
           const noChange  = !isCheaper && !isMarkup;
           const isStd     = row.id === '__standard__';
+          const hasFormula = row.ruleSteps.some(s => s.priceType === 'formula');
 
           return (
             <div
@@ -279,6 +302,12 @@ function PricelistBreakdown({
                       </span>
                     )}
                   </div>
+                  {/* Formula breakdown: show cost × markup = price */}
+                  {hasFormula && !row.needsCost && usedCost > 0 && (
+                    <p className="mt-0.5 text-[9px] text-gray-400 tabular-nums">
+                      Cost {formatCurrency(usedCost)} × (1 + markup%) = {formatCurrency(dp)}
+                    </p>
+                  )}
                 </div>
 
                 {/* Price + delta */}
@@ -289,7 +318,9 @@ function PricelistBreakdown({
                     {formatCurrency(dp)}
                   </p>
                   {noChange ? (
-                    <p className="text-[9px] text-gray-300 leading-tight">standard</p>
+                    <p className="text-[9px] leading-tight text-gray-300">
+                      {!isStd && row.ruleSteps.length > 0 ? '= standard' : '—'}
+                    </p>
                   ) : (
                     <p className={`text-[10px] font-semibold tabular-nums leading-tight ${
                       isCheaper ? 'text-emerald-600' : 'text-orange-500'
