@@ -1231,11 +1231,8 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
       const sizePricing = computePOSPricing(sp, size, tenant);
       return {
         ...size,
-        sellingPrice:       sizePricing.sellingPrice,
-        originalPrice:      sizePricing.isOnSale ? sizePricing.originalPrice : null,
-        // Expose the platform-derived cost so pricelist formula rules can
-        // compute correctly even when Size.costPrice is not set in the DB.
-        posComputedCostPrice: sizePricing.costPrice || 0,
+        sellingPrice:  sizePricing.sellingPrice,
+        originalPrice: sizePricing.isOnSale ? sizePricing.originalPrice : null,
       };
     });
 
@@ -1265,13 +1262,10 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
 
     return {
       ...sp,
-      baseSellingPrice:     basePrice,
-      originalPrice:        basePricing.isOnSale ? originalPrice : null,
-      isOnSale:             basePricing.isOnSale,
-      isFlashSale:          basePricing.isFlashSale,
-      // Platform-derived cost: use when sp.costPrice is 0 / not set, so
-      // pricelist formula rules (cost × markup%) compute a real price.
-      posComputedCostPrice: basePricing.costPrice || 0,
+      baseSellingPrice: basePrice,
+      originalPrice:    basePricing.isOnSale ? originalPrice : null,
+      isOnSale:         basePricing.isOnSale,
+      isFlashSale:      basePricing.isFlashSale,
       activeBundles,
       sizes: enrichedSizes,
     };

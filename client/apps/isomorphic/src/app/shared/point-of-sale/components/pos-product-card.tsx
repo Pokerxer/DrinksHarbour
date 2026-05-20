@@ -49,16 +49,13 @@ function PricelistBreakdown({
     0
   ), [product]);
 
-  // Effective cost: prefer explicit DB costPrice; fall back to the
-  // platform-computed cost price exposed by the POS API so formula rules
-  // always have a real cost to work from.
-  const costPrice = useMemo(() => {
-    const raw      = Number((product as any).costPrice)            || 0;
-    const computed = Number((product as any).posComputedCostPrice) || 0;
-    return raw > 0 ? raw : computed;
-  }, [product]);
+  // Use only the actual vendor costPrice (sp.costPrice). The platform-computed
+  // cost is derived FROM the selling price, so using it for formula rules creates
+  // a circular result (derivedCost × markup = sellingPrice again). Formula rules
+  // require the true purchase cost to produce a meaningful different price.
+  const costPrice = Number((product as any).costPrice) || 0;
 
-  // Per-size true bases and effective costs
+  // Per-size true bases and costs
   const sizeBases = useMemo<Record<string, number>>(() => {
     const map: Record<string, number> = {};
     for (const sz of validSizes) {
@@ -73,9 +70,9 @@ function PricelistBreakdown({
   const sizeCosts = useMemo<Record<string, number>>(() => {
     const map: Record<string, number> = {};
     for (const sz of validSizes) {
-      const raw      = Number((sz as any).costPrice)            || 0;
-      const computed = Number((sz as any).posComputedCostPrice) || 0;
-      map[sz._id] = raw > 0 ? raw : computed > 0 ? computed : costPrice;
+      const szCost = Number((sz as any).costPrice) || 0;
+      // Only fall back to product-level cost if size has no cost of its own
+      map[sz._id] = szCost > 0 ? szCost : costPrice;
     }
     return map;
   }, [validSizes, costPrice]);
@@ -302,10 +299,15 @@ function PricelistBreakdown({
                       </span>
                     )}
                   </div>
-                  {/* Formula breakdown: show cost × markup = price */}
-                  {hasFormula && !row.needsCost && usedCost > 0 && (
+                  {/* Formula breakdown */}
+                  {hasFormula && !row.needsCost && usedCost > 0 && !noChange && (
                     <p className="mt-0.5 text-[9px] text-gray-400 tabular-nums">
                       Cost {formatCurrency(usedCost)} × (1 + markup%) = {formatCurrency(dp)}
+                    </p>
+                  )}
+                  {hasFormula && row.needsCost && (
+                    <p className="mt-0.5 text-[9px] text-orange-400">
+                      Set vendor cost price on this product to calculate
                     </p>
                   )}
                 </div>
