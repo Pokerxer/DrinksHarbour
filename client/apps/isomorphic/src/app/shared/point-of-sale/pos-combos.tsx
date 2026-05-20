@@ -240,19 +240,19 @@ function ProductChip({ item, product, onRemove, onSizesChange }: {
               const oos    = size.availableStock <= 0;
               return (
                 <button
-                  key={size._id}
+                  key={sid}
                   type="button"
                   onClick={() => toggleSize(sid)}
                   className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-all ${
                     active
                       ? 'border-blue-200 bg-blue-50 text-blue-800'
-                      : 'border-gray-200 bg-white text-gray-400 line-through'
-                  } ${oos ? 'opacity-50' : ''}`}
+                      : 'border-gray-200 bg-white text-gray-400 line-through opacity-60'
+                  }`}
                 >
                   {active && <PiCheckCircle className="h-3 w-3 text-blue-500" />}
                   {size.displayName}
                   <span className="text-[10px] font-normal opacity-70">{formatCurrency(size.sellingPrice)}</span>
-                  {oos && <span className="rounded bg-red-100 px-1 text-[9px] text-red-500">OOS</span>}
+                  {oos && <span className="rounded bg-amber-100 px-1 text-[9px] text-amber-600">low stock</span>}
                 </button>
               );
             })}
@@ -533,22 +533,23 @@ function POSPreview({ name, price, lines, allProducts }: {
                             <p className={`mb-1.5 text-[10px] font-bold ${color.text}`}>Choose size</p>
                             <div className="flex flex-wrap gap-1.5">
                               {availSizes.map(size => {
-                                const selected = selEntry?.size === size._id;
-                                const oos = size.availableStock <= 0;
+                                const selected = String(selEntry?.size) === String(size._id);
+                                const oos      = size.availableStock <= 0;
                                 return (
                                   <button key={size._id} type="button"
-                                    onClick={() => selectSize(li, item.subProduct, size._id)}
-                                    disabled={oos}
-                                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-all disabled:opacity-40 ${
+                                    onClick={() => selectSize(li, item.subProduct, String(size._id))}
+                                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-all ${
                                       selected
                                         ? `${color.dot} border-current text-white`
                                         : `border-gray-200 bg-white ${color.text} hover:${color.bg}`
-                                    }`}>
+                                    } ${oos && !selected ? 'opacity-50' : ''}`}>
                                     <span>{size.displayName}</span>
                                     <span className={`text-[10px] font-normal ${selected ? 'opacity-80' : 'opacity-60'}`}>
                                       {formatCurrency(size.sellingPrice)}
                                     </span>
-                                    {oos && <span className="text-[9px]">OOS</span>}
+                                    {oos && (
+                                      <span className="rounded bg-red-100 px-1 text-[9px] text-red-500">low</span>
+                                    )}
                                   </button>
                                 );
                               })}

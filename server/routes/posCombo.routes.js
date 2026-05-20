@@ -67,14 +67,29 @@ router.get('/products', tenantAdminOrSuperAdmin, async (req, res, next) => {
       .lean();
 
     const products = subProducts.map(sp => {
-      const enrichedSizes = (sp.sizes || []).map(size => ({
+      let enrichedSizes = (sp.sizes || []).map(size => ({
         ...size,
-        // Use platform-computed price, fall back to raw if computation gives 0
         sellingPrice: computePrice(sp, size, req.tenant) || size.sellingPrice || 0,
       }));
+
+      // If all sizes report 0 availableStock but the SubProduct has aggregate stock,
+      // distribute evenly (same logic as the POS getProducts endpoint).
+      if (
+        enrichedSizes.length > 0 &&
+        !sp.sellWithoutSizeVariants &&
+        (sp.availableStock || 0) > 0 &&
+        enrichedSizes.every(s => (s.availableStock || 0) <= 0)
+      ) {
+        const per  = Math.floor(sp.availableStock / enrichedSizes.length);
+        const rem  = sp.availableStock % enrichedSizes.length;
+        enrichedSizes = enrichedSizes.map((s, i) => ({
+          ...s,
+          availableStock: per + (i === 0 ? rem : 0),
+        }));
+      }
+
       return {
         ...sp,
-        // Product-level computed price (no sizeDoc)
         baseSellingPrice: computePrice(sp, null, req.tenant) || sp.baseSellingPrice || 0,
         sizes: enrichedSizes,
       };
