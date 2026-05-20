@@ -12,8 +12,8 @@ import {
   PiCrown,
 } from 'react-icons/pi';
 import {
-  Bar, Line, ComposedChart, XAxis, YAxis,
-  CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  Bar, Line, ComposedChart, LineChart,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { CustomTooltip } from '@core/components/charts/custom-tooltip';
 import { posApi } from '@/app/shared/point-of-sale/api';
@@ -159,6 +159,59 @@ function SalesChart({ data }: { data: { date: string; sales: number; orders: num
             />
           </ComposedChart>
         </ResponsiveContainer>
+      </div>
+
+      {/* Orders line chart */}
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs font-semibold text-gray-600">Order Count Trend</p>
+          <span className="text-[10px] text-gray-400">
+            Total {data.reduce((s, d) => s + d.orders, 0)} orders this week
+          </span>
+        </div>
+        <div className="h-32 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={chartData}
+              margin={{ top: 4, right: 8, left: -8, bottom: 0 }}
+              className="[&_.recharts-cartesian-grid-vertical]:opacity-0"
+            >
+              <defs>
+                <linearGradient id="ordersLineGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor="#b20202" stopOpacity={0.12} />
+                  <stop offset="95%" stopColor="#b20202" stopOpacity={0}    />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis
+                dataKey="day"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 10, fill: '#94a3b8' }}
+              />
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                allowDecimals={false}
+                tick={{ fontSize: 10, fill: '#94a3b8' }}
+                width={24}
+              />
+              <Tooltip
+                content={<CustomTooltip />}
+                cursor={{ stroke: '#e2e8f0', strokeWidth: 1 }}
+              />
+              <Line
+                type="monotone"
+                dataKey="orders"
+                name="Orders"
+                stroke="#b20202"
+                strokeWidth={2}
+                dot={{ r: 3, fill: '#fff', stroke: '#b20202', strokeWidth: 2 }}
+                activeDot={{ r: 5, fill: '#b20202' }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       {/* Trend footnote */}
