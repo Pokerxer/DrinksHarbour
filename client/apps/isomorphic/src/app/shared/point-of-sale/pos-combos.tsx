@@ -34,8 +34,13 @@ const createCombo   = (t: string, b: any) => apiReq('POST', '/api/pos-combos', t
 const updateCombo   = (t: string, id: string, b: any) => apiReq('PATCH', `/api/pos-combos/${id}`, t, b);
 const deleteCombo   = (t: string, id: string) => apiReq('DELETE', `/api/pos-combos/${id}`, t);
 const fetchProducts = async (t: string) => {
-  const r = await fetch(`${API}/api/pos/products?limit=200`, { headers: { Authorization: `Bearer ${t}` } });
-  return (await r.json()).data?.products || [];
+  // Use the admin subproducts endpoint (accepts admin JWT, not POS-only token)
+  // Returns subProducts with product.name, product.images, sizes[]
+  const r = await fetch(`${API}/api/subproducts?limit=200&status=active`, {
+    headers: { Authorization: `Bearer ${t}` },
+  });
+  const json = await r.json();
+  return json.data?.subProducts || [];
 };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
