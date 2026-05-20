@@ -753,7 +753,7 @@ exports.getPOSDashboard = asyncHandler(async (req, res) => {
   const yesterdayEnd   = endOfDay(new Date(now - 86400000));
   const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [todayStats, yesterdayStats, monthStats, currentSession, recentOrders] = await Promise.all([
+  const [todayStats, yesterdayStats, monthStats, currentSession, recentOrders, topProducts] = await Promise.all([
     getPOSOrderStats(tenantId, todayStart, todayEnd),
     getPOSOrderStats(tenantId, yesterdayStart, yesterdayEnd),
     getPOSOrderStats(tenantId, thisMonthStart, todayEnd),
@@ -761,10 +761,21 @@ exports.getPOSDashboard = asyncHandler(async (req, res) => {
       .populate('openedBy activeCashier', 'firstName lastName posName')
       .sort({ openedAt: -1 }),
     Order.find({ 'items.tenant': tenantId, source: 'pos', paymentStatus: 'paid' })
-      .select('orderNumber totalAmount paymentMethod placedAt createdAt')
+      .select('orderNumber totalAmount paymentMethod customer placedAt createdAt')
+      .populate('customer', 'firstName lastName')
       .sort({ createdAt: -1 })
       .limit(10)
       .lean(),
+    // Top 5 selling products today
+    Order.aggregate([
+      { $match: { 'items.tenant': tenantId, source: 'pos', paymentStatus: 'paid', createdAt: { $gte: todayStart, $lte: todayEnd } } },
+      { $unwind: '$items' },
+      { $match: { 'items.tenant': tenantId } },
+      { $group: { _id: '$items.subProduct', name: { $first: '$items.name' }, qty: { $sum: '$items.quantity' }, revenue: { $sum: '$items.totalPrice' } } },
+      { $sort: { revenue: -1 } },
+      { $limit: 5 },
+      { $project: { _id: 1, name: 1, qty: 1, revenue: 1 } },
+    ]),
   ]);
 
   // 7-day chart
@@ -784,11 +795,12 @@ exports.getPOSDashboard = asyncHandler(async (req, res) => {
     success: true,
     data: {
       currentSession,
-      today:     todayStats,
-      yesterday: yesterdayStats,
-      thisMonth: monthStats,
+      today:        todayStats,
+      yesterday:    yesterdayStats,
+      thisMonth:    monthStats,
       chartData,
       recentOrders: recentOrders.map((o) => ({ ...o, total: o.totalAmount })),
+      topProducts,
     },
   });
 });

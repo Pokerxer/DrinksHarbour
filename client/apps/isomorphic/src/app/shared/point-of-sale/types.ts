@@ -253,6 +253,7 @@ export interface POSDashboardData {
   thisMonth: { totalSales: number; orderCount: number; breakdown: Record<string, { total: number; count: number }> };
   chartData: { date: string; sales: number; orders: number }[];
   recentOrders: POSRecentOrder[];
+  topProducts?: { _id: string; name: string; qty: number; revenue: number }[];
 }
 
 export interface POSRecentOrder {
