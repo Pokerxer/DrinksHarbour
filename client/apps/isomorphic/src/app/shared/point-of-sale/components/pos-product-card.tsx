@@ -7,11 +7,14 @@ import {
   findMatchingPricelistRules, applyRuleTransform,
 } from '@/app/shared/point-of-sale/utils';
 import { usePOSCart, usePOSAuth, usePOSAvailablePricelists, usePOSPricelist } from '@/app/shared/point-of-sale/store';
+import { RULE_TYPE_META } from '@/app/shared/point-of-sale/pricelist-constants';
 import Image from 'next/image';
+import toast from 'react-hot-toast';
 import {
   PiPlus, PiMinus, PiX, PiShoppingCart,
   PiInfo, PiPackage, PiBarcode, PiTag,
   PiWarning, PiCheckCircle, PiProhibit, PiTagChevron,
+  PiArrowDown, PiArrowUp, PiCurrencyNgn,
 } from 'react-icons/pi';
 
 type ProductCardProps = {
@@ -33,117 +36,140 @@ function PricelistBreakdown({
 }) {
   const { token } = usePOSAuth();
   const { pricelists, loaded, load } = usePOSAvailablePricelists();
-  const { selectedPricelist } = usePOSPricelist();
+  const { selectedPricelist, setSelectedPricelist } = usePOSPricelist();
   const [activeSizeId, setActiveSizeId] = useState<string>(validSizes[0]?._id ?? '');
 
   useEffect(() => { if (token) load(token); }, [token, load]);
 
-  // True base: prefer _priceBeforePricelist (set when pricelist is active) so
-  // we always compare against the actual standard price.
-  const trueBase = useMemo(() => {
-    return (
-      Number((product as any)._priceBeforePricelist) ||
-      Number((product as any).originalPrice) ||
-      Number(product.baseSellingPrice) ||
-      0
-    );
-  }, [product]);
+  // True base: use _priceBeforePricelist when a pricelist is active so we
+  // always compare against the actual raw standard price.
+  const trueBase = useMemo(() => (
+    Number((product as any)._priceBeforePricelist) ||
+    Number(product.baseSellingPrice) ||
+    0
+  ), [product]);
 
-  const costPrice = Number(product.costPrice) || 0;
+  const costPrice = Number((product as any).costPrice) || 0;
 
-  // Per-size true bases
+  // Per-size true bases (raw prices before any pricelist)
   const sizeBases = useMemo<Record<string, number>>(() => {
     const map: Record<string, number> = {};
     for (const sz of validSizes) {
       map[sz._id] =
         Number((sz as any)._priceBeforePricelist) ||
-        Number((sz as any).originalPrice) ||
         Number(sz.sellingPrice) ||
         0;
     }
     return map;
   }, [validSizes]);
 
-  // Helper: build rule label string
-  function ruleLabel(rules: any[]): string {
-    if (!rules.length) return '';
-    const parts = rules.map(r => {
-      if (r.priceType === 'formula')    return `Cost +${r.markupPercentage}% markup`;
-      if (r.priceType === 'fixed')      return `Fixed price`;
-      if (r.priceType === 'flash_sale') return `⚡ ${r.flashSalePercentage}% flash`;
+  type RuleStep = { priceType: string; label: string; meta: any };
+
+  function buildRuleSteps(rules: any[]): RuleStep[] {
+    return rules.map(r => {
+      const meta = (RULE_TYPE_META as any)[r.priceType] ?? { label: r.priceType, color: '#6b7280', bg: '#f3f4f6', border: '#e5e7eb' };
+      let label = meta.label;
+      if (r.priceType === 'formula')    label = `+${r.markupPercentage}% on cost`;
+      if (r.priceType === 'fixed')      label = `Fixed ${formatCurrency(r.fixedPrice)}`;
+      if (r.priceType === 'flash_sale') label = `${r.flashSalePercentage}% flash`;
       if (r.priceType === 'discount') {
-        return r.discountType === 'fixed'
-          ? `-₦${r.discountAmount} off`
+        label = r.discountType === 'fixed'
+          ? `-${formatCurrency(r.discountAmount)}`
           : `-${r.discountPercentage}%${r.minQuantity > 0 ? ` (qty ${r.minQuantity}+)` : ''}`;
       }
-      return r.priceType;
+      return { priceType: r.priceType, label, meta };
     });
-    return parts.join(' → ');
+  }
+
+  function buildBundleHints(pl: any): string[] {
+    const now = new Date();
+    const bundleRules = (pl.rules || []).filter((r: any) =>
+      r.priceType === 'bundle' &&
+      (!r.endDate || new Date(r.endDate) >= now) &&
+      (!r.startDate || new Date(r.startDate) <= now)
+    );
+    return bundleRules.map((r: any) => {
+      const qty  = r.bundleQuantity ?? 2;
+      const disc = r.bundleDiscount ?? 0;
+      const dt   = r.bundleDiscountType || 'percentage';
+      if (dt === 'markup_on_cost') return `📦 Buy ${qty}+ · Cost +${disc}% markup`;
+      if (dt === 'no_discount')    return `📦 Buy ${qty}+ · No extra discount`;
+      if (dt === 'fixed')          return `📦 Buy ${qty}+ · ${formatCurrency(disc)} off`;
+      return `📦 Buy ${qty}+ · ${disc}% off`;
+    });
   }
 
   type PlRow = {
     id: string;
     name: string;
     isActive: boolean;
-    hasRule: boolean;
-    ruleHint: string;
-    // no-size price
+    ruleSteps: RuleStep[];
+    bundleHints: string[];
     price: number;
     saving: number;
-    // per-size prices
-    sizePrices: Record<string, { price: number; saving: number }>;
+    pct: number;
+    needsCost: boolean;
+    sizePrices: Record<string, { price: number; saving: number; pct: number }>;
+    plRef: any;
   };
 
   const rows = useMemo<PlRow[]>(() => {
     const list: PlRow[] = [];
 
-    // Standard row
-    const stdSzPrices: Record<string, { price: number; saving: number }> = {};
-    for (const sz of validSizes) stdSzPrices[sz._id] = { price: sizeBases[sz._id] || 0, saving: 0 };
-
+    // Standard row (no pricelist)
+    const stdSzPrices: Record<string, { price: number; saving: number; pct: number }> = {};
+    for (const sz of validSizes) stdSzPrices[sz._id] = { price: sizeBases[sz._id] || 0, saving: 0, pct: 0 };
     list.push({
-      id: '__standard__',
-      name: 'Standard Price',
+      id: '__standard__', name: 'Standard Price',
       isActive: !selectedPricelist,
-      hasRule: false,
-      ruleHint: 'No pricelist',
-      price: trueBase,
-      saving: 0,
-      sizePrices: stdSzPrices,
+      ruleSteps: [], bundleHints: [],
+      price: trueBase, saving: 0, pct: 0, needsCost: false,
+      sizePrices: stdSzPrices, plRef: null,
     });
 
     for (const pl of pricelists) {
-      const rules = findMatchingPricelistRules(pl.rules || [], product._id, 1, 'price');
-      let plPrice = trueBase;
-      for (const rule of rules) plPrice = applyRuleTransform(plPrice, rule, costPrice);
+      const priceRules  = findMatchingPricelistRules(pl.rules || [], product._id, 1, 'price');
+      const bundleHints = buildBundleHints(pl);
 
-      const szPrices: Record<string, { price: number; saving: number }> = {};
+      // Detect if formula rules need a cost price we don't have
+      const needsCost = priceRules.some(r => r.priceType === 'formula') && costPrice <= 0;
+
+      let plPrice = trueBase;
+      for (const rule of priceRules) plPrice = applyRuleTransform(plPrice, rule, costPrice);
+      const saving = trueBase - plPrice;
+      const pct    = trueBase > 0 ? Math.round(Math.abs(saving) / trueBase * 100) : 0;
+
+      const szPrices: Record<string, { price: number; saving: number; pct: number }> = {};
       for (const sz of validSizes) {
         const szBase = sizeBases[sz._id] || 0;
         const szCost = Number((sz as any).costPrice) > 0 ? Number((sz as any).costPrice) : costPrice;
         let szP = szBase;
-        for (const rule of rules) szP = applyRuleTransform(szP, rule, szCost);
-        szPrices[sz._id] = { price: szP, saving: szBase - szP };
+        for (const rule of priceRules) szP = applyRuleTransform(szP, rule, szCost);
+        const szSaving = szBase - szP;
+        szPrices[sz._id] = { price: szP, saving: szSaving, pct: szBase > 0 ? Math.round(Math.abs(szSaving) / szBase * 100) : 0 };
       }
 
       list.push({
-        id: pl._id,
-        name: pl.name,
+        id: pl._id, name: pl.name,
         isActive: selectedPricelist?._id === pl._id,
-        hasRule: rules.length > 0,
-        ruleHint: ruleLabel(rules),
-        price: plPrice,
-        saving: trueBase - plPrice,
-        sizePrices: szPrices,
+        ruleSteps: buildRuleSteps(priceRules),
+        bundleHints,
+        price: plPrice, saving, pct, needsCost,
+        sizePrices: szPrices, plRef: pl,
       });
     }
 
     return list;
   }, [pricelists, product, validSizes, sizeBases, trueBase, costPrice, selectedPricelist]);
 
+  function applyPricelist(pl: any) {
+    setSelectedPricelist(pl);
+    toast.success(`Pricelist: ${pl.name}`, { icon: '🏷️' });
+  }
+
   if (!loaded) {
     return (
-      <div className="flex items-center justify-center gap-2 py-4 text-xs text-gray-400">
+      <div className="flex items-center justify-center gap-2 py-6 text-xs text-gray-400">
         <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-200 border-t-gray-500" />
         Loading pricelists…
       </div>
@@ -152,94 +178,153 @@ function PricelistBreakdown({
 
   if (pricelists.length === 0) {
     return (
-      <p className="py-2 text-center text-xs text-gray-400">
-        No selectable pricelists configured.
-      </p>
+      <div className="flex flex-col items-center gap-1.5 py-6">
+        <PiTagChevron className="h-8 w-8 text-gray-200" />
+        <p className="text-xs text-gray-400">No selectable pricelists configured.</p>
+        <p className="text-[10px] text-gray-300">Mark a pricelist as Selectable in admin.</p>
+      </div>
     );
   }
 
-  // Size selector for multi-size products
   const activeSize = validSizes.find(s => s._id === activeSizeId);
 
   return (
-    <div className="space-y-2">
-      {/* Size selector */}
+    <div className="space-y-3">
+
+      {/* Size selector — only for multi-size products */}
       {hasSizes && validSizes.length > 1 && (
-        <div className="flex flex-wrap gap-1.5">
-          {validSizes.map(sz => (
-            <button
-              key={sz._id}
-              type="button"
-              onClick={() => setActiveSizeId(sz._id)}
-              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                activeSizeId === sz._id
-                  ? 'bg-[#b20202] text-white'
-                  : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              {sz.displayName}
-            </button>
-          ))}
+        <div>
+          <p className="mb-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-400">Size variant</p>
+          <div className="flex flex-wrap gap-1.5">
+            {validSizes.map(sz => (
+              <button
+                key={sz._id}
+                type="button"
+                onClick={() => setActiveSizeId(sz._id)}
+                className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                  activeSizeId === sz._id
+                    ? 'bg-[#b20202] text-white shadow-sm'
+                    : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {sz.displayName}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Rows */}
-      <div className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200">
+      {/* Pricelist rows */}
+      <div className="divide-y divide-gray-100 overflow-hidden rounded-2xl border border-gray-200">
         {rows.map((row) => {
-          const displayPrice = hasSizes && activeSizeId
-            ? (row.sizePrices[activeSizeId]?.price ?? row.price)
+          const dp = hasSizes && activeSizeId
+            ? (row.sizePrices[activeSizeId]?.price   ?? row.price)
             : row.price;
-          const displaySaving = hasSizes && activeSizeId
-            ? (row.sizePrices[activeSizeId]?.saving ?? row.saving)
+          const ds = hasSizes && activeSizeId
+            ? (row.sizePrices[activeSizeId]?.saving  ?? row.saving)
             : row.saving;
+          const dp_pct = hasSizes && activeSizeId
+            ? (row.sizePrices[activeSizeId]?.pct     ?? row.pct)
+            : row.pct;
 
-          const isCheaper  = displaySaving > 0.5;
-          const isMarkup   = displaySaving < -0.5;
-          const noChange   = !isCheaper && !isMarkup;
+          const isCheaper = ds > 0.5;
+          const isMarkup  = ds < -0.5;
+          const noChange  = !isCheaper && !isMarkup;
+          const isStd     = row.id === '__standard__';
 
           return (
             <div
               key={row.id}
-              className={`flex items-center gap-3 px-3.5 py-3 ${
-                row.isActive ? 'bg-emerald-50' : row.id === '__standard__' ? 'bg-gray-50/50' : 'bg-white'
+              className={`px-3.5 py-3 transition-colors ${
+                row.isActive
+                  ? 'bg-emerald-50'
+                  : isStd
+                  ? 'bg-gray-50/60'
+                  : 'bg-white hover:bg-gray-50/40'
               }`}
             >
-              {/* Left: name + rule hint */}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className={`text-xs font-bold ${row.isActive ? 'text-emerald-700' : 'text-gray-800'}`}>
-                    {row.name}
-                  </span>
-                  {row.isActive && (
-                    <span className="shrink-0 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-white">
-                      Active
+              {/* Top row: name + badges + price */}
+              <div className="flex items-start gap-2">
+                {/* Name + active badge */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className={`text-[11px] font-bold leading-tight ${
+                      row.isActive ? 'text-emerald-700' : isStd ? 'text-gray-500' : 'text-gray-800'
+                    }`}>
+                      {row.name}
                     </span>
+                    {row.isActive && (
+                      <span className="rounded-full bg-emerald-600 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-white">
+                        Active
+                      </span>
+                    )}
+                    {!isStd && !row.ruleSteps.length && (
+                      <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-400">
+                        No rule for this product
+                      </span>
+                    )}
+                    {/* Rule type badges */}
+                    {row.ruleSteps.map((step, i) => (
+                      <span
+                        key={i}
+                        className="rounded px-1.5 py-0.5 text-[9px] font-bold"
+                        style={{ background: step.meta.bg, color: step.meta.color, border: `1px solid ${step.meta.border}` }}
+                      >
+                        {step.label}
+                      </span>
+                    ))}
+                    {row.needsCost && (
+                      <span className="rounded bg-orange-50 px-1.5 py-0.5 text-[9px] text-orange-500">
+                        ⚠ No cost price
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Price + delta */}
+                <div className="shrink-0 text-right">
+                  <p className={`text-sm font-extrabold tabular-nums leading-tight ${
+                    row.isActive ? 'text-emerald-700' : 'text-gray-900'
+                  }`}>
+                    {formatCurrency(dp)}
+                  </p>
+                  {noChange ? (
+                    <p className="text-[9px] text-gray-300 leading-tight">standard</p>
+                  ) : (
+                    <p className={`text-[10px] font-semibold tabular-nums leading-tight ${
+                      isCheaper ? 'text-emerald-600' : 'text-orange-500'
+                    }`}>
+                      {isCheaper ? '↓' : '↑'} {formatCurrency(Math.abs(ds))}
+                      {dp_pct > 0 && <span className="ml-0.5 opacity-70">({dp_pct}%)</span>}
+                    </p>
                   )}
                 </div>
-                {row.ruleHint && (
-                  <p className={`mt-0.5 truncate text-[10px] ${row.hasRule ? 'text-indigo-600' : 'text-gray-400'}`}>
-                    {row.ruleHint}
-                  </p>
-                )}
               </div>
 
-              {/* Right: price + delta */}
-              <div className="flex shrink-0 flex-col items-end gap-0.5">
-                <span className={`text-sm font-extrabold tabular-nums ${
-                  row.isActive ? 'text-emerald-700' : 'text-gray-900'
-                }`}>
-                  {formatCurrency(displayPrice)}
-                </span>
-                {noChange ? (
-                  <span className="text-[10px] text-gray-300">—</span>
-                ) : (
-                  <span className={`text-[10px] font-semibold tabular-nums ${
-                    isCheaper ? 'text-emerald-600' : 'text-orange-500'
-                  }`}>
-                    {isCheaper ? '↓' : '↑'} {formatCurrency(Math.abs(displaySaving))}
-                  </span>
-                )}
-              </div>
+              {/* Bundle hints */}
+              {row.bundleHints.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {row.bundleHints.map((hint, i) => (
+                    <span
+                      key={i}
+                      className="rounded bg-purple-50 px-1.5 py-0.5 text-[9px] font-semibold text-purple-600"
+                    >
+                      {hint}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Apply button — non-standard, non-active rows */}
+              {!isStd && !row.isActive && (
+                <button
+                  type="button"
+                  onClick={() => applyPricelist(row.plRef)}
+                  className="mt-2 w-full rounded-lg border border-gray-200 py-1.5 text-[10px] font-semibold text-gray-500 transition-colors hover:border-[#b20202] hover:bg-red-50 hover:text-[#b20202]"
+                >
+                  Use this pricelist
+                </button>
+              )}
             </div>
           );
         })}
@@ -247,7 +332,7 @@ function PricelistBreakdown({
 
       {hasSizes && activeSize && (
         <p className="text-right text-[10px] text-gray-400">
-          Showing prices for <strong>{activeSize.displayName}</strong>
+          Prices for <strong>{activeSize.displayName}</strong>
         </p>
       )}
     </div>
