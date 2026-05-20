@@ -269,81 +269,163 @@ function ProductChip({ item, product, onRemove, onSizesChange }: {
   );
 }
 
-// ── Product search dropdown ───────────────────────────────────────────────────
+// ── Product search dropdown (fixed-position to avoid overflow clipping) ────────
 
 function ProductAddDropdown({ all, existingIds, onAdd }: {
   all: Product[];
   existingIds: string[];
   onAdd: (id: string) => void;
 }) {
-  const [q, setQ]       = useState('');
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [q, setQ]           = useState('');
+  const [open, setOpen]     = useState(false);
+  const [style, setStyle]   = useState<React.CSSProperties>({});
+  const btnRef  = useRef<HTMLButtonElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
+
+  // Position the dropdown in fixed coords so it escapes any overflow:hidden parent
+  function openDrop() {
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      const dropH = 340; // approx height
+      const spaceBelow = window.innerHeight - r.bottom;
+      const top = spaceBelow >= dropH ? r.bottom + 6 : r.top - dropH - 6;
+      setStyle({ position: 'fixed', top, left: r.left, width: Math.max(320, r.width), zIndex: 9999 });
+    }
+    setOpen(true);
+    setQ('');
+  }
 
   useEffect(() => {
-    function close(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, []);
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || dropRef.current?.contains(t)) return;
+      setOpen(false);
+    }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
 
+  // Use String() for IDs so ObjectId vs string mismatches don't hide products
+  const existingSet = new Set(existingIds.map(String));
   const filtered = all.filter(p =>
-    !existingIds.includes(p._id) &&
-    (!q || p.product?.name?.toLowerCase().includes(q.toLowerCase()) || p.sku?.toLowerCase().includes(q.toLowerCase()))
+    !existingSet.has(String(p._id)) &&
+    (!q ||
+      p.product?.name?.toLowerCase().includes(q.toLowerCase()) ||
+      p.sku?.toLowerCase().includes(q.toLowerCase()))
   );
 
+  function emptyMsg() {
+    if (all.length === 0) return 'Loading products…';
+    if (!q && filtered.length === 0) return 'All products in your catalog are already in this group';
+    return `No products match "${q}"`;
+  }
+
   return (
-    <div className="relative" ref={ref}>
-      <button type="button" onClick={() => { setOpen(o => !o); setQ(''); }}
-        className="flex items-center gap-1.5 rounded-xl border border-dashed border-gray-300 px-3 py-2 text-xs font-medium text-gray-500 hover:border-[#b20202] hover:text-[#b20202] transition-colors">
-        <PiPlus className="h-3.5 w-3.5" /> Add product
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => open ? setOpen(false) : openDrop()}
+        className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium transition-colors ${
+          open
+            ? 'border-[#b20202] bg-red-50 text-[#b20202]'
+            : 'border-dashed border-gray-300 text-gray-500 hover:border-[#b20202] hover:text-[#b20202]'
+        }`}
+      >
+        <PiPlus className="h-3.5 w-3.5" />
+        Add product
+        {all.length > 0 && (
+          <span className="ml-0.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold text-gray-500">
+            {all.length - existingSet.size}
+          </span>
+        )}
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1.5 w-80 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
+        <div ref={dropRef} style={style}
+          className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl ring-1 ring-black/5">
+          {/* Search */}
           <div className="border-b border-gray-100 p-2.5">
             <div className="relative">
               <PiMagnifyingGlass className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-              <input autoFocus value={q} onChange={e => setQ(e.target.value)}
-                placeholder="Search by name or SKU…"
-                className="w-full rounded-xl border border-gray-200 py-2 pl-8 pr-3 text-xs outline-none focus:border-[#b20202]" />
+              <input
+                autoFocus
+                value={q}
+                onChange={e => setQ(e.target.value)}
+                placeholder="Search products by name or SKU…"
+                className="w-full rounded-xl border border-gray-200 py-2 pl-8 pr-3 text-xs outline-none focus:border-[#b20202]"
+              />
+              {q && (
+                <button type="button" onClick={() => setQ('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
+                  <PiX className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
           </div>
-          <div className="max-h-60 overflow-y-auto">
-            {filtered.length === 0 && (
-              <p className="py-6 text-center text-xs text-gray-400">
-                {q ? 'No matching products' : 'All products already added'}
-              </p>
-            )}
-            {filtered.map(p => {
-              const img = p.product?.images?.[0]?.thumbnail || p.product?.images?.[0]?.url;
-              const hasSizes = (p.sizes?.length ?? 0) > 0 && !p.sellWithoutSizeVariants;
-              return (
-                <button key={p._id} type="button"
-                  onClick={() => { onAdd(p._id); setOpen(false); setQ(''); }}
-                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors">
-                  {img
-                    ? <img src={img} className="h-9 w-9 shrink-0 rounded-xl object-cover" alt="" />
-                    : <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-base">🍾</div>
-                  }
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-semibold text-gray-800">{p.product?.name || p.sku}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[10px] text-gray-400">{formatCurrency(p.baseSellingPrice)}</span>
-                      {hasSizes && (
-                        <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold text-blue-600">
-                          {p.sizes.length} sizes
-                        </span>
-                      )}
+
+          {/* Results */}
+          <div className="max-h-72 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <div className="flex flex-col items-center py-8 text-center">
+                <PiPackage className="mb-2 h-8 w-8 text-gray-200" />
+                <p className="text-xs text-gray-400">{emptyMsg()}</p>
+              </div>
+            ) : (
+              filtered.map(p => {
+                const img      = p.product?.images?.[0]?.thumbnail || p.product?.images?.[0]?.url;
+                const hasSizes = (p.sizes?.length ?? 0) > 0 && !p.sellWithoutSizeVariants;
+                const priceStr = hasSizes && p.sizes.length > 0
+                  ? (() => {
+                      const prices = p.sizes.map(s => s.sellingPrice).filter(v => v > 0).sort((a, b) => a - b);
+                      if (!prices.length) return formatCurrency(p.baseSellingPrice);
+                      return prices[0] === prices[prices.length - 1]
+                        ? formatCurrency(prices[0])
+                        : `${formatCurrency(prices[0])} – ${formatCurrency(prices[prices.length - 1])}`;
+                    })()
+                  : formatCurrency(p.baseSellingPrice);
+
+                return (
+                  <button key={p._id} type="button"
+                    onClick={() => { onAdd(String(p._id)); setOpen(false); setQ(''); }}
+                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-gray-50 active:bg-gray-100">
+                    {img
+                      ? <img src={img} className="h-10 w-10 shrink-0 rounded-xl object-cover" alt="" />
+                      : <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-lg">🍾</div>
+                    }
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-bold text-gray-800">{p.product?.name || p.sku}</p>
+                      <div className="mt-0.5 flex items-center gap-2">
+                        <span className="text-[10px] font-semibold text-gray-600">{priceStr}</span>
+                        {hasSizes && (
+                          <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold text-blue-600">
+                            {p.sizes.length} size{p.sizes.length !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                        {p.sku && (
+                          <span className="font-mono text-[9px] text-gray-300">{p.sku}</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <PiPlus className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-                </button>
-              );
-            })}
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#b20202]/10 text-[#b20202]">
+                      <PiPlus className="h-3 w-3" />
+                    </div>
+                  </button>
+                );
+              })
+            )}
           </div>
+
+          {/* Footer count */}
+          {filtered.length > 0 && (
+            <div className="border-t border-gray-100 px-3 py-2 text-[10px] text-gray-400">
+              {filtered.length} product{filtered.length !== 1 ? 's' : ''} available
+            </div>
+          )}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -660,8 +742,8 @@ function ComboModal({ initial, products, onSave, onClose }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 backdrop-blur-sm p-0 sm:items-center sm:p-4">
-      <div className="flex w-full max-w-5xl flex-col overflow-hidden rounded-none bg-white shadow-2xl sm:rounded-2xl sm:max-h-[92vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" style={{ padding: '10vh 10vw' }}>
+      <div className="flex w-full h-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
 
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-gray-100 bg-white px-5 py-4">
