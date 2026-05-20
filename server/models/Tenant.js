@@ -391,14 +391,13 @@ tenantSchema.pre('save', async function () {
 
 // ── Pre-findOneAndUpdate: normalise state in $set operations ─────────────────
 
-tenantSchema.pre('findOneAndUpdate', function (next) {
+tenantSchema.pre('findOneAndUpdate', function () {
   const update = this.getUpdate();
   const state  = update?.$set?.['address.state'] || update?.address?.state;
   if (state) {
     if (!update.$set) update.$set = {};
     update.$set.normalizedState = normaliseState(state);
   }
-  next();
 });
 
 // ────────────────────────────────────────────────
