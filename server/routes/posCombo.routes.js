@@ -1,7 +1,24 @@
 const express  = require('express');
 const router   = express.Router();
-const POSCombo = require('../models/POSCombo');
+const POSCombo    = require('../models/POSCombo');
+const SubProduct  = require('../models/SubProduct');
+const { calcPlatformCostPrice, calcPlatformSellingPrice, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
 const { authenticate, attachTenant, tenantAdminOrSuperAdmin } = require('../middleware/auth.middleware');
+
+/** Mirror of pos.controller.js computePOSPricing — produces the platform selling price. */
+function computePrice(sp, sizeDoc, tenant) {
+  const revenueModel  = tenant?.revenueModel         ?? 'markup';
+  const markupPct     = tenant?.markupPercentage      ?? 25;
+  const commissionPct = tenant?.commissionPercentage  ?? 12;
+  const platformMarkupPct = sp.product?.platformMarkup ?? DEFAULT_PLATFORM_MARKUP;
+
+  const rawCost    = (sizeDoc?.costPrice    > 0 ? sizeDoc.costPrice    : null) ?? sp.costPrice    ?? 0;
+  const rawSelling = (sizeDoc?.sellingPrice > 0 ? sizeDoc.sellingPrice : null) ?? sp.baseSellingPrice ?? 0;
+  if (rawCost <= 0 && rawSelling <= 0) return 0;
+
+  const platformCost = calcPlatformCostPrice(rawCost, rawSelling, revenueModel, markupPct, commissionPct);
+  return calcPlatformSellingPrice(platformCost, platformMarkupPct);
+}
 
 router.use(authenticate);
 router.use(attachTenant);
@@ -33,6 +50,39 @@ function normaliseLines(choiceLines) {
     _id: cl._id,
   }));
 }
+
+// ── Products list with computed POS pricing (for combo builder) ───────────────
+// MUST be before /:id so Express doesn't treat "products" as an ID.
+router.get('/products', tenantAdminOrSuperAdmin, async (req, res, next) => {
+  try {
+    const subProducts = await SubProduct.find({ tenant: req.tenant._id })
+      .select('sku baseSellingPrice costPrice sizes sellWithoutSizeVariants product availableStock')
+      .populate({
+        path:   'product',
+        select: 'name images type platformMarkup platformDiscount',
+      })
+      .populate('sizes')
+      .sort({ totalSold: -1, isFeaturedByTenant: -1 })
+      .limit(300)
+      .lean();
+
+    const products = subProducts.map(sp => {
+      const enrichedSizes = (sp.sizes || []).map(size => ({
+        ...size,
+        // Use platform-computed price, fall back to raw if computation gives 0
+        sellingPrice: computePrice(sp, size, req.tenant) || size.sellingPrice || 0,
+      }));
+      return {
+        ...sp,
+        // Product-level computed price (no sizeDoc)
+        baseSellingPrice: computePrice(sp, null, req.tenant) || sp.baseSellingPrice || 0,
+        sizes: enrichedSizes,
+      };
+    });
+
+    res.json({ success: true, data: { products } });
+  } catch (err) { next(err); }
+});
 
 // ── List ──────────────────────────────────────────────────────────────────────
 router.get('/', tenantAdminOrSuperAdmin, async (req, res, next) => {

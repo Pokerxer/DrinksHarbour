@@ -34,12 +34,12 @@ const createCombo   = (t: string, b: any) => apiReq('POST', '/api/pos-combos', t
 const updateCombo   = (t: string, id: string, b: any) => apiReq('PATCH', `/api/pos-combos/${id}`, t, b);
 const deleteCombo   = (t: string, id: string) => apiReq('DELETE', `/api/pos-combos/${id}`, t);
 const fetchProducts = async (t: string) => {
-  // Admin endpoint accepts admin JWT (unlike /api/pos/products which needs POS token)
-  const r = await fetch(`${API}/api/subproducts?limit=200`, {
+  // Dedicated endpoint: admin JWT, returns products with platform-computed prices
+  const r = await fetch(`${API}/api/pos-combos/products`, {
     headers: { Authorization: `Bearer ${t}` },
   });
   const json = await r.json();
-  return json.data?.subProducts || [];
+  return json.data?.products || [];
 };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -159,18 +159,18 @@ function ProductChip({ item, product, onRemove, onSizesChange }: {
   const hasSizes = (product.sizes?.length ?? 0) > 0 && !product.sellWithoutSizeVariants;
   const selectedSizes = item.allowedSizes;
 
-  // Price to show: if sizes restricted, show range of those sizes; else base price
+  // Price display: use computed sellingPrice from the API (platform-enriched)
   const relevantSizes = hasSizes
     ? (selectedSizes.length > 0
-        ? product.sizes.filter(s => selectedSizes.includes(s._id))
+        ? product.sizes.filter(s => selectedSizes.includes(String(s._id)))
         : product.sizes)
     : [];
   const price = hasSizes && relevantSizes.length > 0
     ? (() => {
-        const prices = relevantSizes.map(s => s.sellingPrice);
-        const min = Math.min(...prices);
-        const max = Math.max(...prices);
-        return min === max ? formatCurrency(min) : `${formatCurrency(min)}–${formatCurrency(max)}`;
+        const prices = relevantSizes.map(s => s.sellingPrice).filter(v => v > 0).sort((a, b) => a - b);
+        if (!prices.length) return formatCurrency(product.baseSellingPrice);
+        const lo = prices[0], hi = prices[prices.length - 1];
+        return lo === hi ? formatCurrency(lo) : `${formatCurrency(lo)} – ${formatCurrency(hi)}`;
       })()
     : formatCurrency(product.baseSellingPrice);
 
@@ -359,12 +359,13 @@ function POSPreview({ name, price, lines, allProducts }: {
 
   const getProduct = (id: string) => allProducts.find(p => String(p._id) === String(id));
 
+  // Reset preview selections whenever the group structure changes
+  useEffect(() => { setSelections({}); }, [lines]);
+
   function selectProduct(lineIdx: number, spId: string, maxSelect: number) {
     setSelections(prev => {
       const current = prev[lineIdx] || [];
-      const existing = current.find(s => s.subProduct === spId);
-      if (existing) {
-        // Deselect
+      if (current.some(s => s.subProduct === spId)) {
         return { ...prev, [lineIdx]: current.filter(s => s.subProduct !== spId) };
       }
       const newSel: Selection = { subProduct: spId };
@@ -378,20 +379,22 @@ function POSPreview({ name, price, lines, allProducts }: {
   function selectSize(lineIdx: number, spId: string, sizeId: string) {
     setSelections(prev => {
       const current = (prev[lineIdx] || []).map(s =>
-        s.subProduct === spId ? { ...s, size: s.size === sizeId ? undefined : sizeId } : s
+        s.subProduct === spId
+          ? { ...s, size: String(s.size) === String(sizeId) ? undefined : sizeId }
+          : s
       );
       return { ...prev, [lineIdx]: current };
     });
   }
 
-  // Calculate price
+  // Running total using computed prices (size-specific if a size is chosen)
   const dynamicTotal = lines.reduce((sum, line, i) => {
     const sel = selections[i] || [];
-    return sum + sel.reduce((s, sel) => {
-      const p = getProduct(sel.subProduct);
+    return sum + sel.reduce((s, entry) => {
+      const p = getProduct(entry.subProduct);
       if (!p) return s;
-      if (sel.size) {
-        const sz = p.sizes?.find(sz => sz._id === sel.size);
+      if (entry.size) {
+        const sz = p.sizes?.find(sz => String(sz._id) === String(entry.size));
         return s + (sz?.sellingPrice || p.baseSellingPrice);
       }
       return s + p.baseSellingPrice;
@@ -471,10 +474,27 @@ function POSPreview({ name, price, lines, allProducts }: {
                           : p.sizes)
                       : [];
 
-                    // Price to show on the row
-                    const rowPrice = selEntry?.size
-                      ? (p.sizes?.find(s => s._id === selEntry.size)?.sellingPrice ?? p.baseSellingPrice)
+                    // Price to show: use selected size price, or price range if sizes available
+                    const selectedSz = selEntry?.size
+                      ? p.sizes?.find(s => String(s._id) === String(selEntry.size))
+                      : null;
+                    const rowPrice = selectedSz
+                      ? selectedSz.sellingPrice
+                      : hasSizes && availSizes.length > 0
+                      ? (() => {
+                          const prices = availSizes.map(s => s.sellingPrice).sort((a, b) => a - b);
+                          const lo = prices[0], hi = prices[prices.length - 1];
+                          return lo; // use lowest for display; full range shown below
+                        })()
                       : p.baseSellingPrice;
+                    const priceRange = hasSizes && availSizes.length > 1 && !selectedSz
+                      ? (() => {
+                          const prices = availSizes.map(s => s.sellingPrice).sort((a, b) => a - b);
+                          return prices[0] === prices[prices.length - 1]
+                            ? formatCurrency(prices[0])
+                            : `${formatCurrency(prices[0])} – ${formatCurrency(prices[prices.length - 1])}`;
+                        })()
+                      : null;
 
                     return (
                       <div key={item.subProduct}>
@@ -497,7 +517,7 @@ function POSPreview({ name, price, lines, allProducts }: {
                               {p.product?.name || p.sku}
                             </p>
                             <p className="text-[10px] text-gray-400">
-                              {hasSizes && !selEntry?.size ? `${availSizes.length} size${availSizes.length !== 1 ? 's' : ''}` : formatCurrency(rowPrice)}
+                              {priceRange || formatCurrency(rowPrice)}
                             </p>
                           </div>
                           {hasSizes && chosen && !selEntry?.size && (
