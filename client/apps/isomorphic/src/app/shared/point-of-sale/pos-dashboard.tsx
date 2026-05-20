@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import {
@@ -11,6 +11,11 @@ import {
   PiUserCircle, PiCalendar, PiArrowUpRight, PiArrowDownRight,
   PiCrown,
 } from 'react-icons/pi';
+import {
+  Bar, Line, ComposedChart, XAxis, YAxis,
+  CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+} from 'recharts';
+import { CustomTooltip } from '@core/components/charts/custom-tooltip';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { usePOSAuth } from '@/app/shared/point-of-sale/store';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
@@ -40,43 +45,33 @@ const METHOD_LABEL: Record<string, string> = {
   mobile_money: 'Mobile Money', split: 'Split',
 };
 
-// ── Sales chart ───────────────────────────────────────────────────────────────
+// ── Sales chart (Recharts ComposedChart — same pattern as customized-mix-chart) ─
 
-function niceScale(max: number, steps = 4): number[] {
-  if (max <= 0) return [0];
-  const raw  = max / steps;
-  const mag  = Math.pow(10, Math.floor(Math.log10(raw)));
-  const nice = [1, 2, 2.5, 5, 10].map(f => f * mag).find(f => f >= raw) ?? mag * 10;
-  return Array.from({ length: steps + 1 }, (_, i) => i * nice);
-}
-
-function fmtY(v: number): string {
-  if (v >= 1_000_000) return `₦${(v / 1_000_000).toFixed(v % 1_000_000 === 0 ? 0 : 1)}M`;
-  if (v >= 1_000)     return `₦${(v / 1_000).toFixed(v % 1_000 === 0 ? 0 : 0)}K`;
+function fmtYAxis(v: number): string {
+  if (v >= 1_000_000) return `₦${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000)     return `₦${Math.round(v / 1_000)}K`;
   return `₦${v}`;
 }
 
 function SalesChart({ data }: { data: { date: string; sales: number; orders: number }[] }) {
-  const [hovered, setHovered] = useState<number | null>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => { const t = setTimeout(() => setMounted(true), 60); return () => clearTimeout(t); }, []);
-
   if (!data.length) return null;
 
-  const maxSales  = Math.max(...data.map(d => d.sales), 1);
-  const maxOrders = Math.max(...data.map(d => d.orders), 1);
-  const ticks     = niceScale(maxSales, 4);
-  const chartMax  = ticks[ticks.length - 1];
+  // Shape recharts expects: add a 'day' label and keep sales + orders
+  const chartData = data.map((d, i) => ({
+    day:    new Date(d.date).toLocaleDateString('en-US', { weekday: 'short' }),
+    date:   new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    sales:  d.sales,
+    orders: d.orders,
+    isToday: i === data.length - 1,
+  }));
 
   const totalSales = data.reduce((s, d) => s + d.sales, 0);
   const avgSales   = totalSales / data.length;
   const bestIdx    = data.reduce((bi, d, i) => d.sales > data[bi].sales ? i : bi, 0);
 
-  // Day-over-day trend: compare last 3 avg vs first 4 avg
-  const half = Math.floor(data.length / 2);
-  const earlyAvg = data.slice(0, half).reduce((s, d) => s + d.sales, 0) / half;
-  const lateAvg  = data.slice(half).reduce((s, d) => s + d.sales, 0) / (data.length - half);
+  const half     = Math.floor(data.length / 2);
+  const earlyAvg = data.slice(0, half).reduce((s, d) => s + d.sales, 0) / (half || 1);
+  const lateAvg  = data.slice(half).reduce((s, d) => s + d.sales, 0) / ((data.length - half) || 1);
   const trendPct = earlyAvg > 0 ? ((lateAvg - earlyAvg) / earlyAvg) * 100 : 0;
 
   return (
@@ -87,7 +82,9 @@ function SalesChart({ data }: { data: { date: string; sales: number; orders: num
         {[
           { label: '7-day total',   value: formatCurrency(totalSales) },
           { label: 'Daily average', value: formatCurrency(avgSales)   },
-          { label: 'Best day',      value: data[bestIdx] ? new Date(data[bestIdx].date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '—' },
+          { label: 'Best day',      value: data[bestIdx]
+              ? new Date(data[bestIdx].date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+              : '—' },
         ].map(s => (
           <div key={s.label} className="rounded-xl bg-gray-50 px-3 py-2.5">
             <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">{s.label}</p>
@@ -96,115 +93,87 @@ function SalesChart({ data }: { data: { date: string; sales: number; orders: num
         ))}
       </div>
 
-      {/* Chart */}
-      <div className="flex gap-2">
+      {/* Recharts ComposedChart: Bar (revenue) + Line (orders) */}
+      <div className="h-52 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart
+            data={chartData}
+            barSize={28}
+            margin={{ top: 4, right: 8, left: -8, bottom: 0 }}
+            className="[&_.recharts-cartesian-grid-vertical]:opacity-0 [&_.recharts-cartesian-axis-tick-value]:fill-gray-500 [&_.recharts-cartesian-axis-tick-value]:text-[11px]"
+          >
+            <defs>
+              <linearGradient id="posSalesGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#b20202" stopOpacity={0.9} />
+                <stop offset="100%" stopColor="#d42b2b" stopOpacity={0.7} />
+              </linearGradient>
+              <linearGradient id="posOrdersArea" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%"   stopColor="#b20202" stopOpacity={0.15} />
+                <stop offset="95%"  stopColor="#b20202" stopOpacity={0}    />
+              </linearGradient>
+            </defs>
 
-        {/* Y-axis labels */}
-        <div className="flex w-12 shrink-0 flex-col-reverse justify-between pb-6 text-right">
-          {ticks.map(t => (
-            <span key={t} className="text-[9px] leading-none text-gray-400 tabular-nums">{fmtY(t)}</span>
-          ))}
-        </div>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+            <XAxis
+              dataKey="day"
+              axisLine={false}
+              tickLine={false}
+              tick={{ fontSize: 11, fill: '#94a3b8' }}
+            />
+            <YAxis
+              axisLine={false}
+              tickLine={false}
+              tickFormatter={fmtYAxis}
+              tick={{ fontSize: 10, fill: '#94a3b8' }}
+              width={52}
+            />
+            <Tooltip
+              content={<CustomTooltip />}
+              cursor={{ fill: '#f8fafc', stroke: '#e2e8f0', strokeWidth: 1 }}
+            />
+            <Legend
+              iconType="circle"
+              iconSize={8}
+              wrapperStyle={{ fontSize: 11, color: '#94a3b8', paddingTop: 8 }}
+            />
 
-        {/* Bars + grid */}
-        <div className="relative flex-1">
-          {/* Horizontal grid lines */}
-          <div className="absolute inset-x-0 bottom-6 top-0 flex flex-col-reverse justify-between pointer-events-none">
-            {ticks.map((_, i) => (
-              <div key={i} className="w-full border-t border-gray-100" />
-            ))}
-          </div>
+            {/* Revenue bars */}
+            <Bar
+              dataKey="sales"
+              name="Revenue"
+              fill="url(#posSalesGradient)"
+              radius={[4, 4, 0, 0]}
+            />
 
-          {/* Bar group */}
-          <div className="relative flex h-44 items-end gap-2 pb-6">
-            {data.map((d, i) => {
-              const barPct    = chartMax > 0 ? (d.sales  / chartMax) * 100 : 0;
-              const ordPct    = maxOrders > 0 ? (d.orders / maxOrders) * 100 : 0;
-              const isToday   = i === data.length - 1;
-              const isBest    = i === bestIdx;
-              const isHovered = hovered === i;
-              const day       = new Date(d.date).toLocaleDateString('en-US', { weekday: 'short' });
-              const dateLabel = new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-
-              return (
-                <div
-                  key={d.date}
-                  className="relative flex flex-1 flex-col items-center"
-                  onMouseEnter={() => setHovered(i)}
-                  onMouseLeave={() => setHovered(null)}
-                >
-                  {/* Hover tooltip */}
-                  {isHovered && (
-                    <div className="pointer-events-none absolute bottom-[calc(100%-1.5rem)] left-1/2 z-20 -translate-x-1/2 -translate-y-1 flex flex-col items-center">
-                      <div className="rounded-xl bg-gray-900 px-3 py-2 text-center shadow-xl ring-1 ring-white/10 whitespace-nowrap">
-                        <p className="text-[9px] font-semibold text-gray-400 mb-0.5">{dateLabel}</p>
-                        <p className="text-[11px] font-bold text-white tabular-nums">{formatCurrency(d.sales)}</p>
-                        <p className="text-[9px] text-gray-400 mt-0.5">{d.orders} order{d.orders !== 1 ? 's' : ''}</p>
-                      </div>
-                      <div className="h-1.5 w-1.5 rotate-45 bg-gray-900 -mt-0.5" />
-                    </div>
-                  )}
-
-                  {/* Bar container */}
-                  <div className="relative flex w-full flex-1 flex-col justify-end">
-
-                    {/* Order-count dot at bar top */}
-                    {d.orders > 0 && barPct > 0 && (
-                      <div
-                        className={`absolute left-1/2 -translate-x-1/2 h-2 w-2 rounded-full border-2 border-white shadow-sm transition-all ${
-                          isToday ? 'bg-[#b20202]' : 'bg-gray-400'
-                        }`}
-                        style={{ bottom: `calc(${barPct}% + 2px)` }}
-                        title={`${d.orders} orders`}
-                      />
-                    )}
-
-                    {/* Bar */}
-                    <div
-                      className={`w-full rounded-t-lg transition-all duration-300 ${
-                        isHovered
-                          ? isToday ? 'opacity-80' : 'bg-gray-400'
-                          : ''
-                      }`}
-                      style={{
-                        height: mounted ? `${Math.max(2, barPct)}%` : '2%',
-                        transition: mounted ? 'height 0.4s cubic-bezier(0.4,0,0.2,1)' : 'none',
-                        background: isToday
-                          ? 'linear-gradient(180deg, #d42b2b 0%, #b20202 100%)'
-                          : isHovered
-                          ? '#9ca3af'
-                          : '#e5e7eb',
-                        boxShadow: isToday && mounted ? '0 -2px 8px rgba(178,2,2,0.3)' : undefined,
-                      }}
-                    />
-                  </div>
-
-                  {/* Day label */}
-                  <div className="flex flex-col items-center mt-1.5 gap-0.5">
-                    <p className={`text-[9px] font-bold leading-none ${
-                      isToday ? 'text-[#b20202]' : isHovered ? 'text-gray-600' : 'text-gray-400'
-                    }`}>{day}</p>
-                    {isBest && (
-                      <PiCrown className="h-2.5 w-2.5 text-amber-400" title="Best day" />
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+            {/* Order count line (secondary axis feel via yAxisId right) */}
+            <Line
+              dataKey="orders"
+              name="Orders"
+              type="monotone"
+              stroke="#b20202"
+              strokeWidth={2}
+              dot={{ r: 3, fill: '#b20202', strokeWidth: 0 }}
+              activeDot={{ r: 5 }}
+              yAxisId={0}
+              opacity={0.5}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
       </div>
 
       {/* Trend footnote */}
       <div className="flex items-center gap-1.5 text-[10px]">
         {trendPct >= 0
-          ? <><PiArrowUpRight className="h-3 w-3 text-emerald-500" /><span className="text-emerald-600 font-semibold">{trendPct.toFixed(0)}% trend up</span></>
-          : <><PiArrowDownRight className="h-3 w-3 text-red-400" /><span className="text-red-500 font-semibold">{Math.abs(trendPct).toFixed(0)}% trend down</span></>
+          ? <><PiArrowUpRight className="h-3 w-3 text-emerald-500" /><span className="font-semibold text-emerald-600">{trendPct.toFixed(0)}% trend up</span></>
+          : <><PiArrowDownRight className="h-3 w-3 text-red-400" /><span className="font-semibold text-red-500">{Math.abs(trendPct).toFixed(0)}% trend down</span></>
         }
         <span className="text-gray-400">vs earlier in the week</span>
-        <span className="ml-auto flex items-center gap-1 text-gray-400">
-          <span className="inline-block h-2 w-2 rounded-full bg-gray-400" /> Orders
-        </span>
+        {data[bestIdx] && (
+          <span className="ml-auto flex items-center gap-1 text-gray-400">
+            <PiCrown className="h-3 w-3 text-amber-400" />
+            Best: {new Date(data[bestIdx].date).toLocaleDateString('en-US', { weekday: 'short' })} {formatCurrency(data[bestIdx].sales)}
+          </span>
+        )}
       </div>
     </div>
   );
