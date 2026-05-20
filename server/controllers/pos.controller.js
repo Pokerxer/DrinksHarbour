@@ -1184,14 +1184,15 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
   const tenant   = req.tenant;
   const { search, category, limit = 200 } = req.query;
 
-  // 'low_stock' and 'out_of_stock' still show (greyed out) so cashiers know
-  // what exists; 'discontinued', 'hidden', 'archived', 'draft', 'pending' are excluded.
-  const POS_STATUSES = ['active', 'low_stock', 'out_of_stock'];
+  // visibleInPOS is the explicit "show in POS" flag and is the sole gate.
+  // Include all statuses except administrative-only ones that mean the product
+  // has been deliberately pulled from all channels.
+  const EXCLUDED_STATUSES = ['discontinued', 'hidden', 'archived'];
 
   const query = {
     tenant:       tenantId,
     visibleInPOS: true,
-    status:       { $in: POS_STATUSES },
+    status:       { $nin: EXCLUDED_STATUSES },
   };
 
   // NOTE: product.type is on the populated Product ref, not on SubProduct itself.
