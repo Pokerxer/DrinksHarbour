@@ -9,7 +9,7 @@ import {
   PiArrowsClockwise, PiCheckCircle, PiWarningCircle,
   PiToggleLeft, PiToggleRight, PiCurrencyNgn, PiListPlus,
   PiMinus, PiMagnifyingGlass, PiArrowRight, PiStar,
-  PiDotsSixVertical, PiInfo,
+  PiCaretDown, PiCaretUp,
 } from 'react-icons/pi';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import POSNavHeader from '@/app/shared/point-of-sale/pos-nav-header';
@@ -29,10 +29,10 @@ async function apiReq(method: string, path: string, token: string, body?: any) {
   return json.data;
 }
 
-const fetchCombos  = (t: string) => apiReq('GET', '/api/pos-combos', t);
-const createCombo  = (t: string, b: any) => apiReq('POST', '/api/pos-combos', t, b);
-const updateCombo  = (t: string, id: string, b: any) => apiReq('PATCH', `/api/pos-combos/${id}`, t, b);
-const deleteCombo  = (t: string, id: string) => apiReq('DELETE', `/api/pos-combos/${id}`, t);
+const fetchCombos   = (t: string) => apiReq('GET', '/api/pos-combos', t);
+const createCombo   = (t: string, b: any) => apiReq('POST', '/api/pos-combos', t, b);
+const updateCombo   = (t: string, id: string, b: any) => apiReq('PATCH', `/api/pos-combos/${id}`, t, b);
+const deleteCombo   = (t: string, id: string) => apiReq('DELETE', `/api/pos-combos/${id}`, t);
 const fetchProducts = async (t: string) => {
   const r = await fetch(`${API}/api/pos/products?limit=200`, { headers: { Authorization: `Bearer ${t}` } });
   return (await r.json()).data?.products || [];
@@ -40,13 +40,33 @@ const fetchProducts = async (t: string) => {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/** One selectable item inside a choice group.
+ *  allowedSizes = [] means ALL sizes are selectable.
+ *  allowedSizes = [id, …] restricts to those specific size variants. */
+type ChoiceItem = {
+  subProduct: string;   // SubProduct._id
+  allowedSizes: string[]; // Size._id[]
+};
+
 type ChoiceLine = {
   _id?: string;
   label: string;
   minSelect: number;
   maxSelect: number;
   required: boolean;
-  products: string[];
+  items: ChoiceItem[];
+};
+
+type PosSize = { _id: string; displayName: string; sellingPrice: number; availableStock: number };
+
+type Product = {
+  _id: string;
+  sku: string;
+  baseSellingPrice: number;
+  availableStock: number;
+  sellWithoutSizeVariants: boolean;
+  sizes: PosSize[];
+  product: { name: string; images?: { thumbnail?: string; url?: string }[] };
 };
 
 type Combo = {
@@ -55,28 +75,35 @@ type Combo = {
   description: string;
   price: number;
   active: boolean;
-  choiceLines: ChoiceLine[];
-  triggerProducts: any[];
-};
-
-type Product = {
-  _id: string;
-  sku: string;
-  baseSellingPrice: number;
-  availableStock: number;
-  product: { name: string; images?: { thumbnail?: string; url?: string }[] };
+  choiceLines: any[];
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const blankLine = (): ChoiceLine => ({ label: '', minSelect: 1, maxSelect: 1, required: true, products: [] });
+const blankLine = (): ChoiceLine => ({ label: '', minSelect: 1, maxSelect: 1, required: true, items: [] });
+
+/** Normalise the server response (old format was products:[id], new is items:[{subProduct,allowedSizes}]) */
+function normaliseLines(raw: any[]): ChoiceLine[] {
+  return (raw || []).map(l => {
+    const items: ChoiceItem[] = (l.items || []).map((it: any) =>
+      typeof it === 'string' || it._id
+        ? { subProduct: it._id || it, allowedSizes: [] }
+        : { subProduct: it.subProduct?._id || it.subProduct, allowedSizes: (it.allowedSizes || []).map((s: any) => s._id || s) }
+    );
+    // backwards-compat: old combos stored products:[id]
+    if (!items.length && l.products?.length) {
+      l.products.forEach((p: any) => items.push({ subProduct: p._id || p, allowedSizes: [] }));
+    }
+    return { ...l, required: l.required !== false, items };
+  });
+}
 
 const GROUP_COLORS = [
-  { bg: 'bg-blue-50',   text: 'text-blue-700',   dot: 'bg-blue-500',   border: 'border-blue-200'   },
-  { bg: 'bg-violet-50', text: 'text-violet-700',  dot: 'bg-violet-500', border: 'border-violet-200' },
-  { bg: 'bg-amber-50',  text: 'text-amber-700',   dot: 'bg-amber-500',  border: 'border-amber-200'  },
-  { bg: 'bg-emerald-50',text: 'text-emerald-700', dot: 'bg-emerald-500',border: 'border-emerald-200'},
-  { bg: 'bg-rose-50',   text: 'text-rose-700',    dot: 'bg-rose-500',   border: 'border-rose-200'   },
+  { dot: 'bg-blue-500',   text: 'text-blue-700',   bg: 'bg-blue-50',    border: 'border-blue-200'   },
+  { dot: 'bg-violet-500', text: 'text-violet-700',  bg: 'bg-violet-50',  border: 'border-violet-200' },
+  { dot: 'bg-amber-500',  text: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200'  },
+  { dot: 'bg-emerald-500',text: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200'},
+  { dot: 'bg-rose-500',   text: 'text-rose-700',    bg: 'bg-rose-50',    border: 'border-rose-200'   },
 ];
 const gc = (i: number) => GROUP_COLORS[i % GROUP_COLORS.length];
 
@@ -85,15 +112,12 @@ const gc = (i: number) => GROUP_COLORS[i % GROUP_COLORS.length];
 function Stepper({ value, min, max, onChange }: { value: number; min: number; max?: number; onChange: (n: number) => void }) {
   return (
     <div className="flex items-center gap-0.5">
-      <button type="button"
-        onClick={() => onChange(Math.max(min, value - 1))}
-        disabled={value <= min}
+      <button type="button" onClick={() => onChange(Math.max(min, value - 1))} disabled={value <= min}
         className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-400 hover:bg-gray-100 disabled:opacity-30">
         <PiMinus className="h-2.5 w-2.5" />
       </button>
       <span className="w-7 text-center text-sm font-bold text-gray-800">{value}</span>
-      <button type="button"
-        onClick={() => onChange(max !== undefined ? Math.min(max, value + 1) : value + 1)}
+      <button type="button" onClick={() => onChange(max !== undefined ? Math.min(max, value + 1) : value + 1)}
         disabled={max !== undefined && value >= max}
         className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-400 hover:bg-gray-100 disabled:opacity-30">
         <PiPlus className="h-2.5 w-2.5" />
@@ -102,12 +126,124 @@ function Stepper({ value, min, max, onChange }: { value: number; min: number; ma
   );
 }
 
-// ── Inline product picker for a choice group ──────────────────────────────────
+// ── Product chip with size config ─────────────────────────────────────────────
 
-function GroupProductPicker({
-  all, selected, onAdd, onRemove,
-}: { all: Product[]; selected: string[]; onAdd: (id: string) => void; onRemove: (id: string) => void }) {
-  const [q, setQ] = useState('');
+function ProductChip({ item, product, onRemove, onSizesChange }: {
+  item: ChoiceItem;
+  product: Product;
+  onRemove: () => void;
+  onSizesChange: (sizeIds: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const img = product.product?.images?.[0]?.thumbnail || product.product?.images?.[0]?.url;
+  const hasSizes = (product.sizes?.length ?? 0) > 0 && !product.sellWithoutSizeVariants;
+  const selectedSizes = item.allowedSizes;
+
+  // Price to show: if sizes restricted, show range of those sizes; else base price
+  const relevantSizes = hasSizes
+    ? (selectedSizes.length > 0
+        ? product.sizes.filter(s => selectedSizes.includes(s._id))
+        : product.sizes)
+    : [];
+  const price = hasSizes && relevantSizes.length > 0
+    ? (() => {
+        const prices = relevantSizes.map(s => s.sellingPrice);
+        const min = Math.min(...prices);
+        const max = Math.max(...prices);
+        return min === max ? formatCurrency(min) : `${formatCurrency(min)}–${formatCurrency(max)}`;
+      })()
+    : formatCurrency(product.baseSellingPrice);
+
+  function toggleSize(sid: string) {
+    onSizesChange(
+      selectedSizes.includes(sid) ? selectedSizes.filter(x => x !== sid) : [...selectedSizes, sid]
+    );
+  }
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      {/* Chip row */}
+      <div className="flex items-center gap-2 px-2.5 py-2">
+        {img
+          ? <img src={img} className="h-7 w-7 shrink-0 rounded-lg object-cover" alt="" />
+          : <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-sm">🍾</span>
+        }
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-semibold text-gray-800">{product.product?.name || product.sku}</p>
+          <p className="text-[10px] text-gray-400">{price}</p>
+        </div>
+
+        {/* Size config button (only for sized products) */}
+        {hasSizes && (
+          <button
+            type="button"
+            onClick={() => setOpen(o => !o)}
+            className={`flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-semibold transition-colors ${
+              open ? 'border-[#b20202] bg-red-50 text-[#b20202]'
+                   : selectedSizes.length > 0
+                   ? 'border-blue-200 bg-blue-50 text-blue-700'
+                   : 'border-gray-200 text-gray-500 hover:border-gray-300'
+            }`}
+          >
+            {selectedSizes.length > 0 ? `${selectedSizes.length} size${selectedSizes.length !== 1 ? 's' : ''}` : 'All sizes'}
+            {open ? <PiCaretUp className="h-2.5 w-2.5" /> : <PiCaretDown className="h-2.5 w-2.5" />}
+          </button>
+        )}
+        <button type="button" onClick={onRemove} className="text-gray-300 hover:text-red-400">
+          <PiX className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* Size picker panel */}
+      {hasSizes && open && (
+        <div className="border-t border-gray-100 bg-gray-50 px-3 py-2.5">
+          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+            Available sizes for this group
+            <span className="ml-1 font-normal normal-case text-gray-300">(uncheck to restrict)</span>
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {product.sizes.map(size => {
+              const active = selectedSizes.length === 0 || selectedSizes.includes(size._id);
+              const oos    = size.availableStock <= 0;
+              return (
+                <button
+                  key={size._id}
+                  type="button"
+                  onClick={() => toggleSize(size._id)}
+                  className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-all ${
+                    active
+                      ? 'border-blue-200 bg-blue-50 text-blue-800'
+                      : 'border-gray-200 bg-white text-gray-400 line-through'
+                  } ${oos ? 'opacity-50' : ''}`}
+                >
+                  {active && <PiCheckCircle className="h-3 w-3 text-blue-500" />}
+                  {size.displayName}
+                  <span className="text-[10px] font-normal opacity-70">{formatCurrency(size.sellingPrice)}</span>
+                  {oos && <span className="rounded bg-red-100 px-1 text-[9px] text-red-500">OOS</span>}
+                </button>
+              );
+            })}
+          </div>
+          {selectedSizes.length > 0 && (
+            <button type="button" onClick={() => onSizesChange([])}
+              className="mt-1.5 text-[10px] text-gray-400 underline hover:text-gray-600">
+              Reset to all sizes
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Product search dropdown ───────────────────────────────────────────────────
+
+function ProductAddDropdown({ all, existingIds, onAdd }: {
+  all: Product[];
+  existingIds: string[];
+  onAdd: (id: string) => void;
+}) {
+  const [q, setQ]       = useState('');
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -118,225 +254,255 @@ function GroupProductPicker({
   }, []);
 
   const filtered = all.filter(p =>
-    !selected.includes(p._id) &&
-    (p.product?.name?.toLowerCase().includes(q.toLowerCase()) || p.sku?.toLowerCase().includes(q.toLowerCase()))
+    !existingIds.includes(p._id) &&
+    (!q || p.product?.name?.toLowerCase().includes(q.toLowerCase()) || p.sku?.toLowerCase().includes(q.toLowerCase()))
   );
-  const selectedProducts = all.filter(p => selected.includes(p._id));
 
   return (
-    <div className="space-y-2">
-      {/* Selected product chips */}
-      {selectedProducts.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {selectedProducts.map(p => {
-            const img = p.product?.images?.[0]?.thumbnail || p.product?.images?.[0]?.url;
-            return (
-              <div key={p._id}
-                className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs shadow-sm">
-                {img
-                  ? <img src={img} className="h-5 w-5 rounded object-cover" alt="" />
-                  : <span className="text-base leading-none">🍾</span>
-                }
-                <span className="font-medium text-gray-700 max-w-[120px] truncate">{p.product?.name || p.sku}</span>
-                <span className="text-[10px] text-gray-400">{formatCurrency(p.baseSellingPrice)}</span>
-                <button type="button" onClick={() => onRemove(p._id)} className="ml-0.5 text-gray-300 hover:text-red-400">
-                  <PiX className="h-3 w-3" />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
+    <div className="relative" ref={ref}>
+      <button type="button" onClick={() => { setOpen(o => !o); setQ(''); }}
+        className="flex items-center gap-1.5 rounded-xl border border-dashed border-gray-300 px-3 py-2 text-xs font-medium text-gray-500 hover:border-[#b20202] hover:text-[#b20202] transition-colors">
+        <PiPlus className="h-3.5 w-3.5" /> Add product
+      </button>
 
-      {/* Add products dropdown */}
-      <div className="relative" ref={ref}>
-        <button
-          type="button"
-          onClick={() => setOpen(o => !o)}
-          className="flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-500 hover:border-[#b20202] hover:text-[#b20202] transition-colors"
-        >
-          <PiPlus className="h-3 w-3" />
-          Add products
-        </button>
-
-        {open && (
-          <div className="absolute left-0 top-full z-30 mt-1 w-72 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
-            <div className="border-b border-gray-100 p-2">
-              <div className="relative">
-                <PiMagnifyingGlass className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-                <input
-                  autoFocus
-                  value={q}
-                  onChange={e => setQ(e.target.value)}
-                  placeholder="Search products…"
-                  className="w-full rounded-lg border border-gray-200 py-1.5 pl-7 pr-2.5 text-xs outline-none focus:border-[#b20202]"
-                />
-              </div>
-            </div>
-            <div className="max-h-52 overflow-y-auto">
-              {filtered.length === 0 && (
-                <p className="py-4 text-center text-xs text-gray-400">
-                  {q ? 'No matching products' : 'All products already added'}
-                </p>
-              )}
-              {filtered.map(p => {
-                const img = p.product?.images?.[0]?.thumbnail || p.product?.images?.[0]?.url;
-                return (
-                  <button
-                    key={p._id}
-                    type="button"
-                    onClick={() => { onAdd(p._id); setQ(''); }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-gray-50 transition-colors"
-                  >
-                    {img
-                      ? <img src={img} className="h-8 w-8 shrink-0 rounded-lg object-cover" alt="" />
-                      : <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-sm">🍾</div>
-                    }
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-semibold text-gray-800">{p.product?.name || p.sku}</p>
-                      <p className="text-[10px] text-gray-400">{formatCurrency(p.baseSellingPrice)}</p>
-                    </div>
-                    <PiPlus className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-                  </button>
-                );
-              })}
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1.5 w-80 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
+          <div className="border-b border-gray-100 p-2.5">
+            <div className="relative">
+              <PiMagnifyingGlass className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+              <input autoFocus value={q} onChange={e => setQ(e.target.value)}
+                placeholder="Search by name or SKU…"
+                className="w-full rounded-xl border border-gray-200 py-2 pl-8 pr-3 text-xs outline-none focus:border-[#b20202]" />
             </div>
           </div>
-        )}
-      </div>
+          <div className="max-h-60 overflow-y-auto">
+            {filtered.length === 0 && (
+              <p className="py-6 text-center text-xs text-gray-400">
+                {q ? 'No matching products' : 'All products already added'}
+              </p>
+            )}
+            {filtered.map(p => {
+              const img = p.product?.images?.[0]?.thumbnail || p.product?.images?.[0]?.url;
+              const hasSizes = (p.sizes?.length ?? 0) > 0 && !p.sellWithoutSizeVariants;
+              return (
+                <button key={p._id} type="button"
+                  onClick={() => { onAdd(p._id); setOpen(false); setQ(''); }}
+                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors">
+                  {img
+                    ? <img src={img} className="h-9 w-9 shrink-0 rounded-xl object-cover" alt="" />
+                    : <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-base">🍾</div>
+                  }
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-semibold text-gray-800">{p.product?.name || p.sku}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[10px] text-gray-400">{formatCurrency(p.baseSellingPrice)}</span>
+                      {hasSizes && (
+                        <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold text-blue-600">
+                          {p.sizes.length} sizes
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <PiPlus className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// ── POS Preview panel ─────────────────────────────────────────────────────────
+// ── POS Preview ───────────────────────────────────────────────────────────────
 
-function POSPreview({
-  name, price, lines, allProducts,
-}: { name: string; price: number; lines: ChoiceLine[]; allProducts: Product[] }) {
-  // Simulate cashier selections (first product in each group)
-  const [selections, setSelections] = useState<Record<number, string[]>>({});
+type Selection = { subProduct: string; size?: string };
+
+function POSPreview({ name, price, lines, allProducts }: {
+  name: string; price: number; lines: ChoiceLine[]; allProducts: Product[];
+}) {
+  // selections[lineIdx] = array of { subProduct, size? }
+  const [selections, setSelections] = useState<Record<number, Selection[]>>({});
 
   const getProduct = (id: string) => allProducts.find(p => p._id === id);
 
-  function toggle(lineIdx: number, productId: string, maxSelect: number) {
+  function selectProduct(lineIdx: number, spId: string, maxSelect: number) {
     setSelections(prev => {
       const current = prev[lineIdx] || [];
-      if (current.includes(productId)) {
-        return { ...prev, [lineIdx]: current.filter(x => x !== productId) };
+      const existing = current.find(s => s.subProduct === spId);
+      if (existing) {
+        // Deselect
+        return { ...prev, [lineIdx]: current.filter(s => s.subProduct !== spId) };
       }
+      const newSel: Selection = { subProduct: spId };
       if (current.length >= maxSelect) {
-        // Replace oldest if at max
-        return { ...prev, [lineIdx]: [...current.slice(1), productId] };
+        return { ...prev, [lineIdx]: [...current.slice(1), newSel] };
       }
-      return { ...prev, [lineIdx]: [...current, productId] };
+      return { ...prev, [lineIdx]: [...current, newSel] };
     });
   }
 
-  // Price calculation
-  const selectedTotal = lines.reduce((sum, line, i) => {
-    const sel = selections[i] || [];
-    return sum + sel.reduce((s, id) => s + (getProduct(id)?.baseSellingPrice || 0), 0);
-  }, 0);
-  const finalPrice = price > 0 ? price : selectedTotal;
+  function selectSize(lineIdx: number, spId: string, sizeId: string) {
+    setSelections(prev => {
+      const current = (prev[lineIdx] || []).map(s =>
+        s.subProduct === spId ? { ...s, size: s.size === sizeId ? undefined : sizeId } : s
+      );
+      return { ...prev, [lineIdx]: current };
+    });
+  }
 
-  // Min/max price range (if dynamic)
-  const minPrice = lines.reduce((sum, line) => {
-    const sorted = [...line.products]
-      .map(id => getProduct(id)?.baseSellingPrice || 0)
-      .sort((a, b) => a - b);
-    return sum + sorted.slice(0, line.minSelect).reduce((s, v) => s + v, 0);
+  // Calculate price
+  const dynamicTotal = lines.reduce((sum, line, i) => {
+    const sel = selections[i] || [];
+    return sum + sel.reduce((s, sel) => {
+      const p = getProduct(sel.subProduct);
+      if (!p) return s;
+      if (sel.size) {
+        const sz = p.sizes?.find(sz => sz._id === sel.size);
+        return s + (sz?.sellingPrice || p.baseSellingPrice);
+      }
+      return s + p.baseSellingPrice;
+    }, 0);
   }, 0);
-  const maxPrice = lines.reduce((sum, line) => {
-    const sorted = [...line.products]
-      .map(id => getProduct(id)?.baseSellingPrice || 0)
-      .sort((a, b) => b - a);
-    return sum + sorted.slice(0, line.maxSelect).reduce((s, v) => s + v, 0);
+  const finalPrice = price > 0 ? price : dynamicTotal;
+
+  // Price range
+  const minPrice = lines.reduce((sum, line) => {
+    const prices = line.items.flatMap(it => {
+      const p = getProduct(it.subProduct);
+      if (!p) return [0];
+      const sizes = it.allowedSizes.length > 0 ? p.sizes?.filter(s => it.allowedSizes.includes(s._id)) : p.sizes;
+      if (sizes?.length) return sizes.map(s => s.sellingPrice);
+      return [p.baseSellingPrice];
+    }).sort((a, b) => a - b);
+    return sum + prices.slice(0, line.minSelect).reduce((s, v) => s + v, 0);
   }, 0);
 
   return (
     <div className="flex h-full flex-col">
       <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-gray-400">POS Preview</p>
-
       <div className="flex-1 overflow-y-auto rounded-2xl border border-gray-200 bg-gray-50">
-        {/* Combo header */}
+
+        {/* Header */}
         <div className="border-b border-gray-200 bg-white px-4 py-3">
           <p className="font-bold text-gray-900">{name || 'Combo name…'}</p>
-          {price > 0 ? (
-            <p className="text-sm font-semibold text-[#b20202]">{formatCurrency(price)}</p>
-          ) : (
-            <p className="text-xs text-gray-400">
-              {minPrice === maxPrice
-                ? formatCurrency(minPrice)
-                : `${formatCurrency(minPrice)} – ${formatCurrency(maxPrice)}`}
-            </p>
-          )}
+          <p className="text-xs text-gray-400 mt-0.5">
+            {price > 0 ? <span className="font-semibold text-[#b20202]">{formatCurrency(price)}</span>
+              : <span>{formatCurrency(minPrice)} and up</span>}
+          </p>
         </div>
 
-        {/* Choice groups */}
+        {lines.length === 0 && (
+          <p className="px-4 py-8 text-center text-xs text-gray-400">Add choice groups to preview</p>
+        )}
+
         <div className="divide-y divide-gray-100">
-          {lines.length === 0 && (
-            <p className="px-4 py-8 text-center text-xs text-gray-400">Add choice groups to see preview</p>
-          )}
-          {lines.map((line, i) => {
-            const color = gc(i);
-            const sel = selections[i] || [];
-            const isSatisfied = sel.length >= line.minSelect;
+          {lines.map((line, li) => {
+            const color  = gc(li);
+            const sel    = selections[li] || [];
+            const done   = sel.length >= line.minSelect;
 
             return (
-              <div key={i} className="px-4 py-3">
+              <div key={li} className="px-4 py-3">
+                {/* Group header */}
                 <div className="mb-2 flex items-center gap-2">
-                  <span className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${color.dot}`}>
-                    {i + 1}
+                  <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white ${color.dot}`}>
+                    {li + 1}
                   </span>
-                  <span className="text-xs font-bold text-gray-800">{line.label || `Group ${i + 1}`}</span>
-                  <span className="ml-auto text-[10px] text-gray-400">
-                    {line.minSelect === line.maxSelect
-                      ? `Pick ${line.minSelect}`
-                      : `Pick ${line.minSelect}–${line.maxSelect}`}
-                    {!line.required && <span className="ml-1 text-gray-300">(optional)</span>}
+                  <span className="flex-1 text-xs font-bold text-gray-800">{line.label || `Group ${li + 1}`}</span>
+                  <span className="text-[10px] text-gray-400">
+                    {line.minSelect === line.maxSelect ? `×${line.minSelect}` : `${line.minSelect}–${line.maxSelect}`}
+                    {!line.required && <span className="ml-1 text-gray-300">opt</span>}
                   </span>
-                  {isSatisfied && <PiCheckCircle className="h-3.5 w-3.5 shrink-0 text-emerald-500" />}
+                  {done && <PiCheckCircle className="h-3.5 w-3.5 text-emerald-500" />}
                 </div>
 
-                <div className="space-y-1">
-                  {line.products.length === 0 && (
-                    <p className="text-[11px] italic text-gray-300">No products added</p>
+                {/* Product choices */}
+                <div className="space-y-1.5">
+                  {line.items.length === 0 && (
+                    <p className="text-[11px] italic text-gray-300">No products</p>
                   )}
-                  {line.products.map(pid => {
-                    const p = getProduct(pid);
+                  {line.items.map(item => {
+                    const p = getProduct(item.subProduct);
                     if (!p) return null;
-                    const chosen = sel.includes(pid);
-                    const isMulti = line.maxSelect > 1;
-                    const img = p.product?.images?.[0]?.thumbnail || p.product?.images?.[0]?.url;
+                    const chosen   = sel.some(s => s.subProduct === item.subProduct);
+                    const selEntry = sel.find(s => s.subProduct === item.subProduct);
+                    const isMulti  = line.maxSelect > 1;
+                    const img      = p.product?.images?.[0]?.thumbnail || p.product?.images?.[0]?.url;
+
+                    // Which sizes are available for this item in this group
+                    const hasSizes = (p.sizes?.length ?? 0) > 0 && !p.sellWithoutSizeVariants;
+                    const availSizes = hasSizes
+                      ? (item.allowedSizes.length > 0
+                          ? p.sizes.filter(s => item.allowedSizes.includes(s._id))
+                          : p.sizes)
+                      : [];
+
+                    // Price to show on the row
+                    const rowPrice = selEntry?.size
+                      ? (p.sizes?.find(s => s._id === selEntry.size)?.sellingPrice ?? p.baseSellingPrice)
+                      : p.baseSellingPrice;
 
                     return (
-                      <button
-                        key={pid}
-                        type="button"
-                        onClick={() => toggle(i, pid, line.maxSelect)}
-                        className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-all ${
-                          chosen
-                            ? `${color.border} ${color.bg} shadow-sm`
-                            : 'border-gray-100 bg-white hover:border-gray-200'
-                        }`}
-                      >
-                        {/* Radio/checkbox indicator */}
-                        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-${isMulti ? 'md' : 'full'} border-2 transition-colors ${
-                          chosen ? `${color.dot} border-current` : 'border-gray-300'
-                        }`}>
-                          {chosen && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
-                        </span>
-                        {img
-                          ? <img src={img} className="h-8 w-8 shrink-0 rounded-lg object-cover" alt="" />
-                          : <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-sm">🍾</div>
-                        }
-                        <div className="flex-1 min-w-0">
-                          <p className={`truncate text-xs font-semibold ${chosen ? color.text : 'text-gray-700'}`}>
-                            {p.product?.name || p.sku}
-                          </p>
-                          <p className="text-[10px] text-gray-400">{formatCurrency(p.baseSellingPrice)}</p>
-                        </div>
-                      </button>
+                      <div key={item.subProduct}>
+                        {/* Product row */}
+                        <button type="button" onClick={() => selectProduct(li, item.subProduct, line.maxSelect)}
+                          className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-all ${
+                            chosen ? `${color.border} ${color.bg} shadow-sm` : 'border-gray-100 bg-white hover:border-gray-200'
+                          }`}>
+                          <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-${isMulti ? 'md' : 'full'} border-2 transition-colors ${
+                            chosen ? `${color.dot} border-current` : 'border-gray-300'
+                          }`}>
+                            {chosen && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                          </span>
+                          {img
+                            ? <img src={img} className="h-8 w-8 shrink-0 rounded-lg object-cover" alt="" />
+                            : <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-sm">🍾</div>
+                          }
+                          <div className="flex-1 min-w-0">
+                            <p className={`truncate text-xs font-semibold ${chosen ? color.text : 'text-gray-700'}`}>
+                              {p.product?.name || p.sku}
+                            </p>
+                            <p className="text-[10px] text-gray-400">
+                              {hasSizes && !selEntry?.size ? `${availSizes.length} size${availSizes.length !== 1 ? 's' : ''}` : formatCurrency(rowPrice)}
+                            </p>
+                          </div>
+                          {hasSizes && chosen && !selEntry?.size && (
+                            <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-600">
+                              Pick size
+                            </span>
+                          )}
+                        </button>
+
+                        {/* Size picker — shown inline when product is selected and has sizes */}
+                        {chosen && hasSizes && availSizes.length > 0 && (
+                          <div className={`ml-4 mt-1 rounded-xl border p-2.5 ${color.bg} ${color.border}`}>
+                            <p className={`mb-1.5 text-[10px] font-bold ${color.text}`}>Choose size</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {availSizes.map(size => {
+                                const selected = selEntry?.size === size._id;
+                                const oos = size.availableStock <= 0;
+                                return (
+                                  <button key={size._id} type="button"
+                                    onClick={() => selectSize(li, item.subProduct, size._id)}
+                                    disabled={oos}
+                                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-all disabled:opacity-40 ${
+                                      selected
+                                        ? `${color.dot} border-current text-white`
+                                        : `border-gray-200 bg-white ${color.text} hover:${color.bg}`
+                                    }`}>
+                                    <span>{size.displayName}</span>
+                                    <span className={`text-[10px] font-normal ${selected ? 'opacity-80' : 'opacity-60'}`}>
+                                      {formatCurrency(size.sellingPrice)}
+                                    </span>
+                                    {oos && <span className="text-[9px]">OOS</span>}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
@@ -349,18 +515,15 @@ function POSPreview({
         {lines.length > 0 && (
           <div className="sticky bottom-0 border-t border-gray-200 bg-white px-4 py-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-gray-500">Combo Total</span>
+              <span className="text-xs font-semibold text-gray-500">Total</span>
               <span className="text-base font-black text-gray-900">{formatCurrency(finalPrice)}</span>
             </div>
-            {price === 0 && selectedTotal > 0 && (
-              <p className="mt-0.5 text-[10px] text-gray-400">Dynamic — sum of selections</p>
-            )}
+            {price === 0 && <p className="mt-0.5 text-[10px] text-gray-400">Updates as you pick options</p>}
           </div>
         )}
       </div>
-
-      <p className="mt-2 text-[10px] text-gray-400 text-center">
-        Click products above to simulate cashier selection
+      <p className="mt-2 text-center text-[10px] text-gray-400">
+        Click to simulate cashier selection
       </p>
     </div>
   );
@@ -374,75 +537,73 @@ function ComboModal({ initial, products, onSave, onClose }: {
   onSave: (d: any) => Promise<void>;
   onClose: () => void;
 }) {
-  const [name, setName]         = useState(initial?.name || '');
-  const [desc, setDesc]         = useState(initial?.description || '');
-  const [priceMode, setPriceMode] = useState<'fixed' | 'dynamic'>(
-    initial?.price && initial.price > 0 ? 'fixed' : 'dynamic'
+  const [name, setName]       = useState(initial?.name || '');
+  const [desc, setDesc]       = useState(initial?.description || '');
+  const [priceMode, setPM]    = useState<'fixed'|'dynamic'>(initial?.price && initial.price > 0 ? 'fixed' : 'dynamic');
+  const [fixedPrice, setFP]   = useState(String(initial?.price || ''));
+  const [active, setActive]   = useState(initial?.active !== false);
+  const [lines, setLines]     = useState<ChoiceLine[]>(
+    initial?.choiceLines?.length ? normaliseLines(initial.choiceLines) : [blankLine()]
   );
-  const [fixedPrice, setFixedPrice] = useState(String(initial?.price || ''));
-  const [active, setActive]     = useState(initial?.active !== false);
-  const [lines, setLines]       = useState<ChoiceLine[]>(
-    initial?.choiceLines?.length
-      ? initial.choiceLines.map(l => ({ ...l, required: l.required !== false, products: l.products?.map((p: any) => p._id || p) || [] }))
-      : [blankLine()]
-  );
-  const [errors, setErrors]     = useState<Record<string, string>>({});
-  const [saving, setSaving]     = useState(false);
+  const [errors, setErrors]   = useState<Record<string, string>>({});
+  const [saving, setSaving]   = useState(false);
 
   function validate() {
     const e: Record<string, string> = {};
-    if (!name.trim()) e.name = 'Combo name is required';
-    if (priceMode === 'fixed' && (!fixedPrice || parseFloat(fixedPrice) <= 0))
-      e.price = 'Enter a price greater than 0';
+    if (!name.trim())                          e.name  = 'Name is required';
+    if (priceMode === 'fixed' && !(parseFloat(fixedPrice) > 0)) e.price = 'Enter a price > 0';
     lines.forEach((l, i) => {
-      if (!l.label.trim()) e[`line_${i}_label`] = 'Group label required';
-      if (l.products.length === 0) e[`line_${i}_products`] = 'Add at least one product';
-      if (l.maxSelect < l.minSelect) e[`line_${i}_max`] = 'Max must be ≥ min';
-      if (l.maxSelect > l.products.length) e[`line_${i}_max`] = `Max can't exceed ${l.products.length} product${l.products.length !== 1 ? 's' : ''}`;
+      if (!l.label.trim())        e[`l${i}label`]    = 'Label required';
+      if (l.items.length === 0)   e[`l${i}items`]    = 'Add at least one product';
+      if (l.maxSelect > l.items.length) e[`l${i}max`] = `Max can't exceed ${l.items.length}`;
     });
     setErrors(e);
-    return Object.keys(e).length === 0;
+    return !Object.keys(e).length;
   }
 
   async function handleSave() {
     if (!validate()) { toast.error('Fix the errors before saving'); return; }
     setSaving(true);
     try {
-      await onSave({
-        name: name.trim(),
-        description: desc,
-        price: priceMode === 'fixed' ? parseFloat(fixedPrice) : 0,
-        active,
-        choiceLines: lines,
-      });
+      await onSave({ name: name.trim(), description: desc, price: priceMode === 'fixed' ? parseFloat(fixedPrice) : 0, active, choiceLines: lines });
       onClose();
     } catch (e: any) { toast.error(e.message || 'Save failed'); }
     finally { setSaving(false); }
   }
 
-  function addLine() {
-    setLines(prev => {
-      const next = [...prev, blankLine()];
-      return next;
-    });
-  }
-
+  function addLine() { setLines(l => [...l, blankLine()]); }
   function removeLine(i: number) { setLines(l => l.filter((_, idx) => idx !== i)); }
 
   function patchLine(i: number, patch: Partial<ChoiceLine>) {
     setLines(l => l.map((line, idx) => {
       if (idx !== i) return line;
-      const updated = { ...line, ...patch };
-      // Auto-clamp maxSelect when products change
-      if (patch.products) {
-        updated.maxSelect = Math.min(updated.maxSelect, Math.max(1, patch.products.length));
-        updated.minSelect = Math.min(updated.minSelect, updated.maxSelect);
+      const u = { ...line, ...patch };
+      if (patch.items) {
+        u.maxSelect = Math.min(u.maxSelect, Math.max(1, patch.items.length));
+        u.minSelect = Math.min(u.minSelect, u.maxSelect);
       }
-      return updated;
+      return u;
     }));
   }
 
-  const hasErrors = Object.keys(errors).length > 0;
+  function addProduct(lineIdx: number, spId: string) {
+    const line = lines[lineIdx];
+    const newItems = [...line.items, { subProduct: spId, allowedSizes: [] }];
+    patchLine(lineIdx, { items: newItems });
+    setErrors(p => ({ ...p, [`l${lineIdx}items`]: '' }));
+  }
+
+  function removeProduct(lineIdx: number, spId: string) {
+    patchLine(lineIdx, { items: lines[lineIdx].items.filter(it => it.subProduct !== spId) });
+  }
+
+  function updateItemSizes(lineIdx: number, spId: string, sizeIds: string[]) {
+    patchLine(lineIdx, {
+      items: lines[lineIdx].items.map(it =>
+        it.subProduct === spId ? { ...it, allowedSizes: sizeIds } : it
+      ),
+    });
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 backdrop-blur-sm p-0 sm:items-center sm:p-4">
@@ -456,217 +617,158 @@ function ComboModal({ initial, products, onSave, onClose }: {
             </div>
             <div>
               <h2 className="text-sm font-bold text-gray-900">{initial ? 'Edit Combo' : 'New Combo'}</h2>
-              <p className="text-[11px] text-gray-400">Build the choice groups — preview updates live on the right</p>
+              <p className="text-[11px] text-gray-400">Build groups · restrict sizes per product · preview on the right</p>
             </div>
           </div>
-          <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100">
+          <button type="button" onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100">
             <PiX className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Body — two panels */}
+        {/* Body */}
         <div className="flex flex-1 overflow-hidden">
 
-          {/* LEFT: Builder */}
+          {/* LEFT: builder */}
           <div className="flex w-full flex-col overflow-y-auto border-r border-gray-100 lg:w-[58%]">
             <div className="space-y-6 px-5 py-5">
 
-              {/* ── Basic info ── */}
+              {/* Basic info */}
               <section className="space-y-3">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Basic Info</p>
+                <div>
+                  <input value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }}
+                    placeholder="Combo name…"
+                    className={`w-full rounded-xl border px-3.5 py-2.5 text-base font-semibold placeholder-gray-300 outline-none ${errors.name ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-[#b20202]'}`} />
+                  {errors.name && <p className="mt-1 text-[11px] text-red-500">{errors.name}</p>}
+                </div>
+                <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={2}
+                  placeholder="Description (optional)…"
+                  className="w-full resize-none rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none focus:border-[#b20202]" />
 
-                <div className="space-y-3">
-                  {/* Name */}
-                  <div>
-                    <input
-                      value={name}
-                      onChange={e => { setName(e.target.value); setErrors(prev => ({ ...prev, name: '' })); }}
-                      placeholder="Combo name…"
-                      className={`w-full rounded-xl border px-3.5 py-2.5 text-base font-semibold placeholder-gray-300 outline-none transition-colors ${
-                        errors.name ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-[#b20202]'
-                      }`}
-                    />
-                    {errors.name && <p className="mt-1 text-[11px] text-red-500">{errors.name}</p>}
+                <div className="flex flex-wrap gap-3">
+                  {/* Price mode */}
+                  <div className="flex-1 min-w-[160px]">
+                    <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Pricing</label>
+                    <div className="flex overflow-hidden rounded-xl border border-gray-200">
+                      {(['dynamic','fixed'] as const).map(m => (
+                        <button key={m} type="button" onClick={() => setPM(m)}
+                          className={`flex-1 py-2 text-xs font-semibold transition-colors ${priceMode === m ? 'bg-[#b20202] text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                          {m === 'dynamic' ? 'Sum of choices' : 'Fixed price'}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-
-                  <textarea
-                    value={desc}
-                    onChange={e => setDesc(e.target.value)}
-                    rows={2}
-                    placeholder="Description (optional)…"
-                    className="w-full resize-none rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none focus:border-[#b20202]"
-                  />
-
-                  {/* Price mode + active */}
-                  <div className="flex flex-wrap gap-3">
-                    {/* Price mode */}
-                    <div className="flex-1 min-w-[160px]">
-                      <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Pricing</label>
-                      <div className="flex rounded-xl border border-gray-200 overflow-hidden">
-                        {(['dynamic', 'fixed'] as const).map(mode => (
-                          <button
-                            key={mode}
-                            type="button"
-                            onClick={() => setPriceMode(mode)}
-                            className={`flex-1 py-2 text-xs font-semibold transition-colors ${
-                              priceMode === mode
-                                ? 'bg-[#b20202] text-white'
-                                : 'bg-white text-gray-500 hover:bg-gray-50'
-                            }`}
-                          >
-                            {mode === 'dynamic' ? 'Sum of choices' : 'Fixed price'}
-                          </button>
-                        ))}
+                  {priceMode === 'fixed' && (
+                    <div className="flex-1 min-w-[130px]">
+                      <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Price (₦)</label>
+                      <div className="relative">
+                        <PiCurrencyNgn className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                        <input type="number" min={0} value={fixedPrice}
+                          onChange={e => { setFP(e.target.value); setErrors(p => ({ ...p, price: '' })); }}
+                          placeholder="45000"
+                          className={`w-full rounded-xl border py-2 pl-8 pr-3 text-sm outline-none ${errors.price ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-[#b20202]'}`} />
                       </div>
+                      {errors.price && <p className="mt-1 text-[11px] text-red-500">{errors.price}</p>}
                     </div>
-
-                    {/* Fixed price input */}
-                    {priceMode === 'fixed' && (
-                      <div className="flex-1 min-w-[140px]">
-                        <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Price (₦)</label>
-                        <div className="relative">
-                          <PiCurrencyNgn className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                          <input
-                            type="number" min={0} value={fixedPrice}
-                            onChange={e => { setFixedPrice(e.target.value); setErrors(prev => ({ ...prev, price: '' })); }}
-                            placeholder="e.g. 45000"
-                            className={`w-full rounded-xl border py-2 pl-8 pr-3 text-sm outline-none ${
-                              errors.price ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-[#b20202]'
-                            }`}
-                          />
-                        </div>
-                        {errors.price && <p className="mt-1 text-[11px] text-red-500">{errors.price}</p>}
-                      </div>
-                    )}
-
-                    {/* Active toggle */}
-                    <div>
-                      <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Status</label>
-                      <button
-                        type="button"
-                        onClick={() => setActive(v => !v)}
-                        className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${
-                          active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-white text-gray-500'
-                        }`}
-                      >
-                        {active ? <PiToggleRight className="h-4 w-4" /> : <PiToggleLeft className="h-4 w-4" />}
-                        {active ? 'Active' : 'Inactive'}
-                      </button>
-                    </div>
+                  )}
+                  <div>
+                    <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Status</label>
+                    <button type="button" onClick={() => setActive(v => !v)}
+                      className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-white text-gray-500'}`}>
+                      {active ? <PiToggleRight className="h-4 w-4" /> : <PiToggleLeft className="h-4 w-4" />}
+                      {active ? 'Active' : 'Inactive'}
+                    </button>
                   </div>
                 </div>
               </section>
 
-              {/* ── Choice groups ── */}
+              {/* Choice groups */}
               <section className="space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
                     Choice Groups
-                    <span className="ml-1.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-500">
-                      {lines.length}
-                    </span>
+                    <span className="ml-1.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-500">{lines.length}</span>
                   </p>
-                  <button
-                    type="button"
-                    onClick={addLine}
-                    className="flex items-center gap-1 rounded-lg border border-dashed border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-500 hover:border-[#b20202] hover:text-[#b20202] transition-colors"
-                  >
+                  <button type="button" onClick={addLine}
+                    className="flex items-center gap-1 rounded-lg border border-dashed border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-500 hover:border-[#b20202] hover:text-[#b20202] transition-colors">
                     <PiListPlus className="h-3.5 w-3.5" /> Add group
                   </button>
                 </div>
 
-                <div className="space-y-3">
-                  {lines.length === 0 && (
-                    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 py-8 text-center">
-                      <PiListPlus className="mb-2 h-8 w-8 text-gray-200" />
-                      <p className="text-xs text-gray-400">No choice groups yet</p>
-                      <p className="text-[11px] text-gray-300">Click "Add group" to define what cashiers can pick</p>
-                    </div>
-                  )}
+                {lines.length === 0 && (
+                  <div className="flex flex-col items-center rounded-2xl border border-dashed border-gray-200 py-8 text-center">
+                    <PiListPlus className="mb-2 h-8 w-8 text-gray-200" />
+                    <p className="text-xs text-gray-400">No groups yet — click "Add group"</p>
+                  </div>
+                )}
 
+                <div className="space-y-3">
                   {lines.map((line, i) => {
                     const color = gc(i);
-                    const lineErrors = {
-                      label:    errors[`line_${i}_label`],
-                      products: errors[`line_${i}_products`],
-                      max:      errors[`line_${i}_max`],
-                    };
-                    const hasLineError = Object.values(lineErrors).some(Boolean);
+                    const le = { label: errors[`l${i}label`], items: errors[`l${i}items`], max: errors[`l${i}max`] };
 
                     return (
-                      <div key={i} className={`overflow-hidden rounded-2xl border ${hasLineError ? 'border-red-200 bg-red-50/30' : 'border-gray-200 bg-white'}`}>
+                      <div key={i} className={`overflow-hidden rounded-2xl border ${Object.values(le).some(Boolean) ? 'border-red-200' : 'border-gray-200'} bg-white`}>
 
-                        {/* Group header bar */}
-                        <div className={`flex items-center gap-3 border-b px-3.5 py-3 ${hasLineError ? 'border-red-200 bg-red-50/50' : 'border-gray-100 bg-gray-50/50'}`}>
-                          <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white ${color.dot}`}>
-                            {i + 1}
-                          </span>
-                          <input
-                            value={line.label}
-                            onChange={e => { patchLine(i, { label: e.target.value }); setErrors(prev => ({ ...prev, [`line_${i}_label`]: '' })); }}
-                            placeholder={`Group ${i + 1} label (e.g. Choose your spirit)`}
-                            className={`flex-1 bg-transparent text-sm font-semibold text-gray-800 outline-none placeholder-gray-300 ${lineErrors.label ? 'text-red-500' : ''}`}
-                          />
+                        {/* Group header */}
+                        <div className={`flex items-center gap-3 border-b px-3.5 py-3 ${Object.values(le).some(Boolean) ? 'border-red-200 bg-red-50/40' : 'border-gray-100 bg-gray-50/40'}`}>
+                          <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white ${color.dot}`}>{i + 1}</span>
+                          <input value={line.label}
+                            onChange={e => { patchLine(i, { label: e.target.value }); setErrors(p => ({ ...p, [`l${i}label`]: '' })); }}
+                            placeholder={`Group ${i + 1} label…`}
+                            className={`flex-1 bg-transparent text-sm font-semibold outline-none placeholder-gray-300 ${le.label ? 'text-red-500' : 'text-gray-800'}`} />
                           <button type="button" onClick={() => removeLine(i)}
-                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-gray-300 hover:bg-red-50 hover:text-red-400 transition-colors">
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-gray-300 hover:bg-red-50 hover:text-red-400">
                             <PiTrash className="h-3.5 w-3.5" />
                           </button>
                         </div>
 
                         {/* Group body */}
                         <div className="space-y-3 p-3.5">
-
-                          {/* Config row: min/max/required */}
+                          {/* Min / Max / Required */}
                           <div className="flex flex-wrap items-center gap-4">
                             <div className="flex items-center gap-2">
                               <span className="text-[11px] font-semibold text-gray-500">Min</span>
-                              <Stepper
-                                value={line.minSelect}
-                                min={line.required ? 1 : 0}
-                                max={line.maxSelect}
-                                onChange={v => patchLine(i, { minSelect: v })}
-                              />
+                              <Stepper value={line.minSelect} min={line.required ? 1 : 0} max={line.maxSelect}
+                                onChange={v => patchLine(i, { minSelect: v })} />
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="text-[11px] font-semibold text-gray-500">Max</span>
-                              <Stepper
-                                value={line.maxSelect}
-                                min={line.minSelect}
-                                max={line.products.length || undefined}
-                                onChange={v => patchLine(i, { maxSelect: v })}
-                              />
+                              <Stepper value={line.maxSelect} min={line.minSelect} max={line.items.length || undefined}
+                                onChange={v => patchLine(i, { maxSelect: v })} />
+                              {le.max && <p className="text-[11px] text-red-500">{le.max}</p>}
                             </div>
-                            <button
-                              type="button"
+                            <button type="button"
                               onClick={() => {
                                 const req = !line.required;
                                 patchLine(i, { required: req, minSelect: req ? Math.max(1, line.minSelect) : 0 });
                               }}
-                              className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-semibold transition-colors ${
-                                line.required
-                                  ? 'border-amber-200 bg-amber-50 text-amber-700'
-                                  : 'border-gray-200 bg-white text-gray-400 hover:bg-gray-50'
-                              }`}
-                            >
+                              className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-semibold transition-colors ${line.required ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-gray-200 bg-white text-gray-400'}`}>
                               <PiStar className="h-3 w-3" />
                               {line.required ? 'Required' : 'Optional'}
                             </button>
-                            {lineErrors.max && <p className="text-[11px] text-red-500">{lineErrors.max}</p>}
                           </div>
 
-                          {/* Product chips + picker */}
-                          <div>
-                            {lineErrors.products && (
-                              <p className="mb-1.5 text-[11px] text-red-500">{lineErrors.products}</p>
-                            )}
-                            <GroupProductPicker
+                          {/* Product chips */}
+                          <div className="space-y-2">
+                            {le.items && <p className="text-[11px] text-red-500">{le.items}</p>}
+                            {line.items.map(item => {
+                              const p = products.find(pr => pr._id === item.subProduct);
+                              if (!p) return null;
+                              return (
+                                <ProductChip key={item.subProduct}
+                                  item={item}
+                                  product={p}
+                                  onRemove={() => removeProduct(i, item.subProduct)}
+                                  onSizesChange={sizes => updateItemSizes(i, item.subProduct, sizes)}
+                                />
+                              );
+                            })}
+                            <ProductAddDropdown
                               all={products}
-                              selected={line.products}
-                              onAdd={id => {
-                                patchLine(i, { products: [...line.products, id] });
-                                setErrors(prev => ({ ...prev, [`line_${i}_products`]: '' }));
-                              }}
-                              onRemove={id => patchLine(i, { products: line.products.filter(x => x !== id) })}
+                              existingIds={line.items.map(it => it.subProduct)}
+                              onAdd={spId => addProduct(i, spId)}
                             />
                           </div>
                         </div>
@@ -675,28 +777,21 @@ function ComboModal({ initial, products, onSave, onClose }: {
                   })}
                 </div>
               </section>
-
             </div>
           </div>
 
-          {/* RIGHT: POS Preview */}
+          {/* RIGHT: preview */}
           <div className="hidden flex-col bg-gray-50/50 p-5 lg:flex lg:w-[42%]">
-            <POSPreview
-              name={name}
-              price={priceMode === 'fixed' ? (parseFloat(fixedPrice) || 0) : 0}
-              lines={lines}
-              allProducts={products}
-            />
+            <POSPreview name={name} price={priceMode === 'fixed' ? (parseFloat(fixedPrice) || 0) : 0}
+              lines={lines} allProducts={products} />
           </div>
         </div>
 
         {/* Footer */}
         <div className="shrink-0 flex items-center justify-between border-t border-gray-100 bg-white px-5 py-4">
-          <div className="flex items-center gap-2 text-[11px] text-gray-400">
-            {hasErrors && (
-              <span className="flex items-center gap-1 text-red-500">
-                <PiWarningCircle className="h-3.5 w-3.5" /> Fix errors above
-              </span>
+          <div className="text-[11px] text-red-500">
+            {Object.keys(errors).some(k => errors[k]) && (
+              <span className="flex items-center gap-1"><PiWarningCircle className="h-3.5 w-3.5" /> Fix errors above</span>
             )}
           </div>
           <div className="flex gap-2">
@@ -723,33 +818,27 @@ function ComboModal({ initial, products, onSave, onClose }: {
 function ComboCard({ combo, onEdit, onDelete, onToggle }: {
   combo: Combo; onEdit: () => void; onDelete: () => void; onToggle: () => void;
 }) {
-  const totalGroups = combo.choiceLines?.length ?? 0;
-  const totalItems  = combo.choiceLines?.reduce((s, l) => s + (l.products?.length ?? 0), 0) ?? 0;
+  const lines = normaliseLines(combo.choiceLines || []);
+  const totalItems = lines.reduce((s, l) => s + l.items.length, 0);
 
   return (
-    <div className={`group flex flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${
-      combo.active ? 'border-gray-200' : 'border-gray-100 opacity-60'
-    }`}>
-      {/* Top color bar */}
+    <div className={`group flex flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${combo.active ? 'border-gray-200' : 'border-gray-100 opacity-60'}`}>
       <div className="h-1 w-full bg-[#b20202]" />
-
       <div className="flex flex-1 flex-col p-4">
-        <div className="flex items-start justify-between gap-2 mb-3">
+        <div className="mb-3 flex items-start justify-between gap-2">
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#b20202]/10">
               <PiPackage className="h-5 w-5 text-[#b20202]" />
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-bold text-gray-900 truncate">{combo.name}</p>
-              {combo.description && (
-                <p className="text-[11px] text-gray-400 mt-0.5 line-clamp-1">{combo.description}</p>
-              )}
+              <p className="truncate text-sm font-bold text-gray-900">{combo.name}</p>
+              {combo.description && <p className="mt-0.5 line-clamp-1 text-[11px] text-gray-400">{combo.description}</p>}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-0.5">
-            <button type="button" onClick={onToggle} title={combo.active ? 'Deactivate' : 'Activate'}
+            <button type="button" onClick={onToggle}
               className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${combo.active ? 'text-emerald-500 hover:bg-emerald-50' : 'text-gray-400 hover:bg-gray-100'}`}>
-              {combo.active ? <PiToggleRight className="h-4.5 w-4.5" /> : <PiToggleLeft className="h-4.5 w-4.5" />}
+              {combo.active ? <PiToggleRight className="h-5 w-5" /> : <PiToggleLeft className="h-5 w-5" />}
             </button>
             <button type="button" onClick={onEdit}
               className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700">
@@ -762,43 +851,37 @@ function ComboCard({ combo, onEdit, onDelete, onToggle }: {
           </div>
         </div>
 
-        {/* Stats row */}
+        {/* Stats */}
         <div className="mb-3 grid grid-cols-3 divide-x divide-gray-100 rounded-xl border border-gray-100 text-center">
           {[
-            { label: 'Price', value: combo.price > 0 ? formatCurrency(combo.price) : 'Dynamic' },
-            { label: 'Groups', value: String(totalGroups) },
-            { label: 'Items', value: String(totalItems) },
+            { l: 'Price',  v: combo.price > 0 ? formatCurrency(combo.price) : 'Dynamic' },
+            { l: 'Groups', v: String(lines.length) },
+            { l: 'Items',  v: String(totalItems) },
           ].map(s => (
-            <div key={s.label} className="py-2.5">
-              <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">{s.label}</p>
-              <p className="mt-0.5 text-sm font-bold text-gray-800">{s.value}</p>
+            <div key={s.l} className="py-2.5">
+              <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">{s.l}</p>
+              <p className="mt-0.5 text-sm font-bold text-gray-800">{s.v}</p>
             </div>
           ))}
         </div>
 
-        {/* Choice groups preview */}
+        {/* Group chips */}
         <div className="space-y-1.5">
-          {(combo.choiceLines || []).slice(0, 3).map((line, i) => (
+          {lines.slice(0, 3).map((line, i) => (
             <div key={i} className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 ${gc(i).bg}`}>
               <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white ${gc(i).dot}`}>{i + 1}</span>
               <span className={`flex-1 truncate text-xs font-semibold ${gc(i).text}`}>{line.label}</span>
               <span className="shrink-0 text-[10px] text-gray-400">
                 {line.minSelect === line.maxSelect ? `×${line.minSelect}` : `${line.minSelect}–${line.maxSelect}`}
-                {' · '}
-                {line.products?.length ?? 0} options
+                {' · '}{line.items.length} option{line.items.length !== 1 ? 's' : ''}
               </span>
             </div>
           ))}
-          {totalGroups > 3 && (
-            <p className="text-[11px] text-gray-400 pl-1">+{totalGroups - 3} more group{totalGroups - 3 !== 1 ? 's' : ''}…</p>
-          )}
+          {lines.length > 3 && <p className="pl-1 text-[11px] text-gray-400">+{lines.length - 3} more…</p>}
         </div>
 
-        {/* Footer badges */}
         <div className="mt-3 flex items-center justify-between">
-          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-            combo.active ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-400'
-          }`}>
+          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${combo.active ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-400'}`}>
             {combo.active ? <PiCheckCircle className="h-3 w-3" /> : <PiWarningCircle className="h-3 w-3" />}
             {combo.active ? 'Active' : 'Inactive'}
           </span>
@@ -837,30 +920,20 @@ export default function POSCombos() {
   useEffect(() => { load(); }, [load]);
 
   async function handleSave(data: any) {
-    if (editing === 'new') {
-      await createCombo(token!, data);
-      toast.success('Combo created');
-    } else if (editing) {
-      await updateCombo(token!, (editing as Combo)._id, data);
-      toast.success('Combo updated');
-    }
+    if (editing === 'new') { await createCombo(token!, data); toast.success('Combo created'); }
+    else if (editing)      { await updateCombo(token!, (editing as Combo)._id, data); toast.success('Combo updated'); }
     await load();
   }
 
-  async function handleDelete(combo: Combo) {
-    if (!confirm(`Delete "${combo.name}"?`)) return;
-    try {
-      await deleteCombo(token!, combo._id);
-      toast.success('Deleted');
-      await load();
-    } catch (e: any) { toast.error(e.message || 'Delete failed'); }
+  async function handleDelete(c: Combo) {
+    if (!confirm(`Delete "${c.name}"?`)) return;
+    try { await deleteCombo(token!, c._id); toast.success('Deleted'); await load(); }
+    catch (e: any) { toast.error(e.message); }
   }
 
-  async function handleToggle(combo: Combo) {
-    try {
-      await updateCombo(token!, combo._id, { active: !combo.active });
-      await load();
-    } catch (e: any) { toast.error(e.message); }
+  async function handleToggle(c: Combo) {
+    try { await updateCombo(token!, c._id, { active: !c.active }); await load(); }
+    catch (e: any) { toast.error(e.message); }
   }
 
   const active   = combos.filter(c => c.active);
@@ -868,19 +941,13 @@ export default function POSCombos() {
 
   return (
     <div className="-mx-4 -mt-2 flex flex-col md:-mx-5 lg:-mx-6 3xl:-mx-8">
-      <div className="px-4 md:px-5 lg:px-6 3xl:px-8">
-        <POSNavHeader />
-      </div>
+      <div className="px-4 md:px-5 lg:px-6 3xl:px-8"><POSNavHeader /></div>
 
       <div className="flex-1 px-6 pb-12 pt-6 md:px-10 lg:px-12">
-
-        {/* Page header */}
         <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-xl font-bold text-gray-900">Combo Choices</h1>
-            <p className="mt-0.5 text-sm text-gray-500">
-              Configurable combos with choice groups — cashiers pick products at the POS terminal
-            </p>
+            <p className="mt-0.5 text-sm text-gray-500">Configurable combos with choice groups — cashiers pick products and sizes at the POS</p>
           </div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={load} disabled={loading}
@@ -905,9 +972,7 @@ export default function POSCombos() {
               <PiPackage className="h-8 w-8 text-[#b20202]" />
             </div>
             <p className="text-base font-bold text-gray-700">No combos yet</p>
-            <p className="mt-1 max-w-sm text-sm text-gray-400">
-              Create your first combo to let cashiers configure bundled products with choice groups at the POS
-            </p>
+            <p className="mt-1 max-w-sm text-sm text-gray-400">Create combos with choice groups — cashiers pick products and sizes when adding to the cart</p>
             <button type="button" onClick={() => setEditing('new')}
               className="mt-5 flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white"
               style={{ backgroundColor: '#b20202' }}>
@@ -920,9 +985,7 @@ export default function POSCombos() {
               <section>
                 <p className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">Active ({active.length})</p>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {active.map(c => (
-                    <ComboCard key={c._id} combo={c} onEdit={() => setEditing(c)} onDelete={() => handleDelete(c)} onToggle={() => handleToggle(c)} />
-                  ))}
+                  {active.map(c => <ComboCard key={c._id} combo={c} onEdit={() => setEditing(c)} onDelete={() => handleDelete(c)} onToggle={() => handleToggle(c)} />)}
                 </div>
               </section>
             )}
@@ -930,9 +993,7 @@ export default function POSCombos() {
               <section>
                 <p className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">Inactive ({inactive.length})</p>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {inactive.map(c => (
-                    <ComboCard key={c._id} combo={c} onEdit={() => setEditing(c)} onDelete={() => handleDelete(c)} onToggle={() => handleToggle(c)} />
-                  ))}
+                  {inactive.map(c => <ComboCard key={c._id} combo={c} onEdit={() => setEditing(c)} onDelete={() => handleDelete(c)} onToggle={() => handleToggle(c)} />)}
                 </div>
               </section>
             )}

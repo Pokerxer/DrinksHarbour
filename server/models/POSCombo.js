@@ -9,7 +9,14 @@ const choiceLineSchema = new Schema({
   minSelect:  { type: Number, default: 1, min: 0 },
   maxSelect:  { type: Number, default: 1, min: 1 },
   required:   { type: Boolean, default: true },
-  products:   [{ type: ObjectId, ref: 'SubProduct' }],
+  // Each item in the group can optionally restrict to specific size variants.
+  // allowedSizes=[] means all sizes are selectable.
+  items: [{
+    subProduct:   { type: ObjectId, ref: 'SubProduct' },
+    allowedSizes: [{ type: ObjectId, ref: 'Size' }],
+  }],
+  // Backward-compat: old format stored products:[ObjectId]
+  products: [{ type: ObjectId, ref: 'SubProduct' }],
 }, { _id: true });
 
 const posComboSchema = new Schema({
