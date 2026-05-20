@@ -5,10 +5,11 @@ const ObjectId = Schema.Types.ObjectId;
 // A "choice line" groups products the cashier can pick from.
 // e.g. "Choose your spirit (pick 1)" or "Choose mixers (pick up to 2)"
 const choiceLineSchema = new Schema({
-  label:      { type: String, required: true },          // "Choose your spirit"
-  minSelect:  { type: Number, default: 1, min: 0 },     // minimum required picks
-  maxSelect:  { type: Number, default: 1, min: 1 },     // maximum allowed picks
-  products:   [{ type: ObjectId, ref: 'SubProduct' }],  // selectable products
+  label:      { type: String, required: true },
+  minSelect:  { type: Number, default: 1, min: 0 },
+  maxSelect:  { type: Number, default: 1, min: 1 },
+  required:   { type: Boolean, default: true },
+  products:   [{ type: ObjectId, ref: 'SubProduct' }],
 }, { _id: true });
 
 const posComboSchema = new Schema({
