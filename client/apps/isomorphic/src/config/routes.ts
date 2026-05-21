@@ -156,6 +156,7 @@ export const routes = {
     lock:     '/point-of-sale/lock',
     cashiers: '/point-of-sale/cashiers',
     settings: '/point-of-sale/settings',
+    loyalty:  '/point-of-sale/loyalty',
     orders:      '/point-of-sale/orders',
     pricelists:  '/pos/pricelists',
     combos:      '/point-of-sale/combos',

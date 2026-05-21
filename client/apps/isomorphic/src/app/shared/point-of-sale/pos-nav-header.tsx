@@ -31,7 +31,7 @@ const navItems: NavItem[] = [
       { label: 'Product Variants',     href: `${routes.eCommerce.subProducts}?from=pos` },
       { label: 'Combo Choices',        href: routes.pos.combos },
       { label: 'Pricelists',           href: routes.pos.pricelists },
-      { label: 'Discount & Loyalty',   href: routes.eCommerce.promotions },
+      { label: 'Discount & Loyalty',   href: routes.pos.loyalty },
       { label: 'Gift cards & eWallet', href: '#' },
     ],
   },

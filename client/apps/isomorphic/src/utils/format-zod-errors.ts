@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ZodIssue, ZodError } from 'zod';
 
 export interface FieldError {

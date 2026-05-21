@@ -6,9 +6,10 @@ import toast from 'react-hot-toast';
 import {
   PiX, PiCheckCircle, PiPrinter, PiUser, PiFileText,
   PiCurrencyNgn, PiCreditCard, PiBank, PiDeviceMobile,
-  PiArrowLeft, PiArrowRight,
+  PiArrowLeft, PiArrowRight, PiTicket, PiLightningBold,
+  PiShoppingCart, PiGift, PiWarning, PiStar,
 } from 'react-icons/pi';
-import { usePOSCart, usePOSAuth, usePOSUI, usePOSSaleSignal, usePOSPricelist } from '@/app/shared/point-of-sale/store';
+import { usePOSCart, usePOSAuth, usePOSUI, usePOSSaleSignal, usePOSPricelist, computeRewardDiscount, getEffectiveBundlePrice } from '@/app/shared/point-of-sale/store';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import { POSOrderResponse } from '@/app/shared/point-of-sale/types';
@@ -52,10 +53,20 @@ function ReceiptScreen({
   order,
   paymentLines = [],
   onNewSale,
+  cartSnapshot = [],
+  appliedCode,
+  autoDiscounts = [],
+  nextOrderCode,
+  nocSettings,
 }: {
   order: POSOrderResponse;
   paymentLines?: PaymentLine[];
   onNewSale: () => void;
+  cartSnapshot?: import('@/app/shared/point-of-sale/types').POSCartItem[];
+  appliedCode?: AppliedCode;
+  autoDiscounts?: AppliedDiscount[];
+  nextOrderCode?: string | null;
+  nocSettings?: Partial<import('@/app/shared/point-of-sale/types').POSNextOrderCouponConfig>;
 }) {
   const { tenant }  = useTenant();
   const { staff }   = usePOSAuth();
@@ -163,39 +174,152 @@ function ReceiptScreen({
           </div>
           <div style={R.divider} />
 
-          {/* Items */}
-          {(order.items || []).map((item, i) => {
-            const price     = item.priceAtPurchase ?? 0;
-            const lineTotal = item.itemSubtotal ?? price * item.quantity;
-            const label     = (item.name || 'Item') + (item.variant ? ` (${item.variant})` : '');
-            const truncated = label.length > 26 ? label.slice(0, 25) + '…' : label;
-            return (
-              <div key={i} style={{ marginBottom: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', ...R.bold }}>
-                  <span style={{ flex: 1, paddingRight: 8 }}>{truncated}</span>
-                  <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                    {formatCurrency(lineTotal)}
-                  </span>
+          {/* Items — grouped by combo when cartSnapshot is available */}
+          {(() => {
+            // Augment server receipt items with comboRef from the cart snapshot
+            // (server items and cart items are in the same order)
+            const augmented = (order.items || []).map((item, i) => ({
+              ...item,
+              comboRef: cartSnapshot[i]?.comboRef,
+            }));
+
+            // Build display groups: combo items grouped under a header
+            type Group =
+              | { kind: 'item'; idx: number }
+              | { kind: 'combo'; instanceId: string; comboName: string; indices: number[] };
+
+            const seen = new Set<string>();
+            const groups: Group[] = [];
+
+            augmented.forEach((item, i) => {
+              if (item.comboRef?.instanceId) {
+                const id = item.comboRef.instanceId;
+                if (!seen.has(id)) {
+                  seen.add(id);
+                  groups.push({
+                    kind: 'combo',
+                    instanceId: id,
+                    comboName: item.comboRef.comboName,
+                    indices: augmented
+                      .map((a, j) => (a.comboRef?.instanceId === id ? j : -1))
+                      .filter(j => j >= 0),
+                  });
+                }
+              } else {
+                groups.push({ kind: 'item', idx: i });
+              }
+            });
+
+            function renderLine(item: typeof augmented[0], i: number, indent = false) {
+              const price     = item.priceAtPurchase ?? 0;
+              const lineTotal = item.itemSubtotal ?? price * item.quantity;
+              const label     = (item.name || 'Item') + (item.variant ? ` (${item.variant})` : '');
+              const maxLen    = indent ? 23 : 26;
+              const truncated = label.length > maxLen ? label.slice(0, maxLen - 1) + '…' : label;
+              const discPct   = price > 0 && item.discountAmount > 0
+                ? Math.round(item.discountAmount / (price * item.quantity) * 100)
+                : 0;
+              return (
+                <div key={i} style={{ marginBottom: indent ? 5 : 8, paddingLeft: indent ? 8 : 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', ...R.bold }}>
+                    <span style={{ flex: 1, paddingRight: 8 }}>{truncated}</span>
+                    <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                      {formatCurrency(lineTotal)}
+                    </span>
+                  </div>
+                  <div style={{ paddingLeft: indent ? 0 : 8, fontSize: 10, ...R.muted }}>
+                    {item.quantity} × {formatCurrency(price)}
+                    {item.discountAmount > 0 && (
+                      <span style={{ marginLeft: 6, ...R.red }}>
+                        combo -{discPct}%{' '}(-{formatCurrency(item.discountAmount)})
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div style={{ paddingLeft: 8, fontSize: 10, ...R.muted }}>
-                  {item.quantity} x {formatCurrency(price)}
-                  {item.discountAmount > 0 && (
-                    <span style={{ marginLeft: 8, ...R.red }}>disc -{formatCurrency(item.discountAmount)}</span>
+              );
+            }
+
+            return groups.map((group, gi) => {
+              if (group.kind === 'item') {
+                return renderLine(augmented[group.idx], group.idx, false);
+              }
+
+              // Combo group
+              const groupItems  = group.indices.map(j => augmented[j]);
+              const comboTotal  = groupItems.reduce((s, it) => s + (it.itemSubtotal ?? 0), 0);
+              const comboSaving = groupItems.reduce((s, it) => s + (it.discountAmount ?? 0), 0);
+              const comboName   = group.comboName.length > 24
+                ? group.comboName.slice(0, 23) + '…'
+                : group.comboName;
+
+              return (
+                <div key={group.instanceId} style={{ marginBottom: 10 }}>
+                  {/* Combo header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, ...R.bold, ...R.red, borderTop: '1px dashed #e0e0e0', paddingTop: 6, marginTop: 4 }}>
+                    <span>🎁 {comboName.toUpperCase()}</span>
+                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(comboTotal)}</span>
+                  </div>
+                  {/* Combo saving line */}
+                  {comboSaving > 0 && (
+                    <div style={{ fontSize: 9, ...R.green, paddingBottom: 3 }}>
+                      Combo saving: -{formatCurrency(comboSaving)}
+                    </div>
                   )}
+                  {/* Combo items */}
+                  {groupItems.map((item, ii) => renderLine(item, group.indices[ii], true))}
+                  <div style={{ borderBottom: '1px dashed #e0e0e0', marginBottom: 4 }} />
                 </div>
-              </div>
-            );
-          })}
+              );
+            });
+          })()}
 
           <div style={R.divider} />
 
           {/* Totals */}
-          {displayDiscount > 0 && (
-            <>
-              <Row label="Subtotal" value={formatCurrency(displaySubtotal)} />
-              <Row label="Discount" value={`-${formatCurrency(displayDiscount)}`} vStyle={R.red} />
-            </>
-          )}
+          {(() => {
+            // Sum all item-level discounts (combo discounts, cashier discounts)
+            const totalItemDisc = (order.items || []).reduce((s, it) => s + (it.discountAmount ?? 0), 0);
+            // Gross before any discounts = sum(priceAtPurchase × qty)
+            const grossSubtotal = (order.items || []).reduce((s, it) => s + (it.priceAtPurchase ?? 0) * it.quantity, 0);
+            const hasItemDisc   = totalItemDisc > 0.005;
+            const hasOrderDisc  = displayDiscount > 0.005;
+            const showBreakdown = hasItemDisc || hasOrderDisc;
+
+            // Build named discount rows; fall back to a single generic row
+            const autoTotal = autoDiscounts.reduce((s, d) => s + d.discount, 0);
+            // Code's share = whatever the server stored minus the auto-discounts we computed
+            const codePortion = appliedCode && hasOrderDisc
+              ? Math.max(0, displayDiscount - autoTotal)
+              : 0;
+
+            return (
+              <>
+                {showBreakdown && (
+                  <>
+                    <Row label="Gross Subtotal" value={formatCurrency(grossSubtotal)} />
+                    {hasItemDisc && <Row label="Item Discounts" value={`-${formatCurrency(totalItemDisc)}`} vStyle={R.red} />}
+                    {/* Named auto-discounts (promotions + bxgy) */}
+                    {autoDiscounts.map(d => (
+                      <Row key={d.id} label={d.name} value={`-${formatCurrency(d.discount)}`} vStyle={R.red} />
+                    ))}
+                    {/* Code row */}
+                    {codePortion > 0 && (
+                      <Row label={appliedCode ? `${appliedCode.kind === 'coupon' ? 'Coupon' : 'Code'} (${appliedCode.code})` : 'Code Discount'}
+                        value={`-${formatCurrency(codePortion)}`} vStyle={R.red} />
+                    )}
+                    {/* Fallback: no named discounts but server recorded one (e.g. cart-level cashier discount) */}
+                    {autoDiscounts.length === 0 && !appliedCode && hasOrderDisc && (
+                      <Row label="Order Discount" value={`-${formatCurrency(displayDiscount)}`} vStyle={R.red} />
+                    )}
+                    {/* Cart-level cashier discount alongside named discounts */}
+                    {(autoDiscounts.length > 0 || appliedCode) && hasOrderDisc && autoTotal + codePortion < displayDiscount - 0.005 && (
+                      <Row label="Order Discount" value={`-${formatCurrency(displayDiscount - autoTotal - codePortion)}`} vStyle={R.red} />
+                    )}
+                  </>
+                )}
+              </>
+            );
+          })()}
           <div style={R.rule} />
           <div style={{ display: 'flex', justifyContent: 'space-between', ...R.bold, fontSize: 14 }}>
             <span>TOTAL</span>
@@ -236,6 +360,27 @@ function ReceiptScreen({
             <p>Please retain this receipt for reference.</p>
             <p style={{ marginTop: 8, fontSize: 9, color: '#aaa' }}>{order.receiptNumber}</p>
           </div>
+
+          {/* Next-order coupon */}
+          {nextOrderCode && nocSettings && (
+            <>
+              <div style={R.divider} />
+              <div style={{ ...R.center, marginTop: 4 }}>
+                <p style={{ fontSize: 10, ...R.bold, color: '#222' }}>🎁 YOUR NEXT ORDER COUPON</p>
+                <p style={{ fontFamily: 'monospace', fontSize: 14, ...R.bold, letterSpacing: '0.12em', color: '#b20202', marginTop: 4 }}>
+                  {nextOrderCode}
+                </p>
+                <p style={{ fontSize: 9, ...R.muted, marginTop: 2 }}>
+                  {nocSettings.type === 'pct'
+                    ? `${nocSettings.value}% off`
+                    : `₦${(nocSettings.value ?? 0).toLocaleString()} off`} your next order
+                </p>
+                <p style={{ fontSize: 9, ...R.muted }}>
+                  Valid for {nocSettings.validDays ?? 30} days
+                </p>
+              </div>
+            </>
+          )}
         </div>
         </div>{/* end scrollable */}
 
@@ -264,27 +409,281 @@ function ReceiptScreen({
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
+// ── Discount engine ───────────────────────────────────────────────────────────
+
+import type {
+  POSSettings, POSCartItem, POSDiscountReward, POSRewardApplyOn,
+  POSCoupon, POSDiscountCode, POSPromotion, POSBuyXGetY,
+} from '@/app/shared/point-of-sale/types';
+import type { CartPendingCode } from '@/app/shared/point-of-sale/store';
+
+// AppliedCode is the same shape as CartPendingCode — one canonical type
+type AppliedCode = CartPendingCode;
+
+interface AppliedDiscount {
+  id: string;
+  name: string;
+  kind: 'code' | 'promotion' | 'bxgy';
+  discount: number;    // ₦ amount
+  color?: string;
+  detail?: string;     // human-readable e.g. "10% off order"
+}
+
+// Resolve the effective reward from a coupon/code (reward obj beats legacy fields)
+function resolveReward(item: { reward?: POSDiscountReward; type: string; value: number }) {
+  return {
+    discType:    (item.reward?.discountType  ?? item.type)  as 'pct' | 'fixed',
+    discValue:   item.reward?.discountValue  ?? item.value,
+    applyOn:     (item.reward?.applyOn       ?? 'order')    as POSRewardApplyOn,
+    maxDiscount: item.reward?.maxDiscount    ?? 0,
+  };
+}
+
+// Apply a reward to the cart; returns ₦ discount amount
+function applyReward(
+  items: POSCartItem[],
+  cartTotal: number,
+  discType: 'pct' | 'fixed',
+  discValue: number,
+  applyOn: POSRewardApplyOn,
+  maxDiscount: number,
+): number {
+  if (discValue <= 0) return 0;
+  let base = cartTotal;
+  if (applyOn === 'cheapest' && items.length) {
+    // Apply to the single cheapest unit price (not the line total)
+    base = Math.min(...items.map(i => i.price));
+  } else if (applyOn === 'most_expensive' && items.length) {
+    base = Math.max(...items.map(i => i.price));
+  }
+  const raw = discType === 'pct'
+    ? Math.round(base * discValue / 100 * 100) / 100
+    : Math.min(discValue, base);
+  return Math.max(0, maxDiscount > 0 ? Math.min(raw, maxDiscount) : raw);
+}
+
+// Validate a typed code (coupon or discount code) and return AppliedCode or error string
+function validateCode(
+  code: string,
+  settings: POSSettings | undefined,
+  cartTotal: number,
+  cartQty: number,
+  selectedPricelistId?: string,
+): AppliedCode | string {
+  if (!code.trim()) return 'Enter a code';
+  const upper = code.trim().toUpperCase();
+  const now   = new Date();
+
+  // ── Coupons ─────────────────────────────────────────────────────────────────
+  for (const c of settings?.coupons ?? []) {
+    if (!c.active || c.code.toUpperCase() !== upper) continue;
+    // Channel check
+    if (c.availableOn && c.availableOn.pos === false) return 'This coupon is not valid at the POS';
+    // Date window
+    if (c.validFrom && new Date(c.validFrom) > now) return 'Coupon not yet valid';
+    if (c.validTo   && new Date(c.validTo)   < now) return 'Coupon has expired';
+    // Usage limit
+    if ((c.maxUsage ?? 0) > 0 && (c.usageCount ?? 0) >= c.maxUsage!) return 'Coupon usage limit reached';
+    // Rules
+    const minOrder = c.rules?.minOrderValue ?? c.minOrderValue ?? 0;
+    const minQty   = c.rules?.minQty ?? 0;
+    if (minOrder > cartTotal) return `Min. order ${formatCurrency(minOrder)} required`;
+    if (minQty   > cartQty)   return `Min. ${minQty} item${minQty > 1 ? 's' : ''} in cart required`;
+    // Pricelist restriction
+    if (c.pricelistIds?.length && selectedPricelistId && !c.pricelistIds.includes(selectedPricelistId))
+      return 'Coupon is restricted to a different pricelist';
+    const r = resolveReward(c);
+    return { code: c.code, name: c.name, kind: 'coupon', ...r };
+  }
+
+  // ── Discount codes ───────────────────────────────────────────────────────────
+  for (const d of settings?.discountCodes ?? []) {
+    if (!d.active || d.code.toUpperCase() !== upper) continue;
+    // Channel check
+    if (d.availableOn && d.availableOn.pos === false) return 'This code is not valid at the POS';
+    // Date window
+    if (d.validFrom && new Date(d.validFrom) > now) return 'Code not yet valid';
+    if (d.validTo   && new Date(d.validTo)   < now) return 'Code has expired';
+    // Usage limit
+    if ((d.maxUsage ?? 0) > 0 && (d.usageCount ?? 0) >= d.maxUsage!) return 'Code usage limit reached';
+    // Rules
+    const minOrder = d.rules?.minOrderValue ?? d.minOrderValue ?? 0;
+    const minQty   = d.rules?.minQty ?? 0;
+    if (minOrder > cartTotal) return `Min. order ${formatCurrency(minOrder)} required`;
+    if (minQty   > cartQty)   return `Min. ${minQty} item${minQty > 1 ? 's' : ''} in cart required`;
+    // Pricelist restriction
+    if (d.pricelistIds?.length && selectedPricelistId && !d.pricelistIds.includes(selectedPricelistId))
+      return 'Code is restricted to a different pricelist';
+    const r = resolveReward(d);
+    return { code: d.code, name: d.name, kind: 'discount_code', ...r, color: d.color };
+  }
+
+  return 'Code not found or inactive';
+}
+
+// Compute all automatic discounts (promotions + bxgy) — returns sorted list
+function computeAutoDiscounts(
+  items: POSCartItem[],
+  cartTotal: number,
+  settings: POSSettings | undefined,
+  selectedPricelistId?: string,
+): AppliedDiscount[] {
+  const now = new Date();
+  const cartQty = items.reduce((s, i) => s + i.quantity, 0);
+  const results: AppliedDiscount[] = [];
+  let remainingTotal = cartTotal;
+  let anyNonStackable = false;
+
+  // ── Promotions (sorted by priority desc) ────────────────────────────────────
+  const validPromos = (settings?.promotions ?? [])
+    .filter(p => {
+      if (!p.active) return false;
+      if (p.startDate && new Date(p.startDate) > now) return false;
+      if (p.endDate   && new Date(p.endDate)   < now) return false;
+      if (p.availableOn && p.availableOn.pos === false) return false;
+      if ((p.maxUsage ?? 0) > 0 && (p.usageCount ?? 0) >= p.maxUsage!) return false;
+      if ((p.rules?.minOrderValue ?? 0) > cartTotal) return false;
+      if ((p.rules?.minQty ?? 0) > cartQty) return false;
+      if (p.pricelistIds?.length && selectedPricelistId && !p.pricelistIds.includes(selectedPricelistId)) return false;
+      return true;
+    })
+    .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+
+  for (const p of validPromos) {
+    if (anyNonStackable && !p.stackable) continue;
+    const r = resolveReward(p);
+    const disc = applyReward(items, remainingTotal, r.discType, r.discValue, r.applyOn, r.maxDiscount);
+    if (disc <= 0) continue;
+    results.push({
+      id:      p._id!,
+      name:    p.name,
+      kind:    'promotion',
+      discount: Math.round(disc * 100) / 100,
+      color:   p.color || '#d97706',
+      detail:  r.discType === 'pct'
+        ? `${r.discValue}% off ${r.applyOn === 'order' ? 'order' : r.applyOn === 'cheapest' ? 'cheapest item' : 'most expensive item'}`
+        : `${formatCurrency(r.discValue)} off`,
+    });
+    remainingTotal -= disc;
+    if (!p.stackable) anyNonStackable = true;
+  }
+
+  // ── Buy X Get Y ──────────────────────────────────────────────────────────────
+  const validBxgy = (settings?.buyXGetY ?? []).filter(b => {
+    if (!b.active) return false;
+    if (b.validFrom && new Date(b.validFrom) > now) return false;
+    if (b.validTo   && new Date(b.validTo)   < now) return false;
+    if (b.availableOn && b.availableOn.pos === false) return false;
+    if ((b.maxUsage ?? 0) > 0 && (b.usageCount ?? 0) >= b.maxUsage!) return false;
+    if ((b.minOrderValue ?? 0) > cartTotal) return false;
+    return true;
+  });
+
+  for (const b of validBxgy) {
+    if (anyNonStackable && !b.stackable) continue;
+
+    // Determine "buy" items pool (exclude items added by BXGY rewards)
+    const buyPool = (b.buyProducts?.length ?? 0) > 0
+      ? items.filter(i => b.buyProducts!.includes(i.productId) && !i.bxgyRef)
+      : items.filter(i => !i.bxgyRef);
+
+    const buyCount = buyPool.reduce((s, i) => s + i.quantity, 0);
+    const sets = Math.floor(buyCount / b.buyQty);
+    if (sets === 0) continue;
+
+    // Determine "get" items pool (exclude items added by BXGY rewards)
+    const getPool = (b.getProducts?.length ?? 0) > 0
+      ? items.filter(i => b.getProducts!.includes(i.productId) && !i.bxgyRef)
+      : buyPool;
+
+    if (!getPool.length) continue;
+
+    // For each set: discount the cheapest getQty items (using effective bundle price)
+    const sortedByPrice = [...getPool].sort((a, b) => {
+      const effA = getEffectiveBundlePrice(a).price;
+      const effB = getEffectiveBundlePrice(b).price;
+      return effA - effB;
+    });
+    let getDisc = 0;
+    let remaining = sets * b.getQty;
+    for (const item of sortedByPrice) {
+      if (remaining <= 0) break;
+      const take = Math.min(remaining, item.quantity);
+      const effPrice = getEffectiveBundlePrice(item).price;
+      getDisc += effPrice * take * (b.getDiscountPct / 100);
+      remaining -= take;
+    }
+    getDisc = Math.round(getDisc * 100) / 100;
+    if (getDisc <= 0) continue;
+
+    results.push({
+      id:      b._id!,
+      name:    b.name,
+      kind:    'bxgy',
+      discount: getDisc,
+      color:   b.color || '#7c3aed',
+      detail:  `Buy ${b.buyQty} get ${b.getQty} ${b.getDiscountPct === 100 ? 'free' : `at ${b.getDiscountPct}% off`}`,
+    });
+    remainingTotal -= getDisc;
+    if (!b.stackable) anyNonStackable = true;
+  }
+
+  return results;
+}
+
+// ── Next-order coupon code generator ─────────────────────────────────────────
+
+function generateNextOrderCode(prefix: string): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return prefix + Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+
 export default function POSPaymentModal() {
   const { items, total, subtotal, discountAmount, customer, note,
-          discountType, discountValue, clearCart } = usePOSCart();
+          discountType, discountValue, clearCart,
+          appliedRewards, rewardsDiscountTotal } = usePOSCart();
+
+  // Snapshot of cart items at the moment the order completes — needed for
+  // combo receipt grouping since the cart is cleared on "New Sale".
+  const [cartSnapshot, setCartSnapshot] = useState<import('@/app/shared/point-of-sale/types').POSCartItem[]>([]);
   const { setActiveView } = usePOSUI();
-  const { token, terminal } = usePOSAuth();
+  const { token, terminal, tenant } = usePOSAuth();
   const { notifySale } = usePOSSaleSignal();
   const { selectedPricelist } = usePOSPricelist();
+  const posSettings = tenant?.posSettings;
 
   const [lines,       setLines]       = useState<PaymentLine[]>([]);
   const [activeId,    setActiveId]    = useState<string | null>(null);
   const [inputStr,    setInputStr]    = useState('0');
-  // When true, the next digit typed replaces inputStr instead of appending
   const [freshInput,  setFreshInput]  = useState(false);
   const [loading,     setLoading]     = useState(false);
   const [orderResult, setOrderResult] = useState<POSOrderResponse | null>(null);
+  const [nextOrderCode, setNextOrderCode] = useState<string | null>(null);
 
-  // ── Derived ──────────────────────────────────────────────────────────────────
+  // ── Discount computation ──────────────────────────────────────────────────────
+  // `total` from the cart already includes rewards (subtotal - cartDiscount - rewardsDiscount).
+  // `effectiveTotal` IS the cart total — no further deduction needed here.
+  const effectiveTotal = total;   // cart store owns all discount arithmetic
+
+  // Build AppliedDiscount list from appliedRewards for the breakdown UI + receipt
+  const autoDiscounts: AppliedDiscount[] = appliedRewards.map(r => ({
+    id:       r.id,
+    name:     r.name,
+    kind:     (r.kind === 'promotion' ? 'promotion' : r.kind === 'bxgy' ? 'bxgy' : 'code') as AppliedDiscount['kind'],
+    discount: computeRewardDiscount(r, items, Math.max(0, subtotal - discountAmount)),
+    color:    r.color,
+    detail:   r.detail,
+  }));
+
+  // Code reward (coupon / discount_code) — shown separately in the UI
+  const appliedCode = appliedRewards.find(r => r.kind === 'coupon' || r.kind === 'discount_code') as AppliedCode | undefined ?? null;
+  const codeDiscount = appliedCode ? computeRewardDiscount(appliedCode, items, Math.max(0, subtotal - discountAmount)) : 0;
 
   const paidTotal   = lines.reduce((s, l) => s + l.amount, 0);
-  const remaining   = total - paidTotal;
-  const change      = Math.max(0, paidTotal - total);
+  const remaining   = effectiveTotal - paidTotal;
+  const change      = Math.max(0, paidTotal - effectiveTotal);
   const canValidate = remaining <= 0.01 && lines.length > 0;
   const activeLine  = lines.find((l) => l.id === activeId) ?? null;
 
@@ -295,12 +694,11 @@ export default function POSPaymentModal() {
   }
 
   function addMethod(method: string, label: string) {
-    // If method already has a line, just select it (no duplicates)
     const existing = lines.find((l) => l.method === method);
     if (existing) {
       setActiveId(existing.id);
       setInputStr(String(existing.amount));
-      setFreshInput(true); // ready to replace on first digit
+      setFreshInput(true);
       return;
     }
     const amt = parseFloat(Math.max(0, remaining).toFixed(2));
@@ -324,7 +722,7 @@ export default function POSPaymentModal() {
 
   function setExact() {
     if (!activeId || remaining <= 0) return;
-    const amt = parseFloat(remaining.toFixed(2));
+    const amt = parseFloat(Math.max(0, remaining).toFixed(2));
     setInputStr(String(amt));
     setFreshInput(false);
     applyAmount(activeId, amt);
@@ -419,21 +817,61 @@ export default function POSPaymentModal() {
         amountTendered = lines.find((l) => l.method === 'cash')?.amount ?? 0;
       }
 
+      // Total discount = cart-level discount + all rewards (both computed by the store)
+      const cartDiscFixed = discountValue > 0
+        ? (discountType === 'fixed' ? discountValue : subtotal * discountValue / 100)
+        : 0;
+      const totalDisc   = cartDiscFixed + rewardsDiscountTotal;
+      const effDiscType  = totalDisc > 0 ? 'fixed'   : undefined;
+      const effDiscValue = totalDisc > 0 ? totalDisc : 0;
+
       const result = await posApi.createOrder(token, {
         items:        orderItems,
         customer,
         paymentMethod,
         amountTendered,
         splitPayments,
-        discountType:  discountValue > 0 ? discountType  : undefined,
-        discountValue: discountValue > 0 ? discountValue : 0,
+        discountType:  effDiscType,
+        discountValue: effDiscValue,
         note:          note || undefined,
         terminalType:  terminal ?? 'retail',
         pricelistId:   selectedPricelist?._id ?? undefined,
       });
+
+      setCartSnapshot([...items]);
       setOrderResult(result.order);
-      // Signal session bar + product grid to refresh their data
       notifySale();
+
+      // Increment usage counts for all applied rewards (best-effort, non-blocking)
+      if (token && posSettings && appliedRewards.length > 0) {
+        const patch: Partial<typeof posSettings> = {};
+        const couponIds   = new Set(appliedRewards.filter(r => r.kind === 'coupon').map(r => r.code!.toUpperCase()));
+        const codeIds     = new Set(appliedRewards.filter(r => r.kind === 'discount_code').map(r => r.code!.toUpperCase()));
+        const promoIds    = new Set(appliedRewards.filter(r => r.kind === 'promotion').map(r => r.id));
+        const bxgyIds     = new Set(appliedRewards.filter(r => r.kind === 'bxgy').map(r => r.id));
+
+        if (couponIds.size)
+          patch.coupons = (posSettings.coupons ?? []).map(c =>
+            couponIds.has(c.code.toUpperCase()) ? { ...c, usageCount: (c.usageCount ?? 0) + 1 } : c);
+        if (codeIds.size)
+          patch.discountCodes = (posSettings.discountCodes ?? []).map(d =>
+            codeIds.has(d.code.toUpperCase()) ? { ...d, usageCount: (d.usageCount ?? 0) + 1 } : d);
+        if (promoIds.size)
+          patch.promotions = (posSettings.promotions ?? []).map(p =>
+            promoIds.has(p._id!) ? { ...p, usageCount: (p.usageCount ?? 0) + 1 } : p);
+        if (bxgyIds.size)
+          patch.buyXGetY = (posSettings.buyXGetY ?? []).map(b =>
+            bxgyIds.has(b._id!) ? { ...b, usageCount: (b.usageCount ?? 0) + 1 } : b);
+
+        if (Object.keys(patch).length > 0)
+          posApi.updatePOSSettings(token, patch).catch(() => {});
+      }
+
+      // Generate next-order coupon if enabled and order qualifies
+      const noc = posSettings?.nextOrderCoupon;
+      if (noc?.enabled && effectiveTotal >= (noc.minOrderForCoupon ?? 0)) {
+        setNextOrderCode(generateNextOrderCode(noc.codePrefix ?? 'NOC-'));
+      }
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Payment failed');
     } finally {
@@ -442,18 +880,30 @@ export default function POSPaymentModal() {
   }
 
   function handleNewSale() {
-    clearCart();
+    clearCart();   // also clears appliedRewards via store
     setActiveView('sell');
     setOrderResult(null);
     setLines([]);
     setActiveId(null);
     setInputStr('0');
     setFreshInput(false);
+    setNextOrderCode(null);
   }
 
   // ── Receipt ───────────────────────────────────────────────────────────────────
 
-  if (orderResult) return <ReceiptScreen order={orderResult} paymentLines={lines} onNewSale={handleNewSale} />;
+  if (orderResult) return (
+    <ReceiptScreen
+      order={orderResult}
+      paymentLines={lines}
+      onNewSale={handleNewSale}
+      cartSnapshot={cartSnapshot}
+      appliedCode={appliedCode ?? undefined}
+      autoDiscounts={autoDiscounts}
+      nextOrderCode={nextOrderCode}
+      nocSettings={posSettings?.nextOrderCoupon}
+    />
+  );
 
   // ── Numpad display value ──────────────────────────────────────────────────────
 
@@ -628,24 +1078,48 @@ export default function POSPaymentModal() {
             'text-6xl font-bold tabular-nums transition-colors',
             canValidate ? 'text-green-600' : 'text-gray-900'
           )}>
-            {formatCurrency(total)}
+            {formatCurrency(effectiveTotal)}
           </p>
-          {change > 0 && (
-            <div className="mt-2 flex items-center gap-2 rounded-full bg-green-50 px-4 py-1.5">
-              <span className="text-sm font-semibold text-green-600">
-                Change: {formatCurrency(change)}
-              </span>
+          {/* Discount breakdown — cart discount + all applied rewards */}
+          {(discountAmount > 0 || rewardsDiscountTotal > 0) && (
+            <div className="mt-2 w-full space-y-1">
+              {discountAmount > 0 && (
+                <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-1.5 text-xs text-gray-600">
+                  <span>Cart discount</span>
+                  <span className="font-bold text-gray-800">−{formatCurrency(discountAmount)}</span>
+                </div>
+              )}
+              {autoDiscounts.map(d => (
+                <div key={d.id} className="flex items-center justify-between rounded-xl px-3 py-1.5 text-xs"
+                  style={{ backgroundColor: `${d.color ?? '#b20202'}12`, color: d.color ?? '#b20202' }}>
+                  <span className="flex items-center gap-1.5 font-semibold min-w-0 truncate">
+                    <PiStar className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{d.name}</span>
+                    {(d as any).code && <span className="font-mono shrink-0">({(d as any).code})</span>}
+                  </span>
+                  <span className="font-bold shrink-0 ml-2">−{formatCurrency(d.discount)}</span>
+                </div>
+              ))}
             </div>
           )}
-          {discountAmount > 0 && (
-            <div className="mt-2 text-sm text-gray-400">
-              Subtotal {formatCurrency(subtotal)} − discount {formatCurrency(discountAmount)}
+
+          {change > 0 && (
+            <div className="mt-2 flex items-center gap-2 rounded-full bg-green-50 px-4 py-1.5">
+              <span className="text-sm font-semibold text-green-600">Change: {formatCurrency(change)}</span>
             </div>
           )}
         </div>
 
         {/* Payment lines + remaining */}
         <div className="shrink-0 space-y-1.5 border-t border-gray-100 px-8 pb-8 pt-5">
+
+          {/* Applied rewards summary — managed via cart Rewards panel */}
+          {appliedRewards.length > 0 && (
+            <div className="mb-1 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-[10px] text-gray-500">
+              <PiStar className="inline h-3 w-3 mr-1 text-[#b20202]" />
+              {appliedRewards.length} reward{appliedRewards.length > 1 ? 's' : ''} applied · −{formatCurrency(rewardsDiscountTotal)}
+            </div>
+          )}
 
           {/* Remaining */}
           <div className={cn(

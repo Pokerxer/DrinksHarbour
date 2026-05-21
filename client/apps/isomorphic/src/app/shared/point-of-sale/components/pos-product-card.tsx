@@ -15,6 +15,7 @@ import {
   PiInfo, PiPackage, PiBarcode, PiTag,
   PiWarning, PiCheckCircle, PiProhibit, PiTagChevron,
   PiArrowDown, PiArrowUp, PiCurrencyNgn,
+  PiPercent, PiGift, PiStar,
 } from 'react-icons/pi';
 
 type ProductCardProps = {
@@ -380,15 +381,78 @@ function ProductInfoModal({
 }: {
   product: POSProduct;
   onClose: () => void;
-  onAddToCart: (sizeId?: string) => void;
+  onAddToCart: (sizeId?: string, discountPct?: number) => void;
 }) {
   const imageUrl = getImageUrl(product);
   const name     = getProductDisplayName(product);
   const hasSizes = (product.sizes?.length ?? 0) > 0 && !product.sellWithoutSizeVariants;
   const validSizes: POSSize[] = hasSizes ? (product.sizes || []).filter(Boolean) : [];
 
-  // Tab: 'info' | 'prices'
-  const [tab, setTab] = useState<'info' | 'prices'>('info');
+  // Tab: 'info' | 'prices' | 'discount'
+  const [tab, setTab] = useState<'info' | 'prices' | 'discount'>('info');
+
+  // ── Discount & Loyalty state ──────────────────────────────────────────────────
+  const [discountMode,  setDiscountMode]  = useState<'pct' | 'fixed'>('pct');
+  const [discountInput, setDiscountInput] = useState('');
+  const [discountSizeId, setDiscountSizeId] = useState<string>(validSizes[0]?._id ?? '');
+  const [customerPts,   setCustomerPts]   = useState('');
+
+  const { tenant }    = usePOSAuth();
+  const { updateItemDiscount } = usePOSCart();
+  const loyalty       = tenant?.posSettings;
+  const ptPerNaira    = loyalty?.loyaltyPointsPerNaira  ?? 0.01;
+  const ptValue       = loyalty?.loyaltyPointsValue      ?? 1;
+  const maxRedPct     = loyalty?.loyaltyMaxRedemptionPct ?? 50;
+  const loyaltyOn     = loyalty?.loyaltyEnabled === true;
+
+  // Configured discount programs from POS settings (fall back to defaults)
+  const discountPrograms = (loyalty?.discountPrograms ?? []).filter(p => p.active);
+  const defaultPresets   = [5, 10, 15, 20, 25, 30, 50];
+
+  // Reference price for the currently-selected size (or product base price)
+  const refPrice = useMemo(() => {
+    if (hasSizes && discountSizeId) {
+      const sz = validSizes.find(s => s._id === discountSizeId);
+      return sz?.sellingPrice ?? product.baseSellingPrice;
+    }
+    return product.baseSellingPrice;
+  }, [hasSizes, discountSizeId, validSizes, product.baseSellingPrice]);
+
+  // Parse input → exact naira saving amount (avoids floating-point %-to-₦ drift)
+  // We store everything as a naira amount internally; only convert to % at submission.
+  const savingNaira = useMemo(() => {
+    const v = parseFloat(discountInput) || 0;
+    if (discountMode === 'fixed') return Math.min(v, refPrice);
+    return Math.round(refPrice * Math.min(100, Math.max(0, v)) / 100 * 100) / 100;
+  }, [discountInput, discountMode, refPrice]);
+
+  // Percentage derived from the exact saving (rounded to 2dp, no drift)
+  const discountPct = useMemo(() =>
+    refPrice > 0 ? Math.round(savingNaira / refPrice * 10000) / 100 : 0,
+    [savingNaira, refPrice]
+  );
+
+  const discountedPrice = Math.max(0, Math.round((refPrice - savingNaira) * 100) / 100);
+
+  // Loyalty
+  const ptsFromPurchase = Math.floor(refPrice * ptPerNaira);
+
+  const redemptionNaira = useMemo(() => {
+    const pts    = parseFloat(customerPts) || 0;
+    const raw    = Math.round(pts * ptValue * 100) / 100;
+    const cap    = Math.round(refPrice * (maxRedPct / 100) * 100) / 100;
+    return Math.min(raw, cap);
+  }, [customerPts, ptValue, refPrice, maxRedPct]);
+
+  // ── Cart line for this product (detect if already in cart) ────────────────────
+  const { items: cartItems } = usePOSCart();
+  const cartLine = useMemo(() => {
+    // For sized products, check the currently selected size
+    const sid = hasSizes ? discountSizeId : undefined;
+    return cartItems.find(i =>
+      i.subProductId === product._id && i.sizeId === sid && !i.comboRef
+    ) ?? null;
+  }, [cartItems, product._id, hasSizes, discountSizeId]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
@@ -452,18 +516,25 @@ function ProductInfoModal({
 
         {/* ── Tab bar ── */}
         <div className="flex shrink-0 border-b border-gray-200">
-          {(['info', 'prices'] as const).map((t) => (
+          {([
+            { id: 'info',     icon: <PiInfo className="h-3.5 w-3.5" />,       label: 'Info',                 badge: false },
+            { id: 'prices',   icon: <PiTagChevron className="h-3.5 w-3.5" />, label: 'Pricelists',           badge: false },
+            { id: 'discount', icon: <PiPercent className="h-3.5 w-3.5" />,    label: 'Discount & Loyalty',   badge: discountPct > 0 },
+          ] as const).map(({ id, icon, label, badge }) => (
             <button
-              key={t}
+              key={id}
               type="button"
-              onClick={() => setTab(t)}
-              className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 text-xs font-bold transition-colors ${
-                tab === t
+              onClick={() => setTab(id)}
+              className={`relative flex flex-1 items-center justify-center gap-1.5 py-2.5 text-[11px] font-bold transition-colors ${
+                tab === id
                   ? 'border-b-2 border-[#b20202] text-[#b20202]'
                   : 'text-gray-400 hover:text-gray-600'
               }`}
             >
-              {t === 'info' ? <><PiInfo className="h-3.5 w-3.5" /> Product Info</> : <><PiTagChevron className="h-3.5 w-3.5" /> Pricelist Prices</>}
+              {icon} {label}
+              {badge && (
+                <span className="absolute right-2 top-1.5 h-2 w-2 rounded-full bg-[#b20202]" />
+              )}
             </button>
           ))}
         </div>
@@ -602,32 +673,300 @@ function ProductInfoModal({
               />
             </div>
           )}
+
+          {/* ── DISCOUNT & LOYALTY TAB ── */}
+          {tab === 'discount' && (
+            <div className="divide-y divide-gray-100">
+
+              {/* ── Size selector ── */}
+              {hasSizes && validSizes.length > 1 && (
+                <div className="px-5 py-3">
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">Apply discount to size</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {validSizes.map(sz => (
+                      <button key={sz._id} type="button"
+                        onClick={() => setDiscountSizeId(sz._id)}
+                        className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition-colors
+                          ${discountSizeId === sz._id ? 'bg-[#b20202] text-white shadow-sm' : 'border border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}
+                      >
+                        {sz.displayName}
+                        <span className={`${discountSizeId === sz._id ? 'text-white/80' : 'text-gray-400'}`}>
+                          {formatCurrency(sz.sellingPrice)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Discount section ── */}
+              <div className="px-5 py-4 space-y-4">
+
+                {/* Header with current price */}
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                    <PiPercent className="h-3.5 w-3.5" /> Item Discount
+                  </p>
+                  <span className="text-sm font-bold text-gray-700">{formatCurrency(refPrice)}</span>
+                </div>
+
+                {/* Existing cart item state */}
+                {cartLine && (
+                  <div className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-xs
+                    ${cartLine.discount > 0 ? 'bg-emerald-50 border border-emerald-200' : 'bg-gray-50 border border-gray-200'}`}>
+                    <div>
+                      <p className={`font-semibold ${cartLine.discount > 0 ? 'text-emerald-700' : 'text-gray-600'}`}>
+                        In cart — qty {cartLine.quantity}
+                      </p>
+                      {cartLine.discount > 0
+                        ? <p className="text-[10px] text-emerald-600">{cartLine.discount}% discount applied</p>
+                        : <p className="text-[10px] text-gray-400">No discount yet</p>}
+                    </div>
+                    {cartLine.discount > 0 && (
+                      <button type="button"
+                        onClick={() => { updateItemDiscount(cartLine.subProductId, 0, cartLine.sizeId, cartLine.comboRef?.instanceId); }}
+                        className="rounded-lg border border-red-100 bg-white px-2 py-1 text-[10px] font-bold text-red-500 hover:bg-red-50"
+                      >
+                        Remove disc
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Quick presets — from configured programs or defaults */}
+                <div>
+                  <p className="mb-2 text-[11px] font-semibold text-gray-500">
+                    {discountPrograms.length > 0 ? 'Discount programs' : 'Quick presets'}
+                  </p>
+                  <div className={`grid gap-1.5 ${discountPrograms.length > 0 ? 'grid-cols-2' : 'grid-cols-4'}`}>
+                    {discountPrograms.length > 0
+                      ? discountPrograms.map(prog => {
+                          const isActive = discountMode === prog.type &&
+                            discountInput === String(prog.value);
+                          return (
+                            <button key={prog._id || prog.name} type="button"
+                              onClick={() => { setDiscountMode(prog.type); setDiscountInput(String(prog.value)); }}
+                              style={isActive ? { backgroundColor: prog.color || '#b20202' } : undefined}
+                              className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-xs font-bold transition-colors
+                                ${isActive ? 'text-white shadow-sm' : 'border border-gray-200 bg-white text-gray-700 hover:border-gray-300'}`}
+                            >
+                              <span className="truncate">{prog.name}</span>
+                              <span className={`ml-1 shrink-0 ${isActive ? 'text-white/80' : 'text-gray-400'}`}>
+                                {prog.type === 'pct' ? `${prog.value}%` : `₦${prog.value.toLocaleString()}`}
+                              </span>
+                            </button>
+                          );
+                        })
+                      : defaultPresets.map(pct => {
+                          const isActive = discountMode === 'pct' && discountInput === String(pct);
+                          return (
+                            <button key={pct} type="button"
+                              onClick={() => { setDiscountMode('pct'); setDiscountInput(String(pct)); }}
+                              className={`rounded-xl py-2.5 text-sm font-bold transition-colors
+                                ${isActive ? 'bg-[#b20202] text-white shadow-sm' : 'border border-gray-200 bg-white text-gray-700 hover:border-[#b20202]/40 hover:text-[#b20202]'}`}
+                            >
+                              {pct}%
+                            </button>
+                          );
+                        })
+                    }
+                    {discountInput && (
+                      <button type="button"
+                        onClick={() => setDiscountInput('')}
+                        className="rounded-xl border border-gray-200 bg-white py-2.5 text-sm font-bold text-gray-400 hover:border-red-200 hover:text-red-500"
+                      >
+                        ✕ Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Custom input */}
+                <div className="flex items-center gap-2">
+                  <div className="flex overflow-hidden rounded-xl border border-gray-200">
+                    {([['pct', '%'], ['fixed', '₦']] as const).map(([m, lbl]) => (
+                      <button key={m} type="button"
+                        onClick={() => { setDiscountMode(m); setDiscountInput(''); }}
+                        className={`px-3.5 py-2.5 text-sm font-bold transition-colors
+                          ${discountMode === m ? 'bg-[#b20202] text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                      >
+                        {lbl}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    max={discountMode === 'pct' ? 100 : refPrice}
+                    value={discountInput}
+                    onChange={e => setDiscountInput(e.target.value)}
+                    placeholder={discountMode === 'pct' ? 'Enter %' : 'Amount ₦'}
+                    className="flex-1 rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-[#b20202]"
+                    autoFocus={tab === 'discount'}
+                  />
+                </div>
+
+                {/* Live price preview */}
+                {savingNaira > 0 ? (
+                  <div className="flex items-center justify-between rounded-2xl bg-emerald-50 px-4 py-3.5">
+                    <div>
+                      <p className="text-sm font-bold text-emerald-800">
+                        {discountPct}% off · save {formatCurrency(savingNaira)}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-emerald-600 line-through">{formatCurrency(refPrice)}</p>
+                    </div>
+                    <p className="text-2xl font-black text-emerald-700 tabular-nums">{formatCurrency(discountedPrice)}</p>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl bg-gray-50 px-4 py-3.5 text-center">
+                    <p className="text-xs text-gray-400">Enter a discount amount above</p>
+                  </div>
+                )}
+
+                {/* Update existing cart item */}
+                {cartLine && savingNaira > 0 && (
+                  <button type="button"
+                    onClick={() => {
+                      updateItemDiscount(cartLine.subProductId, discountPct, cartLine.sizeId, cartLine.comboRef?.instanceId);
+                      setDiscountInput('');
+                    }}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 py-3 text-sm font-bold text-emerald-700 hover:bg-emerald-100 transition-colors"
+                  >
+                    <PiCheckCircle className="h-4 w-4" />
+                    Update cart item to {discountPct}% off
+                  </button>
+                )}
+              </div>
+
+              {/* ── Loyalty Points ── */}
+              {loyaltyOn && (
+                <div className="px-5 py-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                      <PiStar className="h-3.5 w-3.5" /> Loyalty Points
+                    </p>
+                    <span className="text-[10px] text-gray-400">
+                      Rate: ₦{Math.round(1 / ptPerNaira)} = 1pt · 1pt = ₦{ptValue}
+                    </span>
+                  </div>
+
+                  {/* Earn badge */}
+                  <div className="flex items-center gap-3 rounded-2xl bg-amber-50 px-4 py-3">
+                    <PiGift className="h-6 w-6 shrink-0 text-amber-500" />
+                    <div className="flex-1">
+                      <p className="text-[11px] font-semibold text-amber-700">This purchase earns</p>
+                      <p className="text-[10px] text-amber-500">Based on {formatCurrency(refPrice)} item price</p>
+                    </div>
+                    <p className="text-xl font-black text-amber-700 tabular-nums">+{ptsFromPurchase}<span className="ml-0.5 text-sm font-semibold">pts</span></p>
+                  </div>
+
+                  {/* Redeem */}
+                  <div>
+                    <p className="mb-2 text-[11px] font-semibold text-gray-500">Customer's points balance</p>
+                    <div className="relative">
+                      <PiStar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-amber-400" />
+                      <input
+                        type="number"
+                        min={0}
+                        value={customerPts}
+                        onChange={e => setCustomerPts(e.target.value)}
+                        placeholder="e.g. 500 pts"
+                        className="w-full rounded-xl border border-gray-200 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-[#b20202]"
+                      />
+                    </div>
+                  </div>
+
+                  {redemptionNaira > 0 && (() => {
+                    const ptsEntered  = parseFloat(customerPts) || 0;
+                    const isCapped    = ptsEntered * ptValue > refPrice * (maxRedPct / 100);
+                    const redDiscPct  = Math.round(redemptionNaira / refPrice * 10000) / 100;
+                    return (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between rounded-2xl bg-violet-50 px-4 py-3">
+                          <div>
+                            <p className="text-xs font-bold text-violet-800">Redemption value</p>
+                            <p className="text-[10px] text-violet-600">
+                              {ptsEntered.toLocaleString()} pts × ₦{ptValue}/pt
+                              {isCapped && <span className="ml-1 font-semibold text-amber-600"> (capped at {maxRedPct}%)</span>}
+                            </p>
+                          </div>
+                          <p className="text-base font-black text-violet-700">−{formatCurrency(redemptionNaira)}</p>
+                        </div>
+                        <button type="button"
+                          onClick={() => {
+                            setDiscountMode('fixed');
+                            setDiscountInput(String(redemptionNaira));
+                            setCustomerPts('');
+                          }}
+                          className="flex w-full items-center justify-center gap-2 rounded-xl border border-violet-200 bg-violet-50 py-2.5 text-xs font-bold text-violet-700 hover:bg-violet-100 transition-colors"
+                        >
+                          <PiStar className="h-3.5 w-3.5" />
+                          Apply {formatCurrency(redemptionNaira)} loyalty discount ({redDiscPct}%)
+                        </button>
+                      </div>
+                    );
+                  })()}
+
+                  <p className="text-center text-[10px] text-gray-400">
+                    Max redemption {maxRedPct}% of item price = {formatCurrency(Math.round(refPrice * maxRedPct / 100))}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── Footer: Add to cart ── */}
         <div className="shrink-0 border-t border-gray-100 px-5 py-4">
+          {/* Active discount strip */}
+          {savingNaira > 0 && (
+            <div className="mb-2.5 flex items-center justify-between rounded-xl bg-emerald-50 px-3 py-2 text-xs">
+              <span className="font-semibold text-emerald-700">
+                {discountPct}% discount · save {formatCurrency(savingNaira)}
+              </span>
+              <button type="button" onClick={() => setDiscountInput('')}
+                className="flex items-center gap-0.5 text-emerald-600 hover:text-red-500">
+                <PiX className="h-3 w-3" /> Remove
+              </button>
+            </div>
+          )}
+
           {hasSizes && validSizes.length > 1 ? (
             <div className="space-y-2">
               <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Add to cart</p>
               <div className="grid grid-cols-2 gap-2">
-                {validSizes.filter(s => s.availableStock > 0).map((size) => (
-                  <button
-                    key={size._id}
-                    type="button"
-                    onClick={() => { onAddToCart(size._id); onClose(); }}
-                    className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2 text-left text-sm hover:border-[#b20202] hover:bg-red-50 transition-colors"
-                  >
-                    <span className="font-semibold text-gray-800">{size.displayName}</span>
-                    <span className="font-bold text-[#b20202]">{formatCurrency(size.sellingPrice)}</span>
-                  </button>
-                ))}
+                {validSizes.filter(s => s.availableStock > 0).map(size => {
+                  // Compute per-size discount: use same savingNaira ratio (not raw input which is for refPrice)
+                  const sizeRatio     = refPrice > 0 ? savingNaira / refPrice : 0;
+                  const sizeSaving    = Math.round(size.sellingPrice * sizeRatio * 100) / 100;
+                  const sizeFinalPrc  = Math.max(0, size.sellingPrice - sizeSaving);
+                  const sizeDiscPct   = size.sellingPrice > 0
+                    ? Math.round(sizeSaving / size.sellingPrice * 10000) / 100 : 0;
+                  return (
+                    <button key={size._id} type="button"
+                      onClick={() => { onAddToCart(size._id, sizeDiscPct || discountPct); onClose(); }}
+                      className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2.5 text-left text-sm hover:border-[#b20202] hover:bg-red-50 transition-colors"
+                    >
+                      <div>
+                        <p className="font-semibold text-gray-800">{size.displayName}</p>
+                        {savingNaira > 0 && <p className="text-[10px] text-emerald-600">-{sizeDiscPct}%</p>}
+                      </div>
+                      <div className="text-right">
+                        {savingNaira > 0 && (
+                          <p className="text-[10px] text-gray-400 line-through leading-tight">{formatCurrency(size.sellingPrice)}</p>
+                        )}
+                        <span className="font-bold text-[#b20202]">{formatCurrency(sizeFinalPrc)}</span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ) : (
             <button
               type="button"
               onClick={() => {
-                onAddToCart(validSizes.length === 1 ? validSizes[0]._id : undefined);
+                onAddToCart(validSizes.length === 1 ? validSizes[0]._id : undefined, discountPct);
                 onClose();
               }}
               disabled={
@@ -639,10 +978,11 @@ function ProductInfoModal({
               style={{ backgroundColor: '#b20202' }}
             >
               <PiShoppingCart className="h-4 w-4" />
-              Add to Cart
+              {savingNaira > 0 ? 'Add with Discount' : 'Add to Cart'}
               <span className="ml-1 rounded-md bg-white/20 px-1.5 py-0.5 text-xs font-semibold">
                 {formatCurrency(
-                  validSizes.length === 1
+                  savingNaira > 0 ? discountedPrice
+                  : validSizes.length === 1
                     ? validSizes[0].sellingPrice
                     : product.baseSellingPrice
                 )}
@@ -813,7 +1153,7 @@ function SizePickerModal({
 
 // ── Product card ──────────────────────────────────────────────────────────────
 export default function POSProductCard({ product, onAddToCart, className, flash = false }: ProductCardProps) {
-  const { items, updateQuantity } = usePOSCart();
+  const { items, updateQuantity, addItem } = usePOSCart();
   const { tenant } = usePOSAuth();
   const allowOverselling = tenant?.posSettings?.allowOverselling === true;
 
@@ -1158,8 +1498,32 @@ export default function POSProductCard({ product, onAddToCart, className, flash 
         <ProductInfoModal
           product={product}
           onClose={() => setShowInfo(false)}
-          onAddToCart={(sizeId) => {
-            (onAddToCart as (p: POSProduct, sizeId?: string, qty?: number) => void)(product, sizeId, 1);
+          onAddToCart={(sizeId, discountPct) => {
+            if (discountPct && discountPct > 0) {
+              const size  = sizeId ? product.sizes?.find(s => s._id === sizeId) : undefined;
+              const price = size
+                ? ((size as any)._priceBeforePricelist ?? size.sellingPrice)
+                : ((product as any)._priceBeforePricelist ?? product.baseSellingPrice);
+              addItem({
+                subProductId:  product._id,
+                productId:     product.product?._id || product._id,
+                sizeId:        size?._id,
+                name:          product.product?.name || 'Product',
+                variant:       size?.displayName || '',
+                sku:           size?.sku || product.sku,
+                image:         product.product?.images?.[0]?.thumbnail || product.product?.images?.[0]?.url,
+                price,
+                quantity:      1,
+                discount:      Math.round(discountPct * 10) / 10,
+                stock:         size?.availableStock ?? product.availableStock,
+                activeBundles: (product.activeBundles ?? []).filter(b => !b.fromPricelist),
+                costPrice:     product.costPrice,
+                originalPrice: product.originalPrice ?? undefined,
+              });
+            } else {
+              (onAddToCart as (p: POSProduct, sizeId?: string, qty?: number) => void)(product, sizeId, 1);
+            }
+            setShowInfo(false);
           }}
         />
       )}

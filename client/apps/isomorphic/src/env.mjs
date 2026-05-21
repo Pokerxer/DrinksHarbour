@@ -7,10 +7,7 @@ export const env = createEnv({
    */
   server: {
     NODE_ENV: z.enum(['development', 'test', 'production']),
-    NEXTAUTH_SECRET:
-      process.env.NODE_ENV === 'production'
-        ? z.string().min(1)
-        : z.string().min(1).optional(),
+    NEXTAUTH_SECRET: z.string().min(1),
     NEXTAUTH_URL: z.string().url(),
 
     // email

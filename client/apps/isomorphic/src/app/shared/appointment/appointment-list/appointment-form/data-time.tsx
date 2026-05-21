@@ -8,7 +8,8 @@ import {
 import { useModal } from '@/app/shared/modal-views/use-modal';
 import ScheduleLightIcon from '@core/components/icons/schedule-light';
 import cn from '@core/utils/class-names';
-import { zodResolver, useForm } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useAtom } from 'jotai';
 import Calendar from 'react-calendar';
 import type { Controller, SubmitHandler } from 'react-hook-form';

@@ -11,6 +11,7 @@ import type {
   POSRecentOrder,
   POSCashMovement,
   POSSettings,
+  POSCombo,
 } from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -65,6 +66,20 @@ export const posApi = {
 
   async getPricelists(token: string) {
     return request<{ pricelists: any[] }>(`${API_URL}/api/pos/pricelists`, { headers: authHeaders(token) });
+  },
+
+  async getCategories() {
+    return request<{ categories: { _id: string; name: string; parent?: string; level?: number }[]; total: number }>(`${API_URL}/api/categories`);
+  },
+
+  async getBrands(params?: { search?: string; limit?: number }) {
+    const qs = new URLSearchParams({ status: 'active', limit: String(params?.limit ?? 200) });
+    if (params?.search) qs.set('search', params.search);
+    return request<{ brands: { _id: string; name: string }[] }>(`${API_URL}/api/brands?${qs}`);
+  },
+
+  async getCombos(token: string) {
+    return request<{ combos: POSCombo[] }>(`${API_URL}/api/pos/combos`, { headers: authHeaders(token) });
   },
 
   async createOrder(token: string, order: Record<string, unknown>) {

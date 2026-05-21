@@ -3,7 +3,8 @@
 
 import { useAtom } from 'jotai';
 import dynamic from 'next/dynamic';
-import { zodResolver, useForm } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import type { Controller, SubmitHandler } from 'react-hook-form';
 import FormSummary from '@/app/shared/multi-step/multi-step-1/form-summary';
 import RangeSlider, { RangeSliderProps } from '@core/ui/range-slider';

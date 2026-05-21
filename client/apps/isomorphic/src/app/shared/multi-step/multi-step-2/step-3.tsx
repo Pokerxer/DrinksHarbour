@@ -10,7 +10,8 @@ import {
   basicInformationSchema,
   BasicInformationSchemaType,
 } from '@/validators/multistep-form-2.schema';
-import { zodResolver, useForm } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useAtom } from 'jotai';
 import dynamic from 'next/dynamic';
 import type { Controller, SubmitHandler } from 'react-hook-form';

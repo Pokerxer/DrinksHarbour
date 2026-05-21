@@ -5,11 +5,13 @@ import { Empty, SearchNotFoundIcon, Button } from 'rizzui';
 import {
   PiMagnifyingGlassBold, PiX, PiArrowsClockwise,
   PiBarcode, PiCheckCircle, PiWarningCircle, PiTag,
+  PiPackage,
 } from 'react-icons/pi';
 import POSProductCard from '@/app/shared/point-of-sale/components/pos-product-card';
-import { POSProduct } from '@/app/shared/point-of-sale/types';
+import POSComboPicker from '@/app/shared/point-of-sale/components/pos-combo-picker';
+import { POSProduct, POSCombo, POSCartItem } from '@/app/shared/point-of-sale/types';
 import { posApi } from '@/app/shared/point-of-sale/api';
-import { usePOSAuth, usePOSUI, usePOSSaleSignal, usePOSCart, usePOSPricelist } from '@/app/shared/point-of-sale/store';
+import { usePOSAuth, usePOSUI, usePOSSaleSignal, usePOSCart, usePOSPricelist, usePOSCombos } from '@/app/shared/point-of-sale/store';
 import { applyPricelistToProduct } from '@/app/shared/point-of-sale/utils';
 import { useBarcodeScanner } from '@/app/shared/point-of-sale/hooks/useBarcodeScanner';
 import toast from 'react-hot-toast';
@@ -63,21 +65,117 @@ function ScanBanner({ result, onDismiss }: { result: ScanResult; onDismiss: () =
   );
 }
 
+// ── Combo card ────────────────────────────────────────────────────────────────
+function ComboCard({ combo, onOpen }: { combo: POSCombo; onOpen: () => void }) {
+  // Collect up to 4 product thumbnails from all choice lines
+  const images = combo.choiceLines
+    .flatMap(l => (l.items || []).map((it: any) => {
+      const sp = it.subProduct;
+      return sp?.product?.images?.[0]?.thumbnail || sp?.product?.images?.[0]?.url || '';
+    }))
+    .filter(Boolean)
+    .slice(0, 4) as string[];
+
+  const groupLabels = combo.choiceLines.map(l => l.label).filter(Boolean);
+
+  const priceNode = combo.priceMode === 'fixed'
+    ? <span className="font-black text-[#b20202]">₦{combo.price.toLocaleString()}</span>
+    : combo.priceMode === 'markup_on_cost'
+    ? <span className="font-bold text-blue-600">+{combo.markupPercentage ?? 0}%</span>
+    : combo.priceMode === 'discount_off_selling'
+    ? <span className="font-bold text-emerald-600">−{combo.discountPercentage ?? 0}%</span>
+    : <span className="text-gray-400">Dynamic</span>;
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group flex flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-all hover:border-[#b20202]/40 hover:shadow-md active:scale-[0.97] text-left"
+    >
+      {/* Image area — collage if we have images, gradient placeholder otherwise */}
+      <div className="relative aspect-square w-full overflow-hidden">
+        {images.length >= 2 ? (
+          <div className="grid h-full w-full grid-cols-2 gap-0.5 bg-gray-100">
+            {Array.from({ length: Math.min(images.length, 4) }).map((_, i) => (
+              <div key={i} className="relative overflow-hidden bg-gray-100">
+                <img
+                  src={images[i]}
+                  alt=""
+                  className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                />
+              </div>
+            ))}
+          </div>
+        ) : images.length === 1 ? (
+          <img
+            src={images[0]}
+            alt=""
+            className="h-full w-full object-cover transition-transform group-hover:scale-105"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#b20202]/10 to-[#b20202]/4">
+            <PiPackage className="h-10 w-10 text-[#b20202]/40" />
+          </div>
+        )}
+
+        {/* Price badge — bottom right */}
+        <div className="absolute bottom-2 right-2 rounded-xl bg-white/90 px-2 py-0.5 text-xs shadow-sm backdrop-blur-sm">
+          {priceNode}
+        </div>
+
+        {/* "Combo" label — top left */}
+        <div className="absolute left-2 top-2 rounded-lg bg-[#b20202] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white shadow-sm">
+          Combo
+        </div>
+      </div>
+
+      {/* Info */}
+      <div className="px-3 pb-3 pt-2.5">
+        <p className="line-clamp-1 text-xs font-bold text-gray-900">{combo.name}</p>
+        {groupLabels.length > 0 && (
+          <p className="mt-0.5 line-clamp-1 text-[10px] text-gray-400">
+            {groupLabels.join(' · ')}
+          </p>
+        )}
+        <div className="mt-2 flex items-center gap-1 flex-wrap">
+          {combo.choiceLines.slice(0, 3).map((l, i) => (
+            <span
+              key={i}
+              className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[9px] font-semibold text-gray-500"
+            >
+              {l.label || `Group ${i + 1}`}
+            </span>
+          ))}
+          {combo.choiceLines.length > 3 && (
+            <span className="text-[9px] text-gray-400">+{combo.choiceLines.length - 3}</span>
+          )}
+        </div>
+      </div>
+    </button>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export default function POSProductGrid({ onAddToCart }: ProductGridProps) {
   const [allProducts, setAllProducts] = useState<POSProduct[]>([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState('');
   const [scanResult, setScanResult]   = useState<ScanResult>(null);
-  const [flashId, setFlashId]         = useState<string | null>(null); // subProduct _id to flash
+  const [flashId, setFlashId]         = useState<string | null>(null);
+
+  const { combos, setCombos }         = usePOSCombos();
+  const [combosLoading, setCombosLoading] = useState(false);
+  const [activeComboPicker, setActiveComboPicker] = useState<POSCombo | null>(null);
+
+  // 'combos' is a virtual category injected into the pills
+  const [showCombos, setShowCombos] = useState(false);
 
   const { token } = usePOSAuth();
   const { searchQuery, setSearchQuery, selectedCategory, setSelectedCategory } = usePOSUI();
   const { saleCounter } = usePOSSaleSignal();
   const { selectedPricelist } = usePOSPricelist();
-  const { items: cartItems } = usePOSCart();
+  const { items: cartItems, addItem } = usePOSCart();
   const searchRef = useRef<HTMLInputElement>(null);
-  // Always keep a snapshot of the latest cart so the sale effect can read what was sold
   const lastSaleCartRef = useRef(cartItems);
   useEffect(() => { lastSaleCartRef.current = cartItems; }, [cartItems]);
 
@@ -97,6 +195,16 @@ export default function POSProductGrid({ onAddToCart }: ProductGridProps) {
 
   // Initial load
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
+
+  // Fetch combos on mount
+  useEffect(() => {
+    if (!token) return;
+    setCombosLoading(true);
+    posApi.getCombos(token)
+      .then(data => setCombos(data.combos || []))
+      .catch(() => { /* silent — combos are optional */ })
+      .finally(() => setCombosLoading(false));
+  }, [token]);
 
   // After every completed sale: optimistically decrement local stock, then silently re-fetch
   const prevSaleCounter = useRef(0);
@@ -222,7 +330,15 @@ export default function POSProductGrid({ onAddToCart }: ProductGridProps) {
     return list;
   }, [allProducts, selectedCategory, searchQuery, selectedPricelist]);
 
-  const isFiltered = !!selectedCategory || !!searchQuery.trim();
+  const isFiltered = !showCombos && (!!selectedCategory || !!searchQuery.trim());
+
+  // Handle adding all combo items to cart
+  function handleComboAdd(items: POSCartItem[]) {
+    if (!items.length) return;
+    items.forEach(item => addItem(item));
+    toast.success(`${items.length} item${items.length > 1 ? 's' : ''} added from combo`, { icon: '🎁' });
+    setActiveComboPicker(null);
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -273,11 +389,12 @@ export default function POSProductGrid({ onAddToCart }: ProductGridProps) {
         {/* Category pills + count + refresh */}
         <div className="flex items-center gap-2">
           <div className="flex flex-1 gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+            {/* All products pill */}
             <button
               type="button"
-              onClick={() => setSelectedCategory('')}
+              onClick={() => { setShowCombos(false); setSelectedCategory(''); }}
               className={`shrink-0 rounded-xl px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-                !selectedCategory
+                !showCombos && !selectedCategory
                   ? 'bg-[#b20202] text-white shadow-sm'
                   : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
               }`}
@@ -285,14 +402,37 @@ export default function POSProductGrid({ onAddToCart }: ProductGridProps) {
               All
               {!loading && (
                 <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${
-                  !selectedCategory ? 'bg-white/25 text-white' : 'bg-gray-100 text-gray-500'
+                  !showCombos && !selectedCategory ? 'bg-white/25 text-white' : 'bg-gray-100 text-gray-500'
                 }`}>
                   {allProducts.length}
                 </span>
               )}
             </button>
 
-            {categories.map((cat) => {
+            {/* Combos pill — only shown when combos exist */}
+            {(combos.length > 0 || combosLoading) && (
+              <button
+                type="button"
+                onClick={() => { setShowCombos(true); setSelectedCategory(''); }}
+                className={`shrink-0 rounded-xl px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                  showCombos
+                    ? 'bg-[#b20202] text-white shadow-sm'
+                    : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                Combos
+                {!combosLoading && (
+                  <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${
+                    showCombos ? 'bg-white/25 text-white' : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    {combos.length}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* Product category pills */}
+            {!showCombos && categories.map((cat) => {
               const count = allProducts.filter((p) => p.product?.type === cat).length;
               return (
                 <button
@@ -317,7 +457,7 @@ export default function POSProductGrid({ onAddToCart }: ProductGridProps) {
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            {!loading && (
+            {!loading && !showCombos && (
               <span className="text-[11px] font-medium text-gray-400">
                 {isFiltered ? `${products.length} / ${allProducts.length}` : `${allProducts.length} items`}
               </span>
@@ -343,66 +483,103 @@ export default function POSProductGrid({ onAddToCart }: ProductGridProps) {
         </div>
       )}
 
+      {/* ── Combo grid ── */}
+      {showCombos && (
+        <div className="flex-1 overflow-y-auto">
+          {combosLoading ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+              {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
+            </div>
+          ) : combos.length === 0 ? (
+            <div className="flex h-64 flex-col items-center justify-center gap-2 text-center">
+              <PiPackage className="h-10 w-10 text-gray-300" />
+              <p className="text-sm text-gray-400">No combos available</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+              {combos.map(combo => (
+                <ComboCard
+                  key={combo._id}
+                  combo={combo}
+                  onOpen={() => setActiveComboPicker(combo)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Product grid ── */}
-      <div className="flex-1 overflow-y-auto">
-        {loading ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-            {Array.from({ length: 12 }).map((_, i) => <SkeletonCard key={i} />)}
-          </div>
-        ) : error ? (
-          <div className="flex h-64 flex-col items-center justify-center gap-3">
-            <p className="text-sm text-red-500">{error}</p>
-            <Button variant="outline" size="sm" onClick={() => fetchProducts()}>Retry</Button>
-          </div>
-        ) : products.length === 0 ? (
-          <div className="flex h-64 flex-col items-center justify-center gap-3 text-center">
-            <Empty
-              image={<SearchNotFoundIcon />}
-              text={
-                searchQuery
-                  ? `No results for "${searchQuery}"${selectedCategory ? ` in ${formatCategoryLabel(selectedCategory)}` : ''}`
-                  : selectedCategory
-                  ? `No products in ${formatCategoryLabel(selectedCategory)}`
-                  : 'No products available'
-              }
-              className="justify-center"
-            />
-            {isFiltered && (
-              <div className="flex gap-2">
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                  >
-                    Clear search
-                  </button>
-                )}
-                {selectedCategory && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedCategory('')}
-                    className="rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                  >
-                    Show all categories
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-            {products.map((product) => (
-              <POSProductCard
-                key={product._id}
-                product={product}
-                onAddToCart={onAddToCart}
-                flash={flashId === product._id}
+      {!showCombos && (
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+              {Array.from({ length: 12 }).map((_, i) => <SkeletonCard key={i} />)}
+            </div>
+          ) : error ? (
+            <div className="flex h-64 flex-col items-center justify-center gap-3">
+              <p className="text-sm text-red-500">{error}</p>
+              <Button variant="outline" size="sm" onClick={() => fetchProducts()}>Retry</Button>
+            </div>
+          ) : products.length === 0 ? (
+            <div className="flex h-64 flex-col items-center justify-center gap-3 text-center">
+              <Empty
+                image={<SearchNotFoundIcon />}
+                text={
+                  searchQuery
+                    ? `No results for "${searchQuery}"${selectedCategory ? ` in ${formatCategoryLabel(selectedCategory)}` : ''}`
+                    : selectedCategory
+                    ? `No products in ${formatCategoryLabel(selectedCategory)}`
+                    : 'No products available'
+                }
+                className="justify-center"
               />
-            ))}
-          </div>
-        )}
-      </div>
+              {isFiltered && (
+                <div className="flex gap-2">
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                    >
+                      Clear search
+                    </button>
+                  )}
+                  {selectedCategory && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategory('')}
+                      className="rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                    >
+                      Show all categories
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+              {products.map((product) => (
+                <POSProductCard
+                  key={product._id}
+                  product={product}
+                  onAddToCart={onAddToCart}
+                  flash={flashId === product._id}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Combo picker modal ── */}
+      {activeComboPicker && (
+        <POSComboPicker
+          combo={activeComboPicker}
+          onAdd={handleComboAdd}
+          onClose={() => setActiveComboPicker(null)}
+        />
+      )}
     </div>
   );
 }

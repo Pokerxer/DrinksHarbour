@@ -2,7 +2,8 @@
 'use client';
 
 import { useAtom } from 'jotai';
-import { zodResolver, useForm } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import type { Controller, SubmitHandler } from 'react-hook-form';
 import { AdvancedRadio, RadioGroup, FieldError, Radio, Text } from 'rizzui';
 import {

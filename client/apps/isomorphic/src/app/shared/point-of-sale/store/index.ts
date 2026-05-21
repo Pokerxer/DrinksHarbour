@@ -2,7 +2,7 @@
 
 import { atom, useAtom, useAtomValue } from 'jotai';
 import { atomWithStorage } from 'jotai/utils';
-import { POSCartItem, POSBundleDeal, POSStaff, POSTenant } from '@/app/shared/point-of-sale/types';
+import { POSCartItem, POSBundleDeal, POSStaff, POSTenant, POSCombo } from '@/app/shared/point-of-sale/types';
 import { findBestPricelistRule, findMatchingPricelistRules, applyRuleTransform } from '@/app/shared/point-of-sale/utils';
 import { useCallback, useMemo } from 'react';
 
@@ -40,6 +40,15 @@ export const usePOSAuth = () => {
   return { token, staff, tenant, terminal, setAuth, setTerminal, logout, isAuthenticated };
 };
 
+// ─── Active combos (shared between grid and cart) ─────────────────────────────
+
+const posActiveCombosAtom = atom<POSCombo[]>([]);
+
+export const usePOSCombos = () => {
+  const [combos, setCombos] = useAtom(posActiveCombosAtom);
+  return { combos, setCombos };
+};
+
 // ─── Cart types ───────────────────────────────────────────────────────────────
 
 type CartCustomer = {
@@ -49,6 +58,31 @@ type CartCustomer = {
   phone: string;
 };
 
+/** A reward/discount the cashier has explicitly applied to the current cart. */
+export type CartAppliedReward = {
+  id: string;            // unique key: _id for promos/bxgy, code for codes, name for discount programs
+  kind: 'discount_program' | 'coupon' | 'discount_code' | 'promotion' | 'bxgy' | 'loyalty';
+  name: string;
+  color?: string;
+  detail?: string;       // human-readable label, e.g. "10% off order"
+  // Discount rule — used to recompute as cart changes
+  discType?: 'pct' | 'fixed';
+  discValue?: number;
+  applyOn?: 'order' | 'cheapest' | 'most_expensive';
+  maxDiscount?: number;
+  // Code fields
+  code?: string;
+  // BuyXGetY fields
+  buyQty?: number;
+  getQty?: number;
+  getDiscountPct?: number;
+  buyProducts?: string[];
+  getProducts?: string[];
+};
+
+// Keep CartPendingCode as an alias — payment modal imports it
+export type CartPendingCode = CartAppliedReward & { kind: 'coupon' | 'discount_code'; code: string };
+
 export type CartData = {
   id: string;
   ref: string;
@@ -57,6 +91,7 @@ export type CartData = {
   discountType: 'percent' | 'fixed';
   discountValue: number;
   note: string;
+  appliedRewards: CartAppliedReward[];
 };
 
 const DEFAULT_CUSTOMER: CartCustomer = {
@@ -76,6 +111,7 @@ const INITIAL_CART: CartData = {
   discountType: 'percent',
   discountValue: 0,
   note: '',
+  appliedRewards: [],
 };
 
 // ─── Terminal-scoped storage ───────────────────────────────────────────────────
@@ -96,8 +132,9 @@ const activeCartIdAtoms   = termAtoms<string>('dh-pos-active-cart', INITIAL_CART
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getItemKey(subProductId: string, sizeId?: string) {
-  return sizeId ? `${subProductId}_${sizeId}` : subProductId;
+function getItemKey(subProductId: string, sizeId?: string, comboInstanceId?: string) {
+  const base = sizeId ? `${subProductId}_${sizeId}` : subProductId;
+  return comboInstanceId ? `${base}__ci_${comboInstanceId}` : base;
 }
 
 function makeCartId() {
@@ -285,6 +322,80 @@ function computeDiscountAmount(subtotal: number, type: 'percent' | 'fixed', valu
   return type === 'fixed' ? Math.min(value, subtotal) : subtotal * (value / 100);
 }
 
+/** Which units of a specific cart item are discounted by a BuyXGetY reward. */
+export type BxgyItemDiscount = {
+  subProductId: string;
+  sizeId?: string;
+  freeQty: number;    // number of units discounted
+  discPct: number;    // 100 = free, 50 = half-price, etc.
+  rewardName: string;
+  rewardColor?: string;
+};
+
+/** Returns the per-item breakdown of which units are free/discounted by a BuyXGetY reward. */
+export function computeBxgyFreeItems(reward: CartAppliedReward, items: POSCartItem[]): BxgyItemDiscount[] {
+  if (reward.kind !== 'bxgy') return [];
+  const buyQty = reward.buyQty ?? 1;
+  const getQty = reward.getQty ?? 1;
+  const discPct = reward.getDiscountPct ?? 100;
+
+  const baseItems = items.filter(i => !i.bxgyRef);
+  const buyPool = (reward.buyProducts?.length ?? 0) > 0
+    ? baseItems.filter(i => reward.buyProducts!.includes(i.productId))
+    : baseItems;
+  const totalBuy = buyPool.reduce((s, i) => s + i.quantity, 0);
+  // Every `buyQty` items in the cart entitles the customer to `getQty` discounted items
+  const sets = Math.floor(totalBuy / buyQty);
+  if (sets === 0) return [];
+
+  const getPool = (reward.getProducts?.length ?? 0) > 0
+    ? items.filter(i => reward.getProducts!.includes(i.productId) && !i.bxgyRef)
+    : buyPool;
+  // Cheapest units get the discount
+  const sorted = [...getPool].sort((a, b) => {
+    const effA = getEffectiveBundlePrice(a).price;
+    const effB = getEffectiveBundlePrice(b).price;
+    return effA - effB;
+  });
+
+  const result: BxgyItemDiscount[] = [];
+  let need = sets * getQty;
+  for (const it of sorted) {
+    if (need <= 0) break;
+    const take = Math.min(need, it.quantity);
+    result.push({ subProductId: it.subProductId, sizeId: it.sizeId, freeQty: take, discPct, rewardName: reward.name, rewardColor: reward.color });
+    need -= take;
+  }
+  return result;
+}
+
+/** Compute the ₦ discount for a single applied reward against the current cart. */
+export function computeRewardDiscount(reward: CartAppliedReward, items: POSCartItem[], base: number): number {
+  if (reward.kind === 'bxgy') {
+    const freeItems = computeBxgyFreeItems(reward, items);
+    const disc = freeItems.reduce((s, fi) => {
+      const item = items.find(i => i.subProductId === fi.subProductId && i.sizeId === fi.sizeId);
+      if (!item) return s;
+      const effPrice = getEffectiveBundlePrice(item).price;
+      return s + effPrice * fi.freeQty * (fi.discPct / 100);
+    }, 0);
+    return Math.round(Math.max(0, disc) * 100) / 100;
+  }
+  const discType  = reward.discType  ?? 'pct';
+  const discValue = reward.discValue ?? 0;
+  if (discValue <= 0) return 0;
+  let applyBase = base;
+  if (reward.applyOn === 'cheapest' && items.length)
+    applyBase = Math.min(...items.map(i => i.price));
+  else if (reward.applyOn === 'most_expensive' && items.length)
+    applyBase = Math.max(...items.map(i => i.price));
+  const raw = discType === 'pct'
+    ? Math.round(applyBase * discValue / 100 * 100) / 100
+    : Math.min(discValue, applyBase);
+  const capped = (reward.maxDiscount ?? 0) > 0 ? Math.min(raw, reward.maxDiscount!) : raw;
+  return Math.max(0, capped);
+}
+
 // ─── usePOSCart ───────────────────────────────────────────────────────────────
 
 export const usePOSCart = () => {
@@ -303,6 +414,7 @@ export const usePOSCart = () => {
   );
 
   const { items, customer, discountType, discountValue, note, ref } = activeCart;
+  const appliedRewards: CartAppliedReward[] = activeCart.appliedRewards ?? [];
 
   // Pricelist is applied dynamically so the total stays live as selection changes
   const [selectedPricelist] = useAtom(pricelistAtom);
@@ -316,7 +428,11 @@ export const usePOSCart = () => {
     () => computeDiscountAmount(subtotal, discountType, discountValue),
     [subtotal, discountType, discountValue]
   );
-  const total     = useMemo(() => Math.max(0, subtotal - discountAmount), [subtotal, discountAmount]);
+  const rewardsDiscountTotal = useMemo(() => {
+    const afterCartDisc = Math.max(0, subtotal - discountAmount);
+    return appliedRewards.reduce((sum, r) => sum + computeRewardDiscount(r, items, afterCartDisc), 0);
+  }, [appliedRewards, items, subtotal, discountAmount]);
+  const total     = useMemo(() => Math.max(0, subtotal - discountAmount - rewardsDiscountTotal), [subtotal, discountAmount, rewardsDiscountTotal]);
   const itemCount = useMemo(() => items.reduce((s, i) => s + i.quantity, 0), [items]);
 
   // ── Update helper ──────────────────────────────────────────────────────────
@@ -339,6 +455,7 @@ export const usePOSCart = () => {
       discountType: 'percent',
       discountValue: 0,
       note: '',
+      appliedRewards: [],
     };
     setCarts((prev) => [...prev, nc]);
     setActiveCartId(nc.id);
@@ -368,50 +485,101 @@ export const usePOSCart = () => {
   );
 
   // ── Item ops ───────────────────────────────────────────────────────────────
+
+  // Full unique key for a cart item — combo items include their instanceId so
+  // they never merge with regular items or other combo instances.
+  function fullKey(i: { subProductId: string; sizeId?: string; comboRef?: { instanceId: string } }) {
+    return getItemKey(i.subProductId, i.sizeId, i.comboRef?.instanceId);
+  }
+
   const addItem = useCallback(
     (item: POSCartItem) => {
-      patchActive({
-        items: (() => {
-          const key = getItemKey(item.subProductId, item.sizeId);
-          const existing = activeCart.items.find(
-            (i) => getItemKey(i.subProductId, i.sizeId) === key
-          );
+      // Use functional setCarts so rapid successive calls (e.g. adding all combo
+      // items in a forEach) each receive the latest state rather than the stale
+      // activeCart.items closure — without this, only the last item survives.
+      setCarts((prev) =>
+        prev.map((c) => {
+          if (c.id !== activeCartId) return c;
+          const key      = fullKey(item);
+          const existing = c.items.find((i) => fullKey(i) === key);
           if (existing) {
-            return activeCart.items.map((i) => {
-              if (getItemKey(i.subProductId, i.sizeId) !== key) return i;
-              return {
-                ...i,
-                quantity: i.quantity + item.quantity,
-                // Always refresh activeBundles so pricelist changes and DB updates are picked up
-                activeBundles: item.activeBundles ?? i.activeBundles,
-              };
-            });
+            return {
+              ...c,
+              items: c.items.map((i) =>
+                fullKey(i) === key
+                  ? { ...i, quantity: i.quantity + item.quantity, activeBundles: item.activeBundles ?? i.activeBundles }
+                  : i
+              ),
+            };
           }
-          return [...activeCart.items, item];
-        })(),
-      });
+          return { ...c, items: [...c.items, item] };
+        })
+      );
     },
-    [activeCart.items, patchActive]
+    [activeCartId, setCarts]
   );
 
   const removeItem = useCallback(
-    (subProductId: string, sizeId?: string) => {
+    (subProductId: string, sizeId?: string, comboInstanceId?: string) => {
+      const key = getItemKey(subProductId, sizeId, comboInstanceId);
       patchActive({
-        items: activeCart.items.filter(
-          (i) => getItemKey(i.subProductId, i.sizeId) !== getItemKey(subProductId, sizeId)
-        ),
+        items: activeCart.items.filter((i) => fullKey(i) !== key),
       });
     },
     [activeCart.items, patchActive]
   );
 
+  const removeComboGroup = useCallback(
+    (instanceId: string) => {
+      patchActive({
+        items: activeCart.items.filter((i) => i.comboRef?.instanceId !== instanceId),
+      });
+    },
+    [activeCart.items, patchActive]
+  );
+
+  const setComboGroupQty = useCallback(
+    (instanceId: string, qty: number) => {
+      if (qty < 1) {
+        patchActive({ items: activeCart.items.filter(i => i.comboRef?.instanceId !== instanceId) });
+      } else {
+        patchActive({
+          items: activeCart.items.map(i =>
+            i.comboRef?.instanceId === instanceId ? { ...i, quantity: Math.round(qty) } : i
+          ),
+        });
+      }
+    },
+    [activeCart.items, patchActive]
+  );
+
+  const replaceComboGroup = useCallback(
+    (instanceId: string, newItems: POSCartItem[]) => {
+      setCarts(prev => prev.map(c => {
+        if (c.id !== activeCartId) return c;
+        // Walk items: at first encounter of the old combo insert new items, then skip rest
+        const result: POSCartItem[] = [];
+        let inserted = false;
+        for (const item of c.items) {
+          if (item.comboRef?.instanceId === instanceId) {
+            if (!inserted) { result.push(...newItems); inserted = true; }
+          } else {
+            result.push(item);
+          }
+        }
+        if (!inserted) result.push(...newItems);
+        return { ...c, items: result };
+      }));
+    },
+    [activeCartId, setCarts]
+  );
+
   const updateQuantity = useCallback(
-    (subProductId: string, quantity: number, sizeId?: string) => {
+    (subProductId: string, quantity: number, sizeId?: string, comboInstanceId?: string) => {
+      const key = getItemKey(subProductId, sizeId, comboInstanceId);
       patchActive({
         items: activeCart.items.map((i) =>
-          getItemKey(i.subProductId, i.sizeId) === getItemKey(subProductId, sizeId)
-            ? { ...i, quantity: Math.max(1, Math.round(quantity)) }
-            : i
+          fullKey(i) === key ? { ...i, quantity: Math.max(1, Math.round(quantity)) } : i
         ),
       });
     },
@@ -419,12 +587,11 @@ export const usePOSCart = () => {
   );
 
   const updateItemDiscount = useCallback(
-    (subProductId: string, discount: number, sizeId?: string) => {
+    (subProductId: string, discount: number, sizeId?: string, comboInstanceId?: string) => {
+      const key = getItemKey(subProductId, sizeId, comboInstanceId);
       patchActive({
         items: activeCart.items.map((i) =>
-          getItemKey(i.subProductId, i.sizeId) === getItemKey(subProductId, sizeId)
-            ? { ...i, discount: Math.max(0, Math.min(100, discount)) }
-            : i
+          fullKey(i) === key ? { ...i, discount: Math.max(0, Math.min(100, discount)) } : i
         ),
       });
     },
@@ -432,12 +599,11 @@ export const usePOSCart = () => {
   );
 
   const updateItemPrice = useCallback(
-    (subProductId: string, price: number, sizeId?: string) => {
+    (subProductId: string, price: number, sizeId?: string, comboInstanceId?: string) => {
+      const key = getItemKey(subProductId, sizeId, comboInstanceId);
       patchActive({
         items: activeCart.items.map((i) =>
-          getItemKey(i.subProductId, i.sizeId) === getItemKey(subProductId, sizeId)
-            ? { ...i, price: Math.max(0, price) }
-            : i
+          fullKey(i) === key ? { ...i, price: Math.max(0, price) } : i
         ),
       });
     },
@@ -451,6 +617,7 @@ export const usePOSCart = () => {
       discountType: 'percent',
       discountValue: 0,
       note: '',
+      appliedRewards: [],
     });
   }, [patchActive]);
 
@@ -470,6 +637,51 @@ export const usePOSCart = () => {
     [patchActive]
   );
 
+  const setAppliedRewards = useCallback(
+    (rewards: CartAppliedReward[]) => patchActive({ appliedRewards: rewards }),
+    [patchActive]
+  );
+
+  const addReward = useCallback(
+    (r: CartAppliedReward) => {
+      let extraItems: POSCartItem[] = [];
+      if (r.kind === 'bxgy') {
+        const freeItems = computeBxgyFreeItems(r, activeCart.items);
+        extraItems = freeItems.map(fi => {
+          const original = activeCart.items.find(
+            i => i.subProductId === fi.subProductId && i.sizeId === fi.sizeId && !i.bxgyRef
+          );
+          if (!original) return null;
+          const origPrice = getEffectiveBundlePrice(original).price;
+          return {
+            ...original,
+            quantity: fi.freeQty,
+            price: 0,           // price is 0 so it doesn't affect subtotal arithmetic
+            discount: 0,
+            bxgyRef: { rewardId: r.id, discPct: fi.discPct, originalPrice: origPrice, rewardName: r.name, rewardColor: r.color },
+            comboRef: undefined,
+            activeBundles: [],
+          };
+        }).filter(Boolean) as POSCartItem[];
+      }
+      patchActive({
+        appliedRewards: [...appliedRewards.filter(x => x.id !== r.id), r],
+        items: [...activeCart.items.filter(i => i.bxgyRef?.rewardId !== r.id), ...extraItems],
+      });
+    },
+    [appliedRewards, activeCart.items, patchActive]
+  );
+
+  const removeReward = useCallback(
+    (id: string) => {
+      patchActive({
+        appliedRewards: appliedRewards.filter(x => x.id !== id),
+        items: activeCart.items.filter(i => i.bxgyRef?.rewardId !== id),
+      });
+    },
+    [appliedRewards, activeCart.items, patchActive]
+  );
+
   return useMemo(
     () => ({
       // Multi-cart
@@ -487,11 +699,20 @@ export const usePOSCart = () => {
       note,
       subtotal,
       discountAmount,
+      rewardsDiscountTotal,
       total,
       itemCount,
+      // Applied rewards
+      appliedRewards,
+      setAppliedRewards,
+      addReward,
+      removeReward,
       // Item ops
       addItem,
       removeItem,
+      removeComboGroup,
+      setComboGroupQty,
+      replaceComboGroup,
       updateQuantity,
       updateItemDiscount,
       updateItemPrice,
@@ -504,8 +725,10 @@ export const usePOSCart = () => {
       carts, activeCartId, ref,
       addCart, switchCart, removeCart,
       items, customer, discountType, discountValue, note,
-      subtotal, discountAmount, total, itemCount,
-      addItem, removeItem, updateQuantity, updateItemDiscount, updateItemPrice,
+      subtotal, discountAmount, rewardsDiscountTotal, total, itemCount,
+      appliedRewards, setAppliedRewards, addReward, removeReward,
+      addItem, removeItem, removeComboGroup, setComboGroupQty, replaceComboGroup,
+      updateQuantity, updateItemDiscount, updateItemPrice,
       clearCart, setCustomer, setDiscount, setNote,
     ]
   );

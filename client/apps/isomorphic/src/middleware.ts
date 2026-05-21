@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { pagesOptions } from '@/app/api/auth/[...nextauth]/pages-options';
 import withAuth from 'next-auth/middleware';
+import { getToken } from 'next-auth/jwt';
 import type { UserRole } from '@/types/authorization';
 import { PLATFORM_ROLES, TENANT_ROLES } from '@/types/authorization';
 
@@ -38,7 +39,38 @@ function extractTenantSlug(req: NextRequest): string | null {
   return null;
 }
 
-export default withAuth(
+// Cookie names NextAuth uses (vary by HTTPS/HTTP)
+const SESSION_COOKIES = [
+  '__Secure-next-auth.session-token',
+  'next-auth.session-token',
+];
+
+/**
+ * If the browser holds a session cookie encrypted with a different secret
+ * (common after NEXTAUTH_SECRET changes), getToken() returns null but the
+ * cookie keeps resending, triggering JWT_SESSION_ERROR on every request.
+ * Clear the bad cookie here and redirect to sign-in once, ending the loop.
+ */
+async function clearStaleCookieIfNeeded(req: NextRequest): Promise<NextResponse | null> {
+  const hasCookie = SESSION_COOKIES.some(name => req.cookies.has(name));
+  if (!hasCookie) return null;
+
+  try {
+    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+    if (token) return null; // valid — let withAuth handle it normally
+  } catch {
+    // decryption failed — fall through to clear
+  }
+
+  // Cookie exists but can't be decrypted — wipe it and redirect to sign-in
+  const signInUrl = new URL(pagesOptions.signIn ?? '/signin', req.url);
+  signInUrl.searchParams.set('callbackUrl', req.nextUrl.pathname);
+  const res = NextResponse.redirect(signInUrl);
+  SESSION_COOKIES.forEach(name => res.cookies.delete(name));
+  return res;
+}
+
+const authMiddleware = withAuth(
   function middleware(req: NextRequest) {
     const authReq = req as NextAuthRequest;
     const token = authReq.nextauth?.token;
@@ -116,6 +148,12 @@ export default withAuth(
     },
   }
 );
+
+export default async function middleware(req: NextRequest) {
+  const staleResponse = await clearStaleCookieIfNeeded(req);
+  if (staleResponse) return staleResponse;
+  return (authMiddleware as any)(req);
+}
 
 export const config = {
   matcher: [

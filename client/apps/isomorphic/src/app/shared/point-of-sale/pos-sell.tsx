@@ -15,7 +15,7 @@ import { routes } from '@/config/routes';
 export default function POSSell() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { addItem } = usePOSCart();
+  const { addItem }    = usePOSCart();
   const { activeView } = usePOSUI();
   const { token, terminal } = usePOSAuth();
 

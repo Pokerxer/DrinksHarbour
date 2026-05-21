@@ -46,10 +46,12 @@ const fetchProducts = async (t: string) => {
 
 /** One selectable item inside a choice group.
  *  allowedSizes = [] means ALL sizes are selectable.
- *  allowedSizes = [id, …] restricts to those specific size variants. */
+ *  minQty/maxQty = quantity range when the cashier picks this product. */
 type ChoiceItem = {
-  subProduct: string;   // SubProduct._id
-  allowedSizes: string[]; // Size._id[]
+  subProduct: string;
+  allowedSizes: string[];
+  minQty: number;
+  maxQty: number;
 };
 
 type ChoiceLine = {
@@ -61,12 +63,15 @@ type ChoiceLine = {
   items: ChoiceItem[];
 };
 
-type PosSize = { _id: string; displayName: string; sellingPrice: number; availableStock: number };
+type PricingMode = 'dynamic' | 'fixed' | 'markup_on_cost' | 'discount_off_selling';
+
+type PosSize = { _id: string; displayName: string; sellingPrice: number; costPrice?: number; availableStock: number; sku?: string };
 
 type Product = {
   _id: string;
   sku: string;
   baseSellingPrice: number;
+  costPrice?: number;
   availableStock: number;
   sellWithoutSizeVariants: boolean;
   sizes: PosSize[];
@@ -77,7 +82,10 @@ type Combo = {
   _id: string;
   name: string;
   description: string;
+  priceMode?: PricingMode;
   price: number;
+  markupPercentage?: number;
+  discountPercentage?: number;
   active: boolean;
   choiceLines: any[];
 };
@@ -98,20 +106,20 @@ function normaliseLines(raw: any[]): ChoiceLine[] {
       // it is an embedded doc with its own _id + a subProduct reference
       if (it.subProduct !== undefined) {
         return {
-          subProduct: it.subProduct?._id
-            ? String(it.subProduct._id)
-            : String(it.subProduct),
+          subProduct:   it.subProduct?._id ? String(it.subProduct._id) : String(it.subProduct),
           allowedSizes: (it.allowedSizes || []).map((s: any) => s?._id ? String(s._id) : String(s)),
+          minQty: Number(it.minQty) || 1,
+          maxQty: Math.max(Number(it.maxQty) || 1, Number(it.minQty) || 1),
         };
       }
       // Fallback: plain ObjectId or minimal object
-      return { subProduct: String(it._id || it), allowedSizes: [] };
+      return { subProduct: String(it._id || it), allowedSizes: [], minQty: 1, maxQty: 1 };
     });
 
     // Backward-compat: old combos stored products:[ObjectId]
     if (!items.length && l.products?.length) {
       for (const p of l.products) {
-        items.push({ subProduct: String(p?._id || p), allowedSizes: [] });
+        items.push({ subProduct: String(p?._id || p), allowedSizes: [], minQty: 1, maxQty: 1 });
       }
     }
     return { ...l, required: l.required !== false, items };
@@ -148,11 +156,12 @@ function Stepper({ value, min, max, onChange }: { value: number; min: number; ma
 
 // ── Product chip with size config ─────────────────────────────────────────────
 
-function ProductChip({ item, product, onRemove, onSizesChange }: {
+function ProductChip({ item, product, onRemove, onSizesChange, onQtyChange }: {
   item: ChoiceItem;
   product: Product;
   onRemove: () => void;
   onSizesChange: (sizeIds: string[]) => void;
+  onQtyChange: (minQty: number, maxQty: number) => void;
 }) {
   const [open, setOpen] = useState(false);
   const img = product.product?.images?.[0]?.thumbnail || product.product?.images?.[0]?.url;
@@ -205,64 +214,120 @@ function ProductChip({ item, product, onRemove, onSizesChange }: {
           <p className="text-[10px] text-gray-400">{price}</p>
         </div>
 
-        {/* Size config button (only for sized products) */}
-        {hasSizes && (
-          <button
-            type="button"
-            onClick={() => setOpen(o => !o)}
-            className={`flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-semibold transition-colors ${
-              open ? 'border-[#b20202] bg-red-50 text-[#b20202]'
-                   : selectedSizes.length > 0
-                   ? 'border-blue-200 bg-blue-50 text-blue-700'
-                   : 'border-gray-200 text-gray-500 hover:border-gray-300'
-            }`}
-          >
-            {selectedSizes.length > 0 ? `${selectedSizes.length} size${selectedSizes.length !== 1 ? 's' : ''}` : 'All sizes'}
-            {open ? <PiCaretUp className="h-2.5 w-2.5" /> : <PiCaretDown className="h-2.5 w-2.5" />}
-          </button>
+        {/* Qty badge — shown when min/max differ from default */}
+        {(item.minQty > 1 || item.maxQty > 1) && (
+          <span className="rounded-lg border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">
+            ×{item.minQty === item.maxQty ? item.minQty : `${item.minQty}–${item.maxQty}`}
+          </span>
         )}
+
+        {/* Settings toggle (sizes + qty) */}
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          className={`flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-semibold transition-colors ${
+            open
+              ? 'border-[#b20202] bg-red-50 text-[#b20202]'
+              : selectedSizes.length > 0 || item.minQty > 1 || item.maxQty > 1
+              ? 'border-blue-200 bg-blue-50 text-blue-700'
+              : 'border-gray-200 text-gray-500 hover:border-gray-300'
+          }`}
+        >
+          {selectedSizes.length > 0
+            ? `${selectedSizes.length} size${selectedSizes.length !== 1 ? 's' : ''}`
+            : hasSizes ? 'All sizes' : 'Settings'}
+          {open ? <PiCaretUp className="h-2.5 w-2.5" /> : <PiCaretDown className="h-2.5 w-2.5" />}
+        </button>
+
         <button type="button" onClick={onRemove} className="text-gray-300 hover:text-red-400">
           <PiX className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      {/* Size picker panel */}
-      {hasSizes && open && (
-        <div className="border-t border-gray-100 bg-gray-50 px-3 py-2.5">
-          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-            Available sizes for this group
-            <span className="ml-1 font-normal normal-case text-gray-300">(uncheck to restrict)</span>
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {product.sizes.map(size => {
-              const sid    = String(size._id);
-              const active = selectedSizes.length === 0 || selectedSizes.includes(sid);
-              const oos    = size.availableStock <= 0;
-              return (
-                <button
-                  key={sid}
-                  type="button"
-                  onClick={() => toggleSize(sid)}
-                  className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-all ${
-                    active
-                      ? 'border-blue-200 bg-blue-50 text-blue-800'
-                      : 'border-gray-200 bg-white text-gray-400 line-through opacity-60'
-                  }`}
-                >
-                  {active && <PiCheckCircle className="h-3 w-3 text-blue-500" />}
-                  {size.displayName}
-                  <span className="text-[10px] font-normal opacity-70">{formatCurrency(size.sellingPrice)}</span>
-                  {oos && <span className="rounded bg-amber-100 px-1 text-[9px] text-amber-600">low stock</span>}
+      {/* Expansion panel: sizes + qty */}
+      {open && (
+        <div className="border-t border-gray-100 bg-gray-50 px-3 py-2.5 space-y-3">
+
+          {/* Size restriction (only for sized products) */}
+          {hasSizes && (
+            <div>
+              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                Available sizes
+                <span className="ml-1 font-normal normal-case text-gray-300">(uncheck to restrict)</span>
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {product.sizes.map(size => {
+                  const sid    = String(size._id);
+                  const active = selectedSizes.length === 0 || selectedSizes.includes(sid);
+                  const oos    = size.availableStock <= 0;
+                  return (
+                    <button
+                      key={sid}
+                      type="button"
+                      onClick={() => toggleSize(sid)}
+                      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-all ${
+                        active
+                          ? 'border-blue-200 bg-blue-50 text-blue-800'
+                          : 'border-gray-200 bg-white text-gray-400 line-through opacity-60'
+                      }`}
+                    >
+                      {active && <PiCheckCircle className="h-3 w-3 text-blue-500" />}
+                      {size.displayName}
+                      <span className="text-[10px] font-normal opacity-70">{formatCurrency(size.sellingPrice)}</span>
+                      {oos && <span className="rounded bg-amber-100 px-1 text-[9px] text-amber-600">low stock</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedSizes.length > 0 && (
+                <button type="button" onClick={() => onSizesChange([])}
+                  className="mt-1.5 text-[10px] text-gray-400 underline hover:text-gray-600">
+                  Reset to all sizes
                 </button>
-              );
-            })}
-          </div>
-          {selectedSizes.length > 0 && (
-            <button type="button" onClick={() => onSizesChange([])}
-              className="mt-1.5 text-[10px] text-gray-400 underline hover:text-gray-600">
-              Reset to all sizes
-            </button>
+              )}
+            </div>
           )}
+
+          {/* Quantity range */}
+          <div>
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              Required quantity per pick
+              <span className="ml-1 font-normal normal-case text-gray-300">(how many units when selected)</span>
+            </p>
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-gray-500">Min</span>
+                <Stepper
+                  value={item.minQty}
+                  min={1}
+                  max={item.maxQty}
+                  onChange={v => onQtyChange(v, Math.max(item.maxQty, v))}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-gray-500">Max</span>
+                <Stepper
+                  value={item.maxQty}
+                  min={item.minQty}
+                  onChange={v => onQtyChange(item.minQty, v)}
+                />
+              </div>
+              {(item.minQty > 1 || item.maxQty > 1) && (
+                <button
+                  type="button"
+                  onClick={() => onQtyChange(1, 1)}
+                  className="text-[10px] text-gray-400 underline hover:text-gray-600"
+                >
+                  Reset to 1
+                </button>
+              )}
+            </div>
+            <p className="mt-1.5 text-[10px] text-gray-400">
+              {item.minQty === item.maxQty
+                ? `Cashier must add exactly ${item.minQty} unit${item.minQty > 1 ? 's' : ''} of this product`
+                : `Cashier picks ${item.minQty}–${item.maxQty} units of this product`}
+            </p>
+          </div>
         </div>
       )}
     </div>
@@ -433,15 +498,19 @@ function ProductAddDropdown({ all, existingIds, onAdd }: {
 
 type Selection = { subProduct: string; size?: string };
 
-function POSPreview({ name, price, lines, allProducts }: {
-  name: string; price: number; lines: ChoiceLine[]; allProducts: Product[];
+function POSPreview({ name, priceMode, fixedPrice, markupPct, discountPct, lines, allProducts }: {
+  name: string;
+  priceMode: PricingMode;
+  fixedPrice: number;
+  markupPct: number;
+  discountPct: number;
+  lines: ChoiceLine[];
+  allProducts: Product[];
 }) {
-  // selections[lineIdx] = array of { subProduct, size? }
   const [selections, setSelections] = useState<Record<number, Selection[]>>({});
 
   const getProduct = (id: string) => allProducts.find(p => String(p._id) === String(id));
 
-  // Reset preview selections whenever the group structure changes
   useEffect(() => { setSelections({}); }, [lines]);
 
   function selectProduct(lineIdx: number, spId: string, maxSelect: number) {
@@ -469,22 +538,48 @@ function POSPreview({ name, price, lines, allProducts }: {
     });
   }
 
-  // Running total using computed prices (size-specific if a size is chosen)
-  const dynamicTotal = lines.reduce((sum, line, i) => {
-    const sel = selections[i] || [];
-    return sum + sel.reduce((s, entry) => {
-      const p = getProduct(entry.subProduct);
-      if (!p) return s;
-      if (entry.size) {
-        const sz = p.sizes?.find(sz => String(sz._id) === String(entry.size));
-        return s + (sz?.sellingPrice || p.baseSellingPrice);
-      }
-      return s + p.baseSellingPrice;
-    }, 0);
-  }, 0);
-  const finalPrice = price > 0 ? price : dynamicTotal;
+  // Running totals: both selling and cost from current selections
+  const { sellingTotal, costTotal } = lines.reduce(
+    (acc, line, i) => {
+      const sel = selections[i] || [];
+      sel.forEach(entry => {
+        const p = getProduct(entry.subProduct);
+        if (!p) return;
+        if (entry.size) {
+          const sz = p.sizes?.find(sz => String(sz._id) === String(entry.size));
+          acc.sellingTotal += sz?.sellingPrice || p.baseSellingPrice;
+          acc.costTotal    += sz?.costPrice    || p.costPrice || 0;
+        } else {
+          acc.sellingTotal += p.baseSellingPrice;
+          acc.costTotal    += p.costPrice || 0;
+        }
+      });
+      return acc;
+    },
+    { sellingTotal: 0, costTotal: 0 },
+  );
 
-  // Price range
+  // Compute final price based on mode
+  let finalPrice = 0;
+  let formulaCaption = '';
+  switch (priceMode) {
+    case 'fixed':
+      finalPrice     = fixedPrice;
+      break;
+    case 'markup_on_cost':
+      finalPrice     = Math.round(costTotal * (1 + markupPct / 100) * 100) / 100;
+      formulaCaption = costTotal > 0 ? `${formatCurrency(costTotal)} cost + ${markupPct}%` : '';
+      break;
+    case 'discount_off_selling':
+      finalPrice     = Math.round(sellingTotal * (1 - discountPct / 100) * 100) / 100;
+      formulaCaption = sellingTotal > 0 ? `${formatCurrency(sellingTotal)} − ${discountPct}%` : '';
+      break;
+    default: // dynamic
+      finalPrice     = sellingTotal;
+      break;
+  }
+
+  // Minimum possible price (cheapest options per line)
   const minPrice = lines.reduce((sum, line) => {
     const prices = line.items.flatMap(it => {
       const p = getProduct(it.subProduct);
@@ -505,7 +600,12 @@ function POSPreview({ name, price, lines, allProducts }: {
         <div className="border-b border-gray-200 bg-white px-4 py-3">
           <p className="font-bold text-gray-900">{name || 'Combo name…'}</p>
           <p className="text-xs text-gray-400 mt-0.5">
-            {price > 0 ? <span className="font-semibold text-[#b20202]">{formatCurrency(price)}</span>
+            {priceMode === 'fixed'
+              ? <span className="font-semibold text-[#b20202]">{formatCurrency(fixedPrice)}</span>
+              : priceMode === 'markup_on_cost'
+              ? <span className="text-gray-500">Cost + {markupPct}% markup</span>
+              : priceMode === 'discount_off_selling'
+              ? <span className="text-gray-500">{discountPct}% off selling price</span>
               : <span>{formatCurrency(minPrice)} and up</span>}
           </p>
         </div>
@@ -650,11 +750,23 @@ function POSPreview({ name, price, lines, allProducts }: {
         {/* Running total */}
         {lines.length > 0 && (
           <div className="sticky bottom-0 border-t border-gray-200 bg-white px-4 py-3">
+            {formulaCaption && (
+              <p className="mb-0.5 text-[10px] text-gray-400">{formulaCaption}</p>
+            )}
+            {priceMode === 'discount_off_selling' && sellingTotal > 0 && finalPrice !== sellingTotal && (
+              <p className="text-[10px] text-gray-400">
+                Was: <span className="line-through">{formatCurrency(sellingTotal)}</span>
+              </p>
+            )}
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-gray-500">Total</span>
-              <span className="text-base font-black text-gray-900">{formatCurrency(finalPrice)}</span>
+              <span className="text-base font-black text-gray-900">
+                {finalPrice > 0 ? formatCurrency(finalPrice) : '—'}
+              </span>
             </div>
-            {price === 0 && <p className="mt-0.5 text-[10px] text-gray-400">Updates as you pick options</p>}
+            {priceMode === 'dynamic' && (
+              <p className="mt-0.5 text-[10px] text-gray-400">Updates as you pick options</p>
+            )}
           </div>
         )}
       </div>
@@ -675,8 +787,12 @@ function ComboModal({ initial, products, onSave, onClose }: {
 }) {
   const [name, setName]       = useState(initial?.name || '');
   const [desc, setDesc]       = useState(initial?.description || '');
-  const [priceMode, setPM]    = useState<'fixed'|'dynamic'>(initial?.price && initial.price > 0 ? 'fixed' : 'dynamic');
+  const [priceMode, setPM]    = useState<PricingMode>(
+    initial?.priceMode || (initial?.price && initial.price > 0 ? 'fixed' : 'dynamic')
+  );
   const [fixedPrice, setFP]   = useState(String(initial?.price || ''));
+  const [markupPct, setMPct]  = useState(String(initial?.markupPercentage ?? ''));
+  const [discPct, setDPct]    = useState(String(initial?.discountPercentage ?? ''));
   const [active, setActive]   = useState(initial?.active !== false);
   const [lines, setLines]     = useState<ChoiceLine[]>(
     initial?.choiceLines?.length ? normaliseLines(initial.choiceLines) : [blankLine()]
@@ -686,12 +802,14 @@ function ComboModal({ initial, products, onSave, onClose }: {
 
   function validate() {
     const e: Record<string, string> = {};
-    if (!name.trim())                          e.name  = 'Name is required';
-    if (priceMode === 'fixed' && !(parseFloat(fixedPrice) > 0)) e.price = 'Enter a price > 0';
+    if (!name.trim()) e.name = 'Name is required';
+    if (priceMode === 'fixed' && !(parseFloat(fixedPrice) > 0))      e.price    = 'Enter a price > 0';
+    if (priceMode === 'markup_on_cost' && !(parseFloat(markupPct) >= 0))  e.markup   = 'Enter a markup %';
+    if (priceMode === 'discount_off_selling' && !(parseFloat(discPct) >= 0)) e.discount = 'Enter a discount %';
     lines.forEach((l, i) => {
-      if (!l.label.trim())        e[`l${i}label`]    = 'Label required';
-      if (l.items.length === 0)   e[`l${i}items`]    = 'Add at least one product';
-      if (l.maxSelect > l.items.length) e[`l${i}max`] = `Max can't exceed ${l.items.length}`;
+      if (!l.label.trim())             e[`l${i}label`] = 'Label required';
+      if (l.items.length === 0)        e[`l${i}items`] = 'Add at least one product';
+      if (l.maxSelect > l.items.length) e[`l${i}max`]  = `Max can't exceed ${l.items.length}`;
     });
     setErrors(e);
     return !Object.keys(e).length;
@@ -701,7 +819,16 @@ function ComboModal({ initial, products, onSave, onClose }: {
     if (!validate()) { toast.error('Fix the errors before saving'); return; }
     setSaving(true);
     try {
-      await onSave({ name: name.trim(), description: desc, price: priceMode === 'fixed' ? parseFloat(fixedPrice) : 0, active, choiceLines: lines });
+      await onSave({
+        name:               name.trim(),
+        description:        desc,
+        priceMode,
+        price:              priceMode === 'fixed' ? (parseFloat(fixedPrice) || 0) : 0,
+        markupPercentage:   priceMode === 'markup_on_cost' ? (parseFloat(markupPct) || 0) : 0,
+        discountPercentage: priceMode === 'discount_off_selling' ? (parseFloat(discPct) || 0) : 0,
+        active,
+        choiceLines: lines,
+      });
       onClose();
     } catch (e: any) { toast.error(e.message || 'Save failed'); }
     finally { setSaving(false); }
@@ -724,7 +851,7 @@ function ComboModal({ initial, products, onSave, onClose }: {
 
   function addProduct(lineIdx: number, spId: string) {
     const line = lines[lineIdx];
-    const newItems = [...line.items, { subProduct: spId, allowedSizes: [] }];
+    const newItems = [...line.items, { subProduct: spId, allowedSizes: [], minQty: 1, maxQty: 1 }];
     patchLine(lineIdx, { items: newItems });
     setErrors(p => ({ ...p, [`l${lineIdx}items`]: '' }));
   }
@@ -737,6 +864,14 @@ function ComboModal({ initial, products, onSave, onClose }: {
     patchLine(lineIdx, {
       items: lines[lineIdx].items.map(it =>
         it.subProduct === spId ? { ...it, allowedSizes: sizeIds } : it
+      ),
+    });
+  }
+
+  function updateItemQty(lineIdx: number, spId: string, minQty: number, maxQty: number) {
+    patchLine(lineIdx, {
+      items: lines[lineIdx].items.map(it =>
+        it.subProduct === spId ? { ...it, minQty, maxQty: Math.max(maxQty, minQty) } : it
       ),
     });
   }
@@ -782,39 +917,82 @@ function ComboModal({ initial, products, onSave, onClose }: {
                   placeholder="Description (optional)…"
                   className="w-full resize-none rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none focus:border-[#b20202]" />
 
-                <div className="flex flex-wrap gap-3">
-                  {/* Price mode */}
-                  <div className="flex-1 min-w-[160px]">
-                    <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Pricing</label>
-                    <div className="flex overflow-hidden rounded-xl border border-gray-200">
-                      {(['dynamic','fixed'] as const).map(m => (
-                        <button key={m} type="button" onClick={() => setPM(m)}
-                          className={`flex-1 py-2 text-xs font-semibold transition-colors ${priceMode === m ? 'bg-[#b20202] text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
-                          {m === 'dynamic' ? 'Sum of choices' : 'Fixed price'}
+                <div className="space-y-3">
+                  {/* Pricing mode — 4 options */}
+                  <div>
+                    <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Pricing mode</label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {([
+                        { mode: 'dynamic',              label: 'Sum of choices',          desc: 'No change — add individual prices' },
+                        { mode: 'fixed',                label: 'Fixed price',             desc: 'Flat amount set by admin' },
+                        { mode: 'markup_on_cost',       label: 'Markup on total cost',    desc: 'Cost of all items + markup %' },
+                        { mode: 'discount_off_selling', label: 'Discount off selling',    desc: 'Selling total minus discount %' },
+                      ] as { mode: PricingMode; label: string; desc: string }[]).map(({ mode, label, desc }) => (
+                        <button key={mode} type="button" onClick={() => setPM(mode)}
+                          className={`flex flex-col rounded-xl border px-3 py-2 text-left transition-colors ${
+                            priceMode === mode
+                              ? 'border-[#b20202] bg-red-50/60 text-[#b20202]'
+                              : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                          }`}>
+                          <span className="text-[11px] font-bold">{label}</span>
+                          <span className="text-[10px] opacity-70">{desc}</span>
                         </button>
                       ))}
                     </div>
                   </div>
-                  {priceMode === 'fixed' && (
-                    <div className="flex-1 min-w-[130px]">
-                      <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Price (₦)</label>
-                      <div className="relative">
-                        <PiCurrencyNgn className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                        <input type="number" min={0} value={fixedPrice}
-                          onChange={e => { setFP(e.target.value); setErrors(p => ({ ...p, price: '' })); }}
-                          placeholder="45000"
-                          className={`w-full rounded-xl border py-2 pl-8 pr-3 text-sm outline-none ${errors.price ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-[#b20202]'}`} />
+
+                  {/* Conditional value input */}
+                  <div className="flex flex-wrap items-end gap-3">
+                    {priceMode === 'fixed' && (
+                      <div className="flex-1 min-w-[130px]">
+                        <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Price (₦)</label>
+                        <div className="relative">
+                          <PiCurrencyNgn className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                          <input type="number" min={0} value={fixedPrice}
+                            onChange={e => { setFP(e.target.value); setErrors(p => ({ ...p, price: '' })); }}
+                            placeholder="45000"
+                            className={`w-full rounded-xl border py-2 pl-8 pr-3 text-sm outline-none ${errors.price ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-[#b20202]'}`} />
+                        </div>
+                        {errors.price && <p className="mt-1 text-[11px] text-red-500">{errors.price}</p>}
                       </div>
-                      {errors.price && <p className="mt-1 text-[11px] text-red-500">{errors.price}</p>}
+                    )}
+                    {priceMode === 'markup_on_cost' && (
+                      <div className="flex-1 min-w-[130px]">
+                        <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Markup %</label>
+                        <div className="relative">
+                          <input type="number" min={0} value={markupPct}
+                            onChange={e => { setMPct(e.target.value); setErrors(p => ({ ...p, markup: '' })); }}
+                            placeholder="25"
+                            className={`w-full rounded-xl border py-2 pl-3 pr-7 text-sm outline-none ${errors.markup ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-[#b20202]'}`} />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                        </div>
+                        {errors.markup && <p className="mt-1 text-[11px] text-red-500">{errors.markup}</p>}
+                        <p className="mt-1 text-[10px] text-gray-400">Price = Σ cost × (1 + {markupPct || 0}%)</p>
+                      </div>
+                    )}
+                    {priceMode === 'discount_off_selling' && (
+                      <div className="flex-1 min-w-[130px]">
+                        <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Discount %</label>
+                        <div className="relative">
+                          <input type="number" min={0} max={100} value={discPct}
+                            onChange={e => { setDPct(e.target.value); setErrors(p => ({ ...p, discount: '' })); }}
+                            placeholder="10"
+                            className={`w-full rounded-xl border py-2 pl-3 pr-7 text-sm outline-none ${errors.discount ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-[#b20202]'}`} />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                        </div>
+                        {errors.discount && <p className="mt-1 text-[11px] text-red-500">{errors.discount}</p>}
+                        <p className="mt-1 text-[10px] text-gray-400">Price = Σ selling × (1 − {discPct || 0}%)</p>
+                      </div>
+                    )}
+
+                    <div className="shrink-0">
+                      <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Status</label>
+                      <button type="button" onClick={() => setActive(v => !v)}
+                        className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-white text-gray-500'}`}>
+                        {active ? <PiToggleRight className="h-4 w-4" /> : <PiToggleLeft className="h-4 w-4" />}
+                        {active ? 'Active' : 'Inactive'}
+                      </button>
                     </div>
-                  )}
-                  <div>
-                    <label className="mb-1.5 block text-[11px] font-semibold text-gray-500">Status</label>
-                    <button type="button" onClick={() => setActive(v => !v)}
-                      className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-white text-gray-500'}`}>
-                      {active ? <PiToggleRight className="h-4 w-4" /> : <PiToggleLeft className="h-4 w-4" />}
-                      {active ? 'Active' : 'Inactive'}
-                    </button>
                   </div>
                 </div>
               </section>
@@ -898,6 +1076,7 @@ function ComboModal({ initial, products, onSave, onClose }: {
                                   product={p}
                                   onRemove={() => removeProduct(i, item.subProduct)}
                                   onSizesChange={sizes => updateItemSizes(i, item.subProduct, sizes)}
+                                  onQtyChange={(mn, mx) => updateItemQty(i, item.subProduct, mn, mx)}
                                 />
                               );
                             })}
@@ -918,8 +1097,15 @@ function ComboModal({ initial, products, onSave, onClose }: {
 
           {/* RIGHT: preview */}
           <div className="hidden flex-col bg-gray-50/50 p-5 lg:flex lg:w-[42%]">
-            <POSPreview name={name} price={priceMode === 'fixed' ? (parseFloat(fixedPrice) || 0) : 0}
-              lines={lines} allProducts={products} />
+            <POSPreview
+              name={name}
+              priceMode={priceMode}
+              fixedPrice={parseFloat(fixedPrice) || 0}
+              markupPct={parseFloat(markupPct) || 0}
+              discountPct={parseFloat(discPct) || 0}
+              lines={lines}
+              allProducts={products}
+            />
           </div>
         </div>
 
@@ -990,7 +1176,16 @@ function ComboCard({ combo, onEdit, onDelete, onToggle }: {
         {/* Stats */}
         <div className="mb-3 grid grid-cols-3 divide-x divide-gray-100 rounded-xl border border-gray-100 text-center">
           {[
-            { l: 'Price',  v: combo.price > 0 ? formatCurrency(combo.price) : 'Dynamic' },
+            {
+              l: 'Pricing',
+              v: combo.priceMode === 'fixed'
+                  ? formatCurrency(combo.price)
+                  : combo.priceMode === 'markup_on_cost'
+                  ? `+${combo.markupPercentage ?? 0}% cost`
+                  : combo.priceMode === 'discount_off_selling'
+                  ? `−${combo.discountPercentage ?? 0}%`
+                  : 'Dynamic',
+            },
             { l: 'Groups', v: String(lines.length) },
             { l: 'Items',  v: String(totalItems) },
           ].map(s => (

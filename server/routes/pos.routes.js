@@ -97,6 +97,72 @@ router.get('/pricelists', protectPOS, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── Active combos for POS cashier ────────────────────────────────────────────
+router.get('/combos', protectPOS, async (req, res, next) => {
+  try {
+    const POSCombo  = require('../models/POSCombo');
+    const SubProduct = require('../models/SubProduct');
+    const { calcPlatformCostPrice, calcPlatformSellingPrice, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
+    const tenant = req.tenant;
+
+    function computePrice(sp, sizeDoc) {
+      const revenueModel      = tenant?.revenueModel        ?? 'markup';
+      const markupPct         = tenant?.markupPercentage    ?? 25;
+      const commissionPct     = tenant?.commissionPercentage ?? 12;
+      const platformMarkupPct = sp.product?.platformMarkup  ?? DEFAULT_PLATFORM_MARKUP;
+      const rawCost    = (sizeDoc?.costPrice    > 0 ? sizeDoc.costPrice    : null) ?? sp.costPrice    ?? 0;
+      const rawSelling = (sizeDoc?.sellingPrice > 0 ? sizeDoc.sellingPrice : null) ?? sp.baseSellingPrice ?? 0;
+      if (rawCost <= 0 && rawSelling <= 0) return rawSelling;
+      const platformCost = calcPlatformCostPrice(rawCost, rawSelling, revenueModel, markupPct, commissionPct);
+      return calcPlatformSellingPrice(platformCost, platformMarkupPct) || rawSelling;
+    }
+
+    const combos = await POSCombo.find({ tenant: tenant._id, active: true })
+      .populate({
+        path:    'choiceLines.items.subProduct',
+        select:  'sku baseSellingPrice costPrice sizes sellWithoutSizeVariants availableStock product',
+        populate: [
+          { path: 'product', select: 'name images type' },
+          { path: 'sizes',   select: 'displayName sellingPrice costPrice availableStock _id sku' },
+        ],
+      })
+      .lean();
+
+    // Enrich sizes with computed pricing + stock distribution
+    const enriched = combos.map(combo => ({
+      ...combo,
+      choiceLines: (combo.choiceLines || []).map(line => ({
+        ...line,
+        items: (line.items || []).map(item => {
+          const sp = item.subProduct;
+          if (!sp) return item;
+          let sizes = (sp.sizes || []).map(s => ({
+            ...s,
+            sellingPrice: computePrice(sp, s) || s.sellingPrice || 0,
+          }));
+          // Distribute stock if all sizes are 0
+          if (sizes.length > 0 && !sp.sellWithoutSizeVariants && (sp.availableStock || 0) > 0
+              && sizes.every(s => (s.availableStock || 0) <= 0)) {
+            const per = Math.floor(sp.availableStock / sizes.length);
+            const rem = sp.availableStock % sizes.length;
+            sizes = sizes.map((s, i) => ({ ...s, availableStock: per + (i === 0 ? rem : 0) }));
+          }
+          return {
+            ...item,
+            subProduct: {
+              ...sp,
+              baseSellingPrice: computePrice(sp, null) || sp.baseSellingPrice || 0,
+              sizes,
+            },
+          };
+        }),
+      })),
+    }));
+
+    res.json({ success: true, data: { combos: enriched } });
+  } catch (err) { next(err); }
+});
+
 router.get('/sessions/current',               protectPOS, getCurrentSession);
 router.post('/sessions/open',                 protectPOS, openSession);
 router.get('/sessions/:id/closing-control',   protectPOS, getClosingControl);

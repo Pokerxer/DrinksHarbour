@@ -3,7 +3,8 @@
 
 import { z } from 'zod';
 import { useAtom } from 'jotai';
-import { zodResolver, useForm } from '@hookform/resolvers/zod';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import type { Controller, SubmitHandler } from 'react-hook-form';
 import { ActionIcon, Select, Title } from 'rizzui';
 import Footer from './footer';

@@ -1,28 +1,36 @@
 'use client';
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import Image from 'next/image';
 import { EmptyProductBoxIcon, Text } from 'rizzui';
 import {
-  PiPlus, PiUser, PiNotePencil, PiX, PiMagnifyingGlass,
+  PiPlus, PiMinus, PiUser, PiNotePencil, PiX, PiMagnifyingGlass,
   PiTag, PiNote, PiArrowCounterClockwise, PiTrash,
   PiBarcode, PiStar, PiList, PiLinkSimple,
-  PiCheckCircle, PiSpinner,
+  PiCheckCircle, PiSpinner, PiPencilSimple,
+  PiTicket, PiLightning, PiShoppingCart, PiWarning,
+  PiCoins, PiPercent,
 } from 'react-icons/pi';
 import {
   usePOSCart, usePOSUI, usePOSAuth, usePOSPricelist, usePOSAvailablePricelists,
+  usePOSCombos,
   getBestBundle, getEffectiveBundlePrice,
   getBestBundleForItem, getEffectiveBundlePriceForItem,
   computeItemPriceChain,
+  computeRewardDiscount,
+
 } from '@/app/shared/point-of-sale/store';
-import { POSCartItem } from '@/app/shared/point-of-sale/types';
+import type { CartAppliedReward } from '@/app/shared/point-of-sale/store';
+import { POSCartItem, POSCombo } from '@/app/shared/point-of-sale/types';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import toast from 'react-hot-toast';
+import POSComboPicker from '@/app/shared/point-of-sale/components/pos-combo-picker';
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 function itemKey(item: POSCartItem) {
-  return item.sizeId ? `${item.subProductId}_${item.sizeId}` : item.subProductId;
+  const base = item.sizeId ? `${item.subProductId}_${item.sizeId}` : item.subProductId;
+  return item.comboRef?.instanceId ? `${base}__ci_${item.comboRef.instanceId}` : base;
 }
 
 type DialMode = 'qty' | 'disc' | 'price';
@@ -131,32 +139,419 @@ function PricelistModal({ token, onClose }: { token: string; onClose: () => void
   );
 }
 
-// ── Actions modal ──────────────────────────────────────────────────────────────
+// ── Rewards modal ─────────────────────────────────────────────────────────────
+function RewardsModal({ onClose }: { onClose: () => void }) {
+  const { items, total, subtotal, discountAmount, appliedRewards, addReward, removeReward, setDiscount } = usePOSCart();
+  const { tenant } = usePOSAuth();
+  const { selectedPricelist } = usePOSPricelist();
+  const posSettings = tenant?.posSettings;
+
+  const [codeInput, setCodeInput] = useState('');
+  const [codeError, setCodeError] = useState('');
+
+  const now     = new Date();
+  const cartQty = items.reduce((s, i) => s + i.quantity, 0);
+
+  // ── Helper: is a reward already applied? ──────────────────────────────────
+  const appliedIds = new Set(appliedRewards.map(r => r.id));
+
+  function toggle(reward: CartAppliedReward) {
+    if (appliedIds.has(reward.id)) removeReward(reward.id);
+    else                           addReward(reward);
+  }
+
+  // ── Resolve reward fields from a coupon / discount code ──────────────────
+  function codeToReward(item: any, kind: 'coupon' | 'discount_code'): CartAppliedReward {
+    return {
+      id:          item.code,
+      kind,
+      name:        item.name,
+      code:        item.code,
+      color:       item.color ?? (kind === 'coupon' ? '#1d4ed8' : '#059669'),
+      discType:    item.reward?.discountType  ?? item.type,
+      discValue:   item.reward?.discountValue ?? item.value,
+      applyOn:     item.reward?.applyOn       ?? 'order',
+      maxDiscount: item.reward?.maxDiscount   ?? 0,
+      detail:      item.reward?.discountType === 'pct' || item.type === 'pct'
+                     ? `${item.reward?.discountValue ?? item.value}% off`
+                     : `₦${formatCurrency(item.reward?.discountValue ?? item.value)} off`,
+    };
+  }
+
+  function validateAndApplyCode() {
+    const upper = codeInput.trim().toUpperCase();
+    if (!upper) { setCodeError('Enter a code'); return; }
+
+    for (const c of posSettings?.coupons ?? []) {
+      if (!c.active || c.code.toUpperCase() !== upper) continue;
+      if (c.availableOn && c.availableOn.pos === false) { setCodeError('Not valid at POS'); return; }
+      if (c.validFrom && new Date(c.validFrom) > now)   { setCodeError('Not yet valid'); return; }
+      if (c.validTo   && new Date(c.validTo)   < now)   { setCodeError('Expired'); return; }
+      if ((c.maxUsage ?? 0) > 0 && (c.usageCount ?? 0) >= c.maxUsage!) { setCodeError('Usage limit reached'); return; }
+      const minOrder = c.rules?.minOrderValue ?? c.minOrderValue ?? 0;
+      if (minOrder > total)                { setCodeError(`Min. order ${formatCurrency(minOrder)} required`); return; }
+      if ((c.rules?.minQty ?? 0) > cartQty){ setCodeError(`Min. ${c.rules?.minQty} items required`); return; }
+      if (c.pricelistIds?.length && selectedPricelist && !c.pricelistIds.includes(selectedPricelist._id)) { setCodeError('Restricted to a different pricelist'); return; }
+      addReward(codeToReward(c, 'coupon'));
+      setCodeInput(''); setCodeError(''); return;
+    }
+    for (const d of posSettings?.discountCodes ?? []) {
+      if (!d.active || d.code.toUpperCase() !== upper) continue;
+      if (d.availableOn && d.availableOn.pos === false) { setCodeError('Not valid at POS'); return; }
+      if (d.validFrom && new Date(d.validFrom) > now)   { setCodeError('Not yet valid'); return; }
+      if (d.validTo   && new Date(d.validTo)   < now)   { setCodeError('Expired'); return; }
+      if ((d.maxUsage ?? 0) > 0 && (d.usageCount ?? 0) >= d.maxUsage!) { setCodeError('Usage limit reached'); return; }
+      const minOrder = d.rules?.minOrderValue ?? d.minOrderValue ?? 0;
+      if (minOrder > total)                { setCodeError(`Min. order ${formatCurrency(minOrder)} required`); return; }
+      if ((d.rules?.minQty ?? 0) > cartQty){ setCodeError(`Min. ${d.rules?.minQty} items required`); return; }
+      if (d.pricelistIds?.length && selectedPricelist && !d.pricelistIds.includes(selectedPricelist._id)) { setCodeError('Restricted to a different pricelist'); return; }
+      addReward(codeToReward(d, 'discount_code'));
+      setCodeInput(''); setCodeError(''); return;
+    }
+    setCodeError('Code not found or inactive');
+  }
+
+  // ── Available promotions ──────────────────────────────────────────────────
+  const availablePromos = (posSettings?.promotions ?? []).filter(p => {
+    if (!p.active) return false;
+    if (p.startDate && new Date(p.startDate) > now) return false;
+    if (p.endDate   && new Date(p.endDate)   < now) return false;
+    if (p.availableOn && p.availableOn.pos === false) return false;
+    if ((p.rules?.minOrderValue ?? 0) > total) return false;
+    if ((p.rules?.minQty ?? 0) > cartQty) return false;
+    return true;
+  });
+
+  // ── Available BuyXGetY ────────────────────────────────────────────────────
+  const availableBxgy = (posSettings?.buyXGetY ?? []).filter(b => {
+    if (!b.active) return false;
+    if (b.validFrom && new Date(b.validFrom) > now) return false;
+    if (b.validTo   && new Date(b.validTo)   < now) return false;
+    if (b.availableOn && b.availableOn.pos === false) return false;
+    const pool = (b.buyProducts?.length ?? 0) > 0 ? items.filter(i => b.buyProducts!.includes(i.productId)) : items;
+    return pool.reduce((s, i) => s + i.quantity, 0) >= b.buyQty;
+  });
+
+  // ── Loyalty ───────────────────────────────────────────────────────────────
+  const loyaltyEnabled = posSettings?.loyaltyEnabled ?? false;
+  const loyaltyPtsPerN = posSettings?.loyaltyPointsPerNaira ?? 0.01;
+  const loyaltyPtVal   = posSettings?.loyaltyPointsValue    ?? 1;
+  const maxRedPct      = posSettings?.loyaltyMaxRedemptionPct ?? 50;
+  const minRedeem      = posSettings?.loyaltyCard?.minRedemption ?? 0;
+  const [loyaltyPoints, setLoyaltyPoints] = useState(0);
+  const earnedPts   = Math.round(total / 100 * loyaltyPtsPerN * 100);
+  const maxRedeem   = Math.round(total * maxRedPct / 100);
+  const redeemValue = Math.min(Math.round(loyaltyPoints * loyaltyPtVal), maxRedeem);
+  const canRedeem   = loyaltyEnabled && loyaltyPoints >= minRedeem && redeemValue > 0;
+  const loyaltyApplied = appliedIds.has('loyalty');
+
+  function toggleLoyalty() {
+    if (loyaltyApplied) {
+      removeReward('loyalty');
+    } else {
+      if (!canRedeem) return;
+      addReward({
+        id: 'loyalty', kind: 'loyalty', name: 'Loyalty Redemption',
+        color: '#d97706', discType: 'fixed', discValue: redeemValue,
+        applyOn: 'order', maxDiscount: 0,
+        detail: `₦${formatCurrency(redeemValue)} redeemed (${loyaltyPoints} pts)`,
+      });
+    }
+  }
+
+  // ── Discount programs ─────────────────────────────────────────────────────
+  const activePrograms = (posSettings?.discountPrograms ?? []).filter(d => d.active);
+  const noOptions = activePrograms.length === 0 && availablePromos.length === 0 && availableBxgy.length === 0 && !loyaltyEnabled;
+
+  // Compute live discount for each applied reward to show in the header summary
+  // Base for reward computation = subtotal after the manual cart-level discount
+  const postCartDiscBase = Math.max(0, subtotal - discountAmount);
+  const rewardsTotal = appliedRewards.reduce((s, r) => s + computeRewardDiscount(r, items, postCartDiscBase), 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="flex w-full sm:max-w-lg flex-col overflow-hidden rounded-t-3xl sm:rounded-2xl bg-white shadow-2xl max-h-[90vh]">
+
+        {/* Header */}
+        <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 py-4">
+          <div className="flex items-center gap-2.5">
+            <PiStar className="h-5 w-5 text-[#b20202]" />
+            <div>
+              <p className="text-sm font-bold text-gray-900">Rewards & Discounts</p>
+              {appliedRewards.length > 0 && (
+                <p className="text-[11px] text-emerald-600 font-semibold">
+                  {appliedRewards.length} applied · −{formatCurrency(rewardsTotal)}
+                </p>
+              )}
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <PiX className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+
+          {/* ── Coupon / Discount Code ── */}
+          <div className="px-5 py-4 space-y-2">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Coupon or Discount Code</p>
+            {/* Applied codes */}
+            {appliedRewards.filter(r => r.kind === 'coupon' || r.kind === 'discount_code').map(r => (
+              <div key={r.id} className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                <PiCheckCircle className="h-4 w-4 shrink-0 text-emerald-500" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-mono text-sm font-bold text-emerald-800 tracking-widest">{r.code}</p>
+                  <p className="text-[11px] text-emerald-600">{r.name} · −{formatCurrency(computeRewardDiscount(r, items, total))}</p>
+                </div>
+                <button type="button" onClick={() => removeReward(r.id)}
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-200 text-emerald-700 hover:bg-emerald-300">
+                  <PiX className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+            {/* Code input */}
+            <div className="flex gap-2">
+              <input value={codeInput} onChange={e => { setCodeInput(e.target.value.toUpperCase()); setCodeError(''); }}
+                onKeyDown={e => e.key === 'Enter' && validateAndApplyCode()}
+                placeholder="Enter coupon or discount code"
+                className={`flex-1 rounded-xl border px-3.5 py-2.5 font-mono text-sm font-bold uppercase tracking-widest outline-none transition-colors
+                  ${codeError ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-[#b20202]'}`} />
+              <button type="button" onClick={validateAndApplyCode} disabled={!codeInput.trim()}
+                className="flex items-center gap-1.5 rounded-xl bg-[#b20202] px-4 py-2.5 text-sm font-bold text-white hover:opacity-90 disabled:opacity-40">
+                <PiTicket className="h-4 w-4" /> Apply
+              </button>
+            </div>
+            {codeError && (
+              <p className="flex items-center gap-1 text-xs text-red-500">
+                <PiWarning className="h-3.5 w-3.5 shrink-0" /> {codeError}
+              </p>
+            )}
+          </div>
+
+          {/* ── Discount programs ── */}
+          {activePrograms.length > 0 && (
+            <div className="px-5 py-4">
+              <p className="mb-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-400">Preset Discounts</p>
+              <div className="space-y-2">
+                {activePrograms.map(dp => {
+                  const rid = `dp_${dp._id ?? dp.name}`;
+                  const applied = appliedIds.has(rid);
+                  const reward: CartAppliedReward = {
+                    id: rid, kind: 'discount_program', name: dp.name, color: dp.color,
+                    discType: dp.type === 'pct' ? 'pct' : 'fixed', discValue: dp.value,
+                    applyOn: 'order', maxDiscount: 0,
+                    detail: dp.type === 'pct' ? `${dp.value}%` : `₦${formatCurrency(dp.value)}`,
+                  };
+                  const disc = computeRewardDiscount(reward, items, total);
+                  return (
+                    <button key={rid} type="button" onClick={() => toggle(reward)}
+                      className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors
+                        ${applied ? 'border-[#b20202]/40 bg-red-50 ring-1 ring-[#b20202]/30' : 'border-gray-200 hover:bg-gray-50'}`}>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {applied
+                          ? <PiCheckCircle className="h-4 w-4 shrink-0 text-[#b20202]" />
+                          : <div className="h-4 w-4 shrink-0 rounded-full border-2 border-gray-300" />}
+                        <div className="min-w-0">
+                          <p className={`text-sm font-bold truncate ${applied ? 'text-[#b20202]' : 'text-gray-800'}`}>{dp.name}</p>
+                          {dp.description && <p className="text-[10px] text-gray-400 truncate">{dp.description}</p>}
+                        </div>
+                      </div>
+                      <div className="ml-3 shrink-0 text-right">
+                        <span className={`rounded-lg px-2.5 py-1 text-xs font-black ${applied ? 'bg-[#b20202] text-white' : 'bg-gray-100 text-gray-700'}`}
+                          style={!applied && dp.color ? { backgroundColor: `${dp.color}18`, color: dp.color } : undefined}>
+                          {dp.type === 'pct' ? `${dp.value}%` : `₦${formatCurrency(dp.value)}`}
+                        </span>
+                        {applied && <p className="mt-0.5 text-[10px] text-[#b20202] font-semibold">−{formatCurrency(disc)}</p>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Promotions ── */}
+          {availablePromos.length > 0 && (
+            <div className="px-5 py-4">
+              <p className="mb-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-400">Available Promotions</p>
+              <div className="space-y-2">
+                {availablePromos.map(p => {
+                  const color   = p.color || '#d97706';
+                  const applied = appliedIds.has(p._id!);
+                  const reward: CartAppliedReward = {
+                    id:          p._id!,
+                    kind:        'promotion',
+                    name:        p.name,
+                    color,
+                    discType:    (p.reward?.discountType  ?? p.type)  as 'pct' | 'fixed',
+                    discValue:   p.reward?.discountValue  ?? p.value,
+                    applyOn:     (p.reward?.applyOn       ?? 'order') as CartAppliedReward['applyOn'],
+                    maxDiscount: p.reward?.maxDiscount    ?? 0,
+                    detail:      p.description,
+                  };
+                  const disc = computeRewardDiscount(reward, items, total);
+                  return (
+                    <button key={p._id} type="button" onClick={() => toggle(reward)}
+                      className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors
+                        ${applied ? 'ring-1' : 'border-gray-200 hover:opacity-90'}`}
+                      style={applied ? { borderColor: `${color}60`, backgroundColor: `${color}12`, outlineColor: color } : { borderColor: `${color}30`, backgroundColor: `${color}08` }}>
+                      {applied
+                        ? <PiCheckCircle className="h-4 w-4 shrink-0" style={{ color }} />
+                        : <PiLightning className="h-4 w-4 shrink-0" style={{ color }} />}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800">{p.name}</p>
+                        {p.description && <p className="text-[10px] text-gray-400">{p.description}</p>}
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <span className="rounded-lg px-2.5 py-1 text-xs font-black text-white" style={{ backgroundColor: color }}>
+                          {reward.discType === 'pct' ? `${reward.discValue}% off` : `₦${formatCurrency(reward.discValue ?? 0)} off`}
+                        </span>
+                        {applied && <p className="mt-0.5 text-[10px] font-semibold" style={{ color }}>−{formatCurrency(disc)}</p>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Buy X Get Y ── */}
+          {availableBxgy.length > 0 && (
+            <div className="px-5 py-4">
+              <p className="mb-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-400">Buy X Get Y</p>
+              <div className="space-y-2">
+                {availableBxgy.map(b => {
+                  const color   = b.color || '#7c3aed';
+                  const applied = appliedIds.has(b._id!);
+                  const reward: CartAppliedReward = {
+                    id:             b._id!,
+                    kind:           'bxgy',
+                    name:           b.name,
+                    color,
+                    buyQty:         b.buyQty,
+                    getQty:         b.getQty,
+                    getDiscountPct: b.getDiscountPct,
+                    buyProducts:    b.buyProducts,
+                    getProducts:    b.getProducts,
+                  };
+                  const disc = computeRewardDiscount(reward, items, total);
+                  return (
+                    <button key={b._id} type="button" onClick={() => toggle(reward)}
+                      className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors
+                        ${applied ? 'ring-1' : 'border-gray-200 hover:opacity-90'}`}
+                      style={applied ? { borderColor: `${color}60`, backgroundColor: `${color}12` } : { borderColor: `${color}30`, backgroundColor: `${color}08` }}>
+                      {applied
+                        ? <PiCheckCircle className="h-4 w-4 shrink-0" style={{ color }} />
+                        : <PiShoppingCart className="h-4 w-4 shrink-0" style={{ color }} />}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800">{b.name}</p>
+                        <p className="text-[10px] text-gray-400">
+                          Buy {b.buyQty} get {b.getQty} {b.getDiscountPct === 100 ? 'free' : `at ${b.getDiscountPct}% off`}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <span className="rounded-lg px-2.5 py-1 text-xs font-black text-white" style={{ backgroundColor: color }}>
+                          −{formatCurrency(disc)}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Loyalty ── */}
+          {loyaltyEnabled && (
+            <div className="px-5 py-4">
+              <p className="mb-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-400">Loyalty Points</p>
+              <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <PiCoins className="h-4 w-4 text-amber-500" />
+                    <span className="text-sm font-semibold text-gray-700">Customer points balance</span>
+                  </div>
+                  <input type="number" min={0} value={loyaltyPoints || ''}
+                    onChange={e => { setLoyaltyPoints(parseInt(e.target.value) || 0); if (loyaltyApplied) removeReward('loyalty'); }}
+                    placeholder="0"
+                    className="w-24 rounded-xl border border-amber-200 bg-white px-3 py-1.5 text-center text-sm font-bold outline-none focus:border-[#d97706]" />
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-lg bg-white px-3 py-2 border border-amber-100">
+                    <p className="text-gray-400">Earns this order</p>
+                    <p className="font-bold text-amber-700">+{earnedPts} pts</p>
+                  </div>
+                  <div className="rounded-lg bg-white px-3 py-2 border border-amber-100">
+                    <p className="text-gray-400">Can redeem (max {maxRedPct}%)</p>
+                    <p className={`font-bold ${canRedeem ? 'text-emerald-600' : 'text-gray-400'}`}>
+                      {loyaltyPoints >= minRedeem ? `₦${formatCurrency(redeemValue)}` : `Need ${minRedeem} pts min`}
+                    </p>
+                  </div>
+                </div>
+                {canRedeem && (
+                  <button type="button" onClick={toggleLoyalty}
+                    className={`w-full rounded-xl py-2.5 text-sm font-bold transition-colors
+                      ${loyaltyApplied ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'text-white hover:opacity-90'}`}
+                    style={loyaltyApplied ? undefined : { backgroundColor: '#d97706' }}>
+                    {loyaltyApplied
+                      ? `✓ ₦${formatCurrency(redeemValue)} applied — click to remove`
+                      : `Apply ₦${formatCurrency(redeemValue)} loyalty discount`}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {noOptions && (
+            <div className="px-5 py-10 text-center">
+              <PiStar className="mx-auto h-10 w-10 text-gray-200 mb-2" />
+              <p className="text-sm text-gray-500 font-medium">No rewards available</p>
+              <p className="text-xs text-gray-400 mt-1">Configure discount programs and promotions in POS settings</p>
+            </div>
+          )}
+        </div>
+
+        <div className="shrink-0 border-t border-gray-100 px-5 py-4">
+          <button type="button" onClick={onClose}
+            className="w-full rounded-xl py-2.5 text-sm font-bold text-white hover:opacity-90"
+            style={{ backgroundColor: '#b20202' }}>
+            Done{appliedRewards.length > 0 ? ` · ${appliedRewards.length} reward${appliedRewards.length > 1 ? 's' : ''} applied` : ''}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Actions modal ─────────────────────────────────────────────────────────────
 function ActionsModal({
   onDiscount,
   onNote,
   onPricelist,
   onCancelOrder,
+  onReward,
   onClose,
 }: {
   onDiscount: () => void;
   onNote: () => void;
   onPricelist: () => void;
   onCancelOrder: () => void;
+  onReward: () => void;
   onClose: () => void;
 }) {
   const { selectedPricelist } = usePOSPricelist();
+  const { appliedRewards: _ar } = usePOSCart();
 
-  const actions = [
-    { label: 'General Note', icon: <PiNote className="h-5 w-5" />, fn: () => { onNote(); onClose(); } },
-    { label: 'Quotation/Order', icon: <PiLinkSimple className="h-5 w-5" />, fn: null },
-    { label: 'Enter Code', icon: <PiBarcode className="h-5 w-5" />, fn: null },
-    { label: 'Reward', icon: <PiStar className="h-5 w-5" />, fn: null },
-    { label: 'Discount', icon: <PiTag className="h-5 w-5" />, fn: () => { onDiscount(); onClose(); } },
-    { label: 'Customer Note', icon: <PiNote className="h-5 w-5" />, fn: () => { onNote(); onClose(); } },
+  type Action = { label: string; icon: React.ReactNode; fn: (() => void) | null; active?: boolean; danger?: boolean };
+  const actions: Action[] = [
+    { label: 'General Note',   icon: <PiNote className="h-5 w-5" />,               fn: () => { onNote(); onClose(); } },
+    { label: 'Quotation/Order',icon: <PiLinkSimple className="h-5 w-5" />,          fn: null },
+    { label: 'Reward',         icon: <PiStar className="h-5 w-5" />,                fn: () => { onReward(); onClose(); }, active: _ar.length > 0 },
+    { label: 'Discount',       icon: <PiPercent className="h-5 w-5" />,             fn: () => { onDiscount(); onClose(); } },
+    { label: 'Customer Note',  icon: <PiNote className="h-5 w-5" />,                fn: () => { onNote(); onClose(); } },
     { label: selectedPricelist ? selectedPricelist.name : 'Price List', icon: <PiList className="h-5 w-5" />, fn: () => { onPricelist(); onClose(); }, active: !!selectedPricelist },
-    { label: 'Refund', icon: <PiArrowCounterClockwise className="h-5 w-5" />, fn: null },
-    { label: 'Cancel Order', icon: <PiTrash className="h-5 w-5" />, fn: () => { onCancelOrder(); onClose(); }, danger: true },
+    { label: 'Refund',         icon: <PiArrowCounterClockwise className="h-5 w-5" />, fn: null },
+    { label: 'Cancel Order',   icon: <PiTrash className="h-5 w-5" />,               fn: () => { onCancelOrder(); onClose(); }, danger: true },
   ];
 
   return (
@@ -178,9 +573,9 @@ function ActionsModal({
               className={`flex flex-col items-center justify-center gap-2 rounded-xl py-8 text-sm font-medium transition-colors ${
                 !a.fn
                   ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
-                  : (a as any).danger
+                  : a.danger
                   ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                  : (a as any).active
+                  : a.active
                   ? 'bg-[#b20202]/10 text-[#b20202] hover:bg-[#b20202]/15 ring-1 ring-[#b20202]/30'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
@@ -320,6 +715,9 @@ export default function POSCart() {
     note,
     itemCount,
     removeItem,
+    removeComboGroup,
+    setComboGroupQty,
+    replaceComboGroup,
     updateQuantity,
     updateItemDiscount,
     updateItemPrice,
@@ -327,14 +725,28 @@ export default function POSCart() {
     setDiscount,
     setNote,
     setCustomer,
+    appliedRewards,
+    removeReward,
+    rewardsDiscountTotal,
   } = usePOSCart();
 
   const { setActiveView } = usePOSUI();
   const { staff, token } = usePOSAuth();
   const { selectedPricelist, setSelectedPricelist } = usePOSPricelist();
+  const { combos, setCombos } = usePOSCombos();
   const staffPerms: string[] = staff?.posPermissions ?? [];
   const canDiscount = staffPerms.includes('pos:discount');
   const canRefund   = staffPerms.includes('pos:refund');
+
+  // Edit combo state
+  type EditComboState = {
+    combo: POSCombo;
+    instanceId: string;
+    groupItems: POSCartItem[];
+    initialPicks: Record<number, Record<number, { val: string | true; qty: number }>>;
+  };
+  const [editingCombo, setEditingCombo] = useState<EditComboState | null>(null);
+  const [loadingEdit,  setLoadingEdit]  = useState<string | null>(null); // instanceId being loaded
 
   // UI state
   const [showActions,   setShowActions]   = useState(false);
@@ -342,12 +754,15 @@ export default function POSCart() {
   const [showNote,      setShowNote]      = useState(false);
   const [showDiscount,  setShowDiscount]  = useState(false);
   const [showPricelist, setShowPricelist] = useState(false);
+  const [showRewards,   setShowRewards]   = useState(false);
 
   // Dialpad state
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [dialMode, setDialMode] = useState<DialMode>('qty');
   const [dialInput, setDialInput] = useState('');
 
+  // Per-item BXGY discount map — merged across all active BXGY rewards
+  // Key: `${subProductId}_${sizeId ?? ''}`
   // When switching carts, reset dialpad selection
   const prevCartIdRef = useRef(activeCartId);
   if (prevCartIdRef.current !== activeCartId) {
@@ -362,6 +777,7 @@ export default function POSCart() {
   }
 
   function selectItem(item: POSCartItem) {
+    if (item.bxgyRef) return; // BXGY items are managed by the reward toggle
     const key = itemKey(item);
     setSelectedKey(key);
     setDialInput(getInitialInput(item, dialMode));
@@ -369,9 +785,10 @@ export default function POSCart() {
 
   function applyDial(input: string, mode: DialMode, item: POSCartItem) {
     const num = parseFloat(input) || 0;
-    if (mode === 'qty')   updateQuantity(item.subProductId, Math.max(1, Math.round(num)), item.sizeId);
-    if (mode === 'disc')  updateItemDiscount(item.subProductId, num, item.sizeId);
-    if (mode === 'price') updateItemPrice(item.subProductId, num, item.sizeId);
+    const ci  = item.comboRef?.instanceId;
+    if (mode === 'qty')   updateQuantity(item.subProductId, Math.max(1, Math.round(num)), item.sizeId, ci);
+    if (mode === 'disc')  updateItemDiscount(item.subProductId, num, item.sizeId, ci);
+    if (mode === 'price') updateItemPrice(item.subProductId, num, item.sizeId, ci);
   }
 
   const pushDigit = useCallback((d: string) => {
@@ -445,6 +862,45 @@ export default function POSCart() {
     setShowCustomer(false);
   }
 
+  async function handleEditCombo(instanceId: string, comboId: string, groupItems: POSCartItem[]) {
+    // Find the full combo definition — use cached atom first, fetch if missing
+    let combo = combos.find(c => String(c._id) === String(comboId));
+    if (!combo && token) {
+      setLoadingEdit(instanceId);
+      try {
+        const data = await posApi.getCombos(token);
+        setCombos(data.combos || []);
+        combo = (data.combos || []).find(c => String(c._id) === String(comboId));
+      } catch {
+        toast.error('Could not load combo details');
+        return;
+      } finally {
+        setLoadingEdit(null);
+      }
+    }
+    if (!combo) { toast.error('Combo not found — it may have been deleted'); return; }
+
+    // Rebuild picks from current cart items
+    const initialPicks: Record<number, Record<number, { val: string | true; qty: number }>> = {};
+    combo.choiceLines.forEach((line, li) => {
+      line.items.forEach((item, ii) => {
+        const spId = String(item.subProduct?._id ?? '');
+        const cartItem = groupItems.find(ci =>
+          String(ci.subProductId) === spId &&
+          (ci.sizeId
+            ? (!item.allowedSizes?.length || item.allowedSizes.map(String).includes(ci.sizeId))
+            : true)
+        );
+        if (cartItem) {
+          if (!initialPicks[li]) initialPicks[li] = {};
+          initialPicks[li][ii] = { val: cartItem.sizeId ?? true, qty: cartItem.quantity };
+        }
+      });
+    });
+
+    setEditingCombo({ combo, instanceId, groupItems, initialPicks });
+  }
+
   function handleCheckout() {
     if (!items.length) return toast.error('Cart is empty');
     setActiveView('payment');
@@ -466,6 +922,170 @@ export default function POSCart() {
   const modeLabels: Record<DialMode, string> = { qty: 'Qty', disc: '%', price: 'Price' };
 
   const disabled = !selectedItem;
+
+  // ── Cart item row renderer (shared for regular + combo items) ─────────────
+  function renderCartItem(item: POSCartItem, isComboChild: boolean) {
+    const key        = itemKey(item);
+    const isSelected = selectedKey === key;
+    const ci         = item.comboRef?.instanceId;
+    const isBxgy     = !!item.bxgyRef;
+
+    const bestBundle = selectedPricelist
+      ? getBestBundleForItem(item, selectedPricelist)
+      : getBestBundle(item);
+    const { price: effectivePrice, overrides: bundleOverrides } = selectedPricelist
+      ? getEffectiveBundlePriceForItem(item, selectedPricelist)
+      : getEffectiveBundlePrice(item);
+    const lineGross   = effectivePrice * item.quantity;
+    const itemDiscAmt = lineGross * Math.max(0, Math.min(100, item.discount)) / 100;
+    let bundleDiscAmt = 0;
+    if (bestBundle && !bundleOverrides) {
+      const dt = bestBundle.discountType ?? 'percentage';
+      bundleDiscAmt = dt === 'fixed'
+        ? Math.max(0, Math.min((bestBundle.discount ?? 0) * item.quantity, lineGross - itemDiscAmt))
+        : Math.max(0, lineGross * Math.min(100, bestBundle.discount ?? 0) / 100);
+    }
+    const lineTotal    = Math.max(0, lineGross - itemDiscAmt - bundleDiscAmt);
+    const bundleActive = bestBundle && (bundleDiscAmt > 0 || bundleOverrides);
+
+    const bundleLabel = bundleActive ? (() => {
+      const dt   = bestBundle!.discountType ?? 'percentage';
+      const name = bestBundle!.name ? ` (${bestBundle!.name})` : '';
+      if (dt === 'markup_on_cost')  return `📦 Bundle${name}: Cost +${bestBundle!.discount ?? 0}% → ${formatCurrency(effectivePrice)}/unit`;
+      if (dt === 'no_discount')     return `📦 Bundle${name}: No discount → ${formatCurrency(effectivePrice)}/unit`;
+      if (dt === 'fixed')           return `📦 Bundle${name}: -${formatCurrency((bestBundle!.discount ?? 0) * item.quantity)}`;
+      return `📦 Bundle${name}: -${bestBundle!.discount ?? 0}%`;
+    })() : null;
+
+    const qtyDisplay = isSelected && dialMode === 'qty' && dialInput !== ''
+      ? dialInput
+      : String(item.quantity);
+
+    // ── BXGY free-product line ─────────────────────────────────────────────────
+    if (isBxgy) {
+      const origPrice  = item.bxgyRef!.originalPrice;
+      const discPct    = item.bxgyRef!.discPct;
+      const unitSaving = origPrice * (discPct / 100);  // per-unit discount amount
+      const lineSaving = unitSaving * item.quantity;
+      const bxgyColor  = item.bxgyRef!.rewardColor ?? '#059669';
+      const isFree     = discPct === 100;
+
+      return (
+        <div
+          key={key}
+          className="w-full border-b border-gray-100 px-4 py-3 border-l-4"
+          style={{ borderLeftColor: `${bxgyColor}60`, backgroundColor: `${bxgyColor}06` }}
+        >
+          {/* Row 1: "Free Product - Name" + negative total */}
+          <div className="flex items-start justify-between gap-2">
+            <span className="flex-1 text-sm font-semibold italic leading-tight" style={{ color: bxgyColor }}>
+              {isFree ? 'Free Product' : `Discounted (${discPct}% off)`} - {item.name}
+              {item.variant ? ` - ${item.variant}` : ''}
+            </span>
+            <span className="shrink-0 text-sm font-bold tabular-nums" style={{ color: bxgyColor }}>
+              -{formatCurrency(lineSaving)}
+            </span>
+          </div>
+          {/* Row 2: qty × -price + remove reward */}
+          <div className="mt-1 flex items-center gap-1.5 text-xs" style={{ color: `${bxgyColor}cc` }}>
+            <span className="inline-block rounded border px-1.5 py-0.5 font-semibold tabular-nums"
+              style={{ borderColor: `${bxgyColor}40`, backgroundColor: 'white' }}>
+              {item.quantity}
+            </span>
+            <span>×</span>
+            <span className="font-semibold tabular-nums">-{formatCurrency(unitSaving)}</span>
+            <span>/ Units</span>
+            <span
+              role="button"
+              tabIndex={0}
+              title={`Remove "${item.bxgyRef!.rewardName ?? 'BXGY'}" offer`}
+              onClick={(e) => { e.stopPropagation(); removeReward(item.bxgyRef!.rewardId); }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); removeReward(item.bxgyRef!.rewardId); }
+              }}
+              className="ml-auto cursor-pointer opacity-50 hover:opacity-100 transition-opacity"
+              style={{ color: bxgyColor }}
+            >
+              <PiX className="h-3.5 w-3.5" />
+            </span>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Regular item row ───────────────────────────────────────────────────────
+    return (
+      <button
+        key={key}
+        type="button"
+        onClick={() => selectItem(item)}
+        className={`w-full border-b border-gray-100 text-left transition-colors
+          ${isComboChild ? 'pl-6 pr-4 py-2.5' : 'px-4 py-3'}
+          ${isSelected ? 'bg-red-50 border-l-4 border-l-[#b20202]' : 'hover:bg-gray-50 border-l-4 border-l-transparent'}
+        `}
+      >
+        {/* Row 1: name + total */}
+        <div className="flex items-start justify-between gap-2">
+          <span className="flex-1 text-sm font-semibold leading-tight text-gray-900">
+            {item.name}{item.variant ? ` - ${item.variant}` : ''}
+          </span>
+          <span className={`shrink-0 text-sm font-bold ${
+            bundleDiscAmt > 0 ? 'text-purple-700'
+            : effectivePrice < item.price ? 'text-emerald-700'
+            : 'text-gray-900'
+          }`}>
+            {formatCurrency(lineTotal)}
+          </span>
+        </div>
+        {/* Row 2: qty × price + remove */}
+        <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500">
+          <span className={`inline-block rounded border px-1.5 py-0.5 font-semibold tabular-nums ${
+            isSelected && dialMode === 'qty'
+              ? 'border-[#b20202] bg-white text-[#b20202]'
+              : 'border-gray-300 bg-white text-gray-700'
+          }`}>
+            {qtyDisplay}
+          </span>
+          <span>×</span>
+          <span className={bundleOverrides ? 'font-semibold text-purple-700' : effectivePrice < item.price ? 'font-semibold text-emerald-700' : ''}>
+            {formatCurrency(effectivePrice)}
+            {Math.abs(effectivePrice - item.price) > 0.001 && (
+              <span className="ml-1 font-normal text-gray-400 line-through text-[10px]">{formatCurrency(item.price)}</span>
+            )}
+          </span>
+          <span>/ Units</span>
+          {item.discount > 0 && (
+            <span className="ml-1 rounded bg-red-50 px-1.5 text-[#b20202]">-{item.discount}%</span>
+          )}
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              removeItem(item.subProductId, item.sizeId, ci);
+              if (selectedKey === key) { setSelectedKey(null); setDialInput(''); }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.stopPropagation();
+                removeItem(item.subProductId, item.sizeId, ci);
+                if (selectedKey === key) { setSelectedKey(null); setDialInput(''); }
+              }
+            }}
+            className="ml-auto cursor-pointer text-gray-300 hover:text-red-500"
+          >
+            <PiX className="h-3.5 w-3.5" />
+          </span>
+        </div>
+        {bundleLabel && (
+          <div className="mt-1 flex items-center justify-between rounded-md bg-purple-50 px-2 py-1 text-[10px] font-semibold text-purple-700">
+            <span>{bundleLabel}</span>
+            <span className="tabular-nums">-{formatCurrency(bundleDiscAmt)}</span>
+          </div>
+        )}
+      </button>
+    );
+  }
 
   return (
     <>
@@ -545,120 +1165,124 @@ export default function POSCart() {
             </div>
           ) : (
             <div>
-              {items.map((item) => {
-                const key = itemKey(item);
-                const isSelected = selectedKey === key;
-                // Use pricelist-aware helpers so display stays live when pricelist changes
-                const bestBundle = selectedPricelist
-                  ? getBestBundleForItem(item, selectedPricelist)
-                  : getBestBundle(item);
-                const { price: effectivePrice, overrides: bundleOverrides } = selectedPricelist
-                  ? getEffectiveBundlePriceForItem(item, selectedPricelist)
-                  : getEffectiveBundlePrice(item);
-                const lineGross     = effectivePrice * item.quantity;
-                const itemDiscAmt   = lineGross * Math.max(0, Math.min(100, item.discount)) / 100;
-                let bundleDiscAmt   = 0;
-                if (bestBundle && !bundleOverrides) {
-                  const dt = bestBundle.discountType ?? 'percentage';
-                  bundleDiscAmt = dt === 'fixed'
-                    ? Math.max(0, Math.min((bestBundle.discount ?? 0) * item.quantity, lineGross - itemDiscAmt))
-                    : Math.max(0, lineGross * Math.min(100, bestBundle.discount ?? 0) / 100);
+              {(() => {
+                // Build display groups: regular items are standalone; combo items are
+                // collected under a shared group header keyed by instanceId.
+                type DisplayEntry =
+                  | { kind: 'item';  item: POSCartItem }
+                  | { kind: 'combo'; instanceId: string; comboName: string; groupItems: POSCartItem[] };
+
+                const seen = new Set<string>();
+                const entries: DisplayEntry[] = [];
+
+                for (const item of items) {
+                  if (item.comboRef?.instanceId) {
+                    const { instanceId, comboName } = item.comboRef;
+                    if (!seen.has(instanceId)) {
+                      seen.add(instanceId);
+                      entries.push({
+                        kind: 'combo',
+                        instanceId,
+                        comboName,
+                        groupItems: items.filter(i => i.comboRef?.instanceId === instanceId),
+                      });
+                    }
+                  } else {
+                    entries.push({ kind: 'item', item });
+                  }
                 }
-                const lineTotal = Math.max(0, lineGross - itemDiscAmt - bundleDiscAmt);
-                const bundleActive  = bestBundle && (bundleDiscAmt > 0 || bundleOverrides);
 
-                const bundleLabel = bundleActive ? (() => {
-                  const dt   = bestBundle!.discountType ?? 'percentage';
-                  const name = bestBundle!.name ? ` (${bestBundle!.name})` : '';
-                  if (dt === 'markup_on_cost')
-                    return `📦 Bundle${name}: Cost +${bestBundle!.discount ?? 0}% markup → ${formatCurrency(effectivePrice)}/unit`;
-                  if (dt === 'no_discount')
-                    return `📦 Bundle${name}: No discount → ${formatCurrency(effectivePrice)}/unit`;
-                  if (dt === 'fixed')
-                    return `📦 Bundle${name}: -${formatCurrency((bestBundle!.discount ?? 0) * item.quantity)}`;
-                  return `📦 Bundle${name}: -${bestBundle!.discount ?? 0}%`;
-                })() : null;
-                const qtyDisplay = isSelected && dialMode === 'qty' && dialInput !== ''
-                  ? dialInput
-                  : String(item.quantity);
+                return entries.map((entry) => {
+                  if (entry.kind === 'combo') {
+                    const { instanceId, comboName, groupItems } = entry;
+                    const comboTotal = groupItems.reduce((s, i) => s + i.price * i.quantity, 0);
+                    const anySelected = groupItems.some(i => selectedKey === itemKey(i));
 
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => selectItem(item)}
-                    className={`w-full border-b border-gray-100 px-4 py-3 text-left transition-colors ${
-                      isSelected ? 'bg-red-50 border-l-4 border-l-[#b20202]' : 'hover:bg-gray-50 border-l-4 border-l-transparent'
-                    }`}
-                  >
-                    {/* Row 1: name + total */}
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="flex-1 text-sm font-semibold leading-tight text-gray-900">
-                        {item.name}{item.variant ? ` - ${item.variant}` : ''}
-                      </span>
-                      <span className={`shrink-0 text-sm font-bold ${
-                        bundleDiscAmt > 0 ? 'text-purple-700'
-                        : effectivePrice < item.price ? 'text-emerald-700'
-                        : 'text-gray-900'
-                      }`}>
-                        {formatCurrency(lineTotal)}
-                      </span>
-                    </div>
-                    {/* Row 2: qty × price / unit + cashier discount */}
-                    <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500">
-                      <span className={`inline-block rounded border px-1.5 py-0.5 font-semibold tabular-nums ${
-                        isSelected && dialMode === 'qty'
-                          ? 'border-[#b20202] bg-white text-[#b20202]'
-                          : 'border-gray-300 bg-white text-gray-700'
-                      }`}>
-                        {qtyDisplay}
-                      </span>
-                      <span>×</span>
-                      <span className={bundleOverrides ? 'font-semibold text-purple-700' : effectivePrice < item.price ? 'font-semibold text-emerald-700' : ''}>
-                        {formatCurrency(effectivePrice)}
-                        {!bundleOverrides && Math.abs(effectivePrice - item.price) > 0.001 && (
-                          <span className="ml-1 font-normal text-gray-400 line-through text-[10px]">{formatCurrency(item.price)}</span>
-                        )}
-                        {bundleOverrides && item.price !== effectivePrice && (
-                          <span className="ml-1 font-normal text-gray-400 line-through text-[10px]">{formatCurrency(item.price)}</span>
-                        )}
-                      </span>
-                      <span>/ Units</span>
-                      {item.discount > 0 && (
-                        <span className="ml-1 rounded bg-red-50 px-1.5 text-[#b20202]">
-                          -{item.discount}%
-                        </span>
-                      )}
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeItem(item.subProductId, item.sizeId);
-                          if (selectedKey === key) { setSelectedKey(null); setDialInput(''); }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.stopPropagation();
-                            removeItem(item.subProductId, item.sizeId);
-                            if (selectedKey === key) { setSelectedKey(null); setDialInput(''); }
-                          }
-                        }}
-                        className="ml-auto cursor-pointer text-gray-300 hover:text-red-500"
-                      >
-                        <PiX className="h-3.5 w-3.5" />
-                      </span>
-                    </div>
-                    {/* Bundle discount sub-line — appears as soon as qty hits threshold */}
-                    {bundleLabel && (
-                      <div className="mt-1 flex items-center justify-between rounded-md bg-purple-50 px-2 py-1 text-[10px] font-semibold text-purple-700">
-                        <span>{bundleLabel}</span>
-                        <span className="tabular-nums">-{formatCurrency(bundleDiscAmt)}</span>
+                    // combo qty = first item's quantity (all items in group are same qty)
+                    const comboQty     = groupItems[0]?.quantity ?? 1;
+                    const comboId      = groupItems[0]?.comboRef?.comboId ?? '';
+                    const isLoadingThis = loadingEdit === instanceId;
+
+                    return (
+                      <div key={instanceId} className={`border-b border-gray-100 ${anySelected ? 'bg-red-50/30' : ''}`}>
+                        {/* Combo group header */}
+                        <div className="flex items-center gap-2 border-b border-[#b20202]/15 bg-[#b20202]/6 px-3 py-2">
+                          {/* Name + item count */}
+                          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                            <span className="text-[10px]">🎁</span>
+                            <span className="truncate text-xs font-bold text-[#b20202]">{comboName}</span>
+                          </div>
+
+                          {/* Qty control */}
+                          <div className="flex shrink-0 items-center rounded-lg border border-[#b20202]/20 bg-white overflow-hidden">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (comboQty <= 1) {
+                                  removeComboGroup(instanceId);
+                                  if (anySelected) { setSelectedKey(null); setDialInput(''); }
+                                } else {
+                                  setComboGroupQty(instanceId, comboQty - 1);
+                                }
+                              }}
+                              className="flex h-6 w-6 items-center justify-center text-[#b20202] hover:bg-[#b20202]/10 transition-colors"
+                            >
+                              <PiMinus className="h-3 w-3" />
+                            </button>
+                            <span className="min-w-[20px] text-center text-xs font-bold text-gray-800">
+                              {comboQty}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setComboGroupQty(instanceId, comboQty + 1)}
+                              className="flex h-6 w-6 items-center justify-center text-[#b20202] hover:bg-[#b20202]/10 transition-colors"
+                            >
+                              <PiPlus className="h-3 w-3" />
+                            </button>
+                          </div>
+
+                          {/* Total (comboTotal already includes item.quantity) */}
+                          <span className="shrink-0 text-xs font-bold text-gray-800">
+                            {formatCurrency(comboTotal)}
+                          </span>
+
+                          {/* Edit button */}
+                          <button
+                            type="button"
+                            title="Edit combo choices"
+                            disabled={isLoadingThis}
+                            onClick={() => handleEditCombo(instanceId, comboId, groupItems)}
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[#b20202]/60 hover:bg-[#b20202]/10 hover:text-[#b20202] transition-colors disabled:opacity-40"
+                          >
+                            {isLoadingThis
+                              ? <PiSpinner className="h-3.5 w-3.5 animate-spin" />
+                              : <PiPencilSimple className="h-3.5 w-3.5" />
+                            }
+                          </button>
+
+                          {/* Remove button */}
+                          <button
+                            type="button"
+                            title="Remove combo"
+                            onClick={() => {
+                              removeComboGroup(instanceId);
+                              if (anySelected) { setSelectedKey(null); setDialInput(''); }
+                            }}
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-gray-300 hover:bg-red-50 hover:text-red-500 transition-colors"
+                          >
+                            <PiX className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Individual combo items */}
+                        {groupItems.map(item => renderCartItem(item, true))}
                       </div>
-                    )}
-                  </button>
-                );
-              })}
+                    );
+                  }
+
+                  return renderCartItem(entry.item, false);
+                });
+              })()}
             </div>
           )}
         </div>
@@ -789,6 +1413,26 @@ export default function POSCart() {
               <span>-{formatCurrency(discountAmount)}</span>
             </div>
           )}
+          {/* BXGY rewards are shown as "Free Product" lines in the item list — skip here */}
+          {appliedRewards.filter(r => r.kind !== 'bxgy').map(r => (
+            <div key={r.id} className="mb-0.5 flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1.5 truncate min-w-0"
+                style={{ color: r.color ?? '#b20202' }}>
+                <PiStar className="h-3 w-3 shrink-0" />
+                <span className="truncate font-semibold">{r.name}</span>
+                {r.code && <span className="font-mono font-bold tracking-wider">({r.code})</span>}
+              </span>
+              <span className="flex items-center gap-1 shrink-0 ml-2">
+                <span className="font-bold" style={{ color: r.color ?? '#b20202' }}>
+                  -{formatCurrency(computeRewardDiscount(r, items, Math.max(0, subtotal - discountAmount)))}
+                </span>
+                <button type="button" onClick={() => removeReward(r.id)}
+                  className="text-gray-300 hover:text-red-400 transition-colors">
+                  <PiX className="h-3 w-3" />
+                </button>
+              </span>
+            </div>
+          ))}
           <div className="flex items-baseline justify-between">
             <span className="text-base font-bold text-gray-900">Total</span>
             <span className={`text-lg font-bold ${selectedPricelist ? 'text-emerald-700' : 'text-gray-900'}`}>
@@ -798,11 +1442,11 @@ export default function POSCart() {
         </div>
 
         {/* ── Action bar ── */}
-        <div className="shrink-0 grid grid-cols-3 gap-px border-t border-gray-200 bg-gray-200">
+        <div className="shrink-0 grid grid-cols-4 gap-px border-t border-gray-200 bg-gray-200">
           <button
             type="button"
             onClick={() => setShowCustomer(true)}
-            className={`flex items-center justify-center gap-1.5 bg-white py-2.5 text-xs font-medium transition-colors hover:bg-gray-50 ${
+            className={`flex items-center justify-center gap-1 bg-white py-2.5 text-[11px] font-medium transition-colors hover:bg-gray-50 ${
               hasCustomer ? 'text-[#b20202]' : 'text-gray-600'
             }`}
           >
@@ -812,17 +1456,30 @@ export default function POSCart() {
           <button
             type="button"
             onClick={() => setShowNote(!showNote)}
-            className={`flex items-center justify-center gap-1.5 bg-white py-2.5 text-xs font-medium transition-colors hover:bg-gray-50 ${
+            className={`flex items-center justify-center gap-1 bg-white py-2.5 text-[11px] font-medium transition-colors hover:bg-gray-50 ${
               note ? 'text-[#b20202]' : 'text-gray-600'
             }`}
           >
             <PiNotePencil className="h-3.5 w-3.5" />
-            Internal Note
+            Note
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowRewards(true)}
+            className={`relative flex items-center justify-center gap-1 bg-white py-2.5 text-[11px] font-medium transition-colors hover:bg-gray-50 ${
+              appliedRewards.length > 0 ? 'text-[#b20202]' : 'text-gray-600'
+            }`}
+          >
+            <PiStar className="h-3.5 w-3.5" />
+            Rewards{appliedRewards.length > 0 ? ` (${appliedRewards.length})` : ''}
+            {appliedRewards.length > 0 && (
+              <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-[#b20202]" />
+            )}
           </button>
           <button
             type="button"
             onClick={() => setShowActions(true)}
-            className="flex items-center justify-center gap-1.5 bg-white py-2.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50"
+            className="flex items-center justify-center gap-1 bg-white py-2.5 text-[11px] font-medium text-gray-600 transition-colors hover:bg-gray-50"
           >
             <PiList className="h-3.5 w-3.5" />
             Actions
@@ -907,9 +1564,14 @@ export default function POSCart() {
           onDiscount={() => setShowDiscount(true)}
           onNote={() => setShowNote(true)}
           onPricelist={() => setShowPricelist(true)}
+          onReward={() => setShowRewards(true)}
           onCancelOrder={() => { clearCart(); setSelectedKey(null); setDialInput(''); }}
           onClose={() => setShowActions(false)}
         />
+      )}
+
+      {showRewards && (
+        <RewardsModal onClose={() => setShowRewards(false)} />
       )}
 
       {showPricelist && token && (
@@ -924,6 +1586,21 @@ export default function POSCart() {
           current={customer}
           onSelect={handleSetCustomer}
           onClose={() => setShowCustomer(false)}
+        />
+      )}
+
+      {/* Edit combo picker */}
+      {editingCombo && (
+        <POSComboPicker
+          combo={editingCombo.combo}
+          initialPicks={editingCombo.initialPicks}
+          editInstanceId={editingCombo.instanceId}
+          onClose={() => setEditingCombo(null)}
+          onAdd={(newItems) => {
+            replaceComboGroup(editingCombo.instanceId, newItems);
+            setEditingCombo(null);
+            toast.success('Combo updated', { icon: '🎁' });
+          }}
         />
       )}
     </>

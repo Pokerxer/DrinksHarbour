@@ -44,7 +44,43 @@ async function deductStock({ subProductId, sizeId, quantity, tenantId, staffId, 
 
   if (sizeId) {
     // ── Size-level deduction ──────────────────────────────────────────────────
-    const sizeFilter = allowOverselling
+    //
+    // Stock may be tracked at the Size level, the SubProduct aggregate level, or both.
+    // Products where stock is only tracked at the SubProduct level will show
+    // Size.availableStock = 0 even when there is real stock — the combo/product
+    // endpoints distribute SubProduct stock to sizes for DISPLAY only (in-memory),
+    // they never write distributed stock back to the Size documents.
+    //
+    // Strategy:
+    //   1. If the Size itself has enough stock → use the strict atomic filter.
+    //   2. If the Size shows 0 but the SubProduct has enough aggregate stock →
+    //      skip the Size stock guard (just update the Size doc) and rely on the
+    //      SubProduct deduction below as the authoritative stock gate.
+    //   3. If neither has stock and overselling is off → throw.
+
+    let useStrictSizeFilter = false;
+
+    if (!allowOverselling) {
+      const [sizeCheck, spCheck] = await Promise.all([
+        Size.findById(sizeId).select('availableStock').lean(),
+        SubProduct.findById(subProductId).select('availableStock').lean(),
+      ]);
+
+      const sizeStock = sizeCheck?.availableStock ?? 0;
+      const spStock   = spCheck?.availableStock   ?? 0;
+
+      if (sizeStock >= quantity) {
+        // Size has its own tracked stock — use strict atomic check
+        useStrictSizeFilter = true;
+      } else if (spStock < quantity) {
+        // Neither Size nor SubProduct has enough — real stock-out
+        throw new Error('Insufficient stock for this size');
+      }
+      // else: sizeStock < quantity but spStock >= quantity
+      // → stock tracked at SubProduct level; proceed without size guard
+    }
+
+    const sizeFilter = (allowOverselling || !useStrictSizeFilter)
       ? { _id: sizeId }
       : { _id: sizeId, availableStock: { $gte: quantity } };
 
@@ -60,14 +96,24 @@ async function deductStock({ subProductId, sizeId, quantity, tenantId, staffId, 
       availability: resolveAvailability(deductedDoc.stock, deductedDoc.lowStockThreshold),
     });
 
-    // Also decrement SubProduct aggregate stock
-    const spUpdated = await SubProduct.findByIdAndUpdate(
-      subProductId,
-      {
-        $inc: { availableStock: -quantity, totalStock: -quantity, totalSold: quantity },
-      },
+    // Also decrement SubProduct aggregate stock.
+    // When !useStrictSizeFilter the SubProduct is the real stock source, so guard
+    // atomically here. When useStrictSizeFilter the Size was already guarded and
+    // the SubProduct is a derived aggregate — update unconditionally.
+    const spFilter = (!allowOverselling && !useStrictSizeFilter)
+      ? { _id: subProductId, availableStock: { $gte: quantity } }
+      : { _id: subProductId };
+
+    const spUpdated = await SubProduct.findOneAndUpdate(
+      spFilter,
+      { $inc: { availableStock: -quantity, totalStock: -quantity, totalSold: quantity } },
       { new: true }
     );
+    if (!spUpdated && !allowOverselling && !useStrictSizeFilter) {
+      // Race condition: stock was taken between our pre-check and now; rollback size
+      await Size.findByIdAndUpdate(sizeId, { $inc: { availableStock: quantity, stock: quantity } });
+      throw new Error('Insufficient stock for this size');
+    }
     if (spUpdated) {
       await SubProduct.findByIdAndUpdate(subProductId, {
         stockStatus: resolveSubProductStatus(spUpdated.availableStock, spUpdated.lowStockThreshold),
@@ -1028,8 +1074,183 @@ exports.updatePOSSettings = asyncHandler(async (req, res) => {
   const { posSettings = {} } = req.body;
 
   const allowed = {};
-  if (typeof posSettings.allowOverselling === 'boolean') {
+  if (typeof posSettings.allowOverselling === 'boolean')
     allowed['posSettings.allowOverselling'] = posSettings.allowOverselling;
+
+  // Loyalty
+  if (typeof posSettings.loyaltyEnabled === 'boolean')
+    allowed['posSettings.loyaltyEnabled'] = posSettings.loyaltyEnabled;
+  if (typeof posSettings.loyaltyPointsPerNaira === 'number' && posSettings.loyaltyPointsPerNaira > 0)
+    allowed['posSettings.loyaltyPointsPerNaira'] = posSettings.loyaltyPointsPerNaira;
+  if (typeof posSettings.loyaltyPointsValue === 'number' && posSettings.loyaltyPointsValue > 0)
+    allowed['posSettings.loyaltyPointsValue'] = posSettings.loyaltyPointsValue;
+  if (typeof posSettings.loyaltyMaxRedemptionPct === 'number')
+    allowed['posSettings.loyaltyMaxRedemptionPct'] = Math.min(100, Math.max(0, posSettings.loyaltyMaxRedemptionPct));
+
+  // Discount programs
+  if (Array.isArray(posSettings.discountPrograms)) {
+    allowed['posSettings.discountPrograms'] = posSettings.discountPrograms.map(p => ({
+      name:          String(p.name        || '').trim().slice(0, 60),
+      description:   String(p.description || '').trim().slice(0, 200),
+      type:          ['pct','fixed'].includes(p.type) ? p.type : 'pct',
+      value:         Math.max(0, Number(p.value) || 0),
+      active:        p.active !== false,
+      color:         String(p.color || '').slice(0, 20),
+      minOrderValue: Math.max(0, Number(p.minOrderValue) || 0),
+    })).filter(p => p.name && p.value > 0);
+  }
+
+  function normaliseAvailability(a) {
+    if (!a) return { pos: true, sales: false, website: false };
+    return { pos: a.pos !== false, sales: !!a.sales, website: !!a.website };
+  }
+  function normaliseRules(r) {
+    if (!r) return { minQty: 0, minOrderValue: 0 };
+    return { minQty: Math.max(0, Number(r.minQty)||0), minOrderValue: Math.max(0, Number(r.minOrderValue)||0) };
+  }
+  function normaliseReward(rw) {
+    if (!rw) return { discountType: 'pct', discountValue: 0, applyOn: 'order', maxDiscount: 0 };
+    return {
+      discountType:  ['pct','fixed'].includes(rw.discountType) ? rw.discountType : 'pct',
+      discountValue: Math.max(0, Number(rw.discountValue)||0),
+      applyOn:       ['order','cheapest','most_expensive'].includes(rw.applyOn) ? rw.applyOn : 'order',
+      maxDiscount:   Math.max(0, Number(rw.maxDiscount)||0),
+    };
+  }
+
+  // Coupons
+  if (Array.isArray(posSettings.coupons)) {
+    allowed['posSettings.coupons'] = posSettings.coupons.map(c => ({
+      code:          String(c.code || '').trim().toUpperCase().slice(0, 30),
+      name:          String(c.name || '').trim().slice(0, 60),
+      description:   String(c.description || '').slice(0, 200),
+      pricelistIds:       Array.isArray(c.pricelistIds)       ? c.pricelistIds.filter(Boolean)       : [],
+      applyTo: { products: Array.isArray(c.applyTo?.products) ? c.applyTo.products.filter(Boolean) : [], categories: Array.isArray(c.applyTo?.categories) ? c.applyTo.categories.filter(Boolean) : [], brands: Array.isArray(c.applyTo?.brands) ? c.applyTo.brands.filter(Boolean) : [] },
+      availableOn:   normaliseAvailability(c.availableOn),
+      rules:         normaliseRules(c.rules),
+      reward:        normaliseReward(c.reward),
+      type:          ['pct','fixed'].includes(c.type) ? c.type : 'pct',
+      value:         Math.max(0, Number(c.value) || 0),
+      minOrderValue: Math.max(0, Number(c.minOrderValue) || 0),
+      maxUsage:      Math.max(0, Number(c.maxUsage) || 0),
+      usageCount:    Math.max(0, Number(c.usageCount) || 0),
+      validFrom:     c.validFrom ? new Date(c.validFrom) : null,
+      validTo:       c.validTo   ? new Date(c.validTo)   : null,
+      active:        c.active !== false,
+      onePerOrder:   !!c.onePerOrder,
+    })).filter(c => c.code && c.value > 0);
+  }
+
+  // Discount codes
+  if (Array.isArray(posSettings.discountCodes)) {
+    allowed['posSettings.discountCodes'] = posSettings.discountCodes.map(d => ({
+      code:          String(d.code || '').trim().toUpperCase().slice(0, 30),
+      name:          String(d.name || '').trim().slice(0, 60),
+      description:   String(d.description || '').slice(0, 200),
+      pricelistIds:       Array.isArray(d.pricelistIds)       ? d.pricelistIds.filter(Boolean)       : [],
+      applyTo: { products: Array.isArray(d.applyTo?.products) ? d.applyTo.products.filter(Boolean) : [], categories: Array.isArray(d.applyTo?.categories) ? d.applyTo.categories.filter(Boolean) : [], brands: Array.isArray(d.applyTo?.brands) ? d.applyTo.brands.filter(Boolean) : [] },
+      availableOn:   normaliseAvailability(d.availableOn),
+      rules:         normaliseRules(d.rules),
+      reward:        normaliseReward(d.reward),
+      type:          ['pct','fixed'].includes(d.type) ? d.type : 'pct',
+      value:         Math.max(0, Number(d.value) || 0),
+      minOrderValue: Math.max(0, Number(d.minOrderValue) || 0),
+      validFrom:     d.validFrom  ? new Date(d.validFrom)  : null,
+      validTo:       d.validTo    ? new Date(d.validTo)    : null,
+      maxUsage:      Math.max(0, Number(d.maxUsage) || 0),
+      usageCount:    Math.max(0, Number(d.usageCount) || 0),
+      color:         typeof d.color === 'string' ? d.color.slice(0, 20) : '#059669',
+      active:        d.active !== false,
+    })).filter(d => d.code && d.value > 0);
+  }
+
+  // Promotions
+  if (Array.isArray(posSettings.promotions)) {
+    allowed['posSettings.promotions'] = posSettings.promotions.map(pr => ({
+      name:          String(pr.name || '').trim().slice(0, 60),
+      description:   String(pr.description || '').slice(0, 200),
+      pricelistIds:       Array.isArray(pr.pricelistIds)       ? pr.pricelistIds.filter(Boolean)       : [],
+      applyTo: { products: Array.isArray(pr.applyTo?.products) ? pr.applyTo.products.filter(Boolean) : [], categories: Array.isArray(pr.applyTo?.categories) ? pr.applyTo.categories.filter(Boolean) : [], brands: Array.isArray(pr.applyTo?.brands) ? pr.applyTo.brands.filter(Boolean) : [] },
+      availableOn:   normaliseAvailability(pr.availableOn),
+      rules:         normaliseRules(pr.rules),
+      reward:        normaliseReward(pr.reward),
+      type:          ['pct','fixed'].includes(pr.type) ? pr.type : 'pct',
+      value:         Math.max(0, Number(pr.value) || 0),
+      startDate:     pr.startDate ? new Date(pr.startDate) : null,
+      endDate:       pr.endDate   ? new Date(pr.endDate)   : null,
+      maxUsage:   Math.max(0, Number(pr.maxUsage) || 0),
+      usageCount: Math.max(0, Number(pr.usageCount) || 0),
+      color:      typeof pr.color === 'string' ? pr.color.slice(0, 20) : '#d97706',
+      stackable:  !!pr.stackable,
+      priority:   Math.max(0, Number(pr.priority) || 0),
+      active:     pr.active !== false,
+    })).filter(pr => pr.name && pr.value > 0);
+  }
+
+  // Buy X Get Y
+  if (Array.isArray(posSettings.buyXGetY)) {
+    allowed['posSettings.buyXGetY'] = posSettings.buyXGetY.map(b => ({
+      name:           String(b.name || '').trim().slice(0, 60),
+      description:    String(b.description || '').slice(0, 200),
+      pricelistIds:  Array.isArray(b.pricelistIds)  ? b.pricelistIds.filter(Boolean)  : [],
+      buyProducts:   Array.isArray(b.buyProducts)   ? b.buyProducts.filter(Boolean)   : [],
+      getProducts:   Array.isArray(b.getProducts)   ? b.getProducts.filter(Boolean)   : [],
+      availableOn:    normaliseAvailability(b.availableOn),
+      buyQty:         Math.max(1, Number(b.buyQty) || 1),
+      getQty:         Math.max(1, Number(b.getQty) || 1),
+      getDiscountPct: Math.min(100, Math.max(0, Number(b.getDiscountPct) || 100)),
+      minOrderValue:  Math.max(0, Number(b.minOrderValue) || 0),
+      maxUsage:   Math.max(0, Number(b.maxUsage) || 0),
+      usageCount: Math.max(0, Number(b.usageCount) || 0),
+      validFrom:  b.validFrom ? new Date(b.validFrom) : null,
+      validTo:    b.validTo   ? new Date(b.validTo)   : null,
+      color:      typeof b.color === 'string' ? b.color.slice(0, 20) : '#7c3aed',
+      stackable:  !!b.stackable,
+      active:     b.active !== false,
+    })).filter(b => b.name);
+  }
+
+  // Loyalty card config
+  if (posSettings.loyaltyCard && typeof posSettings.loyaltyCard === 'object') {
+    const lc = posSettings.loyaltyCard;
+    if (typeof lc.enabled        === 'boolean') allowed['posSettings.loyaltyCard.enabled']        = lc.enabled;
+    if (typeof lc.cardPrefix     === 'string')  allowed['posSettings.loyaltyCard.cardPrefix']      = lc.cardPrefix.slice(0, 10);
+    if (typeof lc.earnMultiplier === 'number')  allowed['posSettings.loyaltyCard.earnMultiplier']  = Math.max(0.1, lc.earnMultiplier);
+    if (typeof lc.welcomeBonus   === 'number')  allowed['posSettings.loyaltyCard.welcomeBonus']    = Math.max(0, lc.welcomeBonus);
+    if (typeof lc.pointsExpiry   === 'number')  allowed['posSettings.loyaltyCard.pointsExpiry']    = Math.max(0, Math.floor(lc.pointsExpiry));
+    if (typeof lc.minRedemption       === 'number')  allowed['posSettings.loyaltyCard.minRedemption']       = Math.max(0, Math.floor(lc.minRedemption));
+    if (typeof lc.bonusMultiplierDays === 'number')  allowed['posSettings.loyaltyCard.bonusMultiplierDays']  = Math.max(1, lc.bonusMultiplierDays);
+    if (Array.isArray(lc.doublePointsDays)) {
+      allowed['posSettings.loyaltyCard.doublePointsDays'] = lc.doublePointsDays.filter(d => d >= 0 && d <= 6).map(Number);
+    }
+    if (Array.isArray(lc.tiers)) {
+      allowed['posSettings.loyaltyCard.tiers'] = lc.tiers
+        .filter(t => t.name?.trim())
+        .map(t => ({
+          name:       String(t.name).trim().slice(0, 30),
+          minPoints:  Math.max(0, Number(t.minPoints) || 0),
+          multiplier: Math.max(0.1, Number(t.multiplier) || 1),
+          color:      t.color || '#d97706',
+          benefits:   String(t.benefits || '').slice(0, 200),
+        }));
+    }
+  }
+
+  // Next order coupon config
+  if (posSettings.nextOrderCoupon && typeof posSettings.nextOrderCoupon === 'object') {
+    const noc = posSettings.nextOrderCoupon;
+    if (typeof noc.enabled           === 'boolean') allowed['posSettings.nextOrderCoupon.enabled']           = noc.enabled;
+    if (['pct','fixed'].includes(noc.type))         allowed['posSettings.nextOrderCoupon.type']              = noc.type;
+    if (typeof noc.value             === 'number')  allowed['posSettings.nextOrderCoupon.value']             = Math.max(0, noc.value);
+    if (typeof noc.validDays         === 'number')  allowed['posSettings.nextOrderCoupon.validDays']         = Math.max(1, noc.validDays);
+    if (typeof noc.minOrderForCoupon === 'number')  allowed['posSettings.nextOrderCoupon.minOrderForCoupon'] = Math.max(0, noc.minOrderForCoupon);
+    if (typeof noc.minRedeemOrder    === 'number')  allowed['posSettings.nextOrderCoupon.minRedeemOrder']    = Math.max(0, noc.minRedeemOrder);
+    if (typeof noc.codePrefix        === 'string')  allowed['posSettings.nextOrderCoupon.codePrefix']        = noc.codePrefix.slice(0, 10);
+    if (typeof noc.color             === 'string')  allowed['posSettings.nextOrderCoupon.color']             = noc.color.slice(0, 20);
+    if (typeof noc.oneUse            === 'boolean') allowed['posSettings.nextOrderCoupon.oneUse']            = noc.oneUse;
+    if (noc.availableOn && typeof noc.availableOn === 'object') {
+      allowed['posSettings.nextOrderCoupon.availableOn'] = normaliseAvailability(noc.availableOn);
+    }
   }
 
   if (Object.keys(allowed).length === 0) {

@@ -27,10 +27,10 @@ router.use(attachTenant);
 
 const itemsPopulate = {
   path:    'choiceLines.items.subProduct',
-  select:  'sku baseSellingPrice availableStock sellWithoutSizeVariants sizes product',
+  select:  'sku baseSellingPrice costPrice availableStock sellWithoutSizeVariants sizes product',
   populate: [
     { path: 'product', select: 'name images type' },
-    { path: 'sizes',   select: 'displayName sellingPrice availableStock _id' },
+    { path: 'sizes',   select: 'displayName sellingPrice costPrice availableStock _id sku' },
   ],
 };
 
@@ -44,8 +44,9 @@ function normaliseLines(choiceLines) {
     items: (cl.items || []).map(it => ({
       subProduct:   it.subProduct?._id || it.subProduct,
       allowedSizes: (it.allowedSizes || []).map(s => s._id || s),
+      minQty: Number(it.minQty) || 1,
+      maxQty: Math.max(Number(it.maxQty) || 1, Number(it.minQty) || 1),
     })),
-    // keep legacy field for backward-compat
     products: [],
     _id: cl._id,
   }));
@@ -124,16 +125,19 @@ router.get('/:id', tenantAdminOrSuperAdmin, async (req, res, next) => {
 // ── Create ────────────────────────────────────────────────────────────────────
 router.post('/', tenantAdminOrSuperAdmin, async (req, res, next) => {
   try {
-    const { name, description, price, choiceLines, active } = req.body;
+    const { name, description, price, priceMode, markupPercentage, discountPercentage, choiceLines, active } = req.body;
     if (!name?.trim()) return res.status(400).json({ success: false, message: 'Name is required' });
 
     const combo = await POSCombo.create({
-      tenant:      req.tenant._id,
-      name:        name.trim(),
-      description: description || '',
-      price:       Number(price) || 0,
-      choiceLines: normaliseLines(choiceLines),
-      active:      active !== false,
+      tenant:             req.tenant._id,
+      name:               name.trim(),
+      description:        description || '',
+      priceMode:          priceMode || 'dynamic',
+      price:              Number(price) || 0,
+      markupPercentage:   Number(markupPercentage) || 0,
+      discountPercentage: Number(discountPercentage) || 0,
+      choiceLines:        normaliseLines(choiceLines),
+      active:             active !== false,
     });
 
     res.status(201).json({ success: true, data: { combo } });
@@ -143,15 +147,18 @@ router.post('/', tenantAdminOrSuperAdmin, async (req, res, next) => {
 // ── Update ────────────────────────────────────────────────────────────────────
 router.patch('/:id', tenantAdminOrSuperAdmin, async (req, res, next) => {
   try {
-    const { name, description, price, choiceLines, active } = req.body;
+    const { name, description, price, priceMode, markupPercentage, discountPercentage, choiceLines, active } = req.body;
     const combo = await POSCombo.findOne({ _id: req.params.id, tenant: req.tenant._id });
     if (!combo) return res.status(404).json({ success: false, message: 'Combo not found' });
 
-    if (name !== undefined)        combo.name        = name.trim();
-    if (description !== undefined) combo.description = description;
-    if (price !== undefined)       combo.price       = Number(price) || 0;
-    if (active !== undefined)      combo.active      = active;
-    if (choiceLines !== undefined) combo.choiceLines = normaliseLines(choiceLines);
+    if (name !== undefined)               combo.name               = name.trim();
+    if (description !== undefined)        combo.description        = description;
+    if (priceMode !== undefined)          combo.priceMode          = priceMode;
+    if (price !== undefined)              combo.price              = Number(price) || 0;
+    if (markupPercentage !== undefined)   combo.markupPercentage   = Number(markupPercentage) || 0;
+    if (discountPercentage !== undefined) combo.discountPercentage = Number(discountPercentage) || 0;
+    if (active !== undefined)             combo.active             = active;
+    if (choiceLines !== undefined)        combo.choiceLines        = normaliseLines(choiceLines);
 
     await combo.save();
     res.json({ success: true, data: { combo } });
