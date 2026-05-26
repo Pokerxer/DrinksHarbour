@@ -38,8 +38,9 @@ const navItems: NavItem[] = [
   {
     label: 'Reporting',
     items: [
+      { label: 'Order Analysis', href: routes.pos.orderAnalysis },
       { label: 'Orders',         href: routes.pos.orders },
-      { label: 'Sales Details',  href: '#' },
+      { label: 'Sales Details',  href: routes.pos.salesDetails },
       { label: 'Session Report', href: routes.pos.sessions },
     ],
   },
