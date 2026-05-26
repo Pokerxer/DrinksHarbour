@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef, type ReactNode } from 'react';
 import {
   PiArrowsClockwise, PiCurrencyNgn, PiShoppingCart, PiTag,
   PiArrowUp, PiArrowDown, PiArrowsDownUp, PiDownloadSimple, PiX,
@@ -268,6 +268,29 @@ function DateTimeRange({
   );
 }
 
+// ── Highlight matching text ────────────────────────────────────────────────────
+
+function highlight(text: string, q: string): ReactNode {
+  if (!q || !text) return text;
+  const lower  = text.toLowerCase();
+  const lowerQ = q.toLowerCase();
+  const parts: ReactNode[] = [];
+  let last = 0;
+  let idx  = lower.indexOf(lowerQ);
+  while (idx !== -1) {
+    if (idx > last) parts.push(text.slice(last, idx));
+    parts.push(
+      <mark key={idx} className="rounded-[2px] bg-yellow-100 px-px text-yellow-900 not-italic">
+        {text.slice(idx, idx + q.length)}
+      </mark>,
+    );
+    last = idx + q.length;
+    idx  = lower.indexOf(lowerQ, last);
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return <>{parts}</>;
+}
+
 // ── Select option data ─────────────────────────────────────────────────────────
 
 interface SelectOption { value: string; label: string; dot?: string; }
@@ -464,6 +487,8 @@ export default function POSSalesDetails() {
   const [methodFilter, setMethodFilter]   = useState('');
   const [statusFilter, setStatusFilter]   = useState<StatusFilter>('active');
   const [search, setSearch]               = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [searchFocused,   setSearchFocused]   = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Sort
@@ -510,11 +535,34 @@ export default function POSSalesDetails() {
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
-  // Reset page on filter/sort change
+  // Debounce search input → debouncedSearch drives filtering
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 280);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // ⌘K / Ctrl+K focuses the search; Escape clears + blurs
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }
+      if (e.key === 'Escape' && document.activeElement === searchRef.current) {
+        setSearch('');
+        searchRef.current?.blur();
+      }
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Reset page on filter/sort change (keyed to debouncedSearch so pages reset after filter applies)
   useEffect(() => { setPage(1); },
-    [dateFrom, dateTo, timeFrom, timeTo, cashierFilter, methodFilter, statusFilter, search, lineSortField, lineSortDir]);
+    [dateFrom, dateTo, timeFrom, timeTo, cashierFilter, methodFilter, statusFilter, debouncedSearch, lineSortField, lineSortDir]);
   useEffect(() => { setGroupPage(1); },
-    [dateFrom, dateTo, timeFrom, timeTo, cashierFilter, methodFilter, statusFilter, search, groupSortField, groupSortDir, groupBy]);
+    [dateFrom, dateTo, timeFrom, timeTo, cashierFilter, methodFilter, statusFilter, debouncedSearch, groupSortField, groupSortDir, groupBy]);
 
   // ── Data ───────────────────────────────────────────────────────────────────
 
@@ -561,7 +609,7 @@ export default function POSSalesDetails() {
   // ── Filtering ──────────────────────────────────────────────────────────────
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = debouncedSearch.toLowerCase();
     return allRows.filter(r => {
       if (statusFilter === 'active' && r.isVoided)  return false;
       if (statusFilter === 'voided' && !r.isVoided) return false;
@@ -576,12 +624,17 @@ export default function POSSalesDetails() {
         if (new Date(r.date).getTime() > endTs) return false;
       }
       if (q) {
-        const hay = `${r.product} ${r.variant} ${r.cashier} ${r.orderNumber} ${r.receiptNumber}`.toLowerCase();
-        if (!hay.includes(q)) return false;
+        const hit =
+          r.product.toLowerCase().includes(q)      ||
+          r.variant.toLowerCase().includes(q)       ||
+          r.cashier.toLowerCase().includes(q)       ||
+          r.orderNumber.toLowerCase().includes(q)   ||
+          r.receiptNumber.toLowerCase().includes(q);
+        if (!hit) return false;
       }
       return true;
     });
-  }, [allRows, statusFilter, cashierFilter, methodFilter, dateFrom, dateTo, timeFrom, timeTo, search]);
+  }, [allRows, statusFilter, cashierFilter, methodFilter, dateFrom, dateTo, timeFrom, timeTo, debouncedSearch]);
 
   // ── Sort (line view) ───────────────────────────────────────────────────────
 
@@ -921,17 +974,46 @@ export default function POSSalesDetails() {
 
           {/* Search + clear (right-aligned) */}
           <div className="ml-auto flex items-center gap-2">
-            <div className="relative">
-              <PiMagnifyingGlass className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-              <input ref={searchRef} type="text" value={search} onChange={e => setSearch(e.target.value)}
+            <div className={`relative transition-all duration-200 ${searchFocused || search ? 'w-72' : 'w-56'}`}>
+              <PiMagnifyingGlass className={`absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 transition-colors duration-150 ${
+                searchFocused ? 'text-[#b20202]' : 'text-gray-400'
+              }`} />
+              <input
+                ref={searchRef}
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setSearchFocused(false)}
                 placeholder="Search product, cashier, order #…"
-                className="w-56 rounded-md border border-gray-200 bg-white py-1.5 pl-8 pr-7 text-sm focus:border-[#b20202] focus:outline-none" />
-              {search && (
-                <button type="button" onClick={() => setSearch('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                className={`w-full rounded-lg border py-1.5 pl-8 text-sm outline-none transition-all duration-150 ${
+                  search
+                    ? 'border-[#b20202]/50 bg-red-50/40 pr-14 text-gray-800 ring-2 ring-[#b20202]/10'
+                    : searchFocused
+                      ? 'border-[#b20202] bg-white pr-8 ring-2 ring-[#b20202]/10'
+                      : 'border-gray-200 bg-white pr-16 hover:border-gray-300'
+                }`}
+              />
+              {/* Result count — shown while debounced search is active */}
+              {debouncedSearch && (
+                <span className="absolute right-7 top-1/2 -translate-y-1/2 rounded-full bg-[#b20202]/10 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-[#b20202]">
+                  {filtered.length}
+                </span>
+              )}
+              {/* Clear */}
+              {search ? (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                >
                   <PiX className="h-3.5 w-3.5" />
                 </button>
-              )}
+              ) : !searchFocused ? (
+                <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 font-mono text-[9px] leading-none text-gray-300">
+                  ⌘K
+                </kbd>
+              ) : null}
             </div>
 
             {(filterChips.length > 0 || cashierFilter || methodFilter || statusFilter !== 'active') && (
@@ -1081,16 +1163,26 @@ export default function POSSalesDetails() {
                         <td className="whitespace-nowrap px-4 py-2.5 text-xs text-gray-500">{fmtDateTime(row.date)}</td>
                         {vis('orderNumber') && (
                           <td className="whitespace-nowrap px-4 py-2.5">
-                            <span className="font-mono text-xs font-semibold text-gray-800">{row.orderNumber}</span>
+                            <span className="font-mono text-xs font-semibold text-gray-800">
+                              {highlight(row.orderNumber, debouncedSearch)}
+                            </span>
                             {row.isVoided && <span className="ml-1.5 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-600">VOID</span>}
                           </td>
                         )}
                         {vis('cashier') && (
-                          <td className="whitespace-nowrap px-4 py-2.5 text-sm text-gray-600">{row.cashier}</td>
+                          <td className="whitespace-nowrap px-4 py-2.5 text-sm text-gray-600">
+                            {highlight(row.cashier, debouncedSearch)}
+                          </td>
                         )}
-                        <td className="max-w-[200px] truncate px-4 py-2.5 font-medium text-gray-900">{row.product}</td>
+                        <td className="max-w-[200px] truncate px-4 py-2.5 font-medium text-gray-900">
+                          {highlight(row.product, debouncedSearch)}
+                        </td>
                         {vis('variant') && (
-                          <td className="px-4 py-2.5 text-sm text-gray-500">{row.variant || <span className="text-gray-300">—</span>}</td>
+                          <td className="px-4 py-2.5 text-sm text-gray-500">
+                            {row.variant
+                              ? highlight(row.variant, debouncedSearch)
+                              : <span className="text-gray-300">—</span>}
+                          </td>
                         )}
                         <td className="px-4 py-2.5 text-center text-sm font-medium text-gray-700 tabular-nums">{row.qty}</td>
                         {vis('unitPrice') && (
@@ -1201,7 +1293,9 @@ export default function POSSalesDetails() {
                     paginatedGroup.map((row, i) => (
                       <tr key={row.key}
                         className={`border-b border-gray-50 transition-colors hover:bg-blue-50/20 ${i % 2 === 1 ? 'bg-gray-50/30' : ''}`}>
-                        <td className="max-w-[240px] truncate px-4 py-2.5 font-medium text-gray-900">{row.key}</td>
+                        <td className="max-w-[240px] truncate px-4 py-2.5 font-medium text-gray-900">
+                          {highlight(row.key, debouncedSearch)}
+                        </td>
                         <td className="px-4 py-2.5 text-center text-gray-700 tabular-nums">{row.qty.toLocaleString()}</td>
                         <td className="whitespace-nowrap px-4 py-2.5 text-right text-gray-500 tabular-nums">{formatCurrency(row.gross)}</td>
                         <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">
