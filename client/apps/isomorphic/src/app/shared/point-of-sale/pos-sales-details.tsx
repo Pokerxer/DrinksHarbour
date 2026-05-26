@@ -595,31 +595,55 @@ export default function POSSalesDetails() {
       {/* ── Sticky control bar ── */}
       <div className="sticky top-0 z-10 shrink-0 border-b border-gray-200 bg-white shadow-sm">
 
-        {/* Row 1 — title · view toggle · actions */}
-        <div className="flex items-center justify-between gap-4 border-b border-gray-100 px-5 py-2.5">
-          <div>
-            <h1 className="text-base font-semibold text-gray-900 leading-tight">Sales Details</h1>
-            <p className="text-[11px] text-gray-400">
-              {loading ? 'Loading…' : (
-                <>
-                  {orders.length.toLocaleString()} orders loaded
-                  {truncated && (
-                    <> · <button type="button" onClick={() => fetchOrders(true)} className="text-[#b20202] underline hover:no-underline">Load all</button></>
-                  )}
-                  {!loading && filtered.length !== allRows.length && (
-                    <> · <span className="font-medium text-gray-600">{filtered.length.toLocaleString()} lines shown</span></>
-                  )}
-                </>
-              )}
+        {/* Row 1 — title · status tabs · actions */}
+        <div className="flex h-14 items-center gap-4 px-5">
+
+          {/* Left: title + context */}
+          <div className="flex min-w-0 shrink-0 flex-col justify-center">
+            <h1 className="text-[15px] font-bold tracking-tight text-gray-900">Sales Details</h1>
+            <p className="text-[11px] leading-none text-gray-400">
+              {loading
+                ? 'Loading…'
+                : <>
+                    {orders.length.toLocaleString()} orders
+                    {truncated && <> · <button type="button" onClick={() => fetchOrders(true)} className="text-[#b20202] underline hover:no-underline">Load all</button></>}
+                    {filtered.length !== allRows.length && <> · <span className="font-medium text-gray-600">{filtered.length.toLocaleString()} shown</span></>}
+                  </>
+              }
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* View mode toggle */}
+          {/* Centre: status tabs */}
+          <div className="flex flex-1 items-center justify-center">
+            <div className="flex rounded-xl border border-gray-200 bg-gray-50 p-0.5">
+              {(['all', 'active', 'voided'] as StatusFilter[]).map(s => {
+                const active = statusFilter === s;
+                return (
+                  <button key={s} type="button" onClick={() => setStatusFilter(s)}
+                    className={`flex items-center gap-2 rounded-[10px] px-4 py-1.5 text-xs font-semibold transition-all ${
+                      active ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-200/60' : 'text-gray-400 hover:text-gray-600'
+                    }`}>
+                    {s === 'all' ? 'All' : s === 'active' ? 'Active' : 'Voided'}
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums leading-none transition-colors ${
+                      active
+                        ? s === 'voided' ? 'bg-red-100 text-red-600' : 'bg-[#b20202]/10 text-[#b20202]'
+                        : 'bg-gray-200 text-gray-400'
+                    }`}>
+                      {statusCounts[s]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right: view controls + actions */}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {/* View toggle */}
             <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
               {(['lines', 'grouped'] as ViewMode[]).map(m => (
                 <button key={m} type="button" onClick={() => setViewMode(m)}
-                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                  className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all ${
                     viewMode === m ? 'bg-[#b20202] text-white shadow-sm' : 'text-gray-500 hover:text-gray-800'
                   }`}>
                   {m === 'lines' ? <><PiList className="h-3.5 w-3.5" />Lines</> : <><PiRows className="h-3.5 w-3.5" />Grouped</>}
@@ -629,7 +653,7 @@ export default function POSSalesDetails() {
 
             {viewMode === 'grouped' && (
               <select value={groupBy} onChange={e => setGroupBy(e.target.value as GroupByKey)}
-                className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none">
+                className="rounded-lg border border-gray-200 bg-white px-2.5 py-[7px] text-xs text-gray-700 focus:border-[#b20202] focus:outline-none">
                 <option value="product">By Product</option>
                 <option value="variant">By Variant</option>
                 <option value="cashier">By Cashier</option>
@@ -638,44 +662,44 @@ export default function POSSalesDetails() {
               </select>
             )}
 
-            <div className="h-5 w-px bg-gray-200" />
+            <div className="mx-1 h-5 w-px bg-gray-200" />
 
             {/* Column picker */}
             <div className="relative" ref={colMenuRef}>
               <button type="button" onClick={() => setShowColMenu(v => !v)}
-                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs transition-colors ${
-                  showColMenu
-                    ? 'border-[#b20202] bg-red-50 text-[#b20202]'
+                className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-[7px] text-xs font-medium transition-colors ${
+                  showColMenu || hiddenCols.size > 0
+                    ? 'border-[#b20202]/40 bg-red-50 text-[#b20202]'
                     : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
                 }`}>
                 Columns
                 {hiddenCols.size > 0 && (
-                  <span className="rounded-full bg-[#b20202] px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  <span className="rounded-full bg-[#b20202] px-1.5 py-0.5 text-[10px] font-bold text-white leading-none">
                     {TOGGLEABLE_COLS.length - hiddenCols.size}/{TOGGLEABLE_COLS.length}
                   </span>
                 )}
               </button>
               {showColMenu && (
-                <div className="absolute right-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
-                  <div className="border-b border-gray-100 px-3 py-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Show / Hide</p>
+                <div className="absolute right-0 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl ring-1 ring-black/5">
+                  <div className="border-b border-gray-100 px-3 py-2.5">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Show / Hide columns</p>
                   </div>
                   <div className="p-1.5 space-y-0.5">
                     {TOGGLEABLE_COLS.map(col => (
                       <button key={col.key} type="button" onClick={() => toggleCol(col.key)}
-                        className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm hover:bg-gray-50">
-                        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold transition-colors ${
-                          vis(col.key) ? 'border-[#b20202] bg-[#b20202] text-white' : 'border-gray-300 text-transparent'
-                        }`}>✓</span>
-                        <span className="text-gray-700">{col.label}</span>
+                        className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-gray-50 transition-colors">
+                        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold transition-all ${
+                          vis(col.key) ? 'border-[#b20202] bg-[#b20202] text-white' : 'border-gray-300'
+                        }`}>{vis(col.key) ? '✓' : ''}</span>
+                        <span className={`text-xs ${vis(col.key) ? 'text-gray-800 font-medium' : 'text-gray-400'}`}>{col.label}</span>
                       </button>
                     ))}
                   </div>
                   {hiddenCols.size > 0 && (
                     <div className="border-t border-gray-100 p-1.5">
                       <button type="button" onClick={() => setHiddenCols(new Set())}
-                        className="w-full rounded-lg px-2 py-1.5 text-xs font-medium text-[#b20202] hover:bg-red-50">
-                        Show all
+                        className="w-full rounded-lg px-2 py-1.5 text-xs font-semibold text-[#b20202] hover:bg-red-50 transition-colors">
+                        Show all columns
                       </button>
                     </div>
                   )}
@@ -683,60 +707,38 @@ export default function POSSalesDetails() {
               )}
             </div>
 
+            <div className="mx-1 h-5 w-px bg-gray-200" />
+
             <button type="button" onClick={() => fetchOrders()} disabled={loading}
-              className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-[7px] text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors">
               <PiArrowsClockwise className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
 
             <button type="button" onClick={handleExport}
               disabled={(viewMode === 'lines' ? sorted.length : grouped.length) === 0}
-              className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#9a0101] disabled:opacity-50">
+              className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-3 py-[7px] text-xs font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50 transition-colors shadow-sm">
               <PiDownloadSimple className="h-3.5 w-3.5" />
               Export CSV
             </button>
           </div>
         </div>
 
-        {/* Row 2 — presets + status tabs */}
-        <div className="flex items-center justify-between gap-4 border-b border-gray-100 px-5 py-2">
-          {/* Quick presets */}
-          <div className="flex items-center gap-1.5">
-            <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-gray-400 mr-0.5">Quick:</span>
-            {DATE_PRESETS.map(preset => (
-              <button key={preset.label} type="button" onClick={() => applyPreset(preset)}
-                className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-all ${
-                  activePreset === preset.label
-                    ? 'bg-[#b20202] text-white shadow-sm'
-                    : 'border border-gray-200 bg-white text-gray-600 hover:border-[#b20202] hover:text-[#b20202]'
-                }`}>
-                {preset.label}
-              </button>
-            ))}
-          </div>
+        {/* Row 2 — date presets + datetime range */}
+        <div className="flex items-center gap-3 border-t border-gray-100 bg-gray-50/60 px-5 py-2">
+          {DATE_PRESETS.map(preset => (
+            <button key={preset.label} type="button" onClick={() => applyPreset(preset)}
+              className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-all ${
+                activePreset === preset.label
+                  ? 'bg-[#b20202] text-white shadow-sm'
+                  : 'border border-gray-200 bg-white text-gray-600 hover:border-[#b20202] hover:text-[#b20202]'
+              }`}>
+              {preset.label}
+            </button>
+          ))}
 
-          {/* Status tabs */}
-          <div className="flex shrink-0 rounded-lg border border-gray-200 bg-gray-50 p-0.5">
-            {(['all', 'active', 'voided'] as StatusFilter[]).map(s => (
-              <button key={s} type="button" onClick={() => setStatusFilter(s)}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-all ${
-                  statusFilter === s ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                }`}>
-                {s === 'all' ? 'All' : s === 'active' ? 'Active' : 'Voided'}
-                <span className={`rounded-full px-1.5 py-0.5 text-[10px] leading-none tabular-nums ${
-                  statusFilter === s
-                    ? s === 'voided' ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'
-                    : 'bg-gray-100 text-gray-400'
-                }`}>
-                  {statusCounts[s]}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
+          <div className="mx-1 h-5 w-px shrink-0 bg-gray-200" />
 
-        {/* Row 3 — filter controls */}
-        <div className="flex flex-wrap items-center gap-3 px-5 py-2.5">
           <DateTimeRange
             dateFrom={dateFrom} dateTo={dateTo} timeFrom={timeFrom} timeTo={timeTo}
             onDateFrom={v => { setDateFrom(v); setActivePreset(''); }}
@@ -744,65 +746,62 @@ export default function POSSalesDetails() {
             onTimeFrom={setTimeFrom} onTimeTo={setTimeTo}
             onClear={clearDateRange}
           />
+        </div>
 
-          <div className="h-6 w-px bg-gray-200" />
+        {/* Row 3 — field filters + search */}
+        <div className="flex items-center gap-2 border-t border-gray-100 px-5 py-2">
+          <select value={cashierFilter} onChange={e => setCashierFilter(e.target.value)}
+            className="rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none">
+            <option value="">All cashiers</option>
+            {cashiers.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
 
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Cashier</span>
-            <select value={cashierFilter} onChange={e => setCashierFilter(e.target.value)}
-              className="rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:border-[#b20202] focus:outline-none">
-              <option value="">All cashiers</option>
-              {cashiers.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Payment</span>
-            <select value={methodFilter} onChange={e => setMethodFilter(e.target.value)}
-              className="rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:border-[#b20202] focus:outline-none">
-              <option value="">All methods</option>
-              {Object.entries(METHOD_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
+          <select value={methodFilter} onChange={e => setMethodFilter(e.target.value)}
+            className="rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none">
+            <option value="">All payments</option>
+            {Object.entries(METHOD_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
 
           {hasCostData && (
-            <label className="flex cursor-pointer select-none items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">
+            <label className="flex cursor-pointer select-none items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-50 transition-colors">
               <input type="checkbox" checked={showProfit} onChange={e => setShowProfit(e.target.checked)} className="accent-[#b20202]" />
               Show profit
             </label>
           )}
 
-          <div className="relative ml-auto">
-            <PiMagnifyingGlass className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-            <input ref={searchRef} type="text" value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Search product, cashier, order #…"
-              className="w-60 rounded-md border border-gray-200 bg-white py-1.5 pl-8 pr-8 text-sm focus:border-[#b20202] focus:outline-none" />
-            {search && (
-              <button type="button" onClick={() => setSearch('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+          {/* Active filter chips (inline) */}
+          {filterChips.length > 0 && (
+            <div className="flex items-center gap-1.5 ml-1">
+              {filterChips.map(chip => (
+                <FilterChip key={chip.label} label={chip.label} onRemove={chip.onRemove} />
+              ))}
+            </div>
+          )}
+
+          {/* Search + clear (right-aligned) */}
+          <div className="ml-auto flex items-center gap-2">
+            <div className="relative">
+              <PiMagnifyingGlass className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+              <input ref={searchRef} type="text" value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Search product, cashier, order #…"
+                className="w-56 rounded-md border border-gray-200 bg-white py-1.5 pl-8 pr-7 text-sm focus:border-[#b20202] focus:outline-none" />
+              {search && (
+                <button type="button" onClick={() => setSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  <PiX className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            {(filterChips.length > 0 || cashierFilter || methodFilter || statusFilter !== 'active') && (
+              <button type="button" onClick={clearAll}
+                className="flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-medium text-[#b20202] hover:bg-red-100 transition-colors">
                 <PiX className="h-3.5 w-3.5" />
+                Clear all
               </button>
             )}
           </div>
-
-          {(filterChips.length > 0 || statusFilter !== 'active') && (
-            <button type="button" onClick={clearAll}
-              className="flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-[#b20202] hover:bg-red-100">
-              <PiX className="h-3.5 w-3.5" />
-              Clear all
-            </button>
-          )}
         </div>
-
-        {/* Row 4 — active filter chips (conditional) */}
-        {filterChips.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 border-t border-gray-100 px-5 py-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mr-0.5">Active:</span>
-            {filterChips.map(chip => (
-              <FilterChip key={chip.label} label={chip.label} onRemove={chip.onRemove} />
-            ))}
-          </div>
-        )}
       </div>
 
       {/* ── Summary strip ── */}
