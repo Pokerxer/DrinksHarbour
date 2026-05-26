@@ -5,7 +5,7 @@ import {
   PiArrowsClockwise, PiCurrencyNgn, PiShoppingCart, PiTag,
   PiArrowUp, PiArrowDown, PiArrowsDownUp, PiDownloadSimple, PiX,
   PiMagnifyingGlass, PiCaretLeft, PiCaretRight, PiPercent,
-  PiTrendUp, PiList, PiRows,
+  PiTrendUp, PiList, PiRows, PiClock,
 } from 'react-icons/pi';
 import { useSession } from 'next-auth/react';
 import { posApi } from '@/app/shared/point-of-sale/api';
@@ -46,17 +46,17 @@ interface LineRow {
   orderId: string;
   orderNumber: string;
   receiptNumber: string;
-  date: string;        // ISO
+  date: string;
   cashier: string;
   product: string;
   variant: string;
   qty: number;
   unitPrice: number;
   discount: number;
-  subtotal: number;    // net after discount
-  gross: number;       // unitPrice × qty
-  costPrice: number;   // sizeCostPrice × qty (0 if unknown)
-  profit: number;      // subtotal – costPrice (0 if unknown)
+  subtotal: number;
+  gross: number;
+  costPrice: number;
+  profit: number;
   paymentMethod: string;
   isVoided: boolean;
 }
@@ -72,11 +72,11 @@ interface GroupRow {
   qty: number;
   gross: number;
   discount: number;
-  revenue: number;    // net
+  revenue: number;
   profit: number;
   lineCount: number;
-  orderCount: number; // distinct orders in this group
-  share: number;      // % of total net revenue (0–100)
+  orderCount: number;
+  share: number;
 }
 
 type GroupSortField = 'key' | 'qty' | 'revenue' | 'gross' | 'discount' | 'profit' | 'lineCount' | 'orderCount' | 'share';
@@ -115,11 +115,6 @@ function isTokenExpired(tok: string | null | undefined): boolean {
   } catch { return true; }
 }
 
-function dateKey(iso: string): string {
-  try { return new Date(iso).toISOString().slice(0, 10); }
-  catch { return iso; }
-}
-
 function fmtDate(iso: string): string {
   try {
     return new Date(iso).toLocaleDateString('en-GB', {
@@ -137,7 +132,11 @@ function fmtDateTime(iso: string): string {
   } catch { return iso; }
 }
 
-// Quick date preset helpers
+function toTs(date: string, time: string): number {
+  if (!date) return 0;
+  return new Date(`${date}T${time || '00:00'}:00`).getTime();
+}
+
 function todayStr()     { return new Date().toISOString().slice(0, 10); }
 function offsetDay(n: number) {
   const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10);
@@ -158,12 +157,12 @@ function endOfLastMonth() {
 }
 
 const DATE_PRESETS = [
-  { label: 'Today',       from: () => todayStr(),       to: () => todayStr() },
-  { label: 'Yesterday',   from: () => offsetDay(-1),    to: () => offsetDay(-1) },
-  { label: 'Last 7 days', from: () => offsetDay(-6),    to: () => todayStr() },
-  { label: 'This week',   from: () => startOfWeek(),    to: () => todayStr() },
-  { label: 'This month',  from: () => startOfMonth(),   to: () => todayStr() },
-  { label: 'Last month',  from: () => startOfLastMonth(), to: () => endOfLastMonth() },
+  { label: 'Today',       from: () => todayStr(),         to: () => todayStr(),         tf: '00:00', tt: '23:59' },
+  { label: 'Yesterday',   from: () => offsetDay(-1),      to: () => offsetDay(-1),      tf: '00:00', tt: '23:59' },
+  { label: 'Last 7 days', from: () => offsetDay(-6),      to: () => todayStr(),         tf: '00:00', tt: '23:59' },
+  { label: 'This week',   from: () => startOfWeek(),      to: () => todayStr(),         tf: '00:00', tt: '23:59' },
+  { label: 'This month',  from: () => startOfMonth(),     to: () => todayStr(),         tf: '00:00', tt: '23:59' },
+  { label: 'Last month',  from: () => startOfLastMonth(), to: () => endOfLastMonth(),   tf: '00:00', tt: '23:59' },
 ];
 
 function exportLineCsv(rows: LineRow[], hasCost: boolean) {
@@ -176,15 +175,10 @@ function exportLineCsv(rows: LineRow[], hasCost: boolean) {
   const lines = rows.map(r => {
     const margin = r.profit > 0 && r.subtotal > 0 ? ((r.profit / r.subtotal) * 100).toFixed(1) + '%' : '—';
     return [
-      fmtDateTime(r.date),
-      r.orderNumber, r.receiptNumber,
-      `"${r.cashier}"`,
-      `"${r.product}"`, `"${r.variant}"`,
-      r.qty,
-      r.unitPrice.toFixed(2),
-      r.gross.toFixed(2),
-      r.discount.toFixed(2),
-      r.subtotal.toFixed(2),
+      fmtDateTime(r.date), r.orderNumber, r.receiptNumber,
+      `"${r.cashier}"`, `"${r.product}"`, `"${r.variant}"`,
+      r.qty, r.unitPrice.toFixed(2), r.gross.toFixed(2),
+      r.discount.toFixed(2), r.subtotal.toFixed(2),
       ...(hasCost ? [r.costPrice.toFixed(2), r.profit.toFixed(2), margin] : []),
       METHOD_LABEL[r.paymentMethod] ?? r.paymentMethod,
       r.isVoided ? 'Yes' : 'No',
@@ -221,6 +215,82 @@ function triggerCsvDownload(csv: string, name: string) {
   URL.revokeObjectURL(url);
 }
 
+// ── DateTimeRange sub-component ────────────────────────────────────────────────
+
+function DateTimeRange({
+  dateFrom, dateTo, timeFrom, timeTo,
+  onDateFrom, onDateTo, onTimeFrom, onTimeTo, onClear,
+}: {
+  dateFrom: string; dateTo: string; timeFrom: string; timeTo: string;
+  onDateFrom: (v: string) => void; onDateTo: (v: string) => void;
+  onTimeFrom: (v: string) => void; onTimeTo:  (v: string) => void;
+  onClear: () => void;
+}) {
+  const hasRange = dateFrom || dateTo;
+  return (
+    <div className="flex items-center gap-2">
+      {/* From */}
+      <div className="flex items-center gap-1">
+        <span className="text-xs font-medium text-gray-400 shrink-0">From</span>
+        <div className="flex items-center rounded-md border border-gray-200 bg-white overflow-hidden focus-within:border-[#b20202] focus-within:ring-1 focus-within:ring-[#b20202]/20">
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={e => onDateFrom(e.target.value)}
+            className="border-0 px-2.5 py-1.5 text-sm text-gray-700 focus:outline-none w-[130px] bg-transparent"
+          />
+          <div className="w-px self-stretch bg-gray-200" />
+          <div className="flex items-center gap-1 px-2">
+            <PiClock className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+            <input
+              type="time"
+              value={timeFrom}
+              onChange={e => onTimeFrom(e.target.value)}
+              className="border-0 py-1.5 text-sm text-gray-700 focus:outline-none w-[72px] bg-transparent"
+            />
+          </div>
+        </div>
+      </div>
+
+      <span className="text-gray-300 text-xs">→</span>
+
+      {/* To */}
+      <div className="flex items-center gap-1">
+        <span className="text-xs font-medium text-gray-400 shrink-0">To</span>
+        <div className="flex items-center rounded-md border border-gray-200 bg-white overflow-hidden focus-within:border-[#b20202] focus-within:ring-1 focus-within:ring-[#b20202]/20">
+          <input
+            type="date"
+            value={dateTo}
+            onChange={e => onDateTo(e.target.value)}
+            className="border-0 px-2.5 py-1.5 text-sm text-gray-700 focus:outline-none w-[130px] bg-transparent"
+          />
+          <div className="w-px self-stretch bg-gray-200" />
+          <div className="flex items-center gap-1 px-2">
+            <PiClock className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+            <input
+              type="time"
+              value={timeTo}
+              onChange={e => onTimeTo(e.target.value)}
+              className="border-0 py-1.5 text-sm text-gray-700 focus:outline-none w-[72px] bg-transparent"
+            />
+          </div>
+        </div>
+      </div>
+
+      {hasRange && (
+        <button
+          type="button"
+          onClick={onClear}
+          className="flex h-7 w-7 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          title="Clear date range"
+        >
+          <PiX className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function POSSalesDetails() {
@@ -230,14 +300,16 @@ export default function POSSalesDetails() {
     return isTokenExpired(t) ? null : t;
   }, [session]);
 
-  const [orders, setOrders]     = useState<PosOrder[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState('');
-  const [truncated, setTruncated] = useState(false); // true when exactly 500 returned
+  const [orders, setOrders]         = useState<PosOrder[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState('');
+  const [truncated, setTruncated]   = useState(false);
 
   // Filters
   const [dateFrom, setDateFrom]           = useState('');
   const [dateTo, setDateTo]               = useState('');
+  const [timeFrom, setTimeFrom]           = useState('00:00');
+  const [timeTo, setTimeTo]               = useState('23:59');
   const [activePreset, setActivePreset]   = useState('');
   const [cashierFilter, setCashierFilter] = useState('');
   const [methodFilter, setMethodFilter]   = useState('');
@@ -245,17 +317,15 @@ export default function POSSalesDetails() {
   const [search, setSearch]               = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Sort (line view)
-  const [lineSortField, setLineSortField] = useState<LineSortField>('date');
-  const [lineSortDir, setLineSortDir]     = useState<'asc' | 'desc'>('desc');
-
-  // Sort (grouped view)
+  // Sort
+  const [lineSortField, setLineSortField]   = useState<LineSortField>('date');
+  const [lineSortDir, setLineSortDir]       = useState<'asc' | 'desc'>('desc');
   const [groupSortField, setGroupSortField] = useState<GroupSortField>('revenue');
   const [groupSortDir, setGroupSortDir]     = useState<'asc' | 'desc'>('desc');
 
   // View
-  const [viewMode, setViewMode] = useState<ViewMode>('lines');
-  const [groupBy, setGroupBy]   = useState<GroupByKey>('product');
+  const [viewMode, setViewMode]     = useState<ViewMode>('lines');
+  const [groupBy, setGroupBy]       = useState<GroupByKey>('product');
   const [showProfit, setShowProfit] = useState(false);
 
   // Pagination
@@ -277,9 +347,7 @@ export default function POSSalesDetails() {
   }, [token, sessionStatus]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
-
-  // Reset to page 1 whenever filters/sort change
-  useEffect(() => { setPage(1); }, [dateFrom, dateTo, cashierFilter, methodFilter, showVoided, search, lineSortField, lineSortDir]);
+  useEffect(() => { setPage(1); }, [dateFrom, dateTo, timeFrom, timeTo, cashierFilter, methodFilter, showVoided, search, lineSortField, lineSortDir]);
 
   // ── Build flat line rows ───────────────────────────────────────────────────
 
@@ -297,22 +365,13 @@ export default function POSSalesDetails() {
         const costPrice = (item.sizeCostPrice ?? 0) * item.quantity;
         const profit    = costPrice > 0 ? subtotal - costPrice : 0;
         rows.push({
-          orderId:       o._id,
-          orderNumber:   o.orderNumber ?? o._id.slice(-6).toUpperCase(),
-          receiptNumber: o.receiptNumber ?? '',
-          date:          o.placedAt || o.createdAt,
-          cashier,
-          product:       item.name,
-          variant:       item.variant ?? '',
-          qty:           item.quantity,
-          unitPrice:     item.priceAtPurchase,
-          discount,
-          subtotal,
-          gross,
-          costPrice,
-          profit,
+          orderId: o._id, orderNumber: o.orderNumber ?? o._id.slice(-6).toUpperCase(),
+          receiptNumber: o.receiptNumber ?? '', date: o.placedAt || o.createdAt,
+          cashier, product: item.name, variant: item.variant ?? '',
+          qty: item.quantity, unitPrice: item.priceAtPurchase,
+          discount, subtotal, gross, costPrice, profit,
           paymentMethod: o.paymentMethod,
-          isVoided:      !!(o.isVoided || o.status === 'voided'),
+          isVoided: !!(o.isVoided || o.status === 'voided'),
         });
       }
     }
@@ -320,11 +379,7 @@ export default function POSSalesDetails() {
   }, [orders]);
 
   const hasCostData = useMemo(() => allRows.some(r => r.costPrice > 0), [allRows]);
-
-  // Unique cashiers for dropdown
-  const cashiers = useMemo(() => {
-    return Array.from(new Set(allRows.map(r => r.cashier))).sort();
-  }, [allRows]);
+  const cashiers    = useMemo(() => Array.from(new Set(allRows.map(r => r.cashier))).sort(), [allRows]);
 
   // ── Apply filters ──────────────────────────────────────────────────────────
 
@@ -334,17 +389,23 @@ export default function POSSalesDetails() {
       if (!showVoided && r.isVoided) return false;
       if (cashierFilter && r.cashier !== cashierFilter) return false;
       if (methodFilter  && r.paymentMethod !== methodFilter) return false;
-      if (dateFrom && dateKey(r.date) < dateFrom) return false;
-      if (dateTo   && dateKey(r.date) > dateTo)   return false;
+      if (dateFrom) {
+        const fromTs = toTs(dateFrom, timeFrom);
+        if (new Date(r.date).getTime() < fromTs) return false;
+      }
+      if (dateTo) {
+        const toTs_ = toTs(dateTo, timeTo) + 59_000;
+        if (new Date(r.date).getTime() > toTs_) return false;
+      }
       if (q) {
-        const haystack = `${r.product} ${r.variant} ${r.cashier} ${r.orderNumber} ${r.receiptNumber}`.toLowerCase();
-        if (!haystack.includes(q)) return false;
+        const hay = `${r.product} ${r.variant} ${r.cashier} ${r.orderNumber} ${r.receiptNumber}`.toLowerCase();
+        if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [allRows, showVoided, cashierFilter, methodFilter, dateFrom, dateTo, search]);
+  }, [allRows, showVoided, cashierFilter, methodFilter, dateFrom, dateTo, timeFrom, timeTo, search]);
 
-  // ── Sort (line view) ──────────────────────────────────────────────────────
+  // ── Sort ───────────────────────────────────────────────────────────────────
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
@@ -359,7 +420,7 @@ export default function POSSalesDetails() {
     });
   }, [filtered, lineSortField, lineSortDir]);
 
-  // ── Grouped rows ──────────────────────────────────────────────────────────
+  // ── Grouped ────────────────────────────────────────────────────────────────
 
   const grouped = useMemo<GroupRow[]>(() => {
     const totalRev = filtered.reduce((s, r) => s + r.subtotal, 0);
@@ -371,7 +432,7 @@ export default function POSSalesDetails() {
         groupBy === 'variant'        ? (r.variant || '(no variant)') :
         groupBy === 'cashier'        ? r.cashier :
         groupBy === 'payment_method' ? (METHOD_LABEL[r.paymentMethod] ?? r.paymentMethod) :
-        /* date */                     fmtDate(r.date);
+        fmtDate(r.date);
 
       const entry = map.get(key);
       if (entry) {
@@ -384,18 +445,15 @@ export default function POSSalesDetails() {
         entry.orderIds.add(r.orderId);
       } else {
         map.set(key, {
-          row: {
-            key, qty: r.qty, gross: r.gross, discount: r.discount,
-            revenue: r.subtotal, profit: r.profit, lineCount: 1, orderCount: 0, share: 0,
-          },
+          row: { key, qty: r.qty, gross: r.gross, discount: r.discount,
+                 revenue: r.subtotal, profit: r.profit, lineCount: 1, orderCount: 0, share: 0 },
           orderIds: new Set([r.orderId]),
         });
       }
     }
 
     const rows: GroupRow[] = Array.from(map.entries()).map(([, { row, orderIds }]) => ({
-      ...row,
-      orderCount: orderIds.size,
+      ...row, orderCount: orderIds.size,
       share: totalRev > 0 ? (row.revenue / totalRev) * 100 : 0,
     }));
 
@@ -414,15 +472,15 @@ export default function POSSalesDetails() {
   // ── Summary ────────────────────────────────────────────────────────────────
 
   const summary = useMemo(() => {
-    const revenue   = filtered.reduce((s, r) => s + r.subtotal, 0);
-    const items     = filtered.reduce((s, r) => s + r.qty, 0);
-    const discount  = filtered.reduce((s, r) => s + r.discount, 0);
-    const gross     = filtered.reduce((s, r) => s + r.gross, 0);
-    const profit    = filtered.reduce((s, r) => s + r.profit, 0);
-    const orderIds  = new Set(filtered.map(r => r.orderId));
-    const orders    = orderIds.size;
-    const avgOrder  = orders > 0 ? revenue / orders : 0;
-    return { revenue, items, discount, gross, profit, orders, avgOrder };
+    const revenue  = filtered.reduce((s, r) => s + r.subtotal, 0);
+    const items    = filtered.reduce((s, r) => s + r.qty, 0);
+    const discount = filtered.reduce((s, r) => s + r.discount, 0);
+    const gross    = filtered.reduce((s, r) => s + r.gross, 0);
+    const profit   = filtered.reduce((s, r) => s + r.profit, 0);
+    const orderIds = new Set(filtered.map(r => r.orderId));
+    const ordersCount = orderIds.size;
+    const avgOrder = ordersCount > 0 ? revenue / ordersCount : 0;
+    return { revenue, items, discount, gross, profit, orders: ordersCount, avgOrder };
   }, [filtered]);
 
   // ── Pagination ─────────────────────────────────────────────────────────────
@@ -430,7 +488,7 @@ export default function POSSalesDetails() {
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const paginated  = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  // ── Sort helpers ───────────────────────────────────────────────────────────
+  // ── Helpers ────────────────────────────────────────────────────────────────
 
   function toggleLineSort(field: LineSortField) {
     if (lineSortField === field) setLineSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -449,23 +507,25 @@ export default function POSSalesDetails() {
       : <PiArrowDown className="h-3 w-3 text-[#b20202]" />;
   }
 
-  // ── Filter helpers ─────────────────────────────────────────────────────────
-
   function applyPreset(preset: typeof DATE_PRESETS[0]) {
-    setDateFrom(preset.from());
-    setDateTo(preset.to());
+    setDateFrom(preset.from()); setDateTo(preset.to());
+    setTimeFrom(preset.tf); setTimeTo(preset.tt);
     setActivePreset(preset.label);
   }
 
-  function clearFilters() {
-    setDateFrom(''); setDateTo(''); setActivePreset('');
+  function clearDateRange() {
+    setDateFrom(''); setDateTo('');
+    setTimeFrom('00:00'); setTimeTo('23:59');
+    setActivePreset('');
+  }
+
+  function clearAllFilters() {
+    clearDateRange();
     setCashierFilter(''); setMethodFilter('');
     setShowVoided(false); setSearch('');
   }
 
   const hasFilters = dateFrom || dateTo || cashierFilter || methodFilter || showVoided || search;
-
-  // ── Group label ────────────────────────────────────────────────────────────
 
   const groupLabel =
     groupBy === 'product'        ? 'Product / Variant' :
@@ -473,8 +533,6 @@ export default function POSSalesDetails() {
     groupBy === 'cashier'        ? 'Cashier' :
     groupBy === 'payment_method' ? 'Payment Method' :
     'Date';
-
-  // ── Export ─────────────────────────────────────────────────────────────────
 
   function handleExport() {
     if (viewMode === 'grouped') exportGroupedCsv(grouped, groupLabel, hasCostData && showProfit);
@@ -484,290 +542,275 @@ export default function POSSalesDetails() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="flex min-h-screen flex-col bg-gray-50">
       <POSNavHeader />
 
-      <div className="mx-auto max-w-screen-2xl px-4 py-6">
+      {/* ── Sticky control bar ── */}
+      <div className="sticky top-0 z-10 shrink-0 border-b border-gray-200 bg-white shadow-sm">
 
-        {/* ── Page header ── */}
-        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900">Sales Details</h1>
-            <p className="mt-0.5 text-sm text-gray-500">
-              Line-item breakdown of all POS sales
-              {orders.length > 0 && (
-                <span className="ml-1 text-gray-400">
-                  — {orders.length.toLocaleString()} order{orders.length !== 1 ? 's' : ''} loaded
+        {/* Row 1 — title + view toggle + actions */}
+        <div className="flex items-center justify-between gap-4 border-b border-gray-100 px-5 py-3">
+          <div className="min-w-0">
+            <h1 className="text-base font-semibold text-gray-900">Sales Details</h1>
+            <p className="text-xs text-gray-400">
+              {loading ? 'Loading…' : (
+                <>
+                  {orders.length.toLocaleString()} order{orders.length !== 1 ? 's' : ''} loaded
                   {truncated && (
-                    <button
-                      type="button"
-                      onClick={() => fetchOrders(true)}
-                      className="ml-2 text-[#b20202] underline hover:no-underline"
-                    >
-                      Load all
-                    </button>
+                    <> · <button type="button" onClick={() => fetchOrders(true)} className="text-[#b20202] underline hover:no-underline">Load all</button></>
                   )}
-                </span>
+                  {filtered.length !== allRows.length && (
+                    <> · <span className="text-gray-600 font-medium">{filtered.length.toLocaleString()} lines shown</span></>
+                  )}
+                </>
               )}
             </p>
           </div>
+
           <div className="flex items-center gap-2">
+            {/* View toggle */}
+            <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+              {(['lines', 'grouped'] as ViewMode[]).map(m => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setViewMode(m)}
+                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                    viewMode === m
+                      ? 'bg-[#b20202] text-white shadow-sm'
+                      : 'text-gray-500 hover:text-gray-800'
+                  }`}
+                >
+                  {m === 'lines'
+                    ? <><PiList className="h-3.5 w-3.5" />Line Items</>
+                    : <><PiRows className="h-3.5 w-3.5" />Grouped</>}
+                </button>
+              ))}
+            </div>
+
+            {viewMode === 'grouped' && (
+              <select
+                value={groupBy}
+                onChange={e => setGroupBy(e.target.value as GroupByKey)}
+                className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none"
+              >
+                <option value="product">By Product</option>
+                <option value="variant">By Variant</option>
+                <option value="cashier">By Cashier</option>
+                <option value="payment_method">By Payment</option>
+                <option value="date">By Date</option>
+              </select>
+            )}
+
+            <div className="h-5 w-px bg-gray-200" />
+
             <button
               type="button"
               onClick={() => fetchOrders()}
               disabled={loading}
-              className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
             >
-              <PiArrowsClockwise className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              <PiArrowsClockwise className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
             <button
               type="button"
               onClick={handleExport}
               disabled={(viewMode === 'lines' ? sorted.length : grouped.length) === 0}
-              className="flex items-center gap-1.5 rounded-md bg-[#b20202] px-3 py-1.5 text-sm text-white hover:bg-[#9a0101] disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#9a0101] disabled:opacity-50"
             >
-              <PiDownloadSimple className="h-4 w-4" />
+              <PiDownloadSimple className="h-3.5 w-3.5" />
               Export CSV
             </button>
           </div>
         </div>
 
-        {/* ── Summary strip ── */}
-        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          {[
-            { icon: PiCurrencyNgn,  label: 'Gross Revenue',   value: formatCurrency(summary.gross),    sub: `before ${formatCurrency(summary.discount)} disc.`, color: 'text-gray-500' },
-            { icon: PiTrendUp,      label: 'Net Revenue',      value: formatCurrency(summary.revenue),  sub: 'after discounts',                                   color: 'text-green-600' },
-            { icon: PiTag,          label: 'Total Discount',   value: formatCurrency(summary.discount), sub: summary.gross > 0 ? `${((summary.discount / summary.gross) * 100).toFixed(1)}% of gross` : '', color: 'text-orange-500' },
-            { icon: PiShoppingCart, label: 'Items Sold',       value: summary.items.toLocaleString(),   sub: `${filtered.length} line${filtered.length !== 1 ? 's' : ''}`, color: 'text-blue-600' },
-            { icon: PiRows,         label: 'Distinct Orders',  value: summary.orders.toLocaleString(),  sub: `avg ${formatCurrency(summary.avgOrder)}/order`,     color: 'text-purple-600' },
-            ...(hasCostData
-              ? [{ icon: PiPercent, label: 'Est. Profit', value: formatCurrency(summary.profit), sub: summary.revenue > 0 ? `${((summary.profit / summary.revenue) * 100).toFixed(1)}% margin` : '', color: 'text-teal-600' }]
-              : [{ icon: PiCurrencyNgn, label: 'Avg Order Value', value: formatCurrency(summary.avgOrder), sub: `across ${summary.orders} orders`, color: 'text-indigo-500' }]
-            ),
-          ].map(({ icon: Icon, label, value, sub, color }) => (
-            <div key={label} className="rounded-lg border border-gray-200 bg-white p-3.5">
-              <div className="flex items-center gap-1.5">
-                <Icon className={`h-4 w-4 ${color}`} />
-                <span className="text-xs text-gray-500">{label}</span>
-              </div>
-              <p className="mt-1.5 text-base font-semibold text-gray-900 leading-tight">{value}</p>
-              {sub && <p className="mt-0.5 text-[11px] text-gray-400">{sub}</p>}
-            </div>
+        {/* Row 2 — quick presets */}
+        <div className="flex items-center gap-1.5 px-5 py-2.5 border-b border-gray-100">
+          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-gray-400 mr-1">Quick:</span>
+          {DATE_PRESETS.map(preset => (
+            <button
+              key={preset.label}
+              type="button"
+              onClick={() => applyPreset(preset)}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
+                activePreset === preset.label
+                  ? 'bg-[#b20202] text-white shadow-sm'
+                  : 'border border-gray-200 bg-white text-gray-600 hover:border-[#b20202] hover:text-[#b20202]'
+              }`}
+            >
+              {preset.label}
+            </button>
           ))}
         </div>
 
-        {/* ── Filters row ── */}
-        <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4 space-y-3">
+        {/* Row 3 — filter controls */}
+        <div className="flex flex-wrap items-center gap-3 px-5 py-2.5">
 
-          {/* Quick date presets */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs font-medium text-gray-500 mr-1">Quick:</span>
-            {DATE_PRESETS.map(preset => (
-              <button
-                key={preset.label}
-                type="button"
-                onClick={() => applyPreset(preset)}
-                className={`rounded-full px-2.5 py-0.5 text-xs transition-colors ${
-                  activePreset === preset.label
-                    ? 'bg-[#b20202] text-white'
-                    : 'border border-gray-200 text-gray-600 hover:border-[#b20202] hover:text-[#b20202]'
-                }`}
-              >
-                {preset.label}
-              </button>
-            ))}
+          {/* Date + time range */}
+          <DateTimeRange
+            dateFrom={dateFrom} dateTo={dateTo}
+            timeFrom={timeFrom} timeTo={timeTo}
+            onDateFrom={v => { setDateFrom(v); setActivePreset(''); }}
+            onDateTo={v => { setDateTo(v); setActivePreset(''); }}
+            onTimeFrom={setTimeFrom}
+            onTimeTo={setTimeTo}
+            onClear={clearDateRange}
+          />
+
+          <div className="h-6 w-px bg-gray-200" />
+
+          {/* Cashier */}
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Cashier</span>
+            <select
+              value={cashierFilter}
+              onChange={e => setCashierFilter(e.target.value)}
+              className="rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:border-[#b20202] focus:outline-none"
+            >
+              <option value="">All cashiers</option>
+              {cashiers.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
 
-          {/* Detailed filters */}
-          <div className="flex flex-wrap items-end gap-3">
-            {/* Date range */}
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-500">From</label>
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={e => { setDateFrom(e.target.value); setActivePreset(''); }}
-                className="rounded-md border border-gray-200 px-3 py-1.5 text-sm focus:border-[#b20202] focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-500">To</label>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={e => { setDateTo(e.target.value); setActivePreset(''); }}
-                className="rounded-md border border-gray-200 px-3 py-1.5 text-sm focus:border-[#b20202] focus:outline-none"
-              />
-            </div>
+          {/* Payment */}
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Payment</span>
+            <select
+              value={methodFilter}
+              onChange={e => setMethodFilter(e.target.value)}
+              className="rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:border-[#b20202] focus:outline-none"
+            >
+              <option value="">All methods</option>
+              {Object.entries(METHOD_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
 
-            {/* Cashier */}
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-500">Cashier</label>
-              <select
-                value={cashierFilter}
-                onChange={e => setCashierFilter(e.target.value)}
-                className="rounded-md border border-gray-200 px-3 py-1.5 text-sm focus:border-[#b20202] focus:outline-none"
-              >
-                <option value="">All cashiers</option>
-                {cashiers.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
+          <div className="h-6 w-px bg-gray-200" />
 
-            {/* Payment method */}
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-500">Payment</label>
-              <select
-                value={methodFilter}
-                onChange={e => setMethodFilter(e.target.value)}
-                className="rounded-md border border-gray-200 px-3 py-1.5 text-sm focus:border-[#b20202] focus:outline-none"
-              >
-                <option value="">All methods</option>
-                {Object.entries(METHOD_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-            </div>
+          {/* Toggles */}
+          <label className="flex cursor-pointer items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 select-none">
+            <input type="checkbox" checked={showVoided} onChange={e => setShowVoided(e.target.checked)} className="accent-[#b20202]" />
+            Include voided
+          </label>
 
-            {/* Include voided */}
-            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
-              <input
-                type="checkbox"
-                checked={showVoided}
-                onChange={e => setShowVoided(e.target.checked)}
-                className="accent-[#b20202]"
-              />
-              Include voided
+          {hasCostData && (
+            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 select-none">
+              <input type="checkbox" checked={showProfit} onChange={e => setShowProfit(e.target.checked)} className="accent-[#b20202]" />
+              Show profit
             </label>
+          )}
 
-            {/* Show profit */}
-            {hasCostData && (
-              <label className="flex cursor-pointer items-center gap-2 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
-                <input
-                  type="checkbox"
-                  checked={showProfit}
-                  onChange={e => setShowProfit(e.target.checked)}
-                  className="accent-[#b20202]"
-                />
-                Show profit
-              </label>
-            )}
-
-            {/* Clear filters */}
-            {hasFilters && (
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-sm text-[#b20202] hover:bg-red-100"
-              >
-                <PiX className="h-3.5 w-3.5" />
-                Clear filters
-              </button>
-            )}
-
-            {/* View toggle (right-aligned) */}
-            <div className="ml-auto flex items-center gap-2 flex-wrap">
-              <div className="flex rounded-md border border-gray-200 bg-gray-50">
-                {(['lines', 'grouped'] as ViewMode[]).map(m => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setViewMode(m)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
-                      viewMode === m
-                        ? 'rounded-md bg-[#b20202] text-white'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    {m === 'lines' ? <><PiList className="h-3.5 w-3.5" />Line Items</> : <><PiRows className="h-3.5 w-3.5" />Grouped</>}
-                  </button>
-                ))}
-              </div>
-
-              {viewMode === 'grouped' && (
-                <select
-                  value={groupBy}
-                  onChange={e => setGroupBy(e.target.value as GroupByKey)}
-                  className="rounded-md border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
-                >
-                  <option value="product">By Product</option>
-                  <option value="variant">By Variant</option>
-                  <option value="cashier">By Cashier</option>
-                  <option value="payment_method">By Payment</option>
-                  <option value="date">By Date</option>
-                </select>
-              )}
-            </div>
-          </div>
-
-          {/* Search box */}
-          <div className="relative">
-            <PiMagnifyingGlass className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          {/* Search */}
+          <div className="relative ml-auto">
+            <PiMagnifyingGlass className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
             <input
               ref={searchRef}
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search product, cashier, order #…"
-              className="w-full rounded-md border border-gray-200 py-1.5 pl-9 pr-8 text-sm focus:border-[#b20202] focus:outline-none"
+              className="rounded-md border border-gray-200 py-1.5 pl-8 pr-8 text-sm focus:border-[#b20202] focus:outline-none w-64"
             />
             {search && (
-              <button
-                type="button"
-                onClick={() => setSearch('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
+              <button type="button" onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                 <PiX className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
-        </div>
 
-        {/* ── Content ── */}
+          {/* Clear all */}
+          {hasFilters && (
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-[#b20202] hover:bg-red-100"
+            >
+              <PiX className="h-3.5 w-3.5" />
+              Clear all
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Summary strip ── */}
+      <div className="shrink-0 border-b border-gray-200 bg-white">
+        <div className="grid divide-x divide-gray-100" style={{ gridTemplateColumns: hasCostData ? 'repeat(6, 1fr)' : 'repeat(5, 1fr)' }}>
+          {[
+            { icon: PiCurrencyNgn,  label: 'Gross Revenue',  value: formatCurrency(summary.gross),    sub: `−${formatCurrency(summary.discount)} disc.`, color: 'text-gray-400' },
+            { icon: PiTrendUp,      label: 'Net Revenue',    value: formatCurrency(summary.revenue),  sub: 'after discounts',                             color: 'text-green-500' },
+            { icon: PiTag,          label: 'Total Discount', value: formatCurrency(summary.discount), sub: summary.gross > 0 ? `${((summary.discount / summary.gross) * 100).toFixed(1)}% of gross` : '', color: 'text-orange-400' },
+            { icon: PiShoppingCart, label: 'Items Sold',     value: summary.items.toLocaleString(),   sub: `${filtered.length} line${filtered.length !== 1 ? 's' : ''}`, color: 'text-blue-500' },
+            { icon: PiRows,         label: 'Distinct Orders',value: summary.orders.toLocaleString(),  sub: `avg ${formatCurrency(summary.avgOrder)}/order`, color: 'text-purple-500' },
+            ...(hasCostData
+              ? [{ icon: PiPercent, label: 'Est. Profit', value: formatCurrency(summary.profit), sub: summary.revenue > 0 ? `${((summary.profit / summary.revenue) * 100).toFixed(1)}% margin` : '', color: 'text-teal-500' }]
+              : []
+            ),
+          ].map(({ icon: Icon, label, value, sub, color }) => (
+            <div key={label} className="flex items-center gap-3 px-5 py-3">
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-50 ${color}`}>
+                <Icon className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] text-gray-400">{label}</p>
+                <p className="text-sm font-semibold text-gray-900 tabular-nums">{value}</p>
+                {sub && <p className="text-[10px] text-gray-400 tabular-nums">{sub}</p>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Content ── */}
+      <div className="flex-1 px-5 py-4">
+
         {loading ? (
-          /* Skeleton */
-          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-            {Array.from({ length: 8 }).map((_, i) => (
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+            <div className="border-b border-gray-100 bg-gray-50 px-4 py-3 flex gap-4">
+              {Array.from({ length: 6 }).map((_, j) => (
+                <div key={j} className="h-3 flex-1 animate-pulse rounded bg-gray-200" />
+              ))}
+            </div>
+            {Array.from({ length: 10 }).map((_, i) => (
               <div key={i} className="flex gap-4 border-b border-gray-50 px-4 py-3">
-                {Array.from({ length: 8 }).map((_, j) => (
-                  <div key={j} className="h-4 flex-1 animate-pulse rounded bg-gray-100" style={{ maxWidth: j === 0 ? 90 : undefined }} />
+                {Array.from({ length: 6 }).map((_, j) => (
+                  <div key={j} className="h-3.5 flex-1 animate-pulse rounded bg-gray-100" style={{ maxWidth: j === 0 ? 90 : undefined }} />
                 ))}
               </div>
             ))}
           </div>
         ) : error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center text-sm text-red-600">
-            {error}
-            <button onClick={() => fetchOrders()} className="ml-3 underline">Retry</button>
+          <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center">
+            <p className="text-sm font-medium text-red-600">{error}</p>
+            <button onClick={() => fetchOrders()} className="mt-2 text-xs text-[#b20202] underline">Retry</button>
           </div>
         ) : viewMode === 'lines' ? (
           <>
-            <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-gray-100 bg-gray-50 text-xs font-medium text-gray-500">
-                      {(
-                        [
-                          { field: 'date'          as LineSortField, label: 'Date/Time',     align: 'text-left'   },
-                          { field: 'orderNumber'   as LineSortField, label: 'Order #',       align: 'text-left'   },
-                          { field: 'cashier'       as LineSortField, label: 'Cashier',       align: 'text-left'   },
-                          { field: 'product'       as LineSortField, label: 'Product',       align: 'text-left'   },
-                          { field: 'variant'       as LineSortField, label: 'Variant',       align: 'text-left'   },
-                          { field: 'qty'           as LineSortField, label: 'Qty',           align: 'text-center' },
-                          { field: 'unitPrice'     as LineSortField, label: 'Unit Price',    align: 'text-right'  },
-                          { field: 'gross'         as LineSortField, label: 'Gross',         align: 'text-right'  },
-                          { field: 'discount'      as LineSortField, label: 'Discount',      align: 'text-right'  },
-                          { field: 'subtotal'      as LineSortField, label: 'Net Total',     align: 'text-right'  },
-                          ...(showProfit && hasCostData
-                            ? [{ field: 'profit' as LineSortField, label: 'Profit', align: 'text-right' }]
-                            : []
-                          ),
-                          { field: 'paymentMethod' as LineSortField, label: 'Payment',       align: 'text-left'   },
-                        ]
-                      ).map(({ field, label, align }) => (
+                    <tr className="border-b border-gray-100 bg-gray-50/80 text-xs font-medium text-gray-500">
+                      {([
+                        { field: 'date'          as LineSortField, label: 'Date/Time',  align: 'text-left'   },
+                        { field: 'orderNumber'   as LineSortField, label: 'Order #',    align: 'text-left'   },
+                        { field: 'cashier'       as LineSortField, label: 'Cashier',    align: 'text-left'   },
+                        { field: 'product'       as LineSortField, label: 'Product',    align: 'text-left'   },
+                        { field: 'variant'       as LineSortField, label: 'Variant',    align: 'text-left'   },
+                        { field: 'qty'           as LineSortField, label: 'Qty',        align: 'text-center' },
+                        { field: 'unitPrice'     as LineSortField, label: 'Unit Price', align: 'text-right'  },
+                        { field: 'gross'         as LineSortField, label: 'Gross',      align: 'text-right'  },
+                        { field: 'discount'      as LineSortField, label: 'Discount',   align: 'text-right'  },
+                        { field: 'subtotal'      as LineSortField, label: 'Net Total',  align: 'text-right'  },
+                        ...(showProfit && hasCostData
+                          ? [{ field: 'profit' as LineSortField, label: 'Profit', align: 'text-right' }]
+                          : []),
+                        { field: 'paymentMethod' as LineSortField, label: 'Payment',   align: 'text-left'   },
+                      ]).map(({ field, label, align }) => (
                         <th
                           key={field}
                           onClick={() => toggleLineSort(field)}
-                          className={`cursor-pointer select-none px-4 py-3 ${align} hover:text-gray-700`}
+                          className={`cursor-pointer select-none whitespace-nowrap px-4 py-3 ${align} hover:text-gray-800`}
                         >
                           <span className="inline-flex items-center gap-1">
                             {label}
@@ -780,7 +823,7 @@ export default function POSSalesDetails() {
                   <tbody>
                     {paginated.length === 0 ? (
                       <tr>
-                        <td colSpan={12} className="py-16 text-center text-sm text-gray-400">
+                        <td colSpan={12} className="py-20 text-center text-sm text-gray-400">
                           {allRows.length === 0
                             ? 'No sales data found. Try refreshing.'
                             : 'No line items match the current filters.'}
@@ -798,16 +841,14 @@ export default function POSSalesDetails() {
                             {fmtDateTime(row.date)}
                           </td>
                           <td className="whitespace-nowrap px-4 py-2.5">
-                            <span className="font-mono text-xs font-medium text-gray-800">{row.orderNumber}</span>
+                            <span className="font-mono text-xs font-semibold text-gray-800">{row.orderNumber}</span>
                             {row.isVoided && (
-                              <span className="ml-1.5 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-600">
-                                VOID
-                              </span>
+                              <span className="ml-1.5 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-600">VOID</span>
                             )}
                           </td>
                           <td className="whitespace-nowrap px-4 py-2.5 text-sm text-gray-700">{row.cashier}</td>
-                          <td className="px-4 py-2.5 font-medium text-gray-900 max-w-[180px] truncate">{row.product}</td>
-                          <td className="px-4 py-2.5 text-sm text-gray-500">{row.variant || '—'}</td>
+                          <td className="max-w-[180px] truncate px-4 py-2.5 font-medium text-gray-900">{row.product}</td>
+                          <td className="px-4 py-2.5 text-sm text-gray-500">{row.variant || <span className="text-gray-300">—</span>}</td>
                           <td className="px-4 py-2.5 text-center text-sm text-gray-700 tabular-nums">{row.qty}</td>
                           <td className="whitespace-nowrap px-4 py-2.5 text-right text-sm text-gray-700 tabular-nums">
                             {formatCurrency(row.unitPrice)}
@@ -818,19 +859,16 @@ export default function POSSalesDetails() {
                           <td className="whitespace-nowrap px-4 py-2.5 text-right text-sm tabular-nums">
                             {row.discount > 0
                               ? <span className="text-orange-500">−{formatCurrency(row.discount)}</span>
-                              : <span className="text-gray-300">—</span>
-                            }
+                              : <span className="text-gray-300">—</span>}
                           </td>
                           <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold text-gray-900 tabular-nums">
                             {formatCurrency(row.subtotal)}
                           </td>
                           {showProfit && hasCostData && (
                             <td className="whitespace-nowrap px-4 py-2.5 text-right text-sm tabular-nums">
-                              {row.profit > 0 ? (
-                                <span className="text-teal-600">{formatCurrency(row.profit)}</span>
-                              ) : (
-                                <span className="text-gray-300">—</span>
-                              )}
+                              {row.profit > 0
+                                ? <span className="text-teal-600">{formatCurrency(row.profit)}</span>
+                                : <span className="text-gray-300">—</span>}
                             </td>
                           )}
                           <td className="whitespace-nowrap px-4 py-2.5">
@@ -845,8 +883,8 @@ export default function POSSalesDetails() {
                   {sorted.length > 0 && (
                     <tfoot>
                       <tr className="border-t-2 border-gray-200 bg-gray-50 text-xs font-semibold text-gray-700">
-                        <td colSpan={5} className="px-4 py-3 text-gray-500">
-                          Page {page} / {totalPages} — {sorted.length} line{sorted.length !== 1 ? 's' : ''}
+                        <td colSpan={5} className="px-4 py-3 text-gray-400">
+                          Page {page} / {totalPages} — {sorted.length.toLocaleString()} line{sorted.length !== 1 ? 's' : ''}
                         </td>
                         <td className="px-4 py-3 text-center tabular-nums">
                           {sorted.reduce((s, r) => s + r.qty, 0)}
@@ -878,30 +916,29 @@ export default function POSSalesDetails() {
             {totalPages > 1 && (
               <div className="mt-3 flex items-center justify-between">
                 <p className="text-xs text-gray-500">
-                  Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, sorted.length)} of {sorted.length}
+                  Showing {((page - 1) * PAGE_SIZE + 1).toLocaleString()}–{Math.min(page * PAGE_SIZE, sorted.length).toLocaleString()} of {sorted.length.toLocaleString()}
                 </p>
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
                     onClick={() => setPage(p => Math.max(1, p - 1))}
                     disabled={page === 1}
-                    className="rounded-md border border-gray-200 p-1.5 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                    className="rounded-lg border border-gray-200 p-1.5 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
                   >
                     <PiCaretLeft className="h-4 w-4" />
                   </button>
                   {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
-                    // Show pages around current
                     let p: number;
-                    if (totalPages <= 7) p = i + 1;
-                    else if (page <= 4) p = i + 1;
+                    if (totalPages <= 7)          p = i + 1;
+                    else if (page <= 4)           p = i + 1;
                     else if (page >= totalPages - 3) p = totalPages - 6 + i;
-                    else p = page - 3 + i;
+                    else                          p = page - 3 + i;
                     return (
                       <button
                         key={p}
                         type="button"
                         onClick={() => setPage(p)}
-                        className={`min-w-[32px] rounded-md border px-2 py-1 text-xs ${
+                        className={`min-w-[32px] rounded-lg border px-2 py-1 text-xs font-medium ${
                           page === p
                             ? 'border-[#b20202] bg-[#b20202] text-white'
                             : 'border-gray-200 text-gray-600 hover:bg-gray-50'
@@ -915,7 +952,7 @@ export default function POSSalesDetails() {
                     type="button"
                     onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                     disabled={page === totalPages}
-                    className="rounded-md border border-gray-200 p-1.5 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                    className="rounded-lg border border-gray-200 p-1.5 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
                   >
                     <PiCaretRight className="h-4 w-4" />
                   </button>
@@ -925,31 +962,28 @@ export default function POSSalesDetails() {
           </>
         ) : (
           /* ── Grouped view ── */
-          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50 text-xs font-medium text-gray-500">
-                    {(
-                      [
-                        { field: 'key'        as GroupSortField, label: groupLabel,        align: 'text-left'   },
-                        { field: 'qty'        as GroupSortField, label: 'Qty Sold',        align: 'text-center' },
-                        { field: 'gross'      as GroupSortField, label: 'Gross Revenue',   align: 'text-right'  },
-                        { field: 'discount'   as GroupSortField, label: 'Discount',        align: 'text-right'  },
-                        { field: 'revenue'    as GroupSortField, label: 'Net Revenue',     align: 'text-right'  },
-                        ...(showProfit && hasCostData
-                          ? [{ field: 'profit' as GroupSortField, label: 'Profit', align: 'text-right' }]
-                          : []
-                        ),
-                        { field: 'share'      as GroupSortField, label: 'Revenue Share',  align: 'text-left'   },
-                        { field: 'lineCount'  as GroupSortField, label: 'Lines',          align: 'text-center' },
-                        { field: 'orderCount' as GroupSortField, label: 'Orders',         align: 'text-center' },
-                      ]
-                    ).map(({ field, label, align }) => (
+                  <tr className="border-b border-gray-100 bg-gray-50/80 text-xs font-medium text-gray-500">
+                    {([
+                      { field: 'key'        as GroupSortField, label: groupLabel,       align: 'text-left'   },
+                      { field: 'qty'        as GroupSortField, label: 'Qty Sold',       align: 'text-center' },
+                      { field: 'gross'      as GroupSortField, label: 'Gross Revenue',  align: 'text-right'  },
+                      { field: 'discount'   as GroupSortField, label: 'Discount',       align: 'text-right'  },
+                      { field: 'revenue'    as GroupSortField, label: 'Net Revenue',    align: 'text-right'  },
+                      ...(showProfit && hasCostData
+                        ? [{ field: 'profit' as GroupSortField, label: 'Profit', align: 'text-right' }]
+                        : []),
+                      { field: 'share'      as GroupSortField, label: 'Revenue Share', align: 'text-left'   },
+                      { field: 'lineCount'  as GroupSortField, label: 'Lines',         align: 'text-center' },
+                      { field: 'orderCount' as GroupSortField, label: 'Orders',        align: 'text-center' },
+                    ]).map(({ field, label, align }) => (
                       <th
                         key={field}
                         onClick={() => toggleGroupSort(field)}
-                        className={`cursor-pointer select-none px-4 py-3 ${align} hover:text-gray-700`}
+                        className={`cursor-pointer select-none whitespace-nowrap px-4 py-3 ${align} hover:text-gray-800`}
                       >
                         <span className="inline-flex items-center gap-1">
                           {label}
@@ -962,21 +996,20 @@ export default function POSSalesDetails() {
                 <tbody>
                   {grouped.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-16 text-center text-sm text-gray-400">
+                      <td colSpan={9} className="py-20 text-center text-sm text-gray-400">
                         {allRows.length === 0 ? 'No sales data found.' : 'No data matches the current filters.'}
                       </td>
                     </tr>
                   ) : (
                     grouped.map(row => (
                       <tr key={row.key} className="border-b border-gray-50 transition-colors hover:bg-gray-50/60">
-                        <td className="px-4 py-2.5 font-medium text-gray-900 max-w-[220px] truncate">{row.key}</td>
+                        <td className="max-w-[220px] truncate px-4 py-2.5 font-medium text-gray-900">{row.key}</td>
                         <td className="px-4 py-2.5 text-center text-gray-700 tabular-nums">{row.qty.toLocaleString()}</td>
                         <td className="px-4 py-2.5 text-right text-gray-500 tabular-nums">{formatCurrency(row.gross)}</td>
                         <td className="px-4 py-2.5 text-right tabular-nums">
                           {row.discount > 0
                             ? <span className="text-orange-500">−{formatCurrency(row.discount)}</span>
-                            : <span className="text-gray-300">—</span>
-                          }
+                            : <span className="text-gray-300">—</span>}
                         </td>
                         <td className="px-4 py-2.5 text-right font-semibold text-gray-900 tabular-nums">
                           {formatCurrency(row.revenue)}
@@ -985,19 +1018,18 @@ export default function POSSalesDetails() {
                           <td className="px-4 py-2.5 text-right tabular-nums">
                             {row.profit > 0
                               ? <span className="text-teal-600">{formatCurrency(row.profit)}</span>
-                              : <span className="text-gray-300">—</span>
-                            }
+                              : <span className="text-gray-300">—</span>}
                           </td>
                         )}
-                        <td className="px-4 py-2.5 min-w-[120px]">
+                        <td className="min-w-[140px] px-4 py-2.5">
                           <div className="flex items-center gap-2">
-                            <div className="flex-1 rounded-full bg-gray-100 h-1.5 overflow-hidden">
+                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
                               <div
                                 className="h-full rounded-full bg-[#b20202]"
                                 style={{ width: `${Math.min(100, row.share)}%` }}
                               />
                             </div>
-                            <span className="text-xs text-gray-500 tabular-nums w-10 text-right">
+                            <span className="w-10 text-right text-xs text-gray-500 tabular-nums">
                               {row.share.toFixed(1)}%
                             </span>
                           </div>
@@ -1011,7 +1043,7 @@ export default function POSSalesDetails() {
                 {grouped.length > 0 && (
                   <tfoot>
                     <tr className="border-t-2 border-gray-200 bg-gray-50 text-xs font-semibold text-gray-700">
-                      <td className="px-4 py-3 text-gray-500">{grouped.length} group{grouped.length !== 1 ? 's' : ''}</td>
+                      <td className="px-4 py-3 text-gray-400">{grouped.length} group{grouped.length !== 1 ? 's' : ''}</td>
                       <td className="px-4 py-3 text-center tabular-nums">{grouped.reduce((s, r) => s + r.qty, 0).toLocaleString()}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(grouped.reduce((s, r) => s + r.gross, 0))}</td>
                       <td className="px-4 py-3 text-right text-orange-500 tabular-nums">
@@ -1038,7 +1070,7 @@ export default function POSSalesDetails() {
 
         {/* ── Truncation notice ── */}
         {truncated && !loading && (
-          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-700 flex items-center justify-between">
+          <div className="mt-3 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-700">
             <span>Showing first 500 orders only. Older data may be missing.</span>
             <button
               type="button"
