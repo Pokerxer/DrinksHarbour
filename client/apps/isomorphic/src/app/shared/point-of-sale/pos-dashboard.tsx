@@ -16,6 +16,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { CustomTooltip } from '@core/components/charts/custom-tooltip';
+import { useSession } from 'next-auth/react';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { usePOSAuth } from '@/app/shared/point-of-sale/store';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
@@ -24,6 +25,14 @@ import { POSDashboardData, POSSessionInfo, POSRecentOrder } from '@/app/shared/p
 import POSNavHeader from './pos-nav-header';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+
+function isTokenExpired(tok: string | null | undefined): boolean {
+  if (!tok) return true;
+  try {
+    const payload = JSON.parse(atob(tok.split('.')[1]));
+    return (payload.exp ?? 0) * 1000 < Date.now();
+  } catch { return true; }
+}
 
 function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
@@ -366,7 +375,10 @@ const TERMINALS = [
 const DEFAULT_TERM = { sessionOpen: null, closingDate: null, closingBalance: null };
 
 export default function POSDashboard() {
-  const { token } = usePOSAuth();
+  const { token: posToken } = usePOSAuth();
+  const { data: session }   = useSession();
+  const sessionToken = (session?.user as { token?: string })?.token ?? null;
+  const token = (!posToken || isTokenExpired(posToken)) ? sessionToken : posToken;
 
   const [dashData, setDashData]   = useState<POSDashboardData | null>(null);
   const [loading,  setLoading]    = useState(false);

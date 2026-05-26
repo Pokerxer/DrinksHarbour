@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { usePOSAuth } from '@/app/shared/point-of-sale/store';
+import { useSession } from 'next-auth/react';
 import { POSSession, POSTenant } from '@/app/shared/point-of-sale/types';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import { routes } from '@/config/routes';
@@ -57,6 +58,14 @@ function loadSavedSearches(): SavedSearch[] {
 }
 function persistSavedSearches(list: SavedSearch[]) {
   localStorage.setItem(SAVED_SEARCHES_KEY, JSON.stringify(list));
+}
+
+function isTokenExpired(tok: string | null | undefined): boolean {
+  if (!tok) return true;
+  try {
+    const payload = JSON.parse(atob(tok.split('.')[1]));
+    return (payload.exp ?? 0) * 1000 < Date.now();
+  } catch { return true; }
 }
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
@@ -1075,7 +1084,10 @@ function SessionRow({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function POSSessions() {
-  const { token, tenant, staff } = usePOSAuth();
+  const { token: posToken, tenant, staff } = usePOSAuth();
+  const { data: session, status: sessionStatus } = useSession();
+  const sessionToken = (session?.user as { token?: string })?.token ?? null;
+  const token = (!posToken || isTokenExpired(posToken)) ? sessionToken : posToken;
   const router = useRouter();
 
   const [sessions, setSessions]         = useState<POSSession[]>([]);
@@ -1103,13 +1115,14 @@ export default function POSSessions() {
   }, [filter, activeFilters]);
 
   const fetchSessions = useCallback(() => {
-    if (!token) return;
+    if (sessionStatus === 'loading') return;
+    if (!token) { setLoading(false); return; }
     setLoading(true);
     posApi.getSessions(token, page, PAGE_SIZE, effectiveStatus)
       .then((d) => { setSessions(d.sessions || []); setTotal(d.total || 0); })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [token, page, effectiveStatus]);
+  }, [token, page, effectiveStatus, sessionStatus]);
 
   useEffect(() => { fetchSessions(); }, [fetchSessions]);
   useEffect(() => { setExpandedGroups(new Set()); }, [groupBy]);

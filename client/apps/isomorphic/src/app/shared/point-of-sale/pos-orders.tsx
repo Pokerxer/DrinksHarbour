@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { usePOSAuth } from '@/app/shared/point-of-sale/store';
+import { useSession } from 'next-auth/react';
 import { POSTenant } from '@/app/shared/point-of-sale/types';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import { routes } from '@/config/routes';
@@ -62,6 +63,14 @@ function loadSaved(): SavedSearch[] { try { return JSON.parse(localStorage.getIt
 function persistSaved(list: SavedSearch[]) { localStorage.setItem(SAVED_KEY, JSON.stringify(list)); }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+function isTokenExpired(tok: string | null | undefined): boolean {
+  if (!tok) return true;
+  try {
+    const payload = JSON.parse(atob(tok.split('.')[1]));
+    return (payload.exp ?? 0) * 1000 < Date.now();
+  } catch { return true; }
+}
 
 function fmtDate(d: string) { return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); }
 function fmtTime(d: string) { return new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }); }
@@ -439,7 +448,10 @@ const GROUP_LABELS: Record<GroupKey, string> = {
 
 export default function POSOrders() {
   const router = useRouter();
-  const { token, tenant } = usePOSAuth();
+  const { token: posToken, tenant } = usePOSAuth();
+  const { data: session, status: sessionStatus } = useSession();
+  const sessionToken = (session?.user as { token?: string })?.token ?? null;
+  const token = (!posToken || isTokenExpired(posToken)) ? sessionToken : posToken;
 
   const [orders,        setOrders]        = useState<PosOrder[]>([]);
   const [loading,       setLoading]       = useState(true);
@@ -457,13 +469,14 @@ export default function POSOrders() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const fetchOrders = useCallback(() => {
-    if (!token) return;
+    if (sessionStatus === 'loading') return;
+    if (!token) { setLoading(false); return; }
     setLoading(true);
     posApi.getAllOrders(token, { limit: 500 })
       .then(data => setOrders((data || []) as PosOrder[]))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [token]);
+  }, [token, sessionStatus]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
   useEffect(() => { setExpandedGroups(new Set()); }, [groupBy]);

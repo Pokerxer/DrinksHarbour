@@ -7,7 +7,7 @@ const {
   tenantAdminOrSuperAdmin,
   tenantUserOnly,
 } = require('../middleware/auth.middleware');
-const { protectPOS, requirePOSPermission } = require('../middleware/pos.middleware');
+const { protectPOS, requirePOSPermission, protectPOSOrAdmin } = require('../middleware/pos.middleware');
 
 const {
   // Session
@@ -43,6 +43,11 @@ const {
   getTenantBankAccounts,
   getPOSSettings,
   updatePOSSettings,
+  // Customers
+  searchPOSCustomers,
+  createPOSCustomer,
+  getPOSCustomer,
+  updatePOSCustomerLoyalty,
 } = require('../controllers/pos.controller');
 
 // ── Reject POS tokens on admin routes ────────────────────────────────────────
@@ -75,9 +80,9 @@ router.get('/staff',             listPOSStaff);  // staff grid (public, no secre
 // protectPOS verifies the token, cross-checks user.tenant === decoded.tenantId,
 // and attaches req.tenant from the DB — never from the raw token claim.
 
-router.get('/session-info',                   protectPOS, getPOSSessionInfo);
-router.get('/products',                       protectPOS, getPOSProducts);
-router.get('/orders',                         protectPOS, getAllPOSOrders);
+router.get('/session-info',                   protectPOSOrAdmin, getPOSSessionInfo);
+router.get('/products',                       protectPOSOrAdmin, getPOSProducts);
+router.get('/orders',                         protectPOSOrAdmin, getAllPOSOrders);
 router.post('/orders',                        protectPOS, requirePOSPermission('pos:sell'),   createPOSOrder);
 router.post('/orders/:id/refund',             protectPOS, requirePOSPermission('pos:refund'), refundPOSOrder);
 router.post('/orders/:id/void',               protectPOS, requirePOSPermission('pos:void'),   voidPOSOrder);
@@ -163,16 +168,22 @@ router.get('/combos', protectPOS, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── POS Customers (loyalty) ───────────────────────────────────────────────────
+router.get('/customers',                      protectPOS, searchPOSCustomers);
+router.post('/customers',                     protectPOS, createPOSCustomer);
+router.get('/customers/:id',                  protectPOS, getPOSCustomer);
+router.patch('/customers/:id/loyalty',        protectPOS, updatePOSCustomerLoyalty);
+
 router.get('/sessions/current',               protectPOS, getCurrentSession);
 router.post('/sessions/open',                 protectPOS, openSession);
 router.get('/sessions/:id/closing-control',   protectPOS, getClosingControl);
 router.post('/sessions/:id/close',            protectPOS, closeSession);
 router.post('/sessions/:id/switch-cashier',   protectPOS, switchCashier);
-router.get('/sessions/:id/orders',            protectPOS, getPOSSessionOrders);
+router.get('/sessions/:id/orders',            protectPOSOrAdmin, getPOSSessionOrders);
 router.get('/sessions/:id/cash-moves',        protectPOS, getCashMoves);
 router.post('/sessions/:id/cash-move',        protectPOS, recordCashMove);
-router.get('/sessions',                       protectPOS, getSessionList);  // POS-token version (mirrors admin route)
-router.get('/dashboard',                      protectPOS, getPOSDashboard);
+router.get('/sessions',                       protectPOSOrAdmin, getSessionList);
+router.get('/dashboard',                      protectPOSOrAdmin, getPOSDashboard);
 
 // ── Admin-JWT protected ───────────────────────────────────────────────────────
 // rejectPOSTokens ensures POS tokens can't slip through the protect() check.

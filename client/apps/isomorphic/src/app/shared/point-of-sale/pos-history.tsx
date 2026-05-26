@@ -4,12 +4,21 @@ import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { usePOSAuth, usePOSCart } from '@/app/shared/point-of-sale/store';
+import { useSession } from 'next-auth/react';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import POSOrderDetail from '@/app/shared/point-of-sale/components/pos-order-detail';
 import { routes } from '@/config/routes';
 // Local cn to avoid any workspace-package resolution issues at runtime
 function cn(...classes: (string | false | undefined | null)[]) {
   return classes.filter(Boolean).join(' ');
+}
+
+function isTokenExpired(tok: string | null | undefined): boolean {
+  if (!tok) return true;
+  try {
+    const payload = JSON.parse(atob(tok.split('.')[1]));
+    return (payload.exp ?? 0) * 1000 < Date.now();
+  } catch { return true; }
 }
 import {
   PiArrowLeft,
@@ -314,7 +323,10 @@ function ReturnDetailPanel({
 // ── Main component ────────────────────────────────────────────────────────────
 export default function POSHistory() {
   const router = useRouter();
-  const { token } = usePOSAuth();
+  const { token: posToken } = usePOSAuth();
+  const { data: session, status: sessionStatus } = useSession();
+  const sessionToken = (session?.user as { token?: string })?.token ?? null;
+  const token = (!posToken || isTokenExpired(posToken)) ? sessionToken : posToken;
   const { addItem } = usePOSCart();
 
   const [orders, setOrders] = useState<HistoryOrder[]>([]);
@@ -340,13 +352,14 @@ export default function POSHistory() {
   }
 
   const fetchOrders = useCallback(() => {
-    if (!token) return;
+    if (sessionStatus === 'loading') return;
+    if (!token) { setLoading(false); return; }
     setLoading(true);
     posApi.getAllOrders(token)
       .then((data) => setOrders((data || []) as HistoryOrder[]))
-      .catch(() => setOrders([]))
+      .catch(() => {})
       .finally(() => setLoading(false));
-  }, [token]);
+  }, [token, sessionStatus]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
