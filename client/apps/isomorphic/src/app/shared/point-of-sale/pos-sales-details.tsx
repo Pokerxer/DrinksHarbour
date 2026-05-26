@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import {
   PiArrowsClockwise, PiCurrencyNgn, PiShoppingCart, PiTag,
   PiArrowUp, PiArrowDown, PiArrowsDownUp, PiDownloadSimple, PiX,
-  PiMagnifyingGlass, PiCaretLeft, PiCaretRight, PiPercent,
+  PiMagnifyingGlass, PiCaretLeft, PiCaretRight, PiCaretDown, PiPercent,
   PiTrendUp, PiList, PiRows, PiClock,
 } from 'react-icons/pi';
 import { useSession } from 'next-auth/react';
@@ -73,6 +73,15 @@ const METHOD_COLOR: Record<string, string> = {
   mobile_money:  'bg-amber-50 text-amber-700 border border-amber-100',
   split:         'bg-orange-50 text-orange-700 border border-orange-100',
   other:         'bg-gray-100 text-gray-600 border border-gray-200',
+};
+
+const METHOD_DOT: Record<string, string> = {
+  cash:          'bg-emerald-500',
+  card:          'bg-blue-500',
+  bank_transfer: 'bg-violet-500',
+  mobile_money:  'bg-amber-500',
+  split:         'bg-orange-500',
+  other:         'bg-gray-400',
 };
 
 const TOGGLEABLE_COLS: { key: ToggleableCol; label: string }[] = [
@@ -259,6 +268,133 @@ function DateTimeRange({
   );
 }
 
+// ── Select option data ─────────────────────────────────────────────────────────
+
+interface SelectOption { value: string; label: string; dot?: string; }
+
+const GROUP_BY_OPTIONS: SelectOption[] = [
+  { value: 'product',        label: 'By Product' },
+  { value: 'variant',        label: 'By Variant' },
+  { value: 'cashier',        label: 'By Cashier' },
+  { value: 'payment_method', label: 'By Payment' },
+  { value: 'date',           label: 'By Date' },
+];
+
+const PAYMENT_OPTIONS: SelectOption[] = Object.entries(METHOD_LABEL).map(([k, v]) => ({
+  value: k, label: v, dot: METHOD_DOT[k],
+}));
+
+// ── CustomSelect ───────────────────────────────────────────────────────────────
+
+function CustomSelect({
+  value, onChange, options, placeholder, minWidth = 130, required = false,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: SelectOption[];
+  placeholder: string;
+  minWidth?: number;
+  required?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  const selected = options.find(o => o.value === value) ?? null;
+  const isActive = !required && value !== '';
+
+  return (
+    <div className="relative" ref={ref} style={{ minWidth }}>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs transition-all ${
+          isActive
+            ? 'border-[#b20202]/40 bg-red-50 text-[#b20202]'
+            : open
+              ? 'border-gray-300 bg-white text-gray-700 shadow-sm'
+              : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+        }`}
+      >
+        {selected?.dot && (
+          <span className={`h-2 w-2 shrink-0 rounded-full ${selected.dot}`} />
+        )}
+        <span className="flex-1 truncate text-left font-medium">
+          {selected?.label ?? placeholder}
+        </span>
+        <span className="flex shrink-0 items-center gap-0.5">
+          {isActive && (
+            <span
+              role="button"
+              aria-label="Clear"
+              onClick={e => { e.stopPropagation(); onChange(''); }}
+              className="rounded-full p-0.5 hover:bg-[#b20202]/10 transition-colors"
+            >
+              <PiX className="h-2.5 w-2.5" />
+            </span>
+          )}
+          <PiCaretDown
+            className={`h-3 w-3 opacity-50 transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+          />
+        </span>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-[calc(100%+4px)] z-50 min-w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl ring-1 ring-black/5">
+          <div className="max-h-56 overflow-y-auto py-1">
+            {!required && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => { onChange(''); setOpen(false); }}
+                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition-colors ${
+                    !isActive
+                      ? 'bg-gray-50 font-semibold text-gray-800'
+                      : 'text-gray-400 hover:bg-gray-50'
+                  }`}
+                >
+                  <span>{placeholder}</span>
+                  {!isActive && <span className="text-[10px] font-bold text-[#b20202]">✓</span>}
+                </button>
+                <div className="mx-3 my-1 border-t border-gray-100" />
+              </>
+            )}
+            {options.map(opt => {
+              const isSel = value === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => { onChange(opt.value); setOpen(false); }}
+                  className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors ${
+                    isSel
+                      ? 'bg-red-50 font-semibold text-[#b20202]'
+                      : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {opt.dot && (
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${opt.dot}`} />
+                  )}
+                  <span className="flex-1">{opt.label}</span>
+                  {isSel && <span className="text-[10px] font-bold text-[#b20202]">✓</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PageBar({
   page, totalPages, totalItems, pageSize,
   onPrev, onNext, onPage,
@@ -409,8 +545,9 @@ export default function POSSalesDetails() {
     return rows;
   }, [orders]);
 
-  const hasCostData = useMemo(() => allRows.some(r => r.costPrice > 0), [allRows]);
-  const cashiers    = useMemo(() => Array.from(new Set(allRows.map(r => r.cashier))).sort(), [allRows]);
+  const hasCostData     = useMemo(() => allRows.some(r => r.costPrice > 0), [allRows]);
+  const cashiers        = useMemo(() => Array.from(new Set(allRows.map(r => r.cashier))).sort(), [allRows]);
+  const cashierOptions  = useMemo<SelectOption[]>(() => cashiers.map(c => ({ value: c, label: c })), [cashiers]);
 
   // Status tab counts (distinct orders)
   const statusCounts = useMemo(() => {
@@ -652,14 +789,14 @@ export default function POSSalesDetails() {
             </div>
 
             {viewMode === 'grouped' && (
-              <select value={groupBy} onChange={e => setGroupBy(e.target.value as GroupByKey)}
-                className="rounded-lg border border-gray-200 bg-white px-2.5 py-[7px] text-xs text-gray-700 focus:border-[#b20202] focus:outline-none">
-                <option value="product">By Product</option>
-                <option value="variant">By Variant</option>
-                <option value="cashier">By Cashier</option>
-                <option value="payment_method">By Payment</option>
-                <option value="date">By Date</option>
-              </select>
+              <CustomSelect
+                value={groupBy}
+                onChange={v => setGroupBy((v || 'product') as GroupByKey)}
+                options={GROUP_BY_OPTIONS}
+                placeholder="Group by…"
+                minWidth={120}
+                required
+              />
             )}
 
             <div className="mx-1 h-5 w-px bg-gray-200" />
@@ -750,17 +887,21 @@ export default function POSSalesDetails() {
 
         {/* Row 3 — field filters + search */}
         <div className="flex items-center gap-2 border-t border-gray-100 px-5 py-2">
-          <select value={cashierFilter} onChange={e => setCashierFilter(e.target.value)}
-            className="rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none">
-            <option value="">All cashiers</option>
-            {cashiers.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <CustomSelect
+            value={cashierFilter}
+            onChange={setCashierFilter}
+            options={cashierOptions}
+            placeholder="All cashiers"
+            minWidth={140}
+          />
 
-          <select value={methodFilter} onChange={e => setMethodFilter(e.target.value)}
-            className="rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none">
-            <option value="">All payments</option>
-            {Object.entries(METHOD_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          <CustomSelect
+            value={methodFilter}
+            onChange={setMethodFilter}
+            options={PAYMENT_OPTIONS}
+            placeholder="All payments"
+            minWidth={140}
+          />
 
           {hasCostData && (
             <label className="flex cursor-pointer select-none items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-50 transition-colors">
