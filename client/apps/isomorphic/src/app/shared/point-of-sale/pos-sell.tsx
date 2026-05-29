@@ -20,6 +20,7 @@ import { routes } from '@/config/routes';
 import { getProducts as getProductsOffline } from './offline/api';
 import { runSyncEngine, registerBackgroundSync } from './offline/sync';
 import { useOnlineStatus } from './offline/use-online-status';
+import { useRegisterSW } from './offline/register-sw';
 
 export default function POSSell() {
   const router = useRouter();
@@ -29,6 +30,7 @@ export default function POSSell() {
   const { token, terminal } = usePOSAuth();
   const settings = usePOSSettings();
   const isOnline = useOnlineStatus();
+  useRegisterSW();
 
   // Whether Jotai has finished hydrating from localStorage
   const [hydrated, setHydrated] = useState(false);

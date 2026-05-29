@@ -88,6 +88,8 @@ const serwist = withSerwist({
   swSrc: 'src/sw.ts',
   swDest: 'public/sw.js',
   reloadOnOnline: false,
+  register: false,
+  disable: process.env.NODE_ENV === 'development',
 });
 
 export default serwist(nextConfig);
