@@ -9,7 +9,7 @@ import React, {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { posApi } from '@/app/shared/point-of-sale/api';
-import { getAllOrders, getSessionOrders, voidOrder } from '@/app/shared/point-of-sale/offline/api';
+import { getAllOrders, getSessionOrders, getSessionInfo, voidOrder } from '@/app/shared/point-of-sale/offline/api';
 import { useOnlineStatus } from '@/app/shared/point-of-sale/offline/use-online-status';
 import { usePOSAuth, usePOSCart } from '@/app/shared/point-of-sale/store';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
@@ -596,13 +596,12 @@ export default function POSSellOrders() {
 
   useEffect(() => {
     if (!token) return;
-    posApi
-      .getSessionInfo(token, terminal ?? 'retail')
+    getSessionInfo(token)
       .then((data) => {
-        if (data.currentSession) setSessionId(data.currentSession._id);
+        if (data?.sessionId) setSessionId(data.sessionId);
       })
       .catch(() => {});
-  }, [token, terminal]);
+  }, [token]);
 
   const fetchOrders = useCallback(() => {
     if (!token) return;
