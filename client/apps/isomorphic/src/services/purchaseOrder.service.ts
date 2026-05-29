@@ -345,6 +345,62 @@ export const purchaseOrderService = {
     return response.json();
   },
 
+  async updatePurchaseOrder(
+    id: string,
+    data: {
+      vendor?: string;
+      vendorName?: string;
+      vendorReference?: string;
+      currency?: string;
+      expectedArrival?: string;
+      items?: Partial<POItem>[];
+      notes?: string;
+      termsConditions?: string;
+      validUntil?: string;
+      purchaseAgreement?: string;
+    },
+    token: string
+  ): Promise<CreatePOResponse> {
+    const response = await fetch(`${API_URL}/api/purchase-orders/${id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to update purchase order');
+    }
+
+    return response.json();
+  },
+
+  async returnPurchaseOrder(
+    id: string,
+    token: string,
+    items: { subProductId: string; sizeId?: string; quantity: number; reason?: string }[],
+    notes?: string
+  ): Promise<CreatePOResponse> {
+    const response = await fetch(`${API_URL}/api/purchase-orders/${id}/return`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ items, notes }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to return purchase order items');
+    }
+
+    return response.json();
+  },
+
   async sendPOToVendor(id: string, token: string, email?: string): Promise<CreatePOResponse> {
     const response = await fetch(
       `${API_URL}/api/purchase-orders/${id}/send-to-vendor`,

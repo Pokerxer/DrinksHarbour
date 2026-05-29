@@ -288,6 +288,54 @@ const getPurchaseOrders = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Update purchase order fields (draft/confirmed only)
+// @route   PATCH /api/purchase-orders/:id
+// @access  Private (Tenant admin)
+const updatePurchaseOrder = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const tenantId = await resolveTenantId(req);
+
+  const po = await PurchaseOrder.findOne({ _id: id, tenant: tenantId });
+  if (!po) throw new NotFoundError("Purchase Order not found");
+
+  if (po.isLocked) throw new ForbiddenError("Purchase Order is locked and cannot be edited");
+  if (po.status === "done" || po.status === "cancel") {
+    throw new ForbiddenError("Cannot edit a locked or cancelled Purchase Order");
+  }
+
+  const {
+    vendor,
+    vendorName,
+    vendorReference,
+    currency,
+    expectedArrival,
+    items,
+    notes,
+    termsConditions,
+    validUntil,
+    purchaseAgreement,
+  } = req.body;
+
+  if (vendor !== undefined) po.vendor = vendor;
+  if (vendorName !== undefined) po.vendorName = vendorName;
+  if (vendorReference !== undefined) po.vendorReference = vendorReference;
+  if (currency !== undefined) po.currency = currency;
+  if (expectedArrival !== undefined) po.expectedArrival = expectedArrival;
+  if (notes !== undefined) po.notes = notes;
+  if (termsConditions !== undefined) po.termsConditions = termsConditions;
+  if (validUntil !== undefined) po.validUntil = validUntil;
+  if (purchaseAgreement !== undefined) po.purchaseAgreement = purchaseAgreement;
+
+  if (items !== undefined && Array.isArray(items)) {
+    await validateSubProducts(items, tenantId);
+    po.items = await enrichPOItems(items, tenantId);
+  }
+
+  await po.save();
+
+  res.status(200).json({ success: true, data: po });
+});
+
 // @desc    Update purchase order status
 // @route   PATCH /api/purchase-orders/:id/status
 // @access  Private (Tenant admin)
@@ -1482,6 +1530,7 @@ module.exports = {
   createPurchaseOrder,
   getPurchaseOrder,
   getPurchaseOrders,
+  updatePurchaseOrder,
   updatePurchaseOrderStatus,
   deletePurchaseOrder,
   generatePurchaseOrderReceipt,

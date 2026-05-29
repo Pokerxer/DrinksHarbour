@@ -5,6 +5,7 @@ const {
   createPurchaseOrder,
   getPurchaseOrder,
   getPurchaseOrders,
+  updatePurchaseOrder,
   updatePurchaseOrderStatus,
   deletePurchaseOrder,
   generatePurchaseOrderReceipt,
@@ -38,6 +39,7 @@ router
 router
   .route("/:id")
   .get(tenantAdminOrSuperAdmin, getPurchaseOrder)
+  .patch(tenantAdminOrSuperAdmin, updatePurchaseOrder)
   .delete(tenantAdminOrSuperAdmin, deletePurchaseOrder);
 
 // Status update

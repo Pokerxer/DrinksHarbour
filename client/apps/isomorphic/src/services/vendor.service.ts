@@ -86,4 +86,23 @@ export const vendorService = {
     );
     return res.data;
   },
+
+  async update(id: string, input: Partial<CreateVendorInput>, token: string): Promise<Vendor> {
+    const res = await apiFetch<{ success: boolean; data: Vendor }>(
+      `${API_URL}/api/vendors/${id}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(input),
+      }
+    );
+    return res.data;
+  },
+
+  async delete(id: string, token: string): Promise<{ success: boolean; message: string }> {
+    return apiFetch<{ success: boolean; message: string }>(
+      `${API_URL}/api/vendors/${id}`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
+    );
+  },
 };
