@@ -1,4 +1,5 @@
 import './src/env.mjs';
+import withSerwist from '@serwist/next';
 /** @type {import('next').NextConfig} */
 
 const nextConfig = {
@@ -83,4 +84,10 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+const serwist = withSerwist({
+  swSrc: 'src/sw.ts',
+  swDest: 'public/sw.js',
+  reloadOnOnline: false,
+});
+
+export default serwist(nextConfig);
