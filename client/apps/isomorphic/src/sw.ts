@@ -38,7 +38,7 @@ serwist.addEventListeners();
 self.addEventListener('sync', (event: SyncEvent) => {
   if (event.tag === 'pos-queue-sync') {
     event.waitUntil(
-      import('/offline/sync').then((m: any) => m.runSyncEngine())
+      import('./offline/sync').then((m: any) => m.runSyncEngine())
     );
   }
 });
