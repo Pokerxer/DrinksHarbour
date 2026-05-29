@@ -22,6 +22,8 @@ import '@/app/globals.css';
 export const metadata = {
   title: siteConfig.title,
   description: siteConfig.description,
+  manifest: '/manifest.json',
+  themeColor: '#b20202',
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';

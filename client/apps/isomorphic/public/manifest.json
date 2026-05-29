@@ -1,0 +1,21 @@
+{
+  "name": "Drinks Harbour POS",
+  "short_name": "DH POS",
+  "description": "Drinks Harbour Point of Sale terminal",
+  "start_url": "/pos/sell",
+  "scope": "/pos/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#ffffff",
+  "theme_color": "#b20202",
+  "icons": [
+    { "src": "/icons/pwa-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/pwa-512.png", "sizes": "512x512", "type": "image/png" },
+    {
+      "src": "/icons/pwa-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
