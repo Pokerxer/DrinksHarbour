@@ -11,7 +11,9 @@ import POSProductCard from '@/app/shared/point-of-sale/components/pos-product-ca
 import POSComboPicker from '@/app/shared/point-of-sale/components/pos-combo-picker';
 import { POSProduct, POSCombo, POSCartItem } from '@/app/shared/point-of-sale/types';
 import { posApi } from '@/app/shared/point-of-sale/api';
-import { usePOSAuth, usePOSUI, usePOSSaleSignal, usePOSCart, usePOSPricelist, usePOSCombos } from '@/app/shared/point-of-sale/store';
+import { getProducts as getProductsOffline, getProductsWithLocalStock } from '@/app/shared/point-of-sale/offline/api';
+import { useOnlineStatus } from '@/app/shared/point-of-sale/offline/use-online-status';
+import { usePOSAuth, usePOSUI, usePOSSaleSignal, usePOSCart, usePOSPricelist, usePOSCombos, usePOSProducts } from '@/app/shared/point-of-sale/store';
 import { applyPricelistToProduct } from '@/app/shared/point-of-sale/utils';
 import { useBarcodeScanner } from '@/app/shared/point-of-sale/hooks/useBarcodeScanner';
 import toast from 'react-hot-toast';
@@ -164,12 +166,14 @@ export default function POSProductGrid({ onAddToCart }: ProductGridProps) {
   const [flashId, setFlashId]         = useState<string | null>(null);
 
   const { combos, setCombos }         = usePOSCombos();
+  const { setProducts: setGlobalProducts } = usePOSProducts();
   const [combosLoading, setCombosLoading] = useState(false);
   const [activeComboPicker, setActiveComboPicker] = useState<POSCombo | null>(null);
 
   // 'combos' is a virtual category injected into the pills
   const [showCombos, setShowCombos] = useState(false);
 
+  const isOnline = useOnlineStatus();
   const { token } = usePOSAuth();
   const { searchQuery, setSearchQuery, selectedCategory, setSelectedCategory } = usePOSUI();
   const { saleCounter } = usePOSSaleSignal();
@@ -184,8 +188,11 @@ export default function POSProductGrid({ onAddToCart }: ProductGridProps) {
     if (!silent) setLoading(true);
     setError('');
     try {
-      const data = await posApi.getProducts(token, { limit: 200 });
-      setAllProducts(data.products || []);
+      const products = isOnline
+        ? await getProductsOffline(token)
+        : await getProductsWithLocalStock();
+      setAllProducts((products || []) as unknown as POSProduct[]);
+      setGlobalProducts((products || []) as unknown as POSProduct[]);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load products');
     } finally {
@@ -512,6 +519,12 @@ export default function POSProductGrid({ onAddToCart }: ProductGridProps) {
       {/* ── Product grid ── */}
       {!showCombos && (
         <div className="flex-1 overflow-y-auto">
+          {!isOnline && (
+            <div className="flex items-center gap-2 rounded bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 mb-2">
+              <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+              Offline — showing cached stock levels
+            </div>
+          )}
           {loading ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
               {Array.from({ length: 12 }).map((_, i) => <SkeletonCard key={i} />)}
