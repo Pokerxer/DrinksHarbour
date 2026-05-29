@@ -4,13 +4,37 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import toast from 'react-hot-toast';
 import {
-  PiX, PiCheckCircle, PiPrinter, PiUser, PiFileText,
-  PiCurrencyNgn, PiCreditCard, PiBank, PiDeviceMobile,
-  PiArrowLeft, PiArrowRight, PiTicket, PiLightningBold,
-  PiShoppingCart, PiGift, PiWarning, PiStar,
+  PiX,
+  PiCheckCircle,
+  PiPrinter,
+  PiUser,
+  PiFileText,
+  PiCurrencyNgn,
+  PiCreditCard,
+  PiBank,
+  PiDeviceMobile,
+  PiArrowLeft,
+  PiArrowRight,
+  PiTicket,
+  PiLightningBold,
+  PiShoppingCart,
+  PiGift,
+  PiWarning,
+  PiStar,
 } from 'react-icons/pi';
-import { usePOSCart, usePOSAuth, usePOSUI, usePOSSaleSignal, usePOSPricelist, computeRewardDiscount, getEffectiveBundlePrice } from '@/app/shared/point-of-sale/store';
+import {
+  usePOSCart,
+  usePOSAuth,
+  usePOSUI,
+  usePOSSaleSignal,
+  usePOSPricelist,
+  computeRewardDiscount,
+  getEffectiveBundlePrice,
+  usePOSSettings,
+} from '@/app/shared/point-of-sale/store';
 import { posApi } from '@/app/shared/point-of-sale/api';
+import { createOrder as createOrderOffline } from '@/app/shared/point-of-sale/offline/api';
+import { useOnlineStatus } from '@/app/shared/point-of-sale/offline/use-online-status';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import { POSOrderResponse } from '@/app/shared/point-of-sale/types';
 import { useTenant } from '@/context/TenantContext';
@@ -18,13 +42,30 @@ import cn from '@core/utils/class-names';
 
 // ── Types & constants ─────────────────────────────────────────────────────────
 
-type PaymentLine = { id: string; method: string; label: string; amount: number };
+type PaymentLine = {
+  id: string;
+  method: string;
+  label: string;
+  amount: number;
+};
 
 const METHODS = [
-  { value: 'cash',          label: 'Cash',          icon: <PiCurrencyNgn className="h-5 w-5" /> },
-  { value: 'card',          label: 'Card / POS',    icon: <PiCreditCard   className="h-5 w-5" /> },
-  { value: 'bank_transfer', label: 'Bank Transfer', icon: <PiBank         className="h-5 w-5" /> },
-  { value: 'mobile_money',  label: 'Mobile Money',  icon: <PiDeviceMobile className="h-5 w-5" /> },
+  { value: 'cash', label: 'Cash', icon: <PiCurrencyNgn className="h-5 w-5" /> },
+  {
+    value: 'card',
+    label: 'Card / POS',
+    icon: <PiCreditCard className="h-5 w-5" />,
+  },
+  {
+    value: 'bank_transfer',
+    label: 'Bank Transfer',
+    icon: <PiBank className="h-5 w-5" />,
+  },
+  {
+    value: 'mobile_money',
+    label: 'Mobile Money',
+    icon: <PiDeviceMobile className="h-5 w-5" />,
+  },
 ];
 
 // Quick-add denominations (Nigerian naira)
@@ -33,20 +74,23 @@ const QUICK = [1_000, 2_000, 5_000];
 // ── Receipt ───────────────────────────────────────────────────────────────────
 
 const METHOD_LABELS: Record<string, string> = {
-  cash: 'CASH', card: 'CARD / POS', bank_transfer: 'BANK TRANSFER',
-  mobile_money: 'MOBILE MONEY', split: 'SPLIT',
+  cash: 'CASH',
+  card: 'CARD / POS',
+  bank_transfer: 'BANK TRANSFER',
+  mobile_money: 'MOBILE MONEY',
+  split: 'SPLIT',
 };
 
 // All receipt colours are inline — bypasses Next.js dark-mode class overrides.
 const R = {
-  paper:   { backgroundColor: '#ffffff', color: '#111111' },
-  muted:   { color: '#555555' },
-  red:     { color: '#b20202' },
-  green:   { color: '#15803d' },
-  bold:    { fontWeight: 700 as const },
-  center:  { textAlign: 'center' as const },
+  paper: { backgroundColor: '#ffffff', color: '#111111' },
+  muted: { color: '#555555' },
+  red: { color: '#b20202' },
+  green: { color: '#15803d' },
+  bold: { fontWeight: 700 as const },
+  center: { textAlign: 'center' as const },
   divider: { borderTop: '1px dashed #aaaaaa', margin: '7px 0' },
-  rule:    { borderTop: '2px solid #222222', margin: '7px 0' },
+  rule: { borderTop: '2px solid #222222', margin: '7px 0' },
 };
 
 function ReceiptScreen({
@@ -66,31 +110,59 @@ function ReceiptScreen({
   appliedCode?: AppliedCode;
   autoDiscounts?: AppliedDiscount[];
   nextOrderCode?: string | null;
-  nocSettings?: Partial<import('@/app/shared/point-of-sale/types').POSNextOrderCouponConfig>;
+  nocSettings?: Partial<
+    import('@/app/shared/point-of-sale/types').POSNextOrderCouponConfig
+  >;
 }) {
-  const { tenant }  = useTenant();
-  const { staff }   = usePOSAuth();
-  const { subtotal: cartSubtotal, discountAmount: cartDiscount, customer, note: cartNote } = usePOSCart();
-  const printRef    = useRef<HTMLDivElement>(null);
+  const { tenant } = useTenant();
+  const { staff } = usePOSAuth();
+  const settings = usePOSSettings();
+  const {
+    subtotal: cartSubtotal,
+    discountAmount: cartDiscount,
+    customer,
+    note: cartNote,
+  } = usePOSCart();
+  const printRef = useRef<HTMLDivElement>(null);
 
-  const storeName   = tenant?.name?.toUpperCase() || 'DRINKS HARBOUR';
-  const staffName   = staff ? (staff.posName || `${staff.firstName} ${staff.lastName}`.trim()) : '—';
-  const hasCustomer = customer.firstName !== 'Walk-in';
-  const custName    = hasCustomer ? `${customer.firstName} ${customer.lastName}`.trim() : null;
+  useEffect(() => {
+    if (settings.autoPrintReceipt) {
+      const t = setTimeout(() => handlePrint(), 600);
+      return () => clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const displaySubtotal = order.subtotal     ?? cartSubtotal;
+  const storeName = tenant?.name?.toUpperCase() || 'DRINKS HARBOUR';
+  const staffName = staff
+    ? staff.posName || `${staff.firstName} ${staff.lastName}`.trim()
+    : '—';
+  const hasCustomer = !!customer.customerId;
+  const custName = hasCustomer
+    ? `${customer.firstName} ${customer.lastName}`.trim()
+    : null;
+
+  const displaySubtotal = order.subtotal ?? cartSubtotal;
   const displayDiscount = order.discountTotal ?? cartDiscount;
-  const displayNote     = order.note          || cartNote;
+  const displayNote = order.note || cartNote;
 
   const receiptDate = new Date(order.placedAt).toLocaleString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: false,
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
   });
 
   function handlePrint() {
     const el = printRef.current;
     if (!el) return;
-    const win = window.open('', '_blank', 'width=400,height=750,scrollbars=yes');
+    const win = window.open(
+      '',
+      '_blank',
+      'width=400,height=750,scrollbars=yes'
+    );
     if (!win) return;
     win.document.write(`<!DOCTYPE html><html><head>
       <title>${order.receiptNumber}</title>
@@ -103,306 +175,641 @@ function ReceiptScreen({
     </head><body>${el.innerHTML}</body></html>`);
     win.document.close();
     win.focus();
-    setTimeout(() => { win.print(); win.close(); }, 400);
+    setTimeout(() => {
+      win.print();
+      win.close();
+    }, 400);
   }
 
   // Shared row: label left, value right — all inline styles
-  function Row({ label, value, vStyle }: { label: string; value: string; vStyle?: React.CSSProperties }) {
+  function Row({
+    label,
+    value,
+    vStyle,
+  }: {
+    label: string;
+    value: string;
+    vStyle?: React.CSSProperties;
+  }) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'space-between', lineHeight: '1.7' }}>
-        <span style={{ flex: 1, textTransform: 'uppercase', letterSpacing: '0.02em' }}>{label}</span>
-        <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', ...vStyle }}>{value}</span>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          lineHeight: '1.7',
+        }}
+      >
+        <span
+          style={{
+            flex: 1,
+            textTransform: 'uppercase',
+            letterSpacing: '0.02em',
+          }}
+        >
+          {label}
+        </span>
+        <span
+          style={{
+            whiteSpace: 'nowrap',
+            fontVariantNumeric: 'tabular-nums',
+            ...vStyle,
+          }}
+        >
+          {value}
+        </span>
       </div>
     );
   }
 
   return (
     /* Transparent overlay — the sell page shows through the blur behind */
-    <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', padding: '24px 16px', overflow: 'hidden' }}>
-
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 50,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        backdropFilter: 'blur(6px)',
+        WebkitBackdropFilter: 'blur(6px)',
+        padding: '24px 16px',
+        overflow: 'hidden',
+      }}
+    >
       {/* Receipt card — scrollable when tall */}
-      <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '100%', width: 380, borderRadius: 16, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.6)' }}>
-
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          maxHeight: '100%',
+          width: 380,
+          borderRadius: 16,
+          overflow: 'hidden',
+          boxShadow: '0 20px 60px rgba(0,0,0,.6)',
+        }}
+      >
         {/* Success banner */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, backgroundColor: '#16a34a', padding: '12px 20px', flexShrink: 0 }}>
-          <div style={{ width: 32, height: 32, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            backgroundColor: '#16a34a',
+            padding: '12px 20px',
+            flexShrink: 0,
+          }}
+        >
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: '50%',
+              backgroundColor: 'rgba(255,255,255,.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
             <PiCheckCircle style={{ width: 20, height: 20, color: '#fff' }} />
           </div>
           <div>
-            <p style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>Payment successful</p>
+            <p style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>
+              Payment successful
+            </p>
             <p style={{ color: '#bbf7d0', fontSize: 12 }}>
-              {formatCurrency(order.total)} &nbsp;·&nbsp; {METHOD_LABELS[order.paymentMethod] ?? order.paymentMethod}
+              {formatCurrency(order.total)} &nbsp;·&nbsp;{' '}
+              {METHOD_LABELS[order.paymentMethod] ?? order.paymentMethod}
             </p>
           </div>
         </div>
 
         {/* Receipt paper — scrollable */}
         <div style={{ overflowY: 'auto', backgroundColor: '#ffffff' }}>
-        <div
-          ref={printRef}
-          style={{
-            ...R.paper,
-            fontFamily: "'Courier New', Courier, monospace",
-            fontSize: 12,
-            lineHeight: 1.6,
-            padding: '24px 20px 20px',
-          }}
-        >
-          {/* Store header */}
-          <div style={{ ...R.center, marginBottom: 8 }}>
-            <p style={{ ...R.bold, fontSize: 15, letterSpacing: '0.1em' }}>{storeName}</p>
-            <p style={{ ...R.muted, fontSize: 10, marginTop: 2 }}>39 GANA ST, MAITAMA, ABUJA</p>
-            <p style={{ ...R.muted, fontSize: 10 }}>NIGERIA</p>
-            <p style={{ color: '#888', fontSize: 10 }}>drinksharbour.com</p>
-          </div>
-
-          <div style={R.rule} />
-
-          {/* Order meta */}
-          <Row label="Receipt #" value={order.receiptNumber} />
-          {order.orderNumber && <Row label="Order #" value={order.orderNumber} />}
-          <Row label="Date"     value={receiptDate} />
-          <Row label="Cashier"  value={staffName} />
-          {custName && <Row label="Customer" value={custName} />}
-
-          <div style={R.rule} />
-
-          {/* Column headers */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', ...R.muted, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            <span style={{ flex: 1 }}>Description</span>
-            <span>Amount</span>
-          </div>
-          <div style={R.divider} />
-
-          {/* Items — grouped by combo when cartSnapshot is available */}
-          {(() => {
-            // Augment server receipt items with comboRef from the cart snapshot
-            // (server items and cart items are in the same order)
-            const augmented = (order.items || []).map((item, i) => ({
-              ...item,
-              comboRef: cartSnapshot[i]?.comboRef,
-            }));
-
-            // Build display groups: combo items grouped under a header
-            type Group =
-              | { kind: 'item'; idx: number }
-              | { kind: 'combo'; instanceId: string; comboName: string; indices: number[] };
-
-            const seen = new Set<string>();
-            const groups: Group[] = [];
-
-            augmented.forEach((item, i) => {
-              if (item.comboRef?.instanceId) {
-                const id = item.comboRef.instanceId;
-                if (!seen.has(id)) {
-                  seen.add(id);
-                  groups.push({
-                    kind: 'combo',
-                    instanceId: id,
-                    comboName: item.comboRef.comboName,
-                    indices: augmented
-                      .map((a, j) => (a.comboRef?.instanceId === id ? j : -1))
-                      .filter(j => j >= 0),
-                  });
-                }
-              } else {
-                groups.push({ kind: 'item', idx: i });
-              }
-            });
-
-            function renderLine(item: typeof augmented[0], i: number, indent = false) {
-              const price     = item.priceAtPurchase ?? 0;
-              const lineTotal = item.itemSubtotal ?? price * item.quantity;
-              const label     = (item.name || 'Item') + (item.variant ? ` (${item.variant})` : '');
-              const maxLen    = indent ? 23 : 26;
-              const truncated = label.length > maxLen ? label.slice(0, maxLen - 1) + '…' : label;
-              const discPct   = price > 0 && item.discountAmount > 0
-                ? Math.round(item.discountAmount / (price * item.quantity) * 100)
-                : 0;
-              return (
-                <div key={i} style={{ marginBottom: indent ? 5 : 8, paddingLeft: indent ? 8 : 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', ...R.bold }}>
-                    <span style={{ flex: 1, paddingRight: 8 }}>{truncated}</span>
-                    <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                      {formatCurrency(lineTotal)}
-                    </span>
-                  </div>
-                  <div style={{ paddingLeft: indent ? 0 : 8, fontSize: 10, ...R.muted }}>
-                    {item.quantity} × {formatCurrency(price)}
-                    {item.discountAmount > 0 && (
-                      <span style={{ marginLeft: 6, ...R.red }}>
-                        combo -{discPct}%{' '}(-{formatCurrency(item.discountAmount)})
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            }
-
-            return groups.map((group, gi) => {
-              if (group.kind === 'item') {
-                return renderLine(augmented[group.idx], group.idx, false);
-              }
-
-              // Combo group
-              const groupItems  = group.indices.map(j => augmented[j]);
-              const comboTotal  = groupItems.reduce((s, it) => s + (it.itemSubtotal ?? 0), 0);
-              const comboSaving = groupItems.reduce((s, it) => s + (it.discountAmount ?? 0), 0);
-              const comboName   = group.comboName.length > 24
-                ? group.comboName.slice(0, 23) + '…'
-                : group.comboName;
-
-              return (
-                <div key={group.instanceId} style={{ marginBottom: 10 }}>
-                  {/* Combo header */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, ...R.bold, ...R.red, borderTop: '1px dashed #e0e0e0', paddingTop: 6, marginTop: 4 }}>
-                    <span>🎁 {comboName.toUpperCase()}</span>
-                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(comboTotal)}</span>
-                  </div>
-                  {/* Combo saving line */}
-                  {comboSaving > 0 && (
-                    <div style={{ fontSize: 9, ...R.green, paddingBottom: 3 }}>
-                      Combo saving: -{formatCurrency(comboSaving)}
-                    </div>
-                  )}
-                  {/* Combo items */}
-                  {groupItems.map((item, ii) => renderLine(item, group.indices[ii], true))}
-                  <div style={{ borderBottom: '1px dashed #e0e0e0', marginBottom: 4 }} />
-                </div>
-              );
-            });
-          })()}
-
-          <div style={R.divider} />
-
-          {/* Totals */}
-          {(() => {
-            // Sum all item-level discounts (combo discounts, cashier discounts)
-            const totalItemDisc = (order.items || []).reduce((s, it) => s + (it.discountAmount ?? 0), 0);
-            // Gross before any discounts = sum(priceAtPurchase × qty)
-            const grossSubtotal = (order.items || []).reduce((s, it) => s + (it.priceAtPurchase ?? 0) * it.quantity, 0);
-            const hasItemDisc   = totalItemDisc > 0.005;
-            const hasOrderDisc  = displayDiscount > 0.005;
-            const showBreakdown = hasItemDisc || hasOrderDisc;
-
-            // Build named discount rows; fall back to a single generic row
-            const autoTotal = autoDiscounts.reduce((s, d) => s + d.discount, 0);
-            // Code's share = whatever the server stored minus the auto-discounts we computed
-            const codePortion = appliedCode && hasOrderDisc
-              ? Math.max(0, displayDiscount - autoTotal)
-              : 0;
-
-            return (
-              <>
-                {showBreakdown && (
-                  <>
-                    <Row label="Gross Subtotal" value={formatCurrency(grossSubtotal)} />
-                    {hasItemDisc && <Row label="Item Discounts" value={`-${formatCurrency(totalItemDisc)}`} vStyle={R.red} />}
-                    {/* Named auto-discounts (promotions + bxgy) */}
-                    {autoDiscounts.map(d => (
-                      <Row key={d.id} label={d.name} value={`-${formatCurrency(d.discount)}`} vStyle={R.red} />
-                    ))}
-                    {/* Code row */}
-                    {codePortion > 0 && (
-                      <Row label={appliedCode ? `${appliedCode.kind === 'coupon' ? 'Coupon' : 'Code'} (${appliedCode.code})` : 'Code Discount'}
-                        value={`-${formatCurrency(codePortion)}`} vStyle={R.red} />
-                    )}
-                    {/* Fallback: no named discounts but server recorded one (e.g. cart-level cashier discount) */}
-                    {autoDiscounts.length === 0 && !appliedCode && hasOrderDisc && (
-                      <Row label="Order Discount" value={`-${formatCurrency(displayDiscount)}`} vStyle={R.red} />
-                    )}
-                    {/* Cart-level cashier discount alongside named discounts */}
-                    {(autoDiscounts.length > 0 || appliedCode) && hasOrderDisc && autoTotal + codePortion < displayDiscount - 0.005 && (
-                      <Row label="Order Discount" value={`-${formatCurrency(displayDiscount - autoTotal - codePortion)}`} vStyle={R.red} />
-                    )}
-                  </>
-                )}
-              </>
-            );
-          })()}
-          <div style={R.rule} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', ...R.bold, fontSize: 14 }}>
-            <span>TOTAL</span>
-            <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(order.total)}</span>
-          </div>
-          <div style={R.rule} />
-
-          {/* Payment */}
-          {paymentLines.length > 1 ? (
-            paymentLines.map((ln, i) => (
-              <Row key={i} label={ln.label} value={formatCurrency(ln.amount)} />
-            ))
-          ) : (
-            <Row
-              label={METHOD_LABELS[order.paymentMethod] ?? order.paymentMethod}
-              value={formatCurrency(order.amountTendered && order.amountTendered > order.total
-                ? order.amountTendered : order.total)}
-            />
-          )}
-          {order.change > 0 && (
-            <Row label="CHANGE" value={formatCurrency(order.change)} vStyle={{ ...R.green, ...R.bold }} />
-          )}
-
-          {/* Note */}
-          {displayNote && (
-            <>
-              <div style={R.divider} />
-              <p style={{ fontSize: 10, fontStyle: 'italic', ...R.muted }}>Note: {displayNote}</p>
-            </>
-          )}
-
-          <div style={R.rule} />
-
-          {/* Footer */}
-          <div style={{ ...R.center, fontSize: 10, ...R.muted, marginTop: 4 }}>
-            <p style={{ ...R.bold, color: '#222' }}>*** THANK YOU FOR YOUR PURCHASE ***</p>
-            <p style={{ marginTop: 3 }}>Goods are not returnable unless defective.</p>
-            <p>Please retain this receipt for reference.</p>
-            <p style={{ marginTop: 8, fontSize: 9, color: '#aaa' }}>{order.receiptNumber}</p>
-          </div>
-
-          {/* Next-order coupon */}
-          {nextOrderCode && nocSettings && (
-            <>
-              <div style={R.divider} />
-              <div style={{ ...R.center, marginTop: 4 }}>
-                <p style={{ fontSize: 10, ...R.bold, color: '#222' }}>🎁 YOUR NEXT ORDER COUPON</p>
-                <p style={{ fontFamily: 'monospace', fontSize: 14, ...R.bold, letterSpacing: '0.12em', color: '#b20202', marginTop: 4 }}>
-                  {nextOrderCode}
+          <div
+            ref={printRef}
+            style={{
+              ...R.paper,
+              fontFamily: "'Courier New', Courier, monospace",
+              fontSize: 12,
+              lineHeight: 1.6,
+              padding: '24px 20px 20px',
+            }}
+          >
+            {/* Store header */}
+            {!settings.basicReceipt && (
+              <div style={{ ...R.center, marginBottom: 8 }}>
+                <p style={{ ...R.bold, fontSize: 15, letterSpacing: '0.1em' }}>
+                  {storeName}
                 </p>
-                <p style={{ fontSize: 9, ...R.muted, marginTop: 2 }}>
-                  {nocSettings.type === 'pct'
-                    ? `${nocSettings.value}% off`
-                    : `₦${(nocSettings.value ?? 0).toLocaleString()} off`} your next order
+                <p style={{ ...R.muted, fontSize: 10, marginTop: 2 }}>
+                  39 GANA ST, MAITAMA, ABUJA
                 </p>
-                <p style={{ fontSize: 9, ...R.muted }}>
-                  Valid for {nocSettings.validDays ?? 30} days
+                <p style={{ ...R.muted, fontSize: 10 }}>NIGERIA</p>
+                <p style={{ color: '#888', fontSize: 10 }}>drinksharbour.com</p>
+              </div>
+            )}
+
+            {settings.receiptHeader ? (
+              <div style={{ ...R.center, marginBottom: 6 }}>
+                <p style={{ fontSize: 11, whiteSpace: 'pre-line' }}>
+                  {settings.receiptHeader}
                 </p>
               </div>
-            </>
-          )}
+            ) : null}
+
+            <div style={R.rule} />
+
+            {/* Order meta */}
+            <Row label="Receipt #" value={order.receiptNumber} />
+            {settings.showOrderNumber && order.orderNumber && (
+              <Row label="Order #" value={order.orderNumber} />
+            )}
+            <Row label="Date" value={receiptDate} />
+            {settings.showCashierName && (
+              <Row label="Cashier" value={staffName} />
+            )}
+            {custName && <Row label="Customer" value={custName} />}
+
+            <div style={R.rule} />
+
+            {/* Column headers */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                ...R.muted,
+                fontSize: 10,
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+              }}
+            >
+              <span style={{ flex: 1 }}>Description</span>
+              <span>Amount</span>
+            </div>
+            <div style={R.divider} />
+
+            {/* Items — grouped by combo when cartSnapshot is available */}
+            {(() => {
+              // Augment server receipt items with comboRef from the cart snapshot
+              // (server items and cart items are in the same order)
+              const augmented = (order.items || []).map((item, i) => ({
+                ...item,
+                comboRef: cartSnapshot[i]?.comboRef,
+              }));
+
+              // Build display groups: combo items grouped under a header
+              type Group =
+                | { kind: 'item'; idx: number }
+                | {
+                    kind: 'combo';
+                    instanceId: string;
+                    comboName: string;
+                    indices: number[];
+                  };
+
+              const seen = new Set<string>();
+              const groups: Group[] = [];
+
+              augmented.forEach((item, i) => {
+                if (item.comboRef?.instanceId) {
+                  const id = item.comboRef.instanceId;
+                  if (!seen.has(id)) {
+                    seen.add(id);
+                    groups.push({
+                      kind: 'combo',
+                      instanceId: id,
+                      comboName: item.comboRef.comboName,
+                      indices: augmented
+                        .map((a, j) => (a.comboRef?.instanceId === id ? j : -1))
+                        .filter((j) => j >= 0),
+                    });
+                  }
+                } else {
+                  groups.push({ kind: 'item', idx: i });
+                }
+              });
+
+              function renderLine(
+                item: (typeof augmented)[0],
+                i: number,
+                indent = false
+              ) {
+                const isGet = item.bxgyRole === 'get';
+                const price = item.priceAtPurchase ?? 0;
+                const lineTotal = item.itemSubtotal ?? price * item.quantity;
+                const label =
+                  (item.name || 'Item') +
+                  (item.variant ? ` (${item.variant})` : '');
+                const maxLen = indent ? 23 : 26;
+                const truncated =
+                  label.length > maxLen
+                    ? label.slice(0, maxLen - 1) + '…'
+                    : label;
+                const discPct =
+                  price > 0 && item.discountAmount > 0
+                    ? Math.round(
+                        (item.discountAmount / (price * item.quantity)) * 100
+                      )
+                    : 0;
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      marginBottom: indent ? 5 : 8,
+                      paddingLeft: indent ? 8 : 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        ...R.bold,
+                      }}
+                    >
+                      <span style={{ flex: 1, paddingRight: 8 }}>
+                        {truncated}
+                        {isGet && (
+                          <span
+                            style={{
+                              display: 'inline-block',
+                              background: '#d1fae5',
+                              color: '#059669',
+                              fontSize: 9,
+                              fontWeight: 700,
+                              padding: '1px 5px',
+                              borderRadius: 3,
+                              marginLeft: 4,
+                              verticalAlign: 'middle',
+                            }}
+                          >
+                            GET
+                          </span>
+                        )}
+                      </span>
+                      <span
+                        style={{
+                          whiteSpace: 'nowrap',
+                          fontVariantNumeric: 'tabular-nums',
+                        }}
+                      >
+                        {formatCurrency(lineTotal)}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        paddingLeft: indent ? 0 : 8,
+                        fontSize: 10,
+                        ...R.muted,
+                      }}
+                    >
+                      {item.quantity} ×{' '}
+                      {isGet ? formatCurrency(0) : formatCurrency(price)}
+                      {isGet && (
+                        <span style={{ marginLeft: 4, color: '#059669' }}>
+                          FREE
+                        </span>
+                      )}
+                      {!isGet && item.discountAmount > 0 && (
+                        <span style={{ marginLeft: 6, ...R.red }}>
+                          combo -{discPct}% (-
+                          {formatCurrency(item.discountAmount)})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
+              return groups.map((group, gi) => {
+                if (group.kind === 'item') {
+                  return renderLine(augmented[group.idx], group.idx, false);
+                }
+
+                // Combo group
+                const groupItems = group.indices.map((j) => augmented[j]);
+                const comboTotal = groupItems.reduce(
+                  (s, it) => s + (it.itemSubtotal ?? 0),
+                  0
+                );
+                const comboSaving = groupItems.reduce(
+                  (s, it) => s + (it.discountAmount ?? 0),
+                  0
+                );
+                const comboName =
+                  group.comboName.length > 24
+                    ? group.comboName.slice(0, 23) + '…'
+                    : group.comboName;
+
+                return (
+                  <div key={group.instanceId} style={{ marginBottom: 10 }}>
+                    {/* Combo header */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        fontSize: 10,
+                        ...R.bold,
+                        ...R.red,
+                        borderTop: '1px dashed #e0e0e0',
+                        paddingTop: 6,
+                        marginTop: 4,
+                      }}
+                    >
+                      <span>🎁 {comboName.toUpperCase()}</span>
+                      <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                        {formatCurrency(comboTotal)}
+                      </span>
+                    </div>
+                    {/* Combo saving line */}
+                    {comboSaving > 0 && (
+                      <div
+                        style={{ fontSize: 9, ...R.green, paddingBottom: 3 }}
+                      >
+                        Combo saving: -{formatCurrency(comboSaving)}
+                      </div>
+                    )}
+                    {/* Combo items */}
+                    {groupItems.map((item, ii) =>
+                      renderLine(item, group.indices[ii], true)
+                    )}
+                    <div
+                      style={{
+                        borderBottom: '1px dashed #e0e0e0',
+                        marginBottom: 4,
+                      }}
+                    />
+                  </div>
+                );
+              });
+            })()}
+
+            <div style={R.divider} />
+
+            {/* Totals */}
+            {(() => {
+              // Sum all item-level discounts (combo discounts, cashier discounts)
+              const totalItemDisc = (order.items || []).reduce(
+                (s, it) => s + (it.discountAmount ?? 0),
+                0
+              );
+              // Gross before any discounts = sum(priceAtPurchase × qty)
+              const grossSubtotal = (order.items || []).reduce(
+                (s, it) => s + (it.priceAtPurchase ?? 0) * it.quantity,
+                0
+              );
+              const hasItemDisc = totalItemDisc > 0.005;
+              const hasOrderDisc = displayDiscount > 0.005;
+              const showBreakdown = hasItemDisc || hasOrderDisc;
+
+              // Build named discount rows; fall back to a single generic row
+              const autoTotal = autoDiscounts.reduce(
+                (s, d) => s + d.discount,
+                0
+              );
+              // Code's share = whatever the server stored minus the auto-discounts we computed
+              const codePortion =
+                appliedCode && hasOrderDisc
+                  ? Math.max(0, displayDiscount - autoTotal)
+                  : 0;
+
+              return (
+                <>
+                  {showBreakdown && (
+                    <>
+                      <Row
+                        label="Gross Subtotal"
+                        value={formatCurrency(grossSubtotal)}
+                      />
+                      {hasItemDisc && (
+                        <Row
+                          label="Item Discounts"
+                          value={`-${formatCurrency(totalItemDisc)}`}
+                          vStyle={R.red}
+                        />
+                      )}
+                      {/* Named auto-discounts (promotions + bxgy) */}
+                      {autoDiscounts.map((d) => (
+                        <Row
+                          key={d.id}
+                          label={d.name}
+                          value={`-${formatCurrency(d.discount)}`}
+                          vStyle={R.red}
+                        />
+                      ))}
+                      {/* Code row */}
+                      {codePortion > 0 && (
+                        <Row
+                          label={
+                            appliedCode
+                              ? `${appliedCode.kind === 'coupon' ? 'Coupon' : 'Code'} (${appliedCode.code})`
+                              : 'Code Discount'
+                          }
+                          value={`-${formatCurrency(codePortion)}`}
+                          vStyle={R.red}
+                        />
+                      )}
+                      {/* Fallback: no named discounts but server recorded one (e.g. cart-level cashier discount) */}
+                      {autoDiscounts.length === 0 &&
+                        !appliedCode &&
+                        hasOrderDisc && (
+                          <Row
+                            label="Order Discount"
+                            value={`-${formatCurrency(displayDiscount)}`}
+                            vStyle={R.red}
+                          />
+                        )}
+                      {/* Cart-level cashier discount alongside named discounts */}
+                      {(autoDiscounts.length > 0 || appliedCode) &&
+                        hasOrderDisc &&
+                        autoTotal + codePortion < displayDiscount - 0.005 && (
+                          <Row
+                            label="Order Discount"
+                            value={`-${formatCurrency(displayDiscount - autoTotal - codePortion)}`}
+                            vStyle={R.red}
+                          />
+                        )}
+                    </>
+                  )}
+                </>
+              );
+            })()}
+            <div style={R.rule} />
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                ...R.bold,
+                fontSize: 14,
+              }}
+            >
+              <span>TOTAL</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                {formatCurrency(order.total)}
+              </span>
+            </div>
+            <div style={R.rule} />
+
+            {/* Payment */}
+            {paymentLines.length > 1 ? (
+              paymentLines.map((ln, i) => (
+                <Row
+                  key={i}
+                  label={ln.label}
+                  value={formatCurrency(ln.amount)}
+                />
+              ))
+            ) : (
+              <Row
+                label={
+                  METHOD_LABELS[order.paymentMethod] ?? order.paymentMethod
+                }
+                value={formatCurrency(
+                  order.amountTendered && order.amountTendered > order.total
+                    ? order.amountTendered
+                    : order.total
+                )}
+              />
+            )}
+            {order.change > 0 && (
+              <Row
+                label="CHANGE"
+                value={formatCurrency(order.change)}
+                vStyle={{ ...R.green, ...R.bold }}
+              />
+            )}
+
+            {/* Note */}
+            {displayNote && (
+              <>
+                <div style={R.divider} />
+                <p style={{ fontSize: 10, fontStyle: 'italic', ...R.muted }}>
+                  Note: {displayNote}
+                </p>
+              </>
+            )}
+
+            <div style={R.rule} />
+
+            {/* Tax line */}
+            {settings.showTaxOnReceipt && settings.taxRate > 0 && (
+              <>
+                <div style={R.divider} />
+                <Row
+                  label={`Tax (${settings.taxRate}% incl.)`}
+                  value={formatCurrency(
+                    (order.total * settings.taxRate) / (100 + settings.taxRate)
+                  )}
+                  vStyle={R.muted}
+                />
+              </>
+            )}
+
+            {/* Footer */}
+            <div
+              style={{ ...R.center, fontSize: 10, ...R.muted, marginTop: 4 }}
+            >
+              {settings.receiptFooter ? (
+                <p style={{ whiteSpace: 'pre-line', marginBottom: 4 }}>
+                  {settings.receiptFooter}
+                </p>
+              ) : (
+                <>
+                  <p style={{ ...R.bold, color: '#222' }}>
+                    *** THANK YOU FOR YOUR PURCHASE ***
+                  </p>
+                  <p style={{ marginTop: 3 }}>
+                    Goods are not returnable unless defective.
+                  </p>
+                  <p>Please retain this receipt for reference.</p>
+                </>
+              )}
+              <p style={{ marginTop: 8, fontSize: 9, color: '#aaa' }}>
+                {order.receiptNumber}
+              </p>
+            </div>
+
+            {/* Next-order coupon */}
+            {nextOrderCode && nocSettings && (
+              <>
+                <div style={R.divider} />
+                <div style={{ ...R.center, marginTop: 4 }}>
+                  <p style={{ fontSize: 10, ...R.bold, color: '#222' }}>
+                    🎁 YOUR NEXT ORDER COUPON
+                  </p>
+                  <p
+                    style={{
+                      fontFamily: 'monospace',
+                      fontSize: 14,
+                      ...R.bold,
+                      letterSpacing: '0.12em',
+                      color: '#b20202',
+                      marginTop: 4,
+                    }}
+                  >
+                    {nextOrderCode}
+                  </p>
+                  <p style={{ fontSize: 9, ...R.muted, marginTop: 2 }}>
+                    {nocSettings.type === 'pct'
+                      ? `${nocSettings.value}% off`
+                      : `₦${(nocSettings.value ?? 0).toLocaleString()} off`}{' '}
+                    your next order
+                  </p>
+                  <p style={{ fontSize: 9, ...R.muted }}>
+                    Valid for {nocSettings.validDays ?? 30} days
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
         </div>
-        </div>{/* end scrollable */}
+        {/* end scrollable */}
 
         {/* Action buttons */}
         <div style={{ display: 'flex', gap: 0, flexShrink: 0 }}>
           <button
             type="button"
             onClick={handlePrint}
-            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, border: 'none', borderTop: '1px solid #e5e7eb', padding: '14px 0', fontSize: 13, fontWeight: 600, color: '#374151', backgroundColor: '#f9fafb', cursor: 'pointer' }}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              border: 'none',
+              borderTop: '1px solid #e5e7eb',
+              padding: '14px 0',
+              fontSize: 13,
+              fontWeight: 600,
+              color: '#374151',
+              backgroundColor: '#f9fafb',
+              cursor: 'pointer',
+            }}
           >
             <PiPrinter style={{ width: 15, height: 15 }} /> Print
           </button>
           <button
             type="button"
             onClick={onNewSale}
-            style={{ flex: 1, border: 'none', borderTop: '1px solid #b20202', padding: '14px 0', fontSize: 13, fontWeight: 700, color: '#fff', backgroundColor: '#b20202', cursor: 'pointer' }}
+            style={{
+              flex: 1,
+              border: 'none',
+              borderTop: '1px solid #b20202',
+              padding: '14px 0',
+              fontSize: 13,
+              fontWeight: 700,
+              color: '#fff',
+              backgroundColor: '#b20202',
+              cursor: 'pointer',
+            }}
           >
             New Sale
           </button>
         </div>
-
-      </div>{/* end receipt card */}
+      </div>
+      {/* end receipt card */}
     </div>
   );
 }
@@ -412,8 +819,14 @@ function ReceiptScreen({
 // ── Discount engine ───────────────────────────────────────────────────────────
 
 import type {
-  POSSettings, POSCartItem, POSDiscountReward, POSRewardApplyOn,
-  POSCoupon, POSDiscountCode, POSPromotion, POSBuyXGetY,
+  POSSettings,
+  POSCartItem,
+  POSDiscountReward,
+  POSRewardApplyOn,
+  POSCoupon,
+  POSDiscountCode,
+  POSPromotion,
+  POSBuyXGetY,
 } from '@/app/shared/point-of-sale/types';
 import type { CartPendingCode } from '@/app/shared/point-of-sale/store';
 
@@ -424,18 +837,22 @@ interface AppliedDiscount {
   id: string;
   name: string;
   kind: 'code' | 'promotion' | 'bxgy';
-  discount: number;    // ₦ amount
+  discount: number; // ₦ amount
   color?: string;
-  detail?: string;     // human-readable e.g. "10% off order"
+  detail?: string; // human-readable e.g. "10% off order"
 }
 
 // Resolve the effective reward from a coupon/code (reward obj beats legacy fields)
-function resolveReward(item: { reward?: POSDiscountReward; type: string; value: number }) {
+function resolveReward(item: {
+  reward?: POSDiscountReward;
+  type: string;
+  value: number;
+}) {
   return {
-    discType:    (item.reward?.discountType  ?? item.type)  as 'pct' | 'fixed',
-    discValue:   item.reward?.discountValue  ?? item.value,
-    applyOn:     (item.reward?.applyOn       ?? 'order')    as POSRewardApplyOn,
-    maxDiscount: item.reward?.maxDiscount    ?? 0,
+    discType: (item.reward?.discountType ?? item.type) as 'pct' | 'fixed',
+    discValue: item.reward?.discountValue ?? item.value,
+    applyOn: (item.reward?.applyOn ?? 'order') as POSRewardApplyOn,
+    maxDiscount: item.reward?.maxDiscount ?? 0,
   };
 }
 
@@ -446,19 +863,20 @@ function applyReward(
   discType: 'pct' | 'fixed',
   discValue: number,
   applyOn: POSRewardApplyOn,
-  maxDiscount: number,
+  maxDiscount: number
 ): number {
   if (discValue <= 0) return 0;
   let base = cartTotal;
   if (applyOn === 'cheapest' && items.length) {
     // Apply to the single cheapest unit price (not the line total)
-    base = Math.min(...items.map(i => i.price));
+    base = Math.min(...items.map((i) => i.price));
   } else if (applyOn === 'most_expensive' && items.length) {
-    base = Math.max(...items.map(i => i.price));
+    base = Math.max(...items.map((i) => i.price));
   }
-  const raw = discType === 'pct'
-    ? Math.round(base * discValue / 100 * 100) / 100
-    : Math.min(discValue, base);
+  const raw =
+    discType === 'pct'
+      ? Math.round(((base * discValue) / 100) * 100) / 100
+      : Math.min(discValue, base);
   return Math.max(0, maxDiscount > 0 ? Math.min(raw, maxDiscount) : raw);
 }
 
@@ -468,224 +886,201 @@ function validateCode(
   settings: POSSettings | undefined,
   cartTotal: number,
   cartQty: number,
-  selectedPricelistId?: string,
+  selectedPricelistId?: string
 ): AppliedCode | string {
   if (!code.trim()) return 'Enter a code';
   const upper = code.trim().toUpperCase();
-  const now   = new Date();
+  const now = new Date();
 
   // ── Coupons ─────────────────────────────────────────────────────────────────
   for (const c of settings?.coupons ?? []) {
     if (!c.active || c.code.toUpperCase() !== upper) continue;
     // Channel check
-    if (c.availableOn && c.availableOn.pos === false) return 'This coupon is not valid at the POS';
+    if (c.availableOn && c.availableOn.pos === false)
+      return 'This coupon is not valid at the POS';
     // Date window
-    if (c.validFrom && new Date(c.validFrom) > now) return 'Coupon not yet valid';
-    if (c.validTo   && new Date(c.validTo)   < now) return 'Coupon has expired';
+    if (c.validFrom && new Date(c.validFrom) > now)
+      return 'Coupon not yet valid';
+    if (c.validTo && new Date(c.validTo) < now) return 'Coupon has expired';
     // Usage limit
-    if ((c.maxUsage ?? 0) > 0 && (c.usageCount ?? 0) >= c.maxUsage!) return 'Coupon usage limit reached';
+    if ((c.maxUsage ?? 0) > 0 && (c.usageCount ?? 0) >= c.maxUsage!)
+      return 'Coupon usage limit reached';
     // Rules
     const minOrder = c.rules?.minOrderValue ?? c.minOrderValue ?? 0;
-    const minQty   = c.rules?.minQty ?? 0;
-    if (minOrder > cartTotal) return `Min. order ${formatCurrency(minOrder)} required`;
-    if (minQty   > cartQty)   return `Min. ${minQty} item${minQty > 1 ? 's' : ''} in cart required`;
+    const minQty = c.rules?.minQty ?? 0;
+    if (minOrder > cartTotal)
+      return `Min. order ${formatCurrency(minOrder)} required`;
+    if (minQty > cartQty)
+      return `Min. ${minQty} item${minQty > 1 ? 's' : ''} in cart required`;
     // Pricelist restriction
-    if (c.pricelistIds?.length && selectedPricelistId && !c.pricelistIds.includes(selectedPricelistId))
+    if (
+      c.pricelistIds?.length &&
+      selectedPricelistId &&
+      !c.pricelistIds.includes(selectedPricelistId)
+    )
       return 'Coupon is restricted to a different pricelist';
     const r = resolveReward(c);
-    return { code: c.code, name: c.name, kind: 'coupon', ...r };
+    return {
+      id: c.code,
+      code: c.code,
+      name: c.name,
+      kind: 'coupon' as const,
+      ...r,
+    };
   }
 
   // ── Discount codes ───────────────────────────────────────────────────────────
   for (const d of settings?.discountCodes ?? []) {
     if (!d.active || d.code.toUpperCase() !== upper) continue;
     // Channel check
-    if (d.availableOn && d.availableOn.pos === false) return 'This code is not valid at the POS';
+    if (d.availableOn && d.availableOn.pos === false)
+      return 'This code is not valid at the POS';
     // Date window
     if (d.validFrom && new Date(d.validFrom) > now) return 'Code not yet valid';
-    if (d.validTo   && new Date(d.validTo)   < now) return 'Code has expired';
+    if (d.validTo && new Date(d.validTo) < now) return 'Code has expired';
     // Usage limit
-    if ((d.maxUsage ?? 0) > 0 && (d.usageCount ?? 0) >= d.maxUsage!) return 'Code usage limit reached';
+    if ((d.maxUsage ?? 0) > 0 && (d.usageCount ?? 0) >= d.maxUsage!)
+      return 'Code usage limit reached';
     // Rules
     const minOrder = d.rules?.minOrderValue ?? d.minOrderValue ?? 0;
-    const minQty   = d.rules?.minQty ?? 0;
-    if (minOrder > cartTotal) return `Min. order ${formatCurrency(minOrder)} required`;
-    if (minQty   > cartQty)   return `Min. ${minQty} item${minQty > 1 ? 's' : ''} in cart required`;
+    const minQty = d.rules?.minQty ?? 0;
+    if (minOrder > cartTotal)
+      return `Min. order ${formatCurrency(minOrder)} required`;
+    if (minQty > cartQty)
+      return `Min. ${minQty} item${minQty > 1 ? 's' : ''} in cart required`;
     // Pricelist restriction
-    if (d.pricelistIds?.length && selectedPricelistId && !d.pricelistIds.includes(selectedPricelistId))
+    if (
+      d.pricelistIds?.length &&
+      selectedPricelistId &&
+      !d.pricelistIds.includes(selectedPricelistId)
+    )
       return 'Code is restricted to a different pricelist';
     const r = resolveReward(d);
-    return { code: d.code, name: d.name, kind: 'discount_code', ...r, color: d.color };
+    return {
+      id: d.code,
+      code: d.code,
+      name: d.name,
+      kind: 'discount_code' as const,
+      ...r,
+      color: d.color,
+    };
   }
 
   return 'Code not found or inactive';
-}
-
-// Compute all automatic discounts (promotions + bxgy) — returns sorted list
-function computeAutoDiscounts(
-  items: POSCartItem[],
-  cartTotal: number,
-  settings: POSSettings | undefined,
-  selectedPricelistId?: string,
-): AppliedDiscount[] {
-  const now = new Date();
-  const cartQty = items.reduce((s, i) => s + i.quantity, 0);
-  const results: AppliedDiscount[] = [];
-  let remainingTotal = cartTotal;
-  let anyNonStackable = false;
-
-  // ── Promotions (sorted by priority desc) ────────────────────────────────────
-  const validPromos = (settings?.promotions ?? [])
-    .filter(p => {
-      if (!p.active) return false;
-      if (p.startDate && new Date(p.startDate) > now) return false;
-      if (p.endDate   && new Date(p.endDate)   < now) return false;
-      if (p.availableOn && p.availableOn.pos === false) return false;
-      if ((p.maxUsage ?? 0) > 0 && (p.usageCount ?? 0) >= p.maxUsage!) return false;
-      if ((p.rules?.minOrderValue ?? 0) > cartTotal) return false;
-      if ((p.rules?.minQty ?? 0) > cartQty) return false;
-      if (p.pricelistIds?.length && selectedPricelistId && !p.pricelistIds.includes(selectedPricelistId)) return false;
-      return true;
-    })
-    .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
-
-  for (const p of validPromos) {
-    if (anyNonStackable && !p.stackable) continue;
-    const r = resolveReward(p);
-    const disc = applyReward(items, remainingTotal, r.discType, r.discValue, r.applyOn, r.maxDiscount);
-    if (disc <= 0) continue;
-    results.push({
-      id:      p._id!,
-      name:    p.name,
-      kind:    'promotion',
-      discount: Math.round(disc * 100) / 100,
-      color:   p.color || '#d97706',
-      detail:  r.discType === 'pct'
-        ? `${r.discValue}% off ${r.applyOn === 'order' ? 'order' : r.applyOn === 'cheapest' ? 'cheapest item' : 'most expensive item'}`
-        : `${formatCurrency(r.discValue)} off`,
-    });
-    remainingTotal -= disc;
-    if (!p.stackable) anyNonStackable = true;
-  }
-
-  // ── Buy X Get Y ──────────────────────────────────────────────────────────────
-  const validBxgy = (settings?.buyXGetY ?? []).filter(b => {
-    if (!b.active) return false;
-    if (b.validFrom && new Date(b.validFrom) > now) return false;
-    if (b.validTo   && new Date(b.validTo)   < now) return false;
-    if (b.availableOn && b.availableOn.pos === false) return false;
-    if ((b.maxUsage ?? 0) > 0 && (b.usageCount ?? 0) >= b.maxUsage!) return false;
-    if ((b.minOrderValue ?? 0) > cartTotal) return false;
-    return true;
-  });
-
-  for (const b of validBxgy) {
-    if (anyNonStackable && !b.stackable) continue;
-
-    // Determine "buy" items pool (exclude items added by BXGY rewards)
-    const buyPool = (b.buyProducts?.length ?? 0) > 0
-      ? items.filter(i => b.buyProducts!.includes(i.productId) && !i.bxgyRef)
-      : items.filter(i => !i.bxgyRef);
-
-    const buyCount = buyPool.reduce((s, i) => s + i.quantity, 0);
-    const sets = Math.floor(buyCount / b.buyQty);
-    if (sets === 0) continue;
-
-    // Determine "get" items pool (exclude items added by BXGY rewards)
-    const getPool = (b.getProducts?.length ?? 0) > 0
-      ? items.filter(i => b.getProducts!.includes(i.productId) && !i.bxgyRef)
-      : buyPool;
-
-    if (!getPool.length) continue;
-
-    // For each set: discount the cheapest getQty items (using effective bundle price)
-    const sortedByPrice = [...getPool].sort((a, b) => {
-      const effA = getEffectiveBundlePrice(a).price;
-      const effB = getEffectiveBundlePrice(b).price;
-      return effA - effB;
-    });
-    let getDisc = 0;
-    let remaining = sets * b.getQty;
-    for (const item of sortedByPrice) {
-      if (remaining <= 0) break;
-      const take = Math.min(remaining, item.quantity);
-      const effPrice = getEffectiveBundlePrice(item).price;
-      getDisc += effPrice * take * (b.getDiscountPct / 100);
-      remaining -= take;
-    }
-    getDisc = Math.round(getDisc * 100) / 100;
-    if (getDisc <= 0) continue;
-
-    results.push({
-      id:      b._id!,
-      name:    b.name,
-      kind:    'bxgy',
-      discount: getDisc,
-      color:   b.color || '#7c3aed',
-      detail:  `Buy ${b.buyQty} get ${b.getQty} ${b.getDiscountPct === 100 ? 'free' : `at ${b.getDiscountPct}% off`}`,
-    });
-    remainingTotal -= getDisc;
-    if (!b.stackable) anyNonStackable = true;
-  }
-
-  return results;
 }
 
 // ── Next-order coupon code generator ─────────────────────────────────────────
 
 function generateNextOrderCode(prefix: string): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  return prefix + Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  return (
+    prefix +
+    Array.from(
+      { length: 8 },
+      () => chars[Math.floor(Math.random() * chars.length)]
+    ).join('')
+  );
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function POSPaymentModal() {
-  const { items, total, subtotal, discountAmount, customer, note,
-          discountType, discountValue, clearCart,
-          appliedRewards, rewardsDiscountTotal } = usePOSCart();
+  const {
+    items,
+    total,
+    subtotal,
+    discountAmount,
+    customer,
+    note,
+    discountType,
+    discountValue,
+    clearCart,
+    appliedRewards,
+    rewardsDiscountTotal,
+  } = usePOSCart();
 
   // Snapshot of cart items at the moment the order completes — needed for
   // combo receipt grouping since the cart is cleared on "New Sale".
-  const [cartSnapshot, setCartSnapshot] = useState<import('@/app/shared/point-of-sale/types').POSCartItem[]>([]);
+  const [cartSnapshot, setCartSnapshot] = useState<
+    import('@/app/shared/point-of-sale/types').POSCartItem[]
+  >([]);
   const { setActiveView } = usePOSUI();
   const { token, terminal, tenant } = usePOSAuth();
   const { notifySale } = usePOSSaleSignal();
   const { selectedPricelist } = usePOSPricelist();
   const posSettings = tenant?.posSettings;
+  const settings = usePOSSettings();
+  const isOnline = useOnlineStatus();
 
-  const [lines,       setLines]       = useState<PaymentLine[]>([]);
-  const [activeId,    setActiveId]    = useState<string | null>(null);
-  const [inputStr,    setInputStr]    = useState('0');
-  const [freshInput,  setFreshInput]  = useState(false);
-  const [loading,     setLoading]     = useState(false);
+  const [lines, setLines] = useState<PaymentLine[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [inputStr, setInputStr] = useState('0');
+  const [freshInput, setFreshInput] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [orderResult, setOrderResult] = useState<POSOrderResponse | null>(null);
   const [nextOrderCode, setNextOrderCode] = useState<string | null>(null);
 
   // ── Discount computation ──────────────────────────────────────────────────────
   // `total` from the cart already includes rewards (subtotal - cartDiscount - rewardsDiscount).
   // `effectiveTotal` IS the cart total — no further deduction needed here.
-  const effectiveTotal = total;   // cart store owns all discount arithmetic
+  const effectiveTotal = total; // cart store owns all discount arithmetic
+
+  // ── Customer / Loyalty helpers ───────────────────────────────────────────────
+  const hasCustomer = !!customer.customerId;
+  const customerLabel = hasCustomer
+    ? `${customer.firstName} ${customer.lastName}`.trim()
+    : null;
+  const loyaltyEnabled = posSettings?.loyaltyEnabled ?? false;
+  const loyaltyPtsPerN = posSettings?.loyaltyPointsPerNaira ?? 0.01;
+  const earnedPts =
+    hasCustomer && loyaltyEnabled
+      ? Math.round(effectiveTotal * loyaltyPtsPerN)
+      : 0;
+  const currentPts = customer.loyaltyPoints ?? 0;
+  const loyaltyR = appliedRewards.find((r) => r.kind === 'loyalty');
+  const redeemedPts = loyaltyR
+    ? Math.round(
+        (loyaltyR.discValue ?? 0) / (posSettings?.loyaltyPointsValue ?? 1)
+      )
+    : 0;
+  const newBalance = Math.max(0, currentPts + earnedPts - redeemedPts);
 
   // Build AppliedDiscount list from appliedRewards for the breakdown UI + receipt
-  const autoDiscounts: AppliedDiscount[] = appliedRewards.map(r => ({
-    id:       r.id,
-    name:     r.name,
-    kind:     (r.kind === 'promotion' ? 'promotion' : r.kind === 'bxgy' ? 'bxgy' : 'code') as AppliedDiscount['kind'],
-    discount: computeRewardDiscount(r, items, Math.max(0, subtotal - discountAmount)),
-    color:    r.color,
-    detail:   r.detail,
+  const autoDiscounts: AppliedDiscount[] = appliedRewards.map((r) => ({
+    id: r.id,
+    name: r.name,
+    kind: (r.kind === 'promotion'
+      ? 'promotion'
+      : r.kind === 'bxgy'
+        ? 'bxgy'
+        : 'code') as AppliedDiscount['kind'],
+    discount: computeRewardDiscount(
+      r,
+      items,
+      Math.max(0, subtotal - discountAmount)
+    ),
+    color: r.color,
+    detail: r.detail,
   }));
 
   // Code reward (coupon / discount_code) — shown separately in the UI
-  const appliedCode = appliedRewards.find(r => r.kind === 'coupon' || r.kind === 'discount_code') as AppliedCode | undefined ?? null;
-  const codeDiscount = appliedCode ? computeRewardDiscount(appliedCode, items, Math.max(0, subtotal - discountAmount)) : 0;
+  const appliedCode =
+    (appliedRewards.find(
+      (r) => r.kind === 'coupon' || r.kind === 'discount_code'
+    ) as AppliedCode | undefined) ?? null;
+  const codeDiscount = appliedCode
+    ? computeRewardDiscount(
+        appliedCode,
+        items,
+        Math.max(0, subtotal - discountAmount)
+      )
+    : 0;
 
-  const paidTotal   = lines.reduce((s, l) => s + l.amount, 0);
-  const remaining   = effectiveTotal - paidTotal;
-  const change      = Math.max(0, paidTotal - effectiveTotal);
+  const paidTotal = lines.reduce((s, l) => s + l.amount, 0);
+  const remaining = effectiveTotal - paidTotal;
+  const change = Math.max(0, paidTotal - effectiveTotal);
   const canValidate = remaining <= 0.01 && lines.length > 0;
-  const activeLine  = lines.find((l) => l.id === activeId) ?? null;
+  const activeLine = lines.find((l) => l.id === activeId) ?? null;
 
   // ── Line helpers ─────────────────────────────────────────────────────────────
 
@@ -701,17 +1096,26 @@ export default function POSPaymentModal() {
       setFreshInput(true);
       return;
     }
+    // When split payments are disabled, replace the current line instead of adding
+    if (!settings.splitPayments && lines.length > 0) {
+      setLines([]);
+      setActiveId(null);
+    }
     const amt = parseFloat(Math.max(0, remaining).toFixed(2));
-    const id  = `ln-${Date.now()}`;
+    const id = `ln-${Date.now()}`;
     setLines((prev) => [...prev, { id, method, label, amount: amt }]);
     setActiveId(id);
     setInputStr(amt === 0 ? '0' : String(amt));
-    setFreshInput(true); // pre-filled amount — first digit replaces it
+    setFreshInput(true);
   }
 
   function removeLine(id: string) {
     setLines((prev) => prev.filter((l) => l.id !== id));
-    if (activeId === id) { setActiveId(null); setInputStr('0'); setFreshInput(false); }
+    if (activeId === id) {
+      setActiveId(null);
+      setInputStr('0');
+      setFreshInput(false);
+    }
   }
 
   function selectLine(line: PaymentLine) {
@@ -730,21 +1134,33 @@ export default function POSPaymentModal() {
 
   // ── Numpad callbacks ─────────────────────────────────────────────────────────
 
-  const pushDigit = useCallback((d: string) => {
-    if (!activeId) return;
-    let next: string;
-    if (freshInput) {
-      // First keystroke after selecting — replace the pre-filled value
-      next = d === '.' ? '0.' : d === '0' ? '0' : d;
-      setFreshInput(false);
-    } else if (d === '.') {
-      next = inputStr.includes('.') ? inputStr : (inputStr === '0' ? '0.' : inputStr + '.');
-    } else {
-      next = inputStr === '0' ? d : inputStr.length >= 10 ? inputStr : inputStr + d;
-    }
-    setInputStr(next);
-    applyAmount(activeId, parseFloat(next) || 0);
-  }, [activeId, inputStr, freshInput]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pushDigit = useCallback(
+    (d: string) => {
+      if (!activeId) return;
+      let next: string;
+      if (freshInput) {
+        // First keystroke after selecting — replace the pre-filled value
+        next = d === '.' ? '0.' : d === '0' ? '0' : d;
+        setFreshInput(false);
+      } else if (d === '.') {
+        next = inputStr.includes('.')
+          ? inputStr
+          : inputStr === '0'
+            ? '0.'
+            : inputStr + '.';
+      } else {
+        next =
+          inputStr === '0'
+            ? d
+            : inputStr.length >= 10
+              ? inputStr
+              : inputStr + d;
+      }
+      setInputStr(next);
+      applyAmount(activeId, parseFloat(next) || 0);
+    },
+    [activeId, inputStr, freshInput]
+  ); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pushBackspace = useCallback(() => {
     if (!activeId) return;
@@ -761,30 +1177,54 @@ export default function POSPaymentModal() {
     applyAmount(activeId, 0);
   }, [activeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const addQuick = useCallback((delta: number) => {
-    if (!activeId) return;
-    const base = parseFloat(inputStr) || 0;
-    const next = parseFloat((base + delta).toFixed(2));
-    setInputStr(String(next));
-    setFreshInput(false);
-    applyAmount(activeId, next);
-  }, [activeId, inputStr]); // eslint-disable-line react-hooks/exhaustive-deps
+  const addQuick = useCallback(
+    (delta: number) => {
+      if (!activeId) return;
+      const base = parseFloat(inputStr) || 0;
+      const next = parseFloat((base + delta).toFixed(2));
+      setInputStr(String(next));
+      setFreshInput(false);
+      applyAmount(activeId, next);
+    },
+    [activeId, inputStr]
+  ); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Physical keyboard ────────────────────────────────────────────────────────
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (/^[0-9]$/.test(e.key))       { e.preventDefault(); pushDigit(e.key); }
-      else if (e.key === '.')           { e.preventDefault(); pushDigit('.'); }
-      else if (e.key === 'Backspace')   { e.preventDefault(); pushBackspace(); }
-      else if (e.key === 'Delete')      { e.preventDefault(); pushClear(); }
-      else if (e.key === 'Enter' && canValidate) { e.preventDefault(); handleValidate(); }
-      else if (e.key === 'Escape')      { e.preventDefault(); setActiveView('sell'); }
+      if (/^[0-9]$/.test(e.key)) {
+        e.preventDefault();
+        pushDigit(e.key);
+      } else if (e.key === '.') {
+        e.preventDefault();
+        pushDigit('.');
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        pushBackspace();
+      } else if (e.key === 'Delete') {
+        e.preventDefault();
+        pushClear();
+      } else if (e.key === 'Enter' && canValidate) {
+        e.preventDefault();
+        handleValidate();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setActiveView('sell');
+      }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [pushDigit, pushBackspace, pushClear, canValidate]); // eslint-disable-line
+
+  // ── Auto-validate when fully paid and setting is on ──────────────────────────
+  useEffect(() => {
+    if (settings.autoValidateOrder && canValidate && !loading && !orderResult) {
+      handleValidate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canValidate, settings.autoValidateOrder]);
 
   // ── Validate ─────────────────────────────────────────────────────────────────
 
@@ -792,50 +1232,75 @@ export default function POSPaymentModal() {
     if (!canValidate || loading || !token) return;
     setLoading(true);
     try {
-      const orderItems = items.map((item) => ({
-        subProductId: item.subProductId,
-        productId:    item.productId,
-        sizeId:       item.sizeId || undefined,
-        quantity:     item.quantity,
-        price:        item.price,
-        discount:     item.discount,
-        sku:          item.sku,
-        variant:      item.variant,
-        name:         item.name,
-      }));
+      const orderItems = items.map((item) => {
+        const isGet = item.bxgyRef?.role === 'get';
+        return {
+          subProductId: item.subProductId,
+          productId: item.productId,
+          sizeId: item.sizeId || undefined,
+          quantity: item.quantity,
+          price: item.price,
+          // BXGY get items: pass the discount % so the server applies it correctly
+          // (server ignores client price but does apply item.discount)
+          discount: isGet ? item.bxgyRef!.discPct : item.discount,
+          sku: item.sku,
+          variant: item.variant,
+          name: item.name,
+          bxgyRole: item.bxgyRef?.role, // 'buy' | 'get' — for receipt display
+        };
+      });
 
       let paymentMethod: string;
       let amountTendered = 0;
       let splitPayments: { method: string; amount: number }[] = [];
 
       if (lines.length === 1) {
-        paymentMethod  = lines[0].method;
+        paymentMethod = lines[0].method;
         amountTendered = lines[0].amount;
       } else {
-        paymentMethod  = 'split';
-        splitPayments  = lines.map((l) => ({ method: l.method, amount: l.amount }));
+        paymentMethod = 'split';
+        splitPayments = lines.map((l) => ({
+          method: l.method,
+          amount: l.amount,
+        }));
         amountTendered = lines.find((l) => l.method === 'cash')?.amount ?? 0;
       }
 
-      // Total discount = cart-level discount + all rewards (both computed by the store)
-      const cartDiscFixed = discountValue > 0
-        ? (discountType === 'fixed' ? discountValue : subtotal * discountValue / 100)
-        : 0;
-      const totalDisc   = cartDiscFixed + rewardsDiscountTotal;
-      const effDiscType  = totalDisc > 0 ? 'fixed'   : undefined;
+      // Total discount = cart-level discount + non-BXGY rewards
+      // BXGY saving is excluded because get-item prices already reflect the discount
+      const cartDiscFixed =
+        discountValue > 0
+          ? discountType === 'fixed'
+            ? discountValue
+            : (subtotal * discountValue) / 100
+          : 0;
+      const bxgyDisc = appliedRewards
+        .filter((r) => r.kind === 'bxgy')
+        .reduce(
+          (s, r) =>
+            s +
+            computeRewardDiscount(
+              r,
+              items,
+              Math.max(0, subtotal - discountAmount)
+            ),
+          0
+        );
+      const totalDisc = cartDiscFixed + (rewardsDiscountTotal - bxgyDisc);
+      const effDiscType = totalDisc > 0 ? 'fixed' : undefined;
       const effDiscValue = totalDisc > 0 ? totalDisc : 0;
 
-      const result = await posApi.createOrder(token, {
-        items:        orderItems,
+      const result = await createOrderOffline(token, terminal ?? 'retail', {
+        items: orderItems,
         customer,
         paymentMethod,
         amountTendered,
         splitPayments,
-        discountType:  effDiscType,
+        discountType: effDiscType,
         discountValue: effDiscValue,
-        note:          note || undefined,
-        terminalType:  terminal ?? 'retail',
-        pricelistId:   selectedPricelist?._id ?? undefined,
+        note: note || undefined,
+        terminalType: terminal ?? 'retail',
+        pricelistId: selectedPricelist?._id ?? undefined,
       });
 
       setCartSnapshot([...items]);
@@ -845,26 +1310,76 @@ export default function POSPaymentModal() {
       // Increment usage counts for all applied rewards (best-effort, non-blocking)
       if (token && posSettings && appliedRewards.length > 0) {
         const patch: Partial<typeof posSettings> = {};
-        const couponIds   = new Set(appliedRewards.filter(r => r.kind === 'coupon').map(r => r.code!.toUpperCase()));
-        const codeIds     = new Set(appliedRewards.filter(r => r.kind === 'discount_code').map(r => r.code!.toUpperCase()));
-        const promoIds    = new Set(appliedRewards.filter(r => r.kind === 'promotion').map(r => r.id));
-        const bxgyIds     = new Set(appliedRewards.filter(r => r.kind === 'bxgy').map(r => r.id));
+        const couponIds = new Set(
+          appliedRewards
+            .filter((r) => r.kind === 'coupon')
+            .map((r) => r.code!.toUpperCase())
+        );
+        const codeIds = new Set(
+          appliedRewards
+            .filter((r) => r.kind === 'discount_code')
+            .map((r) => r.code!.toUpperCase())
+        );
+        const promoIds = new Set(
+          appliedRewards.filter((r) => r.kind === 'promotion').map((r) => r.id)
+        );
+        const bxgyIds = new Set(
+          appliedRewards.filter((r) => r.kind === 'bxgy').map((r) => r.id)
+        );
 
         if (couponIds.size)
-          patch.coupons = (posSettings.coupons ?? []).map(c =>
-            couponIds.has(c.code.toUpperCase()) ? { ...c, usageCount: (c.usageCount ?? 0) + 1 } : c);
+          patch.coupons = (posSettings.coupons ?? []).map((c) =>
+            couponIds.has(c.code.toUpperCase())
+              ? { ...c, usageCount: (c.usageCount ?? 0) + 1 }
+              : c
+          );
         if (codeIds.size)
-          patch.discountCodes = (posSettings.discountCodes ?? []).map(d =>
-            codeIds.has(d.code.toUpperCase()) ? { ...d, usageCount: (d.usageCount ?? 0) + 1 } : d);
+          patch.discountCodes = (posSettings.discountCodes ?? []).map((d) =>
+            codeIds.has(d.code.toUpperCase())
+              ? { ...d, usageCount: (d.usageCount ?? 0) + 1 }
+              : d
+          );
         if (promoIds.size)
-          patch.promotions = (posSettings.promotions ?? []).map(p =>
-            promoIds.has(p._id!) ? { ...p, usageCount: (p.usageCount ?? 0) + 1 } : p);
+          patch.promotions = (posSettings.promotions ?? []).map((p) =>
+            promoIds.has(p._id!)
+              ? { ...p, usageCount: (p.usageCount ?? 0) + 1 }
+              : p
+          );
         if (bxgyIds.size)
-          patch.buyXGetY = (posSettings.buyXGetY ?? []).map(b =>
-            bxgyIds.has(b._id!) ? { ...b, usageCount: (b.usageCount ?? 0) + 1 } : b);
+          patch.buyXGetY = (posSettings.buyXGetY ?? []).map((b) =>
+            bxgyIds.has(b._id!)
+              ? { ...b, usageCount: (b.usageCount ?? 0) + 1 }
+              : b
+          );
 
         if (Object.keys(patch).length > 0)
           posApi.updatePOSSettings(token, patch).catch(() => {});
+      }
+
+      // Update customer loyalty balance (earn + redeem) — best-effort, non-blocking
+      if (
+        token &&
+        customer.customerId &&
+        (posSettings?.loyaltyEnabled ?? false)
+      ) {
+        const loyaltyPtsPerN = posSettings?.loyaltyPointsPerNaira ?? 0.01;
+        const earned = Math.round(
+          (effectiveTotal / 100) * loyaltyPtsPerN * 100
+        );
+        const loyaltyR = appliedRewards.find((r) => r.kind === 'loyalty');
+        const ptVal = posSettings?.loyaltyPointsValue ?? 1;
+        const redeemed = loyaltyR
+          ? Math.round((loyaltyR.discValue ?? 0) / (ptVal || 1))
+          : 0;
+        posApi
+          .updateCustomerLoyalty(
+            token,
+            customer.customerId,
+            earned,
+            redeemed,
+            effectiveTotal
+          )
+          .catch(() => {});
       }
 
       // Generate next-order coupon if enabled and order qualifies
@@ -880,7 +1395,7 @@ export default function POSPaymentModal() {
   }
 
   function handleNewSale() {
-    clearCart();   // also clears appliedRewards via store
+    clearCart(); // also clears appliedRewards via store
     setActiveView('sell');
     setOrderResult(null);
     setLines([]);
@@ -892,18 +1407,19 @@ export default function POSPaymentModal() {
 
   // ── Receipt ───────────────────────────────────────────────────────────────────
 
-  if (orderResult) return (
-    <ReceiptScreen
-      order={orderResult}
-      paymentLines={lines}
-      onNewSale={handleNewSale}
-      cartSnapshot={cartSnapshot}
-      appliedCode={appliedCode ?? undefined}
-      autoDiscounts={autoDiscounts}
-      nextOrderCode={nextOrderCode}
-      nocSettings={posSettings?.nextOrderCoupon}
-    />
-  );
+  if (orderResult)
+    return (
+      <ReceiptScreen
+        order={orderResult}
+        paymentLines={lines}
+        onNewSale={handleNewSale}
+        cartSnapshot={cartSnapshot}
+        appliedCode={appliedCode ?? undefined}
+        autoDiscounts={autoDiscounts}
+        nextOrderCode={nextOrderCode}
+        nocSettings={posSettings?.nextOrderCoupon}
+      />
+    );
 
   // ── Numpad display value ──────────────────────────────────────────────────────
 
@@ -915,13 +1431,20 @@ export default function POSPaymentModal() {
 
   return (
     <div className="fixed inset-0 z-50 flex bg-[#f0f0f0]">
-
       {/* ══ LEFT PANEL ════════════════════════════════════════════════════════ */}
       <div className="flex w-[340px] shrink-0 flex-col border-r border-gray-200 bg-[#f0f0f0]">
-
         {/* Payment method buttons */}
-        <div className="flex-1 overflow-y-auto space-y-1.5 px-3 pt-3">
-          {METHODS.map((m) => {
+        <div className="flex-1 space-y-1.5 overflow-y-auto px-3 pt-3">
+          {!isOnline && (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 mb-4">
+              <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+              <span className="font-medium">Offline Order</span>
+              <span className="text-amber-600">— will sync when connection returns</span>
+            </div>
+          )}
+          {METHODS.filter((m) =>
+            settings.enabledPaymentMethods.includes(m.value)
+          ).map((m) => {
             const inUse = lines.some((l) => l.method === m.value);
             const isActive = activeLine?.method === m.value;
             return (
@@ -934,19 +1457,36 @@ export default function POSPaymentModal() {
                   isActive
                     ? 'border-[#b20202] bg-red-50 text-[#b20202]'
                     : inUse
-                    ? 'border-green-300 bg-green-50 text-green-700 hover:border-green-400'
-                    : 'border-gray-200 bg-white text-gray-800 hover:border-[#b20202] hover:shadow-md'
+                      ? 'border-green-300 bg-green-50 text-green-700 hover:border-green-400'
+                      : 'border-gray-200 bg-white text-gray-800 hover:border-[#b20202] hover:shadow-md'
                 )}
               >
-                <span className={isActive ? 'text-[#b20202]' : inUse ? 'text-green-600' : 'text-gray-400'}>
+                <span
+                  className={
+                    isActive
+                      ? 'text-[#b20202]'
+                      : inUse
+                        ? 'text-green-600'
+                        : 'text-gray-400'
+                  }
+                >
                   {m.icon}
                 </span>
-                <span className="flex-1">{m.label}</span>
+                <span className="flex-1">
+                  {m.label}
+                  {!isOnline && m.value !== 'cash' && (
+                    <p className="mt-0.5 text-[11px] text-amber-600">
+                      Record only — no terminal. Verify with customer on reconnect.
+                    </p>
+                  )}
+                </span>
                 {inUse && (
-                  <span className={cn(
-                    'text-[10px] font-bold uppercase tracking-wide',
-                    isActive ? 'text-[#b20202]' : 'text-green-600'
-                  )}>
+                  <span
+                    className={cn(
+                      'text-[10px] font-bold uppercase tracking-wide',
+                      isActive ? 'text-[#b20202]' : 'text-green-600'
+                    )}
+                  >
                     {isActive ? 'editing' : 'added'}
                   </span>
                 )}
@@ -955,15 +1495,48 @@ export default function POSPaymentModal() {
           })}
         </div>
 
-        {/* Customer / Invoice */}
-        <div className="grid grid-cols-2 gap-1.5 border-t border-gray-200 px-3 py-2">
-          <button type="button"
-            className="flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white py-2 text-xs font-medium text-gray-600 hover:bg-gray-50">
-            <PiUser className="h-3.5 w-3.5" /> Customer
-          </button>
-          <button type="button"
-            className="flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white py-2 text-xs font-medium text-gray-600 hover:bg-gray-50">
-            <PiFileText className="h-3.5 w-3.5" /> Invoice
+        {/* Tips — shown when tipsEnabled */}
+        {settings.tipsEnabled && (
+          <div className="border-t border-gray-200 px-3 py-2">
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+              Tip
+            </p>
+            <div className="flex gap-1.5">
+              {[5, 10, 15, 20].map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  onClick={() => addMethod('tip', `Tip ${pct}%`)}
+                  className="flex-1 rounded-lg border border-gray-200 bg-white py-1.5 text-xs font-semibold text-gray-700 hover:border-[#b20202] hover:text-[#b20202]"
+                >
+                  {pct}%
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Customer info */}
+        <div className="border-t border-gray-200 px-3 py-2">
+          <button
+            type="button"
+            onClick={() => setActiveView('sell')}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:bg-gray-50',
+              hasCustomer
+                ? 'border-[#b20202]/30 bg-red-50 text-[#b20202]'
+                : 'border-gray-200 bg-white text-gray-500'
+            )}
+          >
+            <PiUser className="h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1 truncate text-left">
+              {hasCustomer ? customerLabel : 'Walk-in Customer'}
+            </span>
+            {hasCustomer && loyaltyEnabled && currentPts > 0 && (
+              <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
+                {currentPts.toLocaleString()}pts
+              </span>
+            )}
           </button>
         </div>
 
@@ -973,10 +1546,12 @@ export default function POSPaymentModal() {
             <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">
               {activeLine ? activeLine.label : 'Select a method'}
             </p>
-            <p className={cn(
-              'mt-0.5 text-right text-3xl font-bold tabular-nums transition-colors',
-              freshInput ? 'text-gray-400' : 'text-white'
-            )}>
+            <p
+              className={cn(
+                'mt-0.5 text-right text-3xl font-bold tabular-nums transition-colors',
+                freshInput ? 'text-gray-400' : 'text-white'
+              )}
+            >
               {displayValue}
             </p>
           </div>
@@ -1000,48 +1575,92 @@ export default function POSPaymentModal() {
         <div className="shrink-0 px-3 pb-2">
           <div className="grid grid-cols-4 gap-1.5">
             {/* Rows 1-3: digits + quick-add */}
-            {(['1','2','3'] as const).map((d) => (
-              <button key={d} type="button" onClick={() => pushDigit(d)}
-                className="flex h-12 items-center justify-center rounded-xl border border-gray-200 bg-white text-base font-semibold text-gray-800 shadow-sm transition-all hover:bg-gray-50 active:scale-95">{d}</button>
+            {(['1', '2', '3'] as const).map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => pushDigit(d)}
+                className="flex h-12 items-center justify-center rounded-xl border border-gray-200 bg-white text-base font-semibold text-gray-800 shadow-sm transition-all hover:bg-gray-50 active:scale-95"
+              >
+                {d}
+              </button>
             ))}
-            <button type="button" onClick={() => addQuick(QUICK[0])} disabled={!activeId}
-              className="flex h-12 items-center justify-center rounded-xl bg-green-500 text-sm font-bold text-white shadow-sm transition-all hover:bg-green-600 active:scale-95 disabled:opacity-30">
+            <button
+              type="button"
+              onClick={() => addQuick(QUICK[0])}
+              disabled={!activeId}
+              className="flex h-12 items-center justify-center rounded-xl bg-green-500 text-sm font-bold text-white shadow-sm transition-all hover:bg-green-600 active:scale-95 disabled:opacity-30"
+            >
               +{QUICK[0] / 1000}k
             </button>
 
-            {(['4','5','6'] as const).map((d) => (
-              <button key={d} type="button" onClick={() => pushDigit(d)}
-                className="flex h-12 items-center justify-center rounded-xl border border-gray-200 bg-white text-base font-semibold text-gray-800 shadow-sm transition-all hover:bg-gray-50 active:scale-95">{d}</button>
+            {(['4', '5', '6'] as const).map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => pushDigit(d)}
+                className="flex h-12 items-center justify-center rounded-xl border border-gray-200 bg-white text-base font-semibold text-gray-800 shadow-sm transition-all hover:bg-gray-50 active:scale-95"
+              >
+                {d}
+              </button>
             ))}
-            <button type="button" onClick={() => addQuick(QUICK[1])} disabled={!activeId}
-              className="flex h-12 items-center justify-center rounded-xl bg-green-500 text-sm font-bold text-white shadow-sm transition-all hover:bg-green-600 active:scale-95 disabled:opacity-30">
+            <button
+              type="button"
+              onClick={() => addQuick(QUICK[1])}
+              disabled={!activeId}
+              className="flex h-12 items-center justify-center rounded-xl bg-green-500 text-sm font-bold text-white shadow-sm transition-all hover:bg-green-600 active:scale-95 disabled:opacity-30"
+            >
               +{QUICK[1] / 1000}k
             </button>
 
-            {(['7','8','9'] as const).map((d) => (
-              <button key={d} type="button" onClick={() => pushDigit(d)}
-                className="flex h-12 items-center justify-center rounded-xl border border-gray-200 bg-white text-base font-semibold text-gray-800 shadow-sm transition-all hover:bg-gray-50 active:scale-95">{d}</button>
+            {(['7', '8', '9'] as const).map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => pushDigit(d)}
+                className="flex h-12 items-center justify-center rounded-xl border border-gray-200 bg-white text-base font-semibold text-gray-800 shadow-sm transition-all hover:bg-gray-50 active:scale-95"
+              >
+                {d}
+              </button>
             ))}
-            <button type="button" onClick={() => addQuick(QUICK[2])} disabled={!activeId}
-              className="flex h-12 items-center justify-center rounded-xl bg-green-500 text-sm font-bold text-white shadow-sm transition-all hover:bg-green-600 active:scale-95 disabled:opacity-30">
+            <button
+              type="button"
+              onClick={() => addQuick(QUICK[2])}
+              disabled={!activeId}
+              className="flex h-12 items-center justify-center rounded-xl bg-green-500 text-sm font-bold text-white shadow-sm transition-all hover:bg-green-600 active:scale-95 disabled:opacity-30"
+            >
               +{QUICK[2] / 1000}k
             </button>
 
             {/* Row 4 */}
-            <button type="button" onClick={pushClear} disabled={!activeId}
-              className="flex h-12 items-center justify-center rounded-xl border border-amber-200 bg-amber-100 text-sm font-bold text-amber-700 shadow-sm transition-all hover:bg-amber-200 active:scale-95 disabled:opacity-30">
+            <button
+              type="button"
+              onClick={pushClear}
+              disabled={!activeId}
+              className="flex h-12 items-center justify-center rounded-xl border border-amber-200 bg-amber-100 text-sm font-bold text-amber-700 shadow-sm transition-all hover:bg-amber-200 active:scale-95 disabled:opacity-30"
+            >
               C
             </button>
-            <button type="button" onClick={() => pushDigit('0')}
-              className="flex h-12 items-center justify-center rounded-xl border border-gray-200 bg-white text-base font-semibold text-gray-800 shadow-sm transition-all hover:bg-gray-50 active:scale-95">
+            <button
+              type="button"
+              onClick={() => pushDigit('0')}
+              className="flex h-12 items-center justify-center rounded-xl border border-gray-200 bg-white text-base font-semibold text-gray-800 shadow-sm transition-all hover:bg-gray-50 active:scale-95"
+            >
               0
             </button>
-            <button type="button" onClick={() => pushDigit('.')}
-              className="flex h-12 items-center justify-center rounded-xl border border-orange-100 bg-orange-50 text-base font-semibold text-orange-500 shadow-sm transition-all hover:bg-orange-100 active:scale-95">
+            <button
+              type="button"
+              onClick={() => pushDigit('.')}
+              className="flex h-12 items-center justify-center rounded-xl border border-orange-100 bg-orange-50 text-base font-semibold text-orange-500 shadow-sm transition-all hover:bg-orange-100 active:scale-95"
+            >
               .
             </button>
-            <button type="button" onClick={pushBackspace} disabled={!activeId}
-              className="flex h-12 items-center justify-center rounded-xl border border-red-200 bg-red-100 text-red-600 shadow-sm transition-all hover:bg-red-200 active:scale-95 disabled:opacity-30">
+            <button
+              type="button"
+              onClick={pushBackspace}
+              disabled={!activeId}
+              className="flex h-12 items-center justify-center rounded-xl border border-red-200 bg-red-100 text-red-600 shadow-sm transition-all hover:bg-red-200 active:scale-95 disabled:opacity-30"
+            >
               ⌫
             </button>
           </div>
@@ -1049,35 +1668,45 @@ export default function POSPaymentModal() {
 
         {/* ── Back + Validate ── */}
         <div className="grid grid-cols-2 border-t border-gray-300">
-          <button type="button" onClick={() => setActiveView('sell')}
-            className="flex items-center justify-center gap-2 bg-gray-200 py-4 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-300">
+          <button
+            type="button"
+            onClick={() => setActiveView('sell')}
+            className="flex items-center justify-center gap-2 bg-gray-200 py-4 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-300"
+          >
             <PiArrowLeft className="h-4 w-4" /> Back
           </button>
-          <button type="button" onClick={handleValidate}
+          <button
+            type="button"
+            onClick={handleValidate}
             disabled={!canValidate || loading}
             className={cn(
               'flex items-center justify-center gap-2 py-4 text-sm font-bold text-white transition-all hover:opacity-90',
-              canValidate ? 'opacity-100' : 'opacity-40 cursor-not-allowed'
+              canValidate ? 'opacity-100' : 'cursor-not-allowed opacity-40'
             )}
-            style={{ backgroundColor: '#b20202' }}>
-            {loading
-              ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              : 'Validate'
-            }
+            style={{ backgroundColor: '#b20202' }}
+          >
+            {loading ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            ) : (
+              'Validate'
+            )}
           </button>
         </div>
       </div>
 
       {/* ══ RIGHT PANEL ═══════════════════════════════════════════════════════ */}
       <div className="flex flex-1 flex-col bg-white">
-
         {/* Order total */}
         <div className="flex flex-1 flex-col items-center justify-center gap-1 px-8">
-          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Order Total</p>
-          <p className={cn(
-            'text-6xl font-bold tabular-nums transition-colors',
-            canValidate ? 'text-green-600' : 'text-gray-900'
-          )}>
+          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">
+            Order Total
+          </p>
+          <p
+            className={cn(
+              'text-6xl font-bold tabular-nums transition-colors',
+              canValidate ? 'text-green-600' : 'text-gray-900'
+            )}
+          >
             {formatCurrency(effectiveTotal)}
           </p>
           {/* Discount breakdown — cart discount + all applied rewards */}
@@ -1086,18 +1715,32 @@ export default function POSPaymentModal() {
               {discountAmount > 0 && (
                 <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-1.5 text-xs text-gray-600">
                   <span>Cart discount</span>
-                  <span className="font-bold text-gray-800">−{formatCurrency(discountAmount)}</span>
+                  <span className="font-bold text-gray-800">
+                    −{formatCurrency(discountAmount)}
+                  </span>
                 </div>
               )}
-              {autoDiscounts.map(d => (
-                <div key={d.id} className="flex items-center justify-between rounded-xl px-3 py-1.5 text-xs"
-                  style={{ backgroundColor: `${d.color ?? '#b20202'}12`, color: d.color ?? '#b20202' }}>
-                  <span className="flex items-center gap-1.5 font-semibold min-w-0 truncate">
+              {autoDiscounts.map((d) => (
+                <div
+                  key={d.id}
+                  className="flex items-center justify-between rounded-xl px-3 py-1.5 text-xs"
+                  style={{
+                    backgroundColor: `${d.color ?? '#b20202'}12`,
+                    color: d.color ?? '#b20202',
+                  }}
+                >
+                  <span className="flex min-w-0 items-center gap-1.5 truncate font-semibold">
                     <PiStar className="h-3.5 w-3.5 shrink-0" />
                     <span className="truncate">{d.name}</span>
-                    {(d as any).code && <span className="font-mono shrink-0">({(d as any).code})</span>}
+                    {(d as any).code && (
+                      <span className="shrink-0 font-mono">
+                        ({(d as any).code})
+                      </span>
+                    )}
                   </span>
-                  <span className="font-bold shrink-0 ml-2">−{formatCurrency(d.discount)}</span>
+                  <span className="ml-2 shrink-0 font-bold">
+                    −{formatCurrency(d.discount)}
+                  </span>
                 </div>
               ))}
             </div>
@@ -1105,29 +1748,47 @@ export default function POSPaymentModal() {
 
           {change > 0 && (
             <div className="mt-2 flex items-center gap-2 rounded-full bg-green-50 px-4 py-1.5">
-              <span className="text-sm font-semibold text-green-600">Change: {formatCurrency(change)}</span>
+              <span className="text-sm font-semibold text-green-600">
+                Change: {formatCurrency(change)}
+              </span>
             </div>
           )}
+
+          {/* Loyalty earn/balance preview */}
+          {hasCustomer &&
+            loyaltyEnabled &&
+            earnedPts > 0 &&
+            settings.showLoyaltyBalanceAtCheckout && (
+              <div className="mt-2 flex items-center gap-2 rounded-full bg-amber-50 px-4 py-1.5">
+                <span className="text-xs font-semibold text-amber-700">
+                  +{earnedPts} pts earned · new balance:{' '}
+                  {newBalance.toLocaleString()} pts
+                </span>
+              </div>
+            )}
         </div>
 
         {/* Payment lines + remaining */}
         <div className="shrink-0 space-y-1.5 border-t border-gray-100 px-8 pb-8 pt-5">
-
           {/* Applied rewards summary — managed via cart Rewards panel */}
           {appliedRewards.length > 0 && (
             <div className="mb-1 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-[10px] text-gray-500">
-              <PiStar className="inline h-3 w-3 mr-1 text-[#b20202]" />
-              {appliedRewards.length} reward{appliedRewards.length > 1 ? 's' : ''} applied · −{formatCurrency(rewardsDiscountTotal)}
+              <PiStar className="mr-1 inline h-3 w-3 text-[#b20202]" />
+              {appliedRewards.length} reward
+              {appliedRewards.length > 1 ? 's' : ''} applied · −
+              {formatCurrency(rewardsDiscountTotal)}
             </div>
           )}
 
           {/* Remaining */}
-          <div className={cn(
-            'flex items-center justify-between rounded-xl px-5 py-3 text-sm font-bold transition-colors',
-            remaining <= 0.01
-              ? 'bg-green-50 text-green-700'
-              : 'bg-amber-50 text-amber-700'
-          )}>
+          <div
+            className={cn(
+              'flex items-center justify-between rounded-xl px-5 py-3 text-sm font-bold transition-colors',
+              remaining <= 0.01
+                ? 'bg-green-50 text-green-700'
+                : 'bg-amber-50 text-amber-700'
+            )}
+          >
             <span>{remaining <= 0.01 ? 'Fully paid' : 'Remaining'}</span>
             <span>{formatCurrency(Math.max(0, remaining))}</span>
           </div>
@@ -1150,17 +1811,21 @@ export default function POSPaymentModal() {
                     : 'border-gray-200 bg-gray-50 hover:border-gray-300 hover:bg-gray-100'
                 )}
               >
-                <span className={cn(
-                  'font-semibold',
-                  activeId === line.id ? 'text-[#b20202]' : 'text-gray-800'
-                )}>
+                <span
+                  className={cn(
+                    'font-semibold',
+                    activeId === line.id ? 'text-[#b20202]' : 'text-gray-800'
+                  )}
+                >
                   {line.label}
                 </span>
                 <div className="flex items-center gap-3">
-                  <span className={cn(
-                    'text-base font-bold tabular-nums',
-                    activeId === line.id ? 'text-[#b20202]' : 'text-gray-700'
-                  )}>
+                  <span
+                    className={cn(
+                      'text-base font-bold tabular-nums',
+                      activeId === line.id ? 'text-[#b20202]' : 'text-gray-700'
+                    )}
+                  >
                     {activeId === line.id
                       ? formatCurrency(parseFloat(inputStr) || 0)
                       : formatCurrency(line.amount)}
@@ -1168,8 +1833,14 @@ export default function POSPaymentModal() {
                   <span
                     role="button"
                     tabIndex={0}
-                    onClick={(e) => { e.stopPropagation(); removeLine(line.id); }}
-                    onKeyDown={(e) => e.key === 'Enter' && (e.stopPropagation(), removeLine(line.id))}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeLine(line.id);
+                    }}
+                    onKeyDown={(e) =>
+                      e.key === 'Enter' &&
+                      (e.stopPropagation(), removeLine(line.id))
+                    }
                     className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full text-red-400 transition-colors hover:bg-red-100 hover:text-red-600"
                   >
                     <PiX className="h-3.5 w-3.5" />
