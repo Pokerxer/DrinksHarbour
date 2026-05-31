@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
-import { PiArrowClockwise, PiEye } from 'react-icons/pi';
+import { PiArrowClockwise, PiEye, PiPlus } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { vendorReturnService } from '@/services/vendorReturn.service';
@@ -37,9 +37,17 @@ export default function PurchasesReturns() {
           <h1 className="text-xl font-semibold text-gray-900">Vendor Returns</h1>
           <p className="text-sm text-gray-500">{returns.length} return{returns.length !== 1 ? 's' : ''}</p>
         </div>
-        <button type="button" onClick={load} className="rounded-lg border border-gray-200 p-2 text-gray-500 hover:bg-gray-50">
-          <PiArrowClockwise className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href={routes.eCommerce.createVendorReturn}
+            className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-3 py-2 text-sm font-semibold text-white hover:bg-[#9a0101]"
+          >
+            <PiPlus className="h-4 w-4" /> New Return
+          </Link>
+          <button type="button" onClick={load} className="rounded-lg border border-gray-200 p-2 text-gray-500 hover:bg-gray-50">
+            <PiArrowClockwise className="h-4 w-4" />
+          </button>
+        </div>
       </div>
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
         {loading ? (

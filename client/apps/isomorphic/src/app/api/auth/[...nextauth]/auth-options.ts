@@ -75,7 +75,7 @@ async function refreshAccessToken(refreshToken: string) {
       return null;
     }
 
-    const data = await response.json() as RefreshTokenResponse;
+    const data = (await response.json()) as RefreshTokenResponse;
     if (data.success && data.data) {
       return {
         token: data.data.token,
@@ -91,19 +91,23 @@ async function refreshAccessToken(refreshToken: string) {
 }
 
 export const authOptions: NextAuthOptions = {
+  secret: process.env.NEXTAUTH_SECRET,
   pages: {
     ...pagesOptions,
   },
   session: {
     strategy: 'jwt',
-    maxAge: 30 * 24 * 60 * 60, // 30 days
+    maxAge: 7 * 24 * 60 * 60, // 7 days
+    updateAge: 24 * 60 * 60, // extend by 7 days on each daily activity
   },
   callbacks: {
     async session({ session, token }) {
       if (token.refreshToken && token.accessToken) {
         try {
           if (isTokenExpired(token.accessToken as string)) {
-            const refreshedTokens = await refreshAccessToken(token.refreshToken as string);
+            const refreshedTokens = await refreshAccessToken(
+              token.refreshToken as string
+            );
             if (refreshedTokens) {
               token.accessToken = refreshedTokens.token;
               token.refreshToken = refreshedTokens.refreshToken;
@@ -135,16 +139,23 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.role = user.role;
         token.tenantId = user.tenantId;
-        token.tenantSlug = (user as { tenantSlug?: string | null }).tenantSlug ?? null;
+        token.tenantSlug =
+          (user as { tenantSlug?: string | null }).tenantSlug ?? null;
         token.accessToken = user.token;
         token.refreshToken = (user as { refreshToken?: string }).refreshToken;
       }
 
       if (trigger === 'update' && token.accessToken) {
         const decoded = decodeJwtPayload(token.accessToken as string);
-        if (decoded && typeof decoded.exp === 'number' && decoded.exp * 1000 < Date.now()) {
+        if (
+          decoded &&
+          typeof decoded.exp === 'number' &&
+          decoded.exp * 1000 < Date.now()
+        ) {
           if (token.refreshToken) {
-            const refreshedTokens = await refreshAccessToken(token.refreshToken as string);
+            const refreshedTokens = await refreshAccessToken(
+              token.refreshToken as string
+            );
             if (refreshedTokens) {
               token.accessToken = refreshedTokens.token;
               token.refreshToken = refreshedTokens.refreshToken;
@@ -191,16 +202,20 @@ export const authOptions: NextAuthOptions = {
           if (!contentType || !contentType.includes('application/json')) {
             const text = await response.text();
             console.error('Non-JSON response from login API:', text);
-            
+
             // If it's HTML, try to extract useful info
             if (text.startsWith('<')) {
-              throw new Error('Login service unavailable. Please check if the backend server is running.');
+              throw new Error(
+                'Login service unavailable. Please check if the backend server is running.'
+              );
             }
-            
-            throw new Error(`Server returned invalid response: ${text.substring(0, 100)}...`);
+
+            throw new Error(
+              `Server returned invalid response: ${text.substring(0, 100)}...`
+            );
           }
 
-          const data = await response.json() as LoginResponse;
+          const data = (await response.json()) as LoginResponse;
 
           if (!response.ok || !data.success) {
             const errorMessage = data.message || 'Invalid email or password';
@@ -208,30 +223,50 @@ export const authOptions: NextAuthOptions = {
           }
 
           const userRole = data.data.user.role;
-          const validRoles: UserRole[] = ['admin', 'super_admin', 'tenant_admin', 'tenant_owner', 'tenant_staff', 'customer'];
+          const validRoles: UserRole[] = [
+            'admin',
+            'super_admin',
+            'tenant_admin',
+            'tenant_owner',
+            'tenant_staff',
+            'customer',
+          ];
           if (!validRoles.includes(userRole)) {
-            throw new Error(`Access denied. Role '${userRole}' is not authorized to access this system.`);
+            throw new Error(
+              `Access denied. Role '${userRole}' is not authorized to access this system.`
+            );
           }
 
           const tenantValue = data.data.user.tenant;
-          const tenantId = typeof tenantValue === 'object' && tenantValue !== null
-            ? tenantValue._id
-            : tenantValue || data.data.user.tenantId || null;
+          const tenantId =
+            typeof tenantValue === 'object' && tenantValue !== null
+              ? tenantValue._id
+              : tenantValue || data.data.user.tenantId || null;
 
           // Resolve tenant slug from populated tenant object or via API
           let tenantSlug: string | null = null;
-          if (typeof tenantValue === 'object' && tenantValue !== null && tenantValue.slug) {
+          if (
+            typeof tenantValue === 'object' &&
+            tenantValue !== null &&
+            tenantValue.slug
+          ) {
             tenantSlug = tenantValue.slug;
           } else if (tenantId) {
             try {
-              const tenantRes = await fetch(`${API_URL}/api/tenants/${tenantId}`, {
-                headers: { Authorization: `Bearer ${data.data.token}` },
-              });
+              const tenantRes = await fetch(
+                `${API_URL}/api/tenants/${tenantId}`,
+                {
+                  headers: { Authorization: `Bearer ${data.data.token}` },
+                }
+              );
               if (tenantRes.ok) {
-                const tenantJson = await tenantRes.json() as TenantSlugResponse;
+                const tenantJson =
+                  (await tenantRes.json()) as TenantSlugResponse;
                 tenantSlug = tenantJson?.data?.tenant?.slug ?? null;
               }
-            } catch { /* non-blocking — slug stays null */ }
+            } catch {
+              /* non-blocking — slug stays null */
+            }
           }
 
           return {
@@ -249,13 +284,19 @@ export const authOptions: NextAuthOptions = {
           };
         } catch (error: unknown) {
           console.error('Auth error:', error);
-          
+
           // Handle network errors specifically
-          if (error instanceof TypeError && error.message === 'Failed to fetch') {
-            throw new Error('Network error: Unable to connect to authentication server. Please check your internet connection and ensure the backend server is running.');
+          if (
+            error instanceof TypeError &&
+            error.message === 'Failed to fetch'
+          ) {
+            throw new Error(
+              'Network error: Unable to connect to authentication server. Please check your internet connection and ensure the backend server is running.'
+            );
           }
-          
-          const message = error instanceof Error ? error.message : 'Authentication failed';
+
+          const message =
+            error instanceof Error ? error.message : 'Authentication failed';
           throw new Error(message);
         }
       },
@@ -275,18 +316,25 @@ export const authOptions: NextAuthOptions = {
           const response = await fetch(`${API_URL}/api/pos/auth/pin-login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tenantSlug: credentials.tenantSlug, pin: credentials.pin }),
+            body: JSON.stringify({
+              tenantSlug: credentials.tenantSlug,
+              pin: credentials.pin,
+            }),
           });
-          const data = await response.json() as LoginResponse;
+          const data = (await response.json()) as LoginResponse;
           if (!response.ok || !data.success) {
             throw new Error(data.message || 'Invalid PIN');
           }
           const user = data.data.user;
           const tenantValue = user.tenant;
-          const tenantId = typeof tenantValue === 'object' && tenantValue !== null
-            ? tenantValue._id : tenantValue || null;
-          const tenantSlug = typeof tenantValue === 'object' && tenantValue !== null
-            ? (tenantValue as any).slug ?? null : null;
+          const tenantId =
+            typeof tenantValue === 'object' && tenantValue !== null
+              ? tenantValue._id
+              : tenantValue || null;
+          const tenantSlug =
+            typeof tenantValue === 'object' && tenantValue !== null
+              ? ((tenantValue as any).slug ?? null)
+              : null;
           return {
             id: String(user._id || user.id),
             email: user.email,
@@ -301,7 +349,10 @@ export const authOptions: NextAuthOptions = {
             refreshToken: data.data.refreshToken,
           };
         } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : 'PIN authentication failed';
+          const message =
+            error instanceof Error
+              ? error.message
+              : 'PIN authentication failed';
           throw new Error(message);
         }
       },

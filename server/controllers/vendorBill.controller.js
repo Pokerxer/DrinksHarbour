@@ -330,6 +330,7 @@ const validateBill = asyncHandler(async (req, res) => {
   const po = vendorBill.purchaseOrder;
   let matchingStatus = "matched";
   let shouldBePaid = "pending";
+  let matchingNotes = "";
   
   // Initialize matching details with size-level breakdown
   const matchingDetails = {

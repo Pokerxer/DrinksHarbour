@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { routes } from '@/config/routes';
 import { posApi } from '@/app/shared/point-of-sale/api';
-import { usePOSAuth } from '@/app/shared/point-of-sale/store';
+import { usePOSAuth, usePOSSettings } from '@/app/shared/point-of-sale/store';
 import { useTenant } from '@/context/TenantContext';
 import { POSStaff } from '@/app/shared/point-of-sale/types';
 import {
@@ -26,7 +26,7 @@ function Clock() {
   }, []);
   return (
     <div>
-      <div className="text-5xl font-extralight tracking-widest text-white tabular-nums">
+      <div className="text-5xl font-extralight tabular-nums tracking-widest text-white">
         {time.toLocaleTimeString('en-US', { hour12: false })}
       </div>
       <div className="mt-1 text-sm font-medium text-red-200">
@@ -46,7 +46,9 @@ const PIN_MAX = 4;
 
 function PinDisplay({ length, shake }: { length: number; shake: boolean }) {
   return (
-    <div className={`flex justify-center gap-4 ${shake ? 'animate-shake' : ''}`}>
+    <div
+      className={`flex justify-center gap-4 ${shake ? 'animate-shake' : ''}`}
+    >
       {Array.from({ length: PIN_MAX }).map((_, i) => (
         <span
           key={i}
@@ -63,9 +65,21 @@ function PinDisplay({ length, shake }: { length: number; shake: boolean }) {
 
 // ── Numpad ─────────────────────────────────────────────────────────────────────
 const NUMPAD_ROWS = [
-  [{ d: '1', sub: '' }, { d: '2', sub: 'ABC' }, { d: '3', sub: 'DEF' }],
-  [{ d: '4', sub: 'GHI' }, { d: '5', sub: 'JKL' }, { d: '6', sub: 'MNO' }],
-  [{ d: '7', sub: 'PQRS' }, { d: '8', sub: 'TUV' }, { d: '9', sub: 'WXYZ' }],
+  [
+    { d: '1', sub: '' },
+    { d: '2', sub: 'ABC' },
+    { d: '3', sub: 'DEF' },
+  ],
+  [
+    { d: '4', sub: 'GHI' },
+    { d: '5', sub: 'JKL' },
+    { d: '6', sub: 'MNO' },
+  ],
+  [
+    { d: '7', sub: 'PQRS' },
+    { d: '8', sub: 'TUV' },
+    { d: '9', sub: 'WXYZ' },
+  ],
 ];
 
 function NumpadKey({
@@ -84,7 +98,7 @@ function NumpadKey({
     <button
       type="button"
       onClick={onClick}
-      className="flex h-16 w-full flex-col items-center justify-center rounded-2xl bg-white/15 text-white transition-all hover:bg-white/25 active:scale-95 select-none"
+      className="flex h-16 w-full select-none flex-col items-center justify-center rounded-2xl bg-white/15 text-white transition-all hover:bg-white/25 active:scale-95"
     >
       <span className="text-2xl font-light leading-none">{label}</span>
       {sub && (
@@ -125,24 +139,36 @@ function StaffRow({
         }`}
       >
         {staff.avatar ? (
-          <img src={staff.avatar} alt="" className="h-full w-full object-cover" />
+          <img
+            src={staff.avatar}
+            alt=""
+            className="h-full w-full object-cover"
+          />
         ) : (
           initials
         )}
       </div>
 
-      <div className="flex-1 min-w-0">
-        <p className={`truncate text-sm font-semibold ${selected ? 'text-gray-900' : 'text-white'}`}>
+      <div className="min-w-0 flex-1">
+        <p
+          className={`truncate text-sm font-semibold ${selected ? 'text-gray-900' : 'text-white'}`}
+        >
           {displayName}
         </p>
-        <p className={`text-xs capitalize ${selected ? 'text-gray-400' : 'text-red-200'}`}>
+        <p
+          className={`text-xs capitalize ${selected ? 'text-gray-400' : 'text-red-200'}`}
+        >
           {staff.hasPin ? staff.role : `${staff.role} · no PIN`}
         </p>
       </div>
 
       {selected && (
         <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#b20202]">
-          <svg className="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+          <svg
+            className="h-3 w-3 text-white"
+            fill="currentColor"
+            viewBox="0 0 20 20"
+          >
             <path
               fillRule="evenodd"
               d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z"
@@ -163,6 +189,8 @@ export default function POSLockScreen() {
   const terminalLabel = terminal === 'retail' ? 'Retail' : 'Wholesale';
 
   const { token, setAuth, setTerminal } = usePOSAuth();
+  const settings = usePOSSettings();
+  const canBypassPIN = !settings.requirePINOnUnlock && !!token;
   const { tenant, tenantSlug: contextSlug } = useTenant();
   const [sessionSlug, setSessionSlug] = useState<string | null>(null);
 
@@ -175,7 +203,8 @@ export default function POSLockScreen() {
     fetch('/api/auth/session')
       .then((r) => (r.ok ? r.json() : null))
       .then((s) => {
-        const slug = (s?.user as any)?.tenantSlug;
+        const slug = (s as { user?: { tenantSlug?: string } } | null)?.user
+          ?.tenantSlug;
         if (slug) setSessionSlug(slug);
       })
       .catch(() => {});
@@ -217,7 +246,11 @@ export default function POSLockScreen() {
         });
         if (eligible.length === 1) setSelectedStaff(eligible[0]);
       })
-      .catch((err: any) => setStaffError(err?.message || 'Could not load staff. Please refresh and try again.'))
+      .catch((err: any) =>
+        setStaffError(
+          err?.message || 'Could not load staff. Please refresh and try again.'
+        )
+      )
       .finally(() => setStaffLoading(false));
   }, [tenantSlug, terminal]);
 
@@ -242,7 +275,12 @@ export default function POSLockScreen() {
       setError('');
       try {
         const data = usePassword
-          ? await posApi.staffLogin(tenantSlug, selectedStaff._id, undefined, passwordValue)
+          ? await posApi.staffLogin(
+              tenantSlug,
+              selectedStaff._id,
+              undefined,
+              passwordValue
+            )
           : await posApi.staffLogin(tenantSlug, selectedStaff._id, pinValue);
         setAuth(data.token, data.staff, data.tenant);
         setTerminal(terminal === 'wholesale' ? 'wholesale' : 'retail');
@@ -292,7 +330,10 @@ export default function POSLockScreen() {
       if (usePassword || !selectedStaff) return;
       if (/^[0-9]$/.test(e.key)) pushDigit(e.key);
       else if (e.key === 'Backspace') deleteDigit();
-      else if (e.key === 'Escape') { setPin(''); setError(''); }
+      else if (e.key === 'Escape') {
+        setPin('');
+        setError('');
+      }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -309,7 +350,10 @@ export default function POSLockScreen() {
   return (
     <div
       className="fixed inset-0 z-50 flex flex-col overflow-hidden"
-      style={{ background: 'linear-gradient(145deg,#b20202 0%,#8f0101 45%,#6e0101 100%)' }}
+      style={{
+        background:
+          'linear-gradient(145deg,#b20202 0%,#8f0101 45%,#6e0101 100%)',
+      }}
     >
       <div className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full bg-white/5 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-32 right-0 h-[500px] w-[500px] rounded-full bg-black/20 blur-3xl" />
@@ -319,7 +363,13 @@ export default function POSLockScreen() {
         <Clock />
         <div className="flex flex-col items-end gap-3">
           <div className="flex items-center gap-2.5 rounded-2xl bg-white/10 px-4 py-2 ring-1 ring-white/20">
-            <Image src="/logo-short.svg" alt="DH" width={22} height={22} className="rounded-full" />
+            <Image
+              src="/logo-short.svg"
+              alt="DH"
+              width={22}
+              height={22}
+              className="rounded-full"
+            />
             <span className="text-sm font-semibold text-white">
               {tenant?.name || 'DrinksHarbour'}
             </span>
@@ -332,9 +382,8 @@ export default function POSLockScreen() {
 
       {/* ── Two-panel layout ── */}
       <div className="relative z-10 flex flex-1 items-center justify-center gap-5 px-6 py-6 lg:gap-8">
-
         {/* Left: staff list */}
-        <div className="flex w-full max-w-xs flex-col rounded-3xl bg-white/10 p-5 backdrop-blur-md ring-1 ring-white/20 lg:max-w-sm">
+        <div className="flex w-full max-w-xs flex-col rounded-3xl bg-white/10 p-5 ring-1 ring-white/20 backdrop-blur-md lg:max-w-sm">
           <div className="mb-4">
             <h2 className="text-base font-bold text-white">Select Cashier</h2>
             <p className="text-xs text-red-200">Choose your name to continue</p>
@@ -370,7 +419,7 @@ export default function POSLockScreen() {
               </button>
             </div>
           ) : (
-            <div className="flex flex-col gap-2 overflow-y-auto max-h-72">
+            <div className="flex max-h-72 flex-col gap-2 overflow-y-auto">
               {staff.map((s) => (
                 <StaffRow
                   key={s._id}
@@ -384,7 +433,16 @@ export default function POSLockScreen() {
         </div>
 
         {/* Right: PIN / password */}
-        <div className="flex w-full max-w-xs flex-col items-center rounded-3xl bg-white/10 p-6 backdrop-blur-md ring-1 ring-white/20 lg:max-w-sm">
+        <div className="flex w-full max-w-xs flex-col items-center rounded-3xl bg-white/10 p-6 ring-1 ring-white/20 backdrop-blur-md lg:max-w-sm">
+          {canBypassPIN && (
+            <button
+              type="button"
+              onClick={() => router.push(routes.pos.sell)}
+              className="mb-4 w-full rounded-xl bg-white/20 py-3 text-sm font-semibold text-white ring-1 ring-white/30 transition-colors hover:bg-white/30"
+            >
+              Continue without PIN
+            </button>
+          )}
           <div className="mb-5 w-full text-center">
             <h2 className="text-base font-bold text-white">
               {usePassword ? 'Enter Password' : 'Enter PIN'}
@@ -397,13 +455,20 @@ export default function POSLockScreen() {
           </div>
 
           {usePassword ? (
-            <div className={`w-full space-y-4 ${!selectedStaff ? 'pointer-events-none opacity-40' : ''}`}>
+            <div
+              className={`w-full space-y-4 ${!selectedStaff ? 'pointer-events-none opacity-40' : ''}`}
+            >
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={(e) => { setPassword(e.target.value); setError(''); }}
-                  onKeyDown={(e) => e.key === 'Enter' && handleLogin('', password)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setError('');
+                  }}
+                  onKeyDown={(e) =>
+                    e.key === 'Enter' && handleLogin('', password)
+                  }
                   placeholder="Password"
                   autoFocus={!!selectedStaff}
                   className="w-full rounded-xl border border-white/20 bg-white/10 px-4 py-3 pr-11 text-sm text-white placeholder-red-300 outline-none focus:border-white/40"
@@ -413,17 +478,23 @@ export default function POSLockScreen() {
                   onClick={() => setShowPassword((v) => !v)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-red-300 hover:text-white"
                 >
-                  {showPassword ? <PiEyeSlash className="h-5 w-5" /> : <PiEye className="h-5 w-5" />}
+                  {showPassword ? (
+                    <PiEyeSlash className="h-5 w-5" />
+                  ) : (
+                    <PiEye className="h-5 w-5" />
+                  )}
                 </button>
               </div>
 
-              {error && <p className="text-center text-xs text-red-200">{error}</p>}
+              {error && (
+                <p className="text-center text-xs text-red-200">{error}</p>
+              )}
 
               <button
                 type="button"
                 disabled={!password.trim() || loggingIn}
                 onClick={() => handleLogin('', password)}
-                className="w-full rounded-xl bg-white py-3 text-sm font-semibold text-[#b20202] transition-colors disabled:opacity-40 hover:bg-red-50"
+                className="w-full rounded-xl bg-white py-3 text-sm font-semibold text-[#b20202] transition-colors hover:bg-red-50 disabled:opacity-40"
               >
                 {loggingIn ? 'Signing in…' : 'Sign In'}
               </button>
@@ -431,7 +502,11 @@ export default function POSLockScreen() {
               {selectedStaff?.hasPin && (
                 <button
                   type="button"
-                  onClick={() => { setUsePassword(false); setPassword(''); setError(''); }}
+                  onClick={() => {
+                    setUsePassword(false);
+                    setPassword('');
+                    setError('');
+                  }}
                   className="w-full text-center text-xs text-red-200 hover:text-white"
                 >
                   Use PIN instead
@@ -445,14 +520,23 @@ export default function POSLockScreen() {
               </div>
 
               <div className="mb-4 h-5">
-                {error && <p className="text-center text-xs text-red-200">{error}</p>}
+                {error && (
+                  <p className="text-center text-xs text-red-200">{error}</p>
+                )}
               </div>
 
-              <div className={`w-full ${!selectedStaff || loggingIn ? 'pointer-events-none opacity-40' : ''}`}>
+              <div
+                className={`w-full ${!selectedStaff || loggingIn ? 'pointer-events-none opacity-40' : ''}`}
+              >
                 <div className="grid grid-cols-3 gap-2.5">
                   {NUMPAD_ROWS.map((row) =>
                     row.map(({ d, sub }) => (
-                      <NumpadKey key={d} label={d} sub={sub} onClick={() => pushDigit(d)} />
+                      <NumpadKey
+                        key={d}
+                        label={d}
+                        sub={sub}
+                        onClick={() => pushDigit(d)}
+                      />
                     ))
                   )}
                   <NumpadKey label="" onClick={() => {}} ghost />
@@ -466,7 +550,11 @@ export default function POSLockScreen() {
 
               <button
                 type="button"
-                onClick={() => { setUsePassword(true); setPin(''); setError(''); }}
+                onClick={() => {
+                  setUsePassword(true);
+                  setPin('');
+                  setError('');
+                }}
                 className="mt-4 text-xs text-red-300 hover:text-white"
               >
                 Use password instead
@@ -515,10 +603,15 @@ function SettingsSheet({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="absolute inset-0 z-20">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
       <div className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-white px-6 pb-10 pt-5 shadow-2xl">
         <div className="mx-auto mb-5 h-1 w-10 rounded-full bg-gray-200" />
-        <h3 className="mb-5 text-base font-bold text-gray-900">Terminal Settings</h3>
+        <h3 className="mb-5 text-base font-bold text-gray-900">
+          Terminal Settings
+        </h3>
         <div className="divide-y divide-gray-100">
           <div className="flex items-center justify-between py-4">
             <div>
@@ -537,7 +630,9 @@ function SettingsSheet({ onClose }: { onClose: () => void }) {
           </div>
           <div className="flex items-center justify-between py-4">
             <div>
-              <p className="text-sm font-medium text-gray-800">Receipt Printer</p>
+              <p className="text-sm font-medium text-gray-800">
+                Receipt Printer
+              </p>
               <p className="text-xs text-gray-400">EPSON TM-T88VI</p>
             </div>
             <span className="rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">

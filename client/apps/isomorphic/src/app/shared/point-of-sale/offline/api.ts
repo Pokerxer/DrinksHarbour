@@ -64,6 +64,21 @@ export async function getProducts(token: string): Promise<any[]> {
       updatedAt: p.updatedAt ?? new Date().toISOString(),
     }));
     await posDb.products.bulkPut(records);
+    // Cache raw image URLs in Cache API so they survive offline
+    if (typeof caches !== 'undefined') {
+      caches.open('pos-product-images').then(async (cache) => {
+        for (const p of products) {
+          const raw =
+            p.product?.images?.[0]?.thumbnail || p.product?.images?.[0]?.url;
+          if (!raw) continue;
+          try {
+            if (await cache.match(raw)) continue;
+            const resp = await fetch(raw, { mode: 'no-cors' });
+            await cache.put(raw, resp);
+          } catch {}
+        }
+      });
+    }
     return products; // Return original POSProduct[] for the grid
   }
   const records = await posDb.products.toArray();
@@ -174,6 +189,24 @@ function orderToRecord(o: any): OrderRecord {
   };
 }
 
+function mapPayloadItems(items: any[]): any[] {
+  return (items ?? []).map((item: any) => {
+    const lineGross = (item.price ?? 0) * (item.quantity ?? 1);
+    const discAmt =
+      Math.round(lineGross * ((item.discount ?? 0) / 100) * 100) / 100;
+    return {
+      name: item.name ?? '',
+      variant: item.variant ?? '',
+      sku: item.sku ?? '',
+      quantity: item.quantity ?? 1,
+      priceAtPurchase: item.price ?? 0,
+      itemSubtotal: lineGross - discAmt,
+      discountAmount: discAmt,
+      bxgyRole: item.bxgyRole,
+    };
+  });
+}
+
 function queueToFakeOrders(queue: QueueEntry[]): OrderRecord[] {
   return queue.map((q) => {
     const p = q.payload as any;
@@ -183,7 +216,7 @@ function queueToFakeOrders(queue: QueueEntry[]): OrderRecord[] {
       total: p.total ?? 0,
       paymentMethod: p.paymentMethod ?? '',
       paymentStatus: 'pending_sync',
-      items: p.items,
+      items: mapPayloadItems(p.items),
       createdAt: q.createdAt,
     };
   });
@@ -239,15 +272,28 @@ export async function createOrder(
     }
   }
 
+  const now = new Date().toISOString();
+  const orderTotal: number = p.total ?? 0;
+  const amountTendered: number = p.amountTendered ?? orderTotal;
+  const receiptItems = mapPayloadItems(p.items);
+
   return {
     order: {
       _id: `offline-${queueId}`,
       receiptNumber: tempReceipt,
-      total: (p as any).total ?? 0,
-      paymentMethod: (p as any).paymentMethod ?? '',
+      total: orderTotal,
+      subtotal: p.subtotal,
+      discountTotal: p.discountValue ?? 0,
+      paymentMethod: p.paymentMethod ?? '',
+      amountTendered,
+      splitPayments: p.splitPayments ?? [],
+      change: Math.max(0, amountTendered - orderTotal),
+      items: receiptItems,
+      placedAt: now,
+      posStaff: '',
+      note: p.note,
       paymentStatus: 'pending_sync',
       isOffline: true,
-      createdAt: new Date().toISOString(),
     },
   };
 }

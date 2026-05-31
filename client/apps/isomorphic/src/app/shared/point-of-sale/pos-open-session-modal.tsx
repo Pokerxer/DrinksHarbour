@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { routes } from '@/config/routes';
 import { posApi } from '@/app/shared/point-of-sale/api';
-import { usePOSAuth } from '@/app/shared/point-of-sale/store';
+import { usePOSAuth, usePOSSettings } from '@/app/shared/point-of-sale/store';
 import { useTenant } from '@/context/TenantContext';
 import { POSSession } from '@/app/shared/point-of-sale/types';
 
@@ -16,10 +16,14 @@ type Props = {
 export default function POSOpenSessionModal({ onSessionOpened }: Props) {
   const { token, staff, terminal } = usePOSAuth();
   const { tenant } = useTenant();
+  const { requireOpeningCash } = usePOSSettings();
   const router = useRouter();
   const [openingCash, setOpeningCash] = useState('');
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState('');
+
+  const cashIsRequired =
+    requireOpeningCash && (!openingCash || Number(openingCash) <= 0);
 
   const cashierName = staff
     ? staff.posName || `${staff.firstName} ${staff.lastName}`
@@ -30,7 +34,11 @@ export default function POSOpenSessionModal({ onSessionOpened }: Props) {
     setOpening(true);
     setError('');
     try {
-      const session = await posApi.openSession(token, Number(openingCash) || 0, terminal ?? 'retail');
+      const session = await posApi.openSession(
+        token,
+        Number(openingCash) || 0,
+        terminal ?? 'retail'
+      );
       onSessionOpened(session);
     } catch (err: any) {
       setError(err.message || 'Failed to open session');
@@ -42,10 +50,15 @@ export default function POSOpenSessionModal({ onSessionOpened }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
       <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
-
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-gray-100 px-6 py-4">
-          <Image src="/logo-short.svg" alt="DH" width={32} height={32} className="rounded-full" />
+          <Image
+            src="/logo-short.svg"
+            alt="DH"
+            width={32}
+            height={32}
+            className="rounded-full"
+          />
           <div className="flex-1">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
               {tenant?.name || 'DrinksHarbour'}
@@ -60,9 +73,16 @@ export default function POSOpenSessionModal({ onSessionOpened }: Props) {
 
         {/* Body */}
         <div className="px-6 py-5">
-          <p className="mb-1 text-sm font-semibold text-gray-800">Opening Control</p>
+          <p className="mb-1 text-sm font-semibold text-gray-800">
+            Opening Control
+          </p>
           <p className="mb-5 text-xs text-gray-500">
             Enter the cash amount in the till at the start of this session.
+            {requireOpeningCash && (
+              <span className="ml-1 font-semibold text-[#b20202]">
+                Required.
+              </span>
+            )}
           </p>
 
           {/* Opening cash table */}
@@ -99,7 +119,9 @@ export default function POSOpenSessionModal({ onSessionOpened }: Props) {
           </div>
 
           {error && (
-            <p className="mt-3 text-center text-sm font-medium text-red-600">{error}</p>
+            <p className="mt-3 text-center text-sm font-medium text-red-600">
+              {error}
+            </p>
           )}
         </div>
 
@@ -115,8 +137,9 @@ export default function POSOpenSessionModal({ onSessionOpened }: Props) {
           <button
             type="button"
             onClick={handleOpen}
-            disabled={opening}
-            className="flex items-center gap-2 rounded-xl px-6 py-2.5 text-sm font-semibold text-white transition-colors disabled:opacity-60 hover:opacity-90"
+            disabled={opening || cashIsRequired}
+            title={cashIsRequired ? 'Opening cash is required' : undefined}
+            className="flex items-center gap-2 rounded-xl px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-60"
             style={{ backgroundColor: '#b20202' }}
           >
             {opening ? (

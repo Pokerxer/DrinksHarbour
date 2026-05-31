@@ -245,11 +245,127 @@ const tenantSchema = new Schema(
       // Allow adding out-of-stock products to cart and processing the order
       allowOverselling: { type: Boolean, default: false },
 
+      // ── Restaurant mode ───────────────────────────────────────────────────────
+      isBarRestaurant: { type: Boolean, default: false },
+
+      // ── Payment options ───────────────────────────────────────────────────────
+      autoValidateOrder:   { type: Boolean, default: false },
+      cashRounding:        { type: Boolean, default: false },
+      maxDifferenceEnabled:{ type: Boolean, default: false },
+      tipsEnabled:         { type: Boolean, default: false },
+
+      // ── POS interface options ─────────────────────────────────────────────────
+      loginWithEmployees: { type: Boolean, default: false },
+      largeScrollbars:    { type: Boolean, default: false },
+      shareOpenOrders:    { type: Boolean, default: false },
+      hidePictures:       { type: Boolean, default: false },
+      showProductImages:  { type: Boolean, default: true  },
+      showCategoryImages: { type: Boolean, default: true  },
+
+      // ── Product & POS categories ──────────────────────────────────────────────
+      restrictCategories:  { type: Boolean, default: false },
+      showMarginsAndCosts: { type: Boolean, default: false },
+      sortCartByCategory:  { type: Boolean, default: false },
+
+      // ── Pricing ───────────────────────────────────────────────────────────────
+      flexiblePricelists:  { type: Boolean, default: false },
+      priceControl:        { type: Boolean, default: false },
+      productPriceDisplay: { type: String, enum: ['tax_excluded', 'tax_included'], default: 'tax_included' },
+      lineDiscounts:       { type: Boolean, default: true  },
+      globalDiscounts:     { type: Boolean, default: false },
+      promotionsEnabled:   { type: Boolean, default: true  },
+
+      // ── Sales controls ────────────────────────────────────────────────────────
+      maxDiscountPct: { type: Number, default: 100, min: 0, max: 100 },
+
+      // ── Session controls ──────────────────────────────────────────────────────
+      requireOpeningCash: { type: Boolean, default: false },
+
+      // ── Payment methods ───────────────────────────────────────────────────────
+      enabledPaymentMethods: {
+        type: [{ type: String, enum: ['cash', 'card', 'bank_transfer', 'mobile_money'] }],
+        default: ['cash', 'card', 'bank_transfer', 'mobile_money'],
+      },
+
+      // ── Receipt ───────────────────────────────────────────────────────────────
+      receiptHeader:          { type: String, default: '', trim: true, maxlength: 200 },
+      receiptFooter:          { type: String, default: '', trim: true, maxlength: 200 },
+      showTaxOnReceipt:       { type: Boolean, default: false },
+      taxRate:                { type: Number,  default: 7.5, min: 0, max: 100 },
+      autoPrintReceipt:       { type: Boolean, default: false },
+      receiptCopies:          { type: Number,  default: 1, min: 1, max: 5 },
+      smsReceiptEnabled:      { type: Boolean, default: false },
+      selfServiceInvoicing:   { type: Boolean, default: false },
+      basicReceipt:           { type: Boolean, default: false },
+      whatsappReceiptEnabled: { type: Boolean, default: false },
+
+      // ── Payment terminals ─────────────────────────────────────────────────────
+      enabledPaymentTerminals: {
+        type: [{ type: String, enum: ['adyen','stripe','six','viva_wallet','paytm','razorpay','mercado_pago'] }],
+        default: [],
+      },
+
+      // ── Connected devices ─────────────────────────────────────────────────────
+      eposPrinter:     { type: Boolean, default: false },
+      customerDisplay: { type: Boolean, default: false },
+      iotBox:          { type: Boolean, default: false },
+
+      // ── Preparation ───────────────────────────────────────────────────────────
+      preparationPrinters: { type: Boolean, default: false },
+      preparationDisplay:  { type: Boolean, default: false },
+      internalNotes:       { type: Boolean, default: false },
+
+      // ── Inventory ─────────────────────────────────────────────────────────────
+      allowShipLater: { type: Boolean, default: false },
+      barcodes:       { type: Boolean, default: false },
+
+      // ── Customers ─────────────────────────────────────────────────────────────
+      requireCustomer:              { type: Boolean, default: false },
+      showLoyaltyBalanceAtCheckout: { type: Boolean, default: true  },
+      customerPhoneSearch:          { type: Boolean, default: true  },
+
+      // ── Order management ──────────────────────────────────────────────────────
+      allowOrderNotes:     { type: Boolean, default: true  },
+      holdOrders:          { type: Boolean, default: false },
+      splitPayments:       { type: Boolean, default: false },
+      minimumOrderAmount:  { type: Number,  default: 0     },
+
+      // ── Refunds & returns ─────────────────────────────────────────────────────
+      allowRefunds:                  { type: Boolean, default: true  },
+      refundWindowDays:              { type: Number,  default: 30    },
+      requireManagerApprovalForRefund: { type: Boolean, default: false },
+      defaultRestockOnRefund:        { type: Boolean, default: true  },
+
+      // ── Security ──────────────────────────────────────────────────────────────
+      sessionTimeoutMins:          { type: Number,  default: 0     },
+      requirePINOnUnlock:          { type: Boolean, default: true  },
+      requireManagerPINForDiscount:{ type: Boolean, default: false },
+
+      // ── Currency & number format ───────────────────────────────────────────────
+      currencySymbol:   { type: String, default: '₦'      },
+      currencyPosition: { type: String, enum: ['before', 'after'], default: 'before' },
+      decimalPlaces:    { type: Number, default: 2         },
+
+      // ── Receipt extras ────────────────────────────────────────────────────────
+      showCashierName:     { type: Boolean, default: true  },
+      showOrderNumber:     { type: Boolean, default: true  },
+      receiptNumberPrefix: { type: String,  default: ''    },
+
       // ── Loyalty programme ─────────────────────────────────────────────────────
       loyaltyEnabled:           { type: Boolean, default: false },
       loyaltyPointsPerNaira:    { type: Number,  default: 0.01  }, // 1pt per ₦100
       loyaltyPointsValue:       { type: Number,  default: 1     }, // 1pt = ₦1
       loyaltyMaxRedemptionPct:  { type: Number,  default: 50    }, // cap 50% of item
+
+      // ── POS Shops (named terminals beyond the built-in retail/wholesale) ────────
+      shops: [{
+        name:        { type: String, required: true, trim: true },
+        mode:        { type: String, enum: ['retail', 'wholesale'], default: 'retail' },
+        color:       { type: String, default: '#b20202' },
+        description: { type: String, default: '' },
+        active:      { type: Boolean, default: true },
+        createdAt:   { type: Date, default: Date.now },
+      }],
 
       // ── Quick discount programs ────────────────────────────────────────────────
       discountPrograms: [{

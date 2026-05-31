@@ -10,6 +10,12 @@ const {
 const { protectPOS, requirePOSPermission, protectPOSOrAdmin } = require('../middleware/pos.middleware');
 
 const {
+  getSessionReport,
+  getDailyReport,
+  getReportSummary,
+} = require('../controllers/pos.report.controller');
+
+const {
   // Session
   openSession,
   closeSession,
@@ -43,6 +49,13 @@ const {
   getTenantBankAccounts,
   getPOSSettings,
   updatePOSSettings,
+  // Shops
+  listPOSShops,
+  createPOSShop,
+  updatePOSShop,
+  deletePOSShop,
+  // Notifications
+  getPOSNotifications,
   // Customers
   searchPOSCustomers,
   createPOSCustomer,
@@ -81,6 +94,7 @@ router.get('/staff',             listPOSStaff);  // staff grid (public, no secre
 // and attaches req.tenant from the DB — never from the raw token claim.
 
 router.get('/session-info',                   protectPOSOrAdmin, getPOSSessionInfo);
+router.get('/notifications',                  protectPOSOrAdmin, getPOSNotifications);
 router.get('/products',                       protectPOSOrAdmin, getPOSProducts);
 router.get('/orders',                         protectPOSOrAdmin, getAllPOSOrders);
 router.post('/orders',                        protectPOS, requirePOSPermission('pos:sell'),   createPOSOrder);
@@ -184,6 +198,9 @@ router.get('/sessions/:id/cash-moves',        protectPOS, getCashMoves);
 router.post('/sessions/:id/cash-move',        protectPOS, recordCashMove);
 router.get('/sessions',                       protectPOSOrAdmin, getSessionList);
 router.get('/dashboard',                      protectPOSOrAdmin, getPOSDashboard);
+router.get('/reports/summary',                protectPOSOrAdmin, getReportSummary);
+router.get('/reports/daily',                  protectPOSOrAdmin, getDailyReport);
+router.get('/reports/session/:id',            protectPOSOrAdmin, getSessionReport);
 
 // ── Admin-JWT protected ───────────────────────────────────────────────────────
 // rejectPOSTokens ensures POS tokens can't slip through the protect() check.
@@ -200,5 +217,9 @@ router.get('/tenant/bank-accounts',  tenantAdminOrSuperAdmin, getTenantBankAccou
 router.patch('/tenant/bank-accounts',tenantAdminOrSuperAdmin, updateTenantBankAccounts);
 router.get('/tenant/settings',       tenantAdminOrSuperAdmin, getPOSSettings);
 router.patch('/tenant/settings',     tenantAdminOrSuperAdmin, updatePOSSettings);
+router.get('/shops',                 tenantAdminOrSuperAdmin, listPOSShops);
+router.post('/shops',                tenantAdminOrSuperAdmin, createPOSShop);
+router.patch('/shops/:shopId',       tenantAdminOrSuperAdmin, updatePOSShop);
+router.delete('/shops/:shopId',      tenantAdminOrSuperAdmin, deletePOSShop);
 
 module.exports = router;

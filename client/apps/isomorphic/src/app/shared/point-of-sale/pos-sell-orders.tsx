@@ -9,7 +9,13 @@ import React, {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { posApi } from '@/app/shared/point-of-sale/api';
-import { getAllOrders, getSessionOrders, getSessionInfo, voidOrder } from '@/app/shared/point-of-sale/offline/api';
+import {
+  getAllOrders,
+  getSessionOrders,
+  getSessionInfo,
+  voidOrder,
+} from '@/app/shared/point-of-sale/offline/api';
+import { runSyncEngine } from '@/app/shared/point-of-sale/offline/sync';
 import { useOnlineStatus } from '@/app/shared/point-of-sale/offline/use-online-status';
 import { usePOSAuth, usePOSCart } from '@/app/shared/point-of-sale/store';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
@@ -620,6 +626,13 @@ export default function POSSellOrders() {
     fetchOrders();
   }, [fetchOrders]);
 
+  // When network is restored: sync queued offline orders then refresh the list
+  useEffect(() => {
+    if (!isOnline || !token) return;
+    runSyncEngine(token).then(() => fetchOrders());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline, token]);
+
   function handleSort(col: SortCol) {
     if (sortCol === col) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -882,9 +895,10 @@ export default function POSSellOrders() {
         {/* ── Left: order table ── */}
         <div className="flex flex-1 flex-col overflow-hidden">
           {!isOnline && (
-            <div className="flex items-center gap-2 rounded bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700 mb-2 mx-3 mt-2">
-              <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-              Offline — showing cached orders. Unsynced orders shown as <strong>OFF-###</strong>.
+            <div className="mx-3 mb-2 mt-2 flex items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
+              Offline — showing cached orders. Unsynced orders shown as{' '}
+              <strong>OFF-###</strong>.
             </div>
           )}
           {loading ? (

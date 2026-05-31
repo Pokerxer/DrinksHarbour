@@ -764,17 +764,25 @@ exports.getCurrentSession = asyncHandler(async (req, res) => {
  */
 exports.getSessionList = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
-  const page   = Math.max(1, parseInt(req.query.page) || 1);
-  const limit  = Math.min(50, parseInt(req.query.limit) || 20);
-  const skip   = (page - 1) * limit;
-  const status = req.query.status; // 'open' | 'closed' | undefined
+  const page     = Math.max(1, parseInt(req.query.page) || 1);
+  const limit    = Math.min(50, parseInt(req.query.limit) || 20);
+  const skip     = (page - 1) * limit;
+  const status   = req.query.status;
+  const dateFrom = req.query.dateFrom;
+  const dateTo   = req.query.dateTo;
 
   const filter = { tenant: tenantId };
   if (status === 'open' || status === 'closed') filter.status = status;
+  if (dateFrom || dateTo) {
+    filter.openedAt = {};
+    if (dateFrom) filter.openedAt.$gte = new Date(dateFrom);
+    if (dateTo)   filter.openedAt.$lte = new Date(new Date(dateTo).setHours(23, 59, 59, 999));
+  }
 
   const [sessions, total] = await Promise.all([
     POSSession.find(filter)
       .populate('openedBy closedBy activeCashier', 'firstName lastName posName avatar')
+      .populate({ path: 'cashierLog.cashier', select: 'firstName lastName posName', strictPopulate: false })
       .populate({ path: 'cashMovements.performedBy', select: 'firstName lastName posName', strictPopulate: false })
       .sort({ openedAt: -1 })
       .skip(skip)
@@ -1077,6 +1085,172 @@ exports.updatePOSSettings = asyncHandler(async (req, res) => {
   if (typeof posSettings.allowOverselling === 'boolean')
     allowed['posSettings.allowOverselling'] = posSettings.allowOverselling;
 
+  // Restaurant mode
+  if (typeof posSettings.isBarRestaurant === 'boolean')
+    allowed['posSettings.isBarRestaurant'] = posSettings.isBarRestaurant;
+
+  // Payment options
+  if (typeof posSettings.autoValidateOrder === 'boolean')
+    allowed['posSettings.autoValidateOrder'] = posSettings.autoValidateOrder;
+  if (typeof posSettings.cashRounding === 'boolean')
+    allowed['posSettings.cashRounding'] = posSettings.cashRounding;
+  if (typeof posSettings.maxDifferenceEnabled === 'boolean')
+    allowed['posSettings.maxDifferenceEnabled'] = posSettings.maxDifferenceEnabled;
+  if (typeof posSettings.tipsEnabled === 'boolean')
+    allowed['posSettings.tipsEnabled'] = posSettings.tipsEnabled;
+
+  // POS interface
+  if (typeof posSettings.loginWithEmployees === 'boolean')
+    allowed['posSettings.loginWithEmployees'] = posSettings.loginWithEmployees;
+  if (typeof posSettings.largeScrollbars === 'boolean')
+    allowed['posSettings.largeScrollbars'] = posSettings.largeScrollbars;
+  if (typeof posSettings.shareOpenOrders === 'boolean')
+    allowed['posSettings.shareOpenOrders'] = posSettings.shareOpenOrders;
+  if (typeof posSettings.hidePictures === 'boolean')
+    allowed['posSettings.hidePictures'] = posSettings.hidePictures;
+  if (typeof posSettings.showProductImages === 'boolean')
+    allowed['posSettings.showProductImages'] = posSettings.showProductImages;
+  if (typeof posSettings.showCategoryImages === 'boolean')
+    allowed['posSettings.showCategoryImages'] = posSettings.showCategoryImages;
+
+  // Product & POS categories
+  if (typeof posSettings.restrictCategories === 'boolean')
+    allowed['posSettings.restrictCategories'] = posSettings.restrictCategories;
+  if (typeof posSettings.showMarginsAndCosts === 'boolean')
+    allowed['posSettings.showMarginsAndCosts'] = posSettings.showMarginsAndCosts;
+  if (typeof posSettings.sortCartByCategory === 'boolean')
+    allowed['posSettings.sortCartByCategory'] = posSettings.sortCartByCategory;
+
+  // Pricing
+  if (typeof posSettings.flexiblePricelists === 'boolean')
+    allowed['posSettings.flexiblePricelists'] = posSettings.flexiblePricelists;
+  if (typeof posSettings.priceControl === 'boolean')
+    allowed['posSettings.priceControl'] = posSettings.priceControl;
+  if (['tax_excluded', 'tax_included'].includes(posSettings.productPriceDisplay))
+    allowed['posSettings.productPriceDisplay'] = posSettings.productPriceDisplay;
+  if (typeof posSettings.lineDiscounts === 'boolean')
+    allowed['posSettings.lineDiscounts'] = posSettings.lineDiscounts;
+  if (typeof posSettings.globalDiscounts === 'boolean')
+    allowed['posSettings.globalDiscounts'] = posSettings.globalDiscounts;
+  if (typeof posSettings.promotionsEnabled === 'boolean')
+    allowed['posSettings.promotionsEnabled'] = posSettings.promotionsEnabled;
+
+  // Sales controls
+  if (typeof posSettings.maxDiscountPct === 'number')
+    allowed['posSettings.maxDiscountPct'] = Math.min(100, Math.max(0, posSettings.maxDiscountPct));
+
+  // Session controls
+  if (typeof posSettings.requireOpeningCash === 'boolean')
+    allowed['posSettings.requireOpeningCash'] = posSettings.requireOpeningCash;
+
+  // Payment methods
+  if (Array.isArray(posSettings.enabledPaymentMethods)) {
+    const valid = ['cash', 'card', 'bank_transfer', 'mobile_money'];
+    allowed['posSettings.enabledPaymentMethods'] = posSettings.enabledPaymentMethods.filter(m => valid.includes(m));
+  }
+
+  // Receipt
+  if (typeof posSettings.receiptHeader === 'string')
+    allowed['posSettings.receiptHeader'] = posSettings.receiptHeader.trim().slice(0, 200);
+  if (typeof posSettings.receiptFooter === 'string')
+    allowed['posSettings.receiptFooter'] = posSettings.receiptFooter.trim().slice(0, 200);
+  if (typeof posSettings.showTaxOnReceipt === 'boolean')
+    allowed['posSettings.showTaxOnReceipt'] = posSettings.showTaxOnReceipt;
+  if (typeof posSettings.taxRate === 'number')
+    allowed['posSettings.taxRate'] = Math.min(100, Math.max(0, posSettings.taxRate));
+  if (typeof posSettings.autoPrintReceipt === 'boolean')
+    allowed['posSettings.autoPrintReceipt'] = posSettings.autoPrintReceipt;
+  if (typeof posSettings.receiptCopies === 'number')
+    allowed['posSettings.receiptCopies'] = Math.min(5, Math.max(1, Math.round(posSettings.receiptCopies)));
+  if (typeof posSettings.smsReceiptEnabled === 'boolean')
+    allowed['posSettings.smsReceiptEnabled'] = posSettings.smsReceiptEnabled;
+  if (typeof posSettings.selfServiceInvoicing === 'boolean')
+    allowed['posSettings.selfServiceInvoicing'] = posSettings.selfServiceInvoicing;
+  if (typeof posSettings.basicReceipt === 'boolean')
+    allowed['posSettings.basicReceipt'] = posSettings.basicReceipt;
+  if (typeof posSettings.whatsappReceiptEnabled === 'boolean')
+    allowed['posSettings.whatsappReceiptEnabled'] = posSettings.whatsappReceiptEnabled;
+
+  // Payment terminals
+  if (Array.isArray(posSettings.enabledPaymentTerminals)) {
+    const validTerminals = ['adyen','stripe','six','viva_wallet','paytm','razorpay','mercado_pago'];
+    allowed['posSettings.enabledPaymentTerminals'] = posSettings.enabledPaymentTerminals.filter(t => validTerminals.includes(t));
+  }
+
+  // Connected devices
+  if (typeof posSettings.eposPrinter === 'boolean')
+    allowed['posSettings.eposPrinter'] = posSettings.eposPrinter;
+  if (typeof posSettings.customerDisplay === 'boolean')
+    allowed['posSettings.customerDisplay'] = posSettings.customerDisplay;
+  if (typeof posSettings.iotBox === 'boolean')
+    allowed['posSettings.iotBox'] = posSettings.iotBox;
+
+  // Preparation
+  if (typeof posSettings.preparationPrinters === 'boolean')
+    allowed['posSettings.preparationPrinters'] = posSettings.preparationPrinters;
+  if (typeof posSettings.preparationDisplay === 'boolean')
+    allowed['posSettings.preparationDisplay'] = posSettings.preparationDisplay;
+  if (typeof posSettings.internalNotes === 'boolean')
+    allowed['posSettings.internalNotes'] = posSettings.internalNotes;
+
+  // Inventory
+  if (typeof posSettings.allowShipLater === 'boolean')
+    allowed['posSettings.allowShipLater'] = posSettings.allowShipLater;
+  if (typeof posSettings.barcodes === 'boolean')
+    allowed['posSettings.barcodes'] = posSettings.barcodes;
+
+  // Customers
+  if (typeof posSettings.requireCustomer === 'boolean')
+    allowed['posSettings.requireCustomer'] = posSettings.requireCustomer;
+  if (typeof posSettings.showLoyaltyBalanceAtCheckout === 'boolean')
+    allowed['posSettings.showLoyaltyBalanceAtCheckout'] = posSettings.showLoyaltyBalanceAtCheckout;
+  if (typeof posSettings.customerPhoneSearch === 'boolean')
+    allowed['posSettings.customerPhoneSearch'] = posSettings.customerPhoneSearch;
+
+  // Order management
+  if (typeof posSettings.allowOrderNotes === 'boolean')
+    allowed['posSettings.allowOrderNotes'] = posSettings.allowOrderNotes;
+  if (typeof posSettings.holdOrders === 'boolean')
+    allowed['posSettings.holdOrders'] = posSettings.holdOrders;
+  if (typeof posSettings.splitPayments === 'boolean')
+    allowed['posSettings.splitPayments'] = posSettings.splitPayments;
+  if (typeof posSettings.minimumOrderAmount === 'number' && posSettings.minimumOrderAmount >= 0)
+    allowed['posSettings.minimumOrderAmount'] = posSettings.minimumOrderAmount;
+
+  // Refunds & returns
+  if (typeof posSettings.allowRefunds === 'boolean')
+    allowed['posSettings.allowRefunds'] = posSettings.allowRefunds;
+  if (typeof posSettings.refundWindowDays === 'number' && posSettings.refundWindowDays >= 0)
+    allowed['posSettings.refundWindowDays'] = posSettings.refundWindowDays;
+  if (typeof posSettings.requireManagerApprovalForRefund === 'boolean')
+    allowed['posSettings.requireManagerApprovalForRefund'] = posSettings.requireManagerApprovalForRefund;
+  if (typeof posSettings.defaultRestockOnRefund === 'boolean')
+    allowed['posSettings.defaultRestockOnRefund'] = posSettings.defaultRestockOnRefund;
+
+  // Security
+  if (typeof posSettings.sessionTimeoutMins === 'number' && posSettings.sessionTimeoutMins >= 0)
+    allowed['posSettings.sessionTimeoutMins'] = posSettings.sessionTimeoutMins;
+  if (typeof posSettings.requirePINOnUnlock === 'boolean')
+    allowed['posSettings.requirePINOnUnlock'] = posSettings.requirePINOnUnlock;
+  if (typeof posSettings.requireManagerPINForDiscount === 'boolean')
+    allowed['posSettings.requireManagerPINForDiscount'] = posSettings.requireManagerPINForDiscount;
+
+  // Currency & number format
+  if (typeof posSettings.currencySymbol === 'string')
+    allowed['posSettings.currencySymbol'] = posSettings.currencySymbol.slice(0, 4);
+  if (['before', 'after'].includes(posSettings.currencyPosition))
+    allowed['posSettings.currencyPosition'] = posSettings.currencyPosition;
+  if ([0, 1, 2].includes(posSettings.decimalPlaces))
+    allowed['posSettings.decimalPlaces'] = posSettings.decimalPlaces;
+
+  // Receipt extras
+  if (typeof posSettings.showCashierName === 'boolean')
+    allowed['posSettings.showCashierName'] = posSettings.showCashierName;
+  if (typeof posSettings.showOrderNumber === 'boolean')
+    allowed['posSettings.showOrderNumber'] = posSettings.showOrderNumber;
+  if (typeof posSettings.receiptNumberPrefix === 'string')
+    allowed['posSettings.receiptNumberPrefix'] = posSettings.receiptNumberPrefix.slice(0, 10);
+
   // Loyalty
   if (typeof posSettings.loyaltyEnabled === 'boolean')
     allowed['posSettings.loyaltyEnabled'] = posSettings.loyaltyEnabled;
@@ -1266,6 +1440,71 @@ exports.updatePOSSettings = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { posSettings: tenant?.posSettings || {} } });
 });
 
+// ─── POS Shops CRUD ──────────────────────────────────────────────────────────
+
+exports.listPOSShops = asyncHandler(async (req, res) => {
+  const tenantId = req.user.tenant;
+  const tenant = await Tenant.findById(tenantId).select('posSettings.shops');
+  const shops = (tenant?.posSettings?.shops || []).filter(s => s.active !== false);
+  res.json({ success: true, data: { shops } });
+});
+
+exports.createPOSShop = asyncHandler(async (req, res) => {
+  const tenantId = req.user.tenant;
+  const { name, mode = 'retail', color = '#b20202', description = '' } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ success: false, message: 'Shop name is required' });
+  }
+  if (!['retail', 'wholesale'].includes(mode)) {
+    return res.status(400).json({ success: false, message: 'mode must be retail or wholesale' });
+  }
+  const tenant = await Tenant.findById(tenantId);
+  if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
+
+  tenant.posSettings.shops = tenant.posSettings.shops || [];
+  tenant.posSettings.shops.push({ name: name.trim(), mode, color, description, active: true, createdAt: new Date() });
+  await tenant.save();
+
+  const created = tenant.posSettings.shops[tenant.posSettings.shops.length - 1];
+  res.status(201).json({ success: true, data: { shop: created } });
+});
+
+exports.updatePOSShop = asyncHandler(async (req, res) => {
+  const tenantId = req.user.tenant;
+  const { shopId } = req.params;
+  const { name, mode, color, description, active } = req.body;
+
+  const tenant = await Tenant.findById(tenantId);
+  if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
+
+  const shop = (tenant.posSettings.shops || []).id(shopId);
+  if (!shop) return res.status(404).json({ success: false, message: 'Shop not found' });
+
+  if (name !== undefined) shop.name = name.trim();
+  if (mode !== undefined && ['retail', 'wholesale'].includes(mode)) shop.mode = mode;
+  if (color !== undefined) shop.color = color;
+  if (description !== undefined) shop.description = description;
+  if (active !== undefined) shop.active = !!active;
+
+  await tenant.save();
+  res.json({ success: true, data: { shop } });
+});
+
+exports.deletePOSShop = asyncHandler(async (req, res) => {
+  const tenantId = req.user.tenant;
+  const { shopId } = req.params;
+
+  const tenant = await Tenant.findById(tenantId);
+  if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
+
+  const shop = (tenant.posSettings.shops || []).id(shopId);
+  if (!shop) return res.status(404).json({ success: false, message: 'Shop not found' });
+
+  shop.deleteOne();
+  await tenant.save();
+  res.json({ success: true, data: { message: 'Shop deleted' } });
+});
+
 // ─── POS Staff Login ─────────────────────────────────────────────────────────
 /**
  * POST /api/pos/auth/staff-login
@@ -1432,8 +1671,11 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
     .populate({
       path:     'product',
       // platformMarkup and platformDiscount are needed for the pricing pipeline
-      select:   'name images type brand platformMarkup platformDiscount',
-      populate: { path: 'brand', select: 'name' },
+      select:   'name images type brand category platformMarkup platformDiscount',
+      populate: [
+        { path: 'brand',    select: '_id name' },
+        { path: 'category', select: '_id name' },
+      ],
     })
     .populate('sizes', 'displayName sellingPrice costPrice availableStock stock _id sku barcode')
     .populate({ path: 'vendor', select: 'firstName lastName email posName', strictPopulate: false })
@@ -1866,9 +2108,10 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       channel:   'pos',
       // Snapshot customer info for receipt/history display
       customer: {
-        firstName: customer.firstName || 'Walk-in',
-        lastName:  customer.lastName  || 'Customer',
-        phone:     customer.phone     || '',
+        firstName:  customer.firstName  || 'Walk-in',
+        lastName:   customer.lastName   || 'Customer',
+        phone:      customer.phone      || '',
+        customerId: customer.customerId || null,
       },
       ...(paymentMethod === 'cash'  && { amount: amountTendered, change: Math.max(0, amountTendered - total) }),
       ...(paymentMethod === 'split' && { splitPayments }),
@@ -2213,8 +2456,17 @@ exports.getAllPOSOrders = asyncHandler(async (req, res) => {
     .select('orderNumber receiptNumber totalAmount subtotal discountTotal paymentMethod paymentStatus status placedAt createdAt posStaff isVoided refunds items paymentDetails posSessionId')
     .populate('posStaff', 'firstName lastName posName')
     .populate({ path: 'posSessionId', select: 'terminalType openedAt status', strictPopulate: false })
-    .populate('items.product', 'name')
-    .populate('items.size', 'displayName')
+    .populate({
+      path: 'items.product',
+      select: 'name brand category subCategory',
+      populate: [
+        { path: 'brand',       select: 'name' },
+        { path: 'category',    select: 'name' },
+        { path: 'subCategory', select: 'name' },
+      ],
+    })
+    .populate('items.size', 'displayName costPrice')
+    .populate('items.subproduct', 'costPrice')
     .populate({ path: 'refunds.refundedBy', select: 'firstName lastName posName', strictPopulate: false })
     .sort({ createdAt: -1 })
     .skip(skip)
@@ -2236,12 +2488,16 @@ exports.getAllPOSOrders = asyncHandler(async (req, res) => {
       amount:        o.paymentDetails?.amount        || 0,
     },
     items: (o.items || []).map((it) => ({
-      name:            it.product?.name || 'Product',
-      variant:         it.size?.displayName || '',
+      name:            it._name || it.product?.name || 'Product',
+      variant:         it._variant || it.size?.displayName || '',
       quantity:        it.quantity,
       priceAtPurchase: it.priceAtPurchase,
       itemSubtotal:    it.itemSubtotal,
       discountAmount:  it.discountAmount || 0,
+      sizeCostPrice:   it.size?.costPrice || it.subproduct?.costPrice || 0,
+      category:        it.product?.category?.name    || '',
+      subcategory:     it.product?.subCategory?.name || '',
+      brand:           it.product?.brand?.name       || '',
     })),
   }));
 
@@ -2256,8 +2512,17 @@ exports.getPOSSessionOrders = asyncHandler(async (req, res) => {
   const orders = await Order.find({ posSessionId: req.params.id })
     .select('orderNumber receiptNumber totalAmount subtotal discountTotal paymentMethod paymentStatus status placedAt createdAt posStaff isVoided refunds items paymentDetails')
     .populate('posStaff', 'firstName lastName posName')
-    .populate('items.product', 'name')
-    .populate('items.size',    'displayName')
+    .populate({
+      path: 'items.product',
+      select: 'name brand category subCategory',
+      populate: [
+        { path: 'brand',       select: 'name' },
+        { path: 'category',    select: 'name' },
+        { path: 'subCategory', select: 'name' },
+      ],
+    })
+    .populate('items.size', 'displayName costPrice')
+    .populate('items.subproduct', 'costPrice')
     .populate({ path: 'refunds.refundedBy', select: 'firstName lastName posName', strictPopulate: false })
     .sort({ createdAt: -1 })
     .limit(200)
@@ -2275,14 +2540,152 @@ exports.getPOSSessionOrders = asyncHandler(async (req, res) => {
       amount:        o.paymentDetails?.amount        || 0,
     },
     items: (o.items || []).map((it) => ({
-      name:            it.product?.name || 'Product',
-      variant:         it.size?.displayName || '',
+      name:            it._name || it.product?.name || 'Product',
+      variant:         it._variant || it.size?.displayName || '',
       quantity:        it.quantity,
       priceAtPurchase: it.priceAtPurchase,
       itemSubtotal:    it.itemSubtotal,
       discountAmount:  it.discountAmount || 0,
+      sizeCostPrice:   it.size?.costPrice || it.subproduct?.costPrice || 0,
+      category:        it.product?.category?.name    || '',
+      subcategory:     it.product?.subCategory?.name || '',
+      brand:           it.product?.brand?.name       || '',
     })),
   }));
 
   res.json({ success: true, data: mapped });
+});
+
+// ─── POS Customer endpoints ───────────────────────────────────────────────────
+
+exports.searchPOSCustomers = asyncHandler(async (req, res) => {
+  const POSCustomer = require('../models/POSCustomer');
+  const tenantId = req.tenant?._id;
+  const { q = '', limit = 20 } = req.query;
+  const lim = Math.min(50, parseInt(limit) || 20);
+
+  let filter = { tenant: tenantId };
+  if (q.trim()) {
+    const escaped = q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const rx = new RegExp(escaped, 'i');
+    filter = {
+      tenant: tenantId,
+      $or: [
+        { phone: { $regex: rx } },
+        { firstName: { $regex: rx } },
+        { lastName: { $regex: rx } },
+        { email: { $regex: rx } },
+      ],
+    };
+  }
+
+  const customers = await POSCustomer.find(filter)
+    .sort({ updatedAt: -1 })
+    .limit(lim)
+    .select('firstName lastName email phone loyaltyPoints totalSpent totalOrders')
+    .lean();
+
+  res.json({ success: true, data: { customers } });
+});
+
+exports.createPOSCustomer = asyncHandler(async (req, res) => {
+  const POSCustomer = require('../models/POSCustomer');
+  const tenantId = req.tenant?._id;
+  const { firstName, lastName = '', email = '', phone = '', notes = '' } = req.body;
+
+  if (!firstName?.trim())
+    return res.status(400).json({ success: false, message: 'First name is required' });
+
+  if (phone.trim()) {
+    const existing = await POSCustomer.findOne({ tenant: tenantId, phone: phone.trim() }).lean();
+    if (existing)
+      return res.status(409).json({
+        success: false,
+        message: 'A customer with this phone number already exists',
+        data: { customer: existing },
+      });
+  }
+
+  const customer = await POSCustomer.create({
+    tenant: tenantId,
+    firstName: firstName.trim(),
+    lastName:  lastName.trim(),
+    email:     email.trim(),
+    phone:     phone.trim(),
+    notes:     notes.trim(),
+  });
+
+  res.status(201).json({ success: true, data: { customer } });
+});
+
+exports.getPOSCustomer = asyncHandler(async (req, res) => {
+  const POSCustomer = require('../models/POSCustomer');
+  const tenantId = req.tenant?._id;
+  const customer = await POSCustomer.findOne({ _id: req.params.id, tenant: tenantId })
+    .select('firstName lastName email phone loyaltyPoints totalSpent totalOrders notes')
+    .lean();
+  if (!customer)
+    return res.status(404).json({ success: false, message: 'Customer not found' });
+  res.json({ success: true, data: { customer } });
+});
+
+exports.updatePOSCustomerLoyalty = asyncHandler(async (req, res) => {
+  const POSCustomer = require('../models/POSCustomer');
+  const tenantId = req.tenant?._id;
+  const { earned = 0, redeemed = 0, orderTotal = 0 } = req.body;
+
+  const customer = await POSCustomer.findOne({ _id: req.params.id, tenant: tenantId });
+  if (!customer)
+    return res.status(404).json({ success: false, message: 'Customer not found' });
+
+  const delta = Math.floor(earned) - Math.floor(redeemed);
+  customer.loyaltyPoints = Math.max(0, customer.loyaltyPoints + delta);
+  if (orderTotal > 0) {
+    customer.totalSpent  += orderTotal;
+    customer.totalOrders += 1;
+  }
+  await customer.save();
+
+  res.json({ success: true, data: { customer } });
+});
+
+// ─── POS Notifications — online platform orders for this tenant ───────────────
+
+exports.getPOSNotifications = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id || req.user?.tenant;
+  const since = req.query.since
+    ? new Date(req.query.since)
+    : new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  const orders = await Order.find({
+    'items.tenant': tenantId,
+    source: { $ne: 'pos' },
+    placedAt: { $gt: since },
+    paymentStatus: 'paid',
+  })
+    .sort({ placedAt: -1 })
+    .limit(50)
+    .populate('user', 'firstName lastName email phone')
+    .select('orderNumber placedAt total source status items user')
+    .lean();
+
+  const notifications = orders.map((o) => ({
+    _id:         String(o._id),
+    orderNumber: o.orderNumber,
+    placedAt:    o.placedAt,
+    total:       o.total,
+    source:      o.source,
+    status:      o.status,
+    customer: o.user
+      ? `${o.user.firstName || ''} ${o.user.lastName || ''}`.trim() || o.user.email || 'Customer'
+      : 'Customer',
+    itemCount: (o.items || []).reduce((s, i) => s + (i.quantity || 1), 0),
+    items: (o.items || []).slice(0, 5).map((i) => ({
+      name:     i.name || i.productName || 'Item',
+      qty:      i.quantity || 1,
+      subtotal: i.itemSubtotal ?? 0,
+    })),
+  }));
+
+  res.json({ success: true, data: { notifications } });
 });

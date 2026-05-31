@@ -28,13 +28,15 @@ export const metadata = {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
-async function fetchTenantBySlug(slug: string): Promise<AdminTenantData | null> {
+async function fetchTenantBySlug(
+  slug: string
+): Promise<AdminTenantData | null> {
   try {
     const res = await fetch(`${API_URL}/api/tenants/slug/${slug}`, {
       cache: 'no-store',
     });
     if (!res.ok) return null;
-    const json = await res.json() as { data?: { tenant?: AdminTenantData } };
+    const json = (await res.json()) as { data?: { tenant?: AdminTenantData } };
     return json?.data?.tenant ?? null;
   } catch {
     return null;
@@ -55,15 +57,13 @@ export default async function RootLayout({
     : null;
 
   const bodyStyle = initialTenant?.primaryColor
-    ? ({ '--color-tenant-primary': initialTenant.primaryColor } as React.CSSProperties)
+    ? ({
+        '--color-tenant-primary': initialTenant.primaryColor,
+      } as React.CSSProperties)
     : undefined;
 
   return (
-    <html
-      lang="en"
-      dir="ltr"
-      suppressHydrationWarning
-    >
+    <html lang="en" dir="ltr" suppressHydrationWarning>
       <body
         suppressHydrationWarning
         className={cn(inter.variable, lexendDeca.variable, 'font-inter')}

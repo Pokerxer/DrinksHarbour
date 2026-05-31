@@ -16,7 +16,10 @@ const navItems: NavItem[] = [
     label: 'Orders',
     items: [
       { label: 'Requests for Quotation', href: routes.eCommerce.purchases },
-      { label: 'Purchase Orders', href: `${routes.eCommerce.purchases}?status=confirmed` },
+      {
+        label: 'Purchase Orders',
+        href: `${routes.eCommerce.purchases}?status=confirmed`,
+      },
       { label: 'Create Purchase Order', href: routes.eCommerce.createPurchase },
       { label: 'Receive Goods', href: routes.eCommerce.receivePurchase },
       { label: 'Validate Receipt', href: routes.eCommerce.validateReceipt },
@@ -28,6 +31,7 @@ const navItems: NavItem[] = [
       { label: 'Vendor Bills', href: routes.eCommerce.vendorBills },
       { label: 'Create Bill', href: routes.eCommerce.createVendorBill },
       { label: 'Vendor Returns', href: routes.eCommerce.vendorReturns },
+      { label: 'Create Return', href: routes.eCommerce.createVendorReturn },
     ],
   },
   {
@@ -40,7 +44,10 @@ const navItems: NavItem[] = [
     label: 'Configuration',
     items: [
       { label: 'Vendors', href: routes.eCommerce.purchaseVendors },
-      { label: 'Purchase Agreements', href: routes.eCommerce.purchaseAgreements },
+      {
+        label: 'Purchase Agreements',
+        href: routes.eCommerce.purchaseAgreements,
+      },
       { label: 'Vendor Pricelists', href: routes.eCommerce.vendorPricelists },
       { label: 'UOM Conversions', href: routes.eCommerce.uomConversions },
       { label: 'Exchange Rates', href: routes.eCommerce.exchangeRates },
@@ -93,7 +100,8 @@ export default function PurchasesNavHeader() {
             'items' in item &&
             (item.items?.some(
               (s) => s.href !== '#' && pathname.startsWith(s.href)
-            ) ?? false);
+            ) ??
+              false);
           const isOpen = openMenu === item.label;
 
           const activeCls =
@@ -136,7 +144,8 @@ export default function PurchasesNavHeader() {
               {isOpen && (
                 <div className="absolute left-0 top-full z-50 min-w-[210px] rounded-b border border-t-0 border-gray-200 bg-white shadow-lg">
                   {item.items?.map((sub) => {
-                    const isSubActive = sub.href !== '#' && pathname === sub.href;
+                    const isSubActive =
+                      sub.href !== '#' && pathname === sub.href;
                     return (
                       <Link
                         key={sub.label}

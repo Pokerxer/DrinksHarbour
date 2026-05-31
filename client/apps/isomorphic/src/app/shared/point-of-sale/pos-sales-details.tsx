@@ -5,8 +5,11 @@ import {
   PiArrowsClockwise, PiCurrencyNgn, PiShoppingCart, PiTag,
   PiArrowUp, PiArrowDown, PiArrowsDownUp, PiDownloadSimple, PiX,
   PiMagnifyingGlass, PiCaretLeft, PiCaretRight, PiCaretDown, PiPercent,
-  PiTrendUp, PiList, PiRows, PiClock,
+  PiTrendUp, PiList, PiRows, PiClock, PiFileCsv, PiFileXls, PiFilePdf,
 } from 'react-icons/pi';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { useSession } from 'next-auth/react';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
@@ -18,6 +21,7 @@ interface OrderItem {
   name: string; variant?: string; quantity: number;
   priceAtPurchase: number; itemSubtotal: number;
   discountAmount?: number; sizeCostPrice?: number;
+  category?: string; subcategory?: string; brand?: string;
 }
 
 interface PosOrder {
@@ -33,6 +37,7 @@ interface PosOrder {
 interface LineRow {
   orderId: string; orderNumber: string; receiptNumber: string;
   date: string; cashier: string; product: string; variant: string;
+  category: string; subcategory: string; brand: string;
   qty: number; unitPrice: number; discount: number;
   subtotal: number; gross: number; costPrice: number; profit: number;
   paymentMethod: string; isVoided: boolean;
@@ -41,6 +46,7 @@ interface LineRow {
 type LineSortField = keyof Pick<
   LineRow,
   'date' | 'orderNumber' | 'cashier' | 'product' | 'variant' |
+  'category' | 'subcategory' | 'brand' |
   'qty' | 'unitPrice' | 'discount' | 'subtotal' | 'gross' | 'profit' | 'paymentMethod'
 >;
 
@@ -54,7 +60,7 @@ type GroupSortField = 'key' | 'qty' | 'revenue' | 'gross' | 'discount' | 'profit
 type GroupByKey   = 'product' | 'cashier' | 'payment_method' | 'date' | 'variant';
 type ViewMode     = 'lines' | 'grouped';
 type StatusFilter = 'all' | 'active' | 'voided';
-type ToggleableCol = 'orderNumber' | 'cashier' | 'variant' | 'unitPrice' | 'gross' | 'discount' | 'payment';
+type ToggleableCol = 'orderNumber' | 'cashier' | 'variant' | 'category' | 'subcategory' | 'brand' | 'unitPrice' | 'gross' | 'discount' | 'payment';
 
 const PAGE_SIZE       = 50;
 const GROUP_PAGE_SIZE = 30;
@@ -84,14 +90,67 @@ const METHOD_DOT: Record<string, string> = {
   other:         'bg-gray-400',
 };
 
-const TOGGLEABLE_COLS: { key: ToggleableCol; label: string }[] = [
+const TOGGLEABLE_COLS: { key: ToggleableCol; label: string; defaultHidden?: boolean }[] = [
   { key: 'orderNumber', label: 'Order #' },
   { key: 'cashier',     label: 'Cashier' },
   { key: 'variant',     label: 'Variant' },
+  { key: 'category',    label: 'Category',    defaultHidden: true },
+  { key: 'subcategory', label: 'Subcategory', defaultHidden: true },
+  { key: 'brand',       label: 'Brand',       defaultHidden: true },
   { key: 'unitPrice',   label: 'Unit Price' },
   { key: 'gross',       label: 'Gross Rev.' },
   { key: 'discount',    label: 'Discount' },
   { key: 'payment',     label: 'Payment' },
+];
+
+// ── Export column definitions ───────────────────────────────────────────────────
+
+type LineExportCol = 'date' | 'order' | 'receipt' | 'cashier' | 'product' | 'variant' |
+  'category' | 'subcategory' | 'brand' | 'qty' | 'unitPrice' |
+  'gross' | 'discount' | 'net' | 'cost' | 'profit' | 'margin' | 'payment' | 'voided';
+
+type GroupExportCol = 'key' | 'qty' | 'gross' | 'discount' | 'revenue' |
+  'profit' | 'margin' | 'share' | 'lineCount' | 'orderCount';
+
+const LINE_EXPORT_COLS: {
+  key: LineExportCol; label: string; required?: boolean; costOnly?: boolean;
+  pdfW: number; pdfAlign: 'left' | 'right';
+}[] = [
+  { key: 'date',        label: 'Date/Time',    required: true,  pdfW: 28, pdfAlign: 'left'  },
+  { key: 'order',       label: 'Order #',                       pdfW: 18, pdfAlign: 'left'  },
+  { key: 'receipt',     label: 'Receipt #',                     pdfW: 16, pdfAlign: 'left'  },
+  { key: 'cashier',     label: 'Cashier',                       pdfW: 22, pdfAlign: 'left'  },
+  { key: 'product',     label: 'Product',      required: true,  pdfW: 34, pdfAlign: 'left'  },
+  { key: 'variant',     label: 'Variant',                       pdfW: 18, pdfAlign: 'left'  },
+  { key: 'category',    label: 'Category',                      pdfW: 20, pdfAlign: 'left'  },
+  { key: 'subcategory', label: 'Subcategory',                   pdfW: 20, pdfAlign: 'left'  },
+  { key: 'brand',       label: 'Brand',                         pdfW: 18, pdfAlign: 'left'  },
+  { key: 'qty',         label: 'Qty',          required: true,  pdfW: 10, pdfAlign: 'right' },
+  { key: 'unitPrice',   label: 'Unit Price',                    pdfW: 20, pdfAlign: 'right' },
+  { key: 'gross',       label: 'Gross Revenue',                 pdfW: 20, pdfAlign: 'right' },
+  { key: 'discount',    label: 'Discount',                      pdfW: 18, pdfAlign: 'right' },
+  { key: 'net',         label: 'Net Total',    required: true,  pdfW: 22, pdfAlign: 'right' },
+  { key: 'cost',        label: 'Cost Price',   costOnly: true,  pdfW: 18, pdfAlign: 'right' },
+  { key: 'profit',      label: 'Profit',       costOnly: true,  pdfW: 18, pdfAlign: 'right' },
+  { key: 'margin',      label: 'Margin %',     costOnly: true,  pdfW: 16, pdfAlign: 'right' },
+  { key: 'payment',     label: 'Payment',                       pdfW: 20, pdfAlign: 'left'  },
+  { key: 'voided',      label: 'Voided',                        pdfW: 12, pdfAlign: 'left'  },
+];
+
+const GROUP_EXPORT_COLS: {
+  key: GroupExportCol; label: string; required?: boolean; costOnly?: boolean;
+  pdfW: number; pdfAlign: 'left' | 'right';
+}[] = [
+  { key: 'key',        label: 'Group',          required: true,  pdfW: 50, pdfAlign: 'left'  },
+  { key: 'qty',        label: 'Qty Sold',                        pdfW: 16, pdfAlign: 'right' },
+  { key: 'gross',      label: 'Gross Revenue',                   pdfW: 26, pdfAlign: 'right' },
+  { key: 'discount',   label: 'Discount',                        pdfW: 24, pdfAlign: 'right' },
+  { key: 'revenue',    label: 'Net Revenue',    required: true,  pdfW: 26, pdfAlign: 'right' },
+  { key: 'profit',     label: 'Profit',         costOnly: true,  pdfW: 24, pdfAlign: 'right' },
+  { key: 'margin',     label: 'Margin %',       costOnly: true,  pdfW: 18, pdfAlign: 'right' },
+  { key: 'share',      label: 'Revenue Share %',                 pdfW: 16, pdfAlign: 'right' },
+  { key: 'lineCount',  label: 'Line Count',                      pdfW: 14, pdfAlign: 'right' },
+  { key: 'orderCount', label: 'Distinct Orders',                 pdfW: 14, pdfAlign: 'right' },
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -148,6 +207,96 @@ const DATE_PRESETS = [
   { label: 'Last month',  from: () => startOfLastMonth(), to: () => endOfLastMonth(),   tf: '00:00', tt: '23:59' },
 ];
 
+// ── Export cell helpers ────────────────────────────────────────────────────────
+
+function getLineCell(r: LineRow, key: LineExportCol, fmt: 'csv' | 'pdf'): string {
+  const q = (s: string) => fmt === 'csv' ? `"${s.replace(/"/g, '""')}"` : s;
+  switch (key) {
+    case 'date':        return fmtDateTime(r.date);
+    case 'order':       return fmt === 'pdf' ? (r.isVoided ? `${r.orderNumber} [VOID]` : r.orderNumber) : r.orderNumber;
+    case 'receipt':     return r.receiptNumber;
+    case 'cashier':     return q(r.cashier);
+    case 'product':     return q(r.product);
+    case 'variant':     return q(r.variant    || (fmt === 'pdf' ? '—' : ''));
+    case 'category':    return q(r.category   || (fmt === 'pdf' ? '—' : ''));
+    case 'subcategory': return q(r.subcategory || (fmt === 'pdf' ? '—' : ''));
+    case 'brand':       return q(r.brand      || (fmt === 'pdf' ? '—' : ''));
+    case 'qty':         return r.qty.toString();
+    case 'unitPrice':   return r.unitPrice.toFixed(2);
+    case 'gross':       return r.gross.toFixed(2);
+    case 'discount':    return fmt === 'pdf' ? (r.discount > 0 ? r.discount.toFixed(2) : '—') : r.discount.toFixed(2);
+    case 'net':         return r.subtotal.toFixed(2);
+    case 'cost':        return fmt === 'pdf' ? (r.costPrice > 0 ? r.costPrice.toFixed(2) : '—') : r.costPrice.toFixed(2);
+    case 'profit':      return fmt === 'pdf' ? (r.profit > 0 ? r.profit.toFixed(2) : '—') : r.profit.toFixed(2);
+    case 'margin': {
+      const m = r.profit > 0 && r.subtotal > 0 ? ((r.profit / r.subtotal) * 100).toFixed(1) : null;
+      return m ? m + '%' : (fmt === 'pdf' ? '—' : '0');
+    }
+    case 'payment':     return METHOD_LABEL[r.paymentMethod] ?? r.paymentMethod;
+    case 'voided':      return r.isVoided ? 'Yes' : 'No';
+    default:            return '';
+  }
+}
+
+function getLineCellExcel(r: LineRow, key: LineExportCol): string | number {
+  switch (key) {
+    case 'date':        return fmtDateTime(r.date);
+    case 'order':       return r.orderNumber;
+    case 'receipt':     return r.receiptNumber;
+    case 'cashier':     return r.cashier;
+    case 'product':     return r.product;
+    case 'variant':     return r.variant;
+    case 'category':    return r.category;
+    case 'subcategory': return r.subcategory;
+    case 'brand':       return r.brand;
+    case 'qty':         return r.qty;
+    case 'unitPrice':   return r.unitPrice;
+    case 'gross':       return r.gross;
+    case 'discount':    return r.discount;
+    case 'net':         return r.subtotal;
+    case 'cost':        return r.costPrice;
+    case 'profit':      return r.profit;
+    case 'margin':      return r.profit > 0 && r.subtotal > 0 ? +((r.profit / r.subtotal) * 100).toFixed(1) : 0;
+    case 'payment':     return METHOD_LABEL[r.paymentMethod] ?? r.paymentMethod;
+    case 'voided':      return r.isVoided ? 'Yes' : 'No';
+    default:            return '';
+  }
+}
+
+function getGroupCell(r: GroupRow, key: GroupExportCol, fmt: 'csv' | 'pdf'): string {
+  const mg = r.profit > 0 && r.revenue > 0 ? ((r.profit / r.revenue) * 100).toFixed(1) : null;
+  switch (key) {
+    case 'key':        return fmt === 'csv' ? `"${r.key.replace(/"/g, '""')}"` : r.key;
+    case 'qty':        return r.qty.toLocaleString();
+    case 'gross':      return r.gross.toFixed(2);
+    case 'discount':   return fmt === 'pdf' && r.discount === 0 ? '—' : r.discount.toFixed(2);
+    case 'revenue':    return r.revenue.toFixed(2);
+    case 'profit':     return fmt === 'pdf' && r.profit === 0 ? '—' : r.profit.toFixed(2);
+    case 'margin':     return mg ? mg + '%' : (fmt === 'pdf' ? '—' : '0');
+    case 'share':      return r.share.toFixed(1) + '%';
+    case 'lineCount':  return r.lineCount.toLocaleString();
+    case 'orderCount': return r.orderCount.toLocaleString();
+    default:           return '';
+  }
+}
+
+function getGroupCellExcel(r: GroupRow, key: GroupExportCol): string | number {
+  const mg = r.profit > 0 && r.revenue > 0 ? +((r.profit / r.revenue) * 100).toFixed(1) : 0;
+  switch (key) {
+    case 'key':        return r.key;
+    case 'qty':        return r.qty;
+    case 'gross':      return r.gross;
+    case 'discount':   return r.discount;
+    case 'revenue':    return r.revenue;
+    case 'profit':     return r.profit;
+    case 'margin':     return mg;
+    case 'share':      return +r.share.toFixed(1);
+    case 'lineCount':  return r.lineCount;
+    case 'orderCount': return r.orderCount;
+    default:           return '';
+  }
+}
+
 // ── CSV ────────────────────────────────────────────────────────────────────────
 
 function triggerCsvDownload(csv: string, name: string) {
@@ -158,43 +307,362 @@ function triggerCsvDownload(csv: string, name: string) {
   a.click(); URL.revokeObjectURL(url);
 }
 
-function exportLineCsv(rows: LineRow[], hasCost: boolean) {
-  const h = [
-    'Date/Time', 'Order #', 'Receipt', 'Cashier', 'Product', 'Variant',
-    'Qty', 'Unit Price', 'Gross', 'Discount', 'Net Total',
-    ...(hasCost ? ['Cost', 'Profit', 'Margin %'] : []),
-    'Payment Method', 'Voided',
-  ];
-  const lines = rows.map(r => {
-    const margin = r.profit > 0 && r.subtotal > 0 ? ((r.profit / r.subtotal) * 100).toFixed(1) + '%' : '—';
-    return [
-      fmtDateTime(r.date), r.orderNumber, r.receiptNumber,
-      `"${r.cashier}"`, `"${r.product}"`, `"${r.variant}"`,
-      r.qty, r.unitPrice.toFixed(2), r.gross.toFixed(2),
-      r.discount.toFixed(2), r.subtotal.toFixed(2),
-      ...(hasCost ? [r.costPrice.toFixed(2), r.profit.toFixed(2), margin] : []),
-      METHOD_LABEL[r.paymentMethod] ?? r.paymentMethod, r.isVoided ? 'Yes' : 'No',
-    ].join(',');
-  });
-  triggerCsvDownload([h.join(','), ...lines].join('\n'), 'sales-details');
+function exportLineCsv(rows: LineRow[], cols: Set<LineExportCol>) {
+  const defs   = LINE_EXPORT_COLS.filter(c => cols.has(c.key));
+  const header = defs.map(c => c.label).join(',');
+  const lines  = rows.map(r => defs.map(c => getLineCell(r, c.key, 'csv')).join(','));
+  triggerCsvDownload([header, ...lines].join('\n'), 'sales-details');
 }
 
-function exportGroupedCsv(rows: GroupRow[], groupLabel: string, hasCost: boolean) {
-  const h = [
-    groupLabel, 'Qty Sold', 'Gross Revenue', 'Discount', 'Net Revenue',
-    ...(hasCost ? ['Profit', 'Margin %'] : []),
-    'Line Count', 'Distinct Orders', 'Revenue Share %',
+function exportGroupedCsv(rows: GroupRow[], groupLabel: string, cols: Set<GroupExportCol>) {
+  const defs   = GROUP_EXPORT_COLS.filter(c => cols.has(c.key));
+  const header = defs.map(c => c.key === 'key' ? groupLabel : c.label).join(',');
+  const lines  = rows.map(r => defs.map(c => getGroupCell(r, c.key, 'csv')).join(','));
+  triggerCsvDownload([header, ...lines].join('\n'), 'sales-grouped');
+}
+
+// ── Excel ──────────────────────────────────────────────────────────────────────
+
+function exportLineExcel(rows: LineRow[], cols: Set<LineExportCol>) {
+  const defs    = LINE_EXPORT_COLS.filter(c => cols.has(c.key));
+  const headers = defs.map(c => c.label);
+  const data    = rows.map(r => defs.map(c => getLineCellExcel(r, c.key)));
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sales Details');
+  XLSX.writeFile(wb, `sales-details-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+function exportGroupedExcel(rows: GroupRow[], groupLabel: string, cols: Set<GroupExportCol>) {
+  const defs    = GROUP_EXPORT_COLS.filter(c => cols.has(c.key));
+  const headers = defs.map(c => c.key === 'key' ? groupLabel : c.label);
+  const data    = rows.map(r => defs.map(c => getGroupCellExcel(r, c.key)));
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sales Grouped');
+  XLSX.writeFile(wb, `sales-grouped-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+// ── PDF ────────────────────────────────────────────────────────────────────────
+
+const BRAND_RGB:  [number, number, number] = [178, 2, 2];
+const GRAY_DARK:  [number, number, number] = [31, 41, 55];
+const GRAY_MED:   [number, number, number] = [107, 114, 128];
+const GRAY_LIGHT: [number, number, number] = [243, 244, 246];
+const TEAL_RGB:   [number, number, number] = [13, 148, 136];
+const ORANGE_RGB: [number, number, number] = [217, 70, 0];
+const GREEN_RGB:  [number, number, number] = [22, 101, 52];
+const RED_PALE:   [number, number, number] = [254, 249, 249];
+const WHITE_RGB:  [number, number, number] = [255, 255, 255];
+
+interface PdfMeta {
+  dateFrom: string; dateTo: string; timeFrom: string; timeTo: string;
+  cashierFilter: string; methodFilter: string; statusFilter: StatusFilter;
+  summary: { gross: number; revenue: number; discount: number; items: number; orders: number; profit: number; avgOrder: number };
+}
+
+function drawPdf1Header(doc: jsPDF, title: string, rowCount: string, meta: PdfMeta, pageW: number): number {
+  doc.setFillColor(...BRAND_RGB);
+  doc.rect(0, 0, pageW, 14, 'F');
+  doc.setTextColor(...WHITE_RGB);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+  doc.text('DrinksHarbour', 12, 9.5);
+  doc.setFontSize(11);
+  doc.text(title, pageW / 2, 9.5, { align: 'center' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+  doc.text(`${rowCount}  ·  ${new Date().toLocaleString('en-GB')}`, pageW - 12, 9.5, { align: 'right' });
+
+  doc.setFillColor(250, 250, 250);
+  doc.rect(0, 14, pageW, 9, 'F');
+  doc.setTextColor(...GRAY_MED);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+  const filters: string[] = [];
+  if (meta.dateFrom || meta.dateTo) {
+    const from = meta.dateFrom ? `${meta.dateFrom}${meta.timeFrom && meta.timeFrom !== '00:00' ? ` ${meta.timeFrom}` : ''}` : '…';
+    const to   = meta.dateTo   ? `${meta.dateTo}${meta.timeTo && meta.timeTo !== '23:59' ? ` ${meta.timeTo}` : ''}` : '…';
+    filters.push(`Date: ${from} → ${to}`);
+  }
+  if (meta.statusFilter !== 'all') filters.push(`Status: ${meta.statusFilter === 'active' ? 'Active only' : 'Voided only'}`);
+  if (meta.cashierFilter) filters.push(`Cashier: ${meta.cashierFilter}`);
+  if (meta.methodFilter)  filters.push(`Payment: ${METHOD_LABEL[meta.methodFilter] ?? meta.methodFilter}`);
+  doc.text(filters.length > 0 ? filters.join('   ·   ') : 'All records — no filters applied', 12, 20.5);
+
+  const statsY = 23; const statsH = 17;
+  doc.setFillColor(...GRAY_LIGHT);
+  doc.rect(0, statsY, pageW, statsH, 'F');
+  doc.setDrawColor(...BRAND_RGB); doc.setLineWidth(0.5);
+  doc.line(0, statsY, pageW, statsY);
+
+  const stats: { label: string; value: string; color: [number, number, number] }[] = [
+    { label: 'Gross Revenue',   value: formatCurrency(meta.summary.gross),    color: GRAY_DARK  },
+    { label: 'Net Revenue',     value: formatCurrency(meta.summary.revenue),  color: GREEN_RGB  },
+    { label: 'Total Discount',  value: formatCurrency(meta.summary.discount), color: ORANGE_RGB },
+    { label: 'Items Sold',      value: meta.summary.items.toLocaleString(),   color: GRAY_DARK  },
+    { label: 'Distinct Orders', value: meta.summary.orders.toLocaleString(),  color: GRAY_DARK  },
+    { label: 'Avg / Order',     value: formatCurrency(meta.summary.avgOrder), color: GRAY_DARK  },
+    ...(meta.summary.profit > 0 ? [{ label: 'Est. Profit', value: formatCurrency(meta.summary.profit), color: TEAL_RGB as [number, number, number] }] : []),
   ];
-  const lines = rows.map(r => {
-    const margin = r.profit > 0 && r.revenue > 0 ? ((r.profit / r.revenue) * 100).toFixed(1) + '%' : '—';
-    return [
-      `"${r.key}"`, r.qty,
-      r.gross.toFixed(2), r.discount.toFixed(2), r.revenue.toFixed(2),
-      ...(hasCost ? [r.profit.toFixed(2), margin] : []),
-      r.lineCount, r.orderCount, r.share.toFixed(1) + '%',
-    ].join(',');
+  const colW = pageW / stats.length;
+  stats.forEach(({ label, value, color }, i) => {
+    const x = i * colW + 8;
+    doc.setTextColor(...GRAY_MED); doc.setFont('helvetica', 'normal'); doc.setFontSize(6);
+    doc.text(label, x, statsY + 5.5);
+    doc.setTextColor(...color); doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5);
+    doc.text(value, x, statsY + 12.5);
   });
-  triggerCsvDownload([h.join(','), ...lines].join('\n'), 'sales-grouped');
+  doc.setDrawColor(210, 210, 210); doc.setLineWidth(0.2);
+  doc.line(0, statsY + statsH, pageW, statsY + statsH);
+  doc.setTextColor(...GRAY_DARK);
+  return statsY + statsH + 3;
+}
+
+function drawPdfMiniHeader(doc: jsPDF, title: string, pageW: number) {
+  doc.setFillColor(...BRAND_RGB);
+  doc.rect(0, 0, pageW, 8, 'F');
+  doc.setTextColor(...WHITE_RGB);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+  doc.text('DrinksHarbour  ·  ' + title, 12, 5.5);
+  doc.setFont('helvetica', 'normal');
+  doc.text(new Date().toLocaleDateString('en-GB'), pageW - 12, 5.5, { align: 'right' });
+  doc.setTextColor(...GRAY_DARK);
+}
+
+function addPdfPageFooters(doc: jsPDF, subtitle: string) {
+  const total = (doc.internal as any).getNumberOfPages() as number;
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  for (let i = 1; i <= total; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(210, 210, 210); doc.setLineWidth(0.3);
+    doc.line(12, pageH - 8, pageW - 12, pageH - 8);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(...GRAY_MED);
+    doc.text('DrinksHarbour  ·  Confidential', 12, pageH - 4.5);
+    doc.text(subtitle, pageW / 2, pageH - 4.5, { align: 'center' });
+    doc.text(`Page ${i} of ${total}`, pageW - 12, pageH - 4.5, { align: 'right' });
+  }
+}
+
+// Draws the Payments / Discounts / Sales Summary section after the main table
+function drawPdfSummarySection(
+  doc: jsPDF, lineRows: LineRow[] | null,
+  meta: PdfMeta, afterY: number,
+  pageW: number, margin: number, reportTitle: string,
+) {
+  const availW = pageW - 2 * margin;
+  const pageH  = doc.internal.pageSize.getHeight();
+  const FOOTER = 12;
+  let y = afterY + 5;
+
+  const ensurePage = (needed: number) => {
+    if (y + needed > pageH - FOOTER) {
+      doc.addPage();
+      drawPdfMiniHeader(doc, reportTitle, pageW);
+      y = 12;
+    }
+  };
+
+  const sectionHead = (label: string) => {
+    ensurePage(9);
+    doc.setFillColor(...GRAY_LIGHT);
+    doc.rect(margin, y, availW, 7.5, 'F');
+    doc.setTextColor(...GRAY_DARK);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+    doc.text(label, margin + 3.5, y + 5.3);
+    y += 7.5;
+  };
+
+  const kv = (
+    label: string, value: string,
+    bold = false,
+    color: [number, number, number] = GRAY_DARK,
+    sep = true,
+  ) => {
+    ensurePage(7);
+    doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(7.5);
+    doc.setTextColor(...GRAY_MED);
+    doc.text(label, margin + 5, y + 4.8);
+    doc.setTextColor(...color);
+    doc.text(value, margin + availW - 5, y + 4.8, { align: 'right' });
+    if (sep) {
+      doc.setDrawColor(235, 235, 235); doc.setLineWidth(0.1);
+      doc.line(margin, y + 6.5, margin + availW, y + 6.5);
+    }
+    y += 7;
+  };
+
+  // Payments
+  if (lineRows) {
+    const byMethod: Record<string, number> = {};
+    lineRows.forEach(r => {
+      if (!r.isVoided) byMethod[r.paymentMethod] = (byMethod[r.paymentMethod] ?? 0) + r.subtotal;
+    });
+    const methods = Object.entries(byMethod);
+    if (methods.length > 0) {
+      sectionHead('Payments');
+      methods.forEach(([m, amt]) => kv(METHOD_LABEL[m] ?? m, formatCurrency(amt)));
+      kv('Total', formatCurrency(meta.summary.revenue), true, BRAND_RGB, false);
+    }
+  }
+
+  // Discounts
+  y += 4;
+  if (lineRows) {
+    const discCount = lineRows.filter(r => !r.isVoided && r.discount > 0).length;
+    sectionHead('Discounts');
+    kv('Number of discounts:', discCount.toLocaleString());
+    kv('Amount of discounts:', formatCurrency(meta.summary.discount), false, GRAY_DARK, false);
+    y += 4;
+  }
+
+  // Sales Summary
+  sectionHead('Sales Summary');
+  kv('Gross Revenue:', formatCurrency(meta.summary.gross));
+  if (meta.summary.discount > 0) kv('Total Discounts:', `− ${formatCurrency(meta.summary.discount)}`, false, ORANGE_RGB);
+  kv('Net Revenue:', formatCurrency(meta.summary.revenue), true, BRAND_RGB);
+  kv('Items Sold:', meta.summary.items.toLocaleString());
+  kv('Distinct Orders:', meta.summary.orders.toLocaleString());
+  kv('Avg Order Value:', formatCurrency(meta.summary.avgOrder));
+  if (meta.summary.profit > 0) kv('Est. Profit:', formatCurrency(meta.summary.profit), false, TEAL_RGB, false);
+}
+
+function exportLinePdf(rows: LineRow[], hasCost: boolean, meta: PdfMeta, selectedCols: Set<LineExportCol>) {
+  const doc    = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const pageW  = doc.internal.pageSize.getWidth();
+  const MARGIN = 12;
+  const AVAIL  = pageW - 2 * MARGIN;
+
+  const hasCategory    = rows.some(r => !!r.category);
+  const hasSubcategory = rows.some(r => !!r.subcategory);
+  const hasBrand       = rows.some(r => !!r.brand);
+
+  const defs = LINE_EXPORT_COLS.filter(c => {
+    if (!selectedCols.has(c.key)) return false;
+    if (c.costOnly && !hasCost) return false;
+    if (c.key === 'category'    && !hasCategory)    return false;
+    if (c.key === 'subcategory' && !hasSubcategory) return false;
+    if (c.key === 'brand'       && !hasBrand)       return false;
+    return true;
+  });
+
+  const totalBaseW = defs.reduce((s, c) => s + c.pdfW, 0);
+  const scale = AVAIL / totalBaseW;
+  const colStyles: Record<number, object> = {};
+  defs.forEach((c, i) => { colStyles[i] = { halign: c.pdfAlign, cellWidth: +(c.pdfW * scale).toFixed(1) }; });
+
+  const netIdx    = defs.findIndex(c => c.key === 'net');
+  const discIdx   = defs.findIndex(c => c.key === 'discount');
+  const profitIdx = defs.findIndex(c => c.key === 'profit');
+
+  const body = rows.map(r => defs.map(c => getLineCell(r, c.key, 'pdf')));
+
+  const totalsRow = defs.map(c => {
+    switch (c.key) {
+      case 'date':     return `${rows.length.toLocaleString()} lines`;
+      case 'qty':      return rows.reduce((s, r) => s + r.qty, 0).toLocaleString();
+      case 'gross':    return rows.reduce((s, r) => s + r.gross, 0).toFixed(2);
+      case 'discount': return rows.reduce((s, r) => s + r.discount, 0).toFixed(2);
+      case 'net':      return rows.reduce((s, r) => s + r.subtotal, 0).toFixed(2);
+      case 'cost':     return rows.reduce((s, r) => s + r.costPrice, 0).toFixed(2);
+      case 'profit':   return rows.reduce((s, r) => s + r.profit, 0).toFixed(2);
+      default:         return '';
+    }
+  });
+
+  const startY = drawPdf1Header(doc, 'SALES DETAILS', `${rows.length.toLocaleString()} line items`, meta, pageW);
+
+  autoTable(doc, {
+    head: [defs.map(c => c.label)],
+    body,
+    foot: [totalsRow],
+    startY,
+    margin: { left: MARGIN, right: MARGIN, bottom: 14, top: 10 },
+    styles: { fontSize: 6.5, cellPadding: { top: 1.8, bottom: 1.8, left: 2, right: 2 }, overflow: 'ellipsize', textColor: GRAY_DARK, font: 'helvetica' },
+    headStyles: { fillColor: BRAND_RGB, textColor: WHITE_RGB, fontStyle: 'bold', fontSize: 7 },
+    footStyles: { fillColor: GRAY_LIGHT, textColor: GRAY_DARK, fontStyle: 'bold', fontSize: 6.5 },
+    alternateRowStyles: { fillColor: RED_PALE },
+    columnStyles: colStyles,
+    showHead: 'everyPage', showFoot: 'lastPage',
+    willDrawPage: (data) => { if (data.pageNumber > 1) drawPdfMiniHeader(doc, 'Sales Details', pageW); },
+    didParseCell: (data) => {
+      if (data.section === 'foot') { if (netIdx >= 0 && data.column.index === netIdx) data.cell.styles.textColor = BRAND_RGB; return; }
+      if (data.section !== 'body') return;
+      const r = rows[data.row.index]; if (!r) return;
+      if (r.isVoided) { data.cell.styles.textColor = [180, 180, 180] as [number, number, number]; data.cell.styles.fontStyle = 'italic'; return; }
+      if (netIdx >= 0    && data.column.index === netIdx)                      { data.cell.styles.textColor = BRAND_RGB;  data.cell.styles.fontStyle = 'bold'; }
+      else if (discIdx >= 0   && data.column.index === discIdx   && r.discount > 0) data.cell.styles.textColor = ORANGE_RGB;
+      else if (profitIdx >= 0 && data.column.index === profitIdx && r.profit  > 0) data.cell.styles.textColor = TEAL_RGB;
+    },
+  });
+
+  const tableEndY = (doc as any).lastAutoTable?.finalY ?? startY + 100;
+  drawPdfSummarySection(doc, rows, meta, tableEndY, pageW, MARGIN, 'Sales Details');
+  addPdfPageFooters(doc, 'Sales Details Report');
+  doc.save(`sales-details-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+function exportGroupedPdf(rows: GroupRow[], groupLabel: string, hasCost: boolean, meta: PdfMeta, selectedCols: Set<GroupExportCol>) {
+  const doc    = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageW  = doc.internal.pageSize.getWidth();
+  const MARGIN = 12;
+  const AVAIL  = pageW - 2 * MARGIN;
+
+  const defs = GROUP_EXPORT_COLS.filter(c => selectedCols.has(c.key) && (hasCost || !c.costOnly));
+
+  const totalBaseW = defs.reduce((s, c) => s + c.pdfW, 0);
+  const scale = AVAIL / totalBaseW;
+  const colStyles: Record<number, object> = {};
+  defs.forEach((c, i) => { colStyles[i] = { halign: c.pdfAlign, cellWidth: +(c.pdfW * scale).toFixed(1) }; });
+
+  const revIdx    = defs.findIndex(c => c.key === 'revenue');
+  const discIdx   = defs.findIndex(c => c.key === 'discount');
+  const profitIdx = defs.findIndex(c => c.key === 'profit');
+
+  const headers = defs.map(c => c.key === 'key' ? groupLabel : c.label);
+  const body    = rows.map(r => defs.map(c => getGroupCell(r, c.key, 'pdf')));
+
+  const totalsRow = defs.map(c => {
+    switch (c.key) {
+      case 'key':        return `${rows.length} groups`;
+      case 'qty':        return rows.reduce((s, r) => s + r.qty, 0).toLocaleString();
+      case 'gross':      return rows.reduce((s, r) => s + r.gross, 0).toFixed(2);
+      case 'discount':   return rows.reduce((s, r) => s + r.discount, 0).toFixed(2);
+      case 'revenue':    return rows.reduce((s, r) => s + r.revenue, 0).toFixed(2);
+      case 'profit':     return rows.reduce((s, r) => s + r.profit, 0).toFixed(2);
+      case 'share':      return '100%';
+      case 'lineCount':  return rows.reduce((s, r) => s + r.lineCount, 0).toLocaleString();
+      default:           return '';
+    }
+  });
+
+  const startY = drawPdf1Header(doc, `SALES — BY ${groupLabel.toUpperCase()}`, `${rows.length.toLocaleString()} groups`, meta, pageW);
+
+  autoTable(doc, {
+    head: [headers],
+    body,
+    foot: [totalsRow],
+    startY,
+    margin: { left: MARGIN, right: MARGIN, bottom: 14, top: 10 },
+    styles: { fontSize: 8, cellPadding: { top: 2.2, bottom: 2.2, left: 2.5, right: 2.5 }, overflow: 'ellipsize', textColor: GRAY_DARK, font: 'helvetica' },
+    headStyles: { fillColor: BRAND_RGB, textColor: WHITE_RGB, fontStyle: 'bold', fontSize: 8.5 },
+    footStyles: { fillColor: GRAY_LIGHT, textColor: GRAY_DARK, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: RED_PALE },
+    columnStyles: colStyles,
+    showHead: 'everyPage', showFoot: 'lastPage',
+    willDrawPage: (data) => { if (data.pageNumber > 1) drawPdfMiniHeader(doc, `Sales — by ${groupLabel}`, pageW); },
+    didParseCell: (data) => {
+      if (data.section === 'foot') { if (revIdx >= 0 && data.column.index === revIdx) data.cell.styles.textColor = BRAND_RGB; return; }
+      if (data.section !== 'body') return;
+      const r = rows[data.row.index]; if (!r) return;
+      if (revIdx >= 0    && data.column.index === revIdx)                      { data.cell.styles.textColor = BRAND_RGB;  data.cell.styles.fontStyle = 'bold'; }
+      else if (discIdx >= 0   && data.column.index === discIdx   && r.discount > 0) data.cell.styles.textColor = ORANGE_RGB;
+      else if (profitIdx >= 0 && data.column.index === profitIdx && r.profit  > 0) data.cell.styles.textColor = TEAL_RGB;
+    },
+  });
+
+  const tableEndY = (doc as any).lastAutoTable?.finalY ?? startY + 100;
+  drawPdfSummarySection(doc, null, meta, tableEndY, pageW, MARGIN, `Sales — by ${groupLabel}`);
+  addPdfPageFooters(doc, `Sales Report — by ${groupLabel}`);
+  doc.save(`sales-grouped-${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
@@ -463,6 +931,126 @@ function PageBar({
   );
 }
 
+// ── Export Column Modal ────────────────────────────────────────────────────────
+
+function ExportColumnModal({
+  format, isGrouped, hasCost,
+  lineCols, groupCols,
+  onToggleLine, onToggleGroup,
+  onSelectAll, onDeselectAll,
+  onCancel, onDownload,
+}: {
+  format: 'csv' | 'excel' | 'pdf';
+  isGrouped: boolean;
+  hasCost: boolean;
+  lineCols: Set<LineExportCol>;
+  groupCols: Set<GroupExportCol>;
+  onToggleLine: (k: LineExportCol) => void;
+  onToggleGroup: (k: GroupExportCol) => void;
+  onSelectAll: () => void;
+  onDeselectAll: () => void;
+  onCancel: () => void;
+  onDownload: () => void;
+}) {
+  const visible  = isGrouped
+    ? GROUP_EXPORT_COLS.filter(c => hasCost || !c.costOnly)
+    : LINE_EXPORT_COLS.filter(c => hasCost || !c.costOnly);
+  const selected = isGrouped ? groupCols : lineCols;
+  const toggle   = isGrouped
+    ? (k: string) => onToggleGroup(k as GroupExportCol)
+    : (k: string) => onToggleLine(k as LineExportCol);
+
+  const selCount = visible.filter(c => selected.has(c.key as LineExportCol & GroupExportCol)).length;
+  const reqCount = visible.filter(c => c.required).length;
+
+  const FmtIcon  = format === 'csv' ? PiFileCsv : format === 'excel' ? PiFileXls : PiFilePdf;
+  const fmtLabel = format === 'csv' ? 'CSV' : format === 'excel' ? 'Excel' : 'PDF';
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
+      <div className="flex w-[540px] max-h-[90vh] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/10">
+        {/* Header */}
+        <div className="flex shrink-0 items-center gap-3 border-b border-gray-100 px-5 py-4">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#b20202]/10">
+            <FmtIcon className="h-5 w-5 text-[#b20202]" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-gray-900">Export as {fmtLabel}</p>
+            <p className="text-xs text-gray-400">Choose the columns to include</p>
+          </div>
+          <button type="button" onClick={onCancel}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600">
+            <PiX className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Column grid */}
+        <div className="overflow-y-auto p-4">
+          <div className="grid grid-cols-3 gap-1.5">
+            {visible.map(col => {
+              const checked  = selected.has(col.key as LineExportCol & GroupExportCol);
+              const disabled = !!col.required;
+              return (
+                <button
+                  key={col.key}
+                  type="button"
+                  onClick={() => !disabled && toggle(col.key)}
+                  disabled={disabled}
+                  className={`flex items-center gap-2 rounded-lg border px-2.5 py-2.5 text-left text-xs transition-colors ${
+                    checked
+                      ? disabled
+                        ? 'cursor-default border-gray-200 bg-gray-50 text-gray-500'
+                        : 'border-[#b20202]/30 bg-red-50 text-[#b20202]'
+                      : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border text-[9px] font-bold transition-all ${
+                    checked
+                      ? disabled ? 'border-gray-300 bg-gray-300 text-white' : 'border-[#b20202] bg-[#b20202] text-white'
+                      : 'border-gray-300'
+                  }`}>
+                    {checked ? '✓' : ''}
+                  </span>
+                  <span className="flex-1 font-medium leading-tight">{col.label}</span>
+                  {disabled && <span className="text-[9px] text-gray-300">req</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 flex items-center gap-3">
+            <p className="text-xs text-gray-400">
+              {selCount} of {visible.length} selected{reqCount > 0 ? ` (${reqCount} required)` : ''}
+            </p>
+            <button type="button" onClick={onSelectAll}
+              className="text-xs font-medium text-[#b20202] hover:underline">
+              Select all
+            </button>
+            <span className="select-none text-gray-200">·</span>
+            <button type="button" onClick={onDeselectAll} disabled={selCount <= reqCount}
+              className="text-xs font-medium text-gray-400 hover:text-gray-600 hover:underline disabled:opacity-40">
+              Deselect all
+            </button>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-gray-100 px-5 py-3">
+          <button type="button" onClick={onCancel}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50">
+            Cancel
+          </button>
+          <button type="button" onClick={onDownload} disabled={selCount === 0}
+            className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#9a0101] disabled:opacity-50">
+            <PiDownloadSimple className="h-4 w-4" />
+            Download {fmtLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function POSSalesDetails() {
@@ -498,18 +1086,37 @@ export default function POSSalesDetails() {
   const [groupSortDir,   setGroupSortDir]   = useState<'asc' | 'desc'>('desc');
 
   // View
-  const [viewMode,    setViewMode]    = useState<ViewMode>('lines');
-  const [groupBy,     setGroupBy]     = useState<GroupByKey>('product');
-  const [showProfit,  setShowProfit]  = useState(false);
-  const [hiddenCols,  setHiddenCols]  = useState<Set<ToggleableCol>>(new Set());
-  const [showColMenu, setShowColMenu] = useState(false);
-  const colMenuRef = useRef<HTMLDivElement>(null);
+  const [viewMode,           setViewMode]           = useState<ViewMode>('lines');
+  const [groupBy,            setGroupBy]            = useState<GroupByKey>('product');
+  const [showProfit,         setShowProfit]         = useState(false);
+  const [hiddenCols,         setHiddenCols]         = useState<Set<ToggleableCol>>(
+    new Set<ToggleableCol>(TOGGLEABLE_COLS.filter(c => c.defaultHidden).map(c => c.key))
+  );
+  const [showColMenu,        setShowColMenu]        = useState(false);
+  const [showExport,         setShowExport]         = useState(false);
+  const colMenuRef  = useRef<HTMLDivElement>(null);
+  const exportRef   = useRef<HTMLDivElement>(null);
+  const [exportDialog, setExportDialog] = useState({
+    open:      false,
+    format:    'csv' as 'csv' | 'excel' | 'pdf',
+    lineCols:  new Set(LINE_EXPORT_COLS.map(c => c.key)) as Set<LineExportCol>,
+    groupCols: new Set(GROUP_EXPORT_COLS.map(c => c.key)) as Set<GroupExportCol>,
+  });
 
   // Pagination (separate for each view)
   const [page,      setPage]      = useState(1);
   const [groupPage, setGroupPage] = useState(1);
 
-  // Close column menu on outside click
+  // Close menus on outside click
+  useEffect(() => {
+    if (!showExport) return;
+    function handler(e: MouseEvent) {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) setShowExport(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showExport]);
+
   useEffect(() => {
     if (!showColMenu) return;
     function handler(e: MouseEvent) {
@@ -583,6 +1190,7 @@ export default function POSSalesDetails() {
           orderId: o._id, orderNumber: o.orderNumber ?? o._id.slice(-6).toUpperCase(),
           receiptNumber: o.receiptNumber ?? '', date: o.placedAt || o.createdAt,
           cashier, product: item.name, variant: item.variant ?? '',
+          category: item.category ?? '', subcategory: item.subcategory ?? '', brand: item.brand ?? '',
           qty: item.quantity, unitPrice: item.priceAtPurchase,
           discount, subtotal, gross, costPrice, profit,
           paymentMethod: o.paymentMethod,
@@ -627,6 +1235,9 @@ export default function POSSalesDetails() {
         const hit =
           r.product.toLowerCase().includes(q)      ||
           r.variant.toLowerCase().includes(q)       ||
+          r.category.toLowerCase().includes(q)      ||
+          r.subcategory.toLowerCase().includes(q)   ||
+          r.brand.toLowerCase().includes(q)         ||
           r.cashier.toLowerCase().includes(q)       ||
           r.orderNumber.toLowerCase().includes(q)   ||
           r.receiptNumber.toLowerCase().includes(q);
@@ -771,9 +1382,62 @@ export default function POSSalesDetails() {
     groupBy === 'payment_method' ? 'Payment Method' :
     'Date';
 
-  function handleExport() {
-    if (viewMode === 'grouped') exportGroupedCsv(grouped, groupLabel, hasCostData && showProfit);
-    else exportLineCsv(sorted, hasCostData && showProfit);
+  type ExportFormat = 'csv' | 'excel' | 'pdf';
+
+  function handleExport(fmt: ExportFormat) {
+    setShowExport(false);
+    setExportDialog(prev => ({ ...prev, open: true, format: fmt }));
+  }
+
+  function toggleExportLineCol(key: LineExportCol) {
+    if (LINE_EXPORT_COLS.find(c => c.key === key)?.required) return;
+    setExportDialog(prev => {
+      const next = new Set(prev.lineCols);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return { ...prev, lineCols: next };
+    });
+  }
+
+  function toggleExportGroupCol(key: GroupExportCol) {
+    if (GROUP_EXPORT_COLS.find(c => c.key === key)?.required) return;
+    setExportDialog(prev => {
+      const next = new Set(prev.groupCols);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return { ...prev, groupCols: next };
+    });
+  }
+
+  function selectAllExportCols() {
+    const hc = hasCostData && showProfit;
+    if (viewMode === 'grouped') {
+      setExportDialog(prev => ({ ...prev, groupCols: new Set(GROUP_EXPORT_COLS.filter(c => hc || !c.costOnly).map(c => c.key)) }));
+    } else {
+      setExportDialog(prev => ({ ...prev, lineCols: new Set(LINE_EXPORT_COLS.filter(c => hc || !c.costOnly).map(c => c.key)) }));
+    }
+  }
+
+  function deselectAllExportCols() {
+    if (viewMode === 'grouped') {
+      setExportDialog(prev => ({ ...prev, groupCols: new Set(GROUP_EXPORT_COLS.filter(c => c.required).map(c => c.key)) }));
+    } else {
+      setExportDialog(prev => ({ ...prev, lineCols: new Set(LINE_EXPORT_COLS.filter(c => c.required).map(c => c.key)) }));
+    }
+  }
+
+  function confirmExport() {
+    const hasCost = hasCostData && showProfit;
+    const pdfMeta: PdfMeta = { dateFrom, dateTo, timeFrom, timeTo, cashierFilter, methodFilter, statusFilter, summary };
+    const { format: fmt, lineCols, groupCols } = exportDialog;
+    setExportDialog(prev => ({ ...prev, open: false }));
+    if (viewMode === 'grouped') {
+      if (fmt === 'csv')   exportGroupedCsv(grouped, groupLabel, groupCols);
+      if (fmt === 'excel') exportGroupedExcel(grouped, groupLabel, groupCols);
+      if (fmt === 'pdf')   exportGroupedPdf(grouped, groupLabel, hasCost, pdfMeta, groupCols);
+    } else {
+      if (fmt === 'csv')   exportLineCsv(sorted, lineCols);
+      if (fmt === 'excel') exportLineExcel(sorted, lineCols);
+      if (fmt === 'pdf')   exportLinePdf(sorted, hasCost, pdfMeta, lineCols);
+    }
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -905,12 +1569,49 @@ export default function POSSalesDetails() {
               Refresh
             </button>
 
-            <button type="button" onClick={handleExport}
-              disabled={(viewMode === 'lines' ? sorted.length : grouped.length) === 0}
-              className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-3 py-[7px] text-xs font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50 transition-colors shadow-sm">
-              <PiDownloadSimple className="h-3.5 w-3.5" />
-              Export CSV
-            </button>
+            {/* Export dropdown */}
+            <div className="relative" ref={exportRef}>
+              <button
+                type="button"
+                onClick={() => setShowExport(v => !v)}
+                disabled={(viewMode === 'lines' ? sorted.length : grouped.length) === 0}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-[7px] text-xs font-semibold transition-colors shadow-sm disabled:opacity-50 ${
+                  showExport
+                    ? 'bg-[#9a0101] text-white'
+                    : 'bg-[#b20202] text-white hover:bg-[#9a0101]'
+                }`}
+              >
+                <PiDownloadSimple className="h-3.5 w-3.5" />
+                Export
+                <PiCaretDown className={`h-3 w-3 opacity-70 transition-transform duration-150 ${showExport ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showExport && (
+                <div className="absolute right-0 top-[calc(100%+6px)] z-50 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl ring-1 ring-black/5">
+                  <div className="border-b border-gray-100 px-3 py-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Export as</p>
+                  </div>
+                  <div className="p-1.5 space-y-0.5">
+                    {([
+                      { fmt: 'csv'   as const, Icon: PiFileCsv,              label: 'CSV',          sub: '.csv' },
+                      { fmt: 'excel' as const, Icon: PiFileXls,              label: 'Excel',        sub: '.xlsx' },
+                      { fmt: 'pdf'   as const, Icon: PiFilePdf,              label: 'PDF',          sub: '.pdf' },
+                    ] as const).map(({ fmt, Icon, label, sub }) => (
+                      <button
+                        key={fmt}
+                        type="button"
+                        onClick={() => handleExport(fmt)}
+                        className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-gray-700 hover:bg-red-50 hover:text-[#b20202] transition-colors"
+                      >
+                        <Icon className="h-4 w-4 shrink-0 opacity-60" />
+                        <span className="flex-1 font-medium">{label}</span>
+                        <span className="text-[10px] text-gray-400">{sub}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1109,6 +1810,21 @@ export default function POSSalesDetails() {
                         <span className="inline-flex items-center gap-1">Variant<SortChevron active={lineSortField === 'variant'} dir={lineSortDir} /></span>
                       </th>
                     )}
+                    {vis('category') && (
+                      <th onClick={() => toggleLineSort('category')} className="cursor-pointer select-none whitespace-nowrap px-4 py-3 text-left hover:text-gray-700">
+                        <span className="inline-flex items-center gap-1">Category<SortChevron active={lineSortField === 'category'} dir={lineSortDir} /></span>
+                      </th>
+                    )}
+                    {vis('subcategory') && (
+                      <th onClick={() => toggleLineSort('subcategory')} className="cursor-pointer select-none whitespace-nowrap px-4 py-3 text-left hover:text-gray-700">
+                        <span className="inline-flex items-center gap-1">Subcategory<SortChevron active={lineSortField === 'subcategory'} dir={lineSortDir} /></span>
+                      </th>
+                    )}
+                    {vis('brand') && (
+                      <th onClick={() => toggleLineSort('brand')} className="cursor-pointer select-none whitespace-nowrap px-4 py-3 text-left hover:text-gray-700">
+                        <span className="inline-flex items-center gap-1">Brand<SortChevron active={lineSortField === 'brand'} dir={lineSortDir} /></span>
+                      </th>
+                    )}
                     <th onClick={() => toggleLineSort('qty')} className="cursor-pointer select-none whitespace-nowrap px-4 py-3 text-center hover:text-gray-700">
                       <span className="inline-flex items-center justify-center gap-1">Qty<SortChevron active={lineSortField === 'qty'} dir={lineSortDir} /></span>
                     </th>
@@ -1184,6 +1900,27 @@ export default function POSSalesDetails() {
                               : <span className="text-gray-300">—</span>}
                           </td>
                         )}
+                        {vis('category') && (
+                          <td className="whitespace-nowrap px-4 py-2.5 text-sm text-gray-500">
+                            {row.category
+                              ? highlight(row.category, debouncedSearch)
+                              : <span className="text-gray-300">—</span>}
+                          </td>
+                        )}
+                        {vis('subcategory') && (
+                          <td className="whitespace-nowrap px-4 py-2.5 text-sm text-gray-500">
+                            {row.subcategory
+                              ? highlight(row.subcategory, debouncedSearch)
+                              : <span className="text-gray-300">—</span>}
+                          </td>
+                        )}
+                        {vis('brand') && (
+                          <td className="whitespace-nowrap px-4 py-2.5 text-sm text-gray-500">
+                            {row.brand
+                              ? highlight(row.brand, debouncedSearch)
+                              : <span className="text-gray-300">—</span>}
+                          </td>
+                        )}
                         <td className="px-4 py-2.5 text-center text-sm font-medium text-gray-700 tabular-nums">{row.qty}</td>
                         {vis('unitPrice') && (
                           <td className="whitespace-nowrap px-4 py-2.5 text-right text-sm text-gray-600 tabular-nums">{formatCurrency(row.unitPrice)}</td>
@@ -1222,10 +1959,13 @@ export default function POSSalesDetails() {
                     <tr className="border-t-2 border-gray-200 bg-gray-50 text-xs font-semibold">
                       <td colSpan={
                         1
-                        + (vis('orderNumber') ? 1 : 0)
-                        + (vis('cashier') ? 1 : 0)
+                        + (vis('orderNumber')  ? 1 : 0)
+                        + (vis('cashier')      ? 1 : 0)
                         + 1
-                        + (vis('variant') ? 1 : 0)
+                        + (vis('variant')      ? 1 : 0)
+                        + (vis('category')     ? 1 : 0)
+                        + (vis('subcategory')  ? 1 : 0)
+                        + (vis('brand')        ? 1 : 0)
                       } className="px-4 py-3 text-gray-400">
                         {sorted.length.toLocaleString()} line{sorted.length !== 1 ? 's' : ''}
                       </td>
@@ -1361,6 +2101,23 @@ export default function POSSalesDetails() {
           </div>
         )}
       </div>
+
+      {/* Export column picker modal */}
+      {exportDialog.open && (
+        <ExportColumnModal
+          format={exportDialog.format}
+          isGrouped={viewMode === 'grouped'}
+          hasCost={hasCostData && showProfit}
+          lineCols={exportDialog.lineCols}
+          groupCols={exportDialog.groupCols}
+          onToggleLine={toggleExportLineCol}
+          onToggleGroup={toggleExportGroupCol}
+          onSelectAll={selectAllExportCols}
+          onDeselectAll={deselectAllExportCols}
+          onCancel={() => setExportDialog(prev => ({ ...prev, open: false }))}
+          onDownload={confirmExport}
+        />
+      )}
     </div>
   );
 }

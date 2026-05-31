@@ -162,7 +162,6 @@ const PurchaseOrderSchema = new Schema(
         quantity: {
           type: Number,
           required: true,
-          min: 0,
         },
         receivedQty: {
           type: Number,

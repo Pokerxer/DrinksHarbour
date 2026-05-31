@@ -4,8 +4,16 @@ import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import {
-  PiArrowLeft, PiPencilSimple, PiCheck, PiPackage,
-  PiReceipt, PiLock, PiLockOpen, PiPaperPlaneTilt, PiX,
+  PiArrowLeft,
+  PiPencilSimple,
+  PiCheck,
+  PiCheckCircle,
+  PiPackage,
+  PiReceipt,
+  PiLock,
+  PiLockOpen,
+  PiPaperPlaneTilt,
+  PiX,
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
@@ -34,7 +42,9 @@ export default function PurchasesPODetail({ id }: { id: string }) {
     }
   }, [id, token]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   async function act(fn: () => Promise<unknown>, msg: string) {
     setActing(true);
@@ -49,24 +59,51 @@ export default function PurchasesPODetail({ id }: { id: string }) {
     }
   }
 
-  if (loading) return <div className="flex items-center justify-center py-20 text-sm text-gray-400">Loading…</div>;
-  if (!po) return (
-    <div className="flex flex-col items-center gap-3 py-20 text-center">
-      <p className="text-sm text-gray-500">Purchase order not found</p>
-      <Link href={routes.eCommerce.purchases} className="text-sm text-[#b20202] underline">Back to list</Link>
-    </div>
-  );
+  if (loading)
+    return (
+      <div className="flex items-center justify-center py-20 text-sm text-gray-400">
+        Loading…
+      </div>
+    );
+  if (!po)
+    return (
+      <div className="flex flex-col items-center gap-3 py-20 text-center">
+        <p className="text-sm text-gray-500">Purchase order not found</p>
+        <Link
+          href={routes.eCommerce.purchases}
+          className="text-sm text-[#b20202] underline"
+        >
+          Back to list
+        </Link>
+      </div>
+    );
 
   const canEdit = po.status === 'draft' && !po.isLocked;
   const canConfirm = po.status === 'draft';
-  const canReceive = po.status === 'confirmed';
-  const canBill = po.status === 'received' || po.status === 'done';
-  const totalCost = po.items.reduce((s, it) => s + (it.totalCost ?? it.unitPrice * it.quantity), 0);
+  const canReceive =
+    po.status === 'confirmed' ||
+    (po.status === 'received' &&
+      po.items.some((i) => i.receivedQty < i.quantity));
+  const canValidate = po.status === 'received';
+  const canBill =
+    po.status === 'received' ||
+    po.status === 'validated' ||
+    po.status === 'done';
+  const totalCost = po.items.reduce(
+    (s, it) =>
+      s +
+      (it.totalCost ??
+        ((it as any).unitCost ?? it.unitPrice ?? 0) * it.quantity),
+    0
+  );
 
   return (
     <div>
       <div className="mb-4 flex items-center gap-2 text-sm text-gray-500">
-        <Link href={routes.eCommerce.purchases} className="flex items-center gap-1 hover:text-gray-700">
+        <Link
+          href={routes.eCommerce.purchases}
+          className="flex items-center gap-1 hover:text-gray-700"
+        >
           <PiArrowLeft className="h-4 w-4" /> Purchase Orders
         </Link>
         <span>/</span>
@@ -76,8 +113,12 @@ export default function PurchasesPODetail({ id }: { id: string }) {
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold text-gray-900">{po.poNumber}</h1>
-            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE[po.status] ?? 'bg-gray-100 text-gray-600'}`}>
+            <h1 className="text-xl font-semibold text-gray-900">
+              {po.poNumber}
+            </h1>
+            <span
+              className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE[po.status] ?? 'bg-gray-100 text-gray-600'}`}
+            >
               {statusLabel(po.status)}
             </span>
             {po.isLocked && (
@@ -86,60 +127,146 @@ export default function PurchasesPODetail({ id }: { id: string }) {
               </span>
             )}
           </div>
-          {po.vendorName && <p className="mt-1 text-sm text-gray-500">Vendor: {po.vendorName}</p>}
+          {po.vendorName && (
+            <p className="mt-1 text-sm text-gray-500">
+              Vendor: {po.vendorName}
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           {canEdit && (
-            <Link href={routes.eCommerce.editPurchase(po._id)}
-              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            <Link
+              href={routes.eCommerce.editPurchase(po._id)}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
               <PiPencilSimple className="h-4 w-4" /> Edit
             </Link>
           )}
           {canConfirm && (
-            <button type="button" disabled={acting}
-              onClick={() => act(() => purchaseOrderService.updatePurchaseOrderStatus(id, 'confirmed', token), 'Purchase order confirmed')}
-              className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-3 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50">
+            <button
+              type="button"
+              disabled={acting}
+              onClick={() =>
+                act(
+                  () =>
+                    purchaseOrderService.updatePurchaseOrderStatus(
+                      id,
+                      'confirmed',
+                      token
+                    ),
+                  'Purchase order confirmed'
+                )
+              }
+              className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-3 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
+            >
               <PiCheck className="h-4 w-4" /> Confirm Order
             </button>
           )}
           {canReceive && (
-            <Link href={`${routes.eCommerce.receivePurchase}?po=${po._id}`}
-              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+            <Link
+              href={`${routes.eCommerce.receivePurchase}?po=${po._id}`}
+              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+            >
               <PiPackage className="h-4 w-4" /> Receive
             </Link>
           )}
+          {canValidate && (
+            <button
+              type="button"
+              disabled={acting}
+              onClick={() =>
+                act(
+                  () =>
+                    purchaseOrderService.updatePurchaseOrderStatus(
+                      id,
+                      'validated',
+                      token
+                    ),
+                  'Receipt validated — stock updated'
+                )
+              }
+              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              <PiCheckCircle className="h-4 w-4" /> Validate
+            </button>
+          )}
           {canBill && (
-            <Link href={`${routes.eCommerce.createVendorBill}?po=${po._id}`}
-              className="flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-2 text-sm font-semibold text-white hover:bg-purple-700">
+            <Link
+              href={`${routes.eCommerce.createVendorBill}?po=${po._id}`}
+              className="flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-2 text-sm font-semibold text-white hover:bg-purple-700"
+            >
               <PiReceipt className="h-4 w-4" /> Create Bill
             </Link>
           )}
-          {!po.isLocked && po.status !== 'draft' && po.status !== 'cancel' && (
-            <button type="button" disabled={acting}
-              onClick={() => act(() => purchaseOrderService.lockPO(id, undefined, token), 'PO locked')}
-              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-              <PiLock className="h-4 w-4" /> Lock
-            </button>
-          )}
+          {!po.isLocked &&
+            po.status !== 'draft' &&
+            po.status !== 'cancel' &&
+            po.status !== 'cancelled' && (
+              <button
+                type="button"
+                disabled={acting}
+                onClick={() =>
+                  act(
+                    () => purchaseOrderService.lockPO(id, undefined, token),
+                    'PO locked'
+                  )
+                }
+                className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <PiLock className="h-4 w-4" /> Lock
+              </button>
+            )}
           {po.isLocked && (
-            <button type="button" disabled={acting}
-              onClick={() => act(() => purchaseOrderService.unlockPO(id, token), 'PO unlocked')}
-              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+            <button
+              type="button"
+              disabled={acting}
+              onClick={() =>
+                act(
+                  () => purchaseOrderService.unlockPO(id, token),
+                  'PO unlocked'
+                )
+              }
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
               <PiLockOpen className="h-4 w-4" /> Unlock
             </button>
           )}
-          {po.status !== 'cancel' && po.status !== 'done' && (
-            <button type="button" disabled={acting}
-              onClick={() => act(() => purchaseOrderService.sendPOToVendor(id, token), 'Sent to vendor')}
-              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
-              <PiPaperPlaneTilt className="h-4 w-4" /> Send to Vendor
-            </button>
-          )}
+          {po.status !== 'cancel' &&
+            po.status !== 'cancelled' &&
+            po.status !== 'done' &&
+            po.status !== 'validated' && (
+              <button
+                type="button"
+                disabled={acting}
+                onClick={() =>
+                  act(
+                    () => purchaseOrderService.sendPOToVendor(id, token),
+                    'Sent to vendor'
+                  )
+                }
+                className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <PiPaperPlaneTilt className="h-4 w-4" /> Send to Vendor
+              </button>
+            )}
           {po.status === 'draft' && (
-            <button type="button" disabled={acting}
-              onClick={() => act(() => purchaseOrderService.updatePurchaseOrderStatus(id, 'cancel', token), 'Cancelled')}
-              className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">
+            <button
+              type="button"
+              disabled={acting}
+              onClick={() =>
+                act(
+                  () =>
+                    purchaseOrderService.updatePurchaseOrderStatus(
+                      id,
+                      'cancelled',
+                      token
+                    ),
+                  'Cancelled'
+                )
+              }
+              className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+            >
               <PiX className="h-4 w-4" /> Cancel
             </button>
           )}
@@ -150,10 +277,23 @@ export default function PurchasesPODetail({ id }: { id: string }) {
         {[
           { label: 'Currency', value: po.currency },
           { label: 'Vendor Reference', value: po.vendorReference ?? '—' },
-          { label: 'Expected Arrival', value: po.expectedArrival ? new Date(po.expectedArrival).toLocaleDateString() : '—' },
-          { label: 'Created', value: po.createdAt ? new Date(po.createdAt).toLocaleDateString() : '—' },
+          {
+            label: 'Expected Arrival',
+            value: po.expectedArrival
+              ? new Date(po.expectedArrival).toLocaleDateString()
+              : '—',
+          },
+          {
+            label: 'Created',
+            value: po.createdAt
+              ? new Date(po.createdAt).toLocaleDateString()
+              : '—',
+          },
         ].map(({ label, value }) => (
-          <div key={label} className="rounded-xl border border-gray-200 bg-white p-4">
+          <div
+            key={label}
+            className="rounded-xl border border-gray-200 bg-white p-4"
+          >
             <p className="text-xs text-gray-500">{label}</p>
             <p className="mt-0.5 font-medium text-gray-900">{value}</p>
           </div>
@@ -167,35 +307,83 @@ export default function PurchasesPODetail({ id }: { id: string }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50">
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Product</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">SKU</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Qty</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Received</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Unit Price</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Total</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                Product
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                SKU
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                Qty
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                Received
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                Unit Price
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                Total
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {po.items.map((item, i) => (
               <tr key={i}>
-                <td className="px-4 py-3 font-medium text-gray-900">{item.productName}</td>
-                <td className="px-4 py-3 font-mono text-xs text-gray-500">{item.sku}</td>
-                <td className="px-4 py-3 text-right text-gray-700">{item.quantity}</td>
+                <td className="px-4 py-3 font-medium text-gray-900">
+                  {(() => {
+                    const name =
+                      (item as any).subProductName ?? item.productName ?? '';
+                    const size = (item as any).sizeName;
+                    if (size && !name.includes(size))
+                      return `${name} – ${size}`;
+                    return name;
+                  })()}
+                </td>
+                <td className="px-4 py-3 font-mono text-xs text-gray-500">
+                  {item.sku}
+                </td>
+                <td className="px-4 py-3 text-right text-gray-700">
+                  {item.quantity}
+                </td>
                 <td className="px-4 py-3 text-right">
-                  <span className={item.receivedQty >= item.quantity ? 'font-medium text-green-600' : 'text-gray-500'}>
+                  <span
+                    className={
+                      item.receivedQty >= item.quantity
+                        ? 'font-medium text-green-600'
+                        : 'text-gray-500'
+                    }
+                  >
                     {item.receivedQty}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-right text-gray-700">{po.currency} {item.unitPrice.toFixed(2)}</td>
+                <td className="px-4 py-3 text-right text-gray-700">
+                  {po.currency}{' '}
+                  {(
+                    (item as any).unitCost ??
+                    item.unitPrice ??
+                    (item.quantity ? (item.totalCost ?? 0) / item.quantity : 0)
+                  ).toFixed(2)}
+                </td>
                 <td className="px-4 py-3 text-right font-medium text-gray-900">
-                  {po.currency} {(item.totalCost ?? item.unitPrice * item.quantity).toFixed(2)}
+                  {po.currency}{' '}
+                  {(
+                    item.totalCost ??
+                    ((item as any).unitCost ?? item.unitPrice ?? 0) *
+                      item.quantity
+                  ).toFixed(2)}
                 </td>
               </tr>
             ))}
           </tbody>
           <tfoot>
             <tr className="border-t border-gray-200 bg-gray-50">
-              <td colSpan={5} className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Total</td>
+              <td
+                colSpan={5}
+                className="px-4 py-3 text-right text-sm font-semibold text-gray-700"
+              >
+                Total
+              </td>
               <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">
                 {po.currency} {totalCost.toFixed(2)}
               </td>

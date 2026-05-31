@@ -30,6 +30,10 @@ const {
 router.use(protect);
 router.use(attachTenant);
 
+// Analytics routes MUST be before /:id to avoid Express treating "analytics" as an id param
+router.get("/analytics/summary", tenantAdminOrSuperAdmin, getPurchaseAnalyticsSummary);
+router.get("/analytics/by-vendor", tenantAdminOrSuperAdmin, getPurchaseAnalyticsByVendor);
+
 // CRUD routes
 router
   .route("/")
@@ -68,9 +72,5 @@ router.post("/:id/send-to-vendor", tenantAdminOrSuperAdmin, sendPOToVendor);
 
 // Return items to vendor
 router.post("/:id/return", tenantAdminOrSuperAdmin, returnPurchaseOrder);
-
-// Analytics routes
-router.get("/analytics/summary", tenantAdminOrSuperAdmin, getPurchaseAnalyticsSummary);
-router.get("/analytics/by-vendor", tenantAdminOrSuperAdmin, getPurchaseAnalyticsByVendor);
 
 module.exports = router;

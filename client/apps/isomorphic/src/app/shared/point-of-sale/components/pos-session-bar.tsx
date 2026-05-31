@@ -51,7 +51,12 @@ interface OfflineChipProps {
   pendingCount: number;
 }
 
-function OfflineChip({ isOnline, syncing, syncDone, pendingCount }: OfflineChipProps) {
+function OfflineChip({
+  isOnline,
+  syncing,
+  syncDone,
+  pendingCount,
+}: OfflineChipProps) {
   if (syncDone) {
     return (
       <span className="flex items-center gap-1.5 rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700">
@@ -63,7 +68,7 @@ function OfflineChip({ isOnline, syncing, syncDone, pendingCount }: OfflineChipP
   if (syncing) {
     return (
       <span className="flex items-center gap-1.5 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-700">
-        <span className="h-2 w-2 rounded-full bg-blue-500 animate-ping" />
+        <span className="h-2 w-2 animate-ping rounded-full bg-blue-500" />
         Syncing…
       </span>
     );
@@ -71,7 +76,7 @@ function OfflineChip({ isOnline, syncing, syncDone, pendingCount }: OfflineChipP
   if (!isOnline) {
     return (
       <span className="flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
-        <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+        <span className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
         Offline
         {pendingCount > 0 && (
           <span className="ml-0.5 rounded-full bg-amber-400 px-1.5 py-0.5 text-[10px] text-white">
@@ -81,7 +86,12 @@ function OfflineChip({ isOnline, syncing, syncDone, pendingCount }: OfflineChipP
       </span>
     );
   }
-  return null;
+  return (
+    <span className="flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-white/80">
+      <span className="h-2 w-2 rounded-full bg-green-400" />
+      Online
+    </span>
+  );
 }
 
 // ── Elapsed time ──────────────────────────────────────────────────────────────
@@ -411,16 +421,20 @@ function HamburgerMenu({
         onClose();
       },
     },
-    ...(installPrompt ? [{
-      label: 'Install App',
-      icon: <PiDeviceMobileSpeaker className="h-4 w-4" />,
-      action: async () => {
-        await installPrompt.prompt();
-        const { outcome } = await installPrompt.userChoice;
-        if (outcome === 'accepted') onInstallAccepted();
-        onClose();
-      },
-    }] : []),
+    ...(installPrompt
+      ? [
+          {
+            label: 'Install App',
+            icon: <PiDeviceMobileSpeaker className="h-4 w-4" />,
+            action: async () => {
+              await installPrompt.prompt();
+              const { outcome } = await installPrompt.userChoice;
+              if (outcome === 'accepted') onInstallAccepted();
+              onClose();
+            },
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -651,7 +665,8 @@ export default function POSSessionBar({ className }: { className?: string }) {
   const [pendingCount, setPendingCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [syncDone, setSyncDone] = useState(false);
-  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installPrompt, setInstallPrompt] =
+    useState<BeforeInstallPromptEvent | null>(null);
 
   const elapsed = useElapsedTime(session?.openedAt);
 
@@ -662,7 +677,11 @@ export default function POSSessionBar({ className }: { className?: string }) {
       setInstallPrompt(e as BeforeInstallPromptEvent);
     };
     window.addEventListener('beforeinstallprompt', handler as EventListener);
-    return () => window.removeEventListener('beforeinstallprompt', handler as EventListener);
+    return () =>
+      window.removeEventListener(
+        'beforeinstallprompt',
+        handler as EventListener
+      );
   }, []);
 
   // Poll pending queue count every 10s

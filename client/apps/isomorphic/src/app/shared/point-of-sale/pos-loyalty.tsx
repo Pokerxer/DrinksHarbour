@@ -409,121 +409,6 @@ function ValiditySection({ validFrom, validTo, maxUsage, usageCount, onValidFrom
   );
 }
 
-// ── Simple product-only picker (for BuyXGetY) ────────────────────────────────
-function ProductOnlyPicker({ value, onChange, adminToken, placeholder = 'Search products…', emptyHint = 'None selected — applies to any product' }: {
-  value: string[];
-  onChange: (ids: string[]) => void;
-  adminToken?: string;
-  placeholder?: string;
-  emptyHint?: string;
-}) {
-  const [query,    setQuery]    = useState('');
-  const [results,  setResults]  = useState<{ id: string; name: string; image?: string }[]>([]);
-  const [names,    setNames]    = useState<Record<string, string>>({});
-  const [images,   setImages]   = useState<Record<string, string>>({});
-  const [loading,  setLoading]  = useState(false);
-
-  useEffect(() => {
-    if (!adminToken || !query.trim()) { setResults([]); return; }
-    setLoading(true);
-    subproductService.getSubProducts(adminToken, { search: query.trim(), limit: 20 })
-      .then((d: any) => {
-        const sps = d.data?.subProducts || d.subProducts || [];
-        const seen = new Set<string>();
-        const items: { id: string; name: string; image?: string }[] = [];
-        for (const sp of sps) {
-          const pid = sp.product?._id;
-          if (!pid || seen.has(pid)) continue;
-          seen.add(pid);
-          items.push({ id: pid, name: sp.product?.name ?? sp.sku, image: sp.product?.images?.[0]?.thumbnail || sp.product?.images?.[0]?.url });
-        }
-        setResults(items);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [query, adminToken]);
-
-  // Load names for pre-selected ids
-  useEffect(() => {
-    if (!adminToken || value.length === 0) return;
-    const missing = value.filter(id => !names[id]);
-    if (!missing.length) return;
-    subproductService.getSubProducts(adminToken, { limit: 200 })
-      .then((d: any) => {
-        const sps = d.data?.subProducts || d.subProducts || [];
-        const nm: Record<string, string> = {};
-        const im: Record<string, string> = {};
-        for (const sp of sps) {
-          if (sp.product?._id) {
-            nm[sp.product._id] = sp.product.name;
-            const img = sp.product.images?.[0]?.thumbnail || sp.product.images?.[0]?.url;
-            if (img) im[sp.product._id] = img;
-          }
-        }
-        setNames(prev => ({ ...prev, ...nm }));
-        setImages(prev => ({ ...prev, ...im }));
-      }).catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adminToken, value.length]);
-
-  function toggle(item: { id: string; name: string; image?: string }) {
-    setNames(prev => ({ ...prev, [item.id]: item.name }));
-    if (item.image) setImages(prev => ({ ...prev, [item.id]: item.image! }));
-    onChange(value.includes(item.id) ? value.filter(x => x !== item.id) : [...value, item.id]);
-  }
-
-  return (
-    <div className="space-y-2.5">
-      {/* Selected chips */}
-      {value.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {value.map(id => (
-            <span key={id} className="inline-flex items-center gap-1.5 rounded-full border border-[#7c3aed]/30 bg-violet-50 pl-1.5 pr-1.5 py-0.5">
-              {images[id] && <img src={images[id]} alt="" className="h-4 w-4 rounded-full object-cover shrink-0" />}
-              <span className="text-[11px] font-semibold text-[#7c3aed]">{names[id] || id}</span>
-              <button type="button" onClick={() => onChange(value.filter(x => x !== id))}
-                className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#7c3aed]/20 text-[#7c3aed] hover:bg-[#7c3aed] hover:text-white transition-colors">
-                <PiX className="h-2.5 w-2.5" />
-              </button>
-            </span>
-          ))}
-          <button type="button" onClick={() => onChange([])} className="text-[10px] text-gray-400 hover:text-red-500 underline self-center">Clear</button>
-        </div>
-      )}
-
-      {/* Search */}
-      <div className="relative">
-        <PiMagnifyingGlass className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-        {loading && <span className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-300 border-t-[#7c3aed] inline-block" />}
-        <input value={query} onChange={e => setQuery(e.target.value)} placeholder={placeholder}
-          className="w-full rounded-xl border border-gray-200 py-2.5 pl-9 pr-4 text-sm outline-none focus:border-[#7c3aed]" />
-      </div>
-
-      {results.length > 0 && (
-        <div className="max-h-44 overflow-y-auto rounded-xl border border-gray-200 divide-y divide-gray-50">
-          {results.map(item => {
-            const checked = value.includes(item.id);
-            return (
-              <button key={item.id} type="button" onClick={() => toggle(item)}
-                className={`flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors ${checked ? 'bg-violet-50/60' : 'hover:bg-gray-50'}`}>
-                <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 transition-colors ${checked ? 'border-[#7c3aed] bg-[#7c3aed]' : 'border-gray-300 bg-white'}`}>
-                  {checked && <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 10 10"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                </div>
-                {item.image
-                  ? <img src={item.image} alt="" className="h-7 w-7 rounded-lg object-cover shrink-0" />
-                  : <div className="h-7 w-7 shrink-0 rounded-lg bg-gray-100 flex items-center justify-center"><PiPackage className="h-3.5 w-3.5 text-gray-400" /></div>}
-                <span className="text-sm font-medium text-gray-800">{item.name}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-      {query && !loading && results.length === 0 && <p className="text-xs text-gray-400 px-1">No products found for "{query}"</p>}
-      {!query && value.length === 0 && <p className="text-[10px] text-gray-400">{emptyHint}</p>}
-    </div>
-  );
-}
-
 // ── Item picker (products / categories / brands) ─────────────────────────────
 type PickItem = { id: string; name: string; image?: string; indent?: number };
 type ItemTab  = 'products' | 'categories' | 'brands';
@@ -1405,23 +1290,24 @@ function BuyXGetYModal({ initial, onSave, onClose, adminToken }: {
   const [description,  setDescription]  = useState(initial?.description  ?? '');
   const [color,        setColor]        = useState(initial?.color        ?? '#7c3aed');
   const [stackable,    setStackable]    = useState(initial?.stackable    ?? false);
-  const [pricelistIds, setPricelistIds] = useState<string[]>(initial?.pricelistIds ?? []);
-  const [buyProducts,  setBuyProducts]  = useState<string[]>(initial?.buyProducts  ?? []);
-  const [getProducts,  setGetProducts]  = useState<string[]>(initial?.getProducts  ?? []);
-  const [availability, setAvailability] = useState<POSDiscountAvailability>(initial?.availableOn ?? DEFAULT_AVAILABILITY);
-  const [buyQty,       setBuyQty]       = useState(initial?.buyQty       ?? 2);
-  const [getQty,       setGetQty]       = useState(initial?.getQty       ?? 1);
+  const [pricelistIds,  setPricelistIds]  = useState<string[]>(initial?.pricelistIds ?? []);
+  const [applyTo,        setApplyTo]        = useState<POSApplicableItems>(initial?.applyTo ?? {});
+  const [rewardApplyTo,  setRewardApplyTo]  = useState<POSApplicableItems>(initial?.rewardApplyTo ?? {});
+  const [availability,   setAvailability]   = useState<POSDiscountAvailability>(initial?.availableOn ?? DEFAULT_AVAILABILITY);
+  const [buyQty,         setBuyQty]         = useState(initial?.buyQty       ?? 2);
+  const [getQty,         setGetQty]         = useState(initial?.getQty       ?? 1);
   const [getDiscountPct, setGetDiscountPct] = useState(initial?.getDiscountPct ?? 100);
-  const [rules,        setRules]        = useState<POSDiscountRules>({ minQty: 0, minOrderValue: initial?.minOrderValue ?? 0 });
-  const [validFrom,    setValidFrom]    = useState(initial?.validFrom    ?? '');
-  const [validTo,      setValidTo]      = useState(initial?.validTo      ?? '');
-  const [maxUsage,     setMaxUsage]     = useState(initial?.maxUsage     ?? 0);
-  const [active,       setActive]       = useState(initial?.active !== false);
-  const [err,          setErr]          = useState('');
+  const [rules,          setRules]          = useState<POSDiscountRules>(initial?.rules ?? { minQty: 0, minOrderValue: initial?.minOrderValue ?? 0 });
+  const [validFrom,      setValidFrom]      = useState(initial?.validFrom    ?? '');
+  const [validTo,        setValidTo]        = useState(initial?.validTo      ?? '');
+  const [maxUsage,       setMaxUsage]       = useState(initial?.maxUsage     ?? 0);
+  const [active,         setActive]         = useState(initial?.active !== false);
+  const [err,            setErr]            = useState('');
 
   const [openValidity,  setOpenValidity]  = useState(false);
   const [openAvailable, setOpenAvailable] = useState(true);
   const [openRules,     setOpenRules]     = useState(false);
+  const [openReward,    setOpenReward]    = useState(true);
 
   function applyPreset(p: typeof BXGY_PRESETS[0]) {
     setBuyQty(p.buyQty);
@@ -1435,9 +1321,14 @@ function BuyXGetYModal({ initial, onSave, onClose, adminToken }: {
     onSave({
       _id: initial?._id, name: name.trim(), description,
       color, stackable,
-      pricelistIds, buyProducts, getProducts,
+      pricelistIds,
+      applyTo, rewardApplyTo,
+      // keep legacy fields in sync
+      buyProducts: applyTo.products ?? [],
+      getProducts: rewardApplyTo.products ?? [],
       availableOn: availability,
       buyQty, getQty, getDiscountPct,
+      rules,
       minOrderValue: rules.minOrderValue,
       maxUsage, usageCount: initial?.usageCount ?? 0,
       validFrom, validTo, active,
@@ -1591,33 +1482,22 @@ function BuyXGetYModal({ initial, onSave, onClose, adminToken }: {
 
       <PricelistPicker value={pricelistIds} onChange={setPricelistIds} adminToken={adminToken} />
 
-      {/* Buy products */}
-      <div className="space-y-2">
-        <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-400">
-          Buy products <span className="font-normal normal-case text-gray-300">— which items must be purchased to trigger the offer</span>
-        </label>
-        <ProductOnlyPicker
-          value={buyProducts}
-          onChange={setBuyProducts}
-          adminToken={adminToken}
-          placeholder="Search products to buy…"
-          emptyHint={`Any product counts — customer just needs ${buyQty} of anything`}
-        />
-      </div>
+      {/* ═══ Rules accordion — conditions (products/categories/brands + qty/value minimums) ═══ */}
+      <AccordionSection title="Rules" icon={<PiInfo className="h-4 w-4" />} open={openRules} onToggle={() => setOpenRules(v => !v)}>
+        <div className="space-y-4">
+          <Field label="Applicable items" hint="— which items the customer must buy">
+            <ItemPicker value={applyTo} onChange={setApplyTo} adminToken={adminToken} />
+          </Field>
+          <RulesSection value={rules} onChange={setRules} />
+        </div>
+      </AccordionSection>
 
-      {/* Get products */}
-      <div className="space-y-2">
-        <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-400">
-          Get products <span className="font-normal normal-case text-gray-300">— which items receive the discount</span>
-        </label>
-        <ProductOnlyPicker
-          value={getProducts}
-          onChange={setGetProducts}
-          adminToken={adminToken}
-          placeholder="Search products to discount…"
-          emptyHint="Same as buy products — the cheapest matching item gets the discount"
-        />
-      </div>
+      {/* ═══ Rewards accordion — benefit (get items) ═══ */}
+      <AccordionSection title="Rewards" icon={<PiGift className="h-4 w-4" />} open={openReward} onToggle={() => setOpenReward(v => !v)}>
+        <Field label="Discount applies to" hint="— which items receive the free/discounted quantity">
+          <ItemPicker value={rewardApplyTo} onChange={setRewardApplyTo} adminToken={adminToken} />
+        </Field>
+      </AccordionSection>
 
       <AccordionSection title="Validity & Usage" icon={<PiCalendar className="h-4 w-4" />} open={openValidity} onToggle={() => setOpenValidity(v => !v)}>
         <ValiditySection validFrom={validFrom} validTo={validTo} maxUsage={maxUsage}
@@ -1626,10 +1506,6 @@ function BuyXGetYModal({ initial, onSave, onClose, adminToken }: {
 
       <AccordionSection title="Available On" icon={<PiShoppingCart className="h-4 w-4" />} open={openAvailable} onToggle={() => setOpenAvailable(v => !v)}>
         <AvailableOnSection value={availability} onChange={setAvailability} />
-      </AccordionSection>
-
-      <AccordionSection title="Rules" icon={<PiInfo className="h-4 w-4" />} open={openRules} onToggle={() => setOpenRules(v => !v)}>
-        <RulesSection value={rules} onChange={setRules} />
       </AccordionSection>
 
       <div className="grid grid-cols-2 gap-3">

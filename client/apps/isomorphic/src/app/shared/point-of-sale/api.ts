@@ -12,6 +12,9 @@ import type {
   POSCashMovement,
   POSSettings,
   POSCombo,
+  POSCustomer,
+  POSShop,
+  POSNotification,
 } from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -31,13 +34,27 @@ function authHeaders(token: string): HeadersInit {
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, options);
-  const body = await res.json() as ApiResponse<T>;
-  if (!res.ok || !body.success) throw new Error(body.message || 'Request failed');
+  if (res.status === 401) {
+    if (typeof window !== 'undefined') {
+      void import('next-auth/react').then((m) =>
+        m.signOut({ callbackUrl: '/signin' })
+      );
+    }
+    throw new Error('Session expired. Please sign in again.');
+  }
+  const body = (await res.json()) as ApiResponse<T>;
+  if (!res.ok || !body.success)
+    throw new Error(body.message || 'Request failed');
   return body.data;
 }
 
 export const posApi = {
-  async staffLogin(tenantSlug: string, staffId: string, pin?: string, password?: string) {
+  async staffLogin(
+    tenantSlug: string,
+    staffId: string,
+    pin?: string,
+    password?: string
+  ) {
     return request<POSAuthResponse>(`${API_URL}/api/pos/auth/staff-login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -46,40 +63,66 @@ export const posApi = {
   },
 
   async listStaff(tenantSlug: string) {
-    return request<{ staff: POSStaff[]; tenant: { _id: string; slug: string; name: string } }>(
-      `${API_URL}/api/pos/staff?tenantSlug=${encodeURIComponent(tenantSlug)}`
-    );
+    return request<{
+      staff: POSStaff[];
+      tenant: { _id: string; slug: string; name: string };
+    }>(`${API_URL}/api/pos/staff?tenantSlug=${encodeURIComponent(tenantSlug)}`);
   },
 
   async getSessionInfo(token: string, terminalType?: 'retail' | 'wholesale') {
     const qs = terminalType ? `?terminalType=${terminalType}` : '';
-    return request<POSSessionInfo>(`${API_URL}/api/pos/session-info${qs}`, { headers: authHeaders(token) });
+    return request<POSSessionInfo>(`${API_URL}/api/pos/session-info${qs}`, {
+      headers: authHeaders(token),
+    });
   },
 
-  async getProducts(token: string, params?: { search?: string; category?: string; limit?: number }) {
+  async getProducts(
+    token: string,
+    params?: { search?: string; category?: string; limit?: number }
+  ) {
     const qs = new URLSearchParams();
     if (params?.search) qs.set('search', params.search);
     if (params?.category) qs.set('category', params.category);
     if (params?.limit) qs.set('limit', String(params.limit));
-    return request<{ products: POSProduct[]; total: number }>(`${API_URL}/api/pos/products?${qs}`, { headers: authHeaders(token) });
+    return request<{ products: POSProduct[]; total: number }>(
+      `${API_URL}/api/pos/products?${qs}`,
+      { headers: authHeaders(token) }
+    );
   },
 
   async getPricelists(token: string) {
-    return request<{ pricelists: any[] }>(`${API_URL}/api/pos/pricelists`, { headers: authHeaders(token) });
+    return request<{ pricelists: any[] }>(`${API_URL}/api/pos/pricelists`, {
+      headers: authHeaders(token),
+    });
   },
 
   async getCategories() {
-    return request<{ categories: { _id: string; name: string; parent?: string; level?: number }[]; total: number }>(`${API_URL}/api/categories`);
+    return request<{
+      categories: {
+        _id: string;
+        name: string;
+        parent?: string;
+        level?: number;
+      }[];
+      total: number;
+    }>(`${API_URL}/api/categories`);
   },
 
   async getBrands(params?: { search?: string; limit?: number }) {
-    const qs = new URLSearchParams({ status: 'active', limit: String(params?.limit ?? 200) });
+    const qs = new URLSearchParams({
+      status: 'active',
+      limit: String(params?.limit ?? 200),
+    });
     if (params?.search) qs.set('search', params.search);
-    return request<{ brands: { _id: string; name: string }[] }>(`${API_URL}/api/brands?${qs}`);
+    return request<{ brands: { _id: string; name: string }[] }>(
+      `${API_URL}/api/brands?${qs}`
+    );
   },
 
   async getCombos(token: string) {
-    return request<{ combos: POSCombo[] }>(`${API_URL}/api/pos/combos`, { headers: authHeaders(token) });
+    return request<{ combos: POSCombo[] }>(`${API_URL}/api/pos/combos`, {
+      headers: authHeaders(token),
+    });
   },
 
   async createOrder(token: string, order: Record<string, unknown>) {
@@ -93,68 +136,121 @@ export const posApi = {
   async refundOrder(
     token: string,
     orderId: string,
-    items: { orderItemIndex: number; quantity: number; discPct?: number; unitPrice?: number; reason?: string; restock?: boolean }[],
+    items: {
+      orderItemIndex: number;
+      quantity: number;
+      discPct?: number;
+      unitPrice?: number;
+      reason?: string;
+      restock?: boolean;
+    }[],
     reason?: string,
-    refundPaymentMethod?: string,
+    refundPaymentMethod?: string
   ) {
-    return request<POSRefundResponse>(`${API_URL}/api/pos/orders/${orderId}/refund`, {
-      method: 'POST',
-      headers: authHeaders(token),
-      body: JSON.stringify({ items, reason, refundPaymentMethod }),
-    });
+    return request<POSRefundResponse>(
+      `${API_URL}/api/pos/orders/${orderId}/refund`,
+      {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify({ items, reason, refundPaymentMethod }),
+      }
+    );
   },
 
   async voidOrder(token: string, orderId: string, reason?: string) {
-    return request<{ _id: string; status: string }>(`${API_URL}/api/pos/orders/${orderId}/void`, {
-      method: 'POST',
-      headers: authHeaders(token),
-      body: JSON.stringify({ reason }),
-    });
+    return request<{ _id: string; status: string }>(
+      `${API_URL}/api/pos/orders/${orderId}/void`,
+      {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify({ reason }),
+      }
+    );
   },
 
   async getDashboard(token: string) {
-    return request<POSDashboardData>(`${API_URL}/api/pos/dashboard`, { headers: authHeaders(token) });
+    return request<POSDashboardData>(`${API_URL}/api/pos/dashboard`, {
+      headers: authHeaders(token),
+    });
   },
 
   async getCurrentSession(token: string) {
-    return request<POSSession | null>(`${API_URL}/api/pos/sessions/current`, { headers: authHeaders(token) });
+    return request<POSSession | null>(`${API_URL}/api/pos/sessions/current`, {
+      headers: authHeaders(token),
+    });
   },
 
-  async openSession(token: string, openingCash?: number, terminalType?: 'retail' | 'wholesale', notes?: string) {
-    const res = await request<{ session: POSSession }>(`${API_URL}/api/pos/sessions/open`, {
-      method: 'POST',
-      headers: authHeaders(token),
-      body: JSON.stringify({ openingCash, terminalType: terminalType ?? 'retail', notes }),
-    });
+  async openSession(
+    token: string,
+    openingCash?: number,
+    terminalType?: 'retail' | 'wholesale',
+    notes?: string
+  ) {
+    const res = await request<{ session: POSSession }>(
+      `${API_URL}/api/pos/sessions/open`,
+      {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify({
+          openingCash,
+          terminalType: terminalType ?? 'retail',
+          notes,
+        }),
+      }
+    );
     return res.session;
   },
 
-  async closeSession(token: string, sessionId: string, countedBalances: { method: string; counted: number }[], closingNotes?: string) {
-    const res = await request<{ session: POSSession; hasDifference: boolean }>(`${API_URL}/api/pos/sessions/${sessionId}/close`, {
-      method: 'POST',
-      headers: authHeaders(token),
-      body: JSON.stringify({ countedBalances, closingNotes }),
-    });
+  async closeSession(
+    token: string,
+    sessionId: string,
+    countedBalances: { method: string; counted: number }[],
+    closingNotes?: string
+  ) {
+    const res = await request<{ session: POSSession; hasDifference: boolean }>(
+      `${API_URL}/api/pos/sessions/${sessionId}/close`,
+      {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify({ countedBalances, closingNotes }),
+      }
+    );
     return res.session;
   },
 
   async switchCashier(token: string, sessionId: string, pin: string) {
-    return request<{ session: POSSession; staff: POSStaff }>(`${API_URL}/api/pos/sessions/${sessionId}/switch-cashier`, {
-      method: 'POST',
-      headers: authHeaders(token),
-      body: JSON.stringify({ pin }),
-    });
+    return request<{ session: POSSession; staff: POSStaff }>(
+      `${API_URL}/api/pos/sessions/${sessionId}/switch-cashier`,
+      {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify({ pin }),
+      }
+    );
   },
 
   async getClosingControl(token: string, sessionId: string) {
-    return request<POSClosingControl>(`${API_URL}/api/pos/sessions/${sessionId}/closing-control`, { headers: authHeaders(token) });
+    return request<POSClosingControl>(
+      `${API_URL}/api/pos/sessions/${sessionId}/closing-control`,
+      { headers: authHeaders(token) }
+    );
   },
 
-  async recordCashMove(token: string, sessionId: string, type: 'in' | 'out', amount: number, reason?: string) {
-    return request<{ movement: POSCashMovement; cashMovements: POSCashMovement[] }>(
-      `${API_URL}/api/pos/sessions/${sessionId}/cash-move`,
-      { method: 'POST', headers: authHeaders(token), body: JSON.stringify({ type, amount, reason }) }
-    );
+  async recordCashMove(
+    token: string,
+    sessionId: string,
+    type: 'in' | 'out',
+    amount: number,
+    reason?: string
+  ) {
+    return request<{
+      movement: POSCashMovement;
+      cashMovements: POSCashMovement[];
+    }>(`${API_URL}/api/pos/sessions/${sessionId}/cash-move`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify({ type, amount, reason }),
+    });
   },
 
   async getCashMoves(token: string, sessionId: string) {
@@ -164,52 +260,317 @@ export const posApi = {
     );
   },
 
-  async getSessions(token: string, page?: number, limit?: number, status?: 'open' | 'closed') {
+  async getSessions(
+    token: string,
+    page?: number,
+    limit?: number,
+    status?: 'open' | 'closed',
+    dateFrom?: string,
+    dateTo?: string
+  ) {
     const qs = new URLSearchParams();
-    if (page)   qs.set('page',   String(page));
-    if (limit)  qs.set('limit',  String(limit));
+    if (page) qs.set('page', String(page));
+    if (limit) qs.set('limit', String(limit));
     if (status) qs.set('status', status);
-    return request<{ sessions: POSSession[]; total: number; page: number; limit: number }>(
-      `${API_URL}/api/pos/sessions?${qs}`, { headers: authHeaders(token) }
-    );
+    if (dateFrom) qs.set('dateFrom', dateFrom);
+    if (dateTo) qs.set('dateTo', dateTo);
+    return request<{
+      sessions: POSSession[];
+      total: number;
+      page: number;
+      limit: number;
+    }>(`${API_URL}/api/pos/sessions?${qs}`, { headers: authHeaders(token) });
   },
 
-  async getAllOrders(token: string, params?: { page?: number; limit?: number }) {
+  async getAllOrders(
+    token: string,
+    params?: { page?: number; limit?: number }
+  ) {
     const qs = new URLSearchParams();
-    if (params?.page)  qs.set('page',  String(params.page));
+    if (params?.page) qs.set('page', String(params.page));
     if (params?.limit) qs.set('limit', String(params.limit));
-    return request<POSRecentOrder[]>(`${API_URL}/api/pos/orders?${qs}`, { headers: authHeaders(token) });
+    return request<POSRecentOrder[]>(`${API_URL}/api/pos/orders?${qs}`, {
+      headers: authHeaders(token),
+    });
   },
 
   async getSessionOrders(token: string, sessionId: string) {
-    return request<POSRecentOrder[]>(`${API_URL}/api/pos/sessions/${sessionId}/orders`, { headers: authHeaders(token) });
+    return request<POSRecentOrder[]>(
+      `${API_URL}/api/pos/sessions/${sessionId}/orders`,
+      { headers: authHeaders(token) }
+    );
   },
 
   async listCashiers(token: string) {
-    return request<POSStaff[]>(`${API_URL}/api/pos/cashiers`, { headers: authHeaders(token) });
+    return request<POSStaff[]>(`${API_URL}/api/pos/cashiers`, {
+      headers: authHeaders(token),
+    });
   },
 
   async getBankAccounts(token: string) {
-    return request<{ bankAccounts: { bankName: string; accountNumber: string; accountName?: string }[] }>(
-      `${API_URL}/api/pos/tenant/bank-accounts`, { headers: authHeaders(token) }
-    );
+    return request<{
+      bankAccounts: {
+        bankName: string;
+        accountNumber: string;
+        accountName?: string;
+      }[];
+    }>(`${API_URL}/api/pos/tenant/bank-accounts`, {
+      headers: authHeaders(token),
+    });
   },
 
-  async updateBankAccounts(token: string, bankAccounts: { bankName: string; accountNumber: string; accountName?: string }[]) {
-    return request<{ bankAccounts: { bankName: string; accountNumber: string; accountName?: string }[] }>(
-      `${API_URL}/api/pos/tenant/bank-accounts`,
-      { method: 'PATCH', headers: authHeaders(token), body: JSON.stringify({ bankAccounts }) }
-    );
+  async updateBankAccounts(
+    token: string,
+    bankAccounts: {
+      bankName: string;
+      accountNumber: string;
+      accountName?: string;
+    }[]
+  ) {
+    return request<{
+      bankAccounts: {
+        bankName: string;
+        accountNumber: string;
+        accountName?: string;
+      }[];
+    }>(`${API_URL}/api/pos/tenant/bank-accounts`, {
+      method: 'PATCH',
+      headers: authHeaders(token),
+      body: JSON.stringify({ bankAccounts }),
+    });
   },
 
   async getPOSSettings(token: string) {
-    return request<{ posSettings: POSSettings }>(`${API_URL}/api/pos/tenant/settings`, { headers: authHeaders(token) });
+    return request<{ posSettings: POSSettings }>(
+      `${API_URL}/api/pos/tenant/settings`,
+      { headers: authHeaders(token) }
+    );
   },
 
   async updatePOSSettings(token: string, posSettings: POSSettings) {
     return request<{ posSettings: POSSettings }>(
       `${API_URL}/api/pos/tenant/settings`,
-      { method: 'PATCH', headers: authHeaders(token), body: JSON.stringify({ posSettings }) }
+      {
+        method: 'PATCH',
+        headers: authHeaders(token),
+        body: JSON.stringify({ posSettings }),
+      }
     );
+  },
+
+  async searchCustomers(token: string, q: string, limit = 20) {
+    const qs = new URLSearchParams({ q, limit: String(limit) });
+    return request<{ customers: POSCustomer[] }>(
+      `${API_URL}/api/pos/customers?${qs}`,
+      { headers: authHeaders(token) }
+    );
+  },
+
+  async createCustomer(
+    token: string,
+    data: {
+      firstName: string;
+      lastName?: string;
+      email?: string;
+      phone?: string;
+      notes?: string;
+    }
+  ) {
+    const res = await fetch(`${API_URL}/api/pos/customers`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify(data),
+    });
+    const body = (await res.json()) as ApiResponse<{ customer: POSCustomer }>;
+    if (res.status === 409 && body.data?.customer) {
+      const err = new Error(body.message || 'Duplicate') as Error & {
+        customer: POSCustomer;
+      };
+      err.customer = body.data.customer;
+      throw err;
+    }
+    if (!res.ok || !body.success)
+      throw new Error(body.message || 'Request failed');
+    return body.data;
+  },
+
+  async getCustomer(token: string, id: string) {
+    return request<{ customer: POSCustomer }>(
+      `${API_URL}/api/pos/customers/${id}`,
+      { headers: authHeaders(token) }
+    );
+  },
+
+  async updateCustomerLoyalty(
+    token: string,
+    id: string,
+    earned: number,
+    redeemed: number,
+    orderTotal: number
+  ) {
+    return request<{ customer: POSCustomer }>(
+      `${API_URL}/api/pos/customers/${id}/loyalty`,
+      {
+        method: 'PATCH',
+        headers: authHeaders(token),
+        body: JSON.stringify({ earned, redeemed, orderTotal }),
+      }
+    );
+  },
+
+  async getSessionReport(token: string, sessionId: string) {
+    return request<{
+      session: POSSession;
+      summary: {
+        totalOrders: number;
+        voidedOrders: number;
+        refundOrders: number;
+        grossRevenue: number;
+        totalDiscounts: number;
+        totalRefunds: number;
+        netRevenue: number;
+        durationMins: number;
+      };
+      paymentTotals: Record<string, number>;
+      cashSummary: {
+        openingCash: number;
+        cashSales: number;
+        cashIn: number;
+        cashOut: number;
+        expectedCash: number;
+        countedCash: number | null;
+        difference: number | null;
+      };
+      cashMovements: POSCashMovement[];
+      productBreakdown: {
+        name: string;
+        qty: number;
+        gross: number;
+        discounts: number;
+        net: number;
+      }[];
+      hourlySales: { hour: string; orders: number; revenue: number }[];
+    }>(`${API_URL}/api/pos/reports/session/${sessionId}`, {
+      headers: authHeaders(token),
+    });
+  },
+
+  async getDailyReport(token: string, date?: string) {
+    const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+    return request<{
+      date: string;
+      sessions: {
+        _id: string;
+        terminalType: string;
+        status: string;
+        openedAt: string;
+        closedAt?: string;
+        orderCount: number;
+        revenue: number;
+      }[];
+      totals: {
+        sessionCount: number;
+        totalOrders: number;
+        voidedOrders: number;
+        refundOrders: number;
+        grossRevenue: number;
+        totalDiscounts: number;
+        totalRefunds: number;
+        netRevenue: number;
+        paymentTotals: Record<string, number>;
+      };
+    }>(`${API_URL}/api/pos/reports/daily${qs}`, {
+      headers: authHeaders(token),
+    });
+  },
+
+  async getReportSummary(
+    token: string,
+    params?: { dateFrom?: string; dateTo?: string }
+  ) {
+    const qs = new URLSearchParams();
+    if (params?.dateFrom) qs.set('dateFrom', params.dateFrom);
+    if (params?.dateTo) qs.set('dateTo', params.dateTo);
+    return request<{
+      dateFrom: string;
+      dateTo: string;
+      totals: {
+        sessionCount: number;
+        totalOrders: number;
+        voidedOrders: number;
+        refundOrders: number;
+        grossRevenue: number;
+        totalDiscounts: number;
+        totalRefunds: number;
+        netRevenue: number;
+        avgOrderValue: number;
+        paymentTotals: Record<string, number>;
+      };
+      dailySales: { date: string; orders: number; revenue: number }[];
+      topProducts: {
+        name: string;
+        qty: number;
+        gross: number;
+        discounts: number;
+        net: number;
+      }[];
+    }>(`${API_URL}/api/pos/reports/summary?${qs}`, {
+      headers: authHeaders(token),
+    });
+  },
+
+  async getNotifications(token: string, since?: string) {
+    const qs = since ? `?since=${encodeURIComponent(since)}` : '';
+    return request<{ notifications: POSNotification[] }>(
+      `${API_URL}/api/pos/notifications${qs}`,
+      { headers: authHeaders(token) }
+    );
+  },
+
+  async listShops(token: string) {
+    return request<{ shops: POSShop[] }>(`${API_URL}/api/pos/shops`, {
+      headers: authHeaders(token),
+    });
+  },
+
+  async createShop(
+    token: string,
+    data: {
+      name: string;
+      mode: 'retail' | 'wholesale';
+      color?: string;
+      description?: string;
+    }
+  ) {
+    return request<{ shop: POSShop }>(`${API_URL}/api/pos/shops`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateShop(
+    token: string,
+    shopId: string,
+    data: Partial<{
+      name: string;
+      mode: 'retail' | 'wholesale';
+      color: string;
+      description: string;
+      active: boolean;
+    }>
+  ) {
+    return request<{ shop: POSShop }>(`${API_URL}/api/pos/shops/${shopId}`, {
+      method: 'PATCH',
+      headers: authHeaders(token),
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteShop(token: string, shopId: string) {
+    return request<{ message: string }>(`${API_URL}/api/pos/shops/${shopId}`, {
+      method: 'DELETE',
+      headers: authHeaders(token),
+    });
   },
 };

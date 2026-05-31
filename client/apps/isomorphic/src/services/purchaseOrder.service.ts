@@ -192,14 +192,16 @@ export const purchaseOrderService = {
       if (!contentType || !contentType.includes('application/json')) {
         const text = await response.text();
         console.error('Non-JSON response:', text);
-        throw new Error(`Invalid response format from server. Status: ${response.status}`);
+        throw new Error(
+          `Invalid response format from server. Status: ${response.status}`
+        );
       }
 
       if (!response.ok) {
         if (response.status === 401) {
           throw new Error('Authentication expired. Please sign in again.');
         }
-        
+
         const errorText = await response.text();
         let errorMessage = 'Failed to fetch purchase orders';
         try {
@@ -214,7 +216,9 @@ export const purchaseOrderService = {
       return response.json();
     } catch (error) {
       if (error instanceof TypeError && error.message === 'Failed to fetch') {
-        throw new Error('Network error: Unable to connect to the server. Please check your internet connection and ensure the backend server is running.');
+        throw new Error(
+          'Network error: Unable to connect to the server. Please check your internet connection and ensure the backend server is running.'
+        );
       }
       throw error;
     }
@@ -236,7 +240,11 @@ export const purchaseOrderService = {
     return response.json();
   },
 
-  async approvePO(id: string, notes?: string, token: string): Promise<CreatePOResponse> {
+  async approvePO(
+    id: string,
+    token: string,
+    notes?: string
+  ): Promise<CreatePOResponse> {
     const response = await fetch(
       `${API_URL}/api/purchase-orders/${id}/approve`,
       {
@@ -257,7 +265,11 @@ export const purchaseOrderService = {
     return response.json();
   },
 
-  async rejectPO(id: string, notes?: string, token: string): Promise<CreatePOResponse> {
+  async rejectPO(
+    id: string,
+    token: string,
+    notes?: string
+  ): Promise<CreatePOResponse> {
     const response = await fetch(
       `${API_URL}/api/purchase-orders/${id}/reject`,
       {
@@ -278,18 +290,19 @@ export const purchaseOrderService = {
     return response.json();
   },
 
-  async lockPO(id: string, reason?: string, token: string): Promise<CreatePOResponse> {
-    const response = await fetch(
-      `${API_URL}/api/purchase-orders/${id}/lock`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ reason }),
-      }
-    );
+  async lockPO(
+    id: string,
+    token: string,
+    reason?: string
+  ): Promise<CreatePOResponse> {
+    const response = await fetch(`${API_URL}/api/purchase-orders/${id}/lock`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ reason }),
+    });
 
     if (!response.ok) {
       const error = await response.json();
@@ -319,12 +332,16 @@ export const purchaseOrderService = {
     return response.json();
   },
 
-  async createBillFromPO(id: string, token: string, options?: {
-    billDate?: string;
-    dueDate?: string;
-    notes?: string;
-    billControlPolicy?: 'ordered' | 'received';
-  }): Promise<CreatePOResponse> {
+  async createBillFromPO(
+    id: string,
+    token: string,
+    options?: {
+      billDate?: string;
+      dueDate?: string;
+      notes?: string;
+      billControlPolicy?: 'ordered' | 'received';
+    }
+  ): Promise<CreatePOResponse> {
     const response = await fetch(
       `${API_URL}/api/purchase-orders/${id}/create-bill`,
       {
@@ -381,17 +398,25 @@ export const purchaseOrderService = {
   async returnPurchaseOrder(
     id: string,
     token: string,
-    items: { subProductId: string; sizeId?: string; quantity: number; reason?: string }[],
+    items: {
+      subProductId: string;
+      sizeId?: string;
+      quantity: number;
+      reason?: string;
+    }[],
     notes?: string
   ): Promise<CreatePOResponse> {
-    const response = await fetch(`${API_URL}/api/purchase-orders/${id}/return`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ items, notes }),
-    });
+    const response = await fetch(
+      `${API_URL}/api/purchase-orders/${id}/return`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ items, notes }),
+      }
+    );
 
     if (!response.ok) {
       const error = await response.json();
@@ -401,7 +426,11 @@ export const purchaseOrderService = {
     return response.json();
   },
 
-  async sendPOToVendor(id: string, token: string, email?: string): Promise<CreatePOResponse> {
+  async sendPOToVendor(
+    id: string,
+    token: string,
+    email?: string
+  ): Promise<CreatePOResponse> {
     const response = await fetch(
       `${API_URL}/api/purchase-orders/${id}/send-to-vendor`,
       {

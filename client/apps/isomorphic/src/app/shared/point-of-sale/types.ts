@@ -13,6 +13,18 @@ export interface POSStaff {
   };
 }
 
+export interface POSCustomer {
+  _id: string;
+  firstName: string;
+  lastName: string;
+  email?: string;
+  phone?: string;
+  loyaltyPoints: number;
+  totalSpent?: number;
+  totalOrders?: number;
+  notes?: string;
+}
+
 export interface POSTenantBankAccount {
   bankName: string;
   accountNumber: string;
@@ -32,31 +44,31 @@ export interface POSDiscountProgram {
 
 // ── Shared discount program fields ────────────────────────────────────────────
 export interface POSDiscountAvailability {
-  pos:     boolean;  // available in POS terminal
-  sales:   boolean;  // available on sales orders
-  website: boolean;  // available on the website
+  pos: boolean; // available in POS terminal
+  sales: boolean; // available on sales orders
+  website: boolean; // available on the website
 }
 
 export interface POSDiscountRules {
-  minQty?:        number;   // minimum cart quantity
-  minOrderValue?: number;   // minimum cart total
+  minQty?: number; // minimum cart quantity
+  minOrderValue?: number; // minimum cart total
 }
 
 /** Where to apply the discount when it triggers */
 export type POSRewardApplyOn = 'order' | 'cheapest' | 'most_expensive';
 
 export interface POSDiscountReward {
-  discountType:  'pct' | 'fixed';
+  discountType: 'pct' | 'fixed';
   discountValue: number;
-  applyOn:       POSRewardApplyOn;
-  maxDiscount?:  number;   // hard cap on the naira saving
+  applyOn: POSRewardApplyOn;
+  maxDiscount?: number; // hard cap on the naira saving
 }
 
 // ── Applicable items (products / categories / brands) ─────────────────────────
 export interface POSApplicableItems {
-  products?:   string[];  // product _id values
-  categories?: string[];  // category _id values (top-level or sub)
-  brands?:     string[];  // brand _id values
+  products?: string[]; // product _id values
+  categories?: string[]; // category _id values (top-level or sub)
+  brands?: string[]; // brand _id values
 }
 
 // ── Coupons ────────────────────────────────────────────────────────────────────
@@ -132,12 +144,19 @@ export interface POSBuyXGetY {
   name: string;
   description?: string;
   pricelistIds?: string[];
-  buyProducts?: string[];   // product _ids that must be in cart (empty = any product)
-  getProducts?: string[];   // product _ids that receive the discount (empty = same as buy)
+  /** Rules: which products/categories/brands the customer must buy (empty = any product). */
+  applyTo?: POSApplicableItems;
+  /** Rewards: which products/categories/brands get the discount (empty = same as applyTo). */
+  rewardApplyTo?: POSApplicableItems;
+  /** legacy product-only buy/reward filters — kept for backward compat */
+  buyProducts?: string[];
+  getProducts?: string[];
   availableOn?: POSDiscountAvailability;
   buyQty: number;
   getQty: number;
   getDiscountPct: number;
+  rules?: POSDiscountRules;
+  /** legacy — kept for backward compat */
   minOrderValue?: number;
   maxUsage?: number;
   usageCount?: number;
@@ -151,23 +170,23 @@ export interface POSBuyXGetY {
 // ── Loyalty Card Tier ─────────────────────────────────────────────────────────
 export interface POSLoyaltyTier {
   _id?: string;
-  name: string;           // e.g. "Silver", "Gold"
-  minPoints: number;      // points needed to reach this tier
-  multiplier: number;     // earn rate multiplier at this tier
-  color: string;          // display colour
-  benefits?: string;      // freeform description of tier perks
+  name: string; // e.g. "Silver", "Gold"
+  minPoints: number; // points needed to reach this tier
+  multiplier: number; // earn rate multiplier at this tier
+  color: string; // display colour
+  benefits?: string; // freeform description of tier perks
 }
 
 // ── Loyalty Card Config ────────────────────────────────────────────────────────
 export interface POSLoyaltyCardConfig {
   enabled: boolean;
-  cardPrefix: string;       // e.g. "DH-" → cards like DH-0001
-  earnMultiplier: number;   // base card-holder multiplier (overridden by tier if set)
-  welcomeBonus: number;     // points given on first purchase
-  pointsExpiry: number;          // days until points expire (0 = never)
-  minRedemption: number;         // minimum points balance needed before customer can redeem
-  doublePointsDays?: number[];   // 0=Sun…6=Sat, days earning is multiplied
-  bonusMultiplierDays?: number;  // multiplier applied on doublePointsDays
+  cardPrefix: string; // e.g. "DH-" → cards like DH-0001
+  earnMultiplier: number; // base card-holder multiplier (overridden by tier if set)
+  welcomeBonus: number; // points given on first purchase
+  pointsExpiry: number; // days until points expire (0 = never)
+  minRedemption: number; // minimum points balance needed before customer can redeem
+  doublePointsDays?: number[]; // 0=Sun…6=Sat, days earning is multiplied
+  bonusMultiplierDays?: number; // multiplier applied on doublePointsDays
   tiers?: POSLoyaltyTier[];
 }
 
@@ -176,17 +195,79 @@ export interface POSNextOrderCouponConfig {
   enabled: boolean;
   type: 'pct' | 'fixed';
   value: number;
-  validDays: number;            // how long the generated coupon lasts
-  minOrderForCoupon: number;    // min purchase amount to receive a next-order coupon
-  minRedeemOrder: number;       // min order value required to USE the coupon
-  codePrefix: string;           // e.g. "NOC-"
-  color: string;                // coupon strip colour
-  oneUse: boolean;              // generated coupon is single-use (default true)
+  validDays: number; // how long the generated coupon lasts
+  minOrderForCoupon: number; // min purchase amount to receive a next-order coupon
+  minRedeemOrder: number; // min order value required to USE the coupon
+  codePrefix: string; // e.g. "NOC-"
+  color: string; // coupon strip colour
+  oneUse: boolean; // generated coupon is single-use (default true)
   availableOn: POSDiscountAvailability;
 }
 
 export interface POSSettings {
   allowOverselling?: boolean;
+  isBarRestaurant?: boolean;
+  autoValidateOrder?: boolean;
+  cashRounding?: boolean;
+  maxDifferenceEnabled?: boolean;
+  tipsEnabled?: boolean;
+  loginWithEmployees?: boolean;
+  largeScrollbars?: boolean;
+  shareOpenOrders?: boolean;
+  hidePictures?: boolean;
+  showProductImages?: boolean;
+  showCategoryImages?: boolean;
+  restrictCategories?: boolean;
+  showMarginsAndCosts?: boolean;
+  sortCartByCategory?: boolean;
+  flexiblePricelists?: boolean;
+  priceControl?: boolean;
+  productPriceDisplay?: 'tax_excluded' | 'tax_included';
+  lineDiscounts?: boolean;
+  globalDiscounts?: boolean;
+  promotionsEnabled?: boolean;
+  maxDiscountPct?: number;
+  requireOpeningCash?: boolean;
+  enabledPaymentMethods?: string[];
+  receiptHeader?: string;
+  receiptFooter?: string;
+  showTaxOnReceipt?: boolean;
+  taxRate?: number;
+  autoPrintReceipt?: boolean;
+  receiptCopies?: number;
+  smsReceiptEnabled?: boolean;
+  selfServiceInvoicing?: boolean;
+  basicReceipt?: boolean;
+  whatsappReceiptEnabled?: boolean;
+  enabledPaymentTerminals?: string[];
+  eposPrinter?: boolean;
+  customerDisplay?: boolean;
+  iotBox?: boolean;
+  preparationPrinters?: boolean;
+  preparationDisplay?: boolean;
+  internalNotes?: boolean;
+  allowShipLater?: boolean;
+  barcodes?: boolean;
+  requireCustomer?: boolean;
+  showLoyaltyBalanceAtCheckout?: boolean;
+  customerPhoneSearch?: boolean;
+  allowOrderNotes?: boolean;
+  holdOrders?: boolean;
+  splitPayments?: boolean;
+  minimumOrderAmount?: number;
+  allowRefunds?: boolean;
+  refundWindowDays?: number;
+  requireManagerApprovalForRefund?: boolean;
+  defaultRestockOnRefund?: boolean;
+  sessionTimeoutMins?: number;
+  requirePINOnUnlock?: boolean;
+  requireManagerPINForDiscount?: boolean;
+  currencySymbol?: string;
+  currencyPosition?: 'before' | 'after';
+  decimalPlaces?: number;
+  showCashierName?: boolean;
+  showOrderNumber?: boolean;
+  receiptNumberPrefix?: string;
   loyaltyEnabled?: boolean;
   loyaltyPointsPerNaira?: number;
   loyaltyPointsValue?: number;
@@ -242,7 +323,8 @@ export interface POSProduct {
     name: string;
     images?: { url: string; thumbnail?: string }[];
     type?: string;
-    brand?: { name: string };
+    brand?: { _id: string; name: string };
+    category?: { _id: string; name: string };
   };
   vendor?: {
     _id: string;
@@ -290,25 +372,28 @@ export interface POSCartItem {
   name: string;
   variant: string;
   sku: string;
+  categoryId?: string; // product category _id (for BXGY/applyTo matching)
+  brandId?: string; // product brand _id (for BXGY/applyTo matching)
   image?: string;
   price: number;
   quantity: number;
   discount: number;
   stock: number;
   activeBundles?: POSBundleDeal[];
-  costPrice?: number;       // needed for markup_on_cost bundle computation
-  originalPrice?: number;   // pre-sale price, needed for no_discount bundle computation
+  costPrice?: number; // needed for markup_on_cost bundle computation
+  originalPrice?: number; // pre-sale price, needed for no_discount bundle computation
   /** Set on items added from a combo. Groups them visually in the cart. */
   comboRef?: {
     comboId: string;
     comboName: string;
-    instanceId: string;   // unique per "Add Combo" action — prevents key collision
+    instanceId: string; // unique per "Add Combo" action — prevents key collision
   };
   /** Set on items auto-added by a Buy X Get Y reward. Links the item to the reward for lifecycle management. */
   bxgyRef?: {
     rewardId: string;
-    discPct: number;       // 100 = free, 50 = half-price, etc.
-    originalPrice: number; // unit price of the original paid item (for display as negative)
+    role: 'buy' | 'get';
+    discPct: number; // 100 = free, 50 = half-price, etc. (0 for buy items)
+    originalPrice: number; // unit price of the underlying product (for display)
     rewardName?: string;
     rewardColor?: string;
   };
@@ -336,6 +421,7 @@ export interface POSReceiptItem {
   priceAtPurchase: number;
   itemSubtotal: number;
   discountAmount: number;
+  bxgyRole?: 'buy' | 'get'; // so receipts can show GET items with a badge
 }
 
 export interface POSOrderRequest {
@@ -388,10 +474,33 @@ export interface POSSession {
   _id: string;
   tenant: string;
   terminalType?: 'retail' | 'wholesale';
-  openedBy: { _id: string; firstName: string; lastName: string; posName?: string; avatar?: string };
-  closedBy?: { _id: string; firstName: string; lastName: string; posName?: string };
-  activeCashier?: { _id: string; firstName: string; lastName: string; posName?: string; avatar?: string };
-  cashierLog: { cashier: string; startedAt: string; endedAt?: string }[];
+  openedBy: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    posName?: string;
+    avatar?: string;
+  };
+  closedBy?: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    posName?: string;
+  };
+  activeCashier?: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    posName?: string;
+    avatar?: string;
+  };
+  cashierLog: {
+    cashier:
+      | { _id: string; firstName: string; lastName: string; posName?: string }
+      | string;
+    startedAt: string;
+    endedAt?: string;
+  }[];
   cashMovements?: POSCashMovement[];
   status: 'open' | 'closed';
   openedAt: string;
@@ -439,9 +548,21 @@ export interface POSZReport {
 
 export interface POSDashboardData {
   currentSession: POSSession | null;
-  today: { totalSales: number; orderCount: number; breakdown: Record<string, { total: number; count: number }> };
-  yesterday: { totalSales: number; orderCount: number; breakdown: Record<string, { total: number; count: number }> };
-  thisMonth: { totalSales: number; orderCount: number; breakdown: Record<string, { total: number; count: number }> };
+  today: {
+    totalSales: number;
+    orderCount: number;
+    breakdown: Record<string, { total: number; count: number }>;
+  };
+  yesterday: {
+    totalSales: number;
+    orderCount: number;
+    breakdown: Record<string, { total: number; count: number }>;
+  };
+  thisMonth: {
+    totalSales: number;
+    orderCount: number;
+    breakdown: Record<string, { total: number; count: number }>;
+  };
   chartData: { date: string; sales: number; orders: number }[];
   recentOrders: POSRecentOrder[];
 }
@@ -458,7 +579,13 @@ export interface POSRecentOrder {
 
 export interface POSSessionInfo {
   currentSession: POSSession | null;
-  lastSession: { _id: string; closedAt: string; totalSales: number; orderCount: number; closedBy: { firstName: string; lastName: string; posName?: string } } | null;
+  lastSession: {
+    _id: string;
+    closedAt: string;
+    totalSales: number;
+    orderCount: number;
+    closedBy: { firstName: string; lastName: string; posName?: string };
+  } | null;
 }
 
 // ── Refund types (Odoo-style) ──────────────────────────────────────────────
@@ -478,7 +605,12 @@ export interface POSRefundRecord {
   items: POSRefundLineItem[];
   totalRefunded: number;
   reason?: string;
-  refundedBy?: { _id: string; firstName: string; lastName: string; posName?: string };
+  refundedBy?: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    posName?: string;
+  };
   refundedAt: string;
   paymentMethod?: string;
 }
@@ -488,7 +620,12 @@ export interface POSCashMovement {
   type: 'in' | 'out';
   amount: number;
   reason?: string;
-  performedBy?: { _id: string; firstName: string; lastName: string; posName?: string };
+  performedBy?: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    posName?: string;
+  };
   performedAt: string;
 }
 
@@ -556,7 +693,34 @@ export interface POSChoiceLine {
   items: POSComboLineItem[];
 }
 
-export type POSComboPriceMode = 'dynamic' | 'fixed' | 'markup_on_cost' | 'discount_off_selling';
+export interface POSNotification {
+  _id: string;
+  orderNumber: string;
+  placedAt: string;
+  total: number;
+  source: 'web' | 'app' | 'manual';
+  status: string;
+  customer: string;
+  itemCount: number;
+  items: { name: string; qty: number; subtotal: number }[];
+  seen?: boolean;
+}
+
+export interface POSShop {
+  _id: string;
+  name: string;
+  mode: 'retail' | 'wholesale';
+  color: string;
+  description: string;
+  active: boolean;
+  createdAt: string;
+}
+
+export type POSComboPriceMode =
+  | 'dynamic'
+  | 'fixed'
+  | 'markup_on_cost'
+  | 'discount_off_selling';
 
 export interface POSCombo {
   _id: string;

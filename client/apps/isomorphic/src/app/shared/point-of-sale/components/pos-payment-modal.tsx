@@ -256,7 +256,7 @@ function ReceiptScreen({
             display: 'flex',
             alignItems: 'center',
             gap: 12,
-            backgroundColor: '#16a34a',
+            backgroundColor: (order as any).isOffline ? '#b45309' : '#16a34a',
             padding: '12px 20px',
             flexShrink: 0,
           }}
@@ -276,11 +276,19 @@ function ReceiptScreen({
           </div>
           <div>
             <p style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>
-              Payment successful
+              {(order as any).isOffline
+                ? 'Recorded offline'
+                : 'Payment successful'}
             </p>
-            <p style={{ color: '#bbf7d0', fontSize: 12 }}>
+            <p
+              style={{
+                color: (order as any).isOffline ? '#fde68a' : '#bbf7d0',
+                fontSize: 12,
+              }}
+            >
               {formatCurrency(order.total)} &nbsp;·&nbsp;{' '}
               {METHOD_LABELS[order.paymentMethod] ?? order.paymentMethod}
+              {(order as any).isOffline && ' · will sync when online'}
             </p>
           </div>
         </div>
@@ -1294,6 +1302,7 @@ export default function POSPaymentModal() {
         items: orderItems,
         customer,
         paymentMethod,
+        total: effectiveTotal,
         amountTendered,
         splitPayments,
         discountType: effDiscType,
@@ -1436,10 +1445,12 @@ export default function POSPaymentModal() {
         {/* Payment method buttons */}
         <div className="flex-1 space-y-1.5 overflow-y-auto px-3 pt-3">
           {!isOnline && (
-            <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 mb-4">
-              <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+            <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+              <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-400" />
               <span className="font-medium">Offline Order</span>
-              <span className="text-amber-600">— will sync when connection returns</span>
+              <span className="text-amber-600">
+                — will sync when connection returns
+              </span>
             </div>
           )}
           {METHODS.filter((m) =>
@@ -1476,7 +1487,8 @@ export default function POSPaymentModal() {
                   {m.label}
                   {!isOnline && m.value !== 'cash' && (
                     <p className="mt-0.5 text-[11px] text-amber-600">
-                      Record only — no terminal. Verify with customer on reconnect.
+                      Record only — no terminal. Verify with customer on
+                      reconnect.
                     </p>
                   )}
                 </span>

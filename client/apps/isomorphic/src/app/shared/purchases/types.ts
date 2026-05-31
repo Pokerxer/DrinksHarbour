@@ -1,4 +1,11 @@
-export type POStatus = 'draft' | 'confirmed' | 'received' | 'billed' | 'cancel';
+export type POStatus =
+  | 'draft'
+  | 'confirmed'
+  | 'received'
+  | 'billed'
+  | 'cancel'
+  | 'validated'
+  | 'cancelled';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 export type BillStatus = 'draft' | 'posted' | 'paid' | 'cancelled';
 export type ReturnStatus = 'draft' | 'confirmed' | 'refunded' | 'cancelled';
@@ -196,22 +203,24 @@ export interface PurchaseAnalyticsSummary {
 }
 
 export const STATUS_BADGE: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-600',
-  rfq: 'bg-gray-100 text-gray-600',
-  confirmed: 'bg-blue-100 text-blue-700',
-  purchase: 'bg-blue-100 text-blue-700',
-  received: 'bg-green-100 text-green-700',
-  done: 'bg-green-100 text-green-700',
-  billed: 'bg-purple-100 text-purple-700',
-  cancel: 'bg-red-100 text-red-600',
-  locked: 'bg-yellow-100 text-yellow-700',
-  posted: 'bg-blue-100 text-blue-700',
-  paid: 'bg-green-100 text-green-700',
-  active: 'bg-green-100 text-green-700',
-  closed: 'bg-gray-100 text-gray-600',
-  pending: 'bg-yellow-100 text-yellow-700',
-  approved: 'bg-green-100 text-green-700',
-  rejected: 'bg-red-100 text-red-600',
+  draft: 'bg-gray-200 text-gray-700',
+  rfq: 'bg-gray-200 text-gray-700',
+  confirmed: 'bg-blue-200 text-blue-800',
+  purchase: 'bg-blue-200 text-blue-800',
+  received: 'bg-emerald-200 text-emerald-800',
+  done: 'bg-emerald-200 text-emerald-800',
+  billed: 'bg-violet-200 text-violet-800',
+  cancel: 'bg-red-200 text-red-700',
+  cancelled: 'bg-red-200 text-red-700',
+  validated: 'bg-emerald-200 text-emerald-800',
+  locked: 'bg-amber-200 text-amber-800',
+  posted: 'bg-blue-200 text-blue-800',
+  paid: 'bg-emerald-200 text-emerald-800',
+  active: 'bg-emerald-200 text-emerald-800',
+  closed: 'bg-gray-200 text-gray-700',
+  pending: 'bg-amber-200 text-amber-800',
+  approved: 'bg-emerald-200 text-emerald-800',
+  rejected: 'bg-red-200 text-red-700',
 };
 
 export function statusLabel(status: string): string {
@@ -223,6 +232,8 @@ export function statusLabel(status: string): string {
     done: 'Done',
     billed: 'Billed',
     cancel: 'Cancelled',
+    cancelled: 'Cancelled',
+    validated: 'Validated',
     posted: 'Posted',
     paid: 'Paid',
     active: 'Active',

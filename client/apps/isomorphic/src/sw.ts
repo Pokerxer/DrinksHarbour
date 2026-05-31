@@ -26,7 +26,16 @@ const serwist = new Serwist({
       handler: 'CacheFirst',
       options: {
         cacheName: 'pos-images',
-        expiration: { maxEntries: 200, maxAgeSeconds: 7 * 24 * 60 * 60 },
+        expiration: { maxEntries: 500, maxAgeSeconds: 7 * 24 * 60 * 60 },
+      },
+    },
+    {
+      matcher: ({ request }: { request: Request }) =>
+        request.destination === 'image',
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'pos-product-images',
+        expiration: { maxEntries: 500, maxAgeSeconds: 7 * 24 * 60 * 60 },
       },
     },
     ...defaultCache,

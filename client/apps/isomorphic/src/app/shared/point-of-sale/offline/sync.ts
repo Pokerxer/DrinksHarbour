@@ -7,64 +7,79 @@ export type SyncResult =
   | { ok: true; synced: number }
   | { ok: false; error: string };
 
+let _syncRunning = false;
+
 export async function runSyncEngine(token?: string): Promise<SyncResult> {
+  if (_syncRunning) return { ok: true, synced: 0 };
+  _syncRunning = true;
   let synced = 0;
-  const pending = await posDb.offlineQueue
-    .where('status')
-    .equals('pending')
-    .sortBy('createdAt');
 
-  for (const entry of pending) {
-    await posDb.offlineQueue.update(entry.id!, { status: 'syncing' });
-    const t = (entry.payload as any)._token ?? token ?? '';
+  try {
+    const pending = await posDb.offlineQueue
+      .where('status')
+      .equals('pending')
+      .sortBy('createdAt');
 
-    try {
-      if (entry.type === 'order') {
-        const { _token, ...body } = entry.payload as any;
-        const data = await posApi.createOrder(t, body);
-        if (data?.order) await posDb.orders.put(data.order);
-        await posDb.stockAdjust.where('queueId').equals(entry.id!).delete();
-        await posDb.offlineQueue.delete(entry.id!);
-        synced++;
-      } else if (entry.type === 'refund') {
-        const { _token, orderId, items, reason, refundPaymentMethod } =
-          entry.payload as any;
-        await posApi.refundOrder(t, orderId, items, reason, refundPaymentMethod);
-        await posDb.offlineQueue.delete(entry.id!);
-        synced++;
-      } else if (entry.type === 'void') {
-        const { _token, orderId, reason } = entry.payload as any;
-        await posApi.voidOrder(t, orderId, reason);
-        await posDb.offlineQueue.delete(entry.id!);
-        synced++;
-      }
-    } catch (err: any) {
-      const status = err?.response?.status ?? err?.status ?? 0;
-      const isConflict = status === 409 || status === 422;
-      const newRetries = (entry.retries ?? 0) + 1;
+    for (const entry of pending) {
+      await posDb.offlineQueue.update(entry.id!, { status: 'syncing' });
+      const t = (entry.payload as any)._token ?? token ?? '';
 
-      if (isConflict || newRetries >= 3) {
-        await posDb.offlineQueue.update(entry.id!, {
-          status: 'failed',
-          retries: newRetries,
-          errorMessage: err?.message ?? String(err),
-        });
-      } else {
-        await posDb.offlineQueue.update(entry.id!, {
-          status: 'pending',
-          retries: newRetries,
-        });
-        break;
+      try {
+        if (entry.type === 'order') {
+          const { _token, ...body } = entry.payload as any;
+          const data = await posApi.createOrder(t, body);
+          if (data?.order) await posDb.orders.put(data.order);
+          await posDb.stockAdjust.where('queueId').equals(entry.id!).delete();
+          await posDb.offlineQueue.delete(entry.id!);
+          synced++;
+        } else if (entry.type === 'refund') {
+          const { _token, orderId, items, reason, refundPaymentMethod } =
+            entry.payload as any;
+          await posApi.refundOrder(
+            t,
+            orderId,
+            items,
+            reason,
+            refundPaymentMethod
+          );
+          await posDb.offlineQueue.delete(entry.id!);
+          synced++;
+        } else if (entry.type === 'void') {
+          const { _token, orderId, reason } = entry.payload as any;
+          await posApi.voidOrder(t, orderId, reason);
+          await posDb.offlineQueue.delete(entry.id!);
+          synced++;
+        }
+      } catch (err: any) {
+        const status = err?.response?.status ?? err?.status ?? 0;
+        const isConflict = status === 409 || status === 422;
+        const newRetries = (entry.retries ?? 0) + 1;
+
+        if (isConflict || newRetries >= 3) {
+          await posDb.offlineQueue.update(entry.id!, {
+            status: 'failed',
+            retries: newRetries,
+            errorMessage: err?.message ?? String(err),
+          });
+        } else {
+          await posDb.offlineQueue.update(entry.id!, {
+            status: 'pending',
+            retries: newRetries,
+          });
+          break;
+        }
       }
     }
-  }
 
-  if (typeof navigator !== 'undefined' && navigator.onLine && token) {
-    try {
-      await getProducts(token);
-    } catch {
-      // best-effort refresh
+    if (typeof navigator !== 'undefined' && navigator.onLine && token) {
+      try {
+        await getProducts(token);
+      } catch {
+        // best-effort refresh
+      }
     }
+  } finally {
+    _syncRunning = false;
   }
 
   return { ok: true, synced };

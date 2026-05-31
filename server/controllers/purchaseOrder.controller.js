@@ -143,7 +143,7 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
   }
 
   const {
-    poNumber,
+    poNumber: poNumberRaw,
     vendor,
     vendorName,
     vendorReference,
@@ -165,17 +165,27 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
   } = req.body;
 
   // Validate required fields
-  if (!poNumber || !vendorName || !items || !Array.isArray(items)) {
+  if (!vendorName || !items || !Array.isArray(items)) {
     throw new ValidationError("Required fields missing");
   }
 
-  // Validate items have subProductId
+  // Auto-generate poNumber if not provided
+  let poNumber = poNumberRaw;
+  if (!poNumber) {
+    const rfqCount = await PurchaseOrder.countDocuments({ tenant: tenantId });
+    poNumber = `RFQ-${String(rfqCount + 1).padStart(6, "0")}`;
+  }
+
+  // Validate items have subProductId and normalise frontend field names → schema names
   for (const item of items) {
     if (!item.subProductId) {
       throw new ValidationError(
         "Each item must have subProductId",
       );
     }
+    if (!item.subProductName && item.productName) item.subProductName = item.productName;
+    if (item.unitCost === undefined || item.unitCost === null) item.unitCost = item.unitPrice ?? 0;
+    if (item.packagingQty === undefined || item.packagingQty === null) item.packagingQty = item.packSize ?? 1;
   }
 
   // Validate subProducts exist in tenant's catalog
@@ -199,8 +209,7 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
     notes,
     project,
     createdBy: userId,
-    // Auto-confirm POs for faster workflow
-    status: "confirmed",
+    status: ["draft", "confirmed"].includes(req.body.status) ? req.body.status : "draft",
     // RFQ specific
     type: type || "po",
     rfqStatus: rfqStatus || (type === "rfq" ? "draft" : undefined),
@@ -299,7 +308,7 @@ const updatePurchaseOrder = asyncHandler(async (req, res) => {
   if (!po) throw new NotFoundError("Purchase Order not found");
 
   if (po.isLocked) throw new ForbiddenError("Purchase Order is locked and cannot be edited");
-  if (po.status === "done" || po.status === "cancel") {
+  if (po.status === "done" || po.status === "cancelled") {
     throw new ForbiddenError("Cannot edit a locked or cancelled Purchase Order");
   }
 
@@ -341,7 +350,10 @@ const updatePurchaseOrder = asyncHandler(async (req, res) => {
 // @access  Private (Tenant admin)
 const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { status, receivedItems } = req.body;
+  const rawStatus = req.body.status;
+  // Accept legacy frontend aliases
+  const status = rawStatus === "cancel" ? "cancelled" : rawStatus === "done" ? "validated" : rawStatus;
+  const { receivedItems } = req.body;
   const tenantId = await resolveTenantId(req);
 
   const purchaseOrder = await PurchaseOrder.findOne({
@@ -388,7 +400,7 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
         (i) => i._id.toString() === receivedItem.itemId,
       );
       if (item) {
-        item.receivedQty = receivedItem.receivedQty;
+        item.receivedQty = Math.max(0, receivedItem.receivedQty ?? 0);
       }
     }
   }
@@ -449,29 +461,23 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
       }
       
       try {
-        const movementData = {
-          subProductId: item.subProductId,
-          sizeId: item.sizeId,
-          type: 'received',
-          quantity: quantityToAdd,
-          unitCost: item.unitCost,
-          relatedPurchaseOrder: purchaseOrder._id,
-          reference: purchaseOrder.poNumber,
-          referenceType: 'purchase_order',
-          supplierId: purchaseOrder.vendor,
-          supplierName: purchaseOrder.vendorName,
-        };
-        
-        if (defaultWarehouseId) {
-          movementData.warehouseId = defaultWarehouseId;
-        }
-        
-        await inventoryService.createMovement(
-          movementData,
-          req.user?._id || purchaseOrder.createdBy,
-          tenantId
+        await inventoryService.recordReceived(
+          item.subProductId,
+          tenantId,
+          {
+            quantity: quantityToAdd,
+            unitCost: item.unitCost ?? 0,
+            reference: purchaseOrder.poNumber,
+            referenceType: 'purchase_order',
+            supplierId: purchaseOrder.vendor,
+            supplierName: purchaseOrder.vendorName,
+            sizeId: item.sizeId,
+            sizeName: item.sizeName,
+            reason: `PO Receipt: ${purchaseOrder.poNumber}`,
+          },
+          req.user?._id || purchaseOrder.createdBy
         );
-        
+
         console.log(`   ✅ Inventory added successfully`);
         successCount++;
       } catch (inventoryError) {
@@ -855,7 +861,7 @@ const getPurchaseAnalyticsByVendor = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    data: po,
+    data: result,
   });
 });
 
