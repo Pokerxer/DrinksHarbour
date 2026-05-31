@@ -1,12 +1,25 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
-import { PiCheck, PiFloppyDisk } from 'react-icons/pi';
+import { PiArrowLeft, PiCheck, PiWarning } from 'react-icons/pi';
+import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { purchaseOrderService } from '@/services/purchaseOrder.service';
+import type { POItem } from '@/services/purchaseOrder.service';
+
+type BillableLine = {
+  subProductName: string;
+  sku?: string;
+  quantity: number;
+  unitPrice: number;
+  taxRate: number;
+  amount: number;
+  tax: number;
+  total: number;
+};
 
 export default function PurchasesBillCreate() {
   const router = useRouter();
@@ -15,16 +28,76 @@ export default function PurchasesBillCreate() {
   const searchParams = useSearchParams();
   const poId = searchParams.get('po') ?? '';
 
-  const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
+  const [po, setPo] = useState<
+    | Awaited<ReturnType<typeof purchaseOrderService.getPurchaseOrder>>['data']
+    | null
+  >(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [billDate, setBillDate] = useState(
+    new Date().toISOString().split('T')[0]
+  );
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
-  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!token || !poId) return;
+    setLoading(true);
+    try {
+      const res = await purchaseOrderService.getPurchaseOrder(poId, token);
+      setPo(res.data);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load PO');
+    } finally {
+      setLoading(false);
+    }
+  }, [poId, token]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const lines: BillableLine[] = (po?.items ?? [])
+    .filter((item: POItem) => (item.receivedQty ?? 0) > 0)
+    .map((item: POItem) => {
+      const qty = item.receivedQty ?? 0;
+      const unitPrice = (item as any).unitCost ?? item.unitPrice ?? 0;
+      const taxRate = item.taxRate ?? 0;
+      const amount = qty * unitPrice;
+      const tax = amount * (taxRate / 100);
+      return {
+        subProductName: item.productName,
+        sku: item.sku,
+        quantity: qty,
+        unitPrice,
+        taxRate,
+        amount,
+        tax,
+        total: amount + tax,
+      };
+    });
+
+  const subtotal = lines.reduce((s, l) => s + l.amount, 0);
+  const taxTotal = lines.reduce((s, l) => s + l.tax, 0);
+  const grandTotal = subtotal + taxTotal;
 
   async function handleCreate() {
-    if (!poId) { toast.error('No purchase order selected. Navigate here from a PO.'); return; }
+    if (!poId) {
+      toast.error('No purchase order selected');
+      return;
+    }
+    if (lines.length === 0) {
+      toast.error('No received items to bill');
+      return;
+    }
     setSaving(true);
     try {
-      const res = await purchaseOrderService.createBillFromPO(poId, token, { billDate, dueDate: dueDate || undefined, notes, billControlPolicy: 'received' });
+      const res = await purchaseOrderService.createBillFromPO(poId, token, {
+        billDate,
+        dueDate: dueDate || undefined,
+        notes: notes || undefined,
+        billControlPolicy: 'received',
+      });
       toast.success('Vendor bill created');
       router.push(routes.eCommerce.vendorBillDetails(res.data._id));
     } catch (err: unknown) {
@@ -34,39 +107,233 @@ export default function PurchasesBillCreate() {
     }
   }
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20 text-sm text-gray-400">
+        Loading…
+      </div>
+    );
+  }
+
   return (
     <div>
-      <h1 className="mb-5 text-xl font-semibold text-gray-900">Create Vendor Bill</h1>
+      {/* Breadcrumb */}
+      <div className="mb-4 flex items-center gap-2 text-sm text-gray-500">
+        <Link
+          href={routes.eCommerce.vendorBills}
+          className="flex items-center gap-1 hover:text-gray-700"
+        >
+          <PiArrowLeft className="h-4 w-4" /> Vendor Bills
+        </Link>
+        <span>/</span>
+        <span className="font-medium text-gray-900">New Bill</span>
+      </div>
+
+      <div className="mb-6">
+        <h1 className="text-xl font-semibold text-gray-900">
+          Create Vendor Bill
+        </h1>
+      </div>
+
+      {/* No PO warning */}
       {!poId && (
-        <div className="mb-4 rounded-xl border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
-          Navigate here from a received Purchase Order to auto-populate bill lines.
+        <div className="mb-5 flex items-start gap-3 rounded-xl border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+          <PiWarning className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Navigate here from a received Purchase Order. Append{' '}
+            <code className="font-mono">?po=&lt;id&gt;</code> to the URL.
+          </span>
         </div>
       )}
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-600">Bill Date</label>
-            <input type="date" value={billDate} onChange={(e) => setBillDate(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20" />
+
+      {po && (
+        <div className="space-y-5">
+          {/* PO summary cards */}
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            {[
+              { label: 'Purchase Order', value: po.poNumber },
+              { label: 'Vendor', value: po.vendorName ?? '—' },
+              { label: 'Currency', value: po.currency ?? 'NGN' },
+              { label: 'PO Status', value: po.status ?? '—' },
+            ].map(({ label, value }) => (
+              <div
+                key={label}
+                className="rounded-xl border border-gray-200 bg-white p-4"
+              >
+                <p className="text-xs text-gray-500">{label}</p>
+                <p className="mt-0.5 truncate font-medium capitalize text-gray-900">
+                  {value}
+                </p>
+              </div>
+            ))}
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-600">Due Date</label>
-            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20" />
+
+          {/* Bill lines preview */}
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+            <div className="border-b border-gray-100 px-5 py-3">
+              <h2 className="text-sm font-semibold text-gray-700">
+                Bill Lines — Received Quantities
+              </h2>
+              <p className="mt-0.5 text-xs text-gray-400">
+                Only items with a received quantity are billable.
+              </p>
+            </div>
+
+            {lines.length === 0 ? (
+              <div className="flex items-center gap-3 px-5 py-8 text-sm text-amber-700">
+                <PiWarning className="h-5 w-5 shrink-0 text-amber-500" />
+                No received items on this PO. Receive goods before creating a
+                bill.
+              </div>
+            ) : (
+              <>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50">
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                        Product
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                        Qty
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                        Unit Cost
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                        Tax %
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                        Tax
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                        Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {lines.map((line, i) => (
+                      <tr key={i} className="hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-gray-900">
+                            {line.subProductName}
+                          </p>
+                          {line.sku && (
+                            <p className="text-xs text-gray-400">{line.sku}</p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-700">
+                          {line.quantity}
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-700">
+                          {po.currency} {line.unitPrice.toFixed(2)}
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-500">
+                          {line.taxRate}%
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-500">
+                          {po.currency} {line.tax.toFixed(2)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-gray-900">
+                          {po.currency} {line.total.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Totals */}
+                <div className="border-t border-gray-100 bg-gray-50 px-5 py-4">
+                  <div className="ml-auto max-w-xs space-y-1.5 text-sm">
+                    <div className="flex justify-between text-gray-600">
+                      <span>Subtotal</span>
+                      <span>
+                        {po.currency} {subtotal.toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-gray-600">
+                      <span>Tax</span>
+                      <span>
+                        {po.currency} {taxTotal.toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-t border-gray-200 pt-2 text-base font-bold text-gray-900">
+                      <span>Total</span>
+                      <span>
+                        {po.currency} {grandTotal.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
-          <div className="sm:col-span-2">
-            <label className="mb-1 block text-xs font-medium text-gray-600">Notes</label>
-            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20" />
+
+          {/* Bill metadata */}
+          <div className="rounded-xl border border-gray-200 bg-white p-5">
+            <h2 className="mb-4 text-sm font-semibold text-gray-700">
+              Bill Details
+            </h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Bill Date *
+                </label>
+                <input
+                  type="date"
+                  value={billDate}
+                  onChange={(e) => setBillDate(e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Due Date
+                </label>
+                <input
+                  type="date"
+                  value={dueDate}
+                  min={billDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Notes
+                </label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={2}
+                  placeholder="Internal notes for this bill…"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center justify-end gap-3">
+            <Link
+              href={routes.eCommerce.vendorBills}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </Link>
+            <button
+              type="button"
+              onClick={handleCreate}
+              disabled={saving || lines.length === 0}
+              className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-5 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
+            >
+              <PiCheck className="h-4 w-4" />
+              {saving
+                ? 'Creating…'
+                : `Create Bill · ${po.currency} ${grandTotal.toFixed(2)}`}
+            </button>
           </div>
         </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={handleCreate} disabled={saving || !poId}
-            className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50">
-            <PiCheck className="h-4 w-4" />{saving ? 'Creating…' : 'Create Bill'}
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
