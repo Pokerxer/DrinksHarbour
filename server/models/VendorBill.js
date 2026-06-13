@@ -14,7 +14,6 @@ const VendorBillSchema = new Schema(
     billNumber: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
     },
     vendor: {
@@ -204,7 +203,8 @@ VendorBillSchema.virtual("remainingAmount").get(function () {
 });
 
 // Indexes
-VendorBillSchema.index({ tenant: 1, billNumber: 1 });
+// Numbers are generated per-tenant, so uniqueness must be scoped per-tenant too
+VendorBillSchema.index({ tenant: 1, billNumber: 1 }, { unique: true });
 VendorBillSchema.index({ tenant: 1, vendor: 1 });
 VendorBillSchema.index({ tenant: 1, purchaseOrder: 1 });
 VendorBillSchema.index({ tenant: 1, status: 1 });

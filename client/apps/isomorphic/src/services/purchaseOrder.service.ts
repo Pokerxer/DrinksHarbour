@@ -36,6 +36,8 @@ export interface PurchaseOrder {
   // Agreement link
   purchaseAgreement?: string;
   agreementType?: 'blanket_order' | 'call_for_tender' | 'none';
+  // Billing policy: bill on ordered or received quantities
+  billControlPolicy?: 'ordered' | 'received';
 }
 
 export interface VendorResponse {
@@ -59,6 +61,7 @@ export interface VendorResponse {
 
 export interface POItem {
   subProductId: string;
+  subProductName?: string;
   productName: string;
   sku: string;
   size?: string;
@@ -68,6 +71,7 @@ export interface POItem {
   packSize: number;
   packQty: number;
   unitPrice: number;
+  unitCost?: number;
   packPrice: number;
   receivedQty: number;
   type: string;
@@ -76,6 +80,15 @@ export interface POItem {
   packaging?: string;
   taxRate?: number;
   totalCost?: number;
+}
+
+export interface PurchaseSettings {
+  requirePOApproval: boolean;
+  lockConfirmedOrders: boolean;
+  defaultBillControlPolicy: 'ordered' | 'received';
+  rfqValidityDays: number;
+  defaultCurrency: string;
+  defaultLeadTimeDays: number;
 }
 
 export interface CreatePOResponse {
@@ -423,6 +436,44 @@ export const purchaseOrderService = {
       throw new Error(error.message || 'Failed to return purchase order items');
     }
 
+    return response.json();
+  },
+
+  async getPurchaseSettings(
+    token: string
+  ): Promise<{
+    success: boolean;
+    data: { purchaseSettings: PurchaseSettings };
+  }> {
+    const response = await fetch(`${API_URL}/api/purchase-orders/settings`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to fetch purchase settings');
+    }
+    return response.json();
+  },
+
+  async updatePurchaseSettings(
+    token: string,
+    purchaseSettings: Partial<PurchaseSettings>
+  ): Promise<{
+    success: boolean;
+    data: { purchaseSettings: PurchaseSettings };
+  }> {
+    const response = await fetch(`${API_URL}/api/purchase-orders/settings`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ purchaseSettings }),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to update purchase settings');
+    }
     return response.json();
   },
 

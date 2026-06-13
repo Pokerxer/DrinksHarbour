@@ -239,6 +239,30 @@ const tenantSchema = new Schema(
     ],
 
     // ────────────────────────────────────────────────
+    // Purchase Settings
+    // ────────────────────────────────────────────────
+    purchaseSettings: {
+      // When false, POs skip the approval step and can be confirmed directly
+      requirePOApproval: { type: Boolean, default: true },
+      // Auto-lock POs against edits once confirmed
+      lockConfirmedOrders: { type: Boolean, default: false },
+      // Default bill control policy for new POs (overridable per bill)
+      defaultBillControlPolicy: {
+        type: String,
+        enum: ['ordered', 'received'],
+        default: 'received',
+      },
+      // Default quotation validity window; 0 disables the default
+      rfqValidityDays: { type: Number, min: 0, max: 365, default: 30 },
+      defaultCurrency: {
+        type: String,
+        enum: ['NGN', 'USD', 'EUR', 'GBP'],
+        default: 'NGN',
+      },
+      defaultLeadTimeDays: { type: Number, min: 0, max: 365, default: 7 },
+    },
+
+    // ────────────────────────────────────────────────
     // POS Settings
     // ────────────────────────────────────────────────
     posSettings: {

@@ -82,13 +82,16 @@ class PurchaseAgreementService {
     };
   }
 
-  async getAgreements(token: string, params?: {
-    status?: string;
-    type?: string;
-    vendor?: string;
-    page?: number;
-    limit?: number;
-  }): Promise<ListResponse> {
+  async getAgreements(
+    token: string,
+    params?: {
+      status?: string;
+      type?: string;
+      vendor?: string;
+      page?: number;
+      limit?: number;
+    }
+  ): Promise<ListResponse> {
     const queryParams = new URLSearchParams();
     if (params?.status) queryParams.set('status', params.status);
     if (params?.type) queryParams.set('type', params.type);
@@ -103,15 +106,20 @@ class PurchaseAgreementService {
     return response.json();
   }
 
-  async getAgreement(id: string, token: string): Promise<{ success: boolean; data: PurchaseAgreement }> {
-    const response = await fetch(
-      `${API_URL}/api/purchase-agreements/${id}`,
-      { headers: this.getHeaders(token) }
-    );
+  async getAgreement(
+    id: string,
+    token: string
+  ): Promise<{ success: boolean; data: PurchaseAgreement }> {
+    const response = await fetch(`${API_URL}/api/purchase-agreements/${id}`, {
+      headers: this.getHeaders(token),
+    });
     return response.json();
   }
 
-  async createAgreement(data: Partial<PurchaseAgreement>, token: string): Promise<CreateResponse> {
+  async createAgreement(
+    data: Partial<PurchaseAgreement>,
+    token: string
+  ): Promise<CreateResponse> {
     const response = await fetch(`${API_URL}/api/purchase-agreements`, {
       method: 'POST',
       headers: this.getHeaders(token),
@@ -120,7 +128,11 @@ class PurchaseAgreementService {
     return response.json();
   }
 
-  async updateAgreement(id: string, data: Partial<PurchaseAgreement>, token: string): Promise<CreateResponse> {
+  async updateAgreement(
+    id: string,
+    data: Partial<PurchaseAgreement>,
+    token: string
+  ): Promise<CreateResponse> {
     const response = await fetch(`${API_URL}/api/purchase-agreements/${id}`, {
       method: 'PATCH',
       headers: this.getHeaders(token),
@@ -129,7 +141,10 @@ class PurchaseAgreementService {
     return response.json();
   }
 
-  async deleteAgreement(id: string, token: string): Promise<{ success: boolean; message: string }> {
+  async deleteAgreement(
+    id: string,
+    token: string
+  ): Promise<{ success: boolean; message: string }> {
     const response = await fetch(`${API_URL}/api/purchase-agreements/${id}`, {
       method: 'DELETE',
       headers: this.getHeaders(token),
@@ -138,42 +153,77 @@ class PurchaseAgreementService {
   }
 
   async activateAgreement(id: string, token: string): Promise<CreateResponse> {
-    const response = await fetch(`${API_URL}/api/purchase-agreements/${id}/activate`, {
-      method: 'POST',
-      headers: this.getHeaders(token),
-    });
+    const response = await fetch(
+      `${API_URL}/api/purchase-agreements/${id}/activate`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(token),
+      }
+    );
     return response.json();
   }
 
-  async addTenderResponse(id: string, data: any, token: string): Promise<CreateResponse> {
-    const response = await fetch(`${API_URL}/api/purchase-agreements/${id}/tender-response`, {
-      method: 'POST',
-      headers: this.getHeaders(token),
-      body: JSON.stringify(data),
-    });
+  async cancelAgreement(id: string, token: string): Promise<CreateResponse> {
+    const response = await fetch(
+      `${API_URL}/api/purchase-agreements/${id}/cancel`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(token),
+      }
+    );
     return response.json();
   }
 
-  async selectTenderWinner(id: string, data: { vendorIndex: number; vendorId?: string; notes?: string }, token: string): Promise<CreateResponse> {
-    const response = await fetch(`${API_URL}/api/purchase-agreements/${id}/select-winner`, {
-      method: 'POST',
-      headers: this.getHeaders(token),
-      body: JSON.stringify(data),
-    });
+  async addTenderResponse(
+    id: string,
+    data: any,
+    token: string
+  ): Promise<CreateResponse> {
+    const response = await fetch(
+      `${API_URL}/api/purchase-agreements/${id}/tender-response`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(token),
+        body: JSON.stringify(data),
+      }
+    );
     return response.json();
   }
 
-  async createPOFromAgreement(id: string, data: {
-    items: any[];
-    vendorReference?: string;
-    expectedArrival?: string;
-    notes?: string;
-  }, token: string): Promise<CreateResponse> {
-    const response = await fetch(`${API_URL}/api/purchase-agreements/${id}/create-po`, {
-      method: 'POST',
-      headers: this.getHeaders(token),
-      body: JSON.stringify(data),
-    });
+  async selectTenderWinner(
+    id: string,
+    data: { vendorIndex: number; vendorId?: string; notes?: string },
+    token: string
+  ): Promise<CreateResponse> {
+    const response = await fetch(
+      `${API_URL}/api/purchase-agreements/${id}/select-winner`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(token),
+        body: JSON.stringify(data),
+      }
+    );
+    return response.json();
+  }
+
+  async createPOFromAgreement(
+    id: string,
+    data: {
+      items: any[];
+      vendorReference?: string;
+      expectedArrival?: string;
+      notes?: string;
+    },
+    token: string
+  ): Promise<CreateResponse> {
+    const response = await fetch(
+      `${API_URL}/api/purchase-agreements/${id}/create-po`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(token),
+        body: JSON.stringify(data),
+      }
+    );
     return response.json();
   }
 }

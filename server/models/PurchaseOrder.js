@@ -14,7 +14,6 @@ const PurchaseOrderSchema = new Schema(
     poNumber: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
     },
     vendor: {
@@ -330,7 +329,8 @@ const PurchaseOrderSchema = new Schema(
 );
 
 // Indexes
-PurchaseOrderSchema.index({ tenant: 1, poNumber: 1 });
+// Numbers are generated per-tenant, so uniqueness must be scoped per-tenant too
+PurchaseOrderSchema.index({ tenant: 1, poNumber: 1 }, { unique: true });
 PurchaseOrderSchema.index({ tenant: 1, vendor: 1 });
 PurchaseOrderSchema.index({ tenant: 1, status: 1 });
 PurchaseOrderSchema.index({ confirmationDate: -1 });

@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { purchaseOrderService } from '@/services/purchaseOrder.service';
 import type { POItem } from '@/services/purchaseOrder.service';
+import BaseCurrencyEquivalent from './base-currency-equivalent';
 
 type BillableLine = {
   subProductName: string;
@@ -39,6 +40,10 @@ export default function PurchasesBillCreate() {
   );
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
+  // null until the user picks; falls back to the PO's own billing policy
+  const [policyOverride, setPolicyOverride] = useState<
+    'ordered' | 'received' | null
+  >(null);
 
   const load = useCallback(async () => {
     if (!token || !poId) return;
@@ -57,16 +62,23 @@ export default function PurchasesBillCreate() {
     load();
   }, [load]);
 
+  const policy = policyOverride ?? po?.billControlPolicy ?? 'received';
+  const poBillable =
+    !!po && ['confirmed', 'received', 'validated'].includes(po.status);
+
   const lines: BillableLine[] = (po?.items ?? [])
-    .filter((item: POItem) => (item.receivedQty ?? 0) > 0)
+    .filter((item: POItem) =>
+      policy === 'received' ? (item.receivedQty ?? 0) > 0 : item.quantity > 0
+    )
     .map((item: POItem) => {
-      const qty = item.receivedQty ?? 0;
-      const unitPrice = (item as any).unitCost ?? item.unitPrice ?? 0;
+      const qty =
+        policy === 'received' ? (item.receivedQty ?? 0) : item.quantity;
+      const unitPrice = item.unitCost ?? item.unitPrice ?? 0;
       const taxRate = item.taxRate ?? 0;
       const amount = qty * unitPrice;
       const tax = amount * (taxRate / 100);
       return {
-        subProductName: item.productName,
+        subProductName: item.subProductName ?? item.productName ?? item.sku,
         sku: item.sku,
         quantity: qty,
         unitPrice,
@@ -87,7 +99,11 @@ export default function PurchasesBillCreate() {
       return;
     }
     if (lines.length === 0) {
-      toast.error('No received items to bill');
+      toast.error(
+        policy === 'received'
+          ? 'No received items to bill — receive goods or switch to ordered quantities'
+          : 'No billable items on this PO'
+      );
       return;
     }
     setSaving(true);
@@ -96,7 +112,7 @@ export default function PurchasesBillCreate() {
         billDate,
         dueDate: dueDate || undefined,
         notes: notes || undefined,
-        billControlPolicy: 'received',
+        billControlPolicy: policy,
       });
       toast.success('Vendor bill created');
       router.push(routes.eCommerce.vendorBillDetails(res.data._id));
@@ -146,6 +162,22 @@ export default function PurchasesBillCreate() {
         </div>
       )}
 
+      {po && !poBillable && (
+        <div className="mb-5 flex items-start gap-3 rounded-xl border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+          <PiWarning className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            This purchase order is <strong>{po.status}</strong> — it must be
+            confirmed before it can be billed.{' '}
+            <Link
+              href={routes.eCommerce.purchaseDetails(po._id)}
+              className="font-medium underline"
+            >
+              Open {po.poNumber}
+            </Link>
+          </span>
+        </div>
+      )}
+
       {po && (
         <div className="space-y-5">
           {/* PO summary cards */}
@@ -170,20 +202,50 @@ export default function PurchasesBillCreate() {
 
           {/* Bill lines preview */}
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-            <div className="border-b border-gray-100 px-5 py-3">
-              <h2 className="text-sm font-semibold text-gray-700">
-                Bill Lines — Received Quantities
-              </h2>
-              <p className="mt-0.5 text-xs text-gray-400">
-                Only items with a received quantity are billable.
-              </p>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-5 py-3">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-700">
+                  Bill Lines —{' '}
+                  {policy === 'received'
+                    ? 'Received Quantities'
+                    : 'Ordered Quantities'}
+                </h2>
+                <p className="mt-0.5 text-xs text-gray-400">
+                  {policy === 'received'
+                    ? 'Bills what has actually been received so far.'
+                    : 'Bills the full ordered quantities, even before receipt.'}
+                </p>
+              </div>
+              <div className="flex rounded-lg border border-gray-200 p-0.5 text-xs font-medium">
+                {(['received', 'ordered'] as const).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPolicyOverride(p)}
+                    className={`rounded-md px-3 py-1.5 capitalize transition-colors ${
+                      policy === p
+                        ? 'bg-[#b20202] text-white'
+                        : 'text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {lines.length === 0 ? (
               <div className="flex items-center gap-3 px-5 py-8 text-sm text-amber-700">
                 <PiWarning className="h-5 w-5 shrink-0 text-amber-500" />
-                No received items on this PO. Receive goods before creating a
-                bill.
+                {policy === 'received' ? (
+                  <span>
+                    No received items on this PO yet. Receive goods first, or
+                    switch to <strong>ordered</strong> to bill the full order
+                    now.
+                  </span>
+                ) : (
+                  <span>No billable items on this purchase order.</span>
+                )}
               </div>
             ) : (
               <>
@@ -262,6 +324,12 @@ export default function PurchasesBillCreate() {
                         {po.currency} {grandTotal.toFixed(2)}
                       </span>
                     </div>
+                    <div className="flex justify-end">
+                      <BaseCurrencyEquivalent
+                        amount={grandTotal}
+                        currency={po.currency}
+                      />
+                    </div>
                   </div>
                 </div>
               </>
@@ -323,7 +391,7 @@ export default function PurchasesBillCreate() {
             <button
               type="button"
               onClick={handleCreate}
-              disabled={saving || lines.length === 0}
+              disabled={saving || lines.length === 0 || !poBillable}
               className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-5 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
             >
               <PiCheck className="h-4 w-4" />

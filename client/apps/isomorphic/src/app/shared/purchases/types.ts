@@ -9,7 +9,12 @@ export type POStatus =
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 export type BillStatus = 'draft' | 'posted' | 'paid' | 'cancelled';
 export type ReturnStatus = 'draft' | 'confirmed' | 'refunded' | 'cancelled';
-export type AgreementStatus = 'draft' | 'active' | 'closed' | 'cancelled';
+export type AgreementStatus =
+  | 'draft'
+  | 'active'
+  | 'expired'
+  | 'exhausted'
+  | 'cancelled';
 export type AgreementType = 'blanket_order' | 'call_for_tender' | 'none';
 
 export interface POItem {
@@ -44,6 +49,7 @@ export interface PurchaseOrder {
   items: POItem[];
   notes?: string;
   status: POStatus;
+  type?: 'rfq' | 'po';
   tenant?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -60,7 +66,9 @@ export interface PurchaseOrder {
   lockedBy?: string;
   lockedByName?: string;
   lockReason?: string;
-  purchaseAgreement?: string;
+  purchaseAgreement?:
+    | string
+    | { _id: string; agreementNumber?: string; name?: string; status?: string };
   agreementType?: AgreementType;
 }
 
@@ -137,23 +145,76 @@ export interface Vendor {
 export interface PurchaseAgreement {
   _id: string;
   agreementNumber: string;
-  vendor?: string;
-  vendorName?: string;
+  name: string;
   agreementType: AgreementType;
+  selectionType?: 'exclusive' | 'non_exclusive';
+  vendor?:
+    | string
+    | { _id: string; name?: string; email?: string; phone?: string };
+  vendorName?: string;
+  currency: string;
   status: AgreementStatus;
   startDate?: string;
   endDate?: string;
-  items?: AgreementItem[];
+  totalQuantity?: number;
+  consumedQuantity?: number;
+  totalAmount?: number;
+  consumedAmount?: number;
+  termsConditions?: string;
   notes?: string;
+  items?: AgreementItem[];
+  tenderResponses?: AgreementTenderResponse[];
+  purchaseOrders?: {
+    _id: string;
+    poNumber?: string;
+    status?: string;
+    totalAmount?: number;
+  }[];
+  approvedAt?: string;
   createdAt?: string;
 }
 
 export interface AgreementItem {
   subProductId: string;
-  productName: string;
-  quantity?: number;
-  unitPrice?: number;
+  subProductName: string;
+  sku?: string;
+  sizeId?: string;
+  sizeName?: string;
+  quantity: number;
+  consumedQuantity?: number;
+  unitPrice: number;
+  totalPrice?: number;
+  packaging?: string;
+  packagingQty?: number;
+  leadTimeDays?: number;
 }
+
+export interface AgreementTenderResponse {
+  vendorId?: string;
+  vendorName: string;
+  submittedAt?: string;
+  totalAmount?: number;
+  currency?: string;
+  notes?: string;
+  deliveryDate?: string;
+  validityDate?: string;
+  status?: 'pending' | 'accepted' | 'rejected' | 'withdrawn';
+}
+
+// statusLabel() maps draft → 'RFQ' for purchase orders; agreements need their own labels.
+export const AGREEMENT_STATUS_LABEL: Record<string, string> = {
+  draft: 'Draft',
+  active: 'Active',
+  expired: 'Expired',
+  exhausted: 'Exhausted',
+  cancelled: 'Cancelled',
+};
+
+export const AGREEMENT_TYPE_LABEL: Record<string, string> = {
+  blanket_order: 'Blanket Order',
+  call_for_tender: 'Call for Tender',
+  none: 'None',
+};
 
 export interface VendorPricelist {
   _id: string;
@@ -175,12 +236,28 @@ export interface PricelistItem {
 
 export interface UomConversion {
   _id: string;
-  fromUom: string;
-  toUom: string;
-  factor: number;
+  name: string;
+  fromUOM: string;
+  toUOM: string;
+  conversionFactor: number;
+  isActive: boolean;
   notes?: string;
   createdAt?: string;
 }
+
+// Must stay in sync with the UOM enum on the server (models/UOMConversion.js).
+export const UOMS = [
+  'Units',
+  'Cases',
+  'Packs',
+  'Bottles',
+  'Cartons',
+  'Boxes',
+  'Pallets',
+  'Liters',
+  'Milliliters',
+  'Gallons',
+] as const;
 
 export interface ExchangeRate {
   _id: string;
@@ -189,9 +266,22 @@ export interface ExchangeRate {
   rate: number;
   effectiveDate: string;
   isActive: boolean;
+  source?: 'manual' | 'live';
   notes?: string;
   createdAt?: string;
 }
+
+// Must stay in sync with the currency enums on the server
+// (models/ExchangeRate.js, models/PurchaseOrder.js, models/VendorBill.js).
+export const CURRENCIES = ['NGN', 'USD', 'EUR', 'GBP'] as const;
+export type Currency = (typeof CURRENCIES)[number];
+export const BASE_CURRENCY: Currency = 'NGN';
+export const CURRENCY_SYMBOLS: Record<string, string> = {
+  NGN: '₦',
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+};
 
 export interface PurchaseAnalyticsSummary {
   totalOrders: number;
@@ -217,6 +307,8 @@ export const STATUS_BADGE: Record<string, string> = {
   posted: 'bg-blue-200 text-blue-800',
   paid: 'bg-emerald-200 text-emerald-800',
   active: 'bg-emerald-200 text-emerald-800',
+  expired: 'bg-amber-200 text-amber-800',
+  exhausted: 'bg-violet-200 text-violet-800',
   closed: 'bg-gray-200 text-gray-700',
   pending: 'bg-amber-200 text-amber-800',
   approved: 'bg-emerald-200 text-emerald-800',

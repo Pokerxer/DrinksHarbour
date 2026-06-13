@@ -52,14 +52,24 @@ const createPurchaseAgreement = async (req, res) => {
   }
 };
 
+// Flip active agreements past their end date to expired before reads
+const expireStaleAgreements = async (tenantId) => {
+  await PurchaseAgreement.updateMany(
+    { tenant: tenantId, status: 'active', endDate: { $lt: new Date() } },
+    { status: 'expired' }
+  );
+};
+
 const getPurchaseAgreement = async (req, res) => {
   try {
     const { id } = req.params;
-    const agreement = await PurchaseAgreement.findById(id)
+    const tenantId = req.tenant._id;
+    await expireStaleAgreements(tenantId);
+    const agreement = await PurchaseAgreement.findOne({ _id: id, tenant: tenantId })
       .populate('vendor', 'name email phone')
       .populate('createdBy', 'name email')
       .populate('approvedBy', 'name email')
-      .populate('purchaseOrders', 'poNumber status confirmationDate')
+      .populate('purchaseOrders', 'poNumber status confirmationDate totalAmount')
       .populate('rfqs', 'poNumber rfqStatus');
 
     if (!agreement) {
@@ -77,6 +87,8 @@ const getPurchaseAgreements = async (req, res) => {
   try {
     const tenantId = req.tenant._id;
     const { status, type, vendor, page = 1, limit = 20 } = req.query;
+
+    await expireStaleAgreements(tenantId);
 
     const filter = { tenant: tenantId };
     if (status) filter.status = status;
@@ -237,7 +249,7 @@ const selectTenderWinner = async (req, res) => {
   try {
     const { id } = req.params;
     const tenantId = req.tenant._id;
-    const { vendorIndex, vendorId, notes } = req.body;
+    const { vendorIndex, vendorId, vendorName } = req.body;
 
     const agreement = await PurchaseAgreement.findOne({ _id: id, tenant: tenantId });
     if (!agreement) {
@@ -287,10 +299,40 @@ const createPOFromAgreement = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Agreement must be active to create PO' });
     }
 
+    if (agreement.endDate && new Date() > new Date(agreement.endDate)) {
+      agreement.status = 'expired';
+      await agreement.save();
+      return res.status(400).json({ success: false, message: 'Agreement has expired' });
+    }
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: 'At least one item is required' });
+    }
+
+    // Reject quantities that exceed what's left on the agreement line
+    for (const item of items) {
+      const agreementItem = agreement.items.find(i =>
+        i.subProductId.toString() === String(item.subProductId)
+      );
+      if (!agreementItem) {
+        return res.status(400).json({
+          success: false,
+          message: `Item ${item.subProductName || item.subProductId} is not on this agreement`,
+        });
+      }
+      const remaining = agreementItem.quantity - (agreementItem.consumedQuantity || 0);
+      if ((item.quantity || 0) <= 0 || item.quantity > remaining) {
+        return res.status(400).json({
+          success: false,
+          message: `Quantity for ${agreementItem.subProductName} must be between 1 and ${remaining} (remaining)`,
+        });
+      }
+    }
+
     const poNumber = await generatePONumber(tenantId);
 
     const poItems = items.map(item => {
-      const agreementItem = agreement.items.find(i => 
+      const agreementItem = agreement.items.find(i =>
         i.subProductId.toString() === item.subProductId.toString()
       );
       return {
@@ -328,6 +370,14 @@ const createPOFromAgreement = async (req, res) => {
     });
 
     agreement.purchaseOrders.push(purchaseOrder._id);
+    poItems.forEach(poItem => {
+      const agreementItem = agreement.items.find(i =>
+        i.subProductId.toString() === String(poItem.subProductId)
+      );
+      if (agreementItem) {
+        agreementItem.consumedQuantity = (agreementItem.consumedQuantity || 0) + poItem.quantity;
+      }
+    });
     agreement.consumedQuantity += poItems.reduce((sum, item) => sum + item.quantity, 0);
     agreement.consumedAmount += poItems.reduce((sum, item) => sum + (item.totalCost || 0), 0);
 
@@ -340,6 +390,31 @@ const createPOFromAgreement = async (req, res) => {
     res.status(201).json({ success: true, data: purchaseOrder });
   } catch (error) {
     console.error('Error creating PO from agreement:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Active agreements can't be edited, so cancellation needs its own action
+const cancelPurchaseAgreement = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tenantId = req.tenant._id;
+
+    const agreement = await PurchaseAgreement.findOne({ _id: id, tenant: tenantId });
+    if (!agreement) {
+      return res.status(404).json({ success: false, message: 'Purchase agreement not found' });
+    }
+
+    if (!['draft', 'active'].includes(agreement.status)) {
+      return res.status(400).json({ success: false, message: 'Only draft or active agreements can be cancelled' });
+    }
+
+    agreement.status = 'cancelled';
+    await agreement.save();
+
+    res.json({ success: true, data: agreement });
+  } catch (error) {
+    console.error('Error cancelling purchase agreement:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -358,6 +433,7 @@ module.exports = {
   updatePurchaseAgreement,
   deletePurchaseAgreement,
   activatePurchaseAgreement,
+  cancelPurchaseAgreement,
   addTenderResponse,
   selectTenderWinner,
   createPOFromAgreement,

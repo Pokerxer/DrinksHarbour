@@ -19,12 +19,12 @@ const uomConversionSchema = new Schema(
     fromUOM: {
       type: String,
       required: true,
-      enum: ['Units', 'Cases', 'Packs', 'Bottles', 'Cartons', 'Boxes', 'Cases', 'Pallets', 'Liters', 'Milliliters', 'Gallons'],
+      enum: ['Units', 'Cases', 'Packs', 'Bottles', 'Cartons', 'Boxes', 'Pallets', 'Liters', 'Milliliters', 'Gallons'],
     },
     toUOM: {
       type: String,
       required: true,
-      enum: ['Units', 'Cases', 'Packs', 'Bottles', 'Cartons', 'Boxes', 'Cases', 'Pallets', 'Liters', 'Milliliters', 'Gallons'],
+      enum: ['Units', 'Cases', 'Packs', 'Bottles', 'Cartons', 'Boxes', 'Pallets', 'Liters', 'Milliliters', 'Gallons'],
     },
     conversionFactor: {
       type: Number,

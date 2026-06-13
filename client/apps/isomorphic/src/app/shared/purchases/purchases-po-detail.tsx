@@ -14,12 +14,15 @@ import {
   PiLockOpen,
   PiPaperPlaneTilt,
   PiX,
+  PiPrinter,
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { purchaseOrderService } from '@/services/purchaseOrder.service';
 import type { PurchaseOrder } from './types';
 import { STATUS_BADGE, statusLabel } from './types';
+import { printPOInvoice } from '@/utils/purchaseInvoice';
+import BaseCurrencyEquivalent from './base-currency-equivalent';
 
 export default function PurchasesPODetail({ id }: { id: string }) {
   const { data: session } = useSession();
@@ -79,13 +82,25 @@ export default function PurchasesPODetail({ id }: { id: string }) {
     );
 
   const canEdit = po.status === 'draft' && !po.isLocked;
-  const canConfirm = po.status === 'draft';
+  // All POs (not RFQs) start as approvalStatus 'pending'; the server rejects
+  // draft → confirmed until approved, so pending drafts get Approve/Reject
+  // and only approved drafts get a plain Confirm.
+  const needsApproval =
+    po.status === 'draft' &&
+    po.type !== 'rfq' &&
+    (!po.approvalStatus || po.approvalStatus === 'pending');
+  const canConfirm =
+    po.status === 'draft' &&
+    (po.type === 'rfq' || po.approvalStatus === 'approved');
   const canReceive =
     po.status === 'confirmed' ||
     (po.status === 'received' &&
       po.items.some((i) => i.receivedQty < i.quantity));
   const canValidate = po.status === 'received';
+  // Confirmed POs can be billed on ordered quantities (policy chosen on the
+  // bill-create page); received/validated bill on received quantities.
   const canBill =
+    po.status === 'confirmed' ||
     po.status === 'received' ||
     po.status === 'validated' ||
     po.status === 'done';
@@ -126,15 +141,51 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                 <PiLock className="h-3 w-3" /> Locked
               </span>
             )}
+            {po.status === 'draft' &&
+              po.type !== 'rfq' &&
+              (!po.approvalStatus || po.approvalStatus === 'pending') && (
+                <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                  Awaiting Approval
+                </span>
+              )}
+            {po.approvalStatus === 'rejected' && (
+              <span className="inline-flex rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">
+                Rejected{po.approvalNotes ? ` — ${po.approvalNotes}` : ''}
+              </span>
+            )}
           </div>
           {po.vendorName && (
             <p className="mt-1 text-sm text-gray-500">
               Vendor: {po.vendorName}
             </p>
           )}
+          {typeof po.purchaseAgreement === 'object' &&
+            po.purchaseAgreement?._id && (
+              <p className="mt-1 text-sm text-gray-500">
+                From agreement:{' '}
+                <Link
+                  href={routes.eCommerce.purchaseAgreementDetails(
+                    po.purchaseAgreement._id
+                  )}
+                  className="font-medium text-[#b20202] hover:underline"
+                >
+                  {po.purchaseAgreement.agreementNumber ?? 'View agreement'}
+                </Link>
+                {po.purchaseAgreement.name
+                  ? ` · ${po.purchaseAgreement.name}`
+                  : ''}
+              </p>
+            )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => printPOInvoice(po)}
+            className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <PiPrinter className="h-4 w-4" /> Print / Download
+          </button>
           {canEdit && (
             <Link
               href={routes.eCommerce.editPurchase(po._id)}
@@ -142,6 +193,39 @@ export default function PurchasesPODetail({ id }: { id: string }) {
             >
               <PiPencilSimple className="h-4 w-4" /> Edit
             </Link>
+          )}
+          {needsApproval && (
+            <>
+              <button
+                type="button"
+                disabled={acting}
+                onClick={() =>
+                  act(
+                    () => purchaseOrderService.approvePO(id, token),
+                    'PO approved and confirmed'
+                  )
+                }
+                className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-3 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
+              >
+                <PiCheck className="h-4 w-4" /> Approve & Confirm
+              </button>
+              <button
+                type="button"
+                disabled={acting}
+                onClick={() => {
+                  if (
+                    confirm('Reject this purchase order? It will be cancelled.')
+                  )
+                    act(
+                      () => purchaseOrderService.rejectPO(id, token),
+                      'PO rejected'
+                    );
+                }}
+                className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+              >
+                <PiX className="h-4 w-4" /> Reject
+              </button>
+            </>
           )}
           {canConfirm && (
             <button
@@ -207,10 +291,7 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                 type="button"
                 disabled={acting}
                 onClick={() =>
-                  act(
-                    () => purchaseOrderService.lockPO(id, undefined, token),
-                    'PO locked'
-                  )
+                  act(() => purchaseOrderService.lockPO(id, token), 'PO locked')
                 }
                 className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               >
@@ -386,6 +467,13 @@ export default function PurchasesPODetail({ id }: { id: string }) {
               </td>
               <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">
                 {po.currency} {totalCost.toFixed(2)}
+                <div>
+                  <BaseCurrencyEquivalent
+                    amount={totalCost}
+                    currency={po.currency}
+                    className="font-normal"
+                  />
+                </div>
               </td>
             </tr>
           </tfoot>

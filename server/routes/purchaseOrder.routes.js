@@ -16,6 +16,8 @@ const {
   createBillFromPO,
   sendPOToVendor,
   returnPurchaseOrder,
+  getPurchaseSettings,
+  updatePurchaseSettings,
   // Analytics
   getPurchaseAnalyticsSummary,
   getPurchaseAnalyticsByVendor,
@@ -33,6 +35,10 @@ router.use(attachTenant);
 // Analytics routes MUST be before /:id to avoid Express treating "analytics" as an id param
 router.get("/analytics/summary", tenantAdminOrSuperAdmin, getPurchaseAnalyticsSummary);
 router.get("/analytics/by-vendor", tenantAdminOrSuperAdmin, getPurchaseAnalyticsByVendor);
+
+// Tenant purchase settings — also before /:id ("settings" is not an id)
+router.get("/settings", tenantAdminOrSuperAdmin, getPurchaseSettings);
+router.patch("/settings", tenantAdminOrSuperAdmin, updatePurchaseSettings);
 
 // CRUD routes
 router

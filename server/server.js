@@ -161,6 +161,8 @@ app.use('/api/warehouses',         warehouseRoutes);
 app.use('/api/reorder',            reorderRoutes);
 app.use('/api/promotions',         promotionRoutes);
 app.use('/api/pricelists',         pricelistRoutes);
+app.use('/api/meetings',           require('./routes/meeting.routes'));
+app.use('/api/tasks',              require('./routes/task.routes'));
 app.use('/api/vendors',            vendorRoutes);
 app.use('/api/purchase-orders',    purchaseOrderRoutes);
 app.use('/api/vendor-bills',       vendorBillRoutes);

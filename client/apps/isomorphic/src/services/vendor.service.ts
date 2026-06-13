@@ -3,6 +3,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 export interface Vendor {
   _id: string;
   name: string;
+  vendorType?: 'individual' | 'company';
   email?: string;
   phone?: string;
   website?: string;
@@ -10,6 +11,7 @@ export interface Vendor {
   notes?: string;
   paymentTerms?: 'prepaid' | 'net_7' | 'net_14' | 'net_30' | 'net_60';
   isActive?: boolean;
+  photo?: string;
   address?: {
     street?: string;
     city?: string;
@@ -31,12 +33,14 @@ export interface Vendor {
 
 export interface CreateVendorInput {
   name: string;
+  vendorType?: 'individual' | 'company';
   email?: string;
   phone?: string;
   website?: string;
   taxId?: string;
   notes?: string;
   paymentTerms?: string;
+  isActive?: boolean;
   address?: Vendor['address'];
   contactPerson?: Vendor['contactPerson'];
 }
@@ -118,5 +122,21 @@ export const vendorService = {
       `${API_URL}/api/vendors/${id}`,
       { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
     );
+  },
+
+  async uploadPhoto(
+    id: string,
+    formData: FormData,
+    token: string
+  ): Promise<Vendor> {
+    const res = await apiFetch<{ success: boolean; data: Vendor }>(
+      `${API_URL}/api/vendors/${id}/photo`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      }
+    );
+    return res.data;
   },
 };

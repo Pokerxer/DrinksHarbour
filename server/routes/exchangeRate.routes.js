@@ -8,6 +8,7 @@ const {
   convertCurrency,
   updateExchangeRate,
   deleteExchangeRate,
+  syncLiveRates,
 } = require('../controllers/exchangeRate.controller');
 const {
   protect,
@@ -24,6 +25,7 @@ router
   .get(tenantAdminOrSuperAdmin, getExchangeRates);
 
 router.get('/latest', tenantAdminOrSuperAdmin, getLatestRates);
+router.post('/sync', tenantAdminOrSuperAdmin, syncLiveRates);
 router.get('/convert', tenantAdminOrSuperAdmin, convertCurrency);
 
 router

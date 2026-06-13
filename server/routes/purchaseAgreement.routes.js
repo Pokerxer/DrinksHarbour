@@ -8,6 +8,7 @@ const {
   updatePurchaseAgreement,
   deletePurchaseAgreement,
   activatePurchaseAgreement,
+  cancelPurchaseAgreement,
   addTenderResponse,
   selectTenderWinner,
   createPOFromAgreement,
@@ -33,6 +34,7 @@ router
   .delete(tenantAdminOrSuperAdmin, deletePurchaseAgreement);
 
 router.post('/:id/activate', tenantAdminOrSuperAdmin, activatePurchaseAgreement);
+router.post('/:id/cancel', tenantAdminOrSuperAdmin, cancelPurchaseAgreement);
 router.post('/:id/tender-response', tenantAdminOrSuperAdmin, addTenderResponse);
 router.post('/:id/select-winner', tenantAdminOrSuperAdmin, selectTenderWinner);
 router.post('/:id/create-po', tenantAdminOrSuperAdmin, createPOFromAgreement);

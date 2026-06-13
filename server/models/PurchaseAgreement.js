@@ -14,7 +14,6 @@ const purchaseAgreementSchema = new Schema(
     agreementNumber: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
     },
     name: {
@@ -197,7 +196,8 @@ const purchaseAgreementSchema = new Schema(
   }
 );
 
-purchaseAgreementSchema.index({ tenant: 1, agreementNumber: 1 });
+// Numbers are generated per-tenant, so uniqueness must be scoped per-tenant too
+purchaseAgreementSchema.index({ tenant: 1, agreementNumber: 1 }, { unique: true });
 purchaseAgreementSchema.index({ tenant: 1, vendor: 1 });
 purchaseAgreementSchema.index({ tenant: 1, status: 1 });
 purchaseAgreementSchema.index({ startDate: 1, endDate: 1 });
@@ -220,11 +220,12 @@ purchaseAgreementSchema.virtual('remainingAmount').get(function() {
 
 purchaseAgreementSchema.pre('save', function(next) {
   if (this.isModified('items')) {
-    this.items = this.items.map(item => ({
-      ...item,
-      totalPrice: item.quantity * item.unitPrice,
-    }));
-    this.totalQuantity = this.items.reduce((sum, item) => sum + item.quantity, 0);
+    // Mutate subdocs in place — spreading a mongoose subdocument copies its
+    // internals instead of the schema fields, which zeroes out the totals.
+    this.items.forEach(item => {
+      item.totalPrice = (item.quantity || 0) * (item.unitPrice || 0);
+    });
+    this.totalQuantity = this.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
     this.totalAmount = this.items.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
   }
   next();

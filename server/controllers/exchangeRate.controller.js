@@ -1,5 +1,6 @@
 // controllers/exchangeRate.controller.js
 const ExchangeRate = require('../models/ExchangeRate');
+const liveRates = require('../services/liveRates.service');
 
 const createExchangeRate = async (req, res) => {
   try {
@@ -26,6 +27,7 @@ const createExchangeRate = async (req, res) => {
       existing.rate = rate;
       existing.isActive = isActive !== false;
       existing.notes = notes;
+      existing.source = 'manual';
       existing.updatedBy = userId;
       await existing.save();
       return res.json({ success: true, data: existing });
@@ -38,6 +40,7 @@ const createExchangeRate = async (req, res) => {
       rate,
       effectiveDate,
       isActive: isActive !== false,
+      source: 'manual',
       notes,
       createdBy: userId,
     });
@@ -87,6 +90,10 @@ const getLatestRates = async (req, res) => {
   try {
     const tenantId = req.tenant._id;
 
+    // Keep rates current: pull from the live provider when stale (no-op
+    // when fresh; falls back to stored rates if the provider is down).
+    await liveRates.autoSyncIfStale(tenantId, req.user._id);
+
     const rates = await ExchangeRate.aggregate([
       { $match: { tenant: tenantId, isActive: true } },
       { $sort: { effectiveDate: -1 } },
@@ -123,6 +130,8 @@ const convertCurrency = async (req, res) => {
     if (!amount || !fromCurrency || !toCurrency) {
       return res.status(400).json({ success: false, message: 'Amount, fromCurrency, and toCurrency are required' });
     }
+
+    await liveRates.autoSyncIfStale(tenantId, req.user._id);
 
     const converted = await ExchangeRate.convertCurrency(
       tenantId,
@@ -205,6 +214,26 @@ const deleteExchangeRate = async (req, res) => {
   }
 };
 
+const syncLiveRates = async (req, res) => {
+  try {
+    const result = await liveRates.syncLiveRates(req.tenant._id, req.user._id);
+    res.json({
+      success: true,
+      data: result,
+      message:
+        result.skippedManual > 0
+          ? `Updated ${result.updated} pair(s); kept ${result.skippedManual} manual rate(s) for today`
+          : `Updated ${result.updated} pair(s) from live rates`,
+    });
+  } catch (error) {
+    console.error('Error syncing live exchange rates:', error);
+    res.status(502).json({
+      success: false,
+      message: `Could not fetch live rates: ${error.message}`,
+    });
+  }
+};
+
 module.exports = {
   createExchangeRate,
   getExchangeRates,
@@ -212,4 +241,5 @@ module.exports = {
   convertCurrency,
   updateExchangeRate,
   deleteExchangeRate,
+  syncLiveRates,
 };

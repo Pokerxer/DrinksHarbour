@@ -307,9 +307,38 @@ async function recordReceived(subProductId, tenantId, data, performedBy) {
     verifiedAt:     new Date(),
   });
 
-  // Update size stock if sizeId provided
+  // Update size stock: specific size if sizeId given, else distribute across all sizes
   if (sizeId) {
     Size.findByIdAndUpdate(sizeId, { $inc: { stock: quantity, availableStock: quantity } }).catch(() => {});
+  } else {
+    // No size specified — keep all Size docs in sync with the SubProduct total
+    const spFull = await SubProduct.findById(subProductId).select('sizes sellWithoutSizeVariants totalStock').lean();
+    if (spFull?.sizes?.length > 0 && !spFull.sellWithoutSizeVariants) {
+      const sizes = await Size.find({ _id: { $in: spFull.sizes } }).select('stock availableStock').lean();
+      if (sizes.length > 0) {
+        const sizeStockSum = sizes.reduce((sum, s) => sum + (s.stock || 0), 0);
+        const target = spFull.totalStock;
+        if (sizeStockSum === 0) {
+          const perSize   = Math.floor(target / sizes.length);
+          const remainder = target % sizes.length;
+          await Promise.all(sizes.map((s, i) => {
+            const val = perSize + (i === 0 ? remainder : 0);
+            return Size.findByIdAndUpdate(s._id, { $set: { stock: val, availableStock: val } });
+          }));
+        } else {
+          let remaining = target;
+          await Promise.all(sizes.map((s, i) => {
+            const isLast   = i === sizes.length - 1;
+            const share    = (s.stock || 0) / sizeStockSum;
+            const newStock = isLast
+              ? Math.max(0, remaining)
+              : Math.max(0, Math.min(remaining, Math.round(share * target)));
+            remaining -= newStock;
+            return Size.findByIdAndUpdate(s._id, { $set: { stock: newStock, availableStock: newStock } });
+          }));
+        }
+      }
+    }
   }
 
   return movement;
@@ -322,7 +351,7 @@ async function adjustInventory(subProductId, tenantId, adjustment, reason, perfo
   if (adjustment === 0) throw new Error('Adjustment cannot be zero');
 
   const sp = await SubProduct.findById(subProductId).select(
-    'totalStock availableStock reservedStock lowStockThreshold stockStatus tenant'
+    'totalStock availableStock reservedStock lowStockThreshold stockStatus tenant sizes sellWithoutSizeVariants'
   );
   if (!sp) throw new Error('SubProduct not found');
 
@@ -335,6 +364,35 @@ async function adjustInventory(subProductId, tenantId, adjustment, reason, perfo
                     : sp.availableStock <= (sp.lowStockThreshold ?? 10) ? 'low_stock'
                     : 'active';
   await sp.save();
+
+  // Keep Size documents in sync so the POS (which reads per-size availableStock)
+  // matches the inventory page (which reads SubProduct.availableStock).
+  if (sp.sizes?.length > 0 && !sp.sellWithoutSizeVariants) {
+    const sizes = await Size.find({ _id: { $in: sp.sizes } }).select('stock availableStock').lean();
+    if (sizes.length > 0) {
+      const sizeStockSum = sizes.reduce((sum, s) => sum + (s.stock || 0), 0);
+      const target = sp.totalStock;
+      if (sizeStockSum === 0) {
+        const perSize   = Math.floor(target / sizes.length);
+        const remainder = target % sizes.length;
+        await Promise.all(sizes.map((s, i) => {
+          const val = perSize + (i === 0 ? remainder : 0);
+          return Size.findByIdAndUpdate(s._id, { $set: { stock: val, availableStock: val } });
+        }));
+      } else {
+        let remaining = target;
+        await Promise.all(sizes.map((s, i) => {
+          const isLast   = i === sizes.length - 1;
+          const share    = (s.stock || 0) / sizeStockSum;
+          const newStock = isLast
+            ? Math.max(0, remaining)
+            : Math.max(0, Math.min(remaining, Math.round(share * target)));
+          remaining -= newStock;
+          return Size.findByIdAndUpdate(s._id, { $set: { stock: newStock, availableStock: newStock } });
+        }));
+      }
+    }
+  }
 
   const qAfter = sp.availableStock;
   const type   = adjustment > 0 ? 'adjustment_in' : 'adjustment_out';
@@ -371,7 +429,7 @@ async function recordReturn(subProductId, tenantId, data, performedBy) {
   if (!quantity || quantity <= 0) throw new Error('Quantity must be positive');
 
   const sp = await SubProduct.findById(subProductId).select(
-    'totalStock availableStock lowStockThreshold stockStatus tenant'
+    'totalStock availableStock lowStockThreshold stockStatus tenant sizes sellWithoutSizeVariants'
   );
   if (!sp) throw new Error('SubProduct not found');
 
@@ -402,6 +460,34 @@ async function recordReturn(subProductId, tenantId, data, performedBy) {
     source:         'manual',
     status:         'confirmed',
   });
+
+  // Keep Size documents in sync with the updated SubProduct total
+  if (sp.sizes?.length > 0 && !sp.sellWithoutSizeVariants) {
+    const sizes = await Size.find({ _id: { $in: sp.sizes } }).select('stock availableStock').lean();
+    if (sizes.length > 0) {
+      const sizeStockSum = sizes.reduce((sum, s) => sum + (s.stock || 0), 0);
+      const target = sp.totalStock;
+      if (sizeStockSum === 0) {
+        const perSize   = Math.floor(target / sizes.length);
+        const remainder = target % sizes.length;
+        await Promise.all(sizes.map((s, i) => {
+          const val = perSize + (i === 0 ? remainder : 0);
+          return Size.findByIdAndUpdate(s._id, { $set: { stock: val, availableStock: val } });
+        }));
+      } else {
+        let remaining = target;
+        await Promise.all(sizes.map((s, i) => {
+          const isLast   = i === sizes.length - 1;
+          const share    = (s.stock || 0) / sizeStockSum;
+          const newStock = isLast
+            ? Math.max(0, remaining)
+            : Math.max(0, Math.min(remaining, Math.round(share * target)));
+          remaining -= newStock;
+          return Size.findByIdAndUpdate(s._id, { $set: { stock: newStock, availableStock: newStock } });
+        }));
+      }
+    }
+  }
 
   return movement;
 }

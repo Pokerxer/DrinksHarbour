@@ -2,6 +2,7 @@
 const asyncHandler = require("express-async-handler");
 const mongoose = require("mongoose");
 const PurchaseOrder = require("../models/PurchaseOrder");
+const Tenant = require("../models/Tenant");
 const SubProduct = require("../models/SubProduct");
 const Size = require("../models/Size");
 const Warehouse = require("../models/Warehouse");
@@ -116,6 +117,25 @@ const validateSubProducts = async (items, tenantId) => {
 };
 
 /**
+ * Tenant-level purchase settings with schema defaults applied
+ */
+const PURCHASE_SETTINGS_DEFAULTS = {
+  requirePOApproval: true,
+  lockConfirmedOrders: false,
+  defaultBillControlPolicy: "received",
+  rfqValidityDays: 30,
+  defaultCurrency: "NGN",
+  defaultLeadTimeDays: 7,
+};
+
+const getTenantPurchaseSettings = async (tenantId) => {
+  const tenant = await Tenant.findById(tenantId)
+    .select("purchaseSettings")
+    .lean();
+  return { ...PURCHASE_SETTINGS_DEFAULTS, ...(tenant?.purchaseSettings || {}) };
+};
+
+/**
  * Get default warehouse for tenant
  */
 const getDefaultWarehouse = async (tenantId) => {
@@ -169,11 +189,20 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
     throw new ValidationError("Required fields missing");
   }
 
-  // Auto-generate poNumber if not provided
+  // Auto-generate poNumber if not provided. Derive from the highest existing
+  // number rather than a document count — counts shrink after deletes and
+  // would re-issue a number that still exists (unique-index crash).
   let poNumber = poNumberRaw;
   if (!poNumber) {
-    const rfqCount = await PurchaseOrder.countDocuments({ tenant: tenantId });
-    poNumber = `RFQ-${String(rfqCount + 1).padStart(6, "0")}`;
+    const last = await PurchaseOrder.findOne({
+      tenant: tenantId,
+      poNumber: { $regex: /^RFQ-\d+$/ },
+    })
+      .sort({ poNumber: -1 })
+      .select("poNumber")
+      .lean();
+    const lastSeq = last ? parseInt(last.poNumber.split("-")[1], 10) : 0;
+    poNumber = `RFQ-${String(lastSeq + 1).padStart(6, "0")}`;
   }
 
   // Validate items have subProductId and normalise frontend field names → schema names
@@ -194,13 +223,34 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
   // Enrich items with subProduct and Size data (auto-lookup)
   const enrichedItems = await enrichPOItems(items, tenantId);
 
+  const purchSettings = await getTenantPurchaseSettings(tenantId);
+
+  const status = ["draft", "confirmed"].includes(req.body.status)
+    ? req.body.status
+    : "draft";
+  // Creating directly as confirmed is an implicit approval by the (admin)
+  // creator — otherwise the status route would reject every later transition
+  // because all POs start with approvalStatus 'pending'. Tenants can also
+  // turn the approval step off entirely in purchase settings.
+  const isConfirmedOnCreate =
+    (status === "confirmed" || !purchSettings.requirePOApproval) &&
+    type !== "rfq";
+
+  // Default quotation expiry from tenant settings
+  let resolvedValidUntil = validUntil;
+  if (!resolvedValidUntil && purchSettings.rfqValidityDays > 0) {
+    const d = new Date();
+    d.setDate(d.getDate() + purchSettings.rfqValidityDays);
+    resolvedValidUntil = d;
+  }
+
   const purchaseOrder = await PurchaseOrder.create({
     tenant: tenantId,
     poNumber,
     vendor,
     vendorName,
     vendorReference,
-    currency: currency || "NGN",
+    currency: currency || purchSettings.defaultCurrency || "NGN",
     orderDate: new Date(),
     confirmationDate: confirmationDate || new Date(),
     expectedArrival,
@@ -209,18 +259,26 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
     notes,
     project,
     createdBy: userId,
-    status: ["draft", "confirmed"].includes(req.body.status) ? req.body.status : "draft",
+    status,
     // RFQ specific
     type: type || "po",
     rfqStatus: rfqStatus || (type === "rfq" ? "draft" : undefined),
-    validUntil,
+    validUntil: resolvedValidUntil,
     termsConditions,
     // For POs, set approval to pending (all POs require approval)
-    approvalStatus: type === "rfq" ? undefined : (approvalStatus || "pending"),
+    approvalStatus:
+      type === "rfq"
+        ? undefined
+        : isConfirmedOnCreate
+          ? "approved"
+          : approvalStatus || "pending",
+    ...(isConfirmedOnCreate && {
+      approvedBy: userId,
+      approvedByName: req.user?.name || "System",
+      approvedAt: new Date(),
+    }),
     originalPO,
     isBackorder: isBackorder || false,
-    // Store creator name for display
-    approvedByName: req.user?.name || "System",
   });
 
   res.status(201).json({
@@ -243,7 +301,8 @@ const getPurchaseOrder = asyncHandler(async (req, res) => {
     .populate("vendor", "name email phone address bankDetails")
     .populate("createdBy", "name email")
     .populate("items.subProductId", "name sku imageUrl")
-    .populate("items.sizeId", "size ml volume");
+    .populate("items.sizeId", "size ml volume")
+    .populate("purchaseAgreement", "agreementNumber name status");
 
   if (!purchaseOrder) {
     throw new NotFoundError("Purchase Order not found");
@@ -365,12 +424,22 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
     throw new NotFoundError("Purchase Order not found");
   }
 
-  // Check if PO requires approval before confirming
+  // Check if PO requires approval before confirming (tenant-configurable)
   if (status === "confirmed" && purchaseOrder.type === "po") {
-    if (purchaseOrder.approvalStatus !== "approved") {
-      throw new ValidationError(
-        "PO must be approved before confirmation"
-      );
+    const purchSettings = await getTenantPurchaseSettings(tenantId);
+    if (
+      purchSettings.requirePOApproval &&
+      purchaseOrder.approvalStatus !== "approved"
+    ) {
+      throw new ValidationError("PO must be approved before confirmation");
+    }
+    if (!purchSettings.requirePOApproval) {
+      purchaseOrder.approvalStatus = "approved";
+    }
+    if (purchSettings.lockConfirmedOrders) {
+      purchaseOrder.isLocked = true;
+      purchaseOrder.lockedAt = new Date();
+      purchaseOrder.lockReason = "Auto-locked on confirmation";
     }
   }
 
@@ -1263,14 +1332,46 @@ const createBillFromPO = asyncHandler(async (req, res) => {
     throw new ValidationError("PO must have a vendor to create a bill");
   }
 
+  if (!["confirmed", "received", "validated"].includes(po.status)) {
+    throw new ValidationError(
+      `Cannot bill a ${po.status} purchase order — confirm it first`
+    );
+  }
+
   const VendorBill = require('../models/VendorBill');
 
-  // Generate bill number
-  const count = await VendorBill.countDocuments({ tenant: tenantId });
-  const year = new Date().getFullYear();
-  const billNumber = `BIL-${year}-${String(count + 1).padStart(5, '0')}`;
+  // One bill per PO: a second bill on 'received' policy would double-bill the
+  // first receipt. Cancel the existing bill to re-bill.
+  const existingBill = await VendorBill.findOne({
+    tenant: tenantId,
+    purchaseOrder: po._id,
+    status: { $ne: 'cancelled' },
+  }).select('billNumber');
+  if (existingBill) {
+    throw new ValidationError(
+      `Bill ${existingBill.billNumber} already exists for this PO. Cancel it before creating a new one.`
+    );
+  }
 
-  const policy = billControlPolicy || po.billControlPolicy || 'received';
+  // Generate bill number from the highest existing sequence this year —
+  // document counts shrink after deletes and would re-issue a taken number.
+  const year = new Date().getFullYear();
+  const lastBill = await VendorBill.findOne({
+    tenant: tenantId,
+    billNumber: { $regex: new RegExp(`^BIL-${year}-\\d+$`) },
+  })
+    .sort({ billNumber: -1 })
+    .select('billNumber')
+    .lean();
+  const lastSeq = lastBill ? parseInt(lastBill.billNumber.split('-')[2], 10) : 0;
+  const billNumber = `BIL-${year}-${String(lastSeq + 1).padStart(5, '0')}`;
+
+  const tenantPurchSettings = await getTenantPurchaseSettings(tenantId);
+  const policy =
+    billControlPolicy ||
+    po.billControlPolicy ||
+    tenantPurchSettings.defaultBillControlPolicy ||
+    'received';
 
   const items = po.items
     .filter(item => {
@@ -1297,7 +1398,25 @@ const createBillFromPO = asyncHandler(async (req, res) => {
     });
 
   if (items.length === 0) {
-    throw new ValidationError("No billable items found. Make sure products have been received.");
+    throw new ValidationError(
+      policy === 'received'
+        ? "No billable items found. Receive products first, or bill on ordered quantities."
+        : "No billable items found on this purchase order."
+    );
+  }
+
+  // Default the due date from the vendor's payment terms (net_7 → +7 days …)
+  let resolvedDueDate = dueDate;
+  if (!resolvedDueDate && po.vendor.paymentTerms) {
+    const netDays = parseInt(
+      String(po.vendor.paymentTerms).replace('net_', ''),
+      10
+    );
+    if (!Number.isNaN(netDays)) {
+      const base = billDate ? new Date(billDate) : new Date();
+      base.setDate(base.getDate() + netDays);
+      resolvedDueDate = base;
+    }
   }
 
   let subtotal = 0;
@@ -1321,7 +1440,7 @@ const createBillFromPO = asyncHandler(async (req, res) => {
     taxAmount,
     totalAmount,
     billDate: billDate || new Date(),
-    dueDate,
+    dueDate: resolvedDueDate,
     notes,
     billControlPolicy: policy,
     status: 'draft',
@@ -1338,6 +1457,48 @@ const createBillFromPO = asyncHandler(async (req, res) => {
     data: vendorBill,
     message: "Vendor bill created successfully",
   });
+});
+
+// @desc    Get tenant purchase settings
+// @route   GET /api/purchase-orders/settings
+// @access  Private (Tenant admin)
+const getPurchaseSettings = asyncHandler(async (req, res) => {
+  const tenantId = await resolveTenantId(req);
+  const purchaseSettings = await getTenantPurchaseSettings(tenantId);
+  res.status(200).json({ success: true, data: { purchaseSettings } });
+});
+
+// Declarative validators — a new key only needs one entry here to persist
+const PURCHASE_SETTING_VALIDATORS = {
+  requirePOApproval: (v) => typeof v === "boolean",
+  lockConfirmedOrders: (v) => typeof v === "boolean",
+  defaultBillControlPolicy: (v) => ["ordered", "received"].includes(v),
+  rfqValidityDays: (v) => typeof v === "number" && v >= 0 && v <= 365,
+  defaultCurrency: (v) => ["NGN", "USD", "EUR", "GBP"].includes(v),
+  defaultLeadTimeDays: (v) => typeof v === "number" && v >= 0 && v <= 365,
+};
+
+// @desc    Update tenant purchase settings
+// @route   PATCH /api/purchase-orders/settings
+// @access  Private (Tenant admin)
+const updatePurchaseSettings = asyncHandler(async (req, res) => {
+  const tenantId = await resolveTenantId(req);
+  const { purchaseSettings = {} } = req.body;
+
+  const updates = {};
+  Object.entries(PURCHASE_SETTING_VALIDATORS).forEach(([key, isValid]) => {
+    if (key in purchaseSettings && isValid(purchaseSettings[key])) {
+      updates[`purchaseSettings.${key}`] = purchaseSettings[key];
+    }
+  });
+
+  if (Object.keys(updates).length === 0) {
+    throw new ValidationError("No valid purchase settings provided");
+  }
+
+  await Tenant.findByIdAndUpdate(tenantId, { $set: updates });
+  const saved = await getTenantPurchaseSettings(tenantId);
+  res.status(200).json({ success: true, data: { purchaseSettings: saved } });
 });
 
 // @desc    Send PO to Vendor via email
@@ -1546,6 +1707,8 @@ module.exports = {
   unlockPO,
   createBillFromPO,
   sendPOToVendor,
+  getPurchaseSettings,
+  updatePurchaseSettings,
   returnPurchaseOrder,
   getPurchaseAnalyticsSummary,
   getPurchaseAnalyticsByVendor,

@@ -8,6 +8,7 @@ export interface ExchangeRate {
   rate: number;
   effectiveDate: string;
   isActive: boolean;
+  source?: 'manual' | 'live';
   notes?: string;
   createdBy?: string;
   updatedBy?: string;
@@ -39,17 +40,22 @@ class ExchangeRateService {
     };
   }
 
-  async getRates(token: string, params?: {
-    fromCurrency?: string;
-    toCurrency?: string;
-    isActive?: boolean;
-    page?: number;
-    limit?: number;
-  }): Promise<ListResponse> {
+  async getRates(
+    token: string,
+    params?: {
+      fromCurrency?: string;
+      toCurrency?: string;
+      isActive?: boolean;
+      page?: number;
+      limit?: number;
+    }
+  ): Promise<ListResponse> {
     const queryParams = new URLSearchParams();
-    if (params?.fromCurrency) queryParams.set('fromCurrency', params.fromCurrency);
+    if (params?.fromCurrency)
+      queryParams.set('fromCurrency', params.fromCurrency);
     if (params?.toCurrency) queryParams.set('toCurrency', params.toCurrency);
-    if (params?.isActive !== undefined) queryParams.set('isActive', String(params.isActive));
+    if (params?.isActive !== undefined)
+      queryParams.set('isActive', String(params.isActive));
     if (params?.page) queryParams.set('page', String(params.page));
     if (params?.limit) queryParams.set('limit', String(params.limit));
 
@@ -60,15 +66,19 @@ class ExchangeRateService {
     return response.json();
   }
 
-  async getLatestRates(token: string): Promise<{ success: boolean; data: ExchangeRate[] }> {
-    const response = await fetch(
-      `${API_URL}/api/exchange-rates/latest`,
-      { headers: this.getHeaders(token) }
-    );
+  async getLatestRates(
+    token: string
+  ): Promise<{ success: boolean; data: ExchangeRate[] }> {
+    const response = await fetch(`${API_URL}/api/exchange-rates/latest`, {
+      headers: this.getHeaders(token),
+    });
     return response.json();
   }
 
-  async createRate(data: Partial<ExchangeRate>, token: string): Promise<CreateResponse> {
+  async createRate(
+    data: Partial<ExchangeRate>,
+    token: string
+  ): Promise<CreateResponse> {
     const response = await fetch(`${API_URL}/api/exchange-rates`, {
       method: 'POST',
       headers: this.getHeaders(token),
@@ -77,7 +87,11 @@ class ExchangeRateService {
     return response.json();
   }
 
-  async updateRate(id: string, data: Partial<ExchangeRate>, token: string): Promise<CreateResponse> {
+  async updateRate(
+    id: string,
+    data: Partial<ExchangeRate>,
+    token: string
+  ): Promise<CreateResponse> {
     const response = await fetch(`${API_URL}/api/exchange-rates/${id}`, {
       method: 'PATCH',
       headers: this.getHeaders(token),
@@ -86,7 +100,22 @@ class ExchangeRateService {
     return response.json();
   }
 
-  async deleteRate(id: string, token: string): Promise<{ success: boolean; message: string }> {
+  async syncLiveRates(token: string): Promise<{
+    success: boolean;
+    data?: { updated: number; skippedManual: number; pairs: number };
+    message?: string;
+  }> {
+    const response = await fetch(`${API_URL}/api/exchange-rates/sync`, {
+      method: 'POST',
+      headers: this.getHeaders(token),
+    });
+    return response.json();
+  }
+
+  async deleteRate(
+    id: string,
+    token: string
+  ): Promise<{ success: boolean; message: string }> {
     const response = await fetch(`${API_URL}/api/exchange-rates/${id}`, {
       method: 'DELETE',
       headers: this.getHeaders(token),
@@ -94,7 +123,12 @@ class ExchangeRateService {
     return response.json();
   }
 
-  async convertCurrency(amount: number, fromCurrency: string, toCurrency: string, token: string): Promise<{
+  async convertCurrency(
+    amount: number,
+    fromCurrency: string,
+    toCurrency: string,
+    token: string
+  ): Promise<{
     success: boolean;
     data: {
       originalAmount: number;

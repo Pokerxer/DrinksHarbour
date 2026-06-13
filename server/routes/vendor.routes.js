@@ -8,8 +8,10 @@ const {
   getAllVendors,
   updateVendor,
   deleteVendor,
+  uploadVendorPhoto,
 } = require('../controllers/vendor.controller');
 const { protect, attachTenant, tenantAdminOrSuperAdmin } = require('../middleware/auth.middleware');
+const { uploadAvatar } = require('../middleware/imageUpload.middleware');
 
 // All routes require authentication and tenant context
 router.use(protect);
@@ -29,5 +31,8 @@ router.route('/:id')
 
 // Create vendor (must be separate from :id to avoid conflict)
 router.post('/', tenantAdminOrSuperAdmin, createVendor);
+
+// Upload vendor photo
+router.post('/:id/photo', tenantAdminOrSuperAdmin, uploadAvatar, uploadVendorPhoto);
 
 module.exports = router;

@@ -31,7 +31,7 @@ export const routes = {
     // Purchase Analytics
     purchaseAnalytics: '/purchases/analytics',
     // Purchase Settings
-    purchaseSettings: '/purchases/settings',
+    purchaseSettings: '/settings#purchases',
     // Purchase Agreements (Blanket Orders)
     purchaseAgreements: '/purchases/agreements',
     createPurchaseAgreement: '/purchases/agreements/create',

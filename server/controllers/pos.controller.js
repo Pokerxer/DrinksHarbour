@@ -1699,22 +1699,34 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
       };
     });
 
-    // If all size variants report 0 availableStock but the SubProduct aggregate
-    // has stock, the size-level stock is stale (e.g. stock was received at the
-    // product level without specifying a size). Distribute the aggregate stock
-    // evenly across sizes so the POS shows correct availability.
-    if (
-      enrichedSizes.length > 0 &&
-      !sp.sellWithoutSizeVariants &&
-      sp.availableStock > 0 &&
-      enrichedSizes.every(s => (s.availableStock || 0) <= 0)
-    ) {
-      const perSize   = Math.floor(sp.availableStock / enrichedSizes.length);
-      const remainder = sp.availableStock % enrichedSizes.length;
-      enrichedSizes = enrichedSizes.map((s, i) => ({
-        ...s,
-        availableStock: perSize + (i === 0 ? remainder : 0),
-      }));
+    // Normalise size-level availableStock to match the SubProduct aggregate.
+    // Mismatches arise when inventory adjustments are made without specifying a
+    // size (the service updates SubProduct only, leaving Size docs stale).
+    const sizeStockSum = enrichedSizes.reduce((sum, s) => sum + (s.availableStock || 0), 0);
+    if (enrichedSizes.length > 0 && !sp.sellWithoutSizeVariants && sizeStockSum !== sp.availableStock) {
+      const target = Math.max(0, sp.availableStock);
+      if (sizeStockSum === 0) {
+        // All sizes at zero — distribute evenly
+        const perSize   = Math.floor(target / enrichedSizes.length);
+        const remainder = target % enrichedSizes.length;
+        enrichedSizes = enrichedSizes.map((s, i) => ({
+          ...s,
+          availableStock: perSize + (i === 0 ? remainder : 0),
+        }));
+      } else {
+        // Sizes have stock but their sum differs — scale proportionally so the
+        // POS sum matches SubProduct.availableStock (source of truth).
+        let remaining = target;
+        enrichedSizes = enrichedSizes.map((s, i) => {
+          const isLast  = i === enrichedSizes.length - 1;
+          const share   = (s.availableStock || 0) / sizeStockSum;
+          const newStock = isLast
+            ? Math.max(0, remaining)
+            : Math.max(0, Math.min(remaining, Math.round(share * target)));
+          remaining -= newStock;
+          return { ...s, availableStock: newStock };
+        });
+      }
     }
 
     // Active bundle deals (not expired, sorted best discount first)

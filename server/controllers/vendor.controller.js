@@ -135,6 +135,7 @@ const updateVendor = asyncHandler(async (req, res) => {
 
   const updates = {
     name: req.body.name,
+    vendorType: req.body.vendorType,
     email: req.body.email,
     phone: req.body.phone,
     address: req.body.address,
@@ -152,12 +153,40 @@ const updateVendor = asyncHandler(async (req, res) => {
     if (updates[key] === undefined) delete updates[key];
   });
 
+  // Sync slug when name changes (findByIdAndUpdate bypasses pre-save)
+  if (updates.name) {
+    updates.slug = Vendor.generateSlug(updates.name);
+  }
+
   vendor = await Vendor.findByIdAndUpdate(id, updates, { new: true });
 
   res.status(200).json({
     success: true,
     data: vendor,
   });
+});
+
+// @desc    Upload vendor photo
+// @route   POST /api/vendors/:id/photo
+// @access  Private (Tenant admin)
+const uploadVendorPhoto = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const tenantId = await resolveTenantId(req);
+
+  const vendor = await Vendor.findOne({ _id: id, tenant: tenantId });
+  if (!vendor) throw new NotFoundError('Vendor not found');
+  if (!req.file) throw new ValidationError('No file uploaded');
+
+  const cloudinaryService = require('../services/cloudinary.service');
+  const result = await cloudinaryService.uploadImage(req.file.buffer, {
+    folder: 'vendors',
+    publicId: `vendor-${id}`,
+  });
+
+  vendor.photo = result.url;
+  await vendor.save();
+
+  res.status(200).json({ success: true, data: vendor.toObject() });
 });
 
 // @desc    Delete vendor
@@ -188,4 +217,5 @@ module.exports = {
   getAllVendors,
   updateVendor,
   deleteVendor,
+  uploadVendorPhoto,
 };

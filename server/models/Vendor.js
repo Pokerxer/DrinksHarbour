@@ -17,6 +17,11 @@ const vendorSchema = new Schema(
       trim: true,
       maxlength: 100,
     },
+    vendorType: {
+      type: String,
+      enum: ['individual', 'company'],
+      default: 'company',
+    },
     slug: {
       type: String,
       trim: true,
@@ -70,6 +75,10 @@ const vendorSchema = new Schema(
       type: String,
       trim: true,
     },
+    photo: {
+      type: String,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -93,20 +102,24 @@ vendorSchema.index({ tenant: 1, slug: 1 }, { unique: true, sparse: true });
 // index
 vendorSchema.index({ tenant: 1, name: 'text', email: 'text' });
 
+function generateSlug(name) {
+  return name.trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+// Must be registered before model compilation so it executes on Vendor.create()
+vendorSchema.pre('save', async function() {
+  if (this.isModified('name') && this.name) {
+    this.slug = generateSlug(this.name);
+  }
+});
+
 const Vendor = mongoose.models.Vendor || mongoose.model('Vendor', vendorSchema);
 
-// Generate slug before saving
-vendorSchema.pre('save', function(next) {
-  if (this.isModified('name') && this.name) {
-    // Simple slug generation - replace spaces with hyphens and lowercase
-    this.slug = this.name.trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '') // Remove special chars
-      .replace(/\s+/g, '-') // Replace spaces with hyphens
-      .replace(/-+/g, '-') // Remove duplicate hyphens
-      .replace(/^-|-$/g, ''); // Remove leading/trailing hyphens
-  }
-  next();
-});
+Vendor.generateSlug = generateSlug;
 
 module.exports = Vendor;

@@ -23,7 +23,10 @@ import { purchaseOrderService } from '@/services/purchaseOrder.service';
 import { vendorService } from '@/services/vendor.service';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { subproductService } from '@/services/subproduct.service';
+import { CURRENCIES } from './types';
 import type { Vendor } from './types';
+import BaseCurrencyEquivalent from './base-currency-equivalent';
+import PackSizeInput from './pack-size-input';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -62,8 +65,6 @@ interface LineItem {
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-
-const CURRENCIES = ['NGN', 'USD', 'EUR', 'GBP'];
 
 const INPUT_CLS =
   'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20';
@@ -679,6 +680,24 @@ export default function PurchasesCreate() {
       toast.error('Add at least one product line');
       return;
     }
+    // The server requires vendorName and a catalog subProductId per item —
+    // catch both here so the user gets a clear message instead of a 400.
+    if (!vendor) {
+      toast.error('Select a vendor before saving');
+      return;
+    }
+    const unlinked = filled.find((it) => !it.subProductId);
+    if (unlinked) {
+      toast.error(
+        `"${unlinked.productName}" isn't linked to a catalog product — pick it from the search dropdown`
+      );
+      return;
+    }
+    const badQty = filled.find((it) => !(it.quantity > 0));
+    if (badQty) {
+      toast.error(`Quantity for "${badQty.productName}" must be at least 1`);
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
@@ -969,20 +988,10 @@ export default function PurchasesCreate() {
                           className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
                         />
                       </div>
-                      <div>
-                        <label className="mb-1 block text-[10px] font-medium text-gray-500">
-                          Pack Size
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={item.packSize}
-                          onChange={(e) =>
-                            updateItem(i, { packSize: Number(e.target.value) })
-                          }
-                          className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
-                        />
-                      </div>
+                      <PackSizeInput
+                        value={item.packSize}
+                        onApply={(patch) => updateItem(i, patch)}
+                      />
                       <div>
                         <label className="mb-1 block text-[10px] font-medium text-gray-500">
                           Unit Price
@@ -1081,6 +1090,12 @@ export default function PurchasesCreate() {
                   <span className="text-base font-bold text-gray-900">
                     {currency} {grandTotal.toFixed(2)}
                   </span>
+                </div>
+                <div className="flex justify-end">
+                  <BaseCurrencyEquivalent
+                    amount={grandTotal}
+                    currency={currency}
+                  />
                 </div>
               </div>
             </div>

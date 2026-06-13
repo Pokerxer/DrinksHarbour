@@ -4,6 +4,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import type { POSSettings, POSShop } from '@/app/shared/point-of-sale/types';
+import { purchaseOrderService } from '@/services/purchaseOrder.service';
+import type { PurchaseSettings } from '@/services/purchaseOrder.service';
 import toast from 'react-hot-toast';
 import {
   PiStorefront,
@@ -759,6 +761,11 @@ const MODULES = [
     label: 'Point of Sale',
     icon: <PiStorefront size={16} />,
   },
+  {
+    id: 'purchases',
+    label: 'Purchases',
+    icon: <PiShoppingBag size={16} />,
+  },
 ] as const;
 
 type ModuleId = (typeof MODULES)[number]['id'];
@@ -822,6 +829,29 @@ const POS_ANCHORS = [
   { id: 'pos_banks', label: 'Bank Accounts', icon: <PiBank size={12} /> },
 ];
 
+const PURCHASE_ANCHORS = [
+  {
+    id: 'purch_orders',
+    label: 'Orders & Approval',
+    icon: <PiShoppingBag size={12} />,
+  },
+  { id: 'purch_billing', label: 'Billing', icon: <PiReceipt size={12} /> },
+  {
+    id: 'purch_defaults',
+    label: 'Defaults',
+    icon: <PiCurrencyDollar size={12} />,
+  },
+];
+
+const D_PURCH: PurchaseSettings = {
+  requirePOApproval: true,
+  lockConfirmedOrders: false,
+  defaultBillControlPolicy: 'received',
+  rfqValidityDays: 30,
+  defaultCurrency: 'NGN',
+  defaultLeadTimeDays: 7,
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Page
 // ─────────────────────────────────────────────────────────────────────────────
@@ -851,6 +881,8 @@ export default function SettingsPage() {
   const [savedTerminals, setSavedTerminals] = useState<string[]>([]);
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [savedBanks, setSavedBanks] = useState<BankAccount[]>([]);
+  const [purch, setPurch] = useState<PurchaseSettings>(D_PURCH);
+  const [savedPurch, setSavedPurch] = useState<PurchaseSettings>(D_PURCH);
   const [shops, setShops] = useState<POSShop[]>([]);
   const [shopForm, setShopForm] = useState({
     name: '',
@@ -869,12 +901,16 @@ export default function SettingsPage() {
     objDirty(pos, savedPos) ||
     arrDirty(methods, savedMethods) ||
     arrDirty(terminals, savedTerminals) ||
-    JSON.stringify(banks) !== JSON.stringify(savedBanks);
+    JSON.stringify(banks) !== JSON.stringify(savedBanks) ||
+    objDirty(purch, savedPurch);
 
   // ── intersection observer for sidebar active anchor ───────────────────────
   useEffect(() => {
-    if (activeModule !== 'point_of_sale') return;
-    const ids = POS_ANCHORS.map((a) => a.id);
+    if (activeModule !== 'point_of_sale' && activeModule !== 'purchases')
+      return;
+    const anchors =
+      activeModule === 'purchases' ? PURCHASE_ANCHORS : POS_ANCHORS;
+    const ids = anchors.map((a) => a.id);
     const els = ids
       .map((id) => document.getElementById(id))
       .filter(Boolean) as HTMLElement[];
@@ -903,11 +939,17 @@ export default function SettingsPage() {
     if (!token) return;
     (async () => {
       try {
-        const [settingsRes, banksRes, shopsRes] = await Promise.all([
+        const [settingsRes, banksRes, shopsRes, purchRes] = await Promise.all([
           posApi.getPOSSettings(token),
           posApi.getBankAccounts(token),
           posApi.listShops(token).catch(() => ({ shops: [] })),
+          purchaseOrderService.getPurchaseSettings(token).catch(() => null),
         ]);
+        if (purchRes?.data?.purchaseSettings) {
+          const p = { ...D_PURCH, ...purchRes.data.purchaseSettings };
+          setPurch(p);
+          setSavedPurch({ ...p });
+        }
         const s = settingsRes.posSettings ?? {};
         const loaded: PosState = {
           isBarRestaurant: s.isBarRestaurant ?? false,
@@ -1012,10 +1054,17 @@ export default function SettingsPage() {
     })();
   }, [token]);
 
+  // Sync the active module with the URL hash, including back/forward
+  // navigation and external links like /settings#purchases
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const hash = window.location.hash.replace('#', '') as ModuleId;
-    if (hash === 'general' || hash === 'point_of_sale') setActiveModule(hash);
+    const applyHash = () => {
+      const hash = window.location.hash.replace('#', '') as ModuleId;
+      if (MODULES.some((m) => m.id === hash)) setActiveModule(hash);
+    };
+    applyHash();
+    window.addEventListener('hashchange', applyHash);
+    return () => window.removeEventListener('hashchange', applyHash);
   }, []);
 
   // ── save / discard ────────────────────────────────────────────────────────
@@ -1030,6 +1079,10 @@ export default function SettingsPage() {
       };
       await posApi.updatePOSSettings(token, posSettings);
       await posApi.updateBankAccounts(token, banks);
+      if (objDirty(purch, savedPurch)) {
+        await purchaseOrderService.updatePurchaseSettings(token, purch);
+        setSavedPurch({ ...purch });
+      }
       setSavedPos({ ...pos });
       setSavedMethods([...methods]);
       setSavedTerminals([...terminals]);
@@ -1047,6 +1100,14 @@ export default function SettingsPage() {
     setMethods([...savedMethods]);
     setTerminals([...savedTerminals]);
     setBanks(savedBanks.map((b) => ({ ...b })));
+    setPurch({ ...savedPurch });
+  }
+
+  function setPurchField<K extends keyof PurchaseSettings>(
+    k: K,
+    v: PurchaseSettings[K]
+  ) {
+    setPurch((p) => ({ ...p, [k]: v }));
   }
 
   function setField<K extends keyof PosState>(k: K, v: PosState[K]) {
@@ -1165,12 +1226,15 @@ export default function SettingsPage() {
           ))}
         </div>
 
-        {activeModule === 'point_of_sale' && (
+        {(activeModule === 'point_of_sale' || activeModule === 'purchases') && (
           <div className="mt-3 border-t border-gray-100 px-3 pb-6 pt-4">
             <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
               Jump to
             </p>
-            {POS_ANCHORS.map((a) => (
+            {(activeModule === 'purchases'
+              ? PURCHASE_ANCHORS
+              : POS_ANCHORS
+            ).map((a) => (
               <button
                 key={a.id}
                 type="button"
@@ -1246,7 +1310,9 @@ export default function SettingsPage() {
             <h1 className="text-[17px] font-semibold text-gray-900">
               {activeModule === 'general'
                 ? 'General Settings'
-                : 'Point of Sale'}
+                : activeModule === 'purchases'
+                  ? 'Purchases'
+                  : 'Point of Sale'}
             </h1>
             {dirty && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-amber-200">
@@ -1261,6 +1327,12 @@ export default function SettingsPage() {
               experience.
             </p>
           )}
+          {activeModule === 'purchases' && (
+            <p className="mt-0.5 text-xs text-gray-400">
+              Configure approval, billing, and defaults for the purchase
+              workflow.
+            </p>
+          )}
         </div>
 
         {/* Content */}
@@ -1268,6 +1340,127 @@ export default function SettingsPage() {
           {activeModule === 'general' && (
             <div className="px-8 py-10 text-sm text-gray-400">
               General settings will appear here.
+            </div>
+          )}
+
+          {activeModule === 'purchases' && !loading && (
+            <div className="mx-auto max-w-3xl space-y-3 px-6 py-6">
+              {vis('purchase order approval confirm lock rfq quotation') && (
+                <SectionCard
+                  id="purch_orders"
+                  icon={<PiShoppingBag size={16} />}
+                  title="Orders & Approval"
+                >
+                  <CbRow
+                    label="Require PO approval"
+                    sub="New purchase orders must be approved before they can be confirmed. Turn off to let admins confirm directly."
+                    checked={purch.requirePOApproval}
+                    onChange={(v) => setPurchField('requirePOApproval', v)}
+                  />
+                  <CbRow
+                    label="Lock orders on confirmation"
+                    sub="Automatically lock confirmed purchase orders against further edits."
+                    checked={purch.lockConfirmedOrders}
+                    onChange={(v) => setPurchField('lockConfirmedOrders', v)}
+                  />
+                  <Row
+                    label="Quotation validity"
+                    sub="Default expiry window for new RFQs. Set 0 to disable."
+                  >
+                    <NumInput
+                      value={purch.rfqValidityDays}
+                      onChange={(v) =>
+                        setPurchField(
+                          'rfqValidityDays',
+                          Math.min(365, Math.max(0, Math.round(v)))
+                        )
+                      }
+                      min={0}
+                      max={365}
+                      suffix="days"
+                    />
+                  </Row>
+                  <Row
+                    label="Default lead time"
+                    sub="Expected days from order to delivery, used as the default on agreement lines."
+                  >
+                    <NumInput
+                      value={purch.defaultLeadTimeDays}
+                      onChange={(v) =>
+                        setPurchField(
+                          'defaultLeadTimeDays',
+                          Math.min(365, Math.max(0, Math.round(v)))
+                        )
+                      }
+                      min={0}
+                      max={365}
+                      suffix="days"
+                    />
+                  </Row>
+                </SectionCard>
+              )}
+
+              {vis('bill billing control policy ordered received') && (
+                <SectionCard
+                  id="purch_billing"
+                  icon={<PiReceipt size={16} />}
+                  title="Billing"
+                >
+                  <Row
+                    label="Bill control policy"
+                    sub="Default quantities used when creating a vendor bill from a PO. Can be overridden per bill."
+                  >
+                    <span />
+                  </Row>
+                  <RadioRow
+                    label="Received quantities"
+                    sub="Bill only what has actually been received"
+                    name="purch_bill_policy"
+                    value="received"
+                    checked={purch.defaultBillControlPolicy === 'received'}
+                    onChange={() =>
+                      setPurchField('defaultBillControlPolicy', 'received')
+                    }
+                  />
+                  <RadioRow
+                    label="Ordered quantities"
+                    sub="Bill the full ordered quantities, even before receipt"
+                    name="purch_bill_policy"
+                    value="ordered"
+                    checked={purch.defaultBillControlPolicy === 'ordered'}
+                    onChange={() =>
+                      setPurchField('defaultBillControlPolicy', 'ordered')
+                    }
+                  />
+                </SectionCard>
+              )}
+
+              {vis('currency naira dollar default') && (
+                <SectionCard
+                  id="purch_defaults"
+                  icon={<PiCurrencyDollar size={16} />}
+                  title="Defaults"
+                >
+                  <Row
+                    label="Default currency"
+                    sub="Pre-selected currency for new purchase orders and agreements."
+                  >
+                    <select
+                      value={purch.defaultCurrency}
+                      onChange={(e) =>
+                        setPurchField('defaultCurrency', e.target.value)
+                      }
+                      className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-900 shadow-sm focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
+                    >
+                      {['NGN', 'USD', 'EUR', 'GBP'].map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </Row>
+                </SectionCard>
+              )}
             </div>
           )}
 

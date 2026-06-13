@@ -23,7 +23,10 @@ import { purchaseOrderService } from '@/services/purchaseOrder.service';
 import { vendorService } from '@/services/vendor.service';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { subproductService } from '@/services/subproduct.service';
+import { CURRENCIES } from './types';
 import type { Vendor, PurchaseOrder } from './types';
+import BaseCurrencyEquivalent from './base-currency-equivalent';
+import PackSizeInput from './pack-size-input';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -63,8 +66,6 @@ interface LineItem {
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-
-const CURRENCIES = ['NGN', 'USD', 'EUR', 'GBP'];
 
 const INPUT_CLS =
   'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20';
@@ -1099,20 +1100,10 @@ export default function PurchasesEdit({ id }: { id: string }) {
                         className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
                       />
                     </div>
-                    <div>
-                      <label className="mb-1 block text-[10px] font-medium text-gray-500">
-                        Pack Size
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.packSize}
-                        onChange={(e) =>
-                          updateItem(i, { packSize: Number(e.target.value) })
-                        }
-                        className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:border-[#b20202] focus:outline-none"
-                      />
-                    </div>
+                    <PackSizeInput
+                      value={item.packSize}
+                      onApply={(patch) => updateItem(i, patch)}
+                    />
                     <div>
                       <label className="mb-1 block text-[10px] font-medium text-gray-500">
                         Unit Price
@@ -1217,6 +1208,12 @@ export default function PurchasesEdit({ id }: { id: string }) {
                 <span className="text-base font-bold text-gray-900">
                   {currency} {grandTotal.toFixed(2)}
                 </span>
+              </div>
+              <div className="flex justify-end">
+                <BaseCurrencyEquivalent
+                  amount={grandTotal}
+                  currency={currency}
+                />
               </div>
             </div>
           </div>

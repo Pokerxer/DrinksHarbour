@@ -36,6 +36,11 @@ const exchangeRateSchema = new Schema(
       type: Boolean,
       default: true,
     },
+    source: {
+      type: String,
+      enum: ['manual', 'live'],
+      default: 'manual',
+    },
     notes: {
       type: String,
       maxlength: 500,
