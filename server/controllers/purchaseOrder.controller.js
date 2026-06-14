@@ -494,12 +494,19 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
 
   // If receiving items, update received quantities
   if (status === "received" && receivedItems && Array.isArray(receivedItems)) {
+    const receiveSettings = await getTenantPurchaseSettings(tenantId);
     for (const receivedItem of receivedItems) {
       const item = purchaseOrder.items.find(
         (i) => i._id.toString() === receivedItem.itemId,
       );
       if (item) {
-        item.receivedQty = Math.max(0, receivedItem.receivedQty ?? 0);
+        const qty = Math.max(0, receivedItem.receivedQty ?? 0);
+        if (!receiveSettings.allowPartialReceipts && qty > 0 && qty < item.quantity) {
+          throw new ValidationError(
+            `Partial receipts are disabled — ${item.subProductName} must be received in full (${item.quantity}).`
+          );
+        }
+        item.receivedQty = qty;
       }
     }
   }
