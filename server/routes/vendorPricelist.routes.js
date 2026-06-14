@@ -9,6 +9,8 @@ const {
   deleteVendorPricelist,
   getPricelistForProduct,
   getVendorPriceListsByProduct,
+  syncNow,
+  getPriceMatrix,
 } = require('../controllers/vendorPricelist.controller');
 const {
   protect,
@@ -24,6 +26,8 @@ router
   .post(tenantAdminOrSuperAdmin, createVendorPricelist)
   .get(tenantAdminOrSuperAdmin, getVendorPricelists);
 
+router.get('/matrix', tenantAdminOrSuperAdmin, getPriceMatrix);
+
 router
   .route('/:id')
   .get(tenantAdminOrSuperAdmin, getVendorPricelist)
@@ -32,5 +36,7 @@ router
 
 router.get('/product/price', tenantAdminOrSuperAdmin, getPricelistForProduct);
 router.get('/product/vendor-prices', tenantAdminOrSuperAdmin, getVendorPriceListsByProduct);
+
+router.post('/:id/sync-now', tenantAdminOrSuperAdmin, syncNow);
 
 module.exports = router;

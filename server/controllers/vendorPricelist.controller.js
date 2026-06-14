@@ -1,5 +1,8 @@
 // controllers/vendorPricelist.controller.js
 const VendorPricelist = require('../models/VendorPricelist');
+const PurchaseOrder = require('../models/PurchaseOrder');
+const { syncVendorPricelistFromPO } = require('../services/vendorPricelistSync.service');
+const { pushHistory, changePercent, findLine } = require('../utils/pricelistHistory');
 
 const createVendorPricelist = async (req, res) => {
   try {
@@ -99,7 +102,33 @@ const updateVendorPricelist = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Vendor pricelist not found' });
     }
 
-    Object.keys(updates).forEach(key => {
+    // Log manual price changes into per-line history before applying item edits.
+    if (Array.isArray(updates.items)) {
+      const now = new Date();
+      updates.items.forEach((incoming, idx) => {
+        if (!incoming) return;
+        const prevLine = findLine(pricelist.items, incoming) || pricelist.items[idx];
+        const oldPrice = prevLine ? prevLine.unitPrice : undefined;
+        const newPrice = Number(incoming.unitPrice) || 0;
+        if (prevLine && oldPrice != null && newPrice > 0 && newPrice !== oldPrice) {
+          if (!Array.isArray(incoming.priceHistory)) {
+            incoming.priceHistory = Array.isArray(prevLine.priceHistory)
+              ? [...prevLine.priceHistory]
+              : [];
+          }
+          pushHistory(incoming, {
+            unitPrice: newPrice,
+            basePrice: Number(incoming.basePrice) || newPrice,
+            date: now,
+            source: 'manual',
+            userId,
+            changePercent: changePercent(oldPrice, newPrice),
+          });
+        }
+      });
+    }
+
+    Object.keys(updates).forEach((key) => {
       if (key !== 'tenant' && key !== 'createdBy') {
         pricelist[key] = updates[key];
       }
@@ -222,6 +251,103 @@ const getVendorPriceListsByProduct = async (req, res) => {
   }
 };
 
+const syncNow = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tenantId = req.tenant._id;
+    const userId = req.user._id;
+
+    const pricelist = await VendorPricelist.findOne({ _id: id, tenant: tenantId });
+    if (!pricelist) {
+      return res.status(404).json({ success: false, message: 'Vendor pricelist not found' });
+    }
+
+    const lastPO = await PurchaseOrder.findOne({
+      tenant: tenantId,
+      vendor: pricelist.vendor,
+      status: 'validated',
+    }).sort({ updatedAt: -1 });
+
+    if (!lastPO) {
+      return res.json({
+        success: false,
+        message: 'No validated purchase order found for this vendor yet',
+      });
+    }
+
+    const result = await syncVendorPricelistFromPO(lastPO, tenantId, userId);
+    const updated = await VendorPricelist.findById(result.pricelistId)
+      .populate('vendor', 'name email');
+
+    res.json({
+      success: true,
+      data: updated,
+      result: { ...result, poNumber: lastPO.poNumber },
+    });
+  } catch (error) {
+    console.error('Error syncing vendor pricelist now:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getPriceMatrix = async (req, res) => {
+  try {
+    const tenantId = req.tenant._id;
+    const { search } = req.query;
+    const now = new Date();
+
+    const pricelists = await VendorPricelist.find({
+      tenant: tenantId,
+      isActive: true,
+      $or: [
+        { startDate: { $lte: now }, endDate: { $gte: now } },
+        { startDate: { $exists: false }, endDate: { $exists: false } },
+        { startDate: { $lte: now }, endDate: { $exists: false } },
+      ],
+    }).populate('vendor', 'name email');
+
+    const q = (search || '').trim().toLowerCase();
+    const groups = new Map();
+
+    for (const pl of pricelists) {
+      for (const it of pl.items) {
+        if (!it.subProductId || !(Number(it.unitPrice) > 0)) continue;
+        const name = it.subProductName || it.productName || '';
+        const sku = it.sku || '';
+        if (q && !name.toLowerCase().includes(q) && !sku.toLowerCase().includes(q)) continue;
+
+        const key = `${it.subProductId}::${it.sizeId || ''}`;
+        if (!groups.has(key)) {
+          groups.set(key, {
+            subProductId: it.subProductId,
+            sizeId: it.sizeId || null,
+            subProductName: name,
+            sizeName: it.sizeName || null,
+            sku,
+            vendors: [],
+          });
+        }
+        groups.get(key).vendors.push({
+          vendorId: pl.vendor?._id || pl.vendor,
+          vendorName: pl.vendor?.name || pl.vendorName,
+          pricelistId: pl._id,
+          pricelistName: pl.name,
+          currency: pl.currency,
+          unitPrice: it.unitPrice,
+          discountPercent: it.discountPercent || 0,
+          leadTimeDays: it.leadTimeDays,
+          vendorProductCode: it.vendorProductCode,
+        });
+      }
+    }
+
+    res.json({ success: true, data: Array.from(groups.values()) });
+  } catch (error) {
+    console.error('Error building price matrix:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   createVendorPricelist,
   getVendorPricelist,
@@ -230,4 +356,6 @@ module.exports = {
   deleteVendorPricelist,
   getPricelistForProduct,
   getVendorPriceListsByProduct,
+  syncNow,
+  getPriceMatrix,
 };
