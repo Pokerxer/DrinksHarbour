@@ -16,6 +16,22 @@ export interface VendorPricelist {
   createdBy?: string;
   updatedBy?: string;
   createdAt?: string;
+  source?: 'manual' | 'auto';
+  autoManaged?: boolean;
+  lastSyncedAt?: string;
+  lastSyncedPO?: { id?: string; poNumber?: string };
+  updatedAt?: string;
+}
+
+export interface HistoryEntry {
+  unitPrice: number;
+  basePrice?: number;
+  date?: string;
+  source: 'po' | 'manual';
+  poId?: string;
+  poNumber?: string;
+  userId?: string;
+  changePercent?: number;
 }
 
 export interface PricelistItem {
@@ -37,7 +53,31 @@ export interface PricelistItem {
   packagingQty: number;
   isPreferred: boolean;
   lastPriceUpdate?: string;
+  previousPrice?: number;
+  previousPriceDate?: string;
+  priceHistory?: HistoryEntry[];
   notes?: string;
+}
+
+export interface MatrixVendorPrice {
+  vendorId: string;
+  vendorName: string;
+  pricelistId: string;
+  pricelistName: string;
+  currency: string;
+  unitPrice: number;
+  discountPercent: number;
+  leadTimeDays?: number;
+  vendorProductCode?: string;
+}
+
+export interface MatrixGroup {
+  subProductId: string;
+  sizeId: string | null;
+  subProductName: string;
+  sizeName: string | null;
+  sku: string;
+  vendors: MatrixVendorPrice[];
 }
 
 interface CreateResponse {
@@ -157,6 +197,29 @@ class VendorPricelistService {
 
     const response = await fetch(
       `${API_URL}/api/vendor-pricelists/product/vendor-prices?${queryParams}`,
+      { headers: this.getHeaders(token) }
+    );
+    return response.json();
+  }
+
+  async syncNow(id: string, token: string): Promise<{
+    success: boolean;
+    data?: VendorPricelist;
+    result?: { created: boolean; updated: number; added: number; changed: number; poNumber: string };
+    message?: string;
+  }> {
+    const response = await fetch(`${API_URL}/api/vendor-pricelists/${id}/sync-now`, {
+      method: 'POST',
+      headers: this.getHeaders(token),
+    });
+    return response.json();
+  }
+
+  async getMatrix(token: string, search?: string): Promise<{ success: boolean; data: MatrixGroup[] }> {
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    const response = await fetch(
+      `${API_URL}/api/vendor-pricelists/matrix?${params}`,
       { headers: this.getHeaders(token) }
     );
     return response.json();
