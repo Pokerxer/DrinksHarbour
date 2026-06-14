@@ -845,11 +845,17 @@ const PURCHASE_ANCHORS = [
 
 const D_PURCH: PurchaseSettings = {
   requirePOApproval: true,
+  approvalThreshold: 0,
   lockConfirmedOrders: false,
   defaultBillControlPolicy: 'received',
+  enable3WayMatching: true,
+  autoGenerateBill: false,
+  allowPartialReceipts: true,
   rfqValidityDays: 30,
   defaultCurrency: 'NGN',
   defaultLeadTimeDays: 7,
+  defaultPaymentTerms: 'Net 30',
+  defaultReceivingLocation: '',
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1448,7 +1454,10 @@ export default function SettingsPage() {
                     <select
                       value={purch.defaultCurrency}
                       onChange={(e) =>
-                        setPurchField('defaultCurrency', e.target.value)
+                        setPurchField(
+                          'defaultCurrency',
+                          e.target.value as PurchaseSettings['defaultCurrency']
+                        )
                       }
                       className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-900 shadow-sm focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
                     >
