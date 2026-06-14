@@ -2,6 +2,10 @@ export const routes = {
   dashboard: '/ecommerce',
   signIn: '/signin',
   signUp: '/signup',
+  warehouses: {
+    list: '/warehouses',
+    detail: (id: string) => `/warehouses/${id}`,
+  },
   eCommerce: {
     dashboard: '/ecommerce',
     products: '/ecommerce/products',
