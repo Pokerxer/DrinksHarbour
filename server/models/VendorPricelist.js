@@ -47,6 +47,22 @@ const vendorPricelistSchema = new Schema(
       min: 0,
       max: 100,
     },
+    source: {
+      type: String,
+      enum: ['manual', 'auto'],
+      default: 'manual',
+    },
+    autoManaged: {
+      type: Boolean,
+      default: false,
+    },
+    lastSyncedAt: {
+      type: Date,
+    },
+    lastSyncedPO: {
+      id: { type: ObjectId, ref: 'PurchaseOrder' },
+      poNumber: String,
+    },
     notes: {
       type: String,
       maxlength: 1000,
@@ -112,6 +128,24 @@ const vendorPricelistSchema = new Schema(
           type: Date,
           default: Date.now,
         },
+        previousPrice: {
+          type: Number,
+        },
+        previousPriceDate: {
+          type: Date,
+        },
+        priceHistory: [
+          {
+            unitPrice: Number,
+            basePrice: Number,
+            date: { type: Date, default: Date.now },
+            source: { type: String, enum: ['po', 'manual'], default: 'po' },
+            poId: { type: ObjectId, ref: 'PurchaseOrder' },
+            poNumber: String,
+            userId: { type: ObjectId, ref: 'User' },
+            changePercent: { type: Number, default: 0 },
+          },
+        ],
         notes: String,
       },
     ],
@@ -135,7 +169,11 @@ const vendorPricelistSchema = new Schema(
 vendorPricelistSchema.index({ tenant: 1, vendor: 1 });
 vendorPricelistSchema.index({ tenant: 1, isActive: 1 });
 vendorPricelistSchema.index({ 'items.subProductId': 1 });
-vendorPricelistSchema.index({ tenant: 1, vendor: 1, 'items.subProductId': 1 }, { unique: true, sparse: true });
+// Non-unique lookup index. Intentionally NOT unique: a vendor may legitimately
+// price the same product in multiple sizes within one pricelist, and across
+// multiple pricelists (e.g. duplicated or seasonal lists, and auto-sync from
+// purchases). Uniqueness here previously broke those flows.
+vendorPricelistSchema.index({ tenant: 1, vendor: 1, 'items.subProductId': 1 });
 
 vendorPricelistSchema.virtual('itemCount').get(function() {
   return this.items ? this.items.length : 0;
