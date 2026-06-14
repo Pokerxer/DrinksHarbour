@@ -7,6 +7,7 @@ const SubProduct = require("../models/SubProduct");
 const Size = require("../models/Size");
 const Warehouse = require("../models/Warehouse");
 const inventoryService = require("../services/inventory.service");
+const VendorBill = require("../models/VendorBill");
 const { syncVendorPricelistFromPO } = require("../services/vendorPricelistSync.service");
 const {
   NotFoundError,
@@ -605,6 +606,22 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
         `⚠️ Vendor pricelist sync failed for ${purchaseOrder.poNumber}:`,
         pricelistError.message
       );
+    }
+
+    // Auto-generate a draft vendor bill if the tenant opted in. Non-blocking.
+    try {
+      const purchSettings = await getTenantPurchaseSettings(tenantId);
+      if (purchSettings.autoGenerateBill) {
+        const billPo = await PurchaseOrder.findById(purchaseOrder._id).populate('vendor');
+        const billResult = await buildBillFromPO(billPo, tenantId, req.user?._id || purchaseOrder.createdBy);
+        if (billResult.bill) {
+          console.log(`🧾 Auto-generated vendor bill ${billResult.bill.billNumber} for ${purchaseOrder.poNumber}`);
+        } else {
+          console.log(`🧾 Auto-bill skipped for ${purchaseOrder.poNumber}: ${billResult.reason}`);
+        }
+      }
+    } catch (billError) {
+      console.error(`⚠️ Auto-bill failed for ${purchaseOrder.poNumber}:`, billError.message);
     }
   }
 
@@ -1363,32 +1380,27 @@ const rejectPO = asyncHandler(async (req, res) => {
 // @desc    Create Vendor Bill from PO
 // @route   POST /api/purchase-orders/:id/create-bill
 // @access  Private (Tenant admin)
-const createBillFromPO = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const { billDate, dueDate, notes, billControlPolicy } = req.body;
-  const tenantId = await resolveTenantId(req);
-
-  const po = await PurchaseOrder.findOne({
-    _id: id,
-    tenant: tenantId,
-    type: "po",
-  }).populate('vendor');
-
-  if (!po) {
-    throw new NotFoundError("Purchase Order not found");
-  }
-
+/**
+ * Build & save a draft VendorBill from a PO document.
+ *
+ * Returns `{ bill }` on success, or `{ skipped: true, reason }` when a live
+ * bill already exists for this PO or there are no billable items. Throws
+ * only for invalid input (no vendor). Shared by the create-bill route and
+ * the auto-bill-on-validation hook.
+ *
+ * @param {object} po - Populated PO document (po.vendor must be populated).
+ * @param {string|ObjectId} tenantId
+ * @param {string|ObjectId} userId - Used as `createdBy` on the bill.
+ * @param {object} [opts]
+ * @param {string} [opts.billControlPolicy] - Overrides PO/tenant policy.
+ * @param {Date|string} [opts.billDate]
+ * @param {Date|string} [opts.dueDate]
+ * @param {string} [opts.notes]
+ */
+async function buildBillFromPO(po, tenantId, userId, opts = {}) {
   if (!po.vendor) {
     throw new ValidationError("PO must have a vendor to create a bill");
   }
-
-  if (!["confirmed", "received", "validated"].includes(po.status)) {
-    throw new ValidationError(
-      `Cannot bill a ${po.status} purchase order — confirm it first`
-    );
-  }
-
-  const VendorBill = require('../models/VendorBill');
 
   // One bill per PO: a second bill on 'received' policy would double-bill the
   // first receipt. Cancel the existing bill to re-bill.
@@ -1398,9 +1410,10 @@ const createBillFromPO = asyncHandler(async (req, res) => {
     status: { $ne: 'cancelled' },
   }).select('billNumber');
   if (existingBill) {
-    throw new ValidationError(
-      `Bill ${existingBill.billNumber} already exists for this PO. Cancel it before creating a new one.`
-    );
+    return {
+      skipped: true,
+      reason: `Bill ${existingBill.billNumber} already exists for this PO. Cancel it before creating a new one.`,
+    };
   }
 
   // Generate bill number from the highest existing sequence this year —
@@ -1418,7 +1431,7 @@ const createBillFromPO = asyncHandler(async (req, res) => {
 
   const tenantPurchSettings = await getTenantPurchaseSettings(tenantId);
   const policy =
-    billControlPolicy ||
+    opts.billControlPolicy ||
     po.billControlPolicy ||
     tenantPurchSettings.defaultBillControlPolicy ||
     'received';
@@ -1448,14 +1461,17 @@ const createBillFromPO = asyncHandler(async (req, res) => {
     });
 
   if (items.length === 0) {
-    throw new ValidationError(
-      policy === 'received'
-        ? "No billable items found. Receive products first, or bill on ordered quantities."
-        : "No billable items found on this purchase order."
-    );
+    return {
+      skipped: true,
+      reason:
+        policy === 'received'
+          ? "No billable items found. Receive products first, or bill on ordered quantities."
+          : "No billable items found on this purchase order.",
+    };
   }
 
   // Default the due date from the vendor's payment terms (net_7 → +7 days …)
+  const { billDate, dueDate, notes } = opts;
   let resolvedDueDate = dueDate;
   if (!resolvedDueDate && po.vendor.paymentTerms) {
     const netDays = parseInt(
@@ -1497,10 +1513,51 @@ const createBillFromPO = asyncHandler(async (req, res) => {
     matchingStatus: 'pending',
     payments: [],
     paidAmount: 0,
-    createdBy: req.user?._id,
+    createdBy: userId,
   });
 
   await vendorBill.save();
+
+  return { bill: vendorBill };
+}
+
+const createBillFromPO = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { billDate, dueDate, notes, billControlPolicy } = req.body;
+  const tenantId = await resolveTenantId(req);
+
+  const po = await PurchaseOrder.findOne({
+    _id: id,
+    tenant: tenantId,
+    type: "po",
+  }).populate('vendor');
+
+  if (!po) {
+    throw new NotFoundError("Purchase Order not found");
+  }
+
+  if (!po.vendor) {
+    throw new ValidationError("PO must have a vendor to create a bill");
+  }
+
+  if (!["confirmed", "received", "validated"].includes(po.status)) {
+    throw new ValidationError(
+      `Cannot bill a ${po.status} purchase order — confirm it first`
+    );
+  }
+
+  const result = await buildBillFromPO(po, tenantId, req.user?._id, {
+    billControlPolicy,
+    billDate,
+    dueDate,
+    notes,
+  });
+
+  if (result.skipped) {
+    throw new ValidationError(result.reason);
+  }
+
+  const vendorBill = result.bill;
 
   res.status(201).json({
     success: true,
