@@ -84,11 +84,17 @@ export interface POItem {
 
 export interface PurchaseSettings {
   requirePOApproval: boolean;
+  approvalThreshold: number;
   lockConfirmedOrders: boolean;
   defaultBillControlPolicy: 'ordered' | 'received';
+  enable3WayMatching: boolean;
+  autoGenerateBill: boolean;
+  allowPartialReceipts: boolean;
   rfqValidityDays: number;
-  defaultCurrency: string;
+  defaultCurrency: 'NGN' | 'USD' | 'EUR' | 'GBP';
   defaultLeadTimeDays: number;
+  defaultPaymentTerms: string;
+  defaultReceivingLocation: string;
 }
 
 export interface CreatePOResponse {
@@ -474,6 +480,40 @@ export const purchaseOrderService = {
       const error = await response.json();
       throw new Error(error.message || 'Failed to update purchase settings');
     }
+    return response.json();
+  },
+
+  async getSettings(
+    token: string
+  ): Promise<{
+    success: boolean;
+    data: { purchaseSettings: PurchaseSettings };
+  }> {
+    const response = await fetch(`${API_URL}/api/purchase-orders/settings`, {
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return response.json();
+  },
+
+  async updateSettings(
+    purchaseSettings: Partial<PurchaseSettings>,
+    token: string
+  ): Promise<{
+    success: boolean;
+    data: { purchaseSettings: PurchaseSettings };
+    message?: string;
+  }> {
+    const response = await fetch(`${API_URL}/api/purchase-orders/settings`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ purchaseSettings }),
+    });
     return response.json();
   },
 
