@@ -122,11 +122,17 @@ const validateSubProducts = async (items, tenantId) => {
  */
 const PURCHASE_SETTINGS_DEFAULTS = {
   requirePOApproval: true,
+  approvalThreshold: 0,
   lockConfirmedOrders: false,
   defaultBillControlPolicy: "received",
+  enable3WayMatching: true,
+  autoGenerateBill: false,
+  allowPartialReceipts: true,
   rfqValidityDays: 30,
   defaultCurrency: "NGN",
   defaultLeadTimeDays: 7,
+  defaultPaymentTerms: "Net 30",
+  defaultReceivingLocation: "",
 };
 
 const getTenantPurchaseSettings = async (tenantId) => {
@@ -1514,11 +1520,17 @@ const getPurchaseSettings = asyncHandler(async (req, res) => {
 // Declarative validators — a new key only needs one entry here to persist
 const PURCHASE_SETTING_VALIDATORS = {
   requirePOApproval: (v) => typeof v === "boolean",
+  approvalThreshold: (v) => typeof v === "number" && v >= 0,
   lockConfirmedOrders: (v) => typeof v === "boolean",
   defaultBillControlPolicy: (v) => ["ordered", "received"].includes(v),
+  enable3WayMatching: (v) => typeof v === "boolean",
+  autoGenerateBill: (v) => typeof v === "boolean",
+  allowPartialReceipts: (v) => typeof v === "boolean",
   rfqValidityDays: (v) => typeof v === "number" && v >= 0 && v <= 365,
   defaultCurrency: (v) => ["NGN", "USD", "EUR", "GBP"].includes(v),
   defaultLeadTimeDays: (v) => typeof v === "number" && v >= 0 && v <= 365,
+  defaultPaymentTerms: (v) => typeof v === "string" && v.length <= 100,
+  defaultReceivingLocation: (v) => typeof v === "string" && v.length <= 200,
 };
 
 // @desc    Update tenant purchase settings
