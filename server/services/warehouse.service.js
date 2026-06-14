@@ -139,7 +139,7 @@ async function transferStock(
           { tenant: tenantId, warehouse: toWarehouse, subProduct, size, type: 'transfer_in',
             quantity, balanceAfter: dest.currentQuantity, reference: notes, transferGroupId, performedBy: userId },
         ],
-        { session }
+        { session, ordered: true }
       );
       // Total across warehouses is unchanged; recompute as a safety no-op.
       await recalcSubProductStock(subProduct, session);
