@@ -260,9 +260,10 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
   // creator — otherwise the status route would reject every later transition
   // because all POs start with approvalStatus 'pending'. Tenants can also
   // turn the approval step off entirely in purchase settings.
+  const orderTotal = poTotal({ items: enrichedItems });
+  const needsApproval = requiresApproval(orderTotal, purchSettings);
   const isConfirmedOnCreate =
-    (status === "confirmed" || !purchSettings.requirePOApproval) &&
-    type !== "rfq";
+    (status === "confirmed" || !needsApproval) && type !== "rfq";
 
   // Default quotation expiry from tenant settings
   let resolvedValidUntil = validUntil;
@@ -279,6 +280,8 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
     vendorName,
     vendorReference,
     currency: currency || purchSettings.defaultCurrency || "NGN",
+    billControlPolicy:
+      req.body.billControlPolicy || purchSettings.defaultBillControlPolicy || "received",
     orderDate: new Date(),
     confirmationDate: confirmationDate || new Date(),
     expectedArrival,
@@ -455,13 +458,11 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
   // Check if PO requires approval before confirming (tenant-configurable)
   if (status === "confirmed" && purchaseOrder.type === "po") {
     const purchSettings = await getTenantPurchaseSettings(tenantId);
-    if (
-      purchSettings.requirePOApproval &&
-      purchaseOrder.approvalStatus !== "approved"
-    ) {
+    const needsApproval = requiresApproval(poTotal(purchaseOrder), purchSettings);
+    if (needsApproval && purchaseOrder.approvalStatus !== "approved") {
       throw new ValidationError("PO must be approved before confirmation");
     }
-    if (!purchSettings.requirePOApproval) {
+    if (!needsApproval) {
       purchaseOrder.approvalStatus = "approved";
     }
     if (purchSettings.lockConfirmedOrders) {
