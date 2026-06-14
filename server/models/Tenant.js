@@ -244,6 +244,8 @@ const tenantSchema = new Schema(
     purchaseSettings: {
       // When false, POs skip the approval step and can be confirmed directly
       requirePOApproval: { type: Boolean, default: true },
+      // Require approval only when PO total >= threshold (0 = all POs)
+      approvalThreshold: { type: Number, min: 0, default: 0 },
       // Auto-lock POs against edits once confirmed
       lockConfirmedOrders: { type: Boolean, default: false },
       // Default bill control policy for new POs (overridable per bill)
@@ -252,6 +254,12 @@ const tenantSchema = new Schema(
         enum: ['ordered', 'received'],
         default: 'received',
       },
+      // Enable 3-way matching on vendor bills
+      enable3WayMatching: { type: Boolean, default: true },
+      // Auto-generate a draft vendor bill when a PO is validated
+      autoGenerateBill: { type: Boolean, default: false },
+      // Allow receiving less than the ordered quantity
+      allowPartialReceipts: { type: Boolean, default: true },
       // Default quotation validity window; 0 disables the default
       rfqValidityDays: { type: Number, min: 0, max: 365, default: 30 },
       defaultCurrency: {
@@ -260,6 +268,8 @@ const tenantSchema = new Schema(
         default: 'NGN',
       },
       defaultLeadTimeDays: { type: Number, min: 0, max: 365, default: 7 },
+      defaultPaymentTerms: { type: String, default: 'Net 30' },
+      defaultReceivingLocation: { type: String, default: '' },
     },
 
     // ────────────────────────────────────────────────
@@ -521,51 +531,6 @@ const tenantSchema = new Schema(
         oneUse:            { type: Boolean, default: true },
         availableOn:       { pos: { type: Boolean, default: true }, sales: { type: Boolean, default: false }, website: { type: Boolean, default: false } },
       },
-    },
-
-    // ────────────────────────────────────────────────
-    // Purchase Settings (Odoo-style)
-    // ────────────────────────────────────────────────
-    purchaseSettings: {
-      // Bill Control Policy
-      billControlPolicy: {
-        type: String,
-        enum: ["ordered", "received"],
-        default: "received",
-      },
-      // Enable 3-way matching
-      enable3WayMatching: {
-        type: Boolean,
-        default: true,
-      },
-      // Require approval for all POs
-      requirePOApproval: {
-        type: Boolean,
-        default: true,
-      },
-      // Approval threshold amount (0 = all POs require approval)
-      approvalThreshold: {
-        type: Number,
-        default: 0,
-        min: 0,
-      },
-      // Default payment terms for POs
-      defaultPaymentTerms: {
-        type: String,
-        default: "Net 30",
-      },
-      // Auto-generate vendor bill when goods received
-      autoGenerateBill: {
-        type: Boolean,
-        default: false,
-      },
-      // Allow partial receipts
-      allowPartialReceipts: {
-        type: Boolean,
-        default: true,
-      },
-      // Default receiving location/warehouse
-      defaultReceivingLocation: String,
     },
   },
   {
