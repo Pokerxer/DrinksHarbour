@@ -55,6 +55,13 @@ router.post(
 router.get('/:id', tenantAdminOrSuperAdmin, subProductController.getSubProduct);
 
 /**
+ * @route   GET /api/subproducts/:id/stock-by-warehouse
+ * @desc    Get a subproduct's stock broken down by warehouse
+ * @access  Private (Tenant admin or Super admin)
+ */
+router.get('/:id/stock-by-warehouse', tenantAdminOrSuperAdmin, subProductController.getStockByWarehouse);
+
+/**
  * @route   PATCH /api/subproducts/:id
  * @desc    Update SubProduct
  * @access  Private (Tenant admin or Super admin)

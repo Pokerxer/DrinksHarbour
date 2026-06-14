@@ -2,6 +2,7 @@
 
 const asyncHandler = require('../utils/asyncHandler');
 const subProductService = require('../services/subproduct.service');
+const warehouseService = require('../services/warehouse.service');
 const { ValidationError } = require('../utils/errors');
 const Tenant = require('../models/Tenant');
 
@@ -782,8 +783,20 @@ const adminSetStatus = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Get a subproduct's stock broken down by warehouse
+ * @route   GET /api/subproducts/:id/stock-by-warehouse
+ * @access  Private (Tenant admin or Super admin)
+ */
+const getStockByWarehouse = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id || req.query.tenantId;
+  const data = await warehouseService.getStockByWarehouse(req.params.id, tenantId);
+  res.json({ success: true, data });
+});
+
 module.exports = {
   getMySubProducts,
+  getStockByWarehouse,
   createSubProduct,
   getSubProduct,
   updateSubProduct,
