@@ -217,6 +217,11 @@ function applyPOItemsToPricelist(pricelist, poItems, ctx = {}) {
       updated++;
       if (unit !== existing.unitPrice) {
         const pct = changePercent(existing.unitPrice, unit);
+        // Capture the pre-change price for the fast list-level delta. (pushHistory
+        // only back-fills previousPrice from an existing history entry, which is
+        // absent the first time a pre-existing line changes.)
+        existing.previousPrice = existing.unitPrice;
+        existing.previousPriceDate = existing.lastPriceUpdate;
         existing.unitPrice = unit;
         existing.basePrice = unit;
         if (it.sku) existing.sku = it.sku;
