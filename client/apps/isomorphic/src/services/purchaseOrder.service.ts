@@ -445,9 +445,7 @@ export const purchaseOrderService = {
     return response.json();
   },
 
-  async getPurchaseSettings(
-    token: string
-  ): Promise<{
+  async getPurchaseSettings(token: string): Promise<{
     success: boolean;
     data: { purchaseSettings: PurchaseSettings };
   }> {
@@ -483,9 +481,7 @@ export const purchaseOrderService = {
     return response.json();
   },
 
-  async getSettings(
-    token: string
-  ): Promise<{
+  async getSettings(token: string): Promise<{
     success: boolean;
     data: { purchaseSettings: PurchaseSettings };
   }> {
