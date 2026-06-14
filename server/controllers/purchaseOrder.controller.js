@@ -7,6 +7,7 @@ const SubProduct = require("../models/SubProduct");
 const Size = require("../models/Size");
 const Warehouse = require("../models/Warehouse");
 const inventoryService = require("../services/inventory.service");
+const { syncVendorPricelistFromPO } = require("../services/vendorPricelistSync.service");
 const {
   NotFoundError,
   ValidationError,
@@ -133,6 +134,27 @@ const getTenantPurchaseSettings = async (tenantId) => {
     .select("purchaseSettings")
     .lean();
   return { ...PURCHASE_SETTINGS_DEFAULTS, ...(tenant?.purchaseSettings || {}) };
+};
+
+/**
+ * Total order value of a PO document (unitCost * quantity over its items).
+ * Pure — safe to unit-test without a DB.
+ */
+const poTotal = (po) =>
+  (po?.items || []).reduce(
+    (s, i) => s + (Number(i.unitCost) || 0) * (Number(i.quantity) || 0),
+    0
+  );
+
+/**
+ * Whether a PO with the given total needs approval under tenant settings.
+ * Approval is required only when enabled AND (threshold is 0 → all POs, or the
+ * total meets/exceeds the threshold). Pure.
+ */
+const requiresApproval = (total, settings = {}) => {
+  if (!settings.requirePOApproval) return false;
+  const threshold = Number(settings.approvalThreshold) || 0;
+  return threshold <= 0 || total >= threshold;
 };
 
 /**
@@ -556,6 +578,27 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
     }
     
     console.log(`🏁 PO Validation Complete: ${successCount} succeeded, ${failCount} failed`);
+
+    // Auto-sync the vendor's pricelist from this (latest) validated purchase.
+    // Non-blocking: a pricelist failure must never block PO validation.
+    try {
+      const syncResult = await syncVendorPricelistFromPO(
+        purchaseOrder,
+        tenantId,
+        req.user?._id || purchaseOrder.createdBy
+      );
+      if (syncResult) {
+        console.log(
+          `🏷️  Vendor pricelist sync: ${syncResult.created ? 'created' : 'updated'} ` +
+            `(${syncResult.updated} updated, ${syncResult.added} added)`
+        );
+      }
+    } catch (pricelistError) {
+      console.error(
+        `⚠️ Vendor pricelist sync failed for ${purchaseOrder.poNumber}:`,
+        pricelistError.message
+      );
+    }
   }
 
   await purchaseOrder.save();
@@ -1712,4 +1755,6 @@ module.exports = {
   returnPurchaseOrder,
   getPurchaseAnalyticsSummary,
   getPurchaseAnalyticsByVendor,
+  requiresApproval,
+  poTotal,
 };
