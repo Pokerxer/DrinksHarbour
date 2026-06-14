@@ -298,7 +298,7 @@ export function ServerAdjustmentModal({
                 <select value={fromWh} onChange={e => setFromWh(e.target.value)} className={`${FIELD} bg-white`}>
                   <option value="">Select…</option>
                   {warehouses.filter(w => w.isActive && w._id !== toWh).map(w => (
-                    <option key={w._id} value={w._id}>{w.location}</option>
+                    <option key={w._id} value={w._id}>{w.name}{w.code ? ` (${w.code})` : ''}</option>
                   ))}
                 </select>
               </div>
@@ -307,7 +307,7 @@ export function ServerAdjustmentModal({
                 <select value={toWh} onChange={e => setToWh(e.target.value)} className={`${FIELD} bg-white`}>
                   <option value="">Select…</option>
                   {warehouses.filter(w => w.isActive && w._id !== fromWh).map(w => (
-                    <option key={w._id} value={w._id}>{w.location}</option>
+                    <option key={w._id} value={w._id}>{w.name}{w.code ? ` (${w.code})` : ''}</option>
                   ))}
                 </select>
               </div>

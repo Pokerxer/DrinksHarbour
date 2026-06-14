@@ -17,6 +17,7 @@ import {
 } from 'react-icons/pi';
 import { inventoryService, type InventoryMovement, type InventorySummary } from '@/services/inventory.service';
 import { warehouseService, type Warehouse } from '@/services/warehouse.service';
+import { warehouseStockService } from '@/services/warehouseStock.service';
 import { subproductService } from '@/services/subproduct.service';
 
 // Tab Components
@@ -30,7 +31,6 @@ import { SettingsTab } from './SettingsTab';
 
 // Modals
 import { AdjustmentModal, TransferModal, ServerAdjustmentModal } from './modals';
-import { LocationFormModal } from './LocationsTab/LocationFormModal';
 
 // Shared utilities
 import {
@@ -243,45 +243,27 @@ export default function SubProductInventory() {
     }
   }, [subProductId, session?.user?.token]);
 
-  // Fetch warehouses for locations
+  // Fetch warehouses (global places) — used by the New Move transfer pickers.
   const fetchWarehouses = useCallback(async () => {
     if (!session?.user?.token) return;
-    
+
     setIsLoadingWarehouses(true);
     try {
-      const response = await warehouseService.getWarehouses(session.user.token, { 
-        limit: 100,
-        subProductId: subProductId 
-      });
-      
-      if (response.success) {
-        const warehouseData = response.data || [];
-        setWarehouses(warehouseData);
-        
-        // Convert warehouses to inventory quants
-        const quants: InventoryQuant[] = warehouseData.map((wh: Warehouse) => ({
-          id: wh._id,
-          locationId: wh._id,
-          locationName: wh.location,
-          locationType: wh.locationType as any,
-          quantity: wh.currentQuantity || 0,
-          reservedQuantity: wh.reservedQuantity || 0,
-          availableQuantity: Math.max(0, (wh.currentQuantity || 0) - (wh.reservedQuantity || 0)),
-          isActive: wh.isActive,
-        }));
-        setInventoryQuants(quants);
-      }
+      const response = await warehouseService.getWarehouses(session.user.token, { isActive: true });
+      setWarehouses(response.data || []);
     } catch (error) {
       console.error('Failed to fetch warehouses:', error);
-      // Fall back to default locations
-      setInventoryQuants([
-        { id: '1', locationId: 'stock_location', locationName: 'Stock Location', locationType: 'internal' as any, quantity: totalStock || 0, reservedQuantity: 0, availableQuantity: totalStock || 0, isActive: true },
-        { id: '2', locationId: 'store_front', locationName: 'Store Front', locationType: 'internal' as any, quantity: 0, reservedQuantity: 0, availableQuantity: 0, isActive: true },
-      ]);
+      setWarehouses([]);
     } finally {
       setIsLoadingWarehouses(false);
     }
-  }, [session?.user?.token, subProductId, totalStock]);
+  }, [session?.user?.token]);
+
+  // Load the warehouse places once (used by the New Move transfer pickers).
+  useEffect(() => {
+    if (!session?.user?.token) return;
+    fetchWarehouses();
+  }, [session?.user?.token, fetchWarehouses]);
 
   // Fetch data when tab changes
   useEffect(() => {
@@ -290,10 +272,7 @@ export default function SubProductInventory() {
     if (activeTab === 'history' || activeTab === 'overview' || activeTab === 'moves') {
       fetchInventoryData();
     }
-    if (activeTab === 'locations') {
-      fetchWarehouses();
-    }
-  }, [subProductId, session?.user?.token, activeTab, fetchInventoryData, fetchWarehouses]);
+  }, [subProductId, session?.user?.token, activeTab, fetchInventoryData]);
 
   // History helper
   const addToHistory = useCallback((
@@ -511,30 +490,8 @@ export default function SubProductInventory() {
     const fromLabel = WAREHOUSE_OPTIONS.find(w => w.value === transferFromWarehouse)?.label || transferFromWarehouse;
     const toLabel = WAREHOUSE_OPTIONS.find(w => w.value === transferToWarehouse)?.label || transferToWarehouse;
 
-    // Try to do server-side transfer if we have subProductId
-    if (subProductId && session?.user?.token) {
-      try {
-        await warehouseService.transferStock({
-          subProductId,
-          sourceWarehouseId: transferFromWarehouse,
-          destinationWarehouseId: transferToWarehouse,
-          quantity: transferQuantity,
-          notes: transferNotes,
-        }, session.user.token);
-        
-        // Refresh data
-        await fetchInventoryData();
-        await fetchWarehouses();
-        
-        toast.success('Transfer completed successfully');
-      } catch (error: any) {
-        console.error('Server transfer failed:', error);
-        toast.error(error.message || 'Server transfer failed, recording locally');
-        // Fall back to local recording
-      }
-    }
-
-    // Always record locally
+    // Per-warehouse/size transfers now run through the Locations tab (real warehouse
+    // places + size). This legacy modal only records a local history note.
     addToHistory('transfer', transferQuantity, totalStock, totalStock, `Transfer from ${fromLabel} to ${toLabel}`, transferNotes, {
       fromLocationName: fromLabel,
       toLocationName: toLabel,
@@ -590,18 +547,21 @@ export default function SubProductInventory() {
 
         case 'transfer':
           if (!data.sourceWarehouseId || !data.destinationWarehouseId) {
-            toast.error('Please select both source and destination locations');
+            toast.error('Please select both source and destination warehouses');
             return;
           }
-          await warehouseService.transferStock({
-            subProductId,
-            sourceWarehouseId: data.sourceWarehouseId,
-            destinationWarehouseId: data.destinationWarehouseId,
+          if (!data.sizeId) {
+            toast.error('Select a size to transfer (stock is tracked per size)');
+            return;
+          }
+          await warehouseStockService.transferStock({
+            subProduct: subProductId,
+            size: data.sizeId,
+            fromWarehouse: data.sourceWarehouseId,
+            toWarehouse: data.destinationWarehouseId,
             quantity: data.quantity,
             notes: data.notes,
-            reference: data.reference,
           }, token);
-          await fetchWarehouses();
           break;
 
         case 'shipped':
@@ -859,34 +819,9 @@ export default function SubProductInventory() {
 
       {activeTab === 'locations' && (
         <LocationsTab
-          warehouses={warehouses}
-          totalStock={totalStock}
-          isLoading={isLoadingWarehouses}
+          subProductId={subProductId}
           token={session?.user?.token}
-          onAddLocation={() => {
-            setEditingWarehouse(null);
-            setShowLocationModal(true);
-          }}
-          onEditLocation={(wh) => {
-            setEditingWarehouse(wh);
-            setShowLocationModal(true);
-          }}
-          onDeleteLocation={async (wh) => {
-            if (!session?.user?.token) return;
-            if (!confirm(`Delete location "${wh.location}"? This cannot be undone.`)) return;
-            try {
-              await warehouseService.deleteWarehouse(wh._id, session.user.token);
-              toast.success('Location deleted');
-              fetchWarehouses();
-            } catch (e: any) {
-              toast.error(e.message || 'Failed to delete location');
-            }
-          }}
-          onAdjustLocation={(wh) => {
-            setTransferFromWarehouse(wh._id);
-            setShowTransferModal(true);
-          }}
-          onRefresh={fetchWarehouses}
+          onRefresh={fetchInventoryData}
         />
       )}
 
@@ -1004,17 +939,6 @@ export default function SubProductInventory() {
         initialType={serverAdjustmentInitialType}
         warehouses={warehouses}
       />
-
-      {/* Location add/edit modal */}
-      {showLocationModal && subProductId && session?.user?.token && (
-        <LocationFormModal
-          subProductId={subProductId}
-          token={session.user.token}
-          warehouse={editingWarehouse}
-          onClose={() => { setShowLocationModal(false); setEditingWarehouse(null); }}
-          onSuccess={() => { setShowLocationModal(false); setEditingWarehouse(null); fetchWarehouses(); toast.success(editingWarehouse ? 'Location updated' : 'Location added'); }}
-        />
-      )}
 
       </div>
     </div>
