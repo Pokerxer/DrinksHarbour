@@ -597,10 +597,12 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
     // Auto-sync the vendor's pricelist from this (latest) validated purchase.
     // Non-blocking: a pricelist failure must never block PO validation.
     try {
+      const syncSettings = await getTenantPurchaseSettings(tenantId);
       const syncResult = await syncVendorPricelistFromPO(
         purchaseOrder,
         tenantId,
-        req.user?._id || purchaseOrder.createdBy
+        req.user?._id || purchaseOrder.createdBy,
+        { defaultLeadTimeDays: syncSettings.defaultLeadTimeDays }
       );
       if (syncResult) {
         console.log(

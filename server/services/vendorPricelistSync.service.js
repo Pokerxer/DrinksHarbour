@@ -54,7 +54,7 @@ async function resolveAutoPricelist(po, tenantId, userId) {
  * Upsert a vendor's auto-managed pricelist from a validated purchase order.
  * @returns {Promise<{pricelistId, created, updated, added, changed}|null>}
  */
-async function syncVendorPricelistFromPO(po, tenantId, userId) {
+async function syncVendorPricelistFromPO(po, tenantId, userId, opts = {}) {
   if (!po || !po.vendor || !Array.isArray(po.items) || po.items.length === 0) {
     return null;
   }
@@ -69,6 +69,7 @@ async function syncVendorPricelistFromPO(po, tenantId, userId) {
     userId: userId || po.createdBy,
     poId: po._id,
     poNumber: po.poNumber,
+    defaultLeadTimeDays: opts.defaultLeadTimeDays,
   });
 
   // Nothing to persist on an existing, unchanged list.

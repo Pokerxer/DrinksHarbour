@@ -84,28 +84,36 @@ function buildTenantData(b, isUpdate = false) {
     if (addressFields.country !== undefined) data.address.country = addressFields.country;
   }
 
-  // Purchase settings (flat ps* fields -> nested object)
+  // Purchase settings (flat ps* fields -> nested canonical object)
   const psFields = {
-    billControlPolicy: b.psBillControlPolicy,
-    enable3WayMatching: b.psEnable3WayMatching,
+    defaultBillControlPolicy: b.psDefaultBillControlPolicy ?? b.psBillControlPolicy,
+    defaultCurrency: b.psDefaultCurrency,
     requirePOApproval: b.psRequirePOApproval,
     approvalThreshold: b.psApprovalThreshold,
-    defaultPaymentTerms: b.psDefaultPaymentTerms,
+    enable3WayMatching: b.psEnable3WayMatching,
     autoGenerateBill: b.psAutoGenerateBill,
     allowPartialReceipts: b.psAllowPartialReceipts,
+    rfqValidityDays: b.psRfqValidityDays,
+    defaultLeadTimeDays: b.psDefaultLeadTimeDays,
+    defaultPaymentTerms: b.psDefaultPaymentTerms,
     defaultReceivingLocation: b.psDefaultReceivingLocation,
+    lockConfirmedOrders: b.psLockConfirmedOrders,
   };
   const hasPsFields = Object.values(psFields).some((v) => v !== undefined);
   if (hasPsFields) {
     data.purchaseSettings = {};
-    if (psFields.billControlPolicy !== undefined) data.purchaseSettings.billControlPolicy = psFields.billControlPolicy;
-    if (psFields.enable3WayMatching !== undefined) data.purchaseSettings.enable3WayMatching = toBool(psFields.enable3WayMatching, true);
+    if (psFields.defaultBillControlPolicy !== undefined) data.purchaseSettings.defaultBillControlPolicy = psFields.defaultBillControlPolicy;
+    if (psFields.defaultCurrency !== undefined) data.purchaseSettings.defaultCurrency = psFields.defaultCurrency;
     if (psFields.requirePOApproval !== undefined) data.purchaseSettings.requirePOApproval = toBool(psFields.requirePOApproval, true);
     if (psFields.approvalThreshold !== undefined) data.purchaseSettings.approvalThreshold = Number(psFields.approvalThreshold);
-    if (psFields.defaultPaymentTerms !== undefined) data.purchaseSettings.defaultPaymentTerms = psFields.defaultPaymentTerms;
+    if (psFields.enable3WayMatching !== undefined) data.purchaseSettings.enable3WayMatching = toBool(psFields.enable3WayMatching, true);
     if (psFields.autoGenerateBill !== undefined) data.purchaseSettings.autoGenerateBill = toBool(psFields.autoGenerateBill, false);
     if (psFields.allowPartialReceipts !== undefined) data.purchaseSettings.allowPartialReceipts = toBool(psFields.allowPartialReceipts, true);
+    if (psFields.rfqValidityDays !== undefined) data.purchaseSettings.rfqValidityDays = Number(psFields.rfqValidityDays);
+    if (psFields.defaultLeadTimeDays !== undefined) data.purchaseSettings.defaultLeadTimeDays = Number(psFields.defaultLeadTimeDays);
+    if (psFields.defaultPaymentTerms !== undefined) data.purchaseSettings.defaultPaymentTerms = psFields.defaultPaymentTerms;
     if (psFields.defaultReceivingLocation !== undefined) data.purchaseSettings.defaultReceivingLocation = psFields.defaultReceivingLocation;
+    if (psFields.lockConfirmedOrders !== undefined) data.purchaseSettings.lockConfirmedOrders = toBool(psFields.lockConfirmedOrders, false);
   }
 
   return data;

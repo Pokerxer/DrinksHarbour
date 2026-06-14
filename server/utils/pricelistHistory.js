@@ -97,7 +97,7 @@ function applyPOItemsToPricelist(pricelist, poItems, ctx = {}) {
         unitPrice: unit,
         discountPercent: 0,
         minQuantity: 1,
-        leadTimeDays: 7,
+        leadTimeDays: Number(ctx.defaultLeadTimeDays) > 0 ? Number(ctx.defaultLeadTimeDays) : 7,
         packaging: it.packaging,
         packagingQty: it.packagingQty || 1,
         isPreferred: false,
