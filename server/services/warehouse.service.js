@@ -246,8 +246,31 @@ async function returnStock({ warehouseId, subProduct, size, quantity }, userId, 
   return { before: after - quantity, after };
 }
 
+/**
+ * Resolve the warehouse a POS shop's stock should be sourced from. A custom
+ * shop (posSettings.shops entry) uses its bound `warehouse`, or null for
+ * aggregate stock if left unbound. The built-in retail/wholesale shops, and
+ * any other shopId that doesn't match a custom shop, always use the
+ * tenant's default warehouse (Warehouse.isDefault), or null if none is set.
+ */
+async function resolveShopWarehouse(tenant, tenantId, shopId) {
+  let shop = null;
+  if (shopId) {
+    try {
+      shop = tenant?.posSettings?.shops?.id?.(shopId) || null;
+    } catch (_) {
+      shop = null;
+    }
+  }
+  if (shop) {
+    return shop.warehouse || null;
+  }
+  const def = await Warehouse.findOne({ tenant: tenantId, isDefault: true }).select('_id').lean();
+  return def?._id || null;
+}
+
 module.exports = {
   createWarehouse, getWarehouses, getWarehouseById, updateWarehouse, deleteWarehouse,
   getWarehouseStock, adjustStock, transferStock, getStockByWarehouse,
-  sellStock, returnStock,
+  sellStock, returnStock, resolveShopWarehouse,
 };

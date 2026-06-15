@@ -11,7 +11,7 @@ const Size            = require('../models/Size');
 const SubProduct      = require('../models/SubProduct');
 const Warehouse       = require('../models/Warehouse');
 const WarehouseStock  = require('../models/WarehouseStock');
-const { sellStock, returnStock } = require('../services/warehouse.service');
+const { sellStock, returnStock, resolveShopWarehouse } = require('../services/warehouse.service');
 const InventoryMovement = require('../models/InventoryMovement');
 const inventoryService = require('../services/inventory.service');
 const { generateOrderNumber, generateReceiptNumber, generateReturnNumber } = require('../utils/orderUtils');
@@ -1738,16 +1738,10 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
   const tenant   = req.tenant;
   const { search, category, limit = 200, shopId } = req.query;
 
-  // Resolve the active shop's bound warehouse, if any.
-  let warehouseId = null;
-  if (shopId) {
-    try {
-      const shop = tenant?.posSettings?.shops?.id?.(shopId);
-      warehouseId = shop?.warehouse || null;
-    } catch (_) {
-      warehouseId = null;
-    }
-  }
+  // Resolve the active shop's bound warehouse. Built-in shops (retail/
+  // wholesale) and unbound custom shops fall back to the tenant's default
+  // warehouse.
+  const warehouseId = await resolveShopWarehouse(tenant, tenantId, shopId);
 
   // visibleInPOS is the explicit "show in POS" flag and is the sole gate.
   // Include all statuses except administrative-only ones that mean the product
@@ -1959,13 +1953,11 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   // Read tenant POS settings for stock enforcement
   const allowOverselling = req.tenant?.posSettings?.allowOverselling === true;
 
-  // Resolve the active shop's bound warehouse, if any. When set, stock is
-  // sourced from and decremented in WarehouseStock for that warehouse only.
-  let warehouseId = null;
-  if (shopId) {
-    const shop = req.tenant?.posSettings?.shops?.id?.(shopId);
-    warehouseId = shop?.warehouse || null;
-  }
+  // Resolve the active shop's bound warehouse. Built-in shops (retail/
+  // wholesale) and unbound custom shops fall back to the tenant's default
+  // warehouse. When set, stock is sourced from and decremented in
+  // WarehouseStock for that warehouse only.
+  const warehouseId = await resolveShopWarehouse(req.tenant, tenantId, shopId);
 
   // Atomic stock deduction with full audit trail
   const deductedItems = [];  // for rollback on failure

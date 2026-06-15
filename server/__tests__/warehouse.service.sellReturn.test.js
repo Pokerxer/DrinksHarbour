@@ -4,7 +4,8 @@ const assert = require('node:assert');
 const WarehouseStock = require('../models/WarehouseStock');
 const WarehouseMovement = require('../models/WarehouseMovement');
 const SubProduct = require('../models/SubProduct');
-const { sellStock, returnStock } = require('../services/warehouse.service');
+const Warehouse = require('../models/Warehouse');
+const { sellStock, returnStock, resolveShopWarehouse } = require('../services/warehouse.service');
 
 const TENANT_ID     = 'tenant1';
 const USER_ID       = 'user1';
@@ -105,4 +106,56 @@ test('returnStock upserts a missing row and records a returned movement', async 
   assert.deepStrictEqual(result, { before: 0, after: 5 });
   assert.strictEqual(movements.length, 1);
   assert.strictEqual(movements[0].type, 'returned');
+});
+
+function fakeTenant(shopsById) {
+  return { posSettings: { shops: { id: (id) => shopsById[id] || null } } };
+}
+
+test('resolveShopWarehouse returns a custom shop\'s bound warehouse', async (t) => {
+  t.mock.method(Warehouse, 'findOne', () => { throw new Error('should not be called'); });
+  const tenant = fakeTenant({ shop1: { warehouse: 'whA' } });
+
+  const result = await resolveShopWarehouse(tenant, TENANT_ID, 'shop1');
+
+  assert.strictEqual(result, 'whA');
+});
+
+test('resolveShopWarehouse returns null for an unbound custom shop (aggregate stock)', async (t) => {
+  t.mock.method(Warehouse, 'findOne', () => { throw new Error('should not be called'); });
+  const tenant = fakeTenant({ shop1: { warehouse: null } });
+
+  const result = await resolveShopWarehouse(tenant, TENANT_ID, 'shop1');
+
+  assert.strictEqual(result, null);
+});
+
+test('resolveShopWarehouse falls back to the tenant default warehouse for built-in shops', async (t) => {
+  t.mock.method(Warehouse, 'findOne', (filter) => {
+    assert.deepStrictEqual(filter, { tenant: TENANT_ID, isDefault: true });
+    return { select: () => ({ lean: async () => ({ _id: 'whDefault' }) }) };
+  });
+  const tenant = fakeTenant({});
+
+  const result = await resolveShopWarehouse(tenant, TENANT_ID, undefined);
+
+  assert.strictEqual(result, 'whDefault');
+});
+
+test('resolveShopWarehouse falls back to the default warehouse for an unrecognized shopId', async (t) => {
+  t.mock.method(Warehouse, 'findOne', () => ({ select: () => ({ lean: async () => ({ _id: 'whDefault' }) }) }));
+  const tenant = fakeTenant({});
+
+  const result = await resolveShopWarehouse(tenant, TENANT_ID, 'retail');
+
+  assert.strictEqual(result, 'whDefault');
+});
+
+test('resolveShopWarehouse returns null when no default warehouse is configured', async (t) => {
+  t.mock.method(Warehouse, 'findOne', () => ({ select: () => ({ lean: async () => null }) }));
+  const tenant = fakeTenant({});
+
+  const result = await resolveShopWarehouse(tenant, TENANT_ID, undefined);
+
+  assert.strictEqual(result, null);
 });
