@@ -399,6 +399,7 @@ const tenantSchema = new Schema(
         description: { type: String, default: '' },
         active:      { type: Boolean, default: true },
         createdAt:   { type: Date, default: Date.now },
+        warehouse:   { type: ObjectId, ref: 'Warehouse', default: null },
       }],
 
       // ── Quick discount programs ────────────────────────────────────────────────

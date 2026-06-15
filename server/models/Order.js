@@ -97,6 +97,7 @@ const orderItemSchema = new Schema({
     type: Number,
     default: 0,
   },
+  warehouse: { type: ObjectId, ref: 'Warehouse', required: false },
 }, { _id: false });
 
 const orderSchema = new Schema(

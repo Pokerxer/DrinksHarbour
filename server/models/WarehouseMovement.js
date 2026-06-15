@@ -11,7 +11,7 @@ const warehouseMovementSchema = new Schema(
     size: { type: ObjectId, ref: 'Size', required: true },
     type: {
       type: String,
-      enum: ['received', 'adjusted', 'shipped', 'transfer_in', 'transfer_out'],
+      enum: ['received', 'adjusted', 'shipped', 'transfer_in', 'transfer_out', 'returned'],
       required: true,
     },
     quantity: { type: Number, required: true },
