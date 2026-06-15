@@ -78,7 +78,12 @@ export const posApi = {
 
   async getProducts(
     token: string,
-    params?: { search?: string; category?: string; limit?: number; shopId?: string }
+    params?: {
+      search?: string;
+      category?: string;
+      limit?: number;
+      shopId?: string;
+    }
   ) {
     const qs = new URLSearchParams();
     if (params?.search) qs.set('search', params.search);
