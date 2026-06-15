@@ -256,24 +256,12 @@ export default function PurchasesPODetail({ id }: { id: string }) {
             </Link>
           )}
           {canValidate && (
-            <button
-              type="button"
-              disabled={acting}
-              onClick={() =>
-                act(
-                  () =>
-                    purchaseOrderService.updatePurchaseOrderStatus(
-                      id,
-                      'validated',
-                      token
-                    ),
-                  'Receipt validated — stock updated'
-                )
-              }
-              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+            <Link
+              href={routes.eCommerce.purchaseReceipt(po._id)}
+              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
             >
               <PiCheckCircle className="h-4 w-4" /> Validate
-            </button>
+            </Link>
           )}
           {canBill && (
             <Link

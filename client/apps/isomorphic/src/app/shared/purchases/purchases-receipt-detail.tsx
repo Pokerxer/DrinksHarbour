@@ -183,7 +183,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
 
   function handleValidateClick() {
     const hasChanges = Object.values(receivedQtys).some((v) => v !== 0);
-    if (!hasChanges) {
+    if (!hasChanges && !allAlreadyReceived) {
       toast.error('Enter at least one unit to process');
       return;
     }
@@ -203,12 +203,18 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
         const key = (item as any)._id?.toString() ?? String(idx);
         return { itemId: key, receivedQty: receivedQtys[key] ?? 0 };
       });
-      await purchaseOrderService.updatePurchaseOrderStatus(
-        id,
-        'received',
-        token,
-        receivedItems
-      );
+      // Only (re)post received quantities when something is actually being
+      // received now. For an already-received PO we skip this — otherwise the
+      // server would overwrite the recorded receivedQty with 0s.
+      const anyNewlyReceived = receivedItems.some((r) => r.receivedQty > 0);
+      if (anyNewlyReceived) {
+        await purchaseOrderService.updatePurchaseOrderStatus(
+          id,
+          'received',
+          token,
+          receivedItems
+        );
+      }
       await purchaseOrderService.updatePurchaseOrderStatus(
         id,
         'validated',
@@ -729,7 +735,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
             <button
               type="button"
               onClick={handleValidateClick}
-              disabled={validating || allAlreadyReceived}
+              disabled={validating}
               className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-5 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <PiCheck className="h-4 w-4" />
