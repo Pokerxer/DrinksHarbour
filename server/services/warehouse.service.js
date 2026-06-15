@@ -195,7 +195,59 @@ async function getStockByWarehouse(subProductId, tenantId) {
     .lean();
 }
 
+/**
+ * Atomically decrement WarehouseStock for a POS sale and record a 'shipped' movement.
+ * Unless allowOverselling is true, the decrement is guarded so it fails (returns null
+ * from findOneAndUpdate) when currentQuantity < quantity, throwing a ValidationError.
+ */
+async function sellStock({ warehouseId, subProduct, size, quantity, allowOverselling = false }, userId, tenantId) {
+  const filter = { tenant: tenantId, warehouse: warehouseId, subProduct, size };
+  if (!allowOverselling) {
+    filter.currentQuantity = { $gte: quantity };
+  }
+
+  const row = await WarehouseStock.findOneAndUpdate(
+    filter,
+    { $inc: { currentQuantity: -quantity } },
+    { new: true, upsert: allowOverselling, setDefaultsOnInsert: allowOverselling }
+  );
+  if (!row) {
+    throw new ValidationError('Insufficient stock for this sale');
+  }
+
+  const after = row.currentQuantity;
+  await WarehouseMovement.create({
+    tenant: tenantId, warehouse: warehouseId, subProduct, size,
+    type: 'shipped', quantity, balanceAfter: after, performedBy: userId,
+  });
+  await recalcSubProductStock(subProduct);
+
+  return { before: after + quantity, after };
+}
+
+/**
+ * Atomically increment WarehouseStock for a POS refund/void and record a 'returned'
+ * movement. Upserts the (warehouse, subProduct, size) row if it doesn't exist yet.
+ */
+async function returnStock({ warehouseId, subProduct, size, quantity }, userId, tenantId) {
+  const row = await WarehouseStock.findOneAndUpdate(
+    { tenant: tenantId, warehouse: warehouseId, subProduct, size },
+    { $inc: { currentQuantity: quantity } },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
+
+  const after = row.currentQuantity;
+  await WarehouseMovement.create({
+    tenant: tenantId, warehouse: warehouseId, subProduct, size,
+    type: 'returned', quantity, balanceAfter: after, performedBy: userId,
+  });
+  await recalcSubProductStock(subProduct);
+
+  return { before: after - quantity, after };
+}
+
 module.exports = {
   createWarehouse, getWarehouses, getWarehouseById, updateWarehouse, deleteWarehouse,
   getWarehouseStock, adjustStock, transferStock, getStockByWarehouse,
+  sellStock, returnStock,
 };
