@@ -7,6 +7,11 @@ const SubProduct = require("../models/SubProduct");
 const Size = require("../models/Size");
 const Warehouse = require("../models/Warehouse");
 const inventoryService = require("../services/inventory.service");
+const warehouseService = require("../services/warehouse.service");
+const {
+  resolveTargetWarehouse,
+  postReceivedStock,
+} = require("../services/poReceive.helpers");
 const VendorBill = require("../models/VendorBill");
 const { syncVendorPricelistFromPO } = require("../services/vendorPricelistSync.service");
 const {
@@ -444,7 +449,7 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
   const rawStatus = req.body.status;
   // Accept legacy frontend aliases
   const status = rawStatus === "cancel" ? "cancelled" : rawStatus === "done" ? "validated" : rawStatus;
-  const { receivedItems } = req.body;
+  const { receivedItems, warehouseId } = req.body;
   const tenantId = await resolveTenantId(req);
 
   const purchaseOrder = await PurchaseOrder.findOne({
@@ -518,80 +523,30 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
       console.log(`⚠️ PO ${purchaseOrder.poNumber} validation: Previous status was '${previousStatus}', expected 'received'. Proceeding anyway...`);
     }
 
-    purchaseOrder.fullyReceivedDate = new Date();
-
-    // Get default warehouse for tenant (optional - can be null)
-    let defaultWarehouseId;
+    // Resolve the destination warehouse BEFORE writing anything, so a missing
+    // warehouse fails validation cleanly with nothing posted.
+    let defaultWarehouseId = null;
     try {
       defaultWarehouseId = await getDefaultWarehouse(tenantId);
     } catch (e) {
-      console.log('No default warehouse found, skipping warehouse update');
       defaultWarehouseId = null;
     }
+    const targetWarehouseId = resolveTargetWarehouse(warehouseId, defaultWarehouseId);
 
-    console.log(`🔍 PO Validation Start: ${purchaseOrder.poNumber} - ${purchaseOrder.items?.length || 0} items`);
-    console.log(`📋 Items details:`, purchaseOrder.items.map(item => ({
-      name: item.subProductName,
-      subProductId: item.subProductId,
-      sizeId: item.sizeId,
-      sizeName: item.sizeName,
-      orderedQty: item.quantity,
-      receivedQty: item.receivedQty,
-      unitCost: item.unitCost
-    })));
+    purchaseOrder.fullyReceivedDate = new Date();
 
-    // Create inventory movements for each item (Odoo-style)
-    let successCount = 0;
-    let failCount = 0;
-    
-    for (const item of purchaseOrder.items) {
-      // Fix: Use quantity as fallback if receivedQty is 0, undefined, or null
-      const quantityToAdd = (item.receivedQty !== undefined && item.receivedQty !== null && item.receivedQty > 0) 
-        ? item.receivedQty 
-        : item.quantity;
-      
-      console.log(`📦 Processing item: ${item.subProductName}`);
-      console.log(`   - subProductId: ${item.subProductId}`);
-      console.log(`   - sizeId: ${item.sizeId || '(none)'}`);
-      console.log(`   - orderedQty: ${item.quantity}, receivedQty: ${item.receivedQty}, using: ${quantityToAdd}`);
-      
-      if (quantityToAdd <= 0) {
-        console.log(`   ⚠️ Skipping - quantity is 0`);
-        continue;
-      }
-      
-      if (!item.subProductId) {
-        console.log(`   ❌ Skipping - no subProductId`);
-        failCount++;
-        continue;
-      }
-      
-      try {
-        await inventoryService.recordReceived(
-          item.subProductId,
-          tenantId,
-          {
-            quantity: quantityToAdd,
-            unitCost: item.unitCost ?? 0,
-            reference: purchaseOrder.poNumber,
-            referenceType: 'purchase_order',
-            supplierId: purchaseOrder.vendor,
-            supplierName: purchaseOrder.vendorName,
-            sizeId: item.sizeId,
-            sizeName: item.sizeName,
-            reason: `PO Receipt: ${purchaseOrder.poNumber}`,
-          },
-          req.user?._id || purchaseOrder.createdBy
-        );
+    console.log(
+      `🔍 PO Validation Start: ${purchaseOrder.poNumber} → warehouse ${targetWarehouseId} — ${purchaseOrder.items?.length || 0} items`
+    );
 
-        console.log(`   ✅ Inventory added successfully`);
-        successCount++;
-      } catch (inventoryError) {
-        console.error(`   ❌ Failed to add inventory:`, inventoryError.message);
-        failCount++;
-      }
-    }
-    
+    const { successCount, failCount } = await postReceivedStock({
+      purchaseOrder,
+      targetWarehouseId,
+      adjustStock: warehouseService.adjustStock,
+      userId: req.user?._id || purchaseOrder.createdBy,
+      tenantId,
+    });
+
     console.log(`🏁 PO Validation Complete: ${successCount} succeeded, ${failCount} failed`);
 
     // Auto-sync the vendor's pricelist from this (latest) validated purchase.
