@@ -220,7 +220,31 @@ async function deductStock({ subProductId, sizeId, quantity, tenantId, staffId, 
  * Restore stock for one refund line.
  * Creates an InventoryMovement audit record.
  */
-async function restoreStock({ subProductId, sizeId, quantity, tenantId, staffId, returnNumber, productId, unitPrice }) {
+async function restoreStock({ subProductId, sizeId, quantity, tenantId, staffId, returnNumber, productId, unitPrice, warehouseId = null, defaultSizeId = null }) {
+  if (warehouseId) {
+    // ── Warehouse-scoped restore ──────────────────────────────────────────
+    const whSizeId = sizeId || defaultSizeId;
+    const { before, after } = await returnStock(
+      { warehouseId, subProduct: subProductId, size: whSizeId, quantity },
+      staffId, tenantId
+    );
+
+    await InventoryMovement.create({
+      subProduct: subProductId, tenant: tenantId, warehouse: warehouseId, product: productId || undefined,
+      size: whSizeId || undefined, type: 'return', category: 'in',
+      quantity,
+      quantityBefore: before,
+      quantityAfter:  after,
+      reference: returnNumber, referenceType: 'return',
+      sellingPrice: unitPrice || 0,
+      performedBy: staffId || tenantId,
+      performedAt: new Date(),
+      source: 'return', status: 'confirmed',
+      notes: `POS return — ${returnNumber}`,
+    }).catch(err => console.error('[Inventory] POS restoreStock audit failed:', err.message));
+    return;
+  }
+
   if (sizeId) {
     const sizeAfter = await Size.findByIdAndUpdate(
       sizeId,
@@ -2367,6 +2391,12 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
 
     // Restore stock only if restock flag is true (Odoo-style: cashier controls this)
     if (restock !== false) {
+      const lineWarehouseId = orderItem.warehouse ? orderItem.warehouse.toString() : null;
+      let lineDefaultSizeId = null;
+      if (lineWarehouseId && !orderItem.size) {
+        const spDoc = await SubProduct.findById(orderItem.subproduct).select('defaultSize').lean();
+        lineDefaultSizeId = spDoc?.defaultSize || null;
+      }
       await restoreStock({
         subProductId: orderItem.subproduct?.toString() || orderItem.subproduct,
         sizeId:       orderItem.size ? orderItem.size.toString() : null,
@@ -2376,6 +2406,8 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
         returnNumber,
         productId:    orderItem.product || undefined,
         unitPrice:    refundUnitPrice,
+        warehouseId:    lineWarehouseId,
+        defaultSizeId:  lineDefaultSizeId,
       });
     }
 
@@ -2463,6 +2495,12 @@ exports.voidPOSOrder = asyncHandler(async (req, res) => {
   const voidNumber = `VOID-${order.receiptNumber || order.orderNumber}`;
   for (const item of order.items) {
     if (!item.subproduct && !item.size) continue;
+    const lineWarehouseId = item.warehouse ? item.warehouse.toString() : null;
+    let lineDefaultSizeId = null;
+    if (lineWarehouseId && !item.size) {
+      const spDoc = await SubProduct.findById(item.subproduct).select('defaultSize').lean();
+      lineDefaultSizeId = spDoc?.defaultSize || null;
+    }
     await restoreStock({
       subProductId: item.subproduct?.toString() || item.subproduct,
       sizeId:       item.size ? item.size.toString() : null,
@@ -2472,6 +2510,8 @@ exports.voidPOSOrder = asyncHandler(async (req, res) => {
       returnNumber: voidNumber,
       productId:    item.product || undefined,
       unitPrice:    item.priceAtPurchase || 0,
+      warehouseId:    lineWarehouseId,
+      defaultSizeId:  lineDefaultSizeId,
     });
   }
 
