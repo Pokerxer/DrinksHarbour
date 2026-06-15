@@ -78,12 +78,13 @@ export const posApi = {
 
   async getProducts(
     token: string,
-    params?: { search?: string; category?: string; limit?: number }
+    params?: { search?: string; category?: string; limit?: number; shopId?: string }
   ) {
     const qs = new URLSearchParams();
     if (params?.search) qs.set('search', params.search);
     if (params?.category) qs.set('category', params.category);
     if (params?.limit) qs.set('limit', String(params.limit));
+    if (params?.shopId) qs.set('shopId', params.shopId);
     return request<{ products: POSProduct[]; total: number }>(
       `${API_URL}/api/pos/products?${qs}`,
       { headers: authHeaders(token) }
@@ -540,6 +541,7 @@ export const posApi = {
       mode: 'retail' | 'wholesale';
       color?: string;
       description?: string;
+      warehouse?: string | null;
     }
   ) {
     return request<{ shop: POSShop }>(`${API_URL}/api/pos/shops`, {
@@ -558,6 +560,7 @@ export const posApi = {
       color: string;
       description: string;
       active: boolean;
+      warehouse: string | null;
     }>
   ) {
     return request<{ shop: POSShop }>(`${API_URL}/api/pos/shops/${shopId}`, {

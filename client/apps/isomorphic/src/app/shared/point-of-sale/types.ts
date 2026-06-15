@@ -714,6 +714,7 @@ export interface POSShop {
   description: string;
   active: boolean;
   createdAt: string;
+  warehouse?: { _id: string; name: string; code: string } | null;
 }
 
 export type POSComboPriceMode =

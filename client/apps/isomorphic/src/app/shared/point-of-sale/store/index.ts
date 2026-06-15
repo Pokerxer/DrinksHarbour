@@ -75,6 +75,18 @@ export const usePOSShops = () => {
   return { shops, setShops };
 };
 
+const posActiveShopIdAtom = atomWithStorage<string | null>('dh-pos-shop', null);
+
+export const usePOSActiveShop = () => {
+  const [activeShopId, setActiveShopId] = useAtom(posActiveShopIdAtom);
+  const { shops } = usePOSShops();
+  const activeShop = useMemo(
+    () => shops.find((s) => s._id === activeShopId) ?? null,
+    [shops, activeShopId]
+  );
+  return { activeShopId, setActiveShopId, activeShop };
+};
+
 // ─── Notifications ────────────────────────────────────────────────────────────
 
 type StoredNotification = POSNotification & { seen: boolean };
