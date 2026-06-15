@@ -1187,6 +1187,13 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
   // Handle both direct data and nested subProductData format from frontend
   const data = updateData.subProductData || updateData;
 
+  // Stock rollup fields are derived from WarehouseStock by recalcSubProductStock().
+  // Never accept them from the client — doing so would overwrite the authoritative
+  // per-warehouse sum. (See spec 2026-06-15-subproduct-edit-inventory-reconciliation.)
+  delete data.totalStock;
+  delete data.reservedStock;
+  delete data.availableStock;
+
   console.log('📥 UpdateSubProduct received updateData:', JSON.stringify(updateData, null, 2).slice(0, 500));
   console.log('📥 UpdateSubProduct received data keys:', Object.keys(data));
   console.log('📥 Inventory fields from data:', {
@@ -1828,9 +1835,8 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
       if (updatedSizeIds.length > 0) {
         const updatedSizes = await Size.find({ _id: { $in: updatedSizeIds } }).lean();
         const totalSizeStock = updatedSizes.reduce((sum, s) => sum + (s.stock || 0), 0);
-        subProduct.totalStock = totalSizeStock;
-        subProduct.availableStock = totalSizeStock - (subProduct.reservedStock || 0);
-        
+        // rollup (totalStock/availableStock) derived from WarehouseStock; not recomputed from size stock
+
         // Update stock status based on sizes
         if (totalSizeStock === 0) {
           subProduct.stockStatus = 'out_of_stock';
