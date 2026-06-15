@@ -74,6 +74,25 @@ function getSourceBadge(m: InventoryMovement) {
   return { label: 'Manual', cls: 'bg-gray-100 text-gray-500', icon: <PiWrench className="h-2.5 w-2.5" /> };
 }
 
+function whLabel(w: any): string | null {
+  if (!w) return null;
+  if (typeof w === 'object') return w.name || w.code || null;
+  return null; // bare id (unpopulated) → nothing to show
+}
+
+type WarehouseInfo =
+  | { kind: 'single'; label: string }
+  | { kind: 'route'; from: string; to: string }
+  | null;
+
+function getWarehouseInfo(m: InventoryMovement): WarehouseInfo {
+  const from = whLabel((m as any).sourceWarehouse);
+  const to   = whLabel((m as any).destinationWarehouse);
+  if (from && to) return { kind: 'route', from, to };
+  const single = whLabel(m.warehouse) || from || to;
+  return single ? { kind: 'single', label: single } : null;
+}
+
 function getOrderRef(m: InventoryMovement): string | null {
   if (m.relatedOrder && typeof m.relatedOrder === 'object')
     return m.relatedOrder.receiptNumber || m.relatedOrder.orderNumber || null;
@@ -2444,6 +2463,7 @@ export function ServerMovementsList({ movements, isLoading, onRefresh, onCancel 
               const source = getSourceBadge(m);
               const orderRef = getOrderRef(m);
               const sizeName = (typeof m.size === 'object' && m.size) ? (m.size.displayName || m.size.size) : (m.sizeName || null);
+              const wh = getWarehouseInfo(m);
               const performer = m.performedBy
                 ? (m.performedBy.posName || `${m.performedBy.firstName || ''} ${m.performedBy.lastName || ''}`.trim() || m.performedBy.email)
                 : null;
@@ -2471,6 +2491,12 @@ export function ServerMovementsList({ movements, isLoading, onRefresh, onCancel 
                         {source.icon}{source.label}
                       </span>
                       {sizeName && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600">{sizeName}</span>}
+                      {wh && (
+                        <span className="flex items-center gap-1 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600">
+                          <PiWarehouse className="h-3 w-3" />
+                          {wh.kind === 'route' ? `${wh.from} → ${wh.to}` : wh.label}
+                        </span>
+                      )}
                       {orderRef && (
                         <span className="flex items-center gap-0.5 text-[10px] text-gray-400">
                           <PiReceipt className="h-3 w-3" />{orderRef}
