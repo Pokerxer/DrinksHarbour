@@ -38,9 +38,15 @@ function recordToPOSProduct(r: ProductRecord): any {
   };
 }
 
-export async function getProducts(token: string, shopId?: string): Promise<any[]> {
+export async function getProducts(
+  token: string,
+  shopId?: string
+): Promise<any[]> {
   if (isOnline()) {
-    const data = await posApi.getProducts(token, shopId ? { shopId } : undefined);
+    const data = await posApi.getProducts(
+      token,
+      shopId ? { shopId } : undefined
+    );
     const products: any[] = data?.products ?? [];
     // Flatten to Dexie records for offline use, mapping nested POSProduct fields
     const records: ProductRecord[] = products.map((p: any) => ({

@@ -14,7 +14,11 @@ import {
   PiCheck,
 } from 'react-icons/pi';
 import { posApi } from '@/app/shared/point-of-sale/api';
-import { usePOSShops, usePOSAuth, usePOSActiveShop } from '@/app/shared/point-of-sale/store';
+import {
+  usePOSShops,
+  usePOSAuth,
+  usePOSActiveShop,
+} from '@/app/shared/point-of-sale/store';
 import type { POSShop } from '@/app/shared/point-of-sale/types';
 
 type NavItem =

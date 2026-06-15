@@ -1194,7 +1194,10 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleShopWarehouseChange(shopId: string, warehouseId: string) {
+  async function handleShopWarehouseChange(
+    shopId: string,
+    warehouseId: string
+  ) {
     try {
       const { shop } = await posApi.updateShop(token, shopId, {
         warehouse: warehouseId || null,
@@ -1664,7 +1667,10 @@ export default function SettingsPage() {
                               <select
                                 value={shop.warehouse?._id || ''}
                                 onChange={(e) =>
-                                  handleShopWarehouseChange(shop._id, e.target.value)
+                                  handleShopWarehouseChange(
+                                    shop._id,
+                                    e.target.value
+                                  )
                                 }
                                 className="shrink-0 rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
                               >
