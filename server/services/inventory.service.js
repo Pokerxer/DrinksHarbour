@@ -21,6 +21,7 @@ const mongoose          = require('mongoose');
 const SubProduct        = require('../models/SubProduct');
 const Size              = require('../models/Size');
 const InventoryMovement = require('../models/InventoryMovement');
+const Warehouse         = require('../models/Warehouse');
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -87,6 +88,25 @@ function audit(items, orderId, type, category, performedBy) {
       }
     }
   });
+}
+
+/**
+ * Resolve the warehouse a movement should be attributed to.
+ * @param {string|ObjectId} tenantId
+ * @param {string|ObjectId|null|undefined} explicitWarehouseId
+ * @returns {Promise<ObjectId|string|null>} explicit id if given, else the tenant's
+ *   default warehouse id, else null. Never throws.
+ */
+async function resolveMovementWarehouse(tenantId, explicitWarehouseId) {
+  if (explicitWarehouseId) return explicitWarehouseId;
+  try {
+    const def = await Warehouse.findOne({ tenant: tenantId, isDefault: true })
+      .select('_id')
+      .lean();
+    return def?._id || null;
+  } catch {
+    return null;
+  }
 }
 
 // ─── public API ─────────────────────────────────────────────────────────────
@@ -776,4 +796,5 @@ module.exports = {
   recordReceived, adjustInventory, recordReturn, transferStock,
   createMovement, getMovements, getInventorySummary,
   cancelMovement, getNextPONumber, getLowStockItems, getInventoryValuation,
+  resolveMovementWarehouse,
 };
