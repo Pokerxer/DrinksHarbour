@@ -83,9 +83,14 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
         const list: Warehouse[] = res.data ?? [];
         setWarehouses(list);
         const preferred = list.find((w) => w.isDefault) ?? list[0];
-        if (preferred) setWarehouseId(preferred._id);
+        // Only seed the default when the user hasn't already chosen one,
+        // so a token refresh re-running this effect won't clobber their pick.
+        if (preferred) setWarehouseId((cur) => cur || preferred._id);
       } catch {
-        if (!cancelled) setWarehouses([]);
+        if (!cancelled) {
+          setWarehouses([]);
+          toast.error('Failed to load warehouses');
+        }
       }
     })();
     return () => {
