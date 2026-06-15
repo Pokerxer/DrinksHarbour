@@ -662,6 +662,9 @@ async function getMovements(tenantId, options = {}) {
       .populate('performedBy', 'firstName lastName email posName')
       .populate('size', 'displayName size')
       .populate('relatedOrder', 'orderNumber receiptNumber placedAt')
+      .populate('warehouse', 'name code')
+      .populate('sourceWarehouse', 'name code')
+      .populate('destinationWarehouse', 'name code')
       .lean(),
     InventoryMovement.countDocuments(query),
   ]);
@@ -687,6 +690,9 @@ async function getInventorySummary(tenantId, subProductId) {
       .limit(10)
       .populate('performedBy', 'firstName lastName')
       .populate('size', 'displayName size')
+      .populate('warehouse', 'name code')
+      .populate('sourceWarehouse', 'name code')
+      .populate('destinationWarehouse', 'name code')
       .lean(),
     InventoryMovement.aggregate([
       { $match: { tenant: tId, subProduct: spId, status: 'confirmed' } },
