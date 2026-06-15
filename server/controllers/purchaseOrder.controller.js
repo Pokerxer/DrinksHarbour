@@ -7,6 +7,7 @@ const SubProduct = require("../models/SubProduct");
 const Size = require("../models/Size");
 const Warehouse = require("../models/Warehouse");
 const warehouseService = require("../services/warehouse.service");
+const inventoryService = require("../services/inventory.service");
 const {
   resolveTargetWarehouse,
   postReceivedStock,
@@ -1649,6 +1650,7 @@ const returnPurchaseOrder = asyncHandler(async (req, res) => {
 
   const errors   = [];
   const movementIds = [];
+  const returnWarehouse = await inventoryService.resolveMovementWarehouse(tenantId, undefined);
 
   for (const retItem of returnItems) {
     const { subProductId, quantity, reason: lineReason } = retItem;
@@ -1712,6 +1714,7 @@ const returnPurchaseOrder = asyncHandler(async (req, res) => {
       const movement = await InventoryMovement.create({
         subProduct:          subProductId,
         tenant:              tenantId,
+        warehouse:           returnWarehouse || undefined,
         size:                effSizeId || undefined,
         type:                'return',
         category:            'out',
