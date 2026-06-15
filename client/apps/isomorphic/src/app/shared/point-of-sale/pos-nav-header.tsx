@@ -14,7 +14,7 @@ import {
   PiCheck,
 } from 'react-icons/pi';
 import { posApi } from '@/app/shared/point-of-sale/api';
-import { usePOSShops, usePOSAuth } from '@/app/shared/point-of-sale/store';
+import { usePOSShops, usePOSAuth, usePOSActiveShop } from '@/app/shared/point-of-sale/store';
 import type { POSShop } from '@/app/shared/point-of-sale/types';
 
 type NavItem =
@@ -268,11 +268,12 @@ function NewShopModal({
 // ── Shop Selector ─────────────────────────────────────────────────────────────
 function ShopSelector({ token }: { token: string }) {
   const { shops, setShops } = usePOSShops();
+  const { activeShopId, setActiveShopId } = usePOSActiveShop();
   const [open, setOpen] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [activeId, setActiveId] = useState<string>('retail');
   const ref = useRef<HTMLDivElement>(null);
 
+  const activeId = activeShopId ?? 'retail';
   const allShops = [...BUILT_IN, ...shops];
   const active = allShops.find((s) => s._id === activeId) ?? BUILT_IN[0];
 
@@ -328,7 +329,7 @@ function ShopSelector({ token }: { token: string }) {
                   key={shop._id}
                   type="button"
                   onClick={() => {
-                    setActiveId(shop._id);
+                    setActiveShopId(shop._id);
                     setOpen(false);
                   }}
                   className={`flex w-full items-center gap-3 px-3 py-2 text-sm transition-colors ${
