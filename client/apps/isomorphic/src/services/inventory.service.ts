@@ -19,8 +19,14 @@ export interface InventoryMovement {
   product?: any;
   size?: { _id: string; displayName?: string; size?: string } | null;
   warehouse?: { _id: string; name?: string; code?: string } | string | null;
-  sourceWarehouse?: { _id: string; name?: string; code?: string } | string | null;
-  destinationWarehouse?: { _id: string; name?: string; code?: string } | string | null;
+  sourceWarehouse?:
+    | { _id: string; name?: string; code?: string }
+    | string
+    | null;
+  destinationWarehouse?:
+    | { _id: string; name?: string; code?: string }
+    | string
+    | null;
   type: string;
   category: string;
   quantity: number;
@@ -28,8 +34,19 @@ export interface InventoryMovement {
   quantityAfter?: number;
   reference?: string;
   referenceType?: string;
-  relatedOrder?: { _id: string; orderNumber?: string; receiptNumber?: string; placedAt?: string } | string | null;
-  relatedPurchaseOrder?: { _id: string; poNumber?: string; createdAt?: string } | string | null;
+  relatedOrder?:
+    | {
+        _id: string;
+        orderNumber?: string;
+        receiptNumber?: string;
+        placedAt?: string;
+      }
+    | string
+    | null;
+  relatedPurchaseOrder?:
+    | { _id: string; poNumber?: string; createdAt?: string }
+    | string
+    | null;
   unitCost?: number;
   totalCost?: number;
   sellingPrice?: number;
@@ -43,7 +60,13 @@ export interface InventoryMovement {
   notes?: string;
   status: string;
   isVerified?: boolean;
-  performedBy?: { _id: string; firstName?: string; lastName?: string; email?: string; posName?: string } | null;
+  performedBy?: {
+    _id: string;
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    posName?: string;
+  } | null;
   performedAt?: string;
   source: string; // 'manual' | 'order' | 'system' | 'api' | 'pos'
   createdAt: string;
@@ -128,7 +151,7 @@ export const inventoryService = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(data),
     });
@@ -143,7 +166,7 @@ export const inventoryService = {
 
   async getMovements(token: string, params?: GetMovementsParams) {
     const queryParams = new URLSearchParams();
-    
+
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
         if (value !== undefined && value !== null && value !== '') {
@@ -153,10 +176,10 @@ export const inventoryService = {
     }
 
     const url = `${API_URL}/api/inventory/movements${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-    
+
     const response = await fetch(url, {
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 
@@ -169,11 +192,14 @@ export const inventoryService = {
   },
 
   async getInventorySummary(subProductId: string, token: string) {
-    const response = await fetch(`${API_URL}/api/inventory/summary/${subProductId}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-    });
+    const response = await fetch(
+      `${API_URL}/api/inventory/summary/${subProductId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
 
     if (!response.ok) {
       const error = await response.json();
@@ -183,12 +209,19 @@ export const inventoryService = {
     return response.json();
   },
 
-  async adjustInventory(subProductId: string, adjustment: number, reason: string, token: string, notes?: string, reference?: string) {
+  async adjustInventory(
+    subProductId: string,
+    adjustment: number,
+    reason: string,
+    token: string,
+    notes?: string,
+    reference?: string
+  ) {
     const response = await fetch(`${API_URL}/api/inventory/adjust`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         subProductId,
@@ -207,24 +240,29 @@ export const inventoryService = {
     return response.json();
   },
 
-  async recordReceived(subProductId: string, quantity: number, token: string, data?: {
-    unitCost?: number;
-    reference?: string;
-    supplierId?: string;
-    supplierName?: string;
-    batchNumber?: string;
-    lotNumber?: string;
-    expirationDate?: string;
-    notes?: string;
-    reason?: string;
-    sizeId?: string;
-    sizeName?: string;
-  }) {
+  async recordReceived(
+    subProductId: string,
+    quantity: number,
+    token: string,
+    data?: {
+      unitCost?: number;
+      reference?: string;
+      supplierId?: string;
+      supplierName?: string;
+      batchNumber?: string;
+      lotNumber?: string;
+      expirationDate?: string;
+      notes?: string;
+      reason?: string;
+      sizeId?: string;
+      sizeName?: string;
+    }
+  ) {
     const response = await fetch(`${API_URL}/api/inventory/received`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         subProductId,
@@ -241,17 +279,22 @@ export const inventoryService = {
     return response.json();
   },
 
-  async recordReturn(subProductId: string, quantity: number, token: string, data?: {
-    reason?: string;
-    notes?: string;
-    reference?: string;
-    orderId?: string;
-  }) {
+  async recordReturn(
+    subProductId: string,
+    quantity: number,
+    token: string,
+    data?: {
+      reason?: string;
+      notes?: string;
+      reference?: string;
+      orderId?: string;
+    }
+  ) {
     const response = await fetch(`${API_URL}/api/inventory/return`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         subProductId,
@@ -269,14 +312,17 @@ export const inventoryService = {
   },
 
   async cancelMovement(movementId: string, token: string, reason: string) {
-    const response = await fetch(`${API_URL}/api/inventory/movements/${movementId}/cancel`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({ reason }),
-    });
+    const response = await fetch(
+      `${API_URL}/api/inventory/movements/${movementId}/cancel`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ reason }),
+      }
+    );
 
     if (!response.ok) {
       const error = await response.json();
@@ -289,7 +335,7 @@ export const inventoryService = {
   async getLowStockItems(token: string) {
     const response = await fetch(`${API_URL}/api/inventory/low-stock`, {
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 
@@ -304,7 +350,7 @@ export const inventoryService = {
   async getInventoryValuation(token: string) {
     const response = await fetch(`${API_URL}/api/inventory/valuation`, {
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 
@@ -319,7 +365,7 @@ export const inventoryService = {
   async getNextPONumber(token: string): Promise<ApiResponse<PONumberResponse>> {
     const response = await fetch(`${API_URL}/api/inventory/next-po`, {
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 
