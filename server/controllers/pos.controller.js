@@ -9,6 +9,9 @@ const jwt = require('jsonwebtoken');
 const Tenant = require('../models/Tenant');
 const Size            = require('../models/Size');
 const SubProduct      = require('../models/SubProduct');
+const Warehouse       = require('../models/Warehouse');
+const WarehouseStock  = require('../models/WarehouseStock');
+const { sellStock, returnStock } = require('../services/warehouse.service');
 const InventoryMovement = require('../models/InventoryMovement');
 const inventoryService = require('../services/inventory.service');
 const { generateOrderNumber, generateReceiptNumber, generateReturnNumber } = require('../utils/orderUtils');
@@ -1075,7 +1078,9 @@ exports.getTenantBankAccounts = asyncHandler(async (req, res) => {
  * GET /api/pos/tenant/settings
  */
 exports.getPOSSettings = asyncHandler(async (req, res) => {
-  const tenant = await Tenant.findById(req.tenant?._id).select('posSettings');
+  const tenant = await Tenant.findById(req.tenant?._id)
+    .select('posSettings')
+    .populate('posSettings.shops.warehouse', 'name code');
   res.json({ success: true, data: { posSettings: tenant?.posSettings || {} } });
 });
 
@@ -1450,26 +1455,37 @@ exports.updatePOSSettings = asyncHandler(async (req, res) => {
 
 exports.listPOSShops = asyncHandler(async (req, res) => {
   const tenantId = req.user.tenant;
-  const tenant = await Tenant.findById(tenantId).select('posSettings.shops');
+  const tenant = await Tenant.findById(tenantId)
+    .select('posSettings.shops')
+    .populate('posSettings.shops.warehouse', 'name code');
   const shops = (tenant?.posSettings?.shops || []).filter(s => s.active !== false);
   res.json({ success: true, data: { shops } });
 });
 
 exports.createPOSShop = asyncHandler(async (req, res) => {
   const tenantId = req.user.tenant;
-  const { name, mode = 'retail', color = '#b20202', description = '' } = req.body;
+  const { name, mode = 'retail', color = '#b20202', description = '', warehouse } = req.body;
   if (!name || !name.trim()) {
     return res.status(400).json({ success: false, message: 'Shop name is required' });
   }
   if (!['retail', 'wholesale'].includes(mode)) {
     return res.status(400).json({ success: false, message: 'mode must be retail or wholesale' });
   }
+
+  let warehouseId = null;
+  if (warehouse) {
+    const wh = await Warehouse.findOne({ _id: warehouse, tenant: tenantId, isActive: true });
+    if (!wh) return res.status(400).json({ success: false, message: 'Warehouse not found or inactive' });
+    warehouseId = wh._id;
+  }
+
   const tenant = await Tenant.findById(tenantId);
   if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
 
   tenant.posSettings.shops = tenant.posSettings.shops || [];
-  tenant.posSettings.shops.push({ name: name.trim(), mode, color, description, active: true, createdAt: new Date() });
+  tenant.posSettings.shops.push({ name: name.trim(), mode, color, description, warehouse: warehouseId, active: true, createdAt: new Date() });
   await tenant.save();
+  await tenant.populate('posSettings.shops.warehouse', 'name code');
 
   const created = tenant.posSettings.shops[tenant.posSettings.shops.length - 1];
   res.status(201).json({ success: true, data: { shop: created } });
@@ -1478,7 +1494,7 @@ exports.createPOSShop = asyncHandler(async (req, res) => {
 exports.updatePOSShop = asyncHandler(async (req, res) => {
   const tenantId = req.user.tenant;
   const { shopId } = req.params;
-  const { name, mode, color, description, active } = req.body;
+  const { name, mode, color, description, active, warehouse } = req.body;
 
   const tenant = await Tenant.findById(tenantId);
   if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
@@ -1492,8 +1508,20 @@ exports.updatePOSShop = asyncHandler(async (req, res) => {
   if (description !== undefined) shop.description = description;
   if (active !== undefined) shop.active = !!active;
 
+  if (warehouse !== undefined) {
+    if (!warehouse) {
+      shop.warehouse = null;
+    } else {
+      const wh = await Warehouse.findOne({ _id: warehouse, tenant: tenantId, isActive: true });
+      if (!wh) return res.status(400).json({ success: false, message: 'Warehouse not found or inactive' });
+      shop.warehouse = wh._id;
+    }
+  }
+
   await tenant.save();
-  res.json({ success: true, data: { shop } });
+  await tenant.populate('posSettings.shops.warehouse', 'name code');
+  const updatedShop = tenant.posSettings.shops.id(shopId);
+  res.json({ success: true, data: { shop: updatedShop } });
 });
 
 exports.deletePOSShop = asyncHandler(async (req, res) => {
