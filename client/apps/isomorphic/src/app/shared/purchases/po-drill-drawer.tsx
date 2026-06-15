@@ -16,7 +16,13 @@ import {
 import { routes } from '@/config/routes';
 import type { PurchaseOrder, POItem } from '@/services/purchaseOrder.service';
 import { STATUS_BADGE, statusLabel, CURRENCY_SYMBOLS } from './types';
-import { fmtCur, fmtNaira, lineUntaxed, lineTax, itemName } from './purchases-analytics-helpers';
+import {
+  fmtCur,
+  fmtNaira,
+  lineUntaxed,
+  lineTax,
+  itemName,
+} from './purchases-analytics-helpers';
 
 // ── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -65,7 +71,13 @@ const STATUS_TAB_LABELS: Record<DrillStatusFilter, string> = {
   cancelled: 'Cancelled',
 };
 
-type DrillSortCol = 'date' | 'poNumber' | 'vendor' | 'currency' | 'total' | 'status';
+type DrillSortCol =
+  | 'date'
+  | 'poNumber'
+  | 'vendor'
+  | 'currency'
+  | 'total'
+  | 'status';
 
 const DRILL_HEADERS: { col: DrillSortCol; label: string; right?: boolean }[] = [
   { col: 'date', label: 'Date' },
@@ -217,10 +229,26 @@ export function PODrillDrawer({
             {/* KPI strip */}
             <div className="grid shrink-0 grid-cols-2 gap-3 border-b border-gray-100 bg-gray-50/40 px-6 py-4 sm:grid-cols-4">
               {[
-                { label: 'Total Spend', value: fmtNaira(totalSpend), accent: '#b20202' },
-                { label: 'PO Count', value: poCount.toLocaleString(), accent: '#4f46e5' },
-                { label: 'Avg Order', value: fmtNaira(avgOrder), accent: '#059669' },
-                { label: 'Receipt Rate', value: `${receiptRate.toFixed(1)}%`, accent: '#f97316' },
+                {
+                  label: 'Total Spend',
+                  value: fmtNaira(totalSpend),
+                  accent: '#b20202',
+                },
+                {
+                  label: 'PO Count',
+                  value: poCount.toLocaleString(),
+                  accent: '#4f46e5',
+                },
+                {
+                  label: 'Avg Order',
+                  value: fmtNaira(avgOrder),
+                  accent: '#059669',
+                },
+                {
+                  label: 'Receipt Rate',
+                  value: `${receiptRate.toFixed(1)}%`,
+                  accent: '#f97316',
+                },
               ].map(({ label, value, accent }) => (
                 <div
                   key={label}
@@ -247,7 +275,7 @@ export function PODrillDrawer({
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search PO #, vendor…"
-                  className="flex-1 bg-transparent text-xs text-gray-700 outline-none placeholder-gray-400"
+                  className="flex-1 bg-transparent text-xs text-gray-700 placeholder-gray-400 outline-none"
                 />
                 {search && (
                   <button
@@ -267,20 +295,22 @@ export function PODrillDrawer({
             {/* Status tabs */}
             <div className="flex shrink-0 items-center gap-3 border-b border-gray-100 px-6 py-2.5">
               <div className="flex flex-wrap rounded-xl border border-gray-200 bg-gray-50/70 p-0.5 text-xs font-semibold">
-                {(Object.keys(STATUS_TAB_LABELS) as DrillStatusFilter[]).map((f) => (
-                  <button
-                    key={f}
-                    type="button"
-                    onClick={() => setStatusFilter(f)}
-                    className={`rounded-lg px-3 py-1.5 transition-all ${
-                      statusFilter === f
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-400 hover:text-gray-600'
-                    }`}
-                  >
-                    {STATUS_TAB_LABELS[f]}
-                  </button>
-                ))}
+                {(Object.keys(STATUS_TAB_LABELS) as DrillStatusFilter[]).map(
+                  (f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => setStatusFilter(f)}
+                      className={`rounded-lg px-3 py-1.5 transition-all ${
+                        statusFilter === f
+                          ? 'bg-white text-gray-900 shadow-sm'
+                          : 'text-gray-400 hover:text-gray-600'
+                      }`}
+                    >
+                      {STATUS_TAB_LABELS[f]}
+                    </button>
+                  )
+                )}
               </div>
             </div>
 
@@ -321,9 +351,15 @@ export function PODrillDrawer({
                             right ? 'text-right' : 'text-left'
                           }`}
                         >
-                          <span className={`flex items-center gap-1 ${right ? 'justify-end' : ''}`}>
+                          <span
+                            className={`flex items-center gap-1 ${right ? 'justify-end' : ''}`}
+                          >
                             {label}
-                            <DrillSortIcon col={col} sortCol={sortCol} sortDir={sortDir} />
+                            <DrillSortIcon
+                              col={col}
+                              sortCol={sortCol}
+                              sortDir={sortDir}
+                            />
                           </span>
                         </th>
                       ))}
@@ -339,7 +375,11 @@ export function PODrillDrawer({
                           onClick={() => setSelected(o)}
                         >
                           <td className="px-3 py-2.5 text-gray-500">
-                            {dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            {dt.toLocaleDateString('en-GB', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                            })}
                           </td>
                           <td className="px-3 py-2.5 font-mono text-[11px] font-semibold text-gray-800">
                             {o.poNumber}
@@ -409,8 +449,12 @@ export function POSummaryPanel({
             <PiArrowLeft className="h-4 w-4" />
           </button>
           <div>
-            <h2 className="text-sm font-bold leading-tight text-gray-900">{po.poNumber}</h2>
-            <p className="mt-0.5 text-xs text-gray-400">{po.vendorName || 'Unknown vendor'}</p>
+            <h2 className="text-sm font-bold leading-tight text-gray-900">
+              {po.poNumber}
+            </h2>
+            <p className="mt-0.5 text-xs text-gray-400">
+              {po.vendorName || 'Unknown vendor'}
+            </p>
           </div>
         </div>
         <button
@@ -458,7 +502,11 @@ export function POSummaryPanel({
           <div>
             <p className="text-gray-400">Order Date</p>
             <p className="font-medium text-gray-900">
-              {dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+              {dt.toLocaleDateString('en-GB', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+              })}
             </p>
           </div>
           {po.expectedArrival && (
@@ -513,12 +561,15 @@ export function POSummaryPanel({
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-gray-600">
                     {symbol}
-                    {(item.unitCost ?? item.unitPrice ?? 0).toLocaleString('en-NG', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
+                    {(item.unitCost ?? item.unitPrice ?? 0).toLocaleString(
+                      'en-NG',
+                      {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }
+                    )}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums font-semibold text-gray-900">
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums text-gray-900">
                     {fmtCur(lineUntaxed(item) + lineTax(item), currency)}
                   </td>
                 </tr>
@@ -531,19 +582,27 @@ export function POSummaryPanel({
         <div className="mt-4 space-y-1.5 rounded-lg bg-gray-50 px-4 py-3 text-xs">
           <div className="flex items-center justify-between">
             <span className="text-gray-500">Untaxed Total</span>
-            <span className="font-medium tabular-nums text-gray-900">{fmtCur(untaxed, currency)}</span>
+            <span className="font-medium tabular-nums text-gray-900">
+              {fmtCur(untaxed, currency)}
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-gray-500">Tax</span>
-            <span className="font-medium tabular-nums text-gray-900">{fmtCur(tax, currency)}</span>
+            <span className="font-medium tabular-nums text-gray-900">
+              {fmtCur(tax, currency)}
+            </span>
           </div>
           <div className="flex items-center justify-between border-t border-gray-200 pt-1.5 font-semibold">
             <span className="text-gray-700">Total</span>
-            <span className="tabular-nums text-gray-900">{fmtCur(total, currency)}</span>
+            <span className="tabular-nums text-gray-900">
+              {fmtCur(total, currency)}
+            </span>
           </div>
           <div className="flex items-center justify-between pt-1.5">
             <span className="text-gray-500">Received</span>
-            <span className="font-medium tabular-nums text-gray-900">{receivedPct.toFixed(1)}%</span>
+            <span className="font-medium tabular-nums text-gray-900">
+              {receivedPct.toFixed(1)}%
+            </span>
           </div>
         </div>
 

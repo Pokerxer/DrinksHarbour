@@ -10,7 +10,12 @@ import {
 } from '@/services/purchaseOrder.service';
 import { fraunces } from './purchases-fonts';
 
-const CURRENCIES: PurchaseSettings['defaultCurrency'][] = ['NGN', 'USD', 'EUR', 'GBP'];
+const CURRENCIES: PurchaseSettings['defaultCurrency'][] = [
+  'NGN',
+  'USD',
+  'EUR',
+  'GBP',
+];
 
 export default function PurchasesSettings() {
   const { data: session } = useSession();
@@ -29,7 +34,9 @@ export default function PurchasesSettings() {
       setSettings(res.data.purchaseSettings);
       setBaseline(res.data.purchaseSettings);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load settings');
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to load settings'
+      );
     } finally {
       setLoading(false);
     }
@@ -104,8 +111,12 @@ export default function PurchasesSettings() {
           onChange={(e) => onChange(e.target.checked)}
           className="sr-only"
         />
-        <span className={`block h-5 w-9 rounded-full transition-colors ${checked ? 'bg-[#b20202]' : 'bg-gray-200'}`} />
-        <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`} />
+        <span
+          className={`block h-5 w-9 rounded-full transition-colors ${checked ? 'bg-[#b20202]' : 'bg-gray-200'}`}
+        />
+        <span
+          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`}
+        />
       </span>
     </label>
   );
@@ -117,7 +128,9 @@ export default function PurchasesSettings() {
           <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#b20202]/70">
             Configuration
           </p>
-          <h1 className={`${fraunces.className} mt-1 text-[26px] font-semibold text-[#2a2420]`}>
+          <h1
+            className={`${fraunces.className} mt-1 text-[26px] font-semibold text-[#2a2420]`}
+          >
             Purchase Settings
           </h1>
         </div>
@@ -144,28 +157,63 @@ export default function PurchasesSettings() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Order Policy */}
         <div className={card}>
-          <h2 className="mb-4 text-sm font-semibold text-gray-700">Order Policy</h2>
+          <h2 className="mb-4 text-sm font-semibold text-gray-700">
+            Order Policy
+          </h2>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={label}>Default Currency</label>
-              <select className={input} value={settings.defaultCurrency} onChange={(e) => patch({ defaultCurrency: e.target.value as PurchaseSettings['defaultCurrency'] })}>
-                {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
+              <select
+                className={input}
+                value={settings.defaultCurrency}
+                onChange={(e) =>
+                  patch({
+                    defaultCurrency: e.target
+                      .value as PurchaseSettings['defaultCurrency'],
+                  })
+                }
+              >
+                {CURRENCIES.map((c) => (
+                  <option key={c}>{c}</option>
+                ))}
               </select>
             </div>
             <div>
               <label className={label}>Default Bill Control</label>
-              <select className={input} value={settings.defaultBillControlPolicy} onChange={(e) => patch({ defaultBillControlPolicy: e.target.value as PurchaseSettings['defaultBillControlPolicy'] })}>
+              <select
+                className={input}
+                value={settings.defaultBillControlPolicy}
+                onChange={(e) =>
+                  patch({
+                    defaultBillControlPolicy: e.target
+                      .value as PurchaseSettings['defaultBillControlPolicy'],
+                  })
+                }
+              >
                 <option value="received">On received quantities</option>
                 <option value="ordered">On ordered quantities</option>
               </select>
             </div>
             <div>
               <label className={label}>Default Payment Terms</label>
-              <input className={input} value={settings.defaultPaymentTerms} onChange={(e) => patch({ defaultPaymentTerms: e.target.value })} />
+              <input
+                className={input}
+                value={settings.defaultPaymentTerms}
+                onChange={(e) => patch({ defaultPaymentTerms: e.target.value })}
+              />
             </div>
             <div>
               <label className={label}>Default Lead Time (days)</label>
-              <input type="number" min={0} max={365} className={input} value={settings.defaultLeadTimeDays} onChange={(e) => patch({ defaultLeadTimeDays: Number(e.target.value) })} />
+              <input
+                type="number"
+                min={0}
+                max={365}
+                className={input}
+                value={settings.defaultLeadTimeDays}
+                onChange={(e) =>
+                  patch({ defaultLeadTimeDays: Number(e.target.value) })
+                }
+              />
             </div>
           </div>
         </div>
@@ -188,9 +236,13 @@ export default function PurchasesSettings() {
                 disabled={!settings.requirePOApproval}
                 className={`${input} disabled:bg-gray-50 disabled:text-gray-400`}
                 value={settings.approvalThreshold}
-                onChange={(e) => patch({ approvalThreshold: Number(e.target.value) })}
+                onChange={(e) =>
+                  patch({ approvalThreshold: Number(e.target.value) })
+                }
               />
-              <p className="mt-1 text-xs text-gray-400">Only POs at or above this total need approval.</p>
+              <p className="mt-1 text-xs text-gray-400">
+                Only POs at or above this total need approval.
+              </p>
             </div>
           </div>
         </div>
@@ -216,7 +268,9 @@ export default function PurchasesSettings() {
 
         {/* Receiving */}
         <div className={card}>
-          <h2 className="mb-4 text-sm font-semibold text-gray-700">Receiving</h2>
+          <h2 className="mb-4 text-sm font-semibold text-gray-700">
+            Receiving
+          </h2>
           <div className="space-y-4">
             <Toggle
               checked={settings.allowPartialReceipts}
@@ -232,18 +286,38 @@ export default function PurchasesSettings() {
             />
             <div>
               <label className={label}>Default Receiving Location</label>
-              <input className={input} value={settings.defaultReceivingLocation} onChange={(e) => patch({ defaultReceivingLocation: e.target.value })} placeholder="e.g. Main Warehouse" />
+              <input
+                className={input}
+                value={settings.defaultReceivingLocation}
+                onChange={(e) =>
+                  patch({ defaultReceivingLocation: e.target.value })
+                }
+                placeholder="e.g. Main Warehouse"
+              />
             </div>
           </div>
         </div>
 
         {/* RFQ */}
         <div className={card}>
-          <h2 className="mb-4 text-sm font-semibold text-gray-700">Requests for Quotation</h2>
+          <h2 className="mb-4 text-sm font-semibold text-gray-700">
+            Requests for Quotation
+          </h2>
           <div>
             <label className={label}>Default RFQ Validity (days)</label>
-            <input type="number" min={0} max={365} className={input} value={settings.rfqValidityDays} onChange={(e) => patch({ rfqValidityDays: Number(e.target.value) })} />
-            <p className="mt-1 text-xs text-gray-400">New RFQs expire this many days after creation (0 = no default).</p>
+            <input
+              type="number"
+              min={0}
+              max={365}
+              className={input}
+              value={settings.rfqValidityDays}
+              onChange={(e) =>
+                patch({ rfqValidityDays: Number(e.target.value) })
+              }
+            />
+            <p className="mt-1 text-xs text-gray-400">
+              New RFQs expire this many days after creation (0 = no default).
+            </p>
           </div>
         </div>
       </div>

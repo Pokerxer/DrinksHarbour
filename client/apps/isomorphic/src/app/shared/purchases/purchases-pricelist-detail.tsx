@@ -21,7 +21,11 @@ import {
 } from '@/services/vendorPricelist.service';
 import { fmtCur } from './purchases-analytics-helpers';
 import { fraunces } from './purchases-fonts';
-import { LineItemsEditor, netPrice, isBigJump } from './purchases-pricelist-shared';
+import {
+  LineItemsEditor,
+  netPrice,
+  isBigJump,
+} from './purchases-pricelist-shared';
 
 const CURRENCIES = ['NGN', 'USD', 'EUR', 'GBP'];
 
@@ -185,7 +189,7 @@ export default function PurchasesPricelistDetail({ id }: { id: string }) {
             </h1>
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
               {pl.autoManaged || pl.source === 'auto' ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-[#b20202]/8 px-2 py-0.5 font-semibold text-[#b20202]">
+                <span className="bg-[#b20202]/8 inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold text-[#b20202]">
                   <PiRobot className="h-3 w-3" /> Auto-managed
                 </span>
               ) : (

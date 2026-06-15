@@ -1,35 +1,59 @@
 'use client';
-import { useState } from 'react';
+
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { PiPlus, PiTrash, PiCheck } from 'react-icons/pi';
+import { PiCheck, PiArrowLeft } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
-import { vendorPricelistService } from '@/services/vendorPricelist.service';
+import {
+  vendorPricelistService,
+  type PricelistItem,
+} from '@/services/vendorPricelist.service';
+import { fmtCur } from './purchases-analytics-helpers';
+import { fraunces } from './purchases-fonts';
+import { LineItemsEditor, netPrice } from './purchases-pricelist-shared';
 
-interface Line { productName: string; unitPrice: number; minQuantity: number; }
+const CURRENCIES = ['NGN', 'USD', 'EUR', 'GBP'];
 
 export default function PurchasesPricelistCreate() {
   const router = useRouter();
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
+
   const [name, setName] = useState('');
   const [vendorName, setVendorName] = useState('');
   const [currency, setCurrency] = useState('NGN');
-  const [lines, setLines] = useState<Line[]>([]);
+  const [discountPercent, setDiscountPercent] = useState(0);
+  const [notes, setNotes] = useState('');
+  const [lines, setLines] = useState<PricelistItem[]>([]);
   const [saving, setSaving] = useState(false);
 
-  function addLine() { setLines((p) => [...p, { productName: '', unitPrice: 0, minQuantity: 1 }]); }
-  function removeLine(i: number) { setLines((p) => p.filter((_, idx) => idx !== i)); }
-  function updateLine(i: number, f: keyof Line, v: string | number) {
-    setLines((p) => p.map((l, idx) => idx === i ? { ...l, [f]: v } : l));
-  }
+  const catalogueValue = useMemo(
+    () => lines.reduce((s, l) => s + netPrice(l), 0),
+    [lines]
+  );
 
   async function handleCreate() {
-    if (!name.trim()) { toast.error('Pricelist name is required'); return; }
+    if (!name.trim()) {
+      toast.error('Pricelist name is required');
+      return;
+    }
     setSaving(true);
     try {
-      const res = await vendorPricelistService.createPricelist({ name, vendorName, currency, isActive: true, items: lines.map((l) => ({ ...l, subProductId: '' })) }, token);
+      const res = await vendorPricelistService.createPricelist(
+        {
+          name,
+          vendorName,
+          currency,
+          discountPercent,
+          notes,
+          isActive: true,
+          items: lines,
+        },
+        token
+      );
       toast.success('Pricelist created');
       router.push(routes.eCommerce.vendorPricelistDetails(res.data._id));
     } catch (err: unknown) {
@@ -39,82 +63,125 @@ export default function PurchasesPricelistCreate() {
     }
   }
 
+  const inputCls =
+    'w-full rounded-lg border border-[#ece4d6] px-3 py-2 text-sm focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/15';
+
   return (
-    <div>
-      <h1 className="mb-5 text-xl font-semibold text-gray-900">New Vendor Pricelist</h1>
-      <div className="space-y-4">
-        <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Pricelist Name</label>
-              <input value={name} onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Vendor</label>
-              <input value={vendorName} onChange={(e) => setVendorName(e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Currency</label>
-              <select value={currency} onChange={(e) => setCurrency(e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20">
-                {['NGN','USD','EUR','GBP'].map((c) => <option key={c}>{c}</option>)}
-              </select>
-            </div>
+    <div className="space-y-5">
+      {/* ── Header ── */}
+      <div className="relative overflow-hidden rounded-2xl border border-[#ece4d6] bg-white px-6 py-5 shadow-sm">
+        <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-[#b20202] via-[#d9a05b] to-[#b20202]" />
+        <Link
+          href={routes.eCommerce.vendorPricelists}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-[#b20202]"
+        >
+          <PiArrowLeft className="h-3.5 w-3.5" /> Pricelists
+        </Link>
+        <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#b20202]/70">
+              Configuration
+            </p>
+            <h1
+              className={`${fraunces.className} mt-1 text-[26px] font-semibold leading-tight text-[#2a2420] sm:text-[30px]`}
+            >
+              New Vendor Pricelist
+            </h1>
           </div>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white">
-          <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
-            <h2 className="text-sm font-semibold text-gray-700">Price Lines</h2>
-            <button type="button" onClick={addLine} className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
-              <PiPlus className="h-3.5 w-3.5" /> Add Line
-            </button>
-          </div>
-          {lines.length === 0 ? (
-            <div className="py-8 text-center text-sm text-gray-400">No price lines yet</div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Product Name</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Unit Price</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Min Qty</th>
-                  <th className="px-3 py-2" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {lines.map((line, i) => (
-                  <tr key={i}>
-                    <td className="px-3 py-2">
-                      <input value={line.productName} onChange={(e) => updateLine(i, 'productName', e.target.value)} placeholder="Product name"
-                        className="w-48 rounded border border-gray-200 px-2 py-1 text-xs focus:border-[#b20202] focus:outline-none" />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input type="number" min="0" step="0.01" value={line.unitPrice} onChange={(e) => updateLine(i, 'unitPrice', Number(e.target.value))}
-                        className="w-28 rounded border border-gray-200 px-2 py-1 text-xs focus:border-[#b20202] focus:outline-none" />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input type="number" min="1" value={line.minQuantity} onChange={(e) => updateLine(i, 'minQuantity', Number(e.target.value))}
-                        className="w-20 rounded border border-gray-200 px-2 py-1 text-xs focus:border-[#b20202] focus:outline-none" />
-                    </td>
-                    <td className="px-3 py-2">
-                      <button type="button" onClick={() => removeLine(i)} className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500">
-                        <PiTrash className="h-3.5 w-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {lines.length > 0 && (
+            <div className="text-right">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                Catalogue Value
+              </p>
+              <p
+                className={`${fraunces.className} text-lg font-semibold tabular-nums text-[#2a2420]`}
+              >
+                {fmtCur(catalogueValue, currency)}
+              </p>
+            </div>
           )}
         </div>
-        <div className="flex justify-end">
-          <button type="button" onClick={handleCreate} disabled={saving}
-            className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50">
-            <PiCheck className="h-4 w-4" />{saving ? 'Creating…' : 'Create Pricelist'}
-          </button>
+      </div>
+
+      {/* ── Metadata ── */}
+      <div className="rounded-2xl border border-[#ece4d6] bg-white p-5 shadow-sm">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">
+              Pricelist Name
+            </label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Q3 Beverage Supply"
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">
+              Vendor
+            </label>
+            <input
+              value={vendorName}
+              onChange={(e) => setVendorName(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">
+              Currency
+            </label>
+            <select
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              className={inputCls}
+            >
+              {CURRENCIES.map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">
+              Global Discount %
+            </label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.5"
+              value={discountPercent}
+              onChange={(e) => setDiscountPercent(Number(e.target.value))}
+              className={inputCls}
+            />
+          </div>
+          <div className="sm:col-span-2 lg:col-span-4">
+            <label className="mb-1 block text-xs font-medium text-gray-600">
+              Notes
+            </label>
+            <input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Optional notes…"
+              className={inputCls}
+            />
+          </div>
         </div>
+      </div>
+
+      {/* ── Line items ── */}
+      <LineItemsEditor lines={lines} currency={currency} onChange={setLines} />
+
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={handleCreate}
+          disabled={saving}
+          className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
+        >
+          <PiCheck className="h-4 w-4" />
+          {saving ? 'Creating…' : 'Create Pricelist'}
+        </button>
       </div>
     </div>
   );

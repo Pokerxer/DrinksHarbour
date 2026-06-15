@@ -1,6 +1,13 @@
 'use client';
 
-import { useEffect, useState, useRef, Fragment, type Dispatch, type SetStateAction } from 'react';
+import {
+  useEffect,
+  useState,
+  useRef,
+  Fragment,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
 import {
   Bar,
   BarChart,
@@ -152,9 +159,7 @@ export function FilterListSection({
   if (items.length === 0) return null;
 
   const matched = filter
-    ? items.filter((it) =>
-        it.name.toLowerCase().includes(filter.toLowerCase())
-      )
+    ? items.filter((it) => it.name.toLowerCase().includes(filter.toLowerCase()))
     : items;
 
   if (filter && matched.length === 0) return null;
@@ -216,8 +221,10 @@ export function FilterListSection({
 
 function EmptyState() {
   return (
-    <div className="flex flex-col items-center gap-2 py-20 text-center">
-      <PiWarning className="h-7 w-7 text-gray-300" />
+    <div className="flex flex-col items-center gap-3 py-20 text-center">
+      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#b20202]/5">
+        <PiWarning className="h-5 w-5 text-[#b20202]/40" />
+      </span>
       <p className="text-sm text-gray-500">
         No purchase orders match the current filters
       </p>
@@ -444,18 +451,21 @@ function LineView({
               onPointClick(row.label, row.orderList);
             }}
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0ebe3" />
             <XAxis
               dataKey="label"
-              tick={{ fontSize: 11, fill: '#9ca3af' }}
+              tick={{ fontSize: 11, fill: '#a39e95' }}
               interval="preserveStartEnd"
             />
             <YAxis
-              tick={{ fontSize: 11, fill: '#9ca3af' }}
+              tick={{ fontSize: 11, fill: '#a39e95' }}
               tickFormatter={(v: number) => fmtAxisVal(v, measure)}
             />
             <Tooltip
-              formatter={(v: number) => [fmtMeasureVal(v, measure), measureLabel]}
+              formatter={(v: number) => [
+                fmtMeasureVal(v, measure),
+                measureLabel,
+              ]}
             />
             <Line
               type="monotone"
@@ -499,18 +509,18 @@ function BarView({
             onBarClick(row.label, row.orderList);
           }}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0ebe3" />
           {manyItems ? (
             <>
               <XAxis
                 type="number"
-                tick={{ fontSize: 11, fill: '#9ca3af' }}
+                tick={{ fontSize: 11, fill: '#a39e95' }}
                 tickFormatter={(v: number) => fmtAxisVal(v, measure)}
               />
               <YAxis
                 type="category"
                 dataKey="label"
-                tick={{ fontSize: 11, fill: '#9ca3af' }}
+                tick={{ fontSize: 11, fill: '#a39e95' }}
                 width={120}
               />
             </>
@@ -518,11 +528,11 @@ function BarView({
             <>
               <XAxis
                 dataKey="label"
-                tick={{ fontSize: 11, fill: '#9ca3af' }}
+                tick={{ fontSize: 11, fill: '#a39e95' }}
                 interval="preserveStartEnd"
               />
               <YAxis
-                tick={{ fontSize: 11, fill: '#9ca3af' }}
+                tick={{ fontSize: 11, fill: '#a39e95' }}
                 tickFormatter={(v: number) => fmtAxisVal(v, measure)}
               />
             </>
@@ -634,7 +644,11 @@ function StackedTableView({
   measure: Measure;
   groupLabel: string;
   orderMap: Record<string, Record<string, PurchaseOrder[]>>;
-  onCellClick: (rowLabel: string, seriesKey: string, orders: PurchaseOrder[]) => void;
+  onCellClick: (
+    rowLabel: string,
+    seriesKey: string,
+    orders: PurchaseOrder[]
+  ) => void;
 }) {
   return (
     <div className="overflow-x-auto">
@@ -666,9 +680,7 @@ function StackedTableView({
                     className="h-2.5 w-2.5 shrink-0 rounded-full"
                     style={{ background: PALETTE[i % PALETTE.length] }}
                   />
-                  <span className="font-medium text-gray-900">
-                    {row.label}
-                  </span>
+                  <span className="font-medium text-gray-900">{row.label}</span>
                 </span>
               </td>
               {series.map((s) => (
@@ -734,7 +746,11 @@ function StackedLineView({
   measure: Measure;
   measureLabel: string;
   orderMap: Record<string, Record<string, PurchaseOrder[]>>;
-  onCellClick: (rowLabel: string, seriesKey: string, orders: PurchaseOrder[]) => void;
+  onCellClick: (
+    rowLabel: string,
+    seriesKey: string,
+    orders: PurchaseOrder[]
+  ) => void;
 }) {
   return (
     <div className="px-3 py-4" style={{ height: 420 }}>
@@ -746,17 +762,21 @@ function StackedLineView({
               return;
             const row = rows[e.activeTooltipIndex];
             const dataKey = String(e.activePayload[0].dataKey ?? '');
-            onCellClick(row.label, dataKey, orderMap[row.isoKey]?.[dataKey] ?? []);
+            onCellClick(
+              row.label,
+              dataKey,
+              orderMap[row.isoKey]?.[dataKey] ?? []
+            );
           }}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0ebe3" />
           <XAxis
             dataKey="label"
-            tick={{ fontSize: 11, fill: '#9ca3af' }}
+            tick={{ fontSize: 11, fill: '#a39e95' }}
             interval="preserveStartEnd"
           />
           <YAxis
-            tick={{ fontSize: 11, fill: '#9ca3af' }}
+            tick={{ fontSize: 11, fill: '#a39e95' }}
             tickFormatter={(v: number) => fmtAxisVal(v, measure)}
           />
           <Tooltip
@@ -792,7 +812,11 @@ function StackedBarView({
   measure: Measure;
   measureLabel: string;
   orderMap: Record<string, Record<string, PurchaseOrder[]>>;
-  onCellClick: (rowLabel: string, seriesKey: string, orders: PurchaseOrder[]) => void;
+  onCellClick: (
+    rowLabel: string,
+    seriesKey: string,
+    orders: PurchaseOrder[]
+  ) => void;
 }) {
   const manyItems = rows.length > 8;
   const height = manyItems ? Math.max(320, rows.length * 32) : 420;
@@ -801,18 +825,18 @@ function StackedBarView({
     <div className="px-3 py-4" style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={rows} layout={manyItems ? 'vertical' : 'horizontal'}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0ebe3" />
           {manyItems ? (
             <>
               <XAxis
                 type="number"
-                tick={{ fontSize: 11, fill: '#9ca3af' }}
+                tick={{ fontSize: 11, fill: '#a39e95' }}
                 tickFormatter={(v: number) => fmtAxisVal(v, measure)}
               />
               <YAxis
                 type="category"
                 dataKey="label"
-                tick={{ fontSize: 11, fill: '#9ca3af' }}
+                tick={{ fontSize: 11, fill: '#a39e95' }}
                 width={120}
               />
             </>
@@ -820,11 +844,11 @@ function StackedBarView({
             <>
               <XAxis
                 dataKey="label"
-                tick={{ fontSize: 11, fill: '#9ca3af' }}
+                tick={{ fontSize: 11, fill: '#a39e95' }}
                 interval="preserveStartEnd"
               />
               <YAxis
-                tick={{ fontSize: 11, fill: '#9ca3af' }}
+                tick={{ fontSize: 11, fill: '#a39e95' }}
                 tickFormatter={(v: number) => fmtAxisVal(v, measure)}
               />
             </>
@@ -876,7 +900,11 @@ export function StackedChart({
   groupLabel: string;
   measureLabel: string;
   orderMap: Record<string, Record<string, PurchaseOrder[]>>;
-  onSegmentClick: (rowLabel: string, seriesKey: string, orders: PurchaseOrder[]) => void;
+  onSegmentClick: (
+    rowLabel: string,
+    seriesKey: string,
+    orders: PurchaseOrder[]
+  ) => void;
 }) {
   if (rows.length === 0) return <EmptyState />;
 
@@ -960,7 +988,8 @@ function PivotDimDropdown({
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
     }
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
@@ -978,7 +1007,9 @@ function PivotDimDropdown({
       </button>
       {open && (
         <div className="absolute left-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-xl border border-gray-100 bg-white py-1 shadow-xl">
-          <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">Group by</p>
+          <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+            Group by
+          </p>
           {ALL_GROUP_ITEMS.map((g) => {
             const inThis = existing.includes(g.key);
             const inOther = otherDims.includes(g.key);
@@ -988,20 +1019,31 @@ function PivotDimDropdown({
                 key={g.key}
                 type="button"
                 disabled={disabled}
-                onClick={() => { onAdd(g.key); setOpen(false); }}
+                onClick={() => {
+                  onAdd(g.key);
+                  setOpen(false);
+                }}
                 className={`flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors ${
-                  disabled ? 'cursor-not-allowed text-gray-300' : 'text-gray-700 hover:bg-gray-50'
+                  disabled
+                    ? 'cursor-not-allowed text-gray-300'
+                    : 'text-gray-700 hover:bg-gray-50'
                 }`}
               >
                 {inThis ? (
                   <PiCheck className="h-3.5 w-3.5 shrink-0 text-gray-300" />
                 ) : inOther ? (
-                  <span className="w-3.5 shrink-0 text-[9px] text-gray-300">↔</span>
+                  <span className="w-3.5 shrink-0 text-[9px] text-gray-300">
+                    ↔
+                  </span>
                 ) : (
                   <span className="w-3.5" />
                 )}
                 {g.label}
-                {inOther && <span className="ml-auto text-[9px] text-gray-300">other axis</span>}
+                {inOther && (
+                  <span className="ml-auto text-[9px] text-gray-300">
+                    other axis
+                  </span>
+                )}
               </button>
             );
           })}
@@ -1019,7 +1061,9 @@ function exportPivotCSV(
   expandedRows: Set<string>,
   expandedCols: Set<string>
 ) {
-  const rowHeader = rowDims.map((d) => ALL_GROUP_ITEMS.find((g) => g.key === d)?.label ?? d).join(' › ');
+  const rowHeader = rowDims
+    .map((d) => ALL_GROUP_ITEMS.find((g) => g.key === d)?.label ?? d)
+    .join(' › ');
   const headers: string[] = [rowHeader, 'Total'];
 
   const visCols: { path: string[]; label: string }[] = [];
@@ -1027,7 +1071,10 @@ function exportPivotCSV(
     p.colVals0.forEach((ck) => {
       if (colDims.length >= 2 && expandedCols.has(ck)) {
         (p.subColValsMap[ck] ?? []).forEach((sk) => {
-          visCols.push({ path: [ck, sk], label: `${formatG1Label(ck, colDims[0])} / ${formatG1Label(sk, colDims[1])}` });
+          visCols.push({
+            path: [ck, sk],
+            label: `${formatG1Label(ck, colDims[0])} / ${formatG1Label(sk, colDims[1])}`,
+          });
         });
       } else {
         visCols.push({ path: [ck], label: formatG1Label(ck, colDims[0]) });
@@ -1037,7 +1084,8 @@ function exportPivotCSV(
   }
 
   const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
-  const numVal = (rowPath: string[], colPath: string[]) => fmtMeasureVal(p.getValue(rowPath, colPath), measure);
+  const numVal = (rowPath: string[], colPath: string[]) =>
+    fmtMeasureVal(p.getValue(rowPath, colPath), measure);
 
   const csvRows: string[][] = [headers];
 
@@ -1052,7 +1100,10 @@ function exportPivotCSV(
 
     if (rowDims.length >= 2 && expandedRows.has(rk)) {
       (p.subRowValsMap[rk] ?? []).forEach((srk) => {
-        const sub = [`  ${formatG1Label(rk, rowDims[0])} / ${formatG1Label(srk, rowDims[1])}`, numVal([rk, srk], [])];
+        const sub = [
+          `  ${formatG1Label(rk, rowDims[0])} / ${formatG1Label(srk, rowDims[1])}`,
+          numVal([rk, srk], []),
+        ];
         visCols.forEach((c) => sub.push(numVal([rk, srk], c.path)));
         csvRows.push(sub);
       });
@@ -1079,14 +1130,19 @@ function exportPivotExcel(
   expandedRows: Set<string>,
   expandedCols: Set<string>
 ) {
-  const rowHeader = rowDims.map((d) => ALL_GROUP_ITEMS.find((g) => g.key === d)?.label ?? d).join(' › ');
+  const rowHeader = rowDims
+    .map((d) => ALL_GROUP_ITEMS.find((g) => g.key === d)?.label ?? d)
+    .join(' › ');
 
   const visCols: { path: string[]; label: string }[] = [];
   if (colDims.length > 0) {
     p.colVals0.forEach((ck) => {
       if (colDims.length >= 2 && expandedCols.has(ck)) {
         (p.subColValsMap[ck] ?? []).forEach((sk) => {
-          visCols.push({ path: [ck, sk], label: `${formatG1Label(ck, colDims[0])} / ${formatG1Label(sk, colDims[1])}` });
+          visCols.push({
+            path: [ck, sk],
+            label: `${formatG1Label(ck, colDims[0])} / ${formatG1Label(sk, colDims[1])}`,
+          });
         });
       } else {
         visCols.push({ path: [ck], label: formatG1Label(ck, colDims[0]) });
@@ -1094,7 +1150,12 @@ function exportPivotExcel(
     });
   }
 
-  const x = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const x = (s: string) =>
+    s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   const numVal = (rp: string[], cp: string[]) => p.getValue(rp, cp);
 
   const strCell = (v: string, bold = false) =>
@@ -1106,19 +1167,33 @@ function exportPivotExcel(
 
   const rows: string[] = [];
 
-  const hdrCells = [strCell(rowHeader, true), strCell('Total', true), ...visCols.map((c) => strCell(c.label, true))].join('');
+  const hdrCells = [
+    strCell(rowHeader, true),
+    strCell('Total', true),
+    ...visCols.map((c) => strCell(c.label, true)),
+  ].join('');
   rows.push(`<Row>${hdrCells}</Row>`);
 
-  const gtCells = [strCell('Total', true), numCell(p.grandTotal, true), ...visCols.map((c) => numCell(numVal([], c.path), true))].join('');
+  const gtCells = [
+    strCell('Total', true),
+    numCell(p.grandTotal, true),
+    ...visCols.map((c) => numCell(numVal([], c.path), true)),
+  ].join('');
   rows.push(`<Row>${gtCells}</Row>`);
 
   p.rowVals0.forEach((rk) => {
-    const rowCells = [strCell(formatG1Label(rk, rowDims[0])), numCell(p.rowTotals[rk]), ...visCols.map((c) => numCell(numVal([rk], c.path)))].join('');
+    const rowCells = [
+      strCell(formatG1Label(rk, rowDims[0])),
+      numCell(p.rowTotals[rk]),
+      ...visCols.map((c) => numCell(numVal([rk], c.path))),
+    ].join('');
     rows.push(`<Row>${rowCells}</Row>`);
     if (rowDims.length >= 2 && expandedRows.has(rk)) {
       (p.subRowValsMap[rk] ?? []).forEach((srk) => {
         const subCells = [
-          strCell(`  ${formatG1Label(rk, rowDims[0])} / ${formatG1Label(srk, rowDims[1])}`),
+          strCell(
+            `  ${formatG1Label(rk, rowDims[0])} / ${formatG1Label(srk, rowDims[1])}`
+          ),
           numCell(numVal([rk, srk], [])),
           ...visCols.map((c) => numCell(numVal([rk, srk], c.path))),
         ].join('');
@@ -1139,7 +1214,9 @@ function exportPivotExcel(
   </Worksheet>
 </Workbook>`;
 
-  const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const blob = new Blob([xml], {
+    type: 'application/vnd.ms-excel;charset=utf-8;',
+  });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -1190,32 +1267,55 @@ export function PivotView({
   const p = pivotData;
 
   const toggleRow = (key: string) =>
-    setExpandedRows((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+    setExpandedRows((prev) => {
+      const n = new Set(prev);
+      n.has(key) ? n.delete(key) : n.add(key);
+      return n;
+    });
   const toggleCol = (key: string) =>
-    setExpandedCols((prev) => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+    setExpandedCols((prev) => {
+      const n = new Set(prev);
+      n.has(key) ? n.delete(key) : n.add(key);
+      return n;
+    });
   const canExpandRow = pivotRowDims.length >= 2;
   const canExpandCol = pivotColDims.length >= 2;
 
   const searchQ = pivotRowSearch.trim().toLowerCase();
   const visibleRows = p
-    ? (searchQ ? p.rowVals0.filter((rk) => formatG1Label(rk, pivotRowDims[0]).toLowerCase().includes(searchQ)) : p.rowVals0)
+    ? searchQ
+      ? p.rowVals0.filter((rk) =>
+          formatG1Label(rk, pivotRowDims[0]).toLowerCase().includes(searchQ)
+        )
+      : p.rowVals0
     : [];
 
-  const visibleCols: { colPath: string[]; label: string; isSubCol: boolean }[] = [];
+  const visibleCols: { colPath: string[]; label: string; isSubCol: boolean }[] =
+    [];
   if (p) {
     p.colVals0.forEach((ck) => {
       if (canExpandCol && expandedCols.has(ck)) {
         (p.subColValsMap[ck] ?? []).forEach((sk) => {
-          visibleCols.push({ colPath: [ck, sk], label: formatG1Label(sk, pivotColDims[1]), isSubCol: true });
+          visibleCols.push({
+            colPath: [ck, sk],
+            label: formatG1Label(sk, pivotColDims[1]),
+            isSubCol: true,
+          });
         });
       } else {
-        visibleCols.push({ colPath: [ck], label: formatG1Label(ck, pivotColDims[0]), isSubCol: false });
+        visibleCols.push({
+          colPath: [ck],
+          label: formatG1Label(ck, pivotColDims[0]),
+          isSubCol: false,
+        });
       }
     });
   }
 
-  const cellVal = (rowPath: string[], colPath: string[]) => (p ? p.getValue(rowPath, colPath) : 0);
-  const ordCount = (rowPath: string[], colPath: string[]) => (p ? p.getOrderCount(rowPath, colPath) : 0);
+  const cellVal = (rowPath: string[], colPath: string[]) =>
+    p ? p.getValue(rowPath, colPath) : 0;
+  const ordCount = (rowPath: string[], colPath: string[]) =>
+    p ? p.getOrderCount(rowPath, colPath) : 0;
 
   const heatStyle = (val: number) => {
     if (!pivotHeatMap || !p || val <= 0) return {};
@@ -1224,27 +1324,47 @@ export function PivotView({
   };
 
   const buildCellTitle = (rPath: string[], cPath: string[]): string => {
-    const rLabel = rPath.length === 0 ? 'All' : rPath.map((k, i) => formatG1Label(k, pivotRowDims[i])).join(' › ');
-    const cLabel = cPath.length === 0 ? 'Total' : cPath.map((k, i) => formatG1Label(k, pivotColDims[i])).join(' › ');
+    const rLabel =
+      rPath.length === 0
+        ? 'All'
+        : rPath.map((k, i) => formatG1Label(k, pivotRowDims[i])).join(' › ');
+    const cLabel =
+      cPath.length === 0
+        ? 'Total'
+        : cPath.map((k, i) => formatG1Label(k, pivotColDims[i])).join(' › ');
     if (rPath.length === 0 && cPath.length === 0) return 'Grand Total';
     if (cPath.length === 0) return rLabel;
     if (rPath.length === 0) return cLabel;
     return `${rLabel} × ${cLabel}`;
   };
 
-  const DataCell = ({ rowPath, colPath, isTotal = false }: { rowPath: string[]; colPath: string[]; isTotal?: boolean }) => {
+  const DataCell = ({
+    rowPath,
+    colPath,
+    isTotal = false,
+  }: {
+    rowPath: string[];
+    colPath: string[];
+    isTotal?: boolean;
+  }) => {
     const val = cellVal(rowPath, colPath);
     const pct = p && p.grandTotal > 0 ? (val / p.grandTotal) * 100 : 0;
     const share = p && p.maxCellVal > 0 ? val / p.maxCellVal : 0;
     const darkText = pivotHeatMap && share > 0.55;
     const ords = pivotShowOrders ? ordCount(rowPath, colPath) : 0;
-    const handleClick = val > 0 ? () => {
-      const cellOrders = p?.getOrders(rowPath, colPath) ?? [];
-      if (cellOrders.length > 0) onCellClick(cellOrders, buildCellTitle(rowPath, colPath));
-    } : undefined;
+    const handleClick =
+      val > 0
+        ? () => {
+            const cellOrders = p?.getOrders(rowPath, colPath) ?? [];
+            if (cellOrders.length > 0)
+              onCellClick(cellOrders, buildCellTitle(rowPath, colPath));
+          }
+        : undefined;
     if (val === 0) {
       return (
-        <td className={`border-b border-r border-gray-100 px-3 py-2 text-right tabular-nums ${isTotal ? 'bg-gray-50' : ''}`}>
+        <td
+          className={`border-b border-r border-gray-100 px-3 py-2 text-right tabular-nums ${isTotal ? 'bg-gray-50' : ''}`}
+        >
           <span className="text-gray-200">—</span>
         </td>
       );
@@ -1255,11 +1375,17 @@ export function PivotView({
         style={isTotal ? {} : heatStyle(val)}
         onClick={handleClick}
       >
-        <div className={`text-xs font-semibold ${darkText ? 'text-[#6b0000]' : isTotal ? 'text-gray-800' : 'text-gray-700'}`}>
+        <div
+          className={`text-xs font-semibold ${darkText ? 'text-[#6b0000]' : isTotal ? 'text-gray-800' : 'text-gray-700'}`}
+        >
           {fmtMeasureVal(val, measure)}
         </div>
-        {pct >= 1 && !isTotal && <div className="text-[10px] text-gray-400">{pct.toFixed(1)}%</div>}
-        {pivotShowOrders && ords > 0 && !isTotal && <div className="text-[10px] text-gray-300">{ords} ord</div>}
+        {pct >= 1 && !isTotal && (
+          <div className="text-[10px] text-gray-400">{pct.toFixed(1)}%</div>
+        )}
+        {pivotShowOrders && ords > 0 && !isTotal && (
+          <div className="text-[10px] text-gray-300">{ords} ord</div>
+        )}
       </td>
     );
   };
@@ -1270,13 +1396,21 @@ export function PivotView({
       <div className="flex flex-wrap items-center gap-2.5 border-b border-gray-100 px-4 py-2.5">
         {/* Row groupings */}
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Rows</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+            Rows
+          </span>
           {pivotRowDims.map((d, i) => (
-            <span key={d} className="flex items-center gap-1 rounded-md border border-teal-200 bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700">
+            <span
+              key={d}
+              className="flex items-center gap-1 rounded-md border border-teal-200 bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700"
+            >
               {ALL_GROUP_ITEMS.find((g) => g.key === d)?.label ?? d}
               <button
-                onClick={() => { setPivotRowDims((prev) => prev.filter((_, j) => j !== i)); setExpandedRows(new Set()); }}
-                className="ml-0.5 rounded opacity-60 hover:opacity-100 hover:text-red-500"
+                onClick={() => {
+                  setPivotRowDims((prev) => prev.filter((_, j) => j !== i));
+                  setExpandedRows(new Set());
+                }}
+                className="ml-0.5 rounded opacity-60 hover:text-red-500 hover:opacity-100"
               >
                 <PiX className="h-3 w-3" />
               </button>
@@ -1287,15 +1421,30 @@ export function PivotView({
               title="Add row grouping"
               existing={pivotRowDims}
               otherDims={pivotColDims}
-              onAdd={(k) => { setPivotRowDims((prev) => [...prev, k]); setExpandedRows(new Set()); }}
+              onAdd={(k) => {
+                setPivotRowDims((prev) => [...prev, k]);
+                setExpandedRows(new Set());
+              }}
             />
           )}
           {canExpandRow && p && p.rowVals0.length > 0 && (
             <div className="flex gap-0.5">
-              <button type="button" title="Expand all rows" onClick={() => setExpandedRows(new Set(p.rowVals0))}
-                className="rounded px-1 py-0.5 text-[10px] text-gray-400 hover:bg-gray-100 hover:text-gray-600">all+</button>
-              <button type="button" title="Collapse all rows" onClick={() => setExpandedRows(new Set())}
-                className="rounded px-1 py-0.5 text-[10px] text-gray-400 hover:bg-gray-100 hover:text-gray-600">all−</button>
+              <button
+                type="button"
+                title="Expand all rows"
+                onClick={() => setExpandedRows(new Set(p.rowVals0))}
+                className="rounded px-1 py-0.5 text-[10px] text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              >
+                all+
+              </button>
+              <button
+                type="button"
+                title="Collapse all rows"
+                onClick={() => setExpandedRows(new Set())}
+                className="rounded px-1 py-0.5 text-[10px] text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              >
+                all−
+              </button>
             </div>
           )}
         </div>
@@ -1305,10 +1454,12 @@ export function PivotView({
           type="button"
           title="Transpose rows ↔ cols"
           onClick={() => {
-            const r = pivotRowDims; const c = pivotColDims;
+            const r = pivotRowDims;
+            const c = pivotColDims;
             setPivotRowDims(c.length > 0 ? c : ['vendor']);
             setPivotColDims(r);
-            setExpandedRows(new Set()); setExpandedCols(new Set());
+            setExpandedRows(new Set());
+            setExpandedCols(new Set());
           }}
           className="flex h-6 w-6 items-center justify-center rounded border border-gray-200 text-gray-400 transition-colors hover:border-[#b20202] hover:text-[#b20202]"
         >
@@ -1317,13 +1468,21 @@ export function PivotView({
 
         {/* Column groupings */}
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Cols</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+            Cols
+          </span>
           {pivotColDims.map((d, i) => (
-            <span key={d} className="flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+            <span
+              key={d}
+              className="flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700"
+            >
               {ALL_GROUP_ITEMS.find((g) => g.key === d)?.label ?? d}
               <button
-                onClick={() => { setPivotColDims((prev) => prev.filter((_, j) => j !== i)); setExpandedCols(new Set()); }}
-                className="ml-0.5 rounded opacity-60 hover:opacity-100 hover:text-red-500"
+                onClick={() => {
+                  setPivotColDims((prev) => prev.filter((_, j) => j !== i));
+                  setExpandedCols(new Set());
+                }}
+                className="ml-0.5 rounded opacity-60 hover:text-red-500 hover:opacity-100"
               >
                 <PiX className="h-3 w-3" />
               </button>
@@ -1334,15 +1493,30 @@ export function PivotView({
               title="Add column grouping"
               existing={pivotColDims}
               otherDims={pivotRowDims}
-              onAdd={(k) => { setPivotColDims((prev) => [...prev, k]); setExpandedCols(new Set()); }}
+              onAdd={(k) => {
+                setPivotColDims((prev) => [...prev, k]);
+                setExpandedCols(new Set());
+              }}
             />
           )}
           {canExpandCol && p && p.colVals0.length > 0 && (
             <div className="flex gap-0.5">
-              <button type="button" title="Expand all columns" onClick={() => setExpandedCols(new Set(p.colVals0))}
-                className="rounded px-1 py-0.5 text-[10px] text-gray-400 hover:bg-gray-100 hover:text-gray-600">all+</button>
-              <button type="button" title="Collapse all columns" onClick={() => setExpandedCols(new Set())}
-                className="rounded px-1 py-0.5 text-[10px] text-gray-400 hover:bg-gray-100 hover:text-gray-600">all−</button>
+              <button
+                type="button"
+                title="Expand all columns"
+                onClick={() => setExpandedCols(new Set(p.colVals0))}
+                className="rounded px-1 py-0.5 text-[10px] text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              >
+                all+
+              </button>
+              <button
+                type="button"
+                title="Collapse all columns"
+                onClick={() => setExpandedCols(new Set())}
+                className="rounded px-1 py-0.5 text-[10px] text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              >
+                all−
+              </button>
             </div>
           )}
         </div>
@@ -1354,10 +1528,19 @@ export function PivotView({
           type="button"
           onClick={() => setPivotHeatMap((h) => !h)}
           className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
-            pivotHeatMap ? 'border-orange-200 bg-orange-50 text-orange-700' : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+            pivotHeatMap
+              ? 'border-orange-200 bg-orange-50 text-orange-700'
+              : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
           }`}
         >
-          <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: pivotHeatMap ? 'linear-gradient(to right, #fef2f2, #b20202)' : '#e5e7eb' }} />
+          <span
+            className="h-2.5 w-2.5 shrink-0 rounded-sm"
+            style={{
+              background: pivotHeatMap
+                ? 'linear-gradient(to right, #fef2f2, #b20202)'
+                : '#e5e7eb',
+            }}
+          />
           Heat map
         </button>
 
@@ -1366,7 +1549,9 @@ export function PivotView({
           type="button"
           onClick={() => setPivotShowOrders((s) => !s)}
           className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
-            pivotShowOrders ? 'border-sky-200 bg-sky-50 text-sky-700' : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+            pivotShowOrders
+              ? 'border-sky-200 bg-sky-50 text-sky-700'
+              : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
           }`}
         >
           <PiShoppingCart className="h-3 w-3" />
@@ -1384,7 +1569,10 @@ export function PivotView({
             className="w-24 bg-transparent text-xs text-gray-700 outline-none placeholder:text-gray-300"
           />
           {pivotRowSearch && (
-            <button onClick={() => setPivotRowSearch('')} className="text-gray-300 hover:text-gray-500">
+            <button
+              onClick={() => setPivotRowSearch('')}
+              className="text-gray-300 hover:text-gray-500"
+            >
               <PiX className="h-3 w-3" />
             </button>
           )}
@@ -1395,7 +1583,16 @@ export function PivotView({
           <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={() => exportPivotCSV(p, pivotRowDims, pivotColDims, measure, expandedRows, expandedCols)}
+              onClick={() =>
+                exportPivotCSV(
+                  p,
+                  pivotRowDims,
+                  pivotColDims,
+                  measure,
+                  expandedRows,
+                  expandedCols
+                )
+              }
               className="flex items-center gap-1.5 rounded-l-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-500 shadow-sm transition-colors hover:bg-gray-50 hover:text-gray-700"
             >
               <PiFloppyDisk className="h-3 w-3" />
@@ -1403,7 +1600,16 @@ export function PivotView({
             </button>
             <button
               type="button"
-              onClick={() => exportPivotExcel(p, pivotRowDims, pivotColDims, measure, expandedRows, expandedCols)}
+              onClick={() =>
+                exportPivotExcel(
+                  p,
+                  pivotRowDims,
+                  pivotColDims,
+                  measure,
+                  expandedRows,
+                  expandedCols
+                )
+              }
               className="flex items-center gap-1.5 rounded-r-lg border border-l-0 border-gray-200 bg-white px-2.5 py-1.5 text-xs text-emerald-600 shadow-sm transition-colors hover:bg-emerald-50"
             >
               <PiFloppyDisk className="h-3 w-3" />
@@ -1413,56 +1619,100 @@ export function PivotView({
         )}
 
         <div className="ml-auto text-xs text-gray-400">
-          {p
-            ? <><span className="font-semibold text-gray-700">{visibleRows.length}</span>{visibleRows.length !== p.rowVals0.length && ` / ${p.rowVals0.length}`} rows · <span className="font-semibold text-gray-700">{fmtMeasureVal(p.grandTotal, measure)}</span></>
-            : 'Loading…'}
+          {p ? (
+            <>
+              <span className="font-semibold text-gray-700">
+                {visibleRows.length}
+              </span>
+              {visibleRows.length !== p.rowVals0.length &&
+                ` / ${p.rowVals0.length}`}{' '}
+              rows ·{' '}
+              <span className="font-semibold text-gray-700">
+                {fmtMeasureVal(p.grandTotal, measure)}
+              </span>
+            </>
+          ) : (
+            'Loading…'
+          )}
         </div>
       </div>
 
       {/* ── Pivot table ───────────────────────────────────────────────── */}
-      {(!p || p.rowVals0.length === 0) ? (
+      {!p || p.rowVals0.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 py-20">
           <PiTable className="h-10 w-10 text-gray-200" />
           <p className="text-sm text-gray-400">
-            {pivotRowDims.length === 0 ? 'Add a row grouping to start' : 'No data for the selected filters'}
+            {pivotRowDims.length === 0
+              ? 'Add a row grouping to start'
+              : 'No data for the selected filters'}
           </p>
         </div>
       ) : (
         <div className="overflow-auto" style={{ maxHeight: '75vh' }}>
           {visibleRows.length === 0 && searchQ && (
             <div className="flex items-center justify-center py-10 text-sm text-gray-400">
-              No rows match <span className="ml-1 font-medium text-gray-600">&quot;{pivotRowSearch}&quot;</span>
+              No rows match{' '}
+              <span className="ml-1 font-medium text-gray-600">
+                &quot;{pivotRowSearch}&quot;
+              </span>
             </div>
           )}
-          <table className="border-collapse text-xs" style={{ minWidth: '100%', display: visibleRows.length === 0 ? 'none' : undefined }}>
+          <table
+            className="border-collapse text-xs"
+            style={{
+              minWidth: '100%',
+              display: visibleRows.length === 0 ? 'none' : undefined,
+            }}
+          >
             <thead>
               <tr>
                 <th className="sticky left-0 top-0 z-30 min-w-[260px] border-b border-r border-gray-100 bg-gray-50 px-4 py-3 text-left align-bottom">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-[#b20202]">
-                    {pivotRowDims.map((d) => ALL_GROUP_ITEMS.find((g) => g.key === d)?.label ?? d).join(' › ')}
+                    {pivotRowDims
+                      .map(
+                        (d) =>
+                          ALL_GROUP_ITEMS.find((g) => g.key === d)?.label ?? d
+                      )
+                      .join(' › ')}
                   </div>
                 </th>
                 <th className="sticky top-0 z-20 min-w-[120px] border-b border-r border-gray-200 bg-gray-50 px-3 py-3 text-right align-bottom">
                   <div className="text-xs font-bold text-gray-700">Total</div>
-                  <div className="mt-0.5 text-[10px] tabular-nums text-gray-500">{fmtMeasureVal(p.grandTotal, measure)}</div>
-                  {pivotShowOrders && <div className="text-[10px] text-gray-300">{p.getOrderCount([], [])} ord</div>}
+                  <div className="mt-0.5 text-[10px] tabular-nums text-gray-500">
+                    {fmtMeasureVal(p.grandTotal, measure)}
+                  </div>
+                  {pivotShowOrders && (
+                    <div className="text-[10px] text-gray-300">
+                      {p.getOrderCount([], [])} ord
+                    </div>
+                  )}
                 </th>
                 {p.colVals0.map((ck) => {
                   const isExpanded = canExpandCol && expandedCols.has(ck);
                   const subCols = isExpanded ? (p.subColValsMap[ck] ?? []) : [];
                   const colSpan = isExpanded ? subCols.length : 1;
                   return (
-                    <th key={ck} colSpan={colSpan} className="sticky top-0 z-20 min-w-[110px] border-b border-l border-gray-100 bg-white px-3 py-3 text-center align-bottom">
+                    <th
+                      key={ck}
+                      colSpan={colSpan}
+                      className="sticky top-0 z-20 min-w-[110px] border-b border-l border-gray-100 bg-white px-3 py-3 text-center align-bottom"
+                    >
                       <div className="flex items-center justify-center gap-1">
                         {canExpandCol && (
-                          <button onClick={() => toggleCol(ck)}
-                            className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-gray-300 text-[10px] font-bold text-gray-500 transition-colors hover:border-[#b20202] hover:text-[#b20202]">
+                          <button
+                            onClick={() => toggleCol(ck)}
+                            className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-gray-300 text-[10px] font-bold text-gray-500 transition-colors hover:border-[#b20202] hover:text-[#b20202]"
+                          >
                             {isExpanded ? '−' : '+'}
                           </button>
                         )}
-                        <span className="font-semibold text-gray-700 leading-tight">{formatG1Label(ck, pivotColDims[0])}</span>
+                        <span className="font-semibold leading-tight text-gray-700">
+                          {formatG1Label(ck, pivotColDims[0])}
+                        </span>
                       </div>
-                      <div className="mt-0.5 text-[10px] tabular-nums text-gray-400">{fmtMeasureVal(p.colTotals[ck], measure)}</div>
+                      <div className="mt-0.5 text-[10px] tabular-nums text-gray-400">
+                        {fmtMeasureVal(p.colTotals[ck], measure)}
+                      </div>
                     </th>
                   );
                 })}
@@ -1474,11 +1724,21 @@ export function PivotView({
                   <th className="sticky top-[52px] z-20 border-b border-r border-gray-200 bg-gray-50" />
                   {p.colVals0.map((ck) => {
                     if (!expandedCols.has(ck)) {
-                      return <th key={ck} className="sticky top-[52px] z-20 min-w-[110px] border-b border-r border-gray-100 bg-white" />;
+                      return (
+                        <th
+                          key={ck}
+                          className="sticky top-[52px] z-20 min-w-[110px] border-b border-r border-gray-100 bg-white"
+                        />
+                      );
                     }
                     return (p.subColValsMap[ck] ?? []).map((sk) => (
-                      <th key={`${ck}:${sk}`} className="sticky top-[52px] z-20 min-w-[100px] border-b border-r border-gray-100 bg-white px-3 py-2 text-right">
-                        <span className="text-[11px] font-medium text-gray-600">{formatG1Label(sk, pivotColDims[1])}</span>
+                      <th
+                        key={`${ck}:${sk}`}
+                        className="sticky top-[52px] z-20 min-w-[100px] border-b border-r border-gray-100 bg-white px-3 py-2 text-right"
+                      >
+                        <span className="text-[11px] font-medium text-gray-600">
+                          {formatG1Label(sk, pivotColDims[1])}
+                        </span>
                       </th>
                     ));
                   })}
@@ -1493,61 +1753,111 @@ export function PivotView({
                 </td>
                 <DataCell rowPath={[]} colPath={[]} isTotal />
                 {visibleCols.map(({ colPath, isSubCol }) => (
-                  <DataCell key={colPath.join(':')} rowPath={[]} colPath={colPath} isTotal={isSubCol} />
+                  <DataCell
+                    key={colPath.join(':')}
+                    rowPath={[]}
+                    colPath={colPath}
+                    isTotal={isSubCol}
+                  />
                 ))}
               </tr>
 
               {visibleRows.map((rk, ri) => {
                 const rowTotal = p.rowTotals[rk];
-                const rowShare = p.grandTotal > 0 ? (rowTotal / p.grandTotal) * 100 : 0;
+                const rowShare =
+                  p.grandTotal > 0 ? (rowTotal / p.grandTotal) * 100 : 0;
                 const isRowExpanded = canExpandRow && expandedRows.has(rk);
-                const subRows = isRowExpanded ? (p.subRowValsMap[rk] ?? []) : [];
+                const subRows = isRowExpanded
+                  ? (p.subRowValsMap[rk] ?? [])
+                  : [];
 
                 return (
                   <Fragment key={rk}>
-                    <tr className={ri % 2 === 0 ? 'bg-white hover:bg-gray-50/60' : 'bg-gray-50/30 hover:bg-gray-50/80'}>
-                      <td className="sticky left-0 z-10 border-b border-r border-gray-100 px-4 py-2.5" style={{ background: ri % 2 === 0 ? '#fff' : '#fafafa' }}>
+                    <tr
+                      className={
+                        ri % 2 === 0
+                          ? 'bg-white hover:bg-gray-50/60'
+                          : 'bg-gray-50/30 hover:bg-gray-50/80'
+                      }
+                    >
+                      <td
+                        className="sticky left-0 z-10 border-b border-r border-gray-100 px-4 py-2.5"
+                        style={{
+                          background: ri % 2 === 0 ? '#fff' : '#fafafa',
+                        }}
+                      >
                         <div className="flex items-center gap-2">
                           {canExpandRow ? (
-                            <button onClick={() => toggleRow(rk)}
-                              className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-gray-300 text-[10px] font-bold text-gray-500 transition-colors hover:border-[#b20202] hover:text-[#b20202]">
+                            <button
+                              onClick={() => toggleRow(rk)}
+                              className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-gray-300 text-[10px] font-bold text-gray-500 transition-colors hover:border-[#b20202] hover:text-[#b20202]"
+                            >
                               {isRowExpanded ? '−' : '+'}
                             </button>
                           ) : (
-                            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-gray-200 text-[10px] text-gray-300">□</span>
+                            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-gray-200 text-[10px] text-gray-300">
+                              □
+                            </span>
                           )}
                           <div className="min-w-0">
-                            <div className="font-medium text-gray-800 leading-snug break-words" style={{ maxWidth: 220 }}>
+                            <div
+                              className="break-words font-medium leading-snug text-gray-800"
+                              style={{ maxWidth: 220 }}
+                            >
                               {formatG1Label(rk, pivotRowDims[0])}
                             </div>
                             <div className="mt-0.5 flex items-center gap-1">
-                              <div className="h-0.5 flex-1 overflow-hidden rounded-full bg-gray-100" style={{ width: 80 }}>
-                                <div className="h-full rounded-full bg-[#b20202] opacity-30" style={{ width: `${rowShare}%` }} />
+                              <div
+                                className="h-0.5 flex-1 overflow-hidden rounded-full bg-gray-100"
+                                style={{ width: 80 }}
+                              >
+                                <div
+                                  className="h-full rounded-full bg-[#b20202] opacity-30"
+                                  style={{ width: `${rowShare}%` }}
+                                />
                               </div>
-                              <span className="text-[9px] text-gray-400">{rowShare.toFixed(1)}%</span>
+                              <span className="text-[9px] text-gray-400">
+                                {rowShare.toFixed(1)}%
+                              </span>
                             </div>
                           </div>
                         </div>
                       </td>
                       <DataCell rowPath={[rk]} colPath={[]} isTotal />
                       {visibleCols.map(({ colPath, isSubCol }) => (
-                        <DataCell key={colPath.join(':')} rowPath={[rk]} colPath={colPath} isTotal={isSubCol} />
+                        <DataCell
+                          key={colPath.join(':')}
+                          rowPath={[rk]}
+                          colPath={colPath}
+                          isTotal={isSubCol}
+                        />
                       ))}
                     </tr>
 
                     {subRows.map((srk) => (
-                      <tr key={`${rk}:${srk}`} className="bg-[#fafbff] hover:bg-blue-50/20">
+                      <tr
+                        key={`${rk}:${srk}`}
+                        className="bg-[#fafbff] hover:bg-blue-50/20"
+                      >
                         <td className="sticky left-0 z-10 border-b border-r border-gray-100 bg-[#fafbff] px-4 py-2">
                           <div className="flex items-center gap-2 pl-7">
                             <span className="h-px w-3 shrink-0 bg-gray-300" />
-                            <span className="text-gray-600 leading-snug break-words" style={{ maxWidth: 200 }}>
+                            <span
+                              className="break-words leading-snug text-gray-600"
+                              style={{ maxWidth: 200 }}
+                            >
                               {formatG1Label(srk, pivotRowDims[1])}
                             </span>
                           </div>
                         </td>
                         <DataCell rowPath={[rk, srk]} colPath={[]} isTotal />
                         {visibleCols.map(({ colPath, isSubCol }) => (
-                          <DataCell key={colPath.join(':')} rowPath={[rk, srk]} colPath={colPath} isTotal={isSubCol} />
+                          <DataCell
+                            key={colPath.join(':')}
+                            rowPath={[rk, srk]}
+                            colPath={colPath}
+                            isTotal={isSubCol}
+                          />
                         ))}
                       </tr>
                     ))}
@@ -1559,17 +1869,31 @@ export function PivotView({
             {p.colVals0.length > 0 && (
               <tfoot>
                 <tr className="border-t-2 border-gray-200 bg-gray-50">
-                  <td className="sticky left-0 z-10 border-r border-gray-200 bg-gray-50 px-4 py-2.5 text-xs font-bold text-gray-700">Total</td>
+                  <td className="sticky left-0 z-10 border-r border-gray-200 bg-gray-50 px-4 py-2.5 text-xs font-bold text-gray-700">
+                    Total
+                  </td>
                   <td className="border-r border-gray-200 bg-gray-100 px-3 py-2.5 text-right tabular-nums">
-                    <div className="text-sm font-bold text-gray-900">{fmtMeasureVal(p.grandTotal, measure)}</div>
+                    <div className="text-sm font-bold text-gray-900">
+                      {fmtMeasureVal(p.grandTotal, measure)}
+                    </div>
                   </td>
                   {visibleCols.map(({ colPath }) => {
                     const val = cellVal([], colPath);
-                    const pct = p.grandTotal > 0 ? (val / p.grandTotal) * 100 : 0;
+                    const pct =
+                      p.grandTotal > 0 ? (val / p.grandTotal) * 100 : 0;
                     return (
-                      <td key={colPath.join(':')} className="border-r border-gray-100 bg-gray-50 px-3 py-2.5 text-right tabular-nums">
-                        <div className="font-bold text-gray-800">{fmtMeasureVal(val, measure)}</div>
-                        {pct > 0 && <div className="text-[10px] text-gray-400">{pct.toFixed(1)}%</div>}
+                      <td
+                        key={colPath.join(':')}
+                        className="border-r border-gray-100 bg-gray-50 px-3 py-2.5 text-right tabular-nums"
+                      >
+                        <div className="font-bold text-gray-800">
+                          {fmtMeasureVal(val, measure)}
+                        </div>
+                        {pct > 0 && (
+                          <div className="text-[10px] text-gray-400">
+                            {pct.toFixed(1)}%
+                          </div>
+                        )}
                       </td>
                     );
                   })}

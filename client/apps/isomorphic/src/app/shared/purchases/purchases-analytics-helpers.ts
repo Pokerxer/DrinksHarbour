@@ -88,17 +88,19 @@ export interface GroupRow2 {
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
+// Curated "wine-label" chart palette — anchored on the brand maroon,
+// rounded out with warm earth tones and muted jewel accents.
 export const PALETTE = [
-  '#b20202',
-  '#ef4444',
-  '#f97316',
-  '#eab308',
-  '#22c55e',
-  '#06b6d4',
-  '#6366f1',
-  '#ec4899',
-  '#14b8a6',
-  '#8b5cf6',
+  '#b20202', // maroon (brand)
+  '#c8932c', // brass / gold
+  '#3d6b5c', // deep teal-green
+  '#5b7da0', // slate blue
+  '#a8512e', // terracotta
+  '#7d6b9e', // muted violet
+  '#8a9b4f', // olive
+  '#c46a6a', // dusty rose
+  '#4a5d6e', // steel
+  '#d9a05b', // amber
 ];
 
 export const STATUS_LABELS: Record<string, string> = {
@@ -692,12 +694,17 @@ export function computeHierarchicalPivot(
   ) => {
     const k = cacheKey(rPath, cPath);
     let e = cache.get(k);
-    if (!e) { e = { ords: new Map(), items: [] }; cache.set(k, e); }
+    if (!e) {
+      e = { ords: new Map(), items: [] };
+      cache.set(k, e);
+    }
     e.ords.set(ordId, order);
     e.items.push(...items);
   };
 
-  const isItemGroup = rowDims.some((d) => ITEM_DIMS.has(d)) || colDims.some((d) => ITEM_DIMS.has(d));
+  const isItemGroup =
+    rowDims.some((d) => ITEM_DIMS.has(d)) ||
+    colDims.some((d) => ITEM_DIMS.has(d));
 
   const rValSets: Set<string>[] = rowDims.map(() => new Set<string>());
   const cValSets: Set<string>[] = colDims.map(() => new Set<string>());
@@ -710,10 +717,14 @@ export function computeHierarchicalPivot(
 
     const processAtom = (item: POItem | null) => {
       const rKeys = rowDims.map((d) =>
-        ITEM_DIMS.has(d) && item ? resolveItemDimKey(item, d, prodMeta) : getPOG1Key(o, d, prodMeta)
+        ITEM_DIMS.has(d) && item
+          ? resolveItemDimKey(item, d, prodMeta)
+          : getPOG1Key(o, d, prodMeta)
       );
       const cKeys = colDims.map((d) =>
-        ITEM_DIMS.has(d) && item ? resolveItemDimKey(item, d, prodMeta) : getPOG1Key(o, d, prodMeta)
+        ITEM_DIMS.has(d) && item
+          ? resolveItemDimKey(item, d, prodMeta)
+          : getPOG1Key(o, d, prodMeta)
       );
 
       rKeys.forEach((k, i) => rValSets[i]?.add(k));
@@ -733,7 +744,13 @@ export function computeHierarchicalPivot(
 
       for (let ri = 0; ri <= rKeys.length; ri++) {
         for (let ci = 0; ci <= cKeys.length; ci++) {
-          addToCache(rKeys.slice(0, ri), cKeys.slice(0, ci), o._id, o, atomItems);
+          addToCache(
+            rKeys.slice(0, ri),
+            cKeys.slice(0, ci),
+            o._id,
+            o,
+            atomItems
+          );
         }
       }
     };
@@ -750,8 +767,16 @@ export function computeHierarchicalPivot(
     const k = cacheKey(rowPath, colPath);
     if (numCache.has(k)) return numCache.get(k)!;
     const e = cache.get(k);
-    if (!e) { numCache.set(k, 0); return 0; }
-    const val = aggregateMeasure(Array.from(e.ords.values()), e.items, measure, toBase);
+    if (!e) {
+      numCache.set(k, 0);
+      return 0;
+    }
+    const val = aggregateMeasure(
+      Array.from(e.ords.values()),
+      e.items,
+      measure,
+      toBase
+    );
     numCache.set(k, val);
     return val;
   };
@@ -768,8 +793,12 @@ export function computeHierarchicalPivot(
   const colVals0 = Array.from(cValSets[0] ?? []);
   const rowTotals: Record<string, number> = {};
   const colTotals: Record<string, number> = {};
-  rowVals0.forEach((k) => { rowTotals[k] = getVal([k], []); });
-  colVals0.forEach((k) => { colTotals[k] = getVal([], [k]); });
+  rowVals0.forEach((k) => {
+    rowTotals[k] = getVal([k], []);
+  });
+  colVals0.forEach((k) => {
+    colTotals[k] = getVal([], [k]);
+  });
 
   if (isDateDim(rowDims[0])) rowVals0.sort((a, b) => a.localeCompare(b));
   else rowVals0.sort((a, b) => rowTotals[b] - rowTotals[a]);
@@ -781,26 +810,43 @@ export function computeHierarchicalPivot(
   const subRowValsMap: Record<string, string[]> = {};
   rowVals0.forEach((rk) => {
     const vals = Array.from(subRVals.get(rk) ?? []);
-    if (rowDims[1] && isDateDim(rowDims[1])) vals.sort((a, b) => a.localeCompare(b));
+    if (rowDims[1] && isDateDim(rowDims[1]))
+      vals.sort((a, b) => a.localeCompare(b));
     else vals.sort((a, b) => getVal([rk, b], []) - getVal([rk, a], []));
     subRowValsMap[rk] = vals;
   });
   const subColValsMap: Record<string, string[]> = {};
   colVals0.forEach((ck) => {
     const vals = Array.from(subCVals.get(ck) ?? []);
-    if (colDims[1] && isDateDim(colDims[1])) vals.sort((a, b) => a.localeCompare(b));
+    if (colDims[1] && isDateDim(colDims[1]))
+      vals.sort((a, b) => a.localeCompare(b));
     else vals.sort((a, b) => getVal([], [ck, b]) - getVal([], [ck, a]));
     subColValsMap[ck] = vals;
   });
 
   const grandTotal = getVal([], []);
   let maxCellVal = 0;
-  rowVals0.forEach((rk) => colVals0.forEach((ck) => { maxCellVal = Math.max(maxCellVal, getVal([rk], [ck])); }));
-  if (colVals0.length === 0) rowVals0.forEach((rk) => { maxCellVal = Math.max(maxCellVal, rowTotals[rk]); });
+  rowVals0.forEach((rk) =>
+    colVals0.forEach((ck) => {
+      maxCellVal = Math.max(maxCellVal, getVal([rk], [ck]));
+    })
+  );
+  if (colVals0.length === 0)
+    rowVals0.forEach((rk) => {
+      maxCellVal = Math.max(maxCellVal, rowTotals[rk]);
+    });
 
   return {
-    rowVals0, colVals0, subRowValsMap, subColValsMap,
-    getValue: getVal, getOrderCount, getOrders,
-    rowTotals, colTotals, grandTotal, maxCellVal,
+    rowVals0,
+    colVals0,
+    subRowValsMap,
+    subColValsMap,
+    getValue: getVal,
+    getOrderCount,
+    getOrders,
+    rowTotals,
+    colTotals,
+    grandTotal,
+    maxCellVal,
   };
 }

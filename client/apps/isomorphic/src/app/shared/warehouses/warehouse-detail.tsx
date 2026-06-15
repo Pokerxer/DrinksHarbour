@@ -15,19 +15,28 @@ import WarehouseTransferDrawer from './warehouse-transfer-drawer';
 import { routes } from '@/config/routes';
 
 const skuOf = (r: WarehouseStockRow) =>
-  typeof r.subProduct === 'object' ? r.subProduct.sku ?? r.subProduct._id : r.subProduct;
+  typeof r.subProduct === 'object'
+    ? (r.subProduct.sku ?? r.subProduct._id)
+    : r.subProduct;
 const sizeOf = (r: WarehouseStockRow) =>
-  typeof r.size === 'object' ? r.size.size ?? r.size._id : r.size;
-const idOf = (v: WarehouseStockRow['subProduct'] | WarehouseStockRow['size']) =>
-  typeof v === 'object' ? v._id : v;
+  typeof r.size === 'object' ? (r.size.size ?? r.size._id) : r.size;
+const idOf = (
+  v: WarehouseStockRow['subProduct'] | WarehouseStockRow['size']
+) => (typeof v === 'object' ? v._id : v);
 
-export default function WarehouseDetail({ warehouseId }: { warehouseId: string }) {
+export default function WarehouseDetail({
+  warehouseId,
+}: {
+  warehouseId: string;
+}) {
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
   const [warehouse, setWarehouse] = useState<Warehouse | null>(null);
   const [rows, setRows] = useState<WarehouseStockRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [transferRow, setTransferRow] = useState<WarehouseStockRow | null>(null);
+  const [transferRow, setTransferRow] = useState<WarehouseStockRow | null>(
+    null
+  );
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -46,11 +55,15 @@ export default function WarehouseDetail({ warehouseId }: { warehouseId: string }
     }
   }, [token, warehouseId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const adjust = async (row: WarehouseStockRow, type: AdjustType) => {
     const raw = prompt(
-      type === 'adjusted' ? 'Set quantity to:' : `Quantity to ${type === 'received' ? 'add' : 'remove'}:`
+      type === 'adjusted'
+        ? 'Set quantity to:'
+        : `Quantity to ${type === 'received' ? 'add' : 'remove'}:`
     );
     if (raw == null) return;
     const quantity = Number(raw);
@@ -61,7 +74,12 @@ export default function WarehouseDetail({ warehouseId }: { warehouseId: string }
     try {
       await warehouseStockService.adjustStock(
         warehouseId,
-        { subProduct: String(idOf(row.subProduct)), size: String(idOf(row.size)), quantity, type },
+        {
+          subProduct: String(idOf(row.subProduct)),
+          size: String(idOf(row.size)),
+          quantity,
+          type,
+        },
         token
       );
       toast.success('Stock adjusted');
@@ -73,11 +91,18 @@ export default function WarehouseDetail({ warehouseId }: { warehouseId: string }
 
   return (
     <div>
-      <Link href={routes.warehouses.list} className="mb-4 inline-flex items-center gap-1 text-sm text-gray-600">
+      <Link
+        href={routes.warehouses.list}
+        className="mb-4 inline-flex items-center gap-1 text-sm text-gray-600"
+      >
         <PiArrowLeft /> Warehouses
       </Link>
-      <h1 className="mb-1 text-2xl font-semibold">{warehouse?.name ?? 'Warehouse'}</h1>
-      <p className="mb-6 text-sm text-gray-500">{warehouse?.code} · {warehouse?.type?.replace('_', ' ')}</p>
+      <h1 className="mb-1 text-2xl font-semibold">
+        {warehouse?.name ?? 'Warehouse'}
+      </h1>
+      <p className="mb-6 text-sm text-gray-500">
+        {warehouse?.code} · {warehouse?.type?.replace('_', ' ')}
+      </p>
 
       {loading ? (
         <p>Loading…</p>
@@ -103,13 +128,33 @@ export default function WarehouseDetail({ warehouseId }: { warehouseId: string }
                   <td className="px-4 py-3">{sizeOf(r)}</td>
                   <td className="px-4 py-3 text-right">{r.currentQuantity}</td>
                   <td className="px-4 py-3 text-right">{r.reservedQuantity}</td>
-                  <td className="px-4 py-3 text-right">{Math.max(0, r.currentQuantity - r.reservedQuantity)}</td>
+                  <td className="px-4 py-3 text-right">
+                    {Math.max(0, r.currentQuantity - r.reservedQuantity)}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
-                      <button onClick={() => adjust(r, 'received')} className="rounded border px-2 py-1 text-xs">+ Receive</button>
-                      <button onClick={() => adjust(r, 'shipped')} className="rounded border px-2 py-1 text-xs">− Ship</button>
-                      <button onClick={() => adjust(r, 'adjusted')} className="rounded border px-2 py-1 text-xs">Set</button>
-                      <button onClick={() => setTransferRow(r)} className="rounded border px-2 py-1 text-xs inline-flex items-center gap-1">
+                      <button
+                        onClick={() => adjust(r, 'received')}
+                        className="rounded border px-2 py-1 text-xs"
+                      >
+                        + Receive
+                      </button>
+                      <button
+                        onClick={() => adjust(r, 'shipped')}
+                        className="rounded border px-2 py-1 text-xs"
+                      >
+                        − Ship
+                      </button>
+                      <button
+                        onClick={() => adjust(r, 'adjusted')}
+                        className="rounded border px-2 py-1 text-xs"
+                      >
+                        Set
+                      </button>
+                      <button
+                        onClick={() => setTransferRow(r)}
+                        className="inline-flex items-center gap-1 rounded border px-2 py-1 text-xs"
+                      >
                         <PiArrowsLeftRight /> Transfer
                       </button>
                     </div>
@@ -129,7 +174,10 @@ export default function WarehouseDetail({ warehouseId }: { warehouseId: string }
           label={`${skuOf(transferRow)} · ${sizeOf(transferRow)}`}
           maxQuantity={transferRow.currentQuantity}
           onClose={() => setTransferRow(null)}
-          onDone={async () => { setTransferRow(null); await load(); }}
+          onDone={async () => {
+            setTransferRow(null);
+            await load();
+          }}
         />
       )}
     </div>

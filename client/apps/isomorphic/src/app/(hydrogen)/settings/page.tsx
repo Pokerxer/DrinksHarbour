@@ -1363,11 +1363,37 @@ export default function SettingsPage() {
                     checked={purch.requirePOApproval}
                     onChange={(v) => setPurchField('requirePOApproval', v)}
                   />
+                  {purch.requirePOApproval && (
+                    <Row
+                      label="Approval threshold"
+                      sub="Only POs at or above this order value need approval. Set 0 to require approval for every PO."
+                      indent
+                    >
+                      <NumInput
+                        value={purch.approvalThreshold}
+                        onChange={(v) =>
+                          setPurchField(
+                            'approvalThreshold',
+                            Math.max(0, Math.round(v))
+                          )
+                        }
+                        min={0}
+                        step={1000}
+                        prefix={purch.defaultCurrency}
+                      />
+                    </Row>
+                  )}
                   <CbRow
                     label="Lock orders on confirmation"
                     sub="Automatically lock confirmed purchase orders against further edits."
                     checked={purch.lockConfirmedOrders}
                     onChange={(v) => setPurchField('lockConfirmedOrders', v)}
+                  />
+                  <CbRow
+                    label="Allow partial receipts"
+                    sub="Permit receiving less than the ordered quantity. Turn off to require each line to be received in full."
+                    checked={purch.allowPartialReceipts}
+                    onChange={(v) => setPurchField('allowPartialReceipts', v)}
                   />
                   <Row
                     label="Quotation validity"
@@ -1438,6 +1464,18 @@ export default function SettingsPage() {
                       setPurchField('defaultBillControlPolicy', 'ordered')
                     }
                   />
+                  <CbRow
+                    label="Auto-generate vendor bill"
+                    sub="Create a draft vendor bill automatically when a purchase order is validated."
+                    checked={purch.autoGenerateBill}
+                    onChange={(v) => setPurchField('autoGenerateBill', v)}
+                  />
+                  <CbRow
+                    label="Enable 3-way matching"
+                    sub="Match the purchase order, receipt, and vendor bill before a bill is paid."
+                    checked={purch.enable3WayMatching}
+                    onChange={(v) => setPurchField('enable3WayMatching', v)}
+                  />
                 </SectionCard>
               )}
 
@@ -1468,6 +1506,24 @@ export default function SettingsPage() {
                       ))}
                     </select>
                   </Row>
+                  <TextInput
+                    label="Default payment terms"
+                    sub="Pre-filled payment terms for new vendor bills (e.g. Net 30)."
+                    value={purch.defaultPaymentTerms}
+                    onChange={(v) => setPurchField('defaultPaymentTerms', v)}
+                    placeholder="Net 30"
+                    maxLength={100}
+                  />
+                  <TextInput
+                    label="Default receiving location"
+                    sub="Warehouse or location pre-selected when receiving goods."
+                    value={purch.defaultReceivingLocation}
+                    onChange={(v) =>
+                      setPurchField('defaultReceivingLocation', v)
+                    }
+                    placeholder="e.g. Main Warehouse"
+                    maxLength={200}
+                  />
                 </SectionCard>
               )}
             </div>

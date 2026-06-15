@@ -105,15 +105,19 @@ class VendorPricelistService {
     };
   }
 
-  async getPricelists(token: string, params?: {
-    vendor?: string;
-    isActive?: boolean;
-    page?: number;
-    limit?: number;
-  }): Promise<ListResponse> {
+  async getPricelists(
+    token: string,
+    params?: {
+      vendor?: string;
+      isActive?: boolean;
+      page?: number;
+      limit?: number;
+    }
+  ): Promise<ListResponse> {
     const queryParams = new URLSearchParams();
     if (params?.vendor) queryParams.set('vendor', params.vendor);
-    if (params?.isActive !== undefined) queryParams.set('isActive', String(params.isActive));
+    if (params?.isActive !== undefined)
+      queryParams.set('isActive', String(params.isActive));
     if (params?.page) queryParams.set('page', String(params.page));
     if (params?.limit) queryParams.set('limit', String(params.limit));
 
@@ -124,15 +128,20 @@ class VendorPricelistService {
     return response.json();
   }
 
-  async getPricelist(id: string, token: string): Promise<{ success: boolean; data: VendorPricelist }> {
-    const response = await fetch(
-      `${API_URL}/api/vendor-pricelists/${id}`,
-      { headers: this.getHeaders(token) }
-    );
+  async getPricelist(
+    id: string,
+    token: string
+  ): Promise<{ success: boolean; data: VendorPricelist }> {
+    const response = await fetch(`${API_URL}/api/vendor-pricelists/${id}`, {
+      headers: this.getHeaders(token),
+    });
     return response.json();
   }
 
-  async createPricelist(data: Partial<VendorPricelist>, token: string): Promise<CreateResponse> {
+  async createPricelist(
+    data: Partial<VendorPricelist>,
+    token: string
+  ): Promise<CreateResponse> {
     const response = await fetch(`${API_URL}/api/vendor-pricelists`, {
       method: 'POST',
       headers: this.getHeaders(token),
@@ -141,7 +150,11 @@ class VendorPricelistService {
     return response.json();
   }
 
-  async updatePricelist(id: string, data: Partial<VendorPricelist>, token: string): Promise<CreateResponse> {
+  async updatePricelist(
+    id: string,
+    data: Partial<VendorPricelist>,
+    token: string
+  ): Promise<CreateResponse> {
     const response = await fetch(`${API_URL}/api/vendor-pricelists/${id}`, {
       method: 'PATCH',
       headers: this.getHeaders(token),
@@ -150,7 +163,10 @@ class VendorPricelistService {
     return response.json();
   }
 
-  async deletePricelist(id: string, token: string): Promise<{ success: boolean; message: string }> {
+  async deletePricelist(
+    id: string,
+    token: string
+  ): Promise<{ success: boolean; message: string }> {
     const response = await fetch(`${API_URL}/api/vendor-pricelists/${id}`, {
       method: 'DELETE',
       headers: this.getHeaders(token),
@@ -158,7 +174,13 @@ class VendorPricelistService {
     return response.json();
   }
 
-  async getPriceForProduct(vendorId: string, subProductId: string, token: string, sizeId?: string, quantity?: number): Promise<{
+  async getPriceForProduct(
+    vendorId: string,
+    subProductId: string,
+    token: string,
+    sizeId?: string,
+    quantity?: number
+  ): Promise<{
     success: boolean;
     data: {
       pricelistId: string;
@@ -179,7 +201,11 @@ class VendorPricelistService {
     return response.json();
   }
 
-  async getVendorPricesForProduct(subProductId: string, token: string, sizeId?: string): Promise<{
+  async getVendorPricesForProduct(
+    subProductId: string,
+    token: string,
+    sizeId?: string
+  ): Promise<{
     success: boolean;
     data: Array<{
       pricelistId: string;
@@ -202,20 +228,35 @@ class VendorPricelistService {
     return response.json();
   }
 
-  async syncNow(id: string, token: string): Promise<{
+  async syncNow(
+    id: string,
+    token: string
+  ): Promise<{
     success: boolean;
     data?: VendorPricelist;
-    result?: { created: boolean; updated: number; added: number; changed: number; poNumber: string };
+    result?: {
+      created: boolean;
+      updated: number;
+      added: number;
+      changed: number;
+      poNumber: string;
+    };
     message?: string;
   }> {
-    const response = await fetch(`${API_URL}/api/vendor-pricelists/${id}/sync-now`, {
-      method: 'POST',
-      headers: this.getHeaders(token),
-    });
+    const response = await fetch(
+      `${API_URL}/api/vendor-pricelists/${id}/sync-now`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(token),
+      }
+    );
     return response.json();
   }
 
-  async getMatrix(token: string, search?: string): Promise<{ success: boolean; data: MatrixGroup[] }> {
+  async getMatrix(
+    token: string,
+    search?: string
+  ): Promise<{ success: boolean; data: MatrixGroup[] }> {
     const params = new URLSearchParams();
     if (search) params.set('search', search);
     const response = await fetch(

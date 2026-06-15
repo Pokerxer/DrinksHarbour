@@ -76,6 +76,8 @@ import {
   PivotView,
 } from './purchases-analytics-charts';
 import { PODrillDrawer } from './po-drill-drawer';
+import { AnalyticsWidgetsGrid } from './purchases-analytics-widgets';
+import { fraunces } from './purchases-fonts';
 
 const SORT_FIELD_LABELS: {
   field: SortField;
@@ -525,8 +527,23 @@ export default function PurchasesAnalytics() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24 text-sm text-gray-400">
-        Loading purchase analysis…
+      <div>
+        <div className="relative mb-6 overflow-hidden rounded-2xl border border-[#ece4d6] bg-white px-6 py-5">
+          <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-[#b20202] via-[#d9a05b] to-[#b20202] opacity-40" />
+          <div className="h-2.5 w-20 animate-pulse rounded-full bg-gray-100" />
+          <div className="mt-3 h-7 w-60 animate-pulse rounded-full bg-gray-100" />
+          <div className="mt-2 h-3 w-80 animate-pulse rounded-full bg-gray-50" />
+        </div>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
+          <div className="bg-[#b20202]/8 col-span-2 h-[118px] animate-pulse rounded-2xl lg:col-span-2" />
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-[118px] animate-pulse rounded-2xl border border-[#ece4d6] bg-white"
+            />
+          ))}
+        </div>
+        <div className="mt-5 h-[440px] animate-pulse rounded-2xl border border-[#ece4d6] bg-white" />
       </div>
     );
   }
@@ -534,35 +551,62 @@ export default function PurchasesAnalytics() {
   return (
     <div>
       {/* ── Header ── */}
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">
-            Purchase Analysis
-          </h1>
-          <p className="mt-0.5 text-sm text-gray-500">
-            Spend, volumes, and vendor performance across purchase orders
-          </p>
+      <div className="relative mb-6 overflow-hidden rounded-2xl border border-[#ece4d6] bg-white px-6 py-5 shadow-sm">
+        <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-[#b20202] via-[#d9a05b] to-[#b20202]" />
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#b20202]/70">
+              Reporting
+            </p>
+            <h1
+              className={`${fraunces.className} mt-1 text-[28px] font-semibold leading-tight text-[#2a2420] sm:text-[32px]`}
+            >
+              Purchase Analysis
+            </h1>
+            <p className="mt-1 text-sm text-gray-500">
+              Spend, volumes, and vendor performance across purchase orders
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={load}
+            title="Refresh"
+            className="group flex items-center gap-1.5 rounded-lg border border-[#ece4d6] bg-white px-3.5 py-2 text-xs font-semibold text-gray-600 transition-colors hover:border-[#b20202]/30 hover:bg-[#b20202]/5 hover:text-[#b20202]"
+          >
+            <PiArrowsClockwise className="h-3.5 w-3.5 transition-transform duration-500 group-active:-rotate-180" />
+            Refresh
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={load}
-          title="Refresh"
-          className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50"
-        >
-          <PiArrowsClockwise className="h-3.5 w-3.5" /> Refresh
-        </button>
       </div>
 
       {/* ── KPI cards ── */}
-      <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-5">
+      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-6">
+        {/* Hero: Total Spend */}
+        <div
+          title={fmtNaira(kpis.totalSpend)}
+          className="relative col-span-2 overflow-hidden rounded-2xl bg-gradient-to-br from-[#8a0202] via-[#b20202] to-[#6b0101] p-5 text-white shadow-md lg:col-span-2"
+        >
+          <div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full border border-white/10" />
+          <div className="pointer-events-none absolute -bottom-14 -right-6 h-28 w-28 rounded-full border border-white/10" />
+          <div className="relative flex items-center justify-between">
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/65">
+              Total Spend
+            </p>
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/15">
+              <PiCurrencyNgn className="h-4 w-4" />
+            </span>
+          </div>
+          <p
+            className={`${fraunces.className} relative mt-3 text-[34px] font-semibold tabular-nums leading-none`}
+          >
+            {fmtCompact(kpis.totalSpend)}
+          </p>
+          <p className="relative mt-1.5 text-[11px] text-white/55">
+            {fmtNaira(kpis.totalSpend)}
+          </p>
+        </div>
+
         {[
-          {
-            label: 'Total Spend',
-            value: fmtCompact(kpis.totalSpend),
-            full: fmtNaira(kpis.totalSpend),
-            icon: <PiCurrencyNgn className="h-4 w-4" />,
-            color: 'text-[#b20202] bg-[#b20202]/10',
-          },
           {
             label: 'Purchase Orders',
             value: String(kpis.orderCount),
@@ -595,17 +639,21 @@ export default function PurchasesAnalytics() {
           <div
             key={label}
             title={full}
-            className="rounded-xl border border-gray-200 bg-white p-4"
+            className="rounded-2xl border border-[#ece4d6] bg-white p-4 transition-shadow hover:shadow-md"
           >
             <div className="flex items-center justify-between">
-              <p className="text-xs text-gray-500">{label}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                {label}
+              </p>
               <span
                 className={`flex h-7 w-7 items-center justify-center rounded-lg ${color}`}
               >
                 {icon}
               </span>
             </div>
-            <p className="mt-1.5 text-xl font-bold tabular-nums text-gray-900">
+            <p
+              className={`${fraunces.className} mt-2 text-2xl font-semibold tabular-nums text-[#2a2420]`}
+            >
               {value}
             </p>
           </div>
@@ -1222,13 +1270,13 @@ export default function PurchasesAnalytics() {
           onCellClick={(orders, title) => setDrillData({ orders, title })}
         />
       ) : (
-        <div className="rounded-xl border border-gray-200 bg-white">
-          <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
-            <h2 className="text-sm font-semibold text-gray-800">
+        <div className="overflow-hidden rounded-2xl border border-[#ece4d6] bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-[#ece4d6] px-5 py-3">
+            <h2 className="text-sm font-semibold text-[#2a2420]">
               {measureLabel} by {groupLabel}
               {groupLabel2 ? ` & ${groupLabel2}` : ''}
             </h2>
-            <span className="text-xs text-gray-500">
+            <span className="bg-[#b20202]/8 rounded-full px-2.5 py-1 text-xs font-semibold text-[#b20202]">
               {measure === 'avg_order'
                 ? `${totalOrders} orders`
                 : `Total: ${fmtMeasureVal(totalValue, measure)}`}
@@ -1267,36 +1315,43 @@ export default function PurchasesAnalytics() {
 
       {/* Top vendors quick table (from server summary) */}
       {summary?.topVendors && summary.topVendors.length > 0 && (
-        <div className="mt-5 overflow-hidden rounded-xl border border-gray-200 bg-white">
-          <div className="border-b border-gray-100 px-5 py-3">
-            <h2 className="text-sm font-semibold text-gray-800">
+        <div className="mt-5 overflow-hidden rounded-2xl border border-[#ece4d6] bg-white shadow-sm">
+          <div className="border-b border-[#ece4d6] px-5 py-3">
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#b20202]/70">
+              Leaderboard
+            </p>
+            <h2
+              className={`${fraunces.className} text-base font-semibold text-[#2a2420]`}
+            >
               Top Vendors by Spend
             </h2>
           </div>
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100 bg-gray-50 text-xs">
-                <th className="px-4 py-2.5 text-left font-medium text-gray-500">
+              <tr className="border-b border-[#ece4d6] bg-[#FAF8F3] text-xs">
+                <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400">
                   Vendor
                 </th>
-                <th className="px-4 py-2.5 text-right font-medium text-gray-500">
+                <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400">
                   Orders
                 </th>
-                <th className="px-4 py-2.5 text-right font-medium text-gray-500">
+                <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400">
                   Total Spend
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-[#f1ece2]">
               {summary.topVendors.map((v, i) => (
-                <tr key={i} className="hover:bg-gray-50">
-                  <td className="px-4 py-2.5 font-medium text-gray-900">
+                <tr key={i} className="transition-colors hover:bg-[#FAF8F3]">
+                  <td className="px-4 py-2.5 font-medium text-[#2a2420]">
                     {v.name}
                   </td>
-                  <td className="px-4 py-2.5 text-right text-gray-600">
+                  <td className="px-4 py-2.5 text-right text-gray-500">
                     {v.count}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-gray-900">
+                  <td
+                    className={`${fraunces.className} px-4 py-2.5 text-right font-semibold tabular-nums text-[#2a2420]`}
+                  >
                     {fmtNaira(v.amount ?? 0)}
                   </td>
                 </tr>
@@ -1305,6 +1360,9 @@ export default function PurchasesAnalytics() {
           </table>
         </div>
       )}
+
+      {/* ── Additional ledger widgets ── */}
+      <AnalyticsWidgetsGrid summary={summary} />
 
       {/* ── PO Drill-down drawer ── */}
       {drillData && (

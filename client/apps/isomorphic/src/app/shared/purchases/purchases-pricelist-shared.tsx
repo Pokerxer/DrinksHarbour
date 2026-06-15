@@ -15,7 +15,10 @@ import {
 import { useSession } from 'next-auth/react';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import type { POSProduct } from '@/app/shared/point-of-sale/types';
-import type { PricelistItem, HistoryEntry } from '@/services/vendorPricelist.service';
+import type {
+  PricelistItem,
+  HistoryEntry,
+} from '@/services/vendorPricelist.service';
 import { fmtCur } from './purchases-analytics-helpers';
 import { fraunces } from './purchases-fonts';
 
@@ -52,7 +55,9 @@ export function lineDelta(line: PricelistItem): number | null {
   }
   if (line.previousPrice && line.previousPrice > 0) {
     return (
-      Math.round(((line.unitPrice - line.previousPrice) / line.previousPrice) * 1000) / 10
+      Math.round(
+        ((line.unitPrice - line.previousPrice) / line.previousPrice) * 1000
+      ) / 10
     );
   }
   return null;
@@ -304,141 +309,142 @@ export function LineItemsEditor({
             </thead>
             <tbody className="divide-y divide-[#f1ece2]">
               {lines.map((line, i) => (
-                  <Fragment key={i}>
-                    <tr className="hover:bg-[#FAF8F3]/60">
-                  <td className="px-4 py-2">
-                    {line.subProductId ? (
-                      <>
-                        <p className="font-medium text-[#2a2420]">
-                          {line.subProductName || line.productName}
-                        </p>
-                        <p className="text-[11px] text-gray-400">
-                          {[line.sizeName, line.sku]
-                            .filter(Boolean)
-                            .join(' · ') || '—'}
-                        </p>
-                        <div className="mt-0.5 flex items-center gap-1.5">
-                          <DeltaBadge delta={lineDelta(line)} />
-                          {line.priceHistory && line.priceHistory.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setOpenHistory(openHistory === i ? null : i)
-                              }
-                              className="text-[10px] font-medium text-gray-400 underline-offset-2 hover:text-[#b20202] hover:underline"
-                            >
-                              {openHistory === i
-                                ? 'Hide history'
-                                : `History (${line.priceHistory.length})`}
-                            </button>
-                          )}
-                        </div>
-                      </>
-                    ) : (
-                      <input
-                        value={line.productName}
-                        onChange={(e) =>
-                          update(i, { productName: e.target.value })
-                        }
-                        placeholder="Product name"
-                        className="w-44 rounded border border-[#ece4d6] px-2 py-1 text-xs focus:border-[#b20202] focus:outline-none"
-                      />
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={line.unitPrice}
-                      onChange={(e) =>
-                        update(i, { unitPrice: Number(e.target.value) })
-                      }
-                      className="w-28 rounded border border-[#ece4d6] px-2 py-1 text-right text-xs tabular-nums focus:border-[#b20202] focus:outline-none"
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.5"
-                      value={line.discountPercent}
-                      onChange={(e) =>
-                        update(i, { discountPercent: Number(e.target.value) })
-                      }
-                      className="w-16 rounded border border-[#ece4d6] px-2 py-1 text-right text-xs tabular-nums focus:border-[#b20202] focus:outline-none"
-                    />
-                  </td>
-                  <td
-                    className={`${fraunces.className} px-3 py-2 text-right font-semibold tabular-nums text-[#2a2420]`}
-                  >
-                    {fmtCur(netPrice(line), currency)}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <input
-                      type="number"
-                      min="1"
-                      value={line.minQuantity ?? 1}
-                      onChange={(e) =>
-                        update(i, { minQuantity: Number(e.target.value) })
-                      }
-                      className="w-16 rounded border border-[#ece4d6] px-2 py-1 text-right text-xs tabular-nums focus:border-[#b20202] focus:outline-none"
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <input
-                      type="number"
-                      min="0"
-                      value={line.leadTimeDays ?? 0}
-                      onChange={(e) =>
-                        update(i, { leadTimeDays: Number(e.target.value) })
-                      }
-                      className="w-14 rounded border border-[#ece4d6] px-2 py-1 text-right text-xs tabular-nums focus:border-[#b20202] focus:outline-none"
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        update(i, { isPreferred: !line.isPreferred })
-                      }
-                      title={
-                        line.isPreferred
-                          ? 'Preferred vendor line'
-                          : 'Mark preferred'
-                      }
-                      className="text-gray-300 transition-colors hover:text-[#c8932c]"
-                    >
-                      {line.isPreferred ? (
-                        <PiStarFill className="h-4 w-4 text-[#c8932c]" />
+                <Fragment key={i}>
+                  <tr className="hover:bg-[#FAF8F3]/60">
+                    <td className="px-4 py-2">
+                      {line.subProductId ? (
+                        <>
+                          <p className="font-medium text-[#2a2420]">
+                            {line.subProductName || line.productName}
+                          </p>
+                          <p className="text-[11px] text-gray-400">
+                            {[line.sizeName, line.sku]
+                              .filter(Boolean)
+                              .join(' · ') || '—'}
+                          </p>
+                          <div className="mt-0.5 flex items-center gap-1.5">
+                            <DeltaBadge delta={lineDelta(line)} />
+                            {line.priceHistory &&
+                              line.priceHistory.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setOpenHistory(openHistory === i ? null : i)
+                                  }
+                                  className="text-[10px] font-medium text-gray-400 underline-offset-2 hover:text-[#b20202] hover:underline"
+                                >
+                                  {openHistory === i
+                                    ? 'Hide history'
+                                    : `History (${line.priceHistory.length})`}
+                                </button>
+                              )}
+                          </div>
+                        </>
                       ) : (
-                        <PiStar className="h-4 w-4" />
+                        <input
+                          value={line.productName}
+                          onChange={(e) =>
+                            update(i, { productName: e.target.value })
+                          }
+                          placeholder="Product name"
+                          className="w-44 rounded border border-[#ece4d6] px-2 py-1 text-xs focus:border-[#b20202] focus:outline-none"
+                        />
                       )}
-                    </button>
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <button
-                      type="button"
-                      onClick={() => remove(i)}
-                      className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.unitPrice}
+                        onChange={(e) =>
+                          update(i, { unitPrice: Number(e.target.value) })
+                        }
+                        className="w-28 rounded border border-[#ece4d6] px-2 py-1 text-right text-xs tabular-nums focus:border-[#b20202] focus:outline-none"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.5"
+                        value={line.discountPercent}
+                        onChange={(e) =>
+                          update(i, { discountPercent: Number(e.target.value) })
+                        }
+                        className="w-16 rounded border border-[#ece4d6] px-2 py-1 text-right text-xs tabular-nums focus:border-[#b20202] focus:outline-none"
+                      />
+                    </td>
+                    <td
+                      className={`${fraunces.className} px-3 py-2 text-right font-semibold tabular-nums text-[#2a2420]`}
                     >
-                      <PiTrash className="h-3.5 w-3.5" />
-                    </button>
-                  </td>
+                      {fmtCur(netPrice(line), currency)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="number"
+                        min="1"
+                        value={line.minQuantity ?? 1}
+                        onChange={(e) =>
+                          update(i, { minQuantity: Number(e.target.value) })
+                        }
+                        className="w-16 rounded border border-[#ece4d6] px-2 py-1 text-right text-xs tabular-nums focus:border-[#b20202] focus:outline-none"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="number"
+                        min="0"
+                        value={line.leadTimeDays ?? 0}
+                        onChange={(e) =>
+                          update(i, { leadTimeDays: Number(e.target.value) })
+                        }
+                        className="w-14 rounded border border-[#ece4d6] px-2 py-1 text-right text-xs tabular-nums focus:border-[#b20202] focus:outline-none"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          update(i, { isPreferred: !line.isPreferred })
+                        }
+                        title={
+                          line.isPreferred
+                            ? 'Preferred vendor line'
+                            : 'Mark preferred'
+                        }
+                        className="text-gray-300 transition-colors hover:text-[#c8932c]"
+                      >
+                        {line.isPreferred ? (
+                          <PiStarFill className="h-4 w-4 text-[#c8932c]" />
+                        ) : (
+                          <PiStar className="h-4 w-4" />
+                        )}
+                      </button>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => remove(i)}
+                        className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                      >
+                        <PiTrash className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                  {openHistory === i && (
+                    <tr>
+                      <td colSpan={8} className="bg-[#FAF8F3]/40">
+                        <PriceHistoryPanel
+                          history={line.priceHistory}
+                          currency={currency}
+                        />
+                      </td>
                     </tr>
-                    {openHistory === i && (
-                      <tr>
-                        <td colSpan={8} className="bg-[#FAF8F3]/40">
-                          <PriceHistoryPanel
-                            history={line.priceHistory}
-                            currency={currency}
-                          />
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))}
+                  )}
+                </Fragment>
+              ))}
             </tbody>
           </table>
         </div>
@@ -480,7 +486,9 @@ export function PriceHistoryPanel({
   currency: string;
 }) {
   if (!history || history.length === 0) {
-    return <p className="px-4 py-3 text-xs text-gray-400">No price history yet.</p>;
+    return (
+      <p className="px-4 py-3 text-xs text-gray-400">No price history yet.</p>
+    );
   }
   const rows = [...history].reverse();
   return (
@@ -502,7 +510,9 @@ export function PriceHistoryPanel({
                 {fmtCur(h.unitPrice, currency)}
               </span>
               <DeltaBadge
-                delta={typeof h.changePercent === 'number' ? h.changePercent : null}
+                delta={
+                  typeof h.changePercent === 'number' ? h.changePercent : null
+                }
               />
             </span>
           </div>

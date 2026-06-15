@@ -160,7 +160,8 @@ export function PriceCompare() {
                           {r.subProductName}
                         </p>
                         <p className="text-[11px] text-gray-400">
-                          {[r.sizeName, r.sku].filter(Boolean).join(' · ') || '—'}
+                          {[r.sizeName, r.sku].filter(Boolean).join(' · ') ||
+                            '—'}
                         </p>
                       </td>
                       <td className="px-4 py-3 text-gray-700">
@@ -211,12 +212,15 @@ export function PriceCompare() {
                             <tbody>
                               {r.priced.map((v) => {
                                 const isBest =
-                                  r.best && v.pricelistId === r.best.pricelistId;
+                                  r.best &&
+                                  v.pricelistId === r.best.pricelistId;
                                 return (
                                   <tr
                                     key={v.pricelistId + v.vendorId}
                                     className={
-                                      isBest ? 'text-[#3d6b5c]' : 'text-gray-600'
+                                      isBest
+                                        ? 'text-[#3d6b5c]'
+                                        : 'text-gray-600'
                                     }
                                   >
                                     <td className="py-1.5">

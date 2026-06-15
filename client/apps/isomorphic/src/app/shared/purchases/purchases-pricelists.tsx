@@ -72,7 +72,9 @@ export default function PurchasesPricelists() {
       lists.map((l) => l.vendorName?.trim()).filter(Boolean)
     ).size;
     const lines = lists.reduce((s, l) => s + (l.items?.length ?? 0), 0);
-    const auto = lists.filter((l) => l.autoManaged || l.source === 'auto').length;
+    const auto = lists.filter(
+      (l) => l.autoManaged || l.source === 'auto'
+    ).length;
     const alerts = lists.reduce(
       (s, l) => s + (l.items?.filter((it) => isBigJump(it)).length ?? 0),
       0
@@ -413,7 +415,7 @@ export default function PurchasesPricelists() {
                       </td>
                       <td className="px-4 py-3">
                         {pl.autoManaged || pl.source === 'auto' ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-[#b20202]/8 px-2 py-0.5 text-[11px] font-semibold text-[#b20202]">
+                          <span className="bg-[#b20202]/8 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold text-[#b20202]">
                             <PiRobot className="h-3 w-3" /> Auto
                           </span>
                         ) : (

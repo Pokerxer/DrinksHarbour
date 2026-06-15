@@ -1,3 +1,12 @@
 node_modules/
 .next/
 .DS_Store
+
+# Secrets — never commit
+.env
+**/.env
+!**/.env.local.example
+server/.env
+
+# Local Claude Code settings / worktrees
+.claude/
