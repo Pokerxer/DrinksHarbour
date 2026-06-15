@@ -21,6 +21,7 @@ const mongoose          = require('mongoose');
 const SubProduct        = require('../models/SubProduct');
 const Size              = require('../models/Size');
 const InventoryMovement = require('../models/InventoryMovement');
+const Warehouse         = require('../models/Warehouse');
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -48,6 +49,10 @@ function syncStatus(subProductId, threshold) {
 /** Fire-and-forget audit trail in InventoryMovement. */
 function audit(items, orderId, type, category, performedBy) {
   setImmediate(async () => {
+    const tenantForWh = items[0]?.tenant;
+    const auditWarehouse = tenantForWh
+      ? await resolveMovementWarehouse(tenantForWh, undefined)
+      : null;
     for (const item of items) {
       if (!item.subproduct || !item.tenant) continue;
       try {
@@ -63,6 +68,7 @@ function audit(items, orderId, type, category, performedBy) {
         await InventoryMovement.create({
           subProduct:    item.subproduct,
           tenant:        item.tenant,
+          warehouse:     auditWarehouse || undefined,
           product:       item.product,
           size:          item.size  || undefined,
           type,
@@ -87,6 +93,25 @@ function audit(items, orderId, type, category, performedBy) {
       }
     }
   });
+}
+
+/**
+ * Resolve the warehouse a movement should be attributed to.
+ * @param {string|ObjectId} tenantId
+ * @param {string|ObjectId|null|undefined} explicitWarehouseId
+ * @returns {Promise<ObjectId|string|null>} explicit id if given, else the tenant's
+ *   default warehouse id, else null. Never throws.
+ */
+async function resolveMovementWarehouse(tenantId, explicitWarehouseId) {
+  if (explicitWarehouseId) return explicitWarehouseId;
+  try {
+    const def = await Warehouse.findOne({ tenant: tenantId, isDefault: true })
+      .select('_id')
+      .lean();
+    return def?._id || null;
+  } catch {
+    return null;
+  }
 }
 
 // ─── public API ─────────────────────────────────────────────────────────────
@@ -257,7 +282,7 @@ async function recordReceived(subProductId, tenantId, data, performedBy) {
   const {
     quantity, unitCost, reference, supplierId, supplierName,
     batchNumber, lotNumber, expirationDate, notes, reason,
-    sizeId, sizeName,
+    sizeId, sizeName, warehouseId,
   } = data;
 
   if (!quantity || quantity <= 0) throw new Error('Quantity must be positive');
@@ -278,9 +303,12 @@ async function recordReceived(subProductId, tenantId, data, performedBy) {
                     : 'active';
   await sp.save();
 
+  const movementWarehouse = await resolveMovementWarehouse(tenantId || sp.tenant, warehouseId);
+
   const movement = await InventoryMovement.create({
     subProduct:     subProductId,
     tenant:         tenantId || sp.tenant,
+    warehouse:      movementWarehouse || undefined,
     type:           'received',
     category:       'in',
     quantity,
@@ -398,9 +426,12 @@ async function adjustInventory(subProductId, tenantId, adjustment, reason, perfo
   const type   = adjustment > 0 ? 'adjustment_in' : 'adjustment_out';
   const cat    = adjustment > 0 ? 'in' : 'out';
 
+  const movementWarehouse = await resolveMovementWarehouse(tenantId || sp.tenant, undefined);
+
   const movement = await InventoryMovement.create({
     subProduct:     subProductId,
     tenant:         tenantId || sp.tenant,
+    warehouse:      movementWarehouse || undefined,
     type,
     category:       cat,
     quantity:       Math.abs(adjustment),
@@ -425,7 +456,7 @@ async function adjustInventory(subProductId, tenantId, adjustment, reason, perfo
  * Record a customer return.
  */
 async function recordReturn(subProductId, tenantId, data, performedBy) {
-  const { quantity, reason, notes, reference, relatedOrder } = data;
+  const { quantity, reason, notes, reference, relatedOrder, warehouseId } = data;
   if (!quantity || quantity <= 0) throw new Error('Quantity must be positive');
 
   const sp = await SubProduct.findById(subProductId).select(
@@ -442,9 +473,12 @@ async function recordReturn(subProductId, tenantId, data, performedBy) {
                     : 'active';
   await sp.save();
 
+  const movementWarehouse = await resolveMovementWarehouse(tenantId || sp.tenant, warehouseId);
+
   const movement = await InventoryMovement.create({
     subProduct:     subProductId,
     tenant:         tenantId || sp.tenant,
+    warehouse:      movementWarehouse || undefined,
     type:           'return',
     category:       'in',
     quantity,
@@ -512,6 +546,7 @@ async function transferStock(data, performedBy, tenantId) {
     quantity,
     quantityBefore:      qBefore,
     quantityAfter:       qBefore,   // transfer doesn't change total
+    warehouse:           sourceWarehouseId,
     sourceWarehouse:     sourceWarehouseId,
     destinationWarehouse: destinationWarehouseId,
     reference,
@@ -532,6 +567,7 @@ async function transferStock(data, performedBy, tenantId) {
     quantity,
     quantityBefore:      qBefore,
     quantityAfter:       qBefore,
+    warehouse:           destinationWarehouseId,
     sourceWarehouse:     sourceWarehouseId,
     destinationWarehouse: destinationWarehouseId,
     reference,
@@ -570,9 +606,12 @@ async function createMovement(data, performedBy, tenantId) {
     await sp.save();
   }
 
+  const movementWarehouse = await resolveMovementWarehouse(tenantId || sp.tenant, data.warehouseId);
+
   const movement = await InventoryMovement.create({
     subProduct:     data.subProductId,
     tenant:         tenantId || sp.tenant,
+    warehouse:      movementWarehouse || undefined,
     type:           data.type,
     category:       data.category,
     quantity:       Math.abs(data.quantity),
@@ -623,6 +662,9 @@ async function getMovements(tenantId, options = {}) {
       .populate('performedBy', 'firstName lastName email posName')
       .populate('size', 'displayName size')
       .populate('relatedOrder', 'orderNumber receiptNumber placedAt')
+      .populate('warehouse', 'name code')
+      .populate('sourceWarehouse', 'name code')
+      .populate('destinationWarehouse', 'name code')
       .lean(),
     InventoryMovement.countDocuments(query),
   ]);
@@ -648,6 +690,9 @@ async function getInventorySummary(tenantId, subProductId) {
       .limit(10)
       .populate('performedBy', 'firstName lastName')
       .populate('size', 'displayName size')
+      .populate('warehouse', 'name code')
+      .populate('sourceWarehouse', 'name code')
+      .populate('destinationWarehouse', 'name code')
       .lean(),
     InventoryMovement.aggregate([
       { $match: { tenant: tId, subProduct: spId, status: 'confirmed' } },
@@ -776,4 +821,5 @@ module.exports = {
   recordReceived, adjustInventory, recordReturn, transferStock,
   createMovement, getMovements, getInventorySummary,
   cancelMovement, getNextPONumber, getLowStockItems, getInventoryValuation,
+  resolveMovementWarehouse,
 };
