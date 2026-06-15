@@ -2129,6 +2129,7 @@ export function MovementDetailPanel({
   const cat = getCategory(movement);
   const style = getCatStyle(cat);
   const source = getSourceBadge(movement);
+  const wh = getWarehouseInfo(movement);
   const sizeName = (typeof movement.size === 'object' && movement.size)
     ? (movement.size.displayName || movement.size.size)
     : (movement.sizeName || null);
@@ -2304,6 +2305,9 @@ export function MovementDetailPanel({
               {[
                 { label: 'Status',    value: <StatusBadge status={movement.status} /> },
                 { label: 'Source',    value: <span className={`flex w-fit items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${source.cls}`}>{source.icon}{source.label}</span> },
+                wh && (wh.kind === 'route'
+                  ? { label: 'Route',     value: `${wh.from} → ${wh.to}` }
+                  : { label: 'Warehouse', value: wh.label }),
                 sizeName            && { label: 'Size',      value: sizeName },
                 getOrderRef(movement) && { label: 'Reference', value: getOrderRef(movement) },
                 performer           && { label: 'By',        value: performer },
