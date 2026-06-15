@@ -67,7 +67,6 @@ import {
 } from '@/validators/sub-product.schema';
 import { routes } from '@/config/routes';
 import { subproductService } from '@/services/subproduct.service';
-import { inventoryService } from '@/services/inventory.service';
 import {
   transformFormData,
   transformBackendToForm,
@@ -843,30 +842,7 @@ export default function CreateEditSubProduct({
       let createdId: string | null = null;
 
       if (isEditMode && id) {
-        const currentSubProductResponse = await subproductService.getSubProduct(id, token);
-        const currentSubProduct =
-          currentSubProductResponse?.data?.subProduct ||
-          currentSubProductResponse?.subProduct ||
-          currentSubProductResponse;
-
-        const currentStock = currentSubProduct?.totalStock || 0;
-        const newStock = transformedData.totalStock || 0;
-        const stockDelta = newStock - currentStock;
-
         await subproductService.updateSubProduct(id, transformedData, token);
-
-        if (stockDelta !== 0) {
-          try {
-            if (stockDelta > 0) {
-              await inventoryService.recordReceived(id, stockDelta, token, { reason: 'Form Update (Added)' });
-            } else {
-              await inventoryService.adjustInventory(id, stockDelta, 'Form Update (Removed)', token);
-            }
-          } catch (invError) {
-            console.error('Failed to record inventory movement on form save:', invError);
-          }
-        }
-
         if (!silent) toast.success('Sub Product updated successfully!');
       } else {
         const response = await subproductService.createSubProduct(transformedData, token);
@@ -874,14 +850,6 @@ export default function CreateEditSubProduct({
 
         if (createdId) {
           setCreatedSubProductId(createdId);
-
-          if (transformedData.totalStock && transformedData.totalStock > 0) {
-            try {
-              await inventoryService.recordReceived(createdId, transformedData.totalStock, token, { reason: 'Initial Stock (Creation)' });
-            } catch (invError) {
-              console.error('Failed to record initial stock movement:', invError);
-            }
-          }
         }
 
         if (!silent) toast.success('Sub Product created successfully!');
