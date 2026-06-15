@@ -10,6 +10,7 @@ const Tenant = require('../models/Tenant');
 const Size            = require('../models/Size');
 const SubProduct      = require('../models/SubProduct');
 const InventoryMovement = require('../models/InventoryMovement');
+const inventoryService = require('../services/inventory.service');
 const { generateOrderNumber, generateReceiptNumber, generateReturnNumber } = require('../utils/orderUtils');
 const { calcPlatformCostPrice, calcPlatformSellingPrice, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
 
@@ -148,9 +149,12 @@ async function deductStock({ subProductId, sizeId, quantity, tenantId, staffId, 
     ? deductedDoc.availableStock + quantity   // pre-deduction value
     : deductedDoc.availableStock + quantity;
 
+  const saleWarehouse = await inventoryService.resolveMovementWarehouse(tenantId, undefined);
+
   InventoryMovement.create({
     subProduct:     subProductId,
     tenant:         tenantId,
+    warehouse:      saleWarehouse || undefined,
     product:        productId || undefined,
     size:           sizeId    || undefined,
     type:           'sold',
@@ -206,8 +210,9 @@ async function restoreStock({ subProductId, sizeId, quantity, tenantId, staffId,
     }
 
     // Audit
+    const restoreWarehouse = await inventoryService.resolveMovementWarehouse(tenantId, undefined);
     await InventoryMovement.create({
-      subProduct: subProductId, tenant: tenantId, product: productId || undefined,
+      subProduct: subProductId, tenant: tenantId, warehouse: restoreWarehouse || undefined, product: productId || undefined,
       size: sizeId, type: 'return', category: 'in',
       quantity,
       quantityBefore: (sizeAfter?.availableStock ?? 0) - quantity,
@@ -233,8 +238,9 @@ async function restoreStock({ subProductId, sizeId, quantity, tenantId, staffId,
               : 'active',
       });
     }
+    const restoreWarehouseNoSize = await inventoryService.resolveMovementWarehouse(tenantId, undefined);
     await InventoryMovement.create({
-      subProduct: subProductId, tenant: tenantId,
+      subProduct: subProductId, tenant: tenantId, warehouse: restoreWarehouseNoSize || undefined,
       type: 'return', category: 'in',
       quantity,
       quantityBefore: (spAfter?.availableStock ?? 0) - quantity,
