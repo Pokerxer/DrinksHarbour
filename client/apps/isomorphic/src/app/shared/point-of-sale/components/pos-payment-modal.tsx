@@ -31,6 +31,7 @@ import {
   computeRewardDiscount,
   getEffectiveBundlePrice,
   usePOSSettings,
+  usePOSActiveShop,
 } from '@/app/shared/point-of-sale/store';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { createOrder as createOrderOffline } from '@/app/shared/point-of-sale/offline/api';
@@ -1016,6 +1017,7 @@ export default function POSPaymentModal() {
   const { token, terminal, tenant } = usePOSAuth();
   const { notifySale } = usePOSSaleSignal();
   const { selectedPricelist } = usePOSPricelist();
+  const { activeShop } = usePOSActiveShop();
   const posSettings = tenant?.posSettings;
   const settings = usePOSSettings();
   const isOnline = useOnlineStatus();
@@ -1310,6 +1312,7 @@ export default function POSPaymentModal() {
         note: note || undefined,
         terminalType: terminal ?? 'retail',
         pricelistId: selectedPricelist?._id ?? undefined,
+        shopId: activeShop?._id,
       });
 
       setCartSnapshot([...items]);
