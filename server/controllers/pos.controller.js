@@ -1736,7 +1736,18 @@ exports.listPOSStaff = asyncHandler(async (req, res) => {
 exports.getPOSProducts = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
   const tenant   = req.tenant;
-  const { search, category, limit = 200 } = req.query;
+  const { search, category, limit = 200, shopId } = req.query;
+
+  // Resolve the active shop's bound warehouse, if any.
+  let warehouseId = null;
+  if (shopId) {
+    try {
+      const shop = tenant?.posSettings?.shops?.id?.(shopId);
+      warehouseId = shop?.warehouse || null;
+    } catch (_) {
+      warehouseId = null;
+    }
+  }
 
   // visibleInPOS is the explicit "show in POS" flag and is the sole gate.
   // Include all statuses except administrative-only ones that mean the product
@@ -1777,6 +1788,24 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
     .limit(Number(limit))
     .lean();
 
+  // When the shop is bound to a warehouse, look up per-(subProduct,size) stock
+  // so warehouse numbers can override the aggregate below.
+  let stockMap = null;
+  if (warehouseId) {
+    const stockRows = await WarehouseStock.find({
+      tenant: tenantId,
+      warehouse: warehouseId,
+      subProduct: { $in: subProducts.map((sp) => sp._id) },
+    }).select('subProduct size currentQuantity').lean();
+
+    stockMap = new Map();
+    for (const row of stockRows) {
+      const spKey = String(row.subProduct);
+      if (!stockMap.has(spKey)) stockMap.set(spKey, new Map());
+      stockMap.get(spKey).set(String(row.size), row.currentQuantity);
+    }
+  }
+
   // Inject computed platform selling prices so the client never sees raw 0-values
   const enriched = subProducts.map((sp) => {
     const basePricing   = computePOSPricing(sp, null, tenant);
@@ -1793,33 +1822,53 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
       };
     });
 
-    // Normalise size-level availableStock to match the SubProduct aggregate.
-    // Mismatches arise when inventory adjustments are made without specifying a
-    // size (the service updates SubProduct only, leaving Size docs stale).
-    const sizeStockSum = enrichedSizes.reduce((sum, s) => sum + (s.availableStock || 0), 0);
-    if (enrichedSizes.length > 0 && !sp.sellWithoutSizeVariants && sizeStockSum !== sp.availableStock) {
-      const target = Math.max(0, sp.availableStock);
-      if (sizeStockSum === 0) {
-        // All sizes at zero — distribute evenly
-        const perSize   = Math.floor(target / enrichedSizes.length);
-        const remainder = target % enrichedSizes.length;
-        enrichedSizes = enrichedSizes.map((s, i) => ({
-          ...s,
-          availableStock: perSize + (i === 0 ? remainder : 0),
-        }));
+    let warehouseAvailableStock = null;
+
+    if (warehouseId) {
+      // Warehouse-scoped: stock comes from WarehouseStock, hard-filter zeros.
+      const spStock = stockMap.get(String(sp._id)) || new Map();
+
+      if (sp.sellWithoutSizeVariants) {
+        const qty = spStock.get(String(sp.defaultSize)) ?? 0;
+        if (qty <= 0) return null;
+        warehouseAvailableStock = qty;
+        enrichedSizes = enrichedSizes.map((s) => ({ ...s, availableStock: qty }));
       } else {
-        // Sizes have stock but their sum differs — scale proportionally so the
-        // POS sum matches SubProduct.availableStock (source of truth).
-        let remaining = target;
-        enrichedSizes = enrichedSizes.map((s, i) => {
-          const isLast  = i === enrichedSizes.length - 1;
-          const share   = (s.availableStock || 0) / sizeStockSum;
-          const newStock = isLast
-            ? Math.max(0, remaining)
-            : Math.max(0, Math.min(remaining, Math.round(share * target)));
-          remaining -= newStock;
-          return { ...s, availableStock: newStock };
-        });
+        enrichedSizes = enrichedSizes
+          .map((s) => ({ ...s, availableStock: spStock.get(String(s._id)) ?? 0 }))
+          .filter((s) => s.availableStock > 0);
+        if (enrichedSizes.length === 0) return null;
+        warehouseAvailableStock = enrichedSizes.reduce((sum, s) => sum + s.availableStock, 0);
+      }
+    } else {
+      // Normalise size-level availableStock to match the SubProduct aggregate.
+      // Mismatches arise when inventory adjustments are made without specifying a
+      // size (the service updates SubProduct only, leaving Size docs stale).
+      const sizeStockSum = enrichedSizes.reduce((sum, s) => sum + (s.availableStock || 0), 0);
+      if (enrichedSizes.length > 0 && !sp.sellWithoutSizeVariants && sizeStockSum !== sp.availableStock) {
+        const target = Math.max(0, sp.availableStock);
+        if (sizeStockSum === 0) {
+          // All sizes at zero — distribute evenly
+          const perSize   = Math.floor(target / enrichedSizes.length);
+          const remainder = target % enrichedSizes.length;
+          enrichedSizes = enrichedSizes.map((s, i) => ({
+            ...s,
+            availableStock: perSize + (i === 0 ? remainder : 0),
+          }));
+        } else {
+          // Sizes have stock but their sum differs — scale proportionally so the
+          // POS sum matches SubProduct.availableStock (source of truth).
+          let remaining = target;
+          enrichedSizes = enrichedSizes.map((s, i) => {
+            const isLast  = i === enrichedSizes.length - 1;
+            const share   = (s.availableStock || 0) / sizeStockSum;
+            const newStock = isLast
+              ? Math.max(0, remaining)
+              : Math.max(0, Math.min(remaining, Math.round(share * target)));
+            remaining -= newStock;
+            return { ...s, availableStock: newStock };
+          });
+        }
       }
     }
 
@@ -1835,10 +1884,11 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
       originalPrice:    basePricing.isOnSale ? originalPrice : null,
       isOnSale:         basePricing.isOnSale,
       isFlashSale:      basePricing.isFlashSale,
+      ...(warehouseId ? { availableStock: warehouseAvailableStock } : {}),
       activeBundles,
       sizes: enrichedSizes,
     };
-  });
+  }).filter(Boolean);
 
   // Post-populate filtering (product.type and search cannot be done in the Mongoose query)
   const filtered = enriched.filter((sp) => {
