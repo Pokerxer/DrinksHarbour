@@ -129,11 +129,14 @@ export const purchaseOrderService = {
     id: string,
     status: string,
     token: string,
-    receivedItems?: { itemId: string; receivedQty: number }[]
+    receivedItems?: { itemId: string; receivedQty: number }[],
+    warehouseId?: string
   ): Promise<CreatePOResponse> {
-    const body = receivedItems
-      ? JSON.stringify({ status, receivedItems })
-      : JSON.stringify({ status });
+    const body = JSON.stringify({
+      status,
+      ...(receivedItems && { receivedItems }),
+      ...(warehouseId && { warehouseId }),
+    });
 
     const response = await fetch(
       `${API_URL}/api/purchase-orders/${id}/status`,
