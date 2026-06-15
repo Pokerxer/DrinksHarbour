@@ -1881,6 +1881,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     sessionId,
     priceOverrides = {}, // { subProductId+sizeId key: newPrice } — requires pos:price_override
     pricelistId,         // selected pricelist _id — applied to prices at order time
+    shopId,              // posSettings.shops._id — resolves a bound warehouse, if any
   } = req.body;
 
   if (!items?.length) return res.status(400).json({ success: false, message: 'No items in order' });
@@ -1908,6 +1909,14 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   // Read tenant POS settings for stock enforcement
   const allowOverselling = req.tenant?.posSettings?.allowOverselling === true;
 
+  // Resolve the active shop's bound warehouse, if any. When set, stock is
+  // sourced from and decremented in WarehouseStock for that warehouse only.
+  let warehouseId = null;
+  if (shopId) {
+    const shop = req.tenant?.posSettings?.shops?.id?.(shopId);
+    warehouseId = shop?.warehouse || null;
+  }
+
   // Atomic stock deduction with full audit trail
   const deductedItems = [];  // for rollback on failure
   const orderItems    = [];
@@ -1919,7 +1928,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
 
       // Fetch subproduct for price resolution and order line data
       const sp = await SubProduct.findById(subProductId)
-        .select('product sku baseSellingPrice costPrice isOnSale saleType saleStartDate saleEndDate saleDiscountValue flashSale bundleDeals')
+        .select('product sku baseSellingPrice costPrice isOnSale saleType saleStartDate saleEndDate saleDiscountValue flashSale bundleDeals defaultSize')
         .populate('product', 'name images platformMarkup platformDiscount')
         .lean();
 
@@ -1952,6 +1961,8 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         finalPrice,
         costPrice:       sizePricing.costPrice,
         allowOverselling,
+        warehouseId,
+        defaultSizeId:   sp?.defaultSize || null,
       });
 
       deductedItems.push({
@@ -1959,6 +1970,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         sizeId:        sizeId || null,
         subProductId,
         quantity,
+        defaultSizeId: sp?.defaultSize || null,
       });
 
       // ── Flash sale: decrement remainingQuantity (best-effort, non-blocking) ──
@@ -2136,7 +2148,8 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       orderItems.push({
         product:               sp?.product?._id || subProductId,
         subproduct:            subProductId,
-        size:                  sizeId || undefined,
+        size:                  (warehouseId ? (sizeId || sp?.defaultSize) : sizeId) || undefined,
+        warehouse:             warehouseId || undefined,
         quantity,
         priceAtPurchase:       effectivePrice,
         itemSubtotal:          lineSubtotal,
@@ -2159,7 +2172,13 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   } catch (stockErr) {
     // Rollback already-deducted stock on failure
     for (const d of deductedItems) {
-      if (d.sizeId) {
+      if (warehouseId) {
+        await returnStock(
+          { warehouseId, subProduct: d.subProductId, size: d.sizeId || d.defaultSizeId, quantity: d.quantity },
+          staffId,
+          tenantId
+        ).catch(() => {});
+      } else if (d.sizeId) {
         await Size.findByIdAndUpdate(d.sizeId, { $inc: { availableStock: d.quantity, stock: d.quantity } });
         await SubProduct.findByIdAndUpdate(d.subProductId, { $inc: { availableStock: d.quantity, totalStock: d.quantity } });
       } else {
