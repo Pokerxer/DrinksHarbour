@@ -168,6 +168,11 @@ export default function SubProductInventory() {
   // Server Data State
   const [inventorySummary, setInventorySummary] =
     useState<InventorySummary | null>(null);
+  const [warehouseRollup, setWarehouseRollup] = useState<{
+    totalStock: number;
+    reservedStock: number;
+    availableStock: number;
+  } | null>(null);
   const [serverMovements, setServerMovements] = useState<InventoryMovement[]>(
     []
   );
@@ -286,20 +291,16 @@ export default function SubProductInventory() {
     }
   }, [calculatedAvailable, autoCalculateAvailable, setValue]);
 
-  // Sync form values from server inventory summary after fetch
+  // Sync the displayed stock rollup into the form from WarehouseStock (source of truth).
+  // stockStatus is intentionally not synced here — it is loaded with the sub-product
+  // on initial form load and is not rollup-managed.
   useEffect(() => {
-    if (inventorySummary?.subProduct) {
-      const sp = inventorySummary.subProduct;
-      if (sp.totalStock !== undefined)
-        setValue('subProductData.totalStock', sp.totalStock);
-      if (sp.availableStock !== undefined)
-        setValue('subProductData.availableStock', sp.availableStock);
-      if (sp.reservedStock !== undefined)
-        setValue('subProductData.reservedStock', sp.reservedStock);
-      if (sp.stockStatus)
-        setValue('subProductData.stockStatus', sp.stockStatus);
+    if (warehouseRollup) {
+      setValue?.('subProductData.totalStock', warehouseRollup.totalStock);
+      setValue?.('subProductData.reservedStock', warehouseRollup.reservedStock);
+      setValue?.('subProductData.availableStock', warehouseRollup.availableStock);
     }
-  }, [inventorySummary]);
+  }, [warehouseRollup, setValue]);
 
   // Fetch server inventory data
   const fetchInventoryData = useCallback(async () => {
@@ -322,6 +323,33 @@ export default function SubProductInventory() {
       console.error('Failed to fetch inventory data:', error);
     } finally {
       setIsLoadingMovements(false);
+    }
+  }, [subProductId, session?.user?.token]);
+
+  // Stock rollup from WarehouseStock rows — the source of truth for on-hand numbers.
+  const fetchWarehouseRollup = useCallback(async () => {
+    if (!subProductId || !session?.user?.token) return;
+    try {
+      const res = await warehouseStockService.getStockByWarehouse(
+        subProductId,
+        session.user.token
+      );
+      const rows = (res?.data ?? []) as Array<{
+        currentQuantity?: number;
+        reservedQuantity?: number;
+      }>;
+      const totalStock = rows.reduce((s, r) => s + (r.currentQuantity || 0), 0);
+      const reservedStock = rows.reduce(
+        (s, r) => s + (r.reservedQuantity || 0),
+        0
+      );
+      setWarehouseRollup({
+        totalStock,
+        reservedStock,
+        availableStock: Math.max(0, totalStock - reservedStock),
+      });
+    } catch (error) {
+      console.error('Failed to fetch warehouse rollup:', error);
     }
   }, [subProductId, session?.user?.token]);
 
@@ -362,6 +390,14 @@ export default function SubProductInventory() {
       fetchInventoryData();
     }
   }, [subProductId, session?.user?.token, activeTab, fetchInventoryData]);
+
+  // Overview shows warehouse-derived numbers; refresh the rollup when it (or Locations) is shown.
+  useEffect(() => {
+    if (!session?.user?.token || !subProductId) return;
+    if (activeTab === 'overview' || activeTab === 'locations') {
+      fetchWarehouseRollup();
+    }
+  }, [subProductId, session?.user?.token, activeTab, fetchWarehouseRollup]);
 
   // History helper
   const addToHistory = useCallback(
@@ -1134,7 +1170,10 @@ export default function SubProductInventory() {
           <LocationsTab
             subProductId={subProductId}
             token={session?.user?.token}
-            onRefresh={fetchInventoryData}
+            onRefresh={() => {
+              fetchInventoryData();
+              fetchWarehouseRollup();
+            }}
           />
         )}
 
