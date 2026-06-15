@@ -18,7 +18,9 @@ export interface InventoryMovement {
   tenant: string;
   product?: any;
   size?: { _id: string; displayName?: string; size?: string } | null;
-  warehouse?: any;
+  warehouse?: { _id: string; name?: string; code?: string } | string | null;
+  sourceWarehouse?: { _id: string; name?: string; code?: string } | string | null;
+  destinationWarehouse?: { _id: string; name?: string; code?: string } | string | null;
   type: string;
   category: string;
   quantity: number;
