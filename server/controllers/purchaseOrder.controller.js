@@ -6,7 +6,6 @@ const Tenant = require("../models/Tenant");
 const SubProduct = require("../models/SubProduct");
 const Size = require("../models/Size");
 const Warehouse = require("../models/Warehouse");
-const inventoryService = require("../services/inventory.service");
 const warehouseService = require("../services/warehouse.service");
 const {
   resolveTargetWarehouse,
