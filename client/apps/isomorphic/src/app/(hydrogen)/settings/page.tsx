@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import type { POSSettings, POSShop } from '@/app/shared/point-of-sale/types';
+import { warehouseService, type Warehouse } from '@/services/warehouse.service';
 import { purchaseOrderService } from '@/services/purchaseOrder.service';
 import type { PurchaseSettings } from '@/services/purchaseOrder.service';
 import toast from 'react-hot-toast';
@@ -890,15 +891,25 @@ export default function SettingsPage() {
   const [purch, setPurch] = useState<PurchaseSettings>(D_PURCH);
   const [savedPurch, setSavedPurch] = useState<PurchaseSettings>(D_PURCH);
   const [shops, setShops] = useState<POSShop[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [shopForm, setShopForm] = useState({
     name: '',
     mode: 'retail' as 'retail' | 'wholesale',
     color: '#b20202',
     description: '',
+    warehouse: '',
   });
   const [shopFormOpen, setShopFormOpen] = useState(false);
   const [shopSaving, setShopSaving] = useState(false);
   const [shopError, setShopError] = useState('');
+
+  useEffect(() => {
+    if (!token) return;
+    warehouseService
+      .getWarehouses(token, { isActive: true })
+      .then((res) => setWarehouses(res.data ?? []))
+      .catch(() => {});
+  }, [token]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -1150,13 +1161,17 @@ export default function SettingsPage() {
     setShopSaving(true);
     setShopError('');
     try {
-      const { shop } = await posApi.createShop(token, shopForm);
+      const { shop } = await posApi.createShop(token, {
+        ...shopForm,
+        warehouse: shopForm.warehouse || null,
+      });
       setShops((prev) => [...prev, shop]);
       setShopForm({
         name: '',
         mode: 'retail',
         color: '#b20202',
         description: '',
+        warehouse: '',
       });
       setShopFormOpen(false);
       toast.success('Shop created');
@@ -1176,6 +1191,20 @@ export default function SettingsPage() {
       toast.success('Shop removed');
     } catch {
       toast.error('Failed to remove shop');
+    }
+  }
+
+  async function handleShopWarehouseChange(shopId: string, warehouseId: string) {
+    try {
+      const { shop } = await posApi.updateShop(token, shopId, {
+        warehouse: warehouseId || null,
+      });
+      setShops((prev) => prev.map((s) => (s._id === shopId ? shop : s)));
+      toast.success('Warehouse updated');
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to update warehouse'
+      );
     }
   }
 
@@ -1632,6 +1661,20 @@ export default function SettingsPage() {
                                   {shop.description || 'No description'}
                                 </p>
                               </div>
+                              <select
+                                value={shop.warehouse?._id || ''}
+                                onChange={(e) =>
+                                  handleShopWarehouseChange(shop._id, e.target.value)
+                                }
+                                className="shrink-0 rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
+                              >
+                                <option value="">No warehouse</option>
+                                {warehouses.map((w) => (
+                                  <option key={w._id} value={w._id}>
+                                    {w.name}
+                                  </option>
+                                ))}
+                              </select>
                               <button
                                 type="button"
                                 onClick={() => handleDeleteShop(shop._id)}
@@ -1760,6 +1803,34 @@ export default function SettingsPage() {
                                 className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
                               />
                             </div>
+                          </div>
+
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-600">
+                              Warehouse{' '}
+                              <span className="font-normal text-gray-400">
+                                (optional)
+                              </span>
+                            </label>
+                            <select
+                              value={shopForm.warehouse}
+                              onChange={(e) =>
+                                setShopForm((f) => ({
+                                  ...f,
+                                  warehouse: e.target.value,
+                                }))
+                              }
+                              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
+                            >
+                              <option value="">
+                                — No warehouse (aggregate stock) —
+                              </option>
+                              {warehouses.map((w) => (
+                                <option key={w._id} value={w._id}>
+                                  {w.name} ({w.code})
+                                </option>
+                              ))}
+                            </select>
                           </div>
 
                           {shopError && (
