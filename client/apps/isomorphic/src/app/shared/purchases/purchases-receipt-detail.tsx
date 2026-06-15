@@ -21,6 +21,7 @@ import {
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { purchaseOrderService } from '@/services/purchaseOrder.service';
+import { warehouseService, type Warehouse } from '@/services/warehouse.service';
 import type { PurchaseOrder } from './types';
 
 type RowStatus = 'done' | 'receiving-all' | 'partial' | 'pending';
@@ -43,6 +44,8 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
   const [notes, setNotes] = useState('');
   const [validating, setValidating] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [warehouseId, setWarehouseId] = useState<string>('');
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -67,6 +70,28 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await warehouseService.getWarehouses(token, {
+          isActive: true,
+        });
+        if (cancelled) return;
+        const list: Warehouse[] = res.data ?? [];
+        setWarehouses(list);
+        const preferred = list.find((w) => w.isDefault) ?? list[0];
+        if (preferred) setWarehouseId(preferred._id);
+      } catch {
+        if (!cancelled) setWarehouses([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   const totals = useMemo(() => {
     if (!po)
@@ -182,9 +207,13 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
       await purchaseOrderService.updatePurchaseOrderStatus(
         id,
         'validated',
-        token
+        token,
+        undefined,
+        warehouseId
       );
-      toast.success('Receipt validated — stock updated');
+      const destName =
+        warehouses.find((w) => w._id === warehouseId)?.name ?? 'inventory';
+      toast.success(`Receipt validated — stock added to ${destName}`);
       router.push(routes.eCommerce.purchaseDetails(id));
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Validation failed');
@@ -592,6 +621,41 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
               </>
             )}
           </p>
+          {warehouses.length === 0 ? (
+            <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+              No warehouses exist yet. You must{' '}
+              <Link
+                href={routes.warehouses.list}
+                className="font-semibold underline hover:text-amber-900"
+              >
+                create a warehouse
+              </Link>{' '}
+              before you can receive stock.
+            </div>
+          ) : (
+            <div className="mb-3">
+              <label
+                htmlFor="destination-warehouse"
+                className="mb-1.5 block text-sm font-medium text-gray-700"
+              >
+                Destination warehouse
+              </label>
+              <select
+                id="destination-warehouse"
+                value={warehouseId}
+                onChange={(e) => setWarehouseId(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
+              >
+                {warehouses.map((w) => (
+                  <option key={w._id} value={w._id}>
+                    {w.name}
+                    {w.code ? ` (${w.code})` : ''}
+                    {w.isDefault ? ' — default' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="flex gap-2">
             <button
               type="button"
@@ -604,7 +668,7 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
             <button
               type="button"
               onClick={handleValidate}
-              disabled={validating}
+              disabled={validating || warehouses.length === 0 || !warehouseId}
               className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-5 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
             >
               <PiCheck className="h-4 w-4" />
