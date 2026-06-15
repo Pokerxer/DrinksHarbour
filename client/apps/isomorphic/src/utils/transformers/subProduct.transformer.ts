@@ -312,9 +312,8 @@ export const transformFormData = (data: SubProductFormInput) => {
     sellWithoutSizeVariants: sp.sellWithoutSizeVariants ?? false,
     defaultSize: sp.defaultSize || '',
     stockStatus: normalizeStockStatus(sp.stockStatus),
-    totalStock: Math.max(0, toNumber(sp.totalStock) ?? 0),
-    reservedStock: Math.max(0, toNumber(sp.reservedStock) ?? 0),
-    availableStock: Math.max(0, toNumber(sp.availableStock) ?? 0),
+    // totalStock / reservedStock / availableStock are a server-side rollup of
+    // WarehouseStock (recalcSubProductStock); never send them from the form.
     lowStockThreshold: toNumber(sp.lowStockThreshold) ?? 10,
     reorderPoint: toNumber(sp.reorderPoint) ?? 5,
     reorderQuantity: toNumber(sp.reorderQuantity) ?? 50,
