@@ -18,7 +18,9 @@ import {
   PiArrowLeft,
   PiArrowRight,
   PiFloppyDisk,
-  PiCaretDown, PiCaretLeft, PiCaretRight,
+  PiCaretDown,
+  PiCaretLeft,
+  PiCaretRight,
   PiClock,
   PiGear,
   PiArchive,
@@ -36,7 +38,6 @@ import {
   PiToggleRight,
   PiGift,
   PiTrolley,
-
   PiWarningCircle,
   PiWarningDiamond,
   PiPackage,
@@ -165,16 +166,29 @@ const successVariants = {
   },
 };
 
-
 // ── ProductStep ──────────────────────────────────────────────────────────────
 // Renders Basic Info + Pricing + Sizes as one step with a sticky section nav
 
 const PRODUCT_SECTIONS = [
-  { id: 'product-info',    label: 'Product Info',    icon: PiTag,         description: 'Select or create the base product' },
-  { id: 'pricing-sizes',  label: 'Pricing & Sizes',  icon: PiCurrencyNgn, description: 'Prices, markup & size variants' },
+  {
+    id: 'product-info',
+    label: 'Product Info',
+    icon: PiTag,
+    description: 'Select or create the base product',
+  },
+  {
+    id: 'pricing-sizes',
+    label: 'Pricing & Sizes',
+    icon: PiCurrencyNgn,
+    description: 'Prices, markup & size variants',
+  },
 ];
 
-function ProductStep({ onProductSelect }: { onProductSelect?: (id: string, name?: string) => void }) {
+function ProductStep({
+  onProductSelect,
+}: {
+  onProductSelect?: (id: string, name?: string) => void;
+}) {
   const [activeSection, setActiveSection] = useState('product-info');
 
   function scrollTo(id: string) {
@@ -203,8 +217,10 @@ function ProductStep({ onProductSelect }: { onProductSelect?: (id: string, name?
   return (
     <div className="flex gap-6">
       {/* Sticky side nav */}
-      <aside className="hidden lg:flex flex-col gap-1 w-48 shrink-0 sticky top-24 self-start">
-        <p className="px-3 mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">Sections</p>
+      <aside className="sticky top-24 hidden w-48 shrink-0 flex-col gap-1 self-start lg:flex">
+        <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+          Sections
+        </p>
         {PRODUCT_SECTIONS.map((s) => {
           const Icon = s.icon;
           const isActive = activeSection === s.id;
@@ -219,25 +235,41 @@ function ProductStep({ onProductSelect }: { onProductSelect?: (id: string, name?
                   : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
               }`}
             >
-              <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${isActive ? 'text-[#b20202]' : 'text-gray-400'}`} />
+              <Icon
+                className={`mt-0.5 h-4 w-4 shrink-0 ${isActive ? 'text-[#b20202]' : 'text-gray-400'}`}
+              />
               <div>
-                <p className={`text-xs font-semibold leading-tight ${isActive ? 'text-[#b20202]' : ''}`}>{s.label}</p>
-                <p className="text-[10px] text-gray-400 leading-tight mt-0.5">{s.description}</p>
+                <p
+                  className={`text-xs font-semibold leading-tight ${isActive ? 'text-[#b20202]' : ''}`}
+                >
+                  {s.label}
+                </p>
+                <p className="mt-0.5 text-[10px] leading-tight text-gray-400">
+                  {s.description}
+                </p>
               </div>
             </button>
           );
         })}
 
         {/* Progress indicator */}
-        <div className="mt-4 px-3 space-y-1">
+        <div className="mt-4 space-y-1 px-3">
           {PRODUCT_SECTIONS.map((s, i) => {
-            const idx = PRODUCT_SECTIONS.findIndex(x => x.id === activeSection);
+            const idx = PRODUCT_SECTIONS.findIndex(
+              (x) => x.id === activeSection
+            );
             const done = i < idx;
             const current = i === idx;
             return (
               <div key={s.id} className="flex items-center gap-2">
-                <span className={`h-1.5 w-1.5 rounded-full transition-colors ${done ? 'bg-green-500' : current ? 'bg-[#b20202]' : 'bg-gray-200'}`} />
-                <span className={`text-[10px] transition-colors ${done ? 'text-green-600' : current ? 'text-[#b20202] font-medium' : 'text-gray-400'}`}>{s.label}</span>
+                <span
+                  className={`h-1.5 w-1.5 rounded-full transition-colors ${done ? 'bg-green-500' : current ? 'bg-[#b20202]' : 'bg-gray-200'}`}
+                />
+                <span
+                  className={`text-[10px] transition-colors ${done ? 'text-green-600' : current ? 'font-medium text-[#b20202]' : 'text-gray-400'}`}
+                >
+                  {s.label}
+                </span>
               </div>
             );
           })}
@@ -245,15 +277,21 @@ function ProductStep({ onProductSelect }: { onProductSelect?: (id: string, name?
       </aside>
 
       {/* Mobile section pills */}
-      <div className="lg:hidden flex gap-2 overflow-x-auto pb-1 mb-4 w-full">
+      <div className="mb-4 flex w-full gap-2 overflow-x-auto pb-1 lg:hidden">
         {PRODUCT_SECTIONS.map((s) => {
           const Icon = s.icon;
           const isActive = activeSection === s.id;
           return (
-            <button key={s.id} type="button" onClick={() => scrollTo(s.id)}
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => scrollTo(s.id)}
               className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
-                isActive ? 'bg-[#b20202] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}>
+                isActive
+                  ? 'bg-[#b20202] text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
               <Icon className="h-3.5 w-3.5" />
               {s.label}
             </button>
@@ -262,19 +300,22 @@ function ProductStep({ onProductSelect }: { onProductSelect?: (id: string, name?
       </div>
 
       {/* Sections */}
-      <div className="flex-1 min-w-0 space-y-10">
-
+      <div className="min-w-0 flex-1 space-y-10">
         {/* ── Product Info ── */}
         <section id="product-info" className="scroll-mt-24">
-          <div className="flex items-center gap-3 mb-5">
+          <div className="mb-5 flex items-center gap-3">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#b20202]/10">
               <PiTag className="h-4 w-4 text-[#b20202]" />
             </div>
             <div>
               <h3 className="text-sm font-bold text-gray-900">Product Info</h3>
-              <p className="text-xs text-gray-500">Select or create the base product, then set SKU and currency</p>
+              <p className="text-xs text-gray-500">
+                Select or create the base product, then set SKU and currency
+              </p>
             </div>
-            <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-[#b20202] text-[10px] font-bold text-white">1</span>
+            <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-[#b20202] text-[10px] font-bold text-white">
+              1
+            </span>
           </div>
           <SubProductBasicInfo onProductSelect={onProductSelect} />
         </section>
@@ -283,22 +324,28 @@ function ProductStep({ onProductSelect }: { onProductSelect?: (id: string, name?
 
         {/* ── Pricing & Sizes ── */}
         <section id="pricing-sizes" className="scroll-mt-24">
-          <div className="flex items-center gap-3 mb-5">
+          <div className="mb-5 flex items-center gap-3">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-green-100">
               <PiCurrencyNgn className="h-4 w-4 text-green-600" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-gray-900">Pricing & Sizes</h3>
-              <p className="text-xs text-gray-500">Set base cost & markup, then add size variants with individual prices and stock</p>
+              <h3 className="text-sm font-bold text-gray-900">
+                Pricing & Sizes
+              </h3>
+              <p className="text-xs text-gray-500">
+                Set base cost & markup, then add size variants with individual
+                prices and stock
+              </p>
             </div>
-            <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-green-500 text-[10px] font-bold text-white">2</span>
+            <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-green-500 text-[10px] font-bold text-white">
+              2
+            </span>
           </div>
           <SubProductPricing />
           <div className="mt-8">
             <SubProductSizes />
           </div>
         </section>
-
       </div>
     </div>
   );
@@ -341,11 +388,15 @@ export default function CreateEditSubProduct({
   const settingsDropdownRef = useRef<HTMLDivElement>(null);
 
   // Archive / Duplicate / Delete state
-  const [actionLoading, setActionLoading] = useState<'archive'|'restore'|'duplicate'|'delete'|null>(null);
-  const [confirmModal, setConfirmModal] = useState<'archive'|'restore'|'delete'|null>(null);
+  const [actionLoading, setActionLoading] = useState<
+    'archive' | 'restore' | 'duplicate' | 'delete' | null
+  >(null);
+  const [confirmModal, setConfirmModal] = useState<
+    'archive' | 'restore' | 'delete' | null
+  >(null);
 
   // Product navigation (prev / next)
-  const [navIds,   setNavIds]   = useState<string[]>([]);
+  const [navIds, setNavIds] = useState<string[]>([]);
   const [navIndex, setNavIndex] = useState<number>(-1);
 
   const isEditMode = Boolean(slug || id);
@@ -363,19 +414,27 @@ export default function CreateEditSubProduct({
   const isDirty = formState.isDirty;
 
   // Read-only stats (not in form schema — fetched from API response)
-  const [statSold, setStatSold]           = useState<number | null>(null);
+  const [statSold, setStatSold] = useState<number | null>(null);
   const [statPurchased, setStatPurchased] = useState<number | null>(null);
   // Which history panel is open
-  const [historyPanel, setHistoryPanel]   = useState<'purchased' | 'sold' | null>(null);
+  const [historyPanel, setHistoryPanel] = useState<'purchased' | 'sold' | null>(
+    null
+  );
 
   // Keep refs in sync so closures (event listeners) always see current values
-  useEffect(() => { isDirtyRef.current = isDirty; }, [isDirty]);
-  useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
-  useEffect(() => { sessionRef.current = session; }, [session]);
+  useEffect(() => {
+    isDirtyRef.current = isDirty;
+  }, [isDirty]);
+  useEffect(() => {
+    isLoadingRef.current = isLoading;
+  }, [isLoading]);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
 
   // ── Product navigation list ───────────────────────────────────────────────
   const NAV_CACHE_KEY = 'dh-sp-nav-v1';
-  const NAV_TTL_MS    = 5 * 60 * 1000; // 5 minutes
+  const NAV_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
   useEffect(() => {
     if (!isEditMode || !id || !session?.user?.token) return;
@@ -394,11 +453,18 @@ export default function CreateEditSubProduct({
         }
         // Fetch fresh list — only need _id, so use a high limit
         const res = await subproductService.getSubProducts(session.user.token, {
-          limit: 500, sort: 'createdAt', order: 'desc',
+          limit: 500,
+          sort: 'createdAt',
+          order: 'desc',
         });
         const items: any[] = res?.data?.subProducts || res?.subProducts || [];
-        const ids: string[] = items.map((p: any) => String(p._id || p.id)).filter(Boolean);
-        sessionStorage.setItem(NAV_CACHE_KEY, JSON.stringify({ ids, ts: Date.now() }));
+        const ids: string[] = items
+          .map((p: any) => String(p._id || p.id))
+          .filter(Boolean);
+        sessionStorage.setItem(
+          NAV_CACHE_KEY,
+          JSON.stringify({ ids, ts: Date.now() })
+        );
         setNavIds(ids);
         setNavIndex(ids.indexOf(String(id)));
       } catch {
@@ -517,7 +583,8 @@ export default function CreateEditSubProduct({
     errs: any,
     currentSection: string
   ): Array<{ field: string; section: string; message: string }> => {
-    const result: Array<{ field: string; section: string; message: string }> = [];
+    const result: Array<{ field: string; section: string; message: string }> =
+      [];
 
     const traverse = (obj: any, path: string[] = []) => {
       for (const key in obj) {
@@ -527,10 +594,12 @@ export default function CreateEditSubProduct({
         if (value && typeof value === 'object') {
           if (value.message) {
             const fieldName = currentPath[currentPath.length - 1];
-            const label = fieldToLabel[fieldName] || fieldName
-              .replace(/([A-Z])/g, ' $1')
-              .replace(/^./, (str) => str.toUpperCase())
-              .trim();
+            const label =
+              fieldToLabel[fieldName] ||
+              fieldName
+                .replace(/([A-Z])/g, ' $1')
+                .replace(/^./, (str) => str.toUpperCase())
+                .trim();
             const section = fieldToSection[fieldName] || currentSection;
 
             result.push({
@@ -543,10 +612,12 @@ export default function CreateEditSubProduct({
               const typeValue = value.types[typeKey];
               if (typeof typeValue === 'string') {
                 const fieldName = `${currentPath[currentPath.length - 1]}.${typeKey}`;
-                const label = fieldToLabel[typeKey] || typeKey
-                  .replace(/([A-Z])/g, ' $1')
-                  .replace(/^./, (str) => str.toUpperCase())
-                  .trim();
+                const label =
+                  fieldToLabel[typeKey] ||
+                  typeKey
+                    .replace(/([A-Z])/g, ' $1')
+                    .replace(/^./, (str) => str.toUpperCase())
+                    .trim();
                 const section = fieldToSection[typeKey] || currentSection;
 
                 result.push({
@@ -612,10 +683,15 @@ export default function CreateEditSubProduct({
             subProductData
           );
           // Capture linked product name for header display
-          const pName = subProductData?.product?.name || subProductData?.product?.title || '';
+          const pName =
+            subProductData?.product?.name ||
+            subProductData?.product?.title ||
+            '';
           if (pName) setLinkedProductName(pName);
-          if (subProductData?.totalSold    != null) setStatSold(subProductData.totalSold);
-          if (subProductData?.purchaseCount != null) setStatPurchased(subProductData.purchaseCount);
+          if (subProductData?.totalSold != null)
+            setStatSold(subProductData.totalSold);
+          if (subProductData?.purchaseCount != null)
+            setStatPurchased(subProductData.purchaseCount);
           const transformed = transformBackendToForm(subProductData);
           console.log('📥 Edit mode - Transformed form data:', transformed);
           methods.reset(transformed);
@@ -687,11 +763,9 @@ export default function CreateEditSubProduct({
 
     // Prefer a linked parent product ID
     const productId =
-      formValues.subProductData?.product ||
-      formValues.product ||
-      null;
+      formValues.subProductData?.product || formValues.product || null;
 
-    const subProductId = isEditMode ? (id || null) : null;
+    const subProductId = isEditMode ? id || null : null;
 
     // Build inline context from form fields for cases with no linked product
     const inlineContext = !productId
@@ -703,13 +777,15 @@ export default function CreateEditSubProduct({
             '',
           type: formValues.type || formValues.newProductData?.type || '',
           brand: formValues.brand || formValues.newProductData?.brand || '',
-          category: formValues.category || formValues.newProductData?.category || '',
+          category:
+            formValues.category || formValues.newProductData?.category || '',
           originCountry:
             formValues.originCountry ||
             formValues.newProductData?.originCountry ||
             '',
           abv: formValues.abv || formValues.newProductData?.abv || null,
-          volumeMl: formValues.volumeMl || formValues.newProductData?.volumeMl || null,
+          volumeMl:
+            formValues.volumeMl || formValues.newProductData?.volumeMl || null,
           shortDescription:
             formValues.shortDescription ||
             formValues.newProductData?.shortDescription ||
@@ -724,7 +800,9 @@ export default function CreateEditSubProduct({
       : null;
 
     if (!productId && !inlineContext?.name) {
-      toast.error('Add a product name in the Basic Info step before generating.');
+      toast.error(
+        'Add a product name in the Basic Info step before generating.'
+      );
       return;
     }
 
@@ -743,12 +821,21 @@ export default function CreateEditSubProduct({
       if (!data) throw new Error('No data returned from AI');
 
       if (data.shortDescriptionOverride) {
-        methods.setValue('subProductData.shortDescriptionOverride', data.shortDescriptionOverride);
+        methods.setValue(
+          'subProductData.shortDescriptionOverride',
+          data.shortDescriptionOverride
+        );
       }
       if (data.descriptionOverride) {
-        methods.setValue('subProductData.descriptionOverride', data.descriptionOverride);
+        methods.setValue(
+          'subProductData.descriptionOverride',
+          data.descriptionOverride
+        );
       }
-      if (Array.isArray(data.customKeywords) && data.customKeywords.length > 0) {
+      if (
+        Array.isArray(data.customKeywords) &&
+        data.customKeywords.length > 0
+      ) {
         methods.setValue('subProductData.customKeywords', data.customKeywords);
       }
       if (data.tenantNotes) {
@@ -758,7 +845,9 @@ export default function CreateEditSubProduct({
       toast.success('AI content generated!', { id: toastId });
     } catch (error: any) {
       console.error('Generate error:', error);
-      toast.error(error.message || 'Failed to generate content', { id: toastId });
+      toast.error(error.message || 'Failed to generate content', {
+        id: toastId,
+      });
     } finally {
       setIsGenerating(false);
     }
@@ -788,116 +877,163 @@ export default function CreateEditSubProduct({
    * Core save logic — shared by manual save, auto-save, and save-on-leave.
    * `silent` = true suppresses toasts (used for auto-save).
    */
-  const performSave = useCallback(async (data: SubProductInput, silent = false) => {
-    const sp = data.subProductData || (data as any);
-    const productId = sp.product || '';
-    const createNew = sp.createNewProduct ?? false;
-    const costPrice = Number(sp.costPrice ?? 0);
+  const performSave = useCallback(
+    async (data: SubProductInput, silent = false) => {
+      const sp = data.subProductData || (data as any);
+      const productId = sp.product || '';
+      const createNew = sp.createNewProduct ?? false;
+      const costPrice = Number(sp.costPrice ?? 0);
 
-    // Guard: must have a parent product or be creating a new one
-    if (!productId && !createNew) {
-      if (!silent) toast.error('Please select a parent product or enable "Create New Product"');
-      return false;
-    }
-
-    // Guard: when creating new product, name + type are required
-    if (createNew) {
-      const npName = sp.newProductData?.name?.trim() ?? '';
-      const npType = sp.newProductData?.type?.trim() ?? '';
-      if (!npName || !npType) {
-        if (!silent) toast.error('New product requires a name and type');
+      // Guard: must have a parent product or be creating a new one
+      if (!productId && !createNew) {
+        if (!silent)
+          toast.error(
+            'Please select a parent product or enable "Create New Product"'
+          );
         return false;
       }
-    }
 
-    // Guard: cost price required when linking to existing product
-    if (!createNew && costPrice <= 0) {
-      if (!silent) toast.error('Cost price must be greater than 0');
-      return false;
-    }
-
-    // Guard: each size variant must have a size value selected
-    const invalidSizes = (sp.sizes || []).filter((s: any) => !s.size || s.size.trim() === '');
-    if (invalidSizes.length > 0) {
-      if (!silent) toast.error(`${invalidSizes.length} size variant(s) are missing a size selection`);
-      return false;
-    }
-
-    const token = sessionRef.current?.user?.token;
-    if (!token) {
-      if (!silent) toast.error('Authentication required. Please sign in again.');
-      return false;
-    }
-
-    if (!silent) {
-      setLoading(true);
-      setSaveStatus('saving');
-    } else {
-      setIsAutoSaving(true);
-    }
-
-    try {
-      const transformedData = transformFormData(data);
-
-      let createdId: string | null = null;
-
-      if (isEditMode && id) {
-        await subproductService.updateSubProduct(id, transformedData, token);
-        if (!silent) toast.success('Sub Product updated successfully!');
-      } else {
-        const response = await subproductService.createSubProduct(transformedData, token);
-        createdId = response?.data?.subProduct?._id || response?.data?.subProduct?.id || null;
-
-        if (createdId) {
-          setCreatedSubProductId(createdId);
+      // Guard: when creating new product, name + type are required
+      if (createNew) {
+        const npName = sp.newProductData?.name?.trim() ?? '';
+        const npType = sp.newProductData?.type?.trim() ?? '';
+        if (!npName || !npType) {
+          if (!silent) toast.error('New product requires a name and type');
+          return false;
         }
-
-        if (!silent) toast.success('Sub Product created successfully!');
       }
 
-      // Mark as saved so unmount/beforeunload auto-save doesn't fire again
-      hasSavedRef.current = true;
-      localStorage.removeItem('subproduct-draft');
-      setSaveStatus('saved');
-
-      // After successful create, redirect to the edit page (Odoo-style)
-      if (!isEditMode && createdId) {
-        router.replace(`/ecommerce/sub-products/${createdId}/edit`);
-        return true;
+      // Guard: cost price required when linking to existing product
+      if (!createNew && costPrice <= 0) {
+        if (!silent) toast.error('Cost price must be greater than 0');
+        return false;
       }
 
-      setTimeout(() => setSaveStatus('idle'), 2000);
+      // Guard: each size variant must have a size value selected
+      const invalidSizes = (sp.sizes || []).filter(
+        (s: any) => !s.size || s.size.trim() === ''
+      );
+      if (invalidSizes.length > 0) {
+        if (!silent)
+          toast.error(
+            `${invalidSizes.length} size variant(s) are missing a size selection`
+          );
+        return false;
+      }
 
-      return true;
-    } catch (error: any) {
-      setSaveStatus('error');
-      console.error('=== SAVE ERROR ===', error);
+      const token = sessionRef.current?.user?.token;
+      if (!token) {
+        if (!silent)
+          toast.error('Authentication required. Please sign in again.');
+        return false;
+      }
+
       if (!silent) {
-        const errorMessage = error.message || 'Failed to save sub product';
-        if (errorMessage.includes('version') || errorMessage.includes('conflict')) {
-          toast.error('This record was modified by another user. Please refresh and try again.');
-        } else if (errorMessage.includes('duplicate') || errorMessage.includes('already exists')) {
-          toast.error('This product already exists in your catalog. Try editing the existing entry instead.');
-        } else if (errorMessage.includes('Product ID is required') || errorMessage.includes('product')) {
-          toast.error('Please select a product or create a new one before saving.');
-        } else if (errorMessage.includes('cost price') || errorMessage.includes('costPrice')) {
-          toast.error('Please enter a valid cost price greater than 0.');
-        } else if (errorMessage.includes('Tenant') || errorMessage.includes('tenant')) {
-          toast.error('Session error. Please sign out and sign back in.');
-        } else if (errorMessage.includes('Unauthorized') || errorMessage.includes('401')) {
-          toast.error('Your session has expired. Please sign in again.');
-        } else if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
-          toast.error('Network error. Please check your internet connection and try again.');
-        } else {
-          toast.error(errorMessage);
-        }
+        setLoading(true);
+        setSaveStatus('saving');
+      } else {
+        setIsAutoSaving(true);
       }
-      return false;
-    } finally {
-      if (!silent) setLoading(false);
-      else setIsAutoSaving(false);
-    }
-  }, [isEditMode, id]);
+
+      try {
+        const transformedData = transformFormData(data);
+
+        let createdId: string | null = null;
+
+        if (isEditMode && id) {
+          await subproductService.updateSubProduct(id, transformedData, token);
+          if (!silent) toast.success('Sub Product updated successfully!');
+        } else {
+          const response = await subproductService.createSubProduct(
+            transformedData,
+            token
+          );
+          createdId =
+            response?.data?.subProduct?._id ||
+            response?.data?.subProduct?.id ||
+            null;
+
+          if (createdId) {
+            setCreatedSubProductId(createdId);
+          }
+
+          if (!silent) toast.success('Sub Product created successfully!');
+        }
+
+        // Mark as saved so unmount/beforeunload auto-save doesn't fire again
+        hasSavedRef.current = true;
+        localStorage.removeItem('subproduct-draft');
+        setSaveStatus('saved');
+
+        // After successful create, redirect to the edit page (Odoo-style)
+        if (!isEditMode && createdId) {
+          router.replace(`/ecommerce/sub-products/${createdId}/edit`);
+          return true;
+        }
+
+        setTimeout(() => setSaveStatus('idle'), 2000);
+
+        return true;
+      } catch (error: any) {
+        setSaveStatus('error');
+        console.error('=== SAVE ERROR ===', error);
+        if (!silent) {
+          const errorMessage = error.message || 'Failed to save sub product';
+          if (
+            errorMessage.includes('version') ||
+            errorMessage.includes('conflict')
+          ) {
+            toast.error(
+              'This record was modified by another user. Please refresh and try again.'
+            );
+          } else if (
+            errorMessage.includes('duplicate') ||
+            errorMessage.includes('already exists')
+          ) {
+            toast.error(
+              'This product already exists in your catalog. Try editing the existing entry instead.'
+            );
+          } else if (
+            errorMessage.includes('Product ID is required') ||
+            errorMessage.includes('product')
+          ) {
+            toast.error(
+              'Please select a product or create a new one before saving.'
+            );
+          } else if (
+            errorMessage.includes('cost price') ||
+            errorMessage.includes('costPrice')
+          ) {
+            toast.error('Please enter a valid cost price greater than 0.');
+          } else if (
+            errorMessage.includes('Tenant') ||
+            errorMessage.includes('tenant')
+          ) {
+            toast.error('Session error. Please sign out and sign back in.');
+          } else if (
+            errorMessage.includes('Unauthorized') ||
+            errorMessage.includes('401')
+          ) {
+            toast.error('Your session has expired. Please sign in again.');
+          } else if (
+            errorMessage.includes('network') ||
+            errorMessage.includes('fetch')
+          ) {
+            toast.error(
+              'Network error. Please check your internet connection and try again.'
+            );
+          } else {
+            toast.error(errorMessage);
+          }
+        }
+        return false;
+      } finally {
+        if (!silent) setLoading(false);
+        else setIsAutoSaving(false);
+      }
+    },
+    [isEditMode, id]
+  );
 
   const onSubmit: SubmitHandler<SubProductInput> = async (data) => {
     console.log('=== FORM DATA SUBMITTED ===', JSON.stringify(data, null, 2));
@@ -920,16 +1056,18 @@ export default function CreateEditSubProduct({
   useEffect(() => {
     return () => {
       if (!isEditMode || !id) return; // create mode: never auto-save on unmount
-      if (!isDirtyRef.current || isLoadingRef.current || hasSavedRef.current) return;
+      if (!isDirtyRef.current || isLoadingRef.current || hasSavedRef.current)
+        return;
       performSave(formValuesRef.current, true).catch(() => {});
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditMode, id]);
 
   // Tab close / refresh — warn about unsaved changes; auto-save only in edit mode
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!isDirtyRef.current || isLoadingRef.current || hasSavedRef.current) return;
+      if (!isDirtyRef.current || isLoadingRef.current || hasSavedRef.current)
+        return;
       if (isEditMode && id) {
         performSave(formValuesRef.current, true).catch(() => {});
       }
@@ -940,7 +1078,6 @@ export default function CreateEditSubProduct({
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [performSave, isEditMode, id]);
-
 
   const progress = ((currentStep + 1) / STEPS.length) * 100;
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
@@ -1043,12 +1180,14 @@ export default function CreateEditSubProduct({
 
   // ── Archive / Restore / Duplicate / Delete handlers ───────────────────────
   const currentStatus = watch('subProductData.status');
-  const isArchived    = currentStatus === 'archived';
-  const token         = session?.user?.token;
-  const subProductId  = id;
+  const isArchived = currentStatus === 'archived';
+  const token = session?.user?.token;
+  const subProductId = id;
 
   function invalidateNavCache() {
-    try { sessionStorage.removeItem(NAV_CACHE_KEY); } catch {}
+    try {
+      sessionStorage.removeItem(NAV_CACHE_KEY);
+    } catch {}
   }
 
   async function handleArchive() {
@@ -1090,9 +1229,14 @@ export default function CreateEditSubProduct({
     setShowSettingsDropdown(false);
     invalidateNavCache();
     try {
-      const res = await subproductService.duplicateSubProduct(subProductId, token);
+      const res = await subproductService.duplicateSubProduct(
+        subProductId,
+        token
+      );
       const newId = res?.data?.subProduct?._id;
-      toast.success(`Duplicated — ${res?.data?.duplicatedSizes ?? 0} size variants copied`);
+      toast.success(
+        `Duplicated — ${res?.data?.duplicatedSizes ?? 0} size variants copied`
+      );
       if (newId) {
         router.push(routes.eCommerce.editSubProduct(newId));
       } else {
@@ -1165,7 +1309,7 @@ export default function CreateEditSubProduct({
               <h1 className="truncate text-sm font-bold text-gray-900">
                 {displayTitle}
               </h1>
-              <div className="flex items-center gap-2 mt-0.5">
+              <div className="mt-0.5 flex items-center gap-2">
                 {isAutoSaving && (
                   <span className="flex items-center gap-1 text-[10px] text-blue-500">
                     <PiSpinner className="h-3 w-3 animate-spin" /> Auto-saving…
@@ -1214,11 +1358,14 @@ export default function CreateEditSubProduct({
                 className="flex h-8 items-center gap-1.5 rounded-lg bg-gray-900 px-3 text-xs font-semibold text-white transition-colors hover:bg-gray-700 disabled:opacity-50"
                 title="Save"
               >
-                {isLoading
-                  ? <PiSpinner className="h-3.5 w-3.5 animate-spin" />
-                  : <PiFloppyDisk className="h-3.5 w-3.5" />
-                }
-                <span className="hidden sm:inline">{isLoading ? 'Saving…' : 'Save'}</span>
+                {isLoading ? (
+                  <PiSpinner className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <PiFloppyDisk className="h-3.5 w-3.5" />
+                )}
+                <span className="hidden sm:inline">
+                  {isLoading ? 'Saving…' : 'Save'}
+                </span>
               </button>
             </div>
 
@@ -1226,7 +1373,9 @@ export default function CreateEditSubProduct({
             {isArchived && (
               <div className="flex shrink-0 items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 ring-1 ring-amber-200">
                 <PiArchive className="h-3.5 w-3.5 text-amber-600" />
-                <span className="text-[11px] font-bold text-amber-700">Archived</span>
+                <span className="text-[11px] font-bold text-amber-700">
+                  Archived
+                </span>
               </div>
             )}
 
@@ -1238,14 +1387,18 @@ export default function CreateEditSubProduct({
                 <span className="text-[11px] font-semibold tabular-nums text-gray-700">
                   {Number(watch('subProductData.totalStock')) || 0}
                 </span>
-                <span className="text-[9px] uppercase tracking-wide text-gray-400">on hand</span>
+                <span className="text-[9px] uppercase tracking-wide text-gray-400">
+                  on hand
+                </span>
               </div>
               {/* Price */}
               {Number(watch('subProductData.baseSellingPrice')) > 0 && (
                 <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1">
                   <PiCurrencyNgn className="h-3 w-3 text-gray-400" />
                   <span className="text-[11px] font-semibold tabular-nums text-gray-700">
-                    {Number(watch('subProductData.baseSellingPrice')).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                    {Number(
+                      watch('subProductData.baseSellingPrice')
+                    ).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
                   </span>
                 </div>
               )}
@@ -1257,8 +1410,12 @@ export default function CreateEditSubProduct({
                   className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 transition-colors hover:border-indigo-300 hover:bg-indigo-50"
                 >
                   <PiShoppingCart className="h-3 w-3 text-gray-400" />
-                  <span className="text-[11px] font-semibold tabular-nums text-gray-700">{statPurchased}</span>
-                  <span className="text-[9px] uppercase tracking-wide text-gray-400">purchased</span>
+                  <span className="text-[11px] font-semibold tabular-nums text-gray-700">
+                    {statPurchased}
+                  </span>
+                  <span className="text-[9px] uppercase tracking-wide text-gray-400">
+                    purchased
+                  </span>
                 </button>
               )}
               {/* Sold — clickable */}
@@ -1269,19 +1426,29 @@ export default function CreateEditSubProduct({
                   className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 transition-colors hover:border-emerald-300 hover:bg-emerald-50"
                 >
                   <PiTrendDown className="h-3 w-3 text-gray-400" />
-                  <span className="text-[11px] font-semibold tabular-nums text-gray-700">{statSold}</span>
-                  <span className="text-[9px] uppercase tracking-wide text-gray-400">sold</span>
+                  <span className="text-[11px] font-semibold tabular-nums text-gray-700">
+                    {statSold}
+                  </span>
+                  <span className="text-[9px] uppercase tracking-wide text-gray-400">
+                    sold
+                  </span>
                 </button>
               )}
               {/* Status */}
               {(() => {
                 const st = watch('subProductData.status') || 'draft';
-                const cls = st === 'active' ? 'bg-green-100 text-green-700' :
-                            st === 'draft'  ? 'bg-gray-100 text-gray-600'   :
-                            st === 'out_of_stock' ? 'bg-red-100 text-red-700' :
-                            'bg-amber-100 text-amber-700';
+                const cls =
+                  st === 'active'
+                    ? 'bg-green-100 text-green-700'
+                    : st === 'draft'
+                      ? 'bg-gray-100 text-gray-600'
+                      : st === 'out_of_stock'
+                        ? 'bg-red-100 text-red-700'
+                        : 'bg-amber-100 text-amber-700';
                 return (
-                  <span className={`rounded-lg px-2.5 py-1 text-[10px] font-bold capitalize ${cls}`}>
+                  <span
+                    className={`rounded-lg px-2.5 py-1 text-[10px] font-bold capitalize ${cls}`}
+                  >
                     {st.replace(/_/g, ' ')}
                   </span>
                 );
@@ -1298,8 +1465,14 @@ export default function CreateEditSubProduct({
                 className="flex h-8 items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-2.5 text-xs font-medium text-purple-700 transition-colors hover:bg-purple-100 disabled:opacity-50"
                 title="Auto-generate content with AI"
               >
-                {isGenerating ? <PiSpinner className="h-3.5 w-3.5 animate-spin" /> : <PiSparkle className="h-3.5 w-3.5" />}
-                <span className="hidden sm:inline">{isGenerating ? 'Generating…' : 'AI'}</span>
+                {isGenerating ? (
+                  <PiSpinner className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <PiSparkle className="h-3.5 w-3.5" />
+                )}
+                <span className="hidden sm:inline">
+                  {isGenerating ? 'Generating…' : 'AI'}
+                </span>
               </button>
 
               {/* ── Prev / Next navigation ── */}
@@ -1308,11 +1481,18 @@ export default function CreateEditSubProduct({
                   <button
                     type="button"
                     disabled={navIndex <= 0}
-                    title={navIndex > 0 ? `Previous product (${navIndex} of ${navIds.length})` : 'No previous product'}
+                    title={
+                      navIndex > 0
+                        ? `Previous product (${navIndex} of ${navIds.length})`
+                        : 'No previous product'
+                    }
                     onClick={async () => {
                       if (navIndex <= 0) return;
-                      if (isDirty && !isLoading) await performSave(methods.getValues(), true);
-                      router.push(routes.eCommerce.editSubProduct(navIds[navIndex - 1]));
+                      if (isDirty && !isLoading)
+                        await performSave(methods.getValues(), true);
+                      router.push(
+                        routes.eCommerce.editSubProduct(navIds[navIndex - 1])
+                      );
                     }}
                     className="flex h-6 w-6 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-white hover:text-gray-900 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-30"
                   >
@@ -1324,11 +1504,18 @@ export default function CreateEditSubProduct({
                   <button
                     type="button"
                     disabled={navIndex >= navIds.length - 1}
-                    title={navIndex < navIds.length - 1 ? `Next product (${navIndex + 2} of ${navIds.length})` : 'No next product'}
+                    title={
+                      navIndex < navIds.length - 1
+                        ? `Next product (${navIndex + 2} of ${navIds.length})`
+                        : 'No next product'
+                    }
                     onClick={async () => {
                       if (navIndex >= navIds.length - 1) return;
-                      if (isDirty && !isLoading) await performSave(methods.getValues(), true);
-                      router.push(routes.eCommerce.editSubProduct(navIds[navIndex + 1]));
+                      if (isDirty && !isLoading)
+                        await performSave(methods.getValues(), true);
+                      router.push(
+                        routes.eCommerce.editSubProduct(navIds[navIndex + 1])
+                      );
                     }}
                     className="flex h-6 w-6 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-white hover:text-gray-900 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-30"
                   >
@@ -1354,18 +1541,26 @@ export default function CreateEditSubProduct({
                         {isArchived ? (
                           <button
                             type="button"
-                            onClick={() => { setShowSettingsDropdown(false); setConfirmModal('restore'); }}
+                            onClick={() => {
+                              setShowSettingsDropdown(false);
+                              setConfirmModal('restore');
+                            }}
                             className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
                           >
-                            <PiArchive className="h-4 w-4 text-gray-400" /> Restore
+                            <PiArchive className="h-4 w-4 text-gray-400" />{' '}
+                            Restore
                           </button>
                         ) : (
                           <button
                             type="button"
-                            onClick={() => { setShowSettingsDropdown(false); setConfirmModal('archive'); }}
+                            onClick={() => {
+                              setShowSettingsDropdown(false);
+                              setConfirmModal('archive');
+                            }}
                             className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
                           >
-                            <PiArchive className="h-4 w-4 text-gray-400" /> Archive
+                            <PiArchive className="h-4 w-4 text-gray-400" />{' '}
+                            Archive
                           </button>
                         )}
                         <button
@@ -1374,15 +1569,22 @@ export default function CreateEditSubProduct({
                           onClick={handleDuplicate}
                           className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                         >
+                          {actionLoading === 'duplicate' ? (
+                            <PiSpinner className="h-4 w-4 animate-spin text-gray-400" />
+                          ) : (
+                            <PiCopy className="h-4 w-4 text-gray-400" />
+                          )}
                           {actionLoading === 'duplicate'
-                            ? <PiSpinner className="h-4 w-4 animate-spin text-gray-400" />
-                            : <PiCopy className="h-4 w-4 text-gray-400" />}
-                          {actionLoading === 'duplicate' ? 'Duplicating…' : 'Duplicate'}
+                            ? 'Duplicating…'
+                            : 'Duplicate'}
                         </button>
                         <div className="my-1 border-t border-gray-100" />
                         <button
                           type="button"
-                          onClick={() => { setShowSettingsDropdown(false); setConfirmModal('delete'); }}
+                          onClick={() => {
+                            setShowSettingsDropdown(false);
+                            setConfirmModal('delete');
+                          }}
                           className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
                         >
                           <PiTrash className="h-4 w-4" /> Delete
@@ -1396,29 +1598,33 @@ export default function CreateEditSubProduct({
           </div>
 
           {/* ── Step tab bar ── */}
-          <div className="flex overflow-x-auto border-t border-gray-100 px-2 scrollbar-hide">
+          <div className="scrollbar-hide flex overflow-x-auto border-t border-gray-100 px-2">
             {STEPS.map((step, index) => {
-              const isActive   = index === currentStep;
-              const isDone     = index < currentStep || completedSteps.has(index);
-              const Icon       = step.icon;
+              const isActive = index === currentStep;
+              const isDone = index < currentStep || completedSteps.has(index);
+              const Icon = step.icon;
               return (
                 <button
                   key={step.key}
                   type="button"
                   onClick={() => handleStepClick(index)}
-                  className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors whitespace-nowrap ${
+                  className={`flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${
                     isActive
                       ? 'border-gray-900 text-gray-900'
                       : isDone
-                      ? 'border-transparent text-green-600 hover:text-gray-700'
-                      : 'border-transparent text-gray-400 hover:text-gray-600'
+                        ? 'border-transparent text-green-600 hover:text-gray-700'
+                        : 'border-transparent text-gray-400 hover:text-gray-600'
                   }`}
                 >
-                  <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
-                    isActive ? 'bg-gray-900 text-white' :
-                    isDone   ? 'bg-green-500 text-white' :
-                    'bg-gray-100 text-gray-500'
-                  }`}>
+                  <span
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                      isActive
+                        ? 'bg-gray-900 text-white'
+                        : isDone
+                          ? 'bg-green-500 text-white'
+                          : 'bg-gray-100 text-gray-500'
+                    }`}
+                  >
                     {isDone ? <PiCheck className="h-3 w-3" /> : index + 1}
                   </span>
                   {step.label}
@@ -1446,7 +1652,10 @@ export default function CreateEditSubProduct({
                 {/* Validation Summary */}
                 {errors && Object.keys(errors).length > 0 && (
                   <ValidationSummary
-                    errors={formatSubProductErrorsForSummary(errors, STEPS[currentStep].label)}
+                    errors={formatSubProductErrorsForSummary(
+                      errors,
+                      STEPS[currentStep].label
+                    )}
                     className="mb-4"
                   />
                 )}
@@ -1495,7 +1704,13 @@ export default function CreateEditSubProduct({
                   {(() => {
                     const key = STEPS[currentStep].key;
                     if (key === formParts.basicPricingSizes) {
-                      return <ProductStep onProductSelect={(_, name) => { if (name) setLinkedProductName(name); }} />;
+                      return (
+                        <ProductStep
+                          onProductSelect={(_, name) => {
+                            if (name) setLinkedProductName(name);
+                          }}
+                        />
+                      );
                     }
                     const Component = COMPONENTS[key];
                     return Component ? <Component /> : null;
@@ -1524,7 +1739,8 @@ export default function CreateEditSubProduct({
                     <div className="flex items-center gap-2 text-amber-600">
                       <PiWarning className="h-4 w-4" />
                       <span className="font-medium">
-                        {fieldErrors.length} validation error{fieldErrors.length !== 1 ? 's' : ''}
+                        {fieldErrors.length} validation error
+                        {fieldErrors.length !== 1 ? 's' : ''}
                       </span>
                     </div>
                     <div className="mt-1 flex flex-wrap gap-1">
@@ -1560,13 +1776,21 @@ export default function CreateEditSubProduct({
 
               <button
                 type="button"
-                onClick={currentStep === STEPS.length - 1 ? methods.handleSubmit(onSubmit) : handleNext}
+                onClick={
+                  currentStep === STEPS.length - 1
+                    ? methods.handleSubmit(onSubmit)
+                    : handleNext
+                }
                 disabled={isLoading}
                 className="flex items-center gap-1.5 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-gray-700 disabled:opacity-50"
               >
                 {currentStep === STEPS.length - 1 ? (
                   <>
-                    {isLoading ? <PiSpinner className="h-4 w-4 animate-spin" /> : <PiFloppyDisk className="h-4 w-4" />}
+                    {isLoading ? (
+                      <PiSpinner className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <PiFloppyDisk className="h-4 w-4" />
+                    )}
                     {isLoading ? 'Saving…' : 'Save'}
                   </>
                 ) : (
@@ -1605,27 +1829,44 @@ export default function CreateEditSubProduct({
           {/* Dialog */}
           <div className="relative w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl">
             {/* Top accent */}
-            <div className={`h-1 w-full ${confirmModal === 'delete' ? 'bg-red-600' : confirmModal === 'archive' ? 'bg-amber-500' : 'bg-green-500'}`} />
+            <div
+              className={`h-1 w-full ${confirmModal === 'delete' ? 'bg-red-600' : confirmModal === 'archive' ? 'bg-amber-500' : 'bg-green-500'}`}
+            />
             <div className="px-6 py-5">
               {/* Icon + title */}
               <div className="mb-4 flex items-start gap-3">
-                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                  confirmModal === 'delete' ? 'bg-red-50' : confirmModal === 'archive' ? 'bg-amber-50' : 'bg-green-50'
-                }`}>
-                  {confirmModal === 'delete'  && <PiTrash   className="h-5 w-5 text-red-600" />}
-                  {confirmModal === 'archive' && <PiArchive className="h-5 w-5 text-amber-600" />}
-                  {confirmModal === 'restore' && <PiArchive className="h-5 w-5 text-green-600" />}
+                <div
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                    confirmModal === 'delete'
+                      ? 'bg-red-50'
+                      : confirmModal === 'archive'
+                        ? 'bg-amber-50'
+                        : 'bg-green-50'
+                  }`}
+                >
+                  {confirmModal === 'delete' && (
+                    <PiTrash className="h-5 w-5 text-red-600" />
+                  )}
+                  {confirmModal === 'archive' && (
+                    <PiArchive className="h-5 w-5 text-amber-600" />
+                  )}
+                  {confirmModal === 'restore' && (
+                    <PiArchive className="h-5 w-5 text-green-600" />
+                  )}
                 </div>
                 <div>
                   <h2 className="text-base font-bold text-gray-900">
-                    {confirmModal === 'delete'  && 'Delete product?'}
+                    {confirmModal === 'delete' && 'Delete product?'}
                     {confirmModal === 'archive' && 'Archive product?'}
                     {confirmModal === 'restore' && 'Restore product?'}
                   </h2>
                   <p className="mt-1 text-sm text-gray-500">
-                    {confirmModal === 'delete'  && 'This permanently removes the product and all its data. This cannot be undone.'}
-                    {confirmModal === 'archive' && `"${displayTitle}" will be hidden from the store and POS. You can restore it later.`}
-                    {confirmModal === 'restore' && `"${displayTitle}" will be restored and set back to active.`}
+                    {confirmModal === 'delete' &&
+                      'This permanently removes the product and all its data. This cannot be undone.'}
+                    {confirmModal === 'archive' &&
+                      `"${displayTitle}" will be hidden from the store and POS. You can restore it later.`}
+                    {confirmModal === 'restore' &&
+                      `"${displayTitle}" will be restored and set back to active.`}
                   </p>
                 </div>
               </div>
@@ -1644,29 +1885,40 @@ export default function CreateEditSubProduct({
                   type="button"
                   disabled={!!actionLoading}
                   onClick={() => {
-                    if (confirmModal === 'delete')  handleDelete();
+                    if (confirmModal === 'delete') handleDelete();
                     if (confirmModal === 'archive') handleArchive();
                     if (confirmModal === 'restore') handleRestore();
                   }}
                   className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold text-white disabled:opacity-50 ${
-                    confirmModal === 'delete'  ? 'bg-red-600 hover:bg-red-700' :
-                    confirmModal === 'archive' ? 'bg-amber-500 hover:bg-amber-600' :
-                    'bg-green-600 hover:bg-green-700'
+                    confirmModal === 'delete'
+                      ? 'bg-red-600 hover:bg-red-700'
+                      : confirmModal === 'archive'
+                        ? 'bg-amber-500 hover:bg-amber-600'
+                        : 'bg-green-600 hover:bg-green-700'
                   }`}
                 >
                   {actionLoading ? (
                     <PiSpinner className="h-4 w-4 animate-spin" />
                   ) : (
                     <>
-                      {confirmModal === 'delete'  && <PiTrash   className="h-4 w-4" />}
-                      {confirmModal === 'archive' && <PiArchive className="h-4 w-4" />}
-                      {confirmModal === 'restore' && <PiArchive className="h-4 w-4" />}
+                      {confirmModal === 'delete' && (
+                        <PiTrash className="h-4 w-4" />
+                      )}
+                      {confirmModal === 'archive' && (
+                        <PiArchive className="h-4 w-4" />
+                      )}
+                      {confirmModal === 'restore' && (
+                        <PiArchive className="h-4 w-4" />
+                      )}
                     </>
                   )}
-                  {actionLoading ? 'Please wait…' : (
-                    confirmModal === 'delete'  ? 'Yes, delete' :
-                    confirmModal === 'archive' ? 'Archive'     : 'Restore'
-                  )}
+                  {actionLoading
+                    ? 'Please wait…'
+                    : confirmModal === 'delete'
+                      ? 'Yes, delete'
+                      : confirmModal === 'archive'
+                        ? 'Archive'
+                        : 'Restore'}
                 </button>
               </div>
             </div>

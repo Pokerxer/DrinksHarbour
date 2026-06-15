@@ -7,11 +7,44 @@ const { recalcSubProductStock } = require('./warehouseStock.helpers');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 
 // ── Place CRUD ──────────────────────────────────────────────
+const CODE_PREFIX = { warehouse: 'WH', store: 'ST', distribution_center: 'DC' };
+
+// Generate the next sequential, tenant-unique code for a warehouse type,
+// e.g. WH-001, ST-002, DC-003.
+async function generateWarehouseCode(tenantId, type) {
+  const prefix = CODE_PREFIX[type] || 'WH';
+  const existing = await Warehouse.find({
+    tenant: tenantId,
+    code: new RegExp(`^${prefix}-\\d+$`),
+  })
+    .select('code')
+    .lean();
+  const max = existing.reduce((m, w) => {
+    const n = parseInt(String(w.code).split('-')[1], 10);
+    return Number.isFinite(n) && n > m ? n : m;
+  }, 0);
+  return `${prefix}-${String(max + 1).padStart(3, '0')}`;
+}
+
 async function createWarehouse(data, userId, tenantId) {
   if (data.isDefault) {
     await Warehouse.updateMany({ tenant: tenantId }, { $set: { isDefault: false } });
   }
-  return Warehouse.create({ ...data, tenant: tenantId, createdBy: userId });
+
+  const payload = { ...data, tenant: tenantId, createdBy: userId };
+  const autoCode = !payload.code || !String(payload.code).trim();
+
+  // Retry on the unique {tenant, code} index in case of a concurrent insert.
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    if (autoCode) payload.code = await generateWarehouseCode(tenantId, payload.type);
+    try {
+      return await Warehouse.create(payload);
+    } catch (err) {
+      const isDupCode = err?.code === 11000 && err?.keyPattern?.code;
+      if (autoCode && isDupCode && attempt < 4) continue;
+      throw err;
+    }
+  }
 }
 
 async function getWarehouses(tenantId, filters = {}) {
@@ -60,7 +93,11 @@ async function deleteWarehouse(id, tenantId) {
 // ── Stock ───────────────────────────────────────────────────
 async function getWarehouseStock(warehouseId, tenantId) {
   return WarehouseStock.find({ tenant: tenantId, warehouse: warehouseId })
-    .populate('subProduct', 'sku')
+    .populate({
+      path: 'subProduct',
+      select: 'sku product imagesOverride',
+      populate: { path: 'product', select: 'name slug images' },
+    })
     .populate('size', 'size')
     .sort({ updatedAt: -1 })
     .lean();

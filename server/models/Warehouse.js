@@ -15,10 +15,18 @@ const warehouseSchema = new Schema(
     },
     address: {
       line1: { type: String, maxlength: 200 },
+      line2: { type: String, maxlength: 200 },
       city: { type: String, maxlength: 100 },
       state: { type: String, maxlength: 100 },
       country: { type: String, maxlength: 100 },
+      postalCode: { type: String, maxlength: 20 },
     },
+    contact: {
+      name: { type: String, maxlength: 120 },
+      phone: { type: String, maxlength: 40 },
+      email: { type: String, maxlength: 160, lowercase: true, trim: true },
+    },
+    notes: { type: String, maxlength: 1000 },
     isActive: { type: Boolean, default: true },
     isDefault: { type: Boolean, default: false },
     createdBy: { type: ObjectId, ref: 'User' },

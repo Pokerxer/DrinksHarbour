@@ -5,14 +5,42 @@ import { useEffect, useState, useCallback } from 'react';
 import { useFormContext, useFieldArray, Controller } from 'react-hook-form';
 import { Input, Text, Button, Switch, Badge } from 'rizzui';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { 
-  PiPlus, PiTrash, PiRuler, PiPackage, PiCaretDown, PiCaretUp, 
-  PiCopy, PiArrowsDownUp, PiCheck, PiWarning, PiX, PiCheckCircle,
-  PiMagnifyingGlass, PiFunnel, PiGauge, PiSparkle, PiTrendUp, PiStack,
-  PiCurrencyNgn, PiPercent, PiWarehouse, PiTimer, PiEraser, PiInfo,
-  PiDotsSixVertical, PiCopySimple, PiTrashSimple, PiChartLine
+import {
+  PiPlus,
+  PiTrash,
+  PiRuler,
+  PiPackage,
+  PiCaretDown,
+  PiCaretUp,
+  PiCopy,
+  PiArrowsDownUp,
+  PiCheck,
+  PiWarning,
+  PiX,
+  PiCheckCircle,
+  PiMagnifyingGlass,
+  PiFunnel,
+  PiGauge,
+  PiSparkle,
+  PiTrendUp,
+  PiStack,
+  PiCurrencyNgn,
+  PiPercent,
+  PiWarehouse,
+  PiTimer,
+  PiEraser,
+  PiInfo,
+  PiDotsSixVertical,
+  PiCopySimple,
+  PiTrashSimple,
+  PiChartLine,
 } from 'react-icons/pi';
-import { fieldStaggerVariants, containerVariants, toggleVariants, itemVariants } from './animations';
+import {
+  fieldStaggerVariants,
+  containerVariants,
+  toggleVariants,
+  itemVariants,
+} from './animations';
 import toast from 'react-hot-toast';
 import cn from '@core/utils/class-names';
 
@@ -26,58 +54,58 @@ const cardVariants = {
     transition: {
       delay: i * 0.08,
       duration: 0.4,
-      ease: [0.25, 0.46, 0.45, 0.94]
-    }
+      ease: [0.25, 0.46, 0.45, 0.94],
+    },
   }),
-  exit: { 
-    opacity: 0, 
-    scale: 0.95, 
+  exit: {
+    opacity: 0,
+    scale: 0.95,
     x: -100,
-    transition: { duration: 0.2 }
+    transition: { duration: 0.2 },
   },
   hover: {
     scale: 1.01,
     boxShadow: '0 8px 30px rgba(0, 0, 0, 0.12)',
-    transition: { duration: 0.2 }
-  }
+    transition: { duration: 0.2 },
+  },
 };
 
 const expandVariants = {
-  hidden: { 
-    opacity: 0, 
+  hidden: {
+    opacity: 0,
     height: 0,
-    overflow: 'hidden'
+    overflow: 'hidden',
   },
-  visible: { 
-    opacity: 1, 
+  visible: {
+    opacity: 1,
     height: 'auto',
     transition: {
       duration: 0.3,
-      ease: 'easeInOut'
-    }
+      ease: 'easeInOut',
+    },
   },
-  exit: { 
-    opacity: 0, 
+  exit: {
+    opacity: 0,
     height: 0,
     transition: {
-      duration: 0.2
-    }
-  }
+      duration: 0.2,
+    },
+  },
 };
 
 const buttonTapVariants = {
   tap: { scale: 0.95 },
-  hover: { scale: 1.02 }
+  hover: { scale: 1.02 },
 };
 
 const shimmerVariants = {
   initial: { x: '-100%' },
-  animate: { x: '100%' }
+  animate: { x: '100%' },
 };
 
 const quickAddVariants = {
   hidden: { opacity: 0, y: -10 },
-  visible: { opacity: 1, y: 0 }
+  visible: { opacity: 1, y: 0 },
 };
 
 // Quick size presets for beverages
@@ -116,10 +144,30 @@ const SIZE_PRESETS = {
 
 const BEVERAGE_CATEGORIES = [
   { id: 'wine', label: 'Wine', icon: '🍷', color: 'bg-red-100 text-red-700' },
-  { id: 'spirit', label: 'Spirit', icon: '🥃', color: 'bg-amber-100 text-amber-700' },
-  { id: 'beer', label: 'Beer', icon: '🍺', color: 'bg-yellow-100 text-yellow-700' },
-  { id: 'soft', label: 'Soft Drinks', icon: '🥤', color: 'bg-blue-100 text-blue-700' },
-  { id: 'packs', label: 'Multi-Packs', icon: '📦', color: 'bg-green-100 text-green-700' },
+  {
+    id: 'spirit',
+    label: 'Spirit',
+    icon: '🥃',
+    color: 'bg-amber-100 text-amber-700',
+  },
+  {
+    id: 'beer',
+    label: 'Beer',
+    icon: '🍺',
+    color: 'bg-yellow-100 text-yellow-700',
+  },
+  {
+    id: 'soft',
+    label: 'Soft Drinks',
+    icon: '🥤',
+    color: 'bg-blue-100 text-blue-700',
+  },
+  {
+    id: 'packs',
+    label: 'Multi-Packs',
+    icon: '📦',
+    color: 'bg-green-100 text-green-700',
+  },
 ];
 
 const MARKUP_PRESETS = [10, 15, 20, 25, 30, 35, 50, 75, 100];
@@ -130,19 +178,35 @@ export const SIZE_OPTIONS = [
   { value: '18.7cl', label: '18.7cl', category: 'Wine & Champagne' },
   { value: '20cl', label: '20cl', category: 'Wine & Champagne' },
   { value: '25cl', label: '25cl', category: 'Wine & Champagne' },
-  { value: '37.5cl', label: '37.5cl (Half Bottle)', category: 'Wine & Champagne' },
+  {
+    value: '37.5cl',
+    label: '37.5cl (Half Bottle)',
+    category: 'Wine & Champagne',
+  },
   { value: '50cl', label: '50cl', category: 'Wine & Champagne' },
   { value: '75cl', label: '75cl (Standard)', category: 'Wine & Champagne' },
   { value: '100cl', label: '100cl', category: 'Wine & Champagne' },
   { value: '150cl', label: '150cl (Magnum)', category: 'Wine & Champagne' },
-  { value: '300cl', label: '300cl (Double Magnum)', category: 'Wine & Champagne' },
+  {
+    value: '300cl',
+    label: '300cl (Double Magnum)',
+    category: 'Wine & Champagne',
+  },
   { value: '450cl', label: '450cl (Jeroboam)', category: 'Wine & Champagne' },
   { value: '600cl', label: '600cl (Imperial)', category: 'Wine & Champagne' },
   { value: '900cl', label: '900cl (Salmanazar)', category: 'Wine & Champagne' },
-  { value: '1200cl', label: '1200cl (Balthazar)', category: 'Wine & Champagne' },
-  { value: '1500cl', label: '1500cl (Nebuchadnezzar)', category: 'Wine & Champagne' },
+  {
+    value: '1200cl',
+    label: '1200cl (Balthazar)',
+    category: 'Wine & Champagne',
+  },
+  {
+    value: '1500cl',
+    label: '1500cl (Nebuchadnezzar)',
+    category: 'Wine & Champagne',
+  },
   { value: '1800cl', label: '1800cl (Melchior)', category: 'Wine & Champagne' },
-  
+
   // Spirits
   { value: '5cl', label: '5cl (Miniature)', category: 'Spirits' },
   { value: '10cl', label: '10cl', category: 'Spirits' },
@@ -154,7 +218,7 @@ export const SIZE_OPTIONS = [
   { value: '1.5L', label: '1.5 Liter', category: 'Spirits' },
   { value: '1.75L', label: '1.75 Liter', category: 'Spirits' },
   { value: '3L', label: '3 Liter', category: 'Spirits' },
-  
+
   // Beer & Cider Bottles
   { value: '27.5cl', label: '27.5cl', category: 'Beer & Cider' },
   { value: '33cl', label: '33cl', category: 'Beer & Cider' },
@@ -167,11 +231,15 @@ export const SIZE_OPTIONS = [
   { value: 'bottle-330ml', label: 'Bottle 330ml', category: 'Beer & Cider' },
   { value: 'bottle-355ml', label: 'Bottle 355ml', category: 'Beer & Cider' },
   { value: 'bottle-500ml', label: 'Bottle 500ml', category: 'Beer & Cider' },
-  { value: 'bottle-568ml', label: 'Bottle 568ml (Pint)', category: 'Beer & Cider' },
+  {
+    value: 'bottle-568ml',
+    label: 'Bottle 568ml (Pint)',
+    category: 'Beer & Cider',
+  },
   { value: 'bottle-600ml', label: 'Bottle 600ml', category: 'Beer & Cider' },
   { value: 'bottle-650ml', label: 'Bottle 650ml', category: 'Beer & Cider' },
   { value: 'bottle-750ml', label: 'Bottle 750ml', category: 'Beer & Cider' },
-  
+
   // Beer Cans
   { value: 'can-200ml', label: 'Can 200ml', category: 'Beer Cans' },
   { value: 'can-250ml', label: 'Can 250ml', category: 'Beer Cans' },
@@ -181,7 +249,7 @@ export const SIZE_OPTIONS = [
   { value: 'can-473ml', label: 'Can 473ml', category: 'Beer Cans' },
   { value: 'can-500ml', label: 'Can 500ml', category: 'Beer Cans' },
   { value: 'can-568ml', label: 'Can 568ml', category: 'Beer Cans' },
-  
+
   // Soft Drinks & Water
   { value: '200ml', label: '200ml', category: 'Soft Drinks & Water' },
   { value: '250ml', label: '250ml', category: 'Soft Drinks & Water' },
@@ -198,7 +266,7 @@ export const SIZE_OPTIONS = [
   { value: '2.5L', label: '2.5 Liter', category: 'Soft Drinks & Water' },
   { value: '3L', label: '3 Liter', category: 'Soft Drinks & Water' },
   { value: '5L', label: '5 Liter', category: 'Soft Drinks & Water' },
-  
+
   // Multi-Packs
   { value: 'pack-4', label: '4-Pack', category: 'Multi-Packs' },
   { value: 'pack-6', label: '6-Pack', category: 'Multi-Packs' },
@@ -212,7 +280,7 @@ export const SIZE_OPTIONS = [
   { value: 'case-6', label: 'Case of 6', category: 'Multi-Packs' },
   { value: 'case-12', label: 'Case of 12', category: 'Multi-Packs' },
   { value: 'case-24', label: 'Case of 24', category: 'Multi-Packs' },
-  
+
   // Coffee & Tea (Weight-based)
   { value: '50g', label: '50g', category: 'Coffee & Tea' },
   { value: '100g', label: '100g', category: 'Coffee & Tea' },
@@ -223,20 +291,20 @@ export const SIZE_OPTIONS = [
   { value: '500g', label: '500g', category: 'Coffee & Tea' },
   { value: '1kg', label: '1kg', category: 'Coffee & Tea' },
   { value: '2kg', label: '2kg', category: 'Coffee & Tea' },
-  
+
   // Tea Bags
   { value: 'teabag-20', label: '20 Tea Bags', category: 'Tea Bags' },
   { value: 'teabag-25', label: '25 Tea Bags', category: 'Tea Bags' },
   { value: 'teabag-40', label: '40 Tea Bags', category: 'Tea Bags' },
   { value: 'teabag-50', label: '50 Tea Bags', category: 'Tea Bags' },
   { value: 'teabag-100', label: '100 Tea Bags', category: 'Tea Bags' },
-  
+
   // Single Serve
   { value: 'unit-single', label: 'Single Unit', category: 'Single Serve' },
   { value: 'shot-25ml', label: 'Shot 25ml', category: 'Single Serve' },
   { value: 'shot-35ml', label: 'Shot 35ml', category: 'Single Serve' },
   { value: 'shot-50ml', label: 'Shot 50ml', category: 'Single Serve' },
-  
+
   // Gift Sets
   { value: 'set-2', label: 'Set of 2', category: 'Gift Sets' },
   { value: 'set-3', label: 'Set of 3', category: 'Gift Sets' },
@@ -246,7 +314,7 @@ export const SIZE_OPTIONS = [
   { value: 'gift-set', label: 'Gift Set', category: 'Gift Sets' },
   { value: 'tasting-set', label: 'Tasting Set', category: 'Gift Sets' },
   { value: 'variety-pack', label: 'Variety Pack', category: 'Gift Sets' },
-  
+
   // Custom
   { value: 'custom', label: 'Custom Size', category: 'Other' },
   { value: 'variable', label: 'Variable Size', category: 'Other' },
@@ -264,36 +332,51 @@ export default function SubProductSizes() {
     name: 'subProductData.sizes',
   });
 
-  const sellWithoutSizeVariants = watch?.('subProductData.sellWithoutSizeVariants');
+  const sellWithoutSizeVariants = watch?.(
+    'subProductData.sellWithoutSizeVariants'
+  );
   const defaultMarkup = watch?.('subProductData.markupPercentage') ?? 25;
   const defaultRoundUp = watch?.('subProductData.roundUp') ?? '100';
   const defaultCostPrice = watch?.('subProductData.costPrice');
   const defaultDiscount = watch?.('subProductData.saleDiscountPercentage') ?? 0;
   const defaultCurrency = watch?.('subProductData.currency') ?? 'NGN';
 
-  const calculateBasePrice = (variantCostPrice: number, variantMarkup: number, variantRoundUp: string) => {
+  const calculateBasePrice = (
+    variantCostPrice: number,
+    variantMarkup: number,
+    variantRoundUp: string
+  ) => {
     if (!variantCostPrice || variantCostPrice <= 0) return 0;
-    let calculatedPrice = variantCostPrice * (1 + (variantMarkup / 100));
-    
+    let calculatedPrice = variantCostPrice * (1 + variantMarkup / 100);
+
     if (variantRoundUp === '100') {
       calculatedPrice = Math.ceil(calculatedPrice / 100) * 100;
     } else if (variantRoundUp === '1000') {
       calculatedPrice = Math.ceil(calculatedPrice / 1000) * 1000;
     }
-    
+
     return Number(calculatedPrice.toFixed(2));
   };
 
-  const calculateSalePrice = (variantBasePrice: number, discountPercentage: number) => {
-    if (!variantBasePrice || variantBasePrice <= 0 || !discountPercentage) return null;
-    const salePrice = variantBasePrice * (1 - (discountPercentage / 100));
+  const calculateSalePrice = (
+    variantBasePrice: number,
+    discountPercentage: number
+  ) => {
+    if (!variantBasePrice || variantBasePrice <= 0 || !discountPercentage)
+      return null;
+    const salePrice = variantBasePrice * (1 - discountPercentage / 100);
     return Number(salePrice.toFixed(2));
   };
 
   const addSize = () => {
-    const baseSellingPrice = defaultCostPrice ? calculateBasePrice(defaultCostPrice, defaultMarkup, defaultRoundUp) : null;
-    const salePrice = baseSellingPrice && defaultDiscount > 0 ? calculateSalePrice(baseSellingPrice, defaultDiscount) : null;
-    
+    const baseSellingPrice = defaultCostPrice
+      ? calculateBasePrice(defaultCostPrice, defaultMarkup, defaultRoundUp)
+      : null;
+    const salePrice =
+      baseSellingPrice && defaultDiscount > 0
+        ? calculateSalePrice(baseSellingPrice, defaultDiscount)
+        : null;
+
     append({
       size: '',
       displayName: '',
@@ -334,7 +417,9 @@ export default function SubProductSizes() {
       append({
         ...currentSize,
         size: `${currentSize.size} (Copy)`,
-        displayName: currentSize.displayName ? `${currentSize.displayName} (Copy)` : '',
+        displayName: currentSize.displayName
+          ? `${currentSize.displayName} (Copy)`
+          : '',
         rank: fields.length + 1,
       });
       toast.success('Size variant duplicated');
@@ -349,7 +434,7 @@ export default function SubProductSizes() {
   };
 
   return (
-    <motion.div 
+    <motion.div
       variants={containerVariants}
       initial="hidden"
       animate="visible"
@@ -360,10 +445,10 @@ export default function SubProductSizes() {
         <div className="relative overflow-hidden rounded-xl border-l-4 border-blue-500 bg-gradient-to-r from-blue-50 via-white to-indigo-50 p-4">
           <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-blue-100/50" />
           <div className="absolute -bottom-4 right-12 h-16 w-16 rounded-full bg-indigo-100/50" />
-          
+
           <div className="relative flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <motion.div 
+              <motion.div
                 whileHover={{ rotate: 360 }}
                 transition={{ duration: 0.5 }}
                 className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg"
@@ -371,13 +456,15 @@ export default function SubProductSizes() {
                 <PiPackage className="h-5 w-5 text-white" />
               </motion.div>
               <div>
-                <Text className="font-semibold text-gray-900">Sizes & Variants</Text>
+                <Text className="font-semibold text-gray-900">
+                  Sizes & Variants
+                </Text>
                 <Text className="text-xs text-gray-500">
                   Configure product size variants for inventory management
                 </Text>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-2">
               {fields.length > 0 && (
                 <>
@@ -402,8 +489,8 @@ export default function SubProductSizes() {
       </motion.div>
 
       {/* Sell Without Variants Toggle */}
-      <motion.div 
-        variants={fieldStaggerVariants} 
+      <motion.div
+        variants={fieldStaggerVariants}
         custom={1}
         className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-all hover:shadow-md"
       >
@@ -412,7 +499,9 @@ export default function SubProductSizes() {
             <PiRuler className="h-6 w-6 text-blue-500" />
           </div>
           <div>
-            <Text className="font-semibold text-gray-800">Sell Without Size Variants</Text>
+            <Text className="font-semibold text-gray-800">
+              Sell Without Size Variants
+            </Text>
             <Text className="text-sm text-gray-500">
               Offer this product as a single item without size options
             </Text>
@@ -445,9 +534,9 @@ export default function SubProductSizes() {
           >
             {/* Summary Header */}
             {fields.length > 0 && (
-              <motion.div 
+              <motion.div
                 variants={fieldStaggerVariants}
-                className="flex items-center justify-between rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 p-4 border border-blue-100"
+                className="flex items-center justify-between rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 p-4"
               >
                 <div className="flex items-center gap-4">
                   <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100">
@@ -455,23 +544,40 @@ export default function SubProductSizes() {
                   </div>
                   <div>
                     <Text className="font-semibold text-gray-800">
-                      {fields.length} Size Variant{fields.length !== 1 ? 's' : ''} Configured
+                      {fields.length} Size Variant
+                      {fields.length !== 1 ? 's' : ''} Configured
                     </Text>
-                    <div className="flex items-center gap-3 mt-1">
+                    <div className="mt-1 flex items-center gap-3">
                       <Text className="text-sm text-gray-500">
-                        Total stock: <span className="font-medium text-blue-600">{fields.reduce((sum, _, i) => {
-                          const stock = watch(`subProductData.sizes.${i}.stock`) || 0;
-                          return sum + stock;
-                        }, 0)}</span> units
+                        Total stock:{' '}
+                        <span className="font-medium text-blue-600">
+                          {fields.reduce((sum, _, i) => {
+                            const stock =
+                              watch(`subProductData.sizes.${i}.stock`) || 0;
+                            return sum + stock;
+                          }, 0)}
+                        </span>{' '}
+                        units
                       </Text>
                       <div className="h-3 w-px bg-gray-300" />
                       <Text className="text-sm text-gray-500">
-                        Avg Price: <span className="font-medium text-green-600">
-                          {fields.filter((_, i) => watch(`subProductData.sizes.${i}.basePrice`)).length > 0 
-                            ? `${defaultCurrency} ${(fields.reduce((sum, _, i) => {
-                              const price = watch(`subProductData.sizes.${i}.basePrice`) || 0;
-                              return sum + price;
-                            }, 0) / fields.filter((_, i) => watch(`subProductData.sizes.${i}.basePrice`)).length).toFixed(2)}`
+                        Avg Price:{' '}
+                        <span className="font-medium text-green-600">
+                          {fields.filter((_, i) =>
+                            watch(`subProductData.sizes.${i}.basePrice`)
+                          ).length > 0
+                            ? `${defaultCurrency} ${(
+                                fields.reduce((sum, _, i) => {
+                                  const price =
+                                    watch(
+                                      `subProductData.sizes.${i}.basePrice`
+                                    ) || 0;
+                                  return sum + price;
+                                }, 0) /
+                                fields.filter((_, i) =>
+                                  watch(`subProductData.sizes.${i}.basePrice`)
+                                ).length
+                              ).toFixed(2)}`
                             : '-'}
                         </span>
                       </Text>
@@ -479,7 +585,9 @@ export default function SubProductSizes() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  {fields.filter((_, i) => watch(`subProductData.sizes.${i}.isDefault`)).length > 0 ? (
+                  {fields.filter((_, i) =>
+                    watch(`subProductData.sizes.${i}.isDefault`)
+                  ).length > 0 ? (
                     <Badge color="success" variant="flat" className="gap-1">
                       <PiCheckCircle className="h-3 w-3" />
                       Default Set
@@ -496,24 +604,26 @@ export default function SubProductSizes() {
 
             {/* Quick Add Section with Category Tabs */}
             {fields.length < 20 && (
-              <motion.div 
+              <motion.div
                 variants={quickAddVariants}
                 initial="hidden"
                 animate="visible"
-                className="rounded-xl bg-white border border-gray-200 p-4 shadow-sm"
+                className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
               >
-                <div className="flex items-center justify-between mb-3">
+                <div className="mb-3 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <PiSparkle className="h-4 w-4 text-amber-500" />
-                    <Text className="text-sm font-medium text-gray-700">Quick Add Common Sizes</Text>
+                    <Text className="text-sm font-medium text-gray-700">
+                      Quick Add Common Sizes
+                    </Text>
                   </div>
                   <Badge variant="flat" color="secondary" size="sm">
                     Click to add
                   </Badge>
                 </div>
-                
+
                 {/* Category Tabs */}
-                <div className="flex flex-wrap gap-2 mb-4">
+                <div className="mb-4 flex flex-wrap gap-2">
                   {BEVERAGE_CATEGORIES.map((cat) => (
                     <motion.button
                       key={cat.id}
@@ -521,8 +631,9 @@ export default function SubProductSizes() {
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                       className={cn(
-                        'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
-                        SIZE_PRESETS[cat.id as keyof typeof SIZE_PRESETS]?.length > 0
+                        'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all',
+                        SIZE_PRESETS[cat.id as keyof typeof SIZE_PRESETS]
+                          ?.length > 0
                           ? 'cursor-pointer hover:shadow-md'
                           : 'cursor-not-allowed opacity-50'
                       )}
@@ -532,16 +643,17 @@ export default function SubProductSizes() {
                     </motion.button>
                   ))}
                 </div>
-                
+
                 {/* Size Buttons by Category */}
                 <div className="space-y-3">
                   {BEVERAGE_CATEGORIES.map((cat) => {
-                    const sizes = SIZE_PRESETS[cat.id as keyof typeof SIZE_PRESETS];
+                    const sizes =
+                      SIZE_PRESETS[cat.id as keyof typeof SIZE_PRESETS];
                     if (!sizes || sizes.length === 0) return null;
-                    
+
                     return (
                       <div key={cat.id} className="space-y-2">
-                        <Text className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                        <Text className="text-xs font-medium uppercase tracking-wide text-gray-500">
                           {cat.icon} {cat.label}
                         </Text>
                         <div className="flex flex-wrap gap-2">
@@ -552,19 +664,41 @@ export default function SubProductSizes() {
                               whileHover={{ scale: 1.05 }}
                               whileTap={{ scale: 0.95 }}
                               onClick={() => {
-                                const exists = fields.some((_, i) => watch(`subProductData.sizes.${i}.size`) === size.value);
+                                const exists = fields.some(
+                                  (_, i) =>
+                                    watch(`subProductData.sizes.${i}.size`) ===
+                                    size.value
+                                );
                                 if (exists) {
                                   toast.error(`${size.label} already exists`);
                                   return;
                                 }
-                                const baseSellingPrice = defaultCostPrice ? calculateBasePrice(defaultCostPrice, defaultMarkup, defaultRoundUp) : null;
-                                const salePrice = baseSellingPrice && defaultDiscount > 0 ? calculateSalePrice(baseSellingPrice, defaultDiscount) : null;
+                                const baseSellingPrice = defaultCostPrice
+                                  ? calculateBasePrice(
+                                      defaultCostPrice,
+                                      defaultMarkup,
+                                      defaultRoundUp
+                                    )
+                                  : null;
+                                const salePrice =
+                                  baseSellingPrice && defaultDiscount > 0
+                                    ? calculateSalePrice(
+                                        baseSellingPrice,
+                                        defaultDiscount
+                                      )
+                                    : null;
                                 append({
                                   size: size.value,
                                   displayName: size.label,
                                   sizeCategory: 'standard',
                                   unitType: 'volume_cl',
-                                  volumeMl: parseFloat(size.value.replace('cl', '').replace('ml', '').replace('L', '')) * 10 || null,
+                                  volumeMl:
+                                    parseFloat(
+                                      size.value
+                                        .replace('cl', '')
+                                        .replace('ml', '')
+                                        .replace('L', '')
+                                    ) * 10 || null,
                                   weightGrams: null,
                                   servingsPerUnit: null,
                                   unitsPerPack: 6,
@@ -592,7 +726,7 @@ export default function SubProductSizes() {
                                 });
                                 toast.success(`Added ${size.label}`);
                               }}
-                              className="px-3 py-1.5 text-xs font-medium rounded-full bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
+                              className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
                             >
                               + {size.label}
                             </motion.button>
@@ -635,14 +769,17 @@ export default function SubProductSizes() {
             </div>
 
             {/* Add Button */}
-            <motion.div variants={fieldStaggerVariants} custom={fields.length + 2}>
+            <motion.div
+              variants={fieldStaggerVariants}
+              custom={fields.length + 2}
+            >
               <motion.button
                 type="button"
                 whileHover="hover"
                 whileTap="tap"
                 variants={buttonTapVariants}
                 onClick={addSize}
-                className="w-full flex items-center justify-center gap-2 py-4 px-6 rounded-xl border-2 border-dashed border-gray-300 text-gray-600 font-medium hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50/50 transition-all group"
+                className="group flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 px-6 py-4 font-medium text-gray-600 transition-all hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-600"
               >
                 <motion.div
                   whileHover={{ scale: 1.1, rotate: 90 }}
@@ -659,23 +796,22 @@ export default function SubProductSizes() {
 
             {/* Empty State */}
             {fields.length === 0 && (
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="text-center py-12 px-6 rounded-xl border-2 border-dashed border-gray-200"
+                className="rounded-xl border-2 border-dashed border-gray-200 px-6 py-12 text-center"
               >
-                <div className="flex h-16 w-16 items-center justify-center mx-auto mb-4 rounded-full bg-gray-50">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-50">
                   <PiRuler className="h-8 w-8 text-gray-400" />
                 </div>
-                <Text className="text-lg font-medium text-gray-600 mb-2">No Size Variants Yet</Text>
-                <Text className="text-sm text-gray-500 mb-4">
-                  Add size variants to manage different product sizes and their stock levels
+                <Text className="mb-2 text-lg font-medium text-gray-600">
+                  No Size Variants Yet
                 </Text>
-                <Button
-                  type="button"
-                  onClick={addSize}
-                  className="mx-auto"
-                >
+                <Text className="mb-4 text-sm text-gray-500">
+                  Add size variants to manage different product sizes and their
+                  stock levels
+                </Text>
+                <Button type="button" onClick={addSize} className="mx-auto">
                   <PiPlus className="mr-2 h-4 w-4" />
                   Add Your First Size
                 </Button>
@@ -704,14 +840,21 @@ function SizeVariantRow({
   control: any;
   remove: (index: number) => void;
   totalSizes: number;
-  calculateBasePrice: (costPrice: number, markup: number, roundUp: string) => number;
+  calculateBasePrice: (
+    costPrice: number,
+    markup: number,
+    roundUp: string
+  ) => number;
   calculateSalePrice: (basePrice: number, discount: number) => number | null;
 }) {
   const variantCostPrice = watch(`subProductData.sizes.${index}.costPrice`);
-  const variantMarkup = watch(`subProductData.sizes.${index}.markupPercentage`) ?? 25;
-  const variantRoundUp = watch(`subProductData.sizes.${index}.roundUp`) ?? '100';
+  const variantMarkup =
+    watch(`subProductData.sizes.${index}.markupPercentage`) ?? 25;
+  const variantRoundUp =
+    watch(`subProductData.sizes.${index}.roundUp`) ?? '100';
   const variantBasePrice = watch(`subProductData.sizes.${index}.basePrice`);
-  const variantDiscount = watch(`subProductData.sizes.${index}.saleDiscountPercentage`) ?? 0;
+  const variantDiscount =
+    watch(`subProductData.sizes.${index}.saleDiscountPercentage`) ?? 0;
 
   const [localMarkup, setLocalMarkup] = useState(variantMarkup);
   const [localDiscount, setLocalDiscount] = useState(variantDiscount);
@@ -729,7 +872,11 @@ function SizeVariantRow({
   // Initialize once on mount
   useEffect(() => {
     if (!initialized && variantCostPrice && variantCostPrice > 0) {
-      const calculatedPrice = calculateBasePrice(variantCostPrice, localMarkup, variantRoundUp);
+      const calculatedPrice = calculateBasePrice(
+        variantCostPrice,
+        localMarkup,
+        variantRoundUp
+      );
       setValue(`subProductData.sizes.${index}.basePrice`, calculatedPrice);
       setInitialized(true);
     }
@@ -738,7 +885,11 @@ function SizeVariantRow({
   // Handle cost price change
   const handleCostPriceChange = (value: number | null) => {
     if (value && value > 0) {
-      const calculatedPrice = calculateBasePrice(value, localMarkup, variantRoundUp);
+      const calculatedPrice = calculateBasePrice(
+        value,
+        localMarkup,
+        variantRoundUp
+      );
       setValue(`subProductData.sizes.${index}.costPrice`, value);
       setValue(`subProductData.sizes.${index}.basePrice`, calculatedPrice);
     } else {
@@ -750,7 +901,11 @@ function SizeVariantRow({
     setLocalMarkup(value);
     setValue(`subProductData.sizes.${index}.markupPercentage`, value);
     if (variantCostPrice && variantCostPrice > 0) {
-      const calculatedPrice = calculateBasePrice(variantCostPrice, value, variantRoundUp);
+      const calculatedPrice = calculateBasePrice(
+        variantCostPrice,
+        value,
+        variantRoundUp
+      );
       setValue(`subProductData.sizes.${index}.basePrice`, calculatedPrice);
     }
   };
@@ -758,7 +913,11 @@ function SizeVariantRow({
   const handleRoundUpChange = (value: string) => {
     setValue(`subProductData.sizes.${index}.roundUp`, value);
     if (variantCostPrice && variantCostPrice > 0) {
-      const calculatedPrice = calculateBasePrice(variantCostPrice, localMarkup, value);
+      const calculatedPrice = calculateBasePrice(
+        variantCostPrice,
+        localMarkup,
+        value
+      );
       setValue(`subProductData.sizes.${index}.basePrice`, calculatedPrice);
     }
   };
@@ -785,10 +944,13 @@ function SizeVariantRow({
   };
 
   const handleSizeChange = (sizeValue: string) => {
-    const selectedOption = SIZE_OPTIONS.find(opt => opt.value === sizeValue);
+    const selectedOption = SIZE_OPTIONS.find((opt) => opt.value === sizeValue);
     if (selectedOption) {
       setValue(`subProductData.sizes.${index}.size`, sizeValue);
-      setValue(`subProductData.sizes.${index}.displayName`, selectedOption.label);
+      setValue(
+        `subProductData.sizes.${index}.displayName`,
+        selectedOption.label
+      );
     }
   };
 
@@ -842,13 +1004,16 @@ function SizeVariantRow({
   ];
 
   // Group sizes by category
-  const groupedOptions = SIZE_OPTIONS.reduce((acc, option) => {
-    if (!acc[option.category]) {
-      acc[option.category] = [];
-    }
-    acc[option.category].push(option);
-    return acc;
-  }, {} as Record<string, typeof SIZE_OPTIONS>);
+  const groupedOptions = SIZE_OPTIONS.reduce(
+    (acc, option) => {
+      if (!acc[option.category]) {
+        acc[option.category] = [];
+      }
+      acc[option.category].push(option);
+      return acc;
+    },
+    {} as Record<string, typeof SIZE_OPTIONS>
+  );
 
   return (
     <div className="rounded-lg border border-gray-200 bg-gray-50/50 p-4">
@@ -865,7 +1030,10 @@ function SizeVariantRow({
                   checked={field.value ?? false}
                   onChange={(e) => {
                     field.onChange(e.target.checked);
-                    setValue(`subProductData.sizes.${index}.isDefault`, e.target.checked);
+                    setValue(
+                      `subProductData.sizes.${index}.isDefault`,
+                      e.target.checked
+                    );
                   }}
                   className="rounded border-gray-300"
                 />
@@ -882,7 +1050,11 @@ function SizeVariantRow({
             onClick={() => setExpanded(!expanded)}
             className="text-gray-600"
           >
-            {expanded ? <PiCaretUp className="h-4 w-4" /> : <PiCaretDown className="h-4 w-4" />}
+            {expanded ? (
+              <PiCaretUp className="h-4 w-4" />
+            ) : (
+              <PiCaretDown className="h-4 w-4" />
+            )}
             {expanded ? 'Collapse' : 'Expand'}
           </Button>
           <Button
@@ -895,7 +1067,9 @@ function SizeVariantRow({
                 append({
                   ...currentSize,
                   size: `${currentSize.size} (Copy)`,
-                  displayName: currentSize.displayName ? `${currentSize.displayName} (Copy)` : '',
+                  displayName: currentSize.displayName
+                    ? `${currentSize.displayName} (Copy)`
+                    : '',
                   rank: totalSizes + 1,
                 });
                 toast.success('Size variant duplicated');
@@ -953,7 +1127,9 @@ function SizeVariantRow({
                     </optgroup>
                   ))}
                 </select>
-                {error && <p className="mt-1 text-xs text-red-500">{error.message}</p>}
+                {error && (
+                  <p className="mt-1 text-xs text-red-500">{error.message}</p>
+                )}
               </>
             )}
           />
@@ -1019,7 +1195,11 @@ function SizeVariantRow({
                 min="0"
                 placeholder="0"
                 value={field.value ?? ''}
-                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
+                onChange={(e) =>
+                  field.onChange(
+                    e.target.value ? parseFloat(e.target.value) : null
+                  )
+                }
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             )}
@@ -1041,7 +1221,11 @@ function SizeVariantRow({
                 min="0"
                 placeholder="0"
                 value={field.value ?? ''}
-                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
+                onChange={(e) =>
+                  field.onChange(
+                    e.target.value ? parseFloat(e.target.value) : null
+                  )
+                }
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             )}
@@ -1063,7 +1247,11 @@ function SizeVariantRow({
                 min="1"
                 placeholder="1"
                 value={field.value ?? ''}
-                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)}
+                onChange={(e) =>
+                  field.onChange(
+                    e.target.value ? parseInt(e.target.value, 10) : null
+                  )
+                }
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             )}
@@ -1087,7 +1275,11 @@ function SizeVariantRow({
                 min="0"
                 placeholder="0.00"
                 value={field.value ?? ''}
-                onChange={(e) => handleCostPriceChange(e.target.value ? parseFloat(e.target.value) : null)}
+                onChange={(e) =>
+                  handleCostPriceChange(
+                    e.target.value ? parseFloat(e.target.value) : null
+                  )
+                }
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             )}
@@ -1106,8 +1298,10 @@ function SizeVariantRow({
             max="500"
             placeholder="25"
             value={localMarkup}
-            onChange={(e) => handleMarkupChange(parseFloat(e.target.value) || 0)}
-            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 mb-2"
+            onChange={(e) =>
+              handleMarkupChange(parseFloat(e.target.value) || 0)
+            }
+            className="mb-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
           {/* Quick Markup Presets */}
           <div className="flex flex-wrap gap-1">
@@ -1116,9 +1310,9 @@ function SizeVariantRow({
                 key={markup}
                 type="button"
                 onClick={() => handleMarkupChange(markup)}
-                className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                  localMarkup === markup 
-                    ? 'bg-blue-600 text-white' 
+                className={`rounded-md px-2 py-1 text-xs transition-colors ${
+                  localMarkup === markup
+                    ? 'bg-blue-600 text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
@@ -1170,7 +1364,11 @@ function SizeVariantRow({
                 min="0"
                 placeholder="Auto-calculated"
                 value={field.value ?? ''}
-                onChange={(e) => handleBasePriceChange(e.target.value ? parseFloat(e.target.value) : null)}
+                onChange={(e) =>
+                  handleBasePriceChange(
+                    e.target.value ? parseFloat(e.target.value) : null
+                  )
+                }
                 className="w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             )}
@@ -1193,7 +1391,11 @@ function SizeVariantRow({
                 min="0"
                 placeholder="0.00"
                 value={field.value ?? ''}
-                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
+                onChange={(e) =>
+                  field.onChange(
+                    e.target.value ? parseFloat(e.target.value) : null
+                  )
+                }
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             )}
@@ -1212,8 +1414,10 @@ function SizeVariantRow({
             max="100"
             placeholder="0"
             value={localDiscount}
-            onChange={(e) => handleDiscountChange(parseFloat(e.target.value) || 0)}
-            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 mb-2"
+            onChange={(e) =>
+              handleDiscountChange(parseFloat(e.target.value) || 0)
+            }
+            className="mb-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
           {/* Quick Discount Presets */}
           <div className="flex flex-wrap gap-1">
@@ -1222,9 +1426,9 @@ function SizeVariantRow({
                 key={discount}
                 type="button"
                 onClick={() => handleDiscountChange(discount)}
-                className={`px-2 py-1 text-xs rounded-md transition-colors ${
-                  localDiscount === discount 
-                    ? 'bg-green-600 text-white' 
+                className={`rounded-md px-2 py-1 text-xs transition-colors ${
+                  localDiscount === discount
+                    ? 'bg-green-600 text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
@@ -1273,7 +1477,11 @@ function SizeVariantRow({
                 min="0"
                 placeholder="0.00"
                 value={field.value ?? ''}
-                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)}
+                onChange={(e) =>
+                  field.onChange(
+                    e.target.value ? parseFloat(e.target.value) : null
+                  )
+                }
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             )}
@@ -1295,7 +1503,9 @@ function SizeVariantRow({
                 min="0"
                 placeholder="0"
                 value={field.value ?? 0}
-                onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 0)}
+                onChange={(e) =>
+                  field.onChange(parseInt(e.target.value, 10) || 0)
+                }
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             )}
@@ -1348,8 +1558,10 @@ function SizeVariantRow({
       {/* Expandable Fields */}
       {expanded && (
         <div className="mt-6 border-t border-gray-200 pt-6">
-          <Text className="mb-4 font-medium text-gray-700">Additional Details</Text>
-          
+          <Text className="mb-4 font-medium text-gray-700">
+            Additional Details
+          </Text>
+
           <div className="grid gap-4 md:grid-cols-3">
             {/* Size Category */}
             <div>
@@ -1390,7 +1602,9 @@ function SizeVariantRow({
                     min="1"
                     placeholder="1"
                     value={field.value ?? 1}
-                    onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 1)}
+                    onChange={(e) =>
+                      field.onChange(parseInt(e.target.value, 10) || 1)
+                    }
                     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 )}
@@ -1412,7 +1626,9 @@ function SizeVariantRow({
                     min="0"
                     placeholder="10"
                     value={field.value ?? 10}
-                    onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 0)}
+                    onChange={(e) =>
+                      field.onChange(parseInt(e.target.value, 10) || 0)
+                    }
                     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 )}
@@ -1434,7 +1650,9 @@ function SizeVariantRow({
                     min="0"
                     placeholder="5"
                     value={field.value ?? 5}
-                    onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 0)}
+                    onChange={(e) =>
+                      field.onChange(parseInt(e.target.value, 10) || 0)
+                    }
                     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 )}
@@ -1456,7 +1674,9 @@ function SizeVariantRow({
                     min="1"
                     placeholder="50"
                     value={field.value ?? 50}
-                    onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 1)}
+                    onChange={(e) =>
+                      field.onChange(parseInt(e.target.value, 10) || 1)
+                    }
                     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 )}
@@ -1478,7 +1698,11 @@ function SizeVariantRow({
                     min="1"
                     placeholder={String(index + 1)}
                     value={field.value ?? ''}
-                    onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)}
+                    onChange={(e) =>
+                      field.onChange(
+                        e.target.value ? parseInt(e.target.value, 10) : null
+                      )
+                    }
                     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 )}
@@ -1547,7 +1771,11 @@ function SizeVariantRow({
                     min="1"
                     placeholder="1"
                     value={field.value ?? ''}
-                    onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)}
+                    onChange={(e) =>
+                      field.onChange(
+                        e.target.value ? parseInt(e.target.value, 10) : null
+                      )
+                    }
                     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 )}
@@ -1569,7 +1797,11 @@ function SizeVariantRow({
                     min="1"
                     placeholder="No limit"
                     value={field.value ?? ''}
-                    onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)}
+                    onChange={(e) =>
+                      field.onChange(
+                        e.target.value ? parseInt(e.target.value, 10) : null
+                      )
+                    }
                     className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 )}
@@ -1588,11 +1820,16 @@ function SizeVariantRow({
                       checked={field.value ?? false}
                       onChange={(e) => {
                         field.onChange(e.target.checked);
-                        setValue(`subProductData.sizes.${index}.requiresAgeVerification`, e.target.checked);
+                        setValue(
+                          `subProductData.sizes.${index}.requiresAgeVerification`,
+                          e.target.checked
+                        );
                       }}
                       className="rounded border-gray-300"
                     />
-                    <span className="text-sm text-gray-700">Requires Age Verification</span>
+                    <span className="text-sm text-gray-700">
+                      Requires Age Verification
+                    </span>
                   </label>
                 )}
               />

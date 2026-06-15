@@ -298,7 +298,10 @@ export default function SubProductInventory() {
     if (warehouseRollup) {
       setValue?.('subProductData.totalStock', warehouseRollup.totalStock);
       setValue?.('subProductData.reservedStock', warehouseRollup.reservedStock);
-      setValue?.('subProductData.availableStock', warehouseRollup.availableStock);
+      setValue?.(
+        'subProductData.availableStock',
+        warehouseRollup.availableStock
+      );
     }
   }, [warehouseRollup, setValue]);
 

@@ -6,7 +6,19 @@ export interface WarehouseStockRow {
   warehouse:
     | string
     | { _id: string; name?: string; code?: string; type?: string };
-  subProduct: string | { _id: string; sku?: string };
+  subProduct:
+    | string
+    | {
+        _id: string;
+        sku?: string;
+        imagesOverride?: { url?: string }[];
+        product?: {
+          _id: string;
+          name?: string;
+          slug?: string;
+          images?: { url?: string }[];
+        };
+      };
   size: string | { _id: string; size?: string };
   currentQuantity: number;
   reservedQuantity: number;

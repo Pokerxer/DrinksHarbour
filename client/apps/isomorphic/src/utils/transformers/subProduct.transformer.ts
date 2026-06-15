@@ -1,7 +1,13 @@
 // utils/transformers/subProduct.transformer.ts
 // Transforms form data to API-ready format for SubProduct creation
 
-const VALID_STOCK_STATUSES = ['in_stock', 'low_stock', 'out_of_stock', 'pre_order', 'discontinued'] as const;
+const VALID_STOCK_STATUSES = [
+  'in_stock',
+  'low_stock',
+  'out_of_stock',
+  'pre_order',
+  'discontinued',
+] as const;
 function normalizeStockStatus(v: string | undefined | null): string {
   return VALID_STOCK_STATUSES.includes(v as any) ? (v as string) : 'in_stock';
 }
@@ -254,12 +260,16 @@ const transformSize = (size: SizeFormData): SizeFormData => {
   };
 };
 
-const transformNewProductData = (data: Record<string, unknown> | null | undefined): Record<string, unknown> | null => {
+const transformNewProductData = (
+  data: Record<string, unknown> | null | undefined
+): Record<string, unknown> | null => {
   if (!data) return null;
-  
-  const volumeMl = toNumber(data.volumeMl as string | number | null | undefined);
+
+  const volumeMl = toNumber(
+    data.volumeMl as string | number | null | undefined
+  );
   const abv = toNumber(data.abv as string | number | null | undefined);
-  
+
   return {
     ...data,
     volumeMl: volumeMl !== undefined && volumeMl > 0 ? volumeMl : undefined,
@@ -270,17 +280,24 @@ const transformNewProductData = (data: Record<string, unknown> | null | undefine
 export const transformFormData = (data: SubProductFormInput) => {
   // Direct access to subProductData - form structure is { subProductData: { ... } }
   const sp = data.subProductData || {};
-  
+
   // Get product name from newProductData if creating new product
   const name = sp.newProductData?.name || '';
-  const slug = name ? name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') : '';
+  const slug = name
+    ? name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+    : '';
   const subProductStatus = sp.isPublished ? 'active' : 'draft';
   const activatedAt = sp.isPublished ? new Date().toISOString() : null;
 
   const subProductData: SubProductFormData = {
     product: sp.product || '',
     createNewProduct: sp.createNewProduct ?? false,
-    newProductData: transformNewProductData(sp.newProductData as Record<string, unknown> | null | undefined),
+    newProductData: transformNewProductData(
+      sp.newProductData as Record<string, unknown> | null | undefined
+    ),
     tenant: sp.tenant || '',
     sku: sp.sku || '',
     baseSellingPrice: toNumber(sp.baseSellingPrice) ?? 0,
@@ -298,7 +315,7 @@ export const transformFormData = (data: SubProductFormInput) => {
     salePrice: toNumber(sp.salePrice) ?? 0,
     saleStartDate: cleanDate(sp.saleStartDate),
     saleEndDate: cleanDate(sp.saleEndDate),
-    saleType: sp.saleType && sp.saleType !== '' ? sp.saleType : 'percentage',  // Default to 'percentage'
+    saleType: sp.saleType && sp.saleType !== '' ? sp.saleType : 'percentage', // Default to 'percentage'
     saleDiscountValue: toNumber(sp.saleDiscountValue) ?? 0,
     saleBanner: sp.saleBanner || { url: '', alt: '' },
     isOnSale: toBoolean(sp.isOnSale) ?? false,
@@ -325,7 +342,7 @@ export const transformFormData = (data: SubProductFormInput) => {
     leadTimeDays: toNumber(sp.leadTimeDays) ?? 0,
     minimumOrderQuantity: toNumber(sp.minimumOrderQuantity) ?? 0,
     estimatedShippingCost: toNumber(sp.estimatedShippingCost) ?? 0,
-    supplierRating: toNumber(sp.supplierRating) || 0,  // Use || to handle empty string, NaN, undefined
+    supplierRating: toNumber(sp.supplierRating) || 0, // Use || to handle empty string, NaN, undefined
     vendorNotes: sp.vendorNotes || '',
     vendorContactName: sp.vendorContactName || '',
     vendorPhone: sp.vendorPhone || '',
@@ -343,58 +360,67 @@ export const transformFormData = (data: SubProductFormInput) => {
     deactivatedAt: cleanDate(sp.deactivatedAt),
     discontinuedAt: cleanDate(sp.discontinuedAt),
     discount: toNumber(sp.discount) ?? 0,
-    discountType: sp.discountType && sp.discountType !== '' ? sp.discountType : 'percentage',  // Default to 'percentage'
+    discountType:
+      sp.discountType && sp.discountType !== ''
+        ? sp.discountType
+        : 'percentage', // Default to 'percentage'
     discountStart: cleanDate(sp.discountStart),
     discountEnd: cleanDate(sp.discountEnd),
-    flashSale: sp.flashSale ? {
-      isActive: sp.flashSale.isActive ?? false,
-      startDate: cleanDate(sp.flashSale.startDate),
-      endDate: cleanDate(sp.flashSale.endDate),
-      discountPercentage: toNumber(sp.flashSale.discountPercentage) ?? 0,
-      remainingQuantity: toNumber(sp.flashSale.remainingQuantity) ?? 0,
-      sizes: sp.flashSale.sizes || [],
-      sizeVariants: sp.flashSale.sizeVariants || [],
-    } : {
-      isActive: false,
-      startDate: null,
-      endDate: null,
-      discountPercentage: 0,
-      remainingQuantity: 0,
-      sizes: [],
-      sizeVariants: [],
-    },
-    bundleDeals: sp.bundleDeals?.map((deal: any) => ({
-      name: deal.name || '',
-      description: deal.description || '',
-      products: deal.products || [],
-      sizes: deal.sizes || [],
-      sizeVariants: deal.sizeVariants || [],
-      quantity: deal.quantity || 2,
-      discount: deal.discount ?? 0,
-      discountType: deal.discountType || 'percentage',
-      active: deal.active !== false,
-      validUntil: cleanDate(deal.validUntil),
-    })) || [],
-    loyaltyDiscount: sp.loyaltyDiscount ? {
-      enabled: sp.loyaltyDiscount.enabled ?? false,
-      percentage: toNumber(sp.loyaltyDiscount.percentage) ?? 0,
-      tierRequirement: sp.loyaltyDiscount.tierRequirement || '',
-      sizes: sp.loyaltyDiscount.sizes || [],
-      sizeVariants: sp.loyaltyDiscount.sizeVariants || [],
-    } : {
-      enabled: false,
-      percentage: 0,
-      tierRequirement: '',
-      sizes: [],
-      sizeVariants: [],
-    },
+    flashSale: sp.flashSale
+      ? {
+          isActive: sp.flashSale.isActive ?? false,
+          startDate: cleanDate(sp.flashSale.startDate),
+          endDate: cleanDate(sp.flashSale.endDate),
+          discountPercentage: toNumber(sp.flashSale.discountPercentage) ?? 0,
+          remainingQuantity: toNumber(sp.flashSale.remainingQuantity) ?? 0,
+          sizes: sp.flashSale.sizes || [],
+          sizeVariants: sp.flashSale.sizeVariants || [],
+        }
+      : {
+          isActive: false,
+          startDate: null,
+          endDate: null,
+          discountPercentage: 0,
+          remainingQuantity: 0,
+          sizes: [],
+          sizeVariants: [],
+        },
+    bundleDeals:
+      sp.bundleDeals?.map((deal: any) => ({
+        name: deal.name || '',
+        description: deal.description || '',
+        products: deal.products || [],
+        sizes: deal.sizes || [],
+        sizeVariants: deal.sizeVariants || [],
+        quantity: deal.quantity || 2,
+        discount: deal.discount ?? 0,
+        discountType: deal.discountType || 'percentage',
+        active: deal.active !== false,
+        validUntil: cleanDate(deal.validUntil),
+      })) || [],
+    loyaltyDiscount: sp.loyaltyDiscount
+      ? {
+          enabled: sp.loyaltyDiscount.enabled ?? false,
+          percentage: toNumber(sp.loyaltyDiscount.percentage) ?? 0,
+          tierRequirement: sp.loyaltyDiscount.tierRequirement || '',
+          sizes: sp.loyaltyDiscount.sizes || [],
+          sizeVariants: sp.loyaltyDiscount.sizeVariants || [],
+        }
+      : {
+          enabled: false,
+          percentage: 0,
+          tierRequirement: '',
+          sizes: [],
+          sizeVariants: [],
+        },
     shipping: {
       weight: toNumber(sp.shipping?.weight) ?? 0,
       length: toNumber(sp.shipping?.length) ?? 0,
       width: toNumber(sp.shipping?.width) ?? 0,
       height: toNumber(sp.shipping?.height) ?? 0,
       fragile: toBoolean(sp.shipping?.fragile) ?? true,
-      requiresAgeVerification: toBoolean(sp.shipping?.requiresAgeVerification) ?? true,
+      requiresAgeVerification:
+        toBoolean(sp.shipping?.requiresAgeVerification) ?? true,
       hazmat: toBoolean(sp.shipping?.hazmat) ?? false,
       shippingClass: sp.shipping?.shippingClass || '',
       carrier: sp.shipping?.carrier || '',
@@ -429,11 +455,12 @@ export const validateRequiredFields = (data: SubProductFormInput): string[] => {
   const productId = sp.product;
   const createNew = sp.createNewProduct;
   const newProductData = sp.newProductData;
-  const hasProduct = productId || 
+  const hasProduct =
+    productId ||
     (createNew === true && newProductData?.name && newProductData?.type);
-  
+
   if (!hasProduct) missing.push('Product');
-  
+
   // Cost price is optional when creating new product
   const costPrice = toNumber(sp.costPrice);
   if (!createNew && (!costPrice || costPrice <= 0)) missing.push('Cost Price');
@@ -442,13 +469,15 @@ export const validateRequiredFields = (data: SubProductFormInput): string[] => {
 };
 
 // Transform backend response to form data format for editing
-export const transformBackendToForm = (backendData: any): SubProductFormInput => {
+export const transformBackendToForm = (
+  backendData: any
+): SubProductFormInput => {
   const sp = backendData;
   const product = sp.product || {};
 
   // Extract product ID whether it's in _id or id format
   const productId = product._id || product.id || '';
-  
+
   // Transform sizes from backend format
   const transformedSizes = (sp.sizes || []).map((size: any) => ({
     size: size.size || '',
@@ -500,10 +529,15 @@ export const transformBackendToForm = (backendData: any): SubProductFormInput =>
       minPrice: sp.minPrice ?? null,
       maxPrice: sp.maxPrice ?? null,
       competitorPrice: sp.competitorPrice || '',
-      saleDiscountPercentage: sp.inputSaleDiscountPercentage ?? sp.saleDiscountPercentage ?? 0,
+      saleDiscountPercentage:
+        sp.inputSaleDiscountPercentage ?? sp.saleDiscountPercentage ?? 0,
       salePrice: sp.salePrice ?? 0,
-      saleStartDate: sp.saleStartDate ? new Date(sp.saleStartDate).toISOString().slice(0, 16) : '',
-      saleEndDate: sp.saleEndDate ? new Date(sp.saleEndDate).toISOString().slice(0, 16) : '',
+      saleStartDate: sp.saleStartDate
+        ? new Date(sp.saleStartDate).toISOString().slice(0, 16)
+        : '',
+      saleEndDate: sp.saleEndDate
+        ? new Date(sp.saleEndDate).toISOString().slice(0, 16)
+        : '',
       saleType: sp.saleType || '',
       saleDiscountValue: sp.saleDiscountValue ?? 0,
       saleBanner: sp.saleBanner || { url: '', alt: '' },
@@ -524,7 +558,9 @@ export const transformBackendToForm = (backendData: any): SubProductFormInput =>
       lowStockThreshold: sp.lowStockThreshold ?? 10,
       reorderPoint: sp.reorderPoint ?? 5,
       reorderQuantity: sp.reorderQuantity ?? 50,
-      lastRestockDate: sp.lastRestockDate ? new Date(sp.lastRestockDate).toISOString().slice(0, 16) : '',
+      lastRestockDate: sp.lastRestockDate
+        ? new Date(sp.lastRestockDate).toISOString().slice(0, 16)
+        : '',
       vendor: sp.vendor || '',
       supplierSKU: sp.supplierSKU || '',
       supplierPrice: sp.supplierPrice ?? 0,
@@ -545,13 +581,23 @@ export const transformBackendToForm = (backendData: any): SubProductFormInput =>
       isPublished: toBoolean(sp.isPublished) ?? false,
       visibleInPOS: toBoolean(sp.visibleInPOS) ?? true,
       visibleInOnlineStore: toBoolean(sp.visibleInOnlineStore) ?? true,
-      activatedAt: sp.activatedAt ? new Date(sp.activatedAt).toISOString().slice(0, 16) : '',
-      deactivatedAt: sp.deactivatedAt ? new Date(sp.deactivatedAt).toISOString().slice(0, 16) : '',
-      discontinuedAt: sp.discontinuedAt ? new Date(sp.discontinuedAt).toISOString().slice(0, 16) : '',
+      activatedAt: sp.activatedAt
+        ? new Date(sp.activatedAt).toISOString().slice(0, 16)
+        : '',
+      deactivatedAt: sp.deactivatedAt
+        ? new Date(sp.deactivatedAt).toISOString().slice(0, 16)
+        : '',
+      discontinuedAt: sp.discontinuedAt
+        ? new Date(sp.discontinuedAt).toISOString().slice(0, 16)
+        : '',
       discount: sp.discount ?? 0,
       discountType: sp.discountType || '',
-      discountStart: sp.discountStart ? new Date(sp.discountStart).toISOString().slice(0, 16) : '',
-      discountEnd: sp.discountEnd ? new Date(sp.discountEnd).toISOString().slice(0, 16) : '',
+      discountStart: sp.discountStart
+        ? new Date(sp.discountStart).toISOString().slice(0, 16)
+        : '',
+      discountEnd: sp.discountEnd
+        ? new Date(sp.discountEnd).toISOString().slice(0, 16)
+        : '',
       flashSale: sp.flashSale || {
         isActive: false,
         startDate: '',
@@ -564,12 +610,23 @@ export const transformBackendToForm = (backendData: any): SubProductFormInput =>
       shipping: (() => {
         const ship = sp.shipping;
         const emptyShipping = {
-          weight: 0, length: 0, width: 0, height: 0,
-          fragile: true, requiresAgeVerification: true, hazmat: false,
-          shippingClass: '', carrier: '', deliveryArea: '',
-          minDeliveryDays: 0, maxDeliveryDays: 0,
-          fixedShippingCost: 0, isFreeShipping: false,
-          freeShippingMinOrder: 0, freeShippingLabel: '', availableForPickup: false,
+          weight: 0,
+          length: 0,
+          width: 0,
+          height: 0,
+          fragile: true,
+          requiresAgeVerification: true,
+          hazmat: false,
+          shippingClass: '',
+          carrier: '',
+          deliveryArea: '',
+          minDeliveryDays: 0,
+          maxDeliveryDays: 0,
+          fixedShippingCost: 0,
+          isFreeShipping: false,
+          freeShippingMinOrder: 0,
+          freeShippingLabel: '',
+          availableForPickup: false,
         };
         // Handle null, undefined, numbers (corrupt data like 6000), or non-object strings
         if (!ship || typeof ship === 'number' || typeof ship === 'string') {
@@ -583,7 +640,8 @@ export const transformBackendToForm = (backendData: any): SubProductFormInput =>
             width: ship.width ?? 0,
             height: ship.height ?? 0,
             fragile: toBoolean(ship.fragile) ?? true,
-            requiresAgeVerification: toBoolean(ship.requiresAgeVerification) ?? true,
+            requiresAgeVerification:
+              toBoolean(ship.requiresAgeVerification) ?? true,
             hazmat: toBoolean(ship.hazmat) ?? false,
             shippingClass: ship.shippingClass || '',
             carrier: ship.carrier || '',
@@ -603,7 +661,13 @@ export const transformBackendToForm = (backendData: any): SubProductFormInput =>
       // Handle warehouse - could be ObjectId, populated object, number (corrupt), string, or null
       warehouse: (() => {
         const wh = sp.warehouse;
-        const emptyWarehouse = { location: '', zone: '', aisle: '', shelf: '', bin: '' };
+        const emptyWarehouse = {
+          location: '',
+          zone: '',
+          aisle: '',
+          shelf: '',
+          bin: '',
+        };
         // Handle null, undefined, numbers (corrupt data), or non-object strings
         if (!wh || typeof wh === 'number' || typeof wh === 'string') {
           return emptyWarehouse;

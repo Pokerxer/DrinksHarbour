@@ -3,9 +3,17 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
 export interface WarehouseAddress {
   line1?: string;
+  line2?: string;
   city?: string;
   state?: string;
   country?: string;
+  postalCode?: string;
+}
+
+export interface WarehouseContact {
+  name?: string;
+  phone?: string;
+  email?: string;
 }
 
 export interface Warehouse {
@@ -15,6 +23,8 @@ export interface Warehouse {
   code: string;
   type: 'warehouse' | 'store' | 'distribution_center';
   address?: WarehouseAddress;
+  contact?: WarehouseContact;
+  notes?: string;
   isActive: boolean;
   isDefault: boolean;
   createdAt: string;
@@ -26,6 +36,8 @@ export type WarehouseInput = {
   code: string;
   type: Warehouse['type'];
   address?: WarehouseAddress;
+  contact?: WarehouseContact;
+  notes?: string;
   isActive?: boolean;
   isDefault?: boolean;
 };
