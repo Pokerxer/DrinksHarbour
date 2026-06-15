@@ -43,7 +43,43 @@ function resolveSubProductStatus(availableStock, lowStockThreshold = 10) {
  * Creates an InventoryMovement audit record.
  * Throws if insufficient stock.
  */
-async function deductStock({ subProductId, sizeId, quantity, tenantId, staffId, receiptNumber, productId, finalPrice, costPrice, allowOverselling = false }) {
+async function deductStock({ subProductId, sizeId, quantity, tenantId, staffId, receiptNumber, productId, finalPrice, costPrice, allowOverselling = false, warehouseId = null, defaultSizeId = null }) {
+  if (warehouseId) {
+    // ── Warehouse-scoped deduction ────────────────────────────────────────
+    // Decrement WarehouseStock directly; recalcSubProductStock refreshes the
+    // SubProduct rollup, so the legacy $inc path below must NOT also run.
+    const whSizeId = sizeId || defaultSizeId;
+    const { before, after } = await sellStock(
+      { warehouseId, subProduct: subProductId, size: whSizeId, quantity, allowOverselling },
+      staffId, tenantId
+    );
+
+    InventoryMovement.create({
+      subProduct:     subProductId,
+      tenant:         tenantId,
+      warehouse:      warehouseId,
+      product:        productId || undefined,
+      size:           whSizeId || undefined,
+      type:           'sold',
+      category:       'out',
+      quantity,
+      quantityBefore: before,
+      quantityAfter:  after,
+      reference:      receiptNumber,
+      referenceType:  'order',
+      sellingPrice:   finalPrice,
+      unitCost:       costPrice || 0,
+      totalCost:      (costPrice || 0) * quantity,
+      performedBy:    staffId || tenantId,
+      performedAt:    new Date(),
+      source:         'order',
+      status:         'confirmed',
+      notes:          `POS sale — receipt ${receiptNumber}`,
+    }).catch(err => console.error('[Inventory] POS deductStock audit failed:', err.message));
+
+    return { _id: subProductId, availableStock: after };
+  }
+
   let deductedDoc = null;
 
   if (sizeId) {
