@@ -1300,6 +1300,10 @@ function SizeVariantRow({
               />
             )}
           />
+          <p className="mt-1 text-[11px] text-gray-400">
+            Sellable count. Warehouse on-hand is managed in the Inventory →
+            Locations tab.
+          </p>
         </div>
 
         {/* SKU */}
