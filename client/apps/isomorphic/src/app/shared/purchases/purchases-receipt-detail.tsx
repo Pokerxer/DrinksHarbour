@@ -41,6 +41,8 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
   const [po, setPO] = useState<PurchaseOrder | null>(null);
   const [loading, setLoading] = useState(true);
   const [receivedQtys, setReceivedQtys] = useState<Record<string, number>>({});
+  const [batchNumbers, setBatchNumbers] = useState<Record<string, string>>({});
+  const [expiryDates, setExpiryDates] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState('');
   const [validating, setValidating] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -197,11 +199,31 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
 
   async function handleValidate() {
     if (!po) return;
+
+    // Perishable (non-alcoholic) batch-tracked lines being received now must
+    // carry an expiry date; alcoholic tracked lines may leave it blank.
+    const missingExpiry = po.items.some((item, idx) => {
+      const key = (item as any)._id?.toString() ?? String(idx);
+      const receiving = receivedQtys[key] ?? 0;
+      return item.tracksBatch && !item.isAlcoholic && receiving > 0 && !expiryDates[key];
+    });
+    if (missingExpiry) {
+      toast.error(
+        'Enter an expiry date for each perishable (non-alcoholic) item being received.'
+      );
+      return;
+    }
+
     setValidating(true);
     try {
       const receivedItems = po.items.map((item, idx) => {
         const key = (item as any)._id?.toString() ?? String(idx);
-        return { itemId: key, receivedQty: receivedQtys[key] ?? 0 };
+        return {
+          itemId: key,
+          receivedQty: receivedQtys[key] ?? 0,
+          batchNumber: batchNumbers[key] || undefined,
+          expiryDate: expiryDates[key] || undefined,
+        };
       });
       // Only (re)post received quantities when something is actually being
       // received now. For an already-received PO we skip this — otherwise the
@@ -488,6 +510,33 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
                           {lineProgress}%
                         </span>
                       </div>
+                      {item.tracksBatch && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <input
+                            type="text"
+                            placeholder="Batch # (auto if blank)"
+                            value={batchNumbers[key] ?? ''}
+                            onChange={(e) =>
+                              setBatchNumbers((m) => ({ ...m, [key]: e.target.value }))
+                            }
+                            className="w-40 rounded border border-gray-200 px-2 py-1 text-xs"
+                          />
+                          <input
+                            type="date"
+                            value={expiryDates[key] ?? ''}
+                            onChange={(e) =>
+                              setExpiryDates((m) => ({ ...m, [key]: e.target.value }))
+                            }
+                            required={!item.isAlcoholic}
+                            title={
+                              item.isAlcoholic
+                                ? 'Expiry date (optional)'
+                                : 'Expiry date (required)'
+                            }
+                            className="w-40 rounded border border-gray-200 px-2 py-1 text-xs"
+                          />
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-gray-500">
                       {item.sku}

@@ -58,6 +58,16 @@ const getWarehouseStock = asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 });
 
+const getWarehouseBatches = asyncHandler(async (req, res) => {
+  const tenantId = requireTenant(req);
+  const { subProduct, size } = req.query;
+  const data = await warehouseService.getBatches(
+    { warehouseId: req.params.id, subProduct, size },
+    tenantId
+  );
+  res.json({ success: true, data });
+});
+
 const adjustWarehouseStock = asyncHandler(async (req, res) => {
   const tenantId = requireTenant(req);
   const { subProduct, size, quantity, type, notes } = req.body;
@@ -82,5 +92,5 @@ const transferStock = asyncHandler(async (req, res) => {
 
 module.exports = {
   createWarehouse, getWarehouses, getWarehouseById, updateWarehouse, deleteWarehouse,
-  getWarehouseStock, adjustWarehouseStock, transferStock,
+  getWarehouseStock, getWarehouseBatches, adjustWarehouseStock, transferStock,
 };

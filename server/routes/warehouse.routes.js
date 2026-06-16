@@ -19,6 +19,7 @@ router.route('/:id')
   .delete(tenantAdminOrSuperAdmin, c.deleteWarehouse);
 
 router.get('/:id/stock', tenantAdminOrSuperAdmin, c.getWarehouseStock);
+router.get('/:id/batches', tenantAdminOrSuperAdmin, c.getWarehouseBatches);
 router.post('/:id/stock/adjust', tenantAdminOrSuperAdmin, c.adjustWarehouseStock);
 
 module.exports = router;

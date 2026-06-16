@@ -83,6 +83,9 @@ export default function ProductBeverageInfo({
   } = useFormContext<CreateProductInput>();
 
   const isAlcoholic = watch('isAlcoholic');
+  const tracksBatch = watch('tracksBatch');
+  // Falls back to the server default (!isAlcoholic) until explicitly toggled.
+  const effectiveTracksBatch = tracksBatch ?? !isAlcoholic;
   const abv = watch('abv');
   const proof = watch('proof');
   const productName = watch('name') || '';
@@ -291,6 +294,36 @@ export default function ProductBeverageInfo({
                   setValue('proof', undefined);
                 }
               }}
+              className="h-6 w-6"
+            />
+          </motion.label>
+        </motion.div>
+
+        {/* Track batches & expiry - toggle */}
+        <motion.div variants={itemVariants} className="@2xl:col-span-2">
+          <motion.label
+            className={cn(
+              'flex cursor-pointer items-center gap-4 rounded-xl border-2 p-5 transition-all duration-300',
+              effectiveTracksBatch
+                ? 'border-emerald-500 bg-emerald-50'
+                : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+            )}
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.99 }}
+          >
+            <div className="flex-1">
+              <span className="block text-base font-semibold text-gray-900">
+                Track batches &amp; expiry dates
+              </span>
+              <span className="block text-sm text-gray-500">
+                When on, receiving this product captures a batch number (and an
+                expiry date for perishables), and stock is depleted
+                first-expiry-first-out. Defaults on for non-alcoholic products.
+              </span>
+            </div>
+            <Checkbox
+              checked={effectiveTracksBatch}
+              onChange={(e) => setValue('tracksBatch', e.target.checked)}
               className="h-6 w-6"
             />
           </motion.label>

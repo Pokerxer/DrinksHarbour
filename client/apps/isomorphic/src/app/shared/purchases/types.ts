@@ -34,6 +34,10 @@ export interface POItem {
   uom?: string;
   taxRate?: number;
   totalCost?: number;
+  // Parent-product batch-tracking flags, surfaced by the single-PO endpoint so
+  // the receiving UI can prompt for batch number + expiry on tracked lines.
+  tracksBatch?: boolean;
+  isAlcoholic?: boolean;
 }
 
 export interface PurchaseOrder {

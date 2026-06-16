@@ -129,6 +129,7 @@ export const productFormSchema = z.object({
   }).optional().or(z.literal('')),
   subType: z.string().optional(),
   isAlcoholic: z.boolean().default(false),
+  tracksBatch: z.boolean().optional(),
   abv: z.number().min(0).max(100).nullable().optional(),
   proof: z.number().min(0).max(200).nullable().optional(),
   volumeMl: z.number().nullable().optional(),

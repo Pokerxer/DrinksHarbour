@@ -100,6 +100,7 @@ export function defaultValues(product?: CreateProductInput): CreateProductInput 
     type: product?.type ?? '',
     subType: product?.subType ?? '',
     isAlcoholic: product?.isAlcoholic ?? false,
+    tracksBatch: product?.tracksBatch,
     abv: product?.abv ?? undefined,
     proof: product?.proof ?? undefined,
     volumeMl: product?.volumeMl ?? undefined,

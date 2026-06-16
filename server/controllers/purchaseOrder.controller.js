@@ -338,7 +338,11 @@ const getPurchaseOrder = asyncHandler(async (req, res) => {
   })
     .populate("vendor", "name email phone address bankDetails")
     .populate("createdBy", "name email")
-    .populate("items.subProductId", "name sku imageUrl")
+    .populate({
+      path: "items.subProductId",
+      select: "name sku imageUrl product",
+      populate: { path: "product", select: "tracksBatch isAlcoholic" },
+    })
     .populate("items.sizeId", "size ml volume")
     .populate("purchaseAgreement", "agreementNumber name status");
 
@@ -346,9 +350,21 @@ const getPurchaseOrder = asyncHandler(async (req, res) => {
     throw new NotFoundError("Purchase Order not found");
   }
 
+  // Surface each line's parent-product batch-tracking flags so the receiving UI
+  // can conditionally prompt for batch number + expiry date.
+  const data = purchaseOrder.toObject();
+  data.items = (data.items || []).map((item) => {
+    const product = item.subProductId && item.subProductId.product;
+    return {
+      ...item,
+      tracksBatch: !!(product && product.tracksBatch),
+      isAlcoholic: !!(product && product.isAlcoholic),
+    };
+  });
+
   res.status(200).json({
     success: true,
-    data: purchaseOrder,
+    data,
   });
 });
 

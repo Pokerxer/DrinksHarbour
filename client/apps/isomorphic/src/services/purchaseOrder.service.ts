@@ -129,7 +129,12 @@ export const purchaseOrderService = {
     id: string,
     status: string,
     token: string,
-    receivedItems?: { itemId: string; receivedQty: number }[],
+    receivedItems?: {
+      itemId: string;
+      receivedQty: number;
+      batchNumber?: string;
+      expiryDate?: string;
+    }[],
     warehouseId?: string
   ): Promise<CreatePOResponse> {
     const body = JSON.stringify({

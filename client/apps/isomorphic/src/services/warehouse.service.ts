@@ -110,4 +110,28 @@ export const warehouseService = {
       'Failed to delete warehouse'
     );
   },
+
+  async getBatches(
+    warehouseId: string,
+    token: string,
+    params: { subProduct?: string; size?: string } = {}
+  ): Promise<{ success: boolean; data: WarehouseBatch[] }> {
+    const qs = new URLSearchParams();
+    if (params.subProduct) qs.set('subProduct', params.subProduct);
+    if (params.size) qs.set('size', params.size);
+    const url = `${API_URL}/api/warehouses/${warehouseId}/batches${qs.toString() ? `?${qs}` : ''}`;
+    return handle(await fetch(url, { headers: auth(token) }), 'Failed to load batches');
+  },
 };
+
+export interface WarehouseBatch {
+  _id: string;
+  batchNumber: string;
+  quantity: number;
+  initialQuantity?: number;
+  expiryDate?: string | null;
+  receivedDate?: string;
+  size?: { _id: string; size?: string } | string;
+  subProduct?: string;
+  poNumber?: string;
+}

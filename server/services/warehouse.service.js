@@ -209,6 +209,22 @@ async function transferStock(
   }
 }
 
+/**
+ * List warehouse batches, optionally filtered by warehouse/subProduct/size.
+ * Sorted earliest-expiry first (FEFO order) for the read UI.
+ */
+async function getBatches({ warehouseId, subProduct, size } = {}, tenantId) {
+  const WarehouseBatch = require('../models/WarehouseBatch');
+  const q = { tenant: tenantId };
+  if (warehouseId) q.warehouse = warehouseId;
+  if (subProduct) q.subProduct = subProduct;
+  if (size) q.size = size;
+  return WarehouseBatch.find(q)
+    .populate('size', 'size')
+    .sort({ expiryDate: 1, createdAt: 1 })
+    .lean();
+}
+
 async function getStockByWarehouse(subProductId, tenantId) {
   return WarehouseStock.find({ tenant: tenantId, subProduct: subProductId })
     .populate('warehouse', 'name code type')
@@ -304,5 +320,5 @@ async function resolveShopWarehouse(tenant, tenantId, shopId) {
 module.exports = {
   createWarehouse, getWarehouses, getWarehouseById, updateWarehouse, deleteWarehouse,
   getWarehouseStock, adjustStock, transferStock, getStockByWarehouse,
-  sellStock, returnStock, resolveShopWarehouse,
+  sellStock, returnStock, resolveShopWarehouse, getBatches,
 };
