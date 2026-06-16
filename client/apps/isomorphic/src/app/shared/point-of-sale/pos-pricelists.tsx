@@ -7,6 +7,8 @@ import { useSession } from 'next-auth/react';
 import POSNavHeader from '@/app/shared/point-of-sale/pos-nav-header';
 import { pricelistService } from '@/services/pricelist.service';
 import { subproductService } from '@/services/subproduct.service';
+import { warehouseService } from '@/services/warehouse.service';
+import { posApi } from '@/app/shared/point-of-sale/api';
 import toast from 'react-hot-toast';
 import {
   PiPlus, PiX, PiGear, PiMagnifyingGlass, PiCaretLeft, PiCaretRight,
@@ -875,6 +877,12 @@ function PricelistPanel({ pl, token, onClose, onRefresh }) {
   const [currency,  setCurrency] = useState(pl?.currency || 'NGN');
   const [website,   setWebsite]  = useState(pl?.website || '');
   const [selectable,setSelectable] = useState(!!pl?.isSelectable);
+  // ── Resolution bindings ──
+  const [boundShops,      setBoundShops]      = useState<string[]>(pl?.shops || []);
+  const [boundWarehouses, setBoundWarehouses] = useState<string[]>((pl?.warehouses || []).map(String));
+  const [isDefault,       setIsDefault]       = useState(!!pl?.isDefault);
+  const [shopOptions,     setShopOptions]     = useState<{ _id: string; name: string }[]>([]);
+  const [whOptions,       setWhOptions]       = useState<{ _id: string; name: string }[]>([]);
   const [dirty,     setDirty]    = useState(false);
   const [saving,    setSaving]   = useState(false);
   const [applying,  setApplying] = useState(false);
@@ -899,8 +907,34 @@ function PricelistPanel({ pl, token, onClose, onRefresh }) {
       setCurrency(pl?.currency || 'NGN');
       setWebsite(pl?.website || '');
       setSelectable(!!pl?.isSelectable);
+      setBoundShops(pl?.shops || []);
+      setBoundWarehouses((pl?.warehouses || []).map(String));
+      setIsDefault(!!pl?.isDefault);
     }
   }, [pl?._id]); // only re-sync when the pricelist ID changes, not on every rule update
+
+  // Load shop + warehouse options for the binding selectors (once per panel).
+  useEffect(() => {
+    if (!token) return;
+    const builtins = [
+      { _id: 'retail', name: 'Retail (built-in)' },
+      { _id: 'wholesale', name: 'Wholesale (built-in)' },
+    ];
+    posApi
+      .listShops(token)
+      .then((r: any) => {
+        const custom = (r?.shops || []).map((s: any) => ({ _id: String(s._id), name: s.name }));
+        setShopOptions([...builtins, ...custom]);
+      })
+      .catch(() => setShopOptions(builtins));
+    warehouseService
+      .getWarehouses(token, { isActive: true })
+      .then((r: any) => {
+        const list = r?.warehouses ?? r?.data?.warehouses ?? r ?? [];
+        setWhOptions(list.map((w: any) => ({ _id: String(w._id), name: w.name })));
+      })
+      .catch(() => setWhOptions([]));
+  }, [token]);
 
   // Eagerly load products when panel mounts (not waiting for modal open)
   useEffect(() => {
@@ -915,7 +949,14 @@ function PricelistPanel({ pl, token, onClose, onRefresh }) {
   async function saveMeta() {
     setSaving(true);
     try {
-      await pricelistService.update(pl._id, { name, currency, website, isSelectable: selectable }, token);
+      await pricelistService.update(
+        pl._id,
+        {
+          name, currency, website, isSelectable: selectable,
+          shops: boundShops, warehouses: boundWarehouses, isDefault,
+        },
+        token
+      );
       toast.success('Pricelist saved');
       setDirty(false);
       dirtyRef.current = false;
@@ -1058,6 +1099,51 @@ function PricelistPanel({ pl, token, onClose, onRefresh }) {
             className="h-3.5 w-3.5 rounded accent-[#b20202]" />
           <span className="text-gray-500">Selectable</span>
         </label>
+        <div className="h-3 w-px bg-gray-200" />
+        <label className="flex cursor-pointer items-center gap-1.5">
+          <input type="checkbox" checked={isDefault} onChange={e => { setIsDefault(e.target.checked); setDirty(true); }}
+            className="h-3.5 w-3.5 rounded accent-[#b20202]" />
+          <span className="text-gray-500">Default</span>
+        </label>
+      </div>
+
+      {/* ── Resolution bindings: shops + warehouses ── */}
+      <div className="flex shrink-0 flex-wrap items-start gap-x-6 gap-y-2 border-b border-gray-100 px-4 py-2.5 text-[11px]">
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Applies to shops</span>
+          <div className="flex flex-wrap gap-1.5">
+            {shopOptions.length === 0 && <span className="text-gray-300">No shops</span>}
+            {shopOptions.map(s => {
+              const on = boundShops.includes(s._id);
+              return (
+                <button key={s._id} type="button"
+                  onClick={() => { setBoundShops(prev => on ? prev.filter(x => x !== s._id) : [...prev, s._id]); setDirty(true); }}
+                  className={`rounded-full border px-2 py-0.5 font-semibold transition-colors ${on ? 'border-[#b20202] bg-[#b20202]/5 text-[#b20202]' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                  {s.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Applies to warehouses</span>
+          <div className="flex flex-wrap gap-1.5">
+            {whOptions.length === 0 && <span className="text-gray-300">No warehouses</span>}
+            {whOptions.map(w => {
+              const on = boundWarehouses.includes(w._id);
+              return (
+                <button key={w._id} type="button"
+                  onClick={() => { setBoundWarehouses(prev => on ? prev.filter(x => x !== w._id) : [...prev, w._id]); setDirty(true); }}
+                  className={`rounded-full border px-2 py-0.5 font-semibold transition-colors ${on ? 'border-[#b20202] bg-[#b20202]/5 text-[#b20202]' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                  {w.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {boundShops.length === 0 && boundWarehouses.length === 0 && selectable && (
+          <span className="self-center text-[10px] italic text-gray-400">Unscoped — offered everywhere as a manual option.</span>
+        )}
       </div>
 
       {/* ── Tabs ── */}
@@ -1460,7 +1546,19 @@ export default function POSPricelists() {
                         <td className={`px-1 py-2.5 ${isSel?'text-red-200':'text-gray-200'}`}>
                           <PiDotsSixVertical className="h-3.5 w-3.5"/>
                         </td>
-                        <td className={`px-3 py-2.5 font-semibold ${isSel?'text-white':'text-gray-900'}`}>{pl.name}</td>
+                        <td className={`px-3 py-2.5 font-semibold ${isSel?'text-white':'text-gray-900'}`}>
+                          <span className="inline-flex items-center gap-1.5">
+                            {pl.name}
+                            {pl.isDefault && (
+                              <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase ${isSel?'bg-white/20 text-white':'bg-amber-100 text-amber-700'}`}>Default</span>
+                            )}
+                            {((pl.shops||[]).length>0 || (pl.warehouses||[]).length>0) && (
+                              <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${isSel?'bg-white/15 text-red-100':'bg-gray-100 text-gray-500'}`}>
+                                {(pl.shops||[]).length}s · {(pl.warehouses||[]).length}w
+                              </span>
+                            )}
+                          </span>
+                        </td>
                         <td className={`px-3 py-2.5 ${isSel?'text-red-100':'text-gray-500'}`}>
                           {(pl.countryGroups||[]).join(', ')||<span className={isSel?'text-red-200':'text-gray-300'}>—</span>}
                         </td>
