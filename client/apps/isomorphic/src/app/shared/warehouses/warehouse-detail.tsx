@@ -23,9 +23,14 @@ import {
   PiDownloadSimpleBold,
   PiMapPin,
   PiEyeBold,
+  PiStackBold,
 } from 'react-icons/pi';
 import { exportToCSV } from '@core/utils/export-to-csv';
-import { warehouseService, type Warehouse } from '@/services/warehouse.service';
+import {
+  warehouseService,
+  type Warehouse,
+  type WarehouseBatch,
+} from '@/services/warehouse.service';
 import {
   warehouseStockService,
   type WarehouseStockRow,
@@ -52,6 +57,8 @@ const imageOf = (r: WarehouseStockRow): string | null => {
 };
 const subProductIdOf = (r: WarehouseStockRow): string | null =>
   typeof r.subProduct === 'object' ? r.subProduct._id : (r.subProduct ?? null);
+const sizeIdOf = (r: WarehouseStockRow): string | null =>
+  typeof r.size === 'object' ? r.size._id : (r.size ?? null);
 const viewHrefOf = (r: WarehouseStockRow): string | null => {
   const id = subProductIdOf(r);
   return id ? routes.eCommerce.editSubProduct(id) : null;
@@ -234,6 +241,88 @@ function StatusBadge({ status }: { status: StockStatus }) {
   );
 }
 
+// ── Batch expiry badge ──────────────────────────────────────────────────────────────
+
+const MS_PER_DAY = 86_400_000;
+
+function ExpiryBadge({ expiryDate }: { expiryDate?: string | null }) {
+  if (!expiryDate) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">
+        No expiry
+      </span>
+    );
+  }
+  const days = Math.floor(
+    (new Date(expiryDate).getTime() - Date.now()) / MS_PER_DAY
+  );
+  const dateStr = new Date(expiryDate).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+  const cls =
+    days < 30
+      ? 'bg-red-50 text-red-600'
+      : days < 60
+        ? 'bg-amber-50 text-amber-700'
+        : 'bg-gray-100 text-gray-600';
+  const note = days < 0 ? 'expired' : days < 60 ? `${days}d left` : null;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}
+    >
+      {dateStr}
+      {note && <span className="opacity-70">· {note}</span>}
+    </span>
+  );
+}
+
+// ── Expanded batch list (one stock row's lots) ───────────────────────────────────────
+
+function BatchPanel({
+  loading,
+  batches,
+}: {
+  loading: boolean;
+  batches: WarehouseBatch[] | undefined;
+}) {
+  if (loading) {
+    return (
+      <div className="space-y-2 px-5 py-4">
+        {[...Array(2)].map((_, i) => (
+          <div key={i} className="h-8 animate-pulse rounded-lg bg-gray-100" />
+        ))}
+      </div>
+    );
+  }
+  if (!batches || batches.length === 0) {
+    return (
+      <p className="px-5 py-4 text-sm text-gray-400">
+        No batches tracked for this line.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-1.5 px-5 py-4">
+      {batches.map((b) => (
+        <div
+          key={b._id}
+          className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-gray-100"
+        >
+          <span className="font-mono font-semibold text-gray-700">
+            {b.batchNumber}
+          </span>
+          <span className="tabular-nums text-gray-500">{b.quantity} units</span>
+          <span className="ml-auto">
+            <ExpiryBadge expiryDate={b.expiryDate} />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Product thumbnail ─────────────────────────────────────────────────────────────
 
 function Thumb({ src, alt }: { src: string | null; alt: string }) {
@@ -338,6 +427,11 @@ export default function WarehouseDetail({
   const [filter, setFilter] = useState('');
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [batchesByRow, setBatchesByRow] = useState<
+    Record<string, WarehouseBatch[]>
+  >({});
+  const [batchLoading, setBatchLoading] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -349,6 +443,8 @@ export default function WarehouseDetail({
       ]);
       setWarehouse(wh.data);
       setRows(stock.data ?? []);
+      setBatchesByRow({});
+      setExpanded(null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -359,6 +455,34 @@ export default function WarehouseDetail({
   useEffect(() => {
     load();
   }, [load]);
+
+  const toggleBatches = useCallback(
+    async (r: WarehouseStockRow) => {
+      if (expanded === r._id) {
+        setExpanded(null);
+        return;
+      }
+      setExpanded(r._id);
+      if (batchesByRow[r._id] || !token) return;
+      const subProduct = subProductIdOf(r);
+      const size = sizeIdOf(r);
+      if (!subProduct || !size) return;
+      setBatchLoading(r._id);
+      try {
+        const res = await warehouseService.getBatches(warehouseId, token, {
+          subProduct,
+          size,
+        });
+        setBatchesByRow((prev) => ({ ...prev, [r._id]: res.data ?? [] }));
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Failed to load batches');
+        setExpanded((cur) => (cur === r._id ? null : cur));
+      } finally {
+        setBatchLoading((cur) => (cur === r._id ? null : cur));
+      }
+    },
+    [expanded, batchesByRow, token, warehouseId]
+  );
 
   const toggleSort = (k: SortKey) => {
     if (sortKey === k) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -655,14 +779,15 @@ export default function WarehouseDetail({
                     const loc = locationOf(r);
                     const href = viewHrefOf(r);
                     const name = nameOf(r);
-                    return (
+                    const isOpen = expanded === r._id;
+                    return [
                       <motion.tr
                         key={r._id}
                         layout
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="group transition-colors hover:bg-gray-50/60"
+                        className={`group transition-colors hover:bg-gray-50/60 ${isOpen ? 'bg-gray-50/60' : ''}`}
                       >
                         <td className="px-5 py-3.5">
                           <div className="flex items-center gap-3">
@@ -718,7 +843,21 @@ export default function WarehouseDetail({
                           <StatusBadge status={statusOf(r)} />
                         </td>
                         <td className="px-5 py-3.5">
-                          <div className="flex justify-end">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => toggleBatches(r)}
+                              aria-expanded={isOpen}
+                              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${isOpen ? 'border-[#b20202] bg-[#b20202]/5 text-[#b20202]' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                            >
+                              <PiStackBold className="h-3.5 w-3.5" />
+                              Batches
+                              {isOpen ? (
+                                <PiCaretUpBold className="h-3 w-3" />
+                              ) : (
+                                <PiCaretDownBold className="h-3 w-3" />
+                              )}
+                            </button>
                             {href ? (
                               <Link
                                 href={href}
@@ -733,8 +872,26 @@ export default function WarehouseDetail({
                             )}
                           </div>
                         </td>
-                      </motion.tr>
-                    );
+                      </motion.tr>,
+                      isOpen ? (
+                        <motion.tr
+                          key={`${r._id}-batches`}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="bg-gray-50/40"
+                        >
+                          <td colSpan={8} className="p-0">
+                            <div className="border-l-2 border-[#b20202]/40">
+                              <BatchPanel
+                                loading={batchLoading === r._id}
+                                batches={batchesByRow[r._id]}
+                              />
+                            </div>
+                          </td>
+                        </motion.tr>
+                      ) : null,
+                    ];
                   })}
                 </AnimatePresence>
               </tbody>
