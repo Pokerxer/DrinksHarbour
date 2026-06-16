@@ -39,6 +39,11 @@ interface HistoryItem {
   itemSubtotal: number;
   discountAmount?: number;
   bxgyRole?: 'buy' | 'get'; // BXGY reward item role — for receipt display
+  warehouse?: { _id: string; name: string; code: string } | null;
+}
+
+function getOrderWarehouse(order: { items?: HistoryItem[] }) {
+  return order.items?.find((i) => i.warehouse)?.warehouse ?? null;
 }
 
 interface DetailOrder {
@@ -909,6 +914,7 @@ export default function POSOrderDetail({
       year: 'numeric',
     });
     const _storeName = (tenant?.name || 'DRINKS HARBOUR').toUpperCase();
+    const _warehouse = getOrderWarehouse(order);
     const _rawLogo = tenant?.logo;
     const _logoSrc =
       (typeof _rawLogo === 'string'
@@ -1039,11 +1045,17 @@ export default function POSOrderDetail({
             <div style="font-size:13px;font-weight:600;color:#111;text-transform:capitalize">${paymentLabel}</div>
             ${_change > 0 ? `<div style="font-size:10px;color:#6b7280;margin-top:1px">Change: ${ng(_change)}</div>` : ''}
           </div>
-          <div style="flex:1;padding:12px 16px">
+          <div style="flex:1;padding:12px 16px${_warehouse ? ';border-right:1px solid #e5e7eb' : ''}">
             <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#b20202;margin-bottom:4px">Customer</div>
             <div style="font-size:13px;font-weight:600;color:#111">${_customerName}</div>
             ${_customerPhone ? `<div style="font-size:10px;color:#6b7280;margin-top:1px">${_customerPhone}</div>` : ''}
           </div>
+          ${_warehouse ? `
+          <div style="flex:1;padding:12px 16px">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#b20202;margin-bottom:4px">Warehouse</div>
+            <div style="font-size:13px;font-weight:600;color:#111">${_warehouse.name}</div>
+            <div style="font-size:10px;color:#6b7280;margin-top:1px">${_warehouse.code}</div>
+          </div>` : ''}
         </div>
 
         <!-- ── Items table ── -->
@@ -1248,6 +1260,20 @@ export default function POSOrderDetail({
               Partially refunded — {formatCurrency(totalRefunded)} returned
             </div>
           )}
+
+          {/* Warehouse info */}
+          {(() => {
+            const wh = getOrderWarehouse(order);
+            return wh ? (
+              <div className="shrink-0 flex items-center gap-2 border-b border-gray-100 px-4 py-2 text-xs text-gray-500">
+                <span className="font-medium text-gray-700">Warehouse:</span>
+                <span className="rounded bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                  {wh.name}
+                </span>
+                <span className="text-gray-400">({wh.code})</span>
+              </div>
+            ) : null;
+          })()}
 
           {/* Items list */}
           <div className="flex-1 overflow-y-auto">
