@@ -1669,7 +1669,9 @@ function PricelistPanel({ pl, token, onClose, onRefresh }) {
     warehouseService
       .getWarehouses(token, { isActive: true })
       .then((r: any) => {
-        const list = r?.warehouses ?? r?.data?.warehouses ?? r ?? [];
+        const list = Array.isArray(r?.data)
+          ? r.data
+          : (r?.data?.warehouses ?? r?.warehouses ?? []);
         setWhOptions(
           list.map((w: any) => ({ _id: String(w._id), name: w.name }))
         );

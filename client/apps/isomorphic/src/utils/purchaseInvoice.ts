@@ -45,7 +45,26 @@ function footerRow() {
   </div>`;
 }
 
+<<<<<<< Updated upstream
 export function buildBillInvoice(bill: VendorBill): string {
+=======
+function openPrint(html: string): void {
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const win = window.open(
+    url,
+    '_blank',
+    'width=900,height=1100,scrollbars=yes'
+  );
+  if (win) win.focus();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+export function buildBillInvoice(
+  bill: VendorBill,
+  companyName: string
+): string {
+>>>>>>> Stashed changes
   const amountDue = bill.totalAmount - bill.paidAmount;
   const statusUpper = bill.status.toUpperCase();
   const watermark =
@@ -241,6 +260,7 @@ export function buildPOInvoice(po: PurchaseOrder): string {
   </body></html>`;
 }
 
+<<<<<<< Updated upstream
 export function printPOInvoice(po: PurchaseOrder): void {
   const win = window.open('', '_blank', 'width=900,height=1100,scrollbars=yes');
   if (!win) return;
@@ -251,4 +271,122 @@ export function printPOInvoice(po: PurchaseOrder): void {
     win.print();
     win.close();
   }, 500);
+=======
+export function printPOInvoice(po: PurchaseOrder, companyName: string): void {
+  openPrint(buildPOInvoice(po, companyName));
+}
+
+// ─── Stock Transfer Invoice ───────────────────────────────────────────────────
+
+function whName(
+  w: string | { _id: string; name: string; code: string }
+): string {
+  if (typeof w === 'string') return w;
+  return `${w.name} (${w.code})`;
+}
+
+export function buildTransferInvoice(
+  transfer: StockTransfer,
+  companyName: string
+): string {
+  const totalQty = transfer.items.reduce((s, it) => s + it.quantity, 0);
+  const transferredQty = transfer.items.reduce(
+    (s, it) => s + it.transferredQty,
+    0
+  );
+
+  const watermark =
+    transfer.status === 'completed'
+      ? `<div style="position:fixed;top:40%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);font-size:80px;font-weight:900;color:rgba(34,197,94,0.12);pointer-events:none;white-space:nowrap">COMPLETED</div>`
+      : transfer.status === 'cancelled'
+        ? `<div style="position:fixed;top:40%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);font-size:80px;font-weight:900;color:rgba(239,68,68,0.12);pointer-events:none;white-space:nowrap">CANCELLED</div>`
+        : '';
+
+  const itemRows = transfer.items
+    .map((item) => {
+      const name = item.sizeName
+        ? `${item.subProductName} – ${item.sizeName}`
+        : item.subProductName;
+      const done = item.transferredQty >= item.quantity;
+      return `<tr>
+        <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6">${name}<div style="font-size:10px;color:#9ca3af">${item.sku || ''}</div></td>
+        <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:right">${item.quantity}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:right"><span style="color:${done ? '#16a34a' : '#6b7280'}">${item.transferredQty}</span></td>
+      </tr>`;
+    })
+    .join('');
+
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Transfer ${transfer.transferNumber}</title><style>${BASE_STYLE}</style></head><body>
+  ${watermark}
+  ${headerBand(transfer.transferNumber, `Status: ${transfer.status.toUpperCase()}`, companyName)}
+
+  <div style="display:flex;gap:16px;margin-bottom:14px">
+    <div style="flex:1;border:1px solid #e5e7eb;border-radius:6px;padding:10px 14px">
+      <div style="font-size:10px;color:#9ca3af;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">From Warehouse</div>
+      <div style="font-weight:600;color:#111">${whName(transfer.sourceWarehouse)}</div>
+    </div>
+    <div style="flex:1;border:1px solid #e5e7eb;border-radius:6px;padding:10px 14px">
+      <div style="font-size:10px;color:#9ca3af;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">To Warehouse</div>
+      <div style="font-weight:600;color:#111">${whName(transfer.destinationWarehouse)}</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:10px;margin-bottom:14px">
+    ${[
+      ['Created', fmtDate(transfer.createdAt)],
+      ['Scheduled', fmtDate(transfer.scheduledDate)],
+      ['Completed', fmtDate(transfer.completedDate)],
+      ['Reference', transfer.transferNumber],
+    ]
+      .map(
+        ([l, v]) =>
+          `<div style="flex:1;border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px"><div style="font-size:10px;color:#9ca3af">${l}</div><div style="font-weight:600;color:#111;margin-top:2px">${v}</div></div>`
+      )
+      .join('')}
+  </div>
+
+  <table style="margin-bottom:4px">
+    <thead>
+      <tr style="background:#b20202">
+        <th style="padding:8px 10px;color:#fff;font-size:11px">Product</th>
+        <th style="padding:8px 10px;color:#fff;font-size:11px;text-align:right">Qty Requested</th>
+        <th style="padding:8px 10px;color:#fff;font-size:11px;text-align:right">Qty Transferred</th>
+      </tr>
+    </thead>
+    <tbody>${itemRows}</tbody>
+    <tfoot>
+      <tr style="background:#f9fafb">
+        <td style="padding:10px;text-align:right;font-weight:700">Total</td>
+        <td style="padding:10px;text-align:right;font-weight:700;font-size:14px">${totalQty}</td>
+        <td style="padding:10px;text-align:right;font-weight:700;font-size:14px;color:${transferredQty === totalQty ? '#16a34a' : '#6b7280'}">${transferredQty}</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  ${
+    transfer.notes
+      ? `<div style="border:1px solid #e5e7eb;border-radius:6px;padding:10px 14px;margin-top:12px;margin-bottom:12px"><div style="font-size:10px;color:#9ca3af;margin-bottom:4px">NOTES</div><div style="font-size:12px;color:#374151">${transfer.notes}</div></div>`
+      : ''
+  }
+
+  <div style="display:flex;gap:16px;margin-top:28px">
+    <div style="flex:1;border-top:1px solid #d1d5db;padding-top:6px">
+      <div style="font-size:10px;color:#9ca3af">Dispatched by</div>
+    </div>
+    <div style="flex:1;border-top:1px solid #d1d5db;padding-top:6px">
+      <div style="font-size:10px;color:#9ca3af">Received by</div>
+    </div>
+  </div>
+
+  ${footerRow(companyName)}
+  <script>window.addEventListener('load',function(){window.print();});</script>
+  </body></html>`;
+}
+
+export function printTransferInvoice(
+  transfer: StockTransfer,
+  companyName: string
+): void {
+  openPrint(buildTransferInvoice(transfer, companyName));
+>>>>>>> Stashed changes
 }
