@@ -675,11 +675,9 @@ export const usePOSCart = () => {
     terminal === 'wholesale'
       ? activeCartIdAtoms.wholesale
       : activeCartIdAtoms.retail;
-  const pricelistAtom =
-    terminal === 'wholesale'
-      ? posSelectedPricelistAtoms.wholesale
-      : posSelectedPricelistAtoms.retail;
   const allPOSProducts = useAtomValue(posProductsAtom);
+  // Pricelist is shop-effective (resolved-or-override) so cart totals match the grid.
+  const { selectedPricelist } = usePOSPricelist();
 
   const [carts, setCarts] = useAtom(cartAtom);
   const [activeCartId, setActiveCartId] = useAtom(activeCartAtom);
@@ -693,9 +691,6 @@ export const usePOSCart = () => {
   const { items, customer, discountType, discountValue, note, ref } =
     activeCart;
   const appliedRewards: CartAppliedReward[] = activeCart.appliedRewards ?? [];
-
-  // Pricelist is applied dynamically so the total stays live as selection changes
-  const [selectedPricelist] = useAtom(pricelistAtom);
 
   // Derived values
   const subtotal = useMemo(
@@ -1187,68 +1182,106 @@ export const usePOSPermissions = () => {
   };
 };
 
-// ─── Pricelist (persisted — survives page refresh) ────────────────────────────
+// ─── Pricelist (shop-effective) ───────────────────────────────────────────────
+// The effective pricelist = manual override for the active shop (if any) else
+// the server-resolved pricelist. Overrides are keyed by shop id and persisted;
+// switching shops re-resolves (the new shop has no override → its resolved one
+// shows). Carts stay terminal-keyed; only the pricelist dimension is shop-keyed.
 
-const posSelectedPricelistAtoms = termAtoms<any | null>(
-  'dh-pos-pricelist',
-  null
+// shopId → pricelistId ('' = explicit "no pricelist"; key absent = use resolved)
+const posPricelistOverrideAtom = atomWithStorage<Record<string, string>>(
+  'dh-pos-pricelist-override',
+  {}
 );
+// Allowed set (with rules) for the active shop — fetched from the server.
+const posAllowedPricelistsAtom = atom<any[]>([]);
+// Auto-resolved pricelist id for the active shop.
+const posResolvedPricelistIdAtom = atom<string | null>(null);
+// Tracks which shop the current allowed/resolved data was fetched for.
+const posPricelistLoadedShopAtom = atom<string | null>(null);
 
-// Cached list of available pricelists (fetched once per session, shared by PricelistPicker + PricelistModal)
-const posAvailablePricelistsAtom = atomWithStorage<any[]>(
-  'dh-pos-available-pricelists',
-  []
-);
-const posAvailablePricelistsLoadedAtom = atom<boolean>(false);
+function effectiveShopKey(activeShopId: string | null) {
+  return activeShopId ?? 'retail';
+}
 
 export const usePOSPricelist = () => {
-  const { terminal } = usePOSAuth();
-  const pricelistAtom =
-    terminal === 'wholesale'
-      ? posSelectedPricelistAtoms.wholesale
-      : posSelectedPricelistAtoms.retail;
-  const [selectedPricelist, setSelectedPricelist] = useAtom(pricelistAtom);
-  return { selectedPricelist, setSelectedPricelist };
+  const { activeShopId } = usePOSActiveShop();
+  const shopKey = effectiveShopKey(activeShopId);
+  const [overrides, setOverrides] = useAtom(posPricelistOverrideAtom);
+  const [allowed] = useAtom(posAllowedPricelistsAtom);
+  const [resolvedId] = useAtom(posResolvedPricelistIdAtom);
+
+  const hasOverride = Object.prototype.hasOwnProperty.call(overrides, shopKey);
+  const selectedPricelist = useMemo(() => {
+    if (hasOverride) {
+      const ov = overrides[shopKey];
+      if (!ov) return null; // explicit "no pricelist"
+      return allowed.find((p) => p._id === ov) ?? null;
+    }
+    if (resolvedId) return allowed.find((p) => p._id === resolvedId) ?? null;
+    return null;
+  }, [hasOverride, overrides, shopKey, allowed, resolvedId]);
+
+  const isManualOverride = hasOverride;
+
+  // Sets a manual override for the active shop. null = explicit "no pricelist".
+  const setSelectedPricelist = useCallback(
+    (pl: any | null) => {
+      setOverrides((prev) => ({ ...prev, [shopKey]: pl?._id ?? '' }));
+    },
+    [setOverrides, shopKey]
+  );
+
+  // Clears the override → falls back to the auto-resolved pricelist.
+  const clearOverride = useCallback(() => {
+    setOverrides((prev) => {
+      const next = { ...prev };
+      delete next[shopKey];
+      return next;
+    });
+  }, [setOverrides, shopKey]);
+
+  return {
+    selectedPricelist,
+    setSelectedPricelist,
+    clearOverride,
+    isManualOverride,
+  };
 };
 
-/** Shared cache of selectable pricelists — avoids duplicate fetches from PricelistPicker and PricelistModal */
+/** Shop-scoped allowed pricelists + auto-resolved id (fetched on shop change). */
 export const usePOSAvailablePricelists = () => {
-  const { terminal } = usePOSAuth();
-  const pricelistAtom =
-    terminal === 'wholesale'
-      ? posSelectedPricelistAtoms.wholesale
-      : posSelectedPricelistAtoms.retail;
-  const [pricelists, setPricelists] = useAtom(posAvailablePricelistsAtom);
-  const [loaded, setLoaded] = useAtom(posAvailablePricelistsLoadedAtom);
-  const [selectedPricelist, setSelectedPricelist] = useAtom(pricelistAtom);
+  const { activeShopId } = usePOSActiveShop();
+  const shopKey = effectiveShopKey(activeShopId);
+  const [pricelists, setPricelists] = useAtom(posAllowedPricelistsAtom);
+  const [resolvedId, setResolvedId] = useAtom(posResolvedPricelistIdAtom);
+  const [loadedShop, setLoadedShop] = useAtom(posPricelistLoadedShopAtom);
 
   const load = useCallback(
     async (token: string) => {
-      if (loaded) return;
+      if (loadedShop === shopKey) return;
       try {
         const { posApi } = await import('@/app/shared/point-of-sale/api');
-        const data = await posApi.getPricelists(token);
-        const fresh = data.pricelists || [];
-        setPricelists(fresh);
-        setLoaded(true);
-        // Sync: if a pricelist is selected from a previous session, replace it
-        // with the freshly fetched version so rule changes in admin take effect.
-        if (selectedPricelist?._id) {
-          const updated = fresh.find(
-            (p: any) => p._id === selectedPricelist._id
-          );
-          if (updated) setSelectedPricelist(updated);
-        }
+        const data = await posApi.getPricelists(token, shopKey);
+        setPricelists(data.pricelists || []);
+        setResolvedId(data.resolvedId ?? null);
+        setLoadedShop(shopKey);
       } catch {
         /* silent — picker shows empty gracefully */
       }
     },
-    [loaded, setPricelists, setLoaded, selectedPricelist, setSelectedPricelist]
+    [loadedShop, shopKey, setPricelists, setResolvedId, setLoadedShop]
   );
 
-  const invalidate = useCallback(() => setLoaded(false), [setLoaded]);
+  const invalidate = useCallback(() => setLoadedShop(null), [setLoadedShop]);
 
-  return { pricelists, loaded, load, invalidate };
+  return {
+    pricelists,
+    resolvedId,
+    loaded: loadedShop === shopKey,
+    load,
+    invalidate,
+  };
 };
 
 // ─── Sale refresh signal ──────────────────────────────────────────────────────

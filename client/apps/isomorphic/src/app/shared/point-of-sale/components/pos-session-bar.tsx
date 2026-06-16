@@ -9,6 +9,7 @@ import {
   usePOSSaleSignal,
   usePOSPricelist,
   usePOSAvailablePricelists,
+  usePOSActiveShop,
 } from '@/app/shared/point-of-sale/store';
 import { POSSession, POSCashMovement } from '@/app/shared/point-of-sale/types';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
@@ -479,15 +480,21 @@ function HamburgerMenu({
 
 // ── Pricelist picker ──────────────────────────────────────────────────────────
 function PricelistPicker({ token }: { token: string }) {
-  const { selectedPricelist, setSelectedPricelist } = usePOSPricelist();
-  const { pricelists, loaded, load } = usePOSAvailablePricelists();
+  const {
+    selectedPricelist,
+    setSelectedPricelist,
+    clearOverride,
+    isManualOverride,
+  } = usePOSPricelist();
+  const { pricelists, resolvedId, loaded, load } = usePOSAvailablePricelists();
+  const { activeShopId } = usePOSActiveShop();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Load once — cached across session
+  // Load the shop-scoped allowed set + resolved id; refetch when the shop changes.
   useEffect(() => {
     if (token) load(token);
-  }, [token, load]);
+  }, [token, activeShopId, load]);
 
   useEffect(() => {
     function onOut(e: MouseEvent) {
@@ -515,8 +522,13 @@ function PricelistPicker({ token }: { token: string }) {
       >
         <PiTag className="h-3.5 w-3.5" />
         <span className="hidden max-w-[120px] truncate sm:inline">
-          {selectedPricelist?.name || 'Pricelist'}
+          {selectedPricelist?.name || 'Auto'}
         </span>
+        {!isManualOverride && (
+          <span className="hidden rounded bg-white/20 px-1 text-[9px] font-bold uppercase sm:inline">
+            Auto
+          </span>
+        )}
         <PiCaretDown
           className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`}
         />
@@ -530,17 +542,24 @@ function PricelistPicker({ token }: { token: string }) {
           <button
             type="button"
             onClick={() => {
-              setSelectedPricelist(null);
+              clearOverride();
               setOpen(false);
             }}
-            className={`flex w-full items-center gap-3 px-4 py-2.5 text-sm transition-colors ${!selectedPricelist ? 'bg-[#b20202]/5 font-semibold text-[#b20202]' : 'text-gray-500 hover:bg-gray-50'}`}
+            className={`flex w-full items-center gap-3 px-4 py-2.5 text-sm transition-colors ${!isManualOverride ? 'bg-[#b20202]/5 font-semibold text-[#b20202]' : 'text-gray-500 hover:bg-gray-50'}`}
           >
-            {!selectedPricelist ? (
+            {!isManualOverride ? (
               <PiCheckCircle className="h-4 w-4 shrink-0 text-[#b20202]" />
             ) : (
               <span className="h-4 w-4 shrink-0" />
             )}
-            Standard Price
+            <span className="flex-1 text-left">
+              Auto
+              <span className="ml-1 text-[10px] text-gray-400">
+                {resolvedId
+                  ? `· ${pricelists.find((p) => p._id === resolvedId)?.name ?? 'resolved'}`
+                  : '· no pricelist'}
+              </span>
+            </span>
           </button>
           <div className="mx-3 my-1 border-t border-gray-100" />
           {pricelists.map((pl) => (

@@ -107,12 +107,28 @@ router.get('/pricelists', protectPOS, async (req, res, next) => {
   try {
     const Pricelist = require('../models/Pricelist');
     const tenantId = req.tenant?._id;
-    const filter = { isSelectable: true };
-    if (tenantId) filter.tenant = tenantId;
-    const pricelists = await Pricelist.find(filter)
-      .select('name currency rules countryGroups website')
-      .lean();
-    res.json({ success: true, data: { pricelists } });
+    const { shopId } = req.query;
+
+    // Without a shop, fall back to the legacy all-selectable list.
+    if (!shopId) {
+      const filter = { isSelectable: true };
+      if (tenantId) filter.tenant = tenantId;
+      const pricelists = await Pricelist.find(filter)
+        .select('name currency rules countryGroups website shops warehouses isDefault')
+        .lean();
+      return res.json({ success: true, data: { pricelists, resolvedId: null } });
+    }
+
+    // Shop-scoped: return the allowed set (with rules) + the auto-resolved id.
+    const { resolveShopPricelist } = require('../services/pricelist.service');
+    const { resolved, allowed } = await resolveShopPricelist(req.tenant, tenantId, shopId);
+    res.json({
+      success: true,
+      data: {
+        pricelists: allowed,
+        resolvedId: resolved ? String(resolved._id) : null,
+      },
+    });
   } catch (err) { next(err); }
 });
 
