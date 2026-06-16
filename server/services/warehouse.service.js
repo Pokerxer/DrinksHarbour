@@ -4,6 +4,7 @@ const Warehouse = require('../models/Warehouse');
 const WarehouseStock = require('../models/WarehouseStock');
 const WarehouseMovement = require('../models/WarehouseMovement');
 const { recalcSubProductStock } = require('./warehouseStock.helpers');
+const batchService = require('./batch.service');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 
 // ── Place CRUD ──────────────────────────────────────────────
@@ -108,7 +109,7 @@ async function getWarehouseStock(warehouseId, tenantId) {
  * type: 'received' | 'shipped' | 'adjusted'
  *   received → +quantity, shipped → -quantity, adjusted → set to quantity (absolute)
  */
-async function adjustStock({ warehouseId, subProduct, size, quantity, type, notes }, userId, tenantId) {
+async function adjustStock({ warehouseId, subProduct, size, quantity, type, notes, tracksBatch = false }, userId, tenantId) {
   if (!['received', 'shipped', 'adjusted'].includes(type)) {
     throw new ValidationError('Invalid adjustment type');
   }
@@ -118,6 +119,7 @@ async function adjustStock({ warehouseId, subProduct, size, quantity, type, note
   if (!row) {
     row = new WarehouseStock({ tenant: tenantId, warehouse: warehouseId, subProduct, size });
   }
+  const before = row.currentQuantity || 0;
   if (type === 'received') row.currentQuantity += quantity;
   else if (type === 'shipped') row.currentQuantity = Math.max(0, row.currentQuantity - quantity);
   else if (type === 'adjusted') row.currentQuantity = Math.max(0, quantity);
@@ -128,6 +130,18 @@ async function adjustStock({ warehouseId, subProduct, size, quantity, type, note
     type, quantity, balanceAfter: row.currentQuantity, reference: notes, performedBy: userId,
   });
   await recalcSubProductStock(subProduct);
+
+  // Reconcile batches on a downward correction: deplete the shortfall FEFO. An
+  // upward adjustment lands in untracked slack (no batch context to attribute it to).
+  if (tracksBatch) {
+    const removed =
+      type === 'shipped' ? Math.min(before, quantity)
+      : type === 'adjusted' && row.currentQuantity < before ? before - row.currentQuantity
+      : 0;
+    if (removed > 0) {
+      await batchService.depleteBatchesFefo({ tenantId, warehouseId, subProduct, size, quantity: removed });
+    }
+  }
   return row;
 }
 
@@ -135,7 +149,7 @@ async function adjustStock({ warehouseId, subProduct, size, quantity, type, note
  * Move quantity of one (subProduct, size) from one warehouse to another, atomically.
  */
 async function transferStock(
-  { subProduct, size, fromWarehouse, toWarehouse, quantity, notes },
+  { subProduct, size, fromWarehouse, toWarehouse, quantity, notes, tracksBatch = false },
   userId,
   tenantId
 ) {
@@ -167,6 +181,13 @@ async function transferStock(
       }
       dest.currentQuantity += quantity;
       await dest.save({ session });
+
+      if (tracksBatch) {
+        await batchService.transferBatchesFefo(
+          { tenantId, subProduct, size, fromWarehouse, toWarehouse, quantity },
+          session
+        );
+      }
 
       const transferGroupId = new mongoose.Types.ObjectId();
       await WarehouseMovement.create(
@@ -200,7 +221,7 @@ async function getStockByWarehouse(subProductId, tenantId) {
  * Unless allowOverselling is true, the decrement is guarded so it fails (returns null
  * from findOneAndUpdate) when currentQuantity < quantity, throwing a ValidationError.
  */
-async function sellStock({ warehouseId, subProduct, size, quantity, allowOverselling = false }, userId, tenantId) {
+async function sellStock({ warehouseId, subProduct, size, quantity, allowOverselling = false, tracksBatch = false }, userId, tenantId) {
   const filter = { tenant: tenantId, warehouse: warehouseId, subProduct, size };
   if (!allowOverselling) {
     filter.currentQuantity = { $gte: quantity };
@@ -222,14 +243,21 @@ async function sellStock({ warehouseId, subProduct, size, quantity, allowOversel
   });
   await recalcSubProductStock(subProduct);
 
-  return { before: after + quantity, after };
+  let batchAllocations = [];
+  if (tracksBatch) {
+    batchAllocations = await batchService.depleteBatchesFefo({
+      tenantId, warehouseId, subProduct, size, quantity,
+    });
+  }
+
+  return { before: after + quantity, after, batchAllocations };
 }
 
 /**
  * Atomically increment WarehouseStock for a POS refund/void and record a 'returned'
  * movement. Upserts the (warehouse, subProduct, size) row if it doesn't exist yet.
  */
-async function returnStock({ warehouseId, subProduct, size, quantity }, userId, tenantId) {
+async function returnStock({ warehouseId, subProduct, size, quantity, batchAllocations = null }, userId, tenantId) {
   const row = await WarehouseStock.findOneAndUpdate(
     { tenant: tenantId, warehouse: warehouseId, subProduct, size },
     { $inc: { currentQuantity: quantity } },
@@ -242,6 +270,10 @@ async function returnStock({ warehouseId, subProduct, size, quantity }, userId, 
     type: 'returned', quantity, balanceAfter: after, performedBy: userId,
   });
   await recalcSubProductStock(subProduct);
+
+  if (batchAllocations && batchAllocations.length) {
+    await batchService.restoreBatches(batchAllocations);
+  }
 
   return { before: after - quantity, after };
 }
