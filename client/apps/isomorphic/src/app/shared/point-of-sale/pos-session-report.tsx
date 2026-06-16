@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { posApi } from '@/app/shared/point-of-sale/api';
+import { useTenant } from '@/context/TenantContext';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import { POSSession } from '@/app/shared/point-of-sale/types';
 import POSNavHeader from '@/app/shared/point-of-sale/pos-nav-header';
@@ -123,8 +124,13 @@ interface SessionOrder {
     priceAtPurchase: number;
     itemSubtotal: number;
     discountAmount?: number;
+    warehouse?: { _id: string; name: string; code: string } | null;
   }[];
   refunds?: { totalRefunded?: number }[];
+}
+
+function getOrderWarehouse(order: { items?: SessionOrder['items'] }) {
+  return order.items?.find((i) => i.warehouse)?.warehouse ?? null;
 }
 
 // ── PDF colours ───────────────────────────────────────────────────────────────
@@ -138,7 +144,7 @@ const PDF_ORANGE: [number, number, number] = [217, 70, 0];
 
 // ── PDF: Session Report ───────────────────────────────────────────────────────
 
-function buildSessionReportPdf(session: POSSession, orders: SessionOrder[]) {
+function buildSessionReportPdf(session: POSSession, orders: SessionOrder[], storeName: string) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
@@ -150,7 +156,7 @@ function buildSessionReportPdf(session: POSSession, orders: SessionOrder[]) {
   doc.setTextColor(...PDF_WHITE);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
-  doc.text('DrinksHarbour', M, 9.5);
+  doc.text(storeName, M, 9.5);
   doc.setFontSize(11);
   doc.text('SESSION REPORT', pageW / 2, 9.5, { align: 'center' });
   doc.setFont('helvetica', 'normal');
@@ -352,7 +358,7 @@ function buildSessionReportPdf(session: POSSession, orders: SessionOrder[]) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6.5);
     doc.setTextColor(...PDF_MED);
-    doc.text('DrinksHarbour  ·  Confidential', M, pageH - 4.5);
+    doc.text(storeName + '  ·  Confidential', M, pageH - 4.5);
     doc.text('Session Report', pageW / 2, pageH - 4.5, { align: 'center' });
     doc.text(`Page ${i} of ${totalPages}`, pageW - M, pageH - 4.5, {
       align: 'right',
@@ -365,7 +371,7 @@ function buildSessionReportPdf(session: POSSession, orders: SessionOrder[]) {
 
 // ── PDF: Z-Report ─────────────────────────────────────────────────────────────
 
-function buildZReportPdf(session: POSSession, orders: SessionOrder[]) {
+function buildZReportPdf(session: POSSession, orders: SessionOrder[], storeName: string) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
@@ -380,7 +386,7 @@ function buildZReportPdf(session: POSSession, orders: SessionOrder[]) {
   doc.text('Z-REPORT', pageW / 2, 9.5, { align: 'center' });
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
-  doc.text('DrinksHarbour', M, 9.5);
+  doc.text(storeName, M, 9.5);
   doc.text(new Date().toLocaleString('en-GB'), pageW - M, 9.5, {
     align: 'right',
   });
@@ -511,7 +517,7 @@ function buildZReportPdf(session: POSSession, orders: SessionOrder[]) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6.5);
     doc.setTextColor(...PDF_MED);
-    doc.text('DrinksHarbour  ·  Confidential', M, pageH - 4.5);
+    doc.text(storeName + '  ·  Confidential', M, pageH - 4.5);
     doc.text('Z-Report', pageW / 2, pageH - 4.5, { align: 'center' });
     doc.text(`Page ${i} of ${totalPages}`, pageW - M, pageH - 4.5, {
       align: 'right',
@@ -524,7 +530,7 @@ function buildZReportPdf(session: POSSession, orders: SessionOrder[]) {
 
 // ── Print: Session Report ─────────────────────────────────────────────────────
 
-function printSessionReport(session: POSSession, orders: SessionOrder[]) {
+function printSessionReport(session: POSSession, orders: SessionOrder[], storeName: string) {
   const totalSales = session.totalSales || 0;
   const orderCount = session.orderCount || 0;
   const itemsSold = orders.reduce(
@@ -584,7 +590,7 @@ function printSessionReport(session: POSSession, orders: SessionOrder[]) {
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px">
     <div>
       <div style="font-size:22px;font-weight:900;color:#b20202">SESSION REPORT</div>
-      <div style="font-size:13px;color:#6b7280;margin-top:4px">DrinksHarbour · ${(session.terminalType || 'retail').toUpperCase()}</div>
+      <div style="font-size:13px;color:#6b7280;margin-top:4px">${storeName} · ${(session.terminalType || 'retail').toUpperCase()}</div>
     </div>
     <div style="text-align:right;font-size:12px;color:#6b7280;line-height:1.8">
       <div><strong>Period:</strong> ${fmtDateTime(session.openedAt)}${session.closedAt ? ` → ${fmtDateTime(session.closedAt)}` : ' (Open)'}</div>
@@ -664,7 +670,7 @@ function printSessionReport(session: POSSession, orders: SessionOrder[]) {
     </tbody>
   </table>
   <div style="margin-top:40px;border-top:1px solid #ccc;padding-top:10px;display:flex;justify-content:space-between;font-size:11px;color:#6b7280">
-    <span>DrinksHarbour · Confidential</span><span>Session Report</span>
+    <span>${storeName} · Confidential</span><span>Session Report</span>
   </div>
   </body></html>`);
   win.document.close();
@@ -841,6 +847,14 @@ function OrderRow({ order }: { order: SessionOrder }) {
                   Refund
                 </span>
               )}
+              {(() => {
+                const wh = getOrderWarehouse(order);
+                return wh ? (
+                  <span className="ml-1.5 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+                    {wh.name}
+                  </span>
+                ) : null;
+              })()}
             </div>
           </div>
         </td>
@@ -1003,6 +1017,8 @@ function ZReportTab({
   orders: SessionOrder[];
   loading: boolean;
 }) {
+  const { tenant } = useTenant();
+  const storeName = tenant?.name || 'DrinksHarbour';
   const voids = orders.filter((o) => o.isVoided);
   const refunds = orders.filter((o) => (o.refunds?.length ?? 0) > 0);
   const refundAmt = refunds.reduce(
@@ -1094,7 +1110,7 @@ function ZReportTab({
         </div>
         <button
           type="button"
-          onClick={() => buildZReportPdf(session, orders)}
+          onClick={() => buildZReportPdf(session, orders, storeName)}
           className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#9a0101]"
         >
           <PiFilePdf className="h-3.5 w-3.5" />
@@ -1295,6 +1311,8 @@ type Tab = 'report' | 'orders' | 'zreport';
 
 export default function POSSessionReport() {
   const { data: auth } = useSession();
+  const { tenant } = useTenant();
+  const storeName = tenant?.name || 'DrinksHarbour';
   const token = useMemo(() => {
     const t = (auth?.user as { token?: string })?.token ?? null;
     return isTokenExpired(t) ? null : t;
@@ -1684,7 +1702,7 @@ export default function POSSessionReport() {
                     <>
                       <button
                         type="button"
-                        onClick={() => printSessionReport(selected, orders)}
+                        onClick={() => printSessionReport(selected, orders, storeName)}
                         className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50"
                       >
                         <PiPrinter className="h-3.5 w-3.5" />
@@ -1692,7 +1710,7 @@ export default function POSSessionReport() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => buildSessionReportPdf(selected, orders)}
+                        onClick={() => buildSessionReportPdf(selected, orders, storeName)}
                         className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#9a0101]"
                       >
                         <PiFilePdf className="h-3.5 w-3.5" />
