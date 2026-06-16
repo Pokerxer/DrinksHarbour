@@ -22,6 +22,7 @@ interface OrderItem {
   priceAtPurchase: number; itemSubtotal: number;
   discountAmount?: number; sizeCostPrice?: number;
   category?: string; subcategory?: string; brand?: string;
+  warehouse?: { _id: string; name: string; code: string } | null;
 }
 
 interface PosOrder {
@@ -40,7 +41,7 @@ interface LineRow {
   category: string; subcategory: string; brand: string;
   qty: number; unitPrice: number; discount: number;
   subtotal: number; gross: number; costPrice: number; profit: number;
-  paymentMethod: string; isVoided: boolean;
+  paymentMethod: string; isVoided: boolean; warehouse: string;
 }
 
 type LineSortField = keyof Pick<
@@ -57,7 +58,7 @@ interface GroupRow {
 }
 
 type GroupSortField = 'key' | 'qty' | 'revenue' | 'gross' | 'discount' | 'profit' | 'lineCount' | 'orderCount' | 'share';
-type GroupByKey   = 'product' | 'cashier' | 'payment_method' | 'date' | 'variant';
+type GroupByKey   = 'product' | 'cashier' | 'payment_method' | 'date' | 'variant' | 'warehouse';
 type ViewMode     = 'lines' | 'grouped';
 type StatusFilter = 'all' | 'active' | 'voided';
 type ToggleableCol = 'orderNumber' | 'cashier' | 'variant' | 'category' | 'subcategory' | 'brand' | 'unitPrice' | 'gross' | 'discount' | 'payment';
@@ -766,6 +767,7 @@ interface SelectOption { value: string; label: string; dot?: string; }
 const GROUP_BY_OPTIONS: SelectOption[] = [
   { value: 'product',        label: 'By Product' },
   { value: 'variant',        label: 'By Variant' },
+  { value: 'warehouse',      label: 'By Warehouse' },
   { value: 'cashier',        label: 'By Cashier' },
   { value: 'payment_method', label: 'By Payment' },
   { value: 'date',           label: 'By Date' },
@@ -1195,6 +1197,7 @@ export default function POSSalesDetails() {
           discount, subtotal, gross, costPrice, profit,
           paymentMethod: o.paymentMethod,
           isVoided: !!(o.isVoided || o.status === 'voided'),
+          warehouse: item.warehouse?.name ?? '',
         });
       }
     }
@@ -1273,6 +1276,7 @@ export default function POSSalesDetails() {
         groupBy === 'variant'        ? (r.variant || '(no variant)') :
         groupBy === 'cashier'        ? r.cashier :
         groupBy === 'payment_method' ? (METHOD_LABEL[r.paymentMethod] ?? r.paymentMethod) :
+        groupBy === 'warehouse'      ? (r.warehouse || 'No warehouse') :
         fmtDate(r.date);
 
       const entry = map.get(key);
@@ -1380,6 +1384,7 @@ export default function POSSalesDetails() {
     groupBy === 'variant'        ? 'Variant' :
     groupBy === 'cashier'        ? 'Cashier' :
     groupBy === 'payment_method' ? 'Payment Method' :
+    groupBy === 'warehouse'      ? 'Warehouse' :
     'Date';
 
   type ExportFormat = 'csv' | 'excel' | 'pdf';
@@ -1825,6 +1830,7 @@ export default function POSSalesDetails() {
                         <span className="inline-flex items-center gap-1">Brand<SortChevron active={lineSortField === 'brand'} dir={lineSortDir} /></span>
                       </th>
                     )}
+                    <th className="whitespace-nowrap px-4 py-3 text-left">Warehouse</th>
                     <th onClick={() => toggleLineSort('qty')} className="cursor-pointer select-none whitespace-nowrap px-4 py-3 text-center hover:text-gray-700">
                       <span className="inline-flex items-center justify-center gap-1">Qty<SortChevron active={lineSortField === 'qty'} dir={lineSortDir} /></span>
                     </th>
@@ -1921,6 +1927,9 @@ export default function POSSalesDetails() {
                               : <span className="text-gray-300">—</span>}
                           </td>
                         )}
+                        <td className="whitespace-nowrap px-4 py-2.5 text-sm text-gray-600">
+                          {row.warehouse || <span className="text-gray-300">—</span>}
+                        </td>
                         <td className="px-4 py-2.5 text-center text-sm font-medium text-gray-700 tabular-nums">{row.qty}</td>
                         {vis('unitPrice') && (
                           <td className="whitespace-nowrap px-4 py-2.5 text-right text-sm text-gray-600 tabular-nums">{formatCurrency(row.unitPrice)}</td>
