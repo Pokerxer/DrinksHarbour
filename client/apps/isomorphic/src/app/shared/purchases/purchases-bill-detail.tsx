@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
+import { useTenant } from '@/context/TenantContext';
 import {
   PiArrowLeft,
   PiCheck,
@@ -79,6 +80,7 @@ function fmt(n: number | undefined, currency: string) {
 
 export default function PurchasesBillDetail({ id }: { id: string }) {
   const { data: session } = useSession();
+  const { tenant } = useTenant();
   const token = (session?.user as { token?: string })?.token ?? '';
   const [bill, setBill] = useState<VendorBill | null>(null);
   const [loading, setLoading] = useState(true);
@@ -218,7 +220,7 @@ export default function PurchasesBillDetail({ id }: { id: string }) {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => bill && printBillInvoice(bill)}
+            onClick={() => bill && printBillInvoice(bill, tenant?.name || 'DrinksHarbour')}
             className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             <PiPrinter className="h-4 w-4" /> Print / Download

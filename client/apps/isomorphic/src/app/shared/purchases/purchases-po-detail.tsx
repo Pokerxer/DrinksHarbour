@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
+import { useTenant } from '@/context/TenantContext';
 import {
   PiArrowLeft,
   PiPencilSimple,
@@ -26,6 +27,7 @@ import BaseCurrencyEquivalent from './base-currency-equivalent';
 
 export default function PurchasesPODetail({ id }: { id: string }) {
   const { data: session } = useSession();
+  const { tenant } = useTenant();
   const token = (session?.user as { token?: string })?.token ?? '';
 
   const [po, setPO] = useState<PurchaseOrder | null>(null);
@@ -181,7 +183,7 @@ export default function PurchasesPODetail({ id }: { id: string }) {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => printPOInvoice(po)}
+            onClick={() => printPOInvoice(po, tenant?.name || 'DrinksHarbour')}
             className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             <PiPrinter className="h-4 w-4" /> Print / Download
