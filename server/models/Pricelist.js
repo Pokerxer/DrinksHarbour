@@ -60,9 +60,20 @@ const pricelistSchema = new Schema({
   website:       { type: String, default: '' },
   isSelectable:  { type: Boolean, default: false },
   tenant:        { type: Schema.Types.ObjectId, ref: 'Tenant', required: false },
+
+  // ── Resolution bindings (POS shop/warehouse → pricelist) ───────────────────
+  // `shops` holds string ids: custom posSettings.shops subdoc ids AND the
+  // built-in virtual shop ids 'retail' / 'wholesale'. Empty shops+warehouses
+  // with isSelectable=true means "unscoped" — offered everywhere as a manual
+  // option but never auto-resolved.
+  shops:         [{ type: String }],
+  warehouses:    [{ type: Schema.Types.ObjectId, ref: 'Warehouse' }],
+  isDefault:     { type: Boolean, default: false },
+
   rules:         [priceRuleSchema],
 }, { timestamps: true });
 
 pricelistSchema.index({ tenant: 1, name: 1 });
+pricelistSchema.index({ tenant: 1, isDefault: 1 });
 
 module.exports = mongoose.model('Pricelist', pricelistSchema);
