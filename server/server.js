@@ -277,6 +277,13 @@ async function startServer() {
   try {
     const dbConnection = await connectDB();
 
+    // Recurring batch-expiry scan. Off during tests; on in production or when
+    // ENABLE_CRON=true is set explicitly.
+    if (process.env.ENABLE_CRON === 'true' || process.env.NODE_ENV === 'production') {
+      const { startExpiryCron } = require('./jobs/expiryScan.job');
+      startExpiryCron();
+    }
+
     console.log('\n┌──────────────────────────────────────────────────────┐');
     console.log('│              DrinksHarbour Backend API               │');
     console.log('└──────────────────────────────────────────────────────┘');
