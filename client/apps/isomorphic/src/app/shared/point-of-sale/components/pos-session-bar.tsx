@@ -480,8 +480,12 @@ function HamburgerMenu({
 
 // ── Pricelist picker ──────────────────────────────────────────────────────────
 function PricelistPicker({ token }: { token: string }) {
-  const { selectedPricelist, setSelectedPricelist, clearOverride, isManualOverride } =
-    usePOSPricelist();
+  const {
+    selectedPricelist,
+    setSelectedPricelist,
+    clearOverride,
+    isManualOverride,
+  } = usePOSPricelist();
   const { pricelists, resolvedId, loaded, load } = usePOSAvailablePricelists();
   const { activeShopId } = usePOSActiveShop();
   const [open, setOpen] = useState(false);

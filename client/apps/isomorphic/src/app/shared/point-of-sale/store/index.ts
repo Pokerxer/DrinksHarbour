@@ -1241,7 +1241,12 @@ export const usePOSPricelist = () => {
     });
   }, [setOverrides, shopKey]);
 
-  return { selectedPricelist, setSelectedPricelist, clearOverride, isManualOverride };
+  return {
+    selectedPricelist,
+    setSelectedPricelist,
+    clearOverride,
+    isManualOverride,
+  };
 };
 
 /** Shop-scoped allowed pricelists + auto-resolved id (fetched on shop change). */
@@ -1270,7 +1275,13 @@ export const usePOSAvailablePricelists = () => {
 
   const invalidate = useCallback(() => setLoadedShop(null), [setLoadedShop]);
 
-  return { pricelists, resolvedId, loaded: loadedShop === shopKey, load, invalidate };
+  return {
+    pricelists,
+    resolvedId,
+    loaded: loadedShop === shopKey,
+    load,
+    invalidate,
+  };
 };
 
 // ─── Sale refresh signal ──────────────────────────────────────────────────────
