@@ -533,6 +533,14 @@ const tenantSchema = new Schema(
         availableOn:       { pos: { type: Boolean, default: true }, sales: { type: Boolean, default: false }, website: { type: Boolean, default: false } },
       },
     },
+
+    // ────────────────────────────────────────────────
+    // Inventory Settings
+    // ────────────────────────────────────────────────
+    inventorySettings: {
+      // Days before expiry at which batches start raising expiry notifications.
+      expiryWarningDays: { type: Number, min: 1, max: 365, default: 90 },
+    },
   },
   {
     timestamps: true,

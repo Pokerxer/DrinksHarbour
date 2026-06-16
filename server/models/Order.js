@@ -98,6 +98,20 @@ const orderItemSchema = new Schema({
     default: 0,
   },
   warehouse: { type: ObjectId, ref: 'Warehouse', required: false },
+
+  // Which warehouse batches this line drew from (FEFO), for traceability and
+  // exact refund restoration. Empty for non-tracked products / untracked stock.
+  batchAllocations: [
+    new Schema(
+      {
+        batch:       { type: ObjectId, ref: 'WarehouseBatch' },
+        batchNumber: { type: String },
+        quantity:    { type: Number, min: 0 },
+        expiryDate:  { type: Date, default: null },
+      },
+      { _id: false }
+    ),
+  ],
 }, { _id: false });
 
 const orderSchema = new Schema(

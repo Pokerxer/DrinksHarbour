@@ -16,6 +16,7 @@ const notificationSchema = new Schema(
         'new_tenant_registration',
         'tenant_subscription_expiring',
         'low_stock_alert',
+        'batch_expiry_alert',
         'new_order',
         'order_status_update',
         'payment_received',

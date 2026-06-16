@@ -248,7 +248,15 @@ const productSchema = new Schema(
       default: false,
       index: true,
     },
-    
+
+    // When true, receiving this product captures a batch number (+ expiry for
+    // perishables) and stock is depleted FEFO. Defaults from !isAlcoholic via a
+    // pre-validate hook; override per product.
+    tracksBatch: {
+      type: Boolean,
+      index: true,
+    },
+
     abv: {
       type: Number,
       min: [0, 'ABV cannot be negative'],
@@ -844,6 +852,13 @@ productSchema.methods.updateRating = async function(newRating) {
     await this.save();
   }
 };
+
+const { defaultTracksBatch } = require('../services/batch.helpers');
+
+productSchema.pre('validate', function applyTracksBatchDefault(next) {
+  this.tracksBatch = defaultTracksBatch(this.isAlcoholic, this.tracksBatch);
+  next();
+});
 
 const Product = mongoose.models.Product || mongoose.model('Product', productSchema);
 module.exports = Product;
