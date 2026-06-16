@@ -241,6 +241,7 @@ function ReturnDetailPanel({
   onClose: () => void;
   onViewOrder: () => void;
 }) {
+  const { tenant } = usePOSAuth();
   const cashierName = refund.refundedBy
     ? refund.refundedBy.posName ||
       `${refund.refundedBy.firstName} ${refund.refundedBy.lastName}`
@@ -283,7 +284,7 @@ function ReturnDetailPanel({
       <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Courier New',monospace;font-size:12px;padding:16px;width:380px;margin:0 auto}</style>
     </head><body>
       <div style="text-align:center;margin-bottom:12px">
-        <strong style="font-size:14px;letter-spacing:2px">DRINKS HARBOUR</strong><br>
+        <strong style="font-size:14px;letter-spacing:2px">${(tenant?.name || 'DRINKS HARBOUR').toUpperCase()}</strong><br>
         <span style="font-size:11px;font-weight:bold;color:#b20202">RETURN RECEIPT</span>
       </div>
       <hr style="border:1px dashed #ccc;margin:8px 0">
