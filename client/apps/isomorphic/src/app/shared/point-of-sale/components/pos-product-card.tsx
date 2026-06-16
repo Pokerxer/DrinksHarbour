@@ -63,7 +63,8 @@ function PricelistBreakdown({
 }) {
   const { token } = usePOSAuth();
   const { pricelists, loaded, load } = usePOSAvailablePricelists();
-  const { selectedPricelist, setSelectedPricelist } = usePOSPricelist();
+  const { selectedPricelist, setSelectedPricelist, isManualOverride } =
+    usePOSPricelist();
   const [activeSizeId, setActiveSizeId] = useState<string>(
     validSizes[0]?._id ?? ''
   );
@@ -380,6 +381,13 @@ function PricelistBreakdown({
                     {row.isActive && (
                       <span className="rounded-full bg-emerald-600 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-white">
                         Active
+                      </span>
+                    )}
+                    {row.isActive && !isStd && (
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide ${isManualOverride ? 'bg-amber-100 text-amber-700' : 'bg-gray-200 text-gray-600'}`}
+                      >
+                        {isManualOverride ? 'Manual' : 'Auto'}
                       </span>
                     )}
                     {!isStd && !row.ruleSteps.length && (
