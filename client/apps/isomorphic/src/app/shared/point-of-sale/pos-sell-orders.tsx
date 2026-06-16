@@ -50,6 +50,11 @@ interface OrderItem {
   priceAtPurchase: number;
   itemSubtotal: number;
   discountAmount?: number;
+  warehouse?: { _id: string; name: string; code: string } | null;
+}
+
+function getOrderWarehouse(order: { items?: OrderItem[] }) {
+  return order.items?.find((i) => i.warehouse)?.warehouse ?? null;
 }
 
 interface RefundLine {
@@ -1011,6 +1016,14 @@ export default function POSSellOrders() {
                               className={`px-4 py-3 font-medium ${isSelected ? 'text-white' : 'text-gray-800'}`}
                             >
                               {order.receiptNumber || '—'}
+                              {(() => {
+                                const wh = getOrderWarehouse(order);
+                                return wh ? (
+                                  <span className="ml-1.5 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+                                    {wh.name}
+                                  </span>
+                                ) : null;
+                              })()}
                             </td>
                             <td
                               className={`px-4 py-3 ${isSelected ? 'text-red-100' : 'text-gray-500'}`}
