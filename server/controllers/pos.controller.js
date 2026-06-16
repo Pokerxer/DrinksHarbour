@@ -1743,6 +1743,15 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
   // warehouse.
   const warehouseId = await resolveShopWarehouse(tenant, tenantId, shopId);
 
+  // Resolve the auto pricelist id for the active shop so the grid knows the
+  // default selection without a separate round-trip / race.
+  let resolvedPricelistId = null;
+  try {
+    const { resolveShopPricelist } = require('../services/pricelist.service');
+    const { resolved } = await resolveShopPricelist(tenant, tenantId, shopId);
+    resolvedPricelistId = resolved ? String(resolved._id) : null;
+  } catch (_) { /* non-fatal — grid falls back to raw prices */ }
+
   // visibleInPOS is the explicit "show in POS" flag and is the sole gate.
   // Include all statuses except administrative-only ones that mean the product
   // has been deliberately pulled from all channels.
@@ -1900,7 +1909,7 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
   });
 
   res.set('Cache-Control', 'private, max-age=60');
-  res.json({ success: true, data: { products: filtered, total: filtered.length } });
+  res.json({ success: true, data: { products: filtered, total: filtered.length, resolvedPricelistId } });
 });
 
 // ─── Create POS Order (with atomic stock deduction) ──────────────────────────
@@ -1937,14 +1946,20 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     return res.status(403).json({ success: false, message: 'Price override permission required' });
   }
 
-  // Fetch the selected pricelist once — applied to every line item's price
+  // Resolve the pricelist AUTHORITATIVELY from the shop. The client may request
+  // an override via pricelistId, but it is honored only if it belongs to the
+  // shop's allowed set; otherwise we use the auto-resolved pricelist.
   let selectedPricelist = null;
-  if (pricelistId) {
-    try {
-      const Pricelist = require('../models/Pricelist');
-      selectedPricelist = await Pricelist.findById(pricelistId).select('rules').lean();
-    } catch (_) { /* non-fatal — fall back to DB pricing */ }
-  }
+  try {
+    const { resolveShopPricelist } = require('../services/pricelist.service');
+    const { resolved, allowed } = await resolveShopPricelist(req.tenant, tenantId, shopId);
+    if (pricelistId) {
+      const override = allowed.find((p) => String(p._id) === String(pricelistId));
+      selectedPricelist = override || resolved || null;
+    } else {
+      selectedPricelist = resolved || null;
+    }
+  } catch (_) { /* non-fatal — fall back to DB pricing */ }
 
   // Resolve receipt number early so audit records can reference it
   const orderNumber   = await generateOrderNumber();
