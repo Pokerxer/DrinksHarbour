@@ -1050,12 +1050,16 @@ export default function POSOrderDetail({
             <div style="font-size:13px;font-weight:600;color:#111">${_customerName}</div>
             ${_customerPhone ? `<div style="font-size:10px;color:#6b7280;margin-top:1px">${_customerPhone}</div>` : ''}
           </div>
-          ${_warehouse ? `
+          ${
+            _warehouse
+              ? `
           <div style="flex:1;padding:12px 16px">
             <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#b20202;margin-bottom:4px">Warehouse</div>
             <div style="font-size:13px;font-weight:600;color:#111">${_warehouse.name}</div>
             <div style="font-size:10px;color:#6b7280;margin-top:1px">${_warehouse.code}</div>
-          </div>` : ''}
+          </div>`
+              : ''
+          }
         </div>
 
         <!-- ── Items table ── -->
@@ -1265,7 +1269,7 @@ export default function POSOrderDetail({
           {(() => {
             const wh = getOrderWarehouse(order);
             return wh ? (
-              <div className="shrink-0 flex items-center gap-2 border-b border-gray-100 px-4 py-2 text-xs text-gray-500">
+              <div className="flex shrink-0 items-center gap-2 border-b border-gray-100 px-4 py-2 text-xs text-gray-500">
                 <span className="font-medium text-gray-700">Warehouse:</span>
                 <span className="rounded bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
                   {wh.name}
