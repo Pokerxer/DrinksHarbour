@@ -96,10 +96,13 @@ export const posApi = {
     );
   },
 
-  async getPricelists(token: string) {
-    return request<{ pricelists: any[] }>(`${API_URL}/api/pos/pricelists`, {
-      headers: authHeaders(token),
-    });
+  async getPricelists(token: string, shopId?: string) {
+    const qs = new URLSearchParams();
+    if (shopId) qs.set('shopId', shopId);
+    return request<{ pricelists: any[]; resolvedId: string | null }>(
+      `${API_URL}/api/pos/pricelists?${qs}`,
+      { headers: authHeaders(token) }
+    );
   },
 
   async getCategories() {
