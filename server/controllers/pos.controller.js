@@ -2650,6 +2650,7 @@ exports.getAllPOSOrders = asyncHandler(async (req, res) => {
     })
     .populate('items.size', 'displayName costPrice')
     .populate('items.subproduct', 'costPrice')
+    .populate('items.warehouse', 'name code')
     .populate({ path: 'refunds.refundedBy', select: 'firstName lastName posName', strictPopulate: false })
     .sort({ createdAt: -1 })
     .skip(skip)
@@ -2681,6 +2682,9 @@ exports.getAllPOSOrders = asyncHandler(async (req, res) => {
       category:        it.product?.category?.name    || '',
       subcategory:     it.product?.subCategory?.name || '',
       brand:           it.product?.brand?.name       || '',
+      warehouse:       it.warehouse
+        ? { _id: it.warehouse._id, name: it.warehouse.name, code: it.warehouse.code }
+        : null,
     })),
   }));
 
