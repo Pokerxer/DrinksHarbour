@@ -43,14 +43,14 @@ function resolveSubProductStatus(availableStock, lowStockThreshold = 10) {
  * Creates an InventoryMovement audit record.
  * Throws if insufficient stock.
  */
-async function deductStock({ subProductId, sizeId, quantity, tenantId, staffId, receiptNumber, productId, finalPrice, costPrice, allowOverselling = false, warehouseId = null, defaultSizeId = null }) {
+async function deductStock({ subProductId, sizeId, quantity, tenantId, staffId, receiptNumber, productId, finalPrice, costPrice, allowOverselling = false, warehouseId = null, defaultSizeId = null, tracksBatch = false }) {
   if (warehouseId) {
     // ── Warehouse-scoped deduction ────────────────────────────────────────
     // Decrement WarehouseStock directly; recalcSubProductStock refreshes the
     // SubProduct rollup, so the legacy $inc path below must NOT also run.
     const whSizeId = sizeId || defaultSizeId;
-    const { before, after } = await sellStock(
-      { warehouseId, subProduct: subProductId, size: whSizeId, quantity, allowOverselling },
+    const { before, after, batchAllocations } = await sellStock(
+      { warehouseId, subProduct: subProductId, size: whSizeId, quantity, allowOverselling, tracksBatch },
       staffId, tenantId
     );
 
@@ -77,7 +77,7 @@ async function deductStock({ subProductId, sizeId, quantity, tenantId, staffId, 
       notes:          `POS sale — receipt ${receiptNumber}`,
     }).catch(err => console.error('[Inventory] POS deductStock audit failed:', err.message));
 
-    return { _id: subProductId, availableStock: after };
+    return { _id: subProductId, availableStock: after, batchAllocations: batchAllocations || [] };
   }
 
   let deductedDoc = null;
@@ -220,12 +220,12 @@ async function deductStock({ subProductId, sizeId, quantity, tenantId, staffId, 
  * Restore stock for one refund line.
  * Creates an InventoryMovement audit record.
  */
-async function restoreStock({ subProductId, sizeId, quantity, tenantId, staffId, returnNumber, productId, unitPrice, warehouseId = null, defaultSizeId = null }) {
+async function restoreStock({ subProductId, sizeId, quantity, tenantId, staffId, returnNumber, productId, unitPrice, warehouseId = null, defaultSizeId = null, batchAllocations = null }) {
   if (warehouseId) {
     // ── Warehouse-scoped restore ──────────────────────────────────────────
     const whSizeId = sizeId || defaultSizeId;
     const { before, after } = await returnStock(
-      { warehouseId, subProduct: subProductId, size: whSizeId, quantity },
+      { warehouseId, subProduct: subProductId, size: whSizeId, quantity, batchAllocations },
       staffId, tenantId
     );
 
@@ -1971,7 +1971,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       // Fetch subproduct for price resolution and order line data
       const sp = await SubProduct.findById(subProductId)
         .select('product sku baseSellingPrice costPrice isOnSale saleType saleStartDate saleEndDate saleDiscountValue flashSale bundleDeals defaultSize')
-        .populate('product', 'name images platformMarkup platformDiscount')
+        .populate('product', 'name images platformMarkup platformDiscount tracksBatch')
         .lean();
 
       // Server-side price: run through same pipeline as the website / cart
@@ -2005,6 +2005,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         allowOverselling,
         warehouseId,
         defaultSizeId:   sp?.defaultSize || null,
+        tracksBatch:     !!sp?.product?.tracksBatch,
       });
 
       deductedItems.push({
@@ -2013,6 +2014,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         subProductId,
         quantity,
         defaultSizeId: sp?.defaultSize || null,
+        batchAllocations: deductedDoc?.batchAllocations || [],
       });
 
       // ── Flash sale: decrement remainingQuantity (best-effort, non-blocking) ──
@@ -2193,6 +2195,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         size:                  (warehouseId ? (sizeId || sp?.defaultSize) : sizeId) || undefined,
         warehouse:             warehouseId || undefined,
         quantity,
+        batchAllocations:      deductedDoc?.batchAllocations || [],
         priceAtPurchase:       effectivePrice,
         itemSubtotal:          lineSubtotal,
         discountAmount:        itemDiscountAmount,
@@ -2216,7 +2219,8 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     for (const d of deductedItems) {
       if (warehouseId) {
         await returnStock(
-          { warehouseId, subProduct: d.subProductId, size: d.sizeId || d.defaultSizeId, quantity: d.quantity },
+          { warehouseId, subProduct: d.subProductId, size: d.sizeId || d.defaultSizeId, quantity: d.quantity,
+            batchAllocations: d.batchAllocations },
           staffId,
           tenantId
         ).catch(() => {});
@@ -2458,6 +2462,21 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
         const spDoc = await SubProduct.findById(orderItem.subproduct).select('defaultSize').lean();
         lineDefaultSizeId = spDoc?.defaultSize || null;
       }
+      // Restore only `quantity` units back to the exact batches they were sold
+      // from, drawn from the front of the stored allocations (handles partial
+      // refunds). WarehouseStock remains the authoritative total either way.
+      let refundAllocations = null;
+      if (lineWarehouseId && Array.isArray(orderItem.batchAllocations) && orderItem.batchAllocations.length) {
+        let remaining = quantity;
+        refundAllocations = [];
+        for (const a of orderItem.batchAllocations) {
+          if (remaining <= 0) break;
+          const take = Math.min(remaining, a.quantity || 0);
+          if (take <= 0) continue;
+          refundAllocations.push({ batch: a.batch, quantity: take });
+          remaining -= take;
+        }
+      }
       await restoreStock({
         subProductId: orderItem.subproduct?.toString() || orderItem.subproduct,
         sizeId:       orderItem.size ? orderItem.size.toString() : null,
@@ -2469,6 +2488,7 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
         unitPrice:    refundUnitPrice,
         warehouseId:    lineWarehouseId,
         defaultSizeId:  lineDefaultSizeId,
+        batchAllocations: refundAllocations,
       });
     }
 
@@ -2573,6 +2593,7 @@ exports.voidPOSOrder = asyncHandler(async (req, res) => {
       unitPrice:    item.priceAtPurchase || 0,
       warehouseId:    lineWarehouseId,
       defaultSizeId:  lineDefaultSizeId,
+      batchAllocations: item.batchAllocations,
     });
   }
 
