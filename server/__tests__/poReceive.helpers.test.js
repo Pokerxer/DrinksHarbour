@@ -157,3 +157,44 @@ test('postReceivedStock counts an adjustStock throw as a failed line and continu
   assert.strictEqual(calls.length, 1);
   assert.strictEqual(calls[0].subProduct, 'sp2');
 });
+
+test('postReceivedStock creates a batch for tracked lines and always adjusts stock', async () => {
+  const adjustCalls = [];
+  const batchCalls = [];
+  const adjustStock = async (p) => { adjustCalls.push(p); };
+  const receiveBatch = async (p) => { batchCalls.push(p); return { _id: 'b1' }; };
+  const generateBatchNumber = async () => 'JUICE500-20260616-001';
+
+  const purchaseOrder = {
+    poNumber: 'PO-1',
+    items: [
+      { subProductId: 'sp1', sizeId: 'sz1', quantity: 10, receivedQty: 10, tracksBatch: true,
+        sku: 'JUICE500', productId: 'p1', receivedExpiryDate: '2026-12-01' },
+      { subProductId: 'sp2', sizeId: 'sz2', quantity: 4, receivedQty: 4, tracksBatch: false },
+    ],
+  };
+  const res = await postReceivedStock({
+    purchaseOrder, targetWarehouseId: 'w1', adjustStock, receiveBatch, generateBatchNumber,
+    userId: 'u1', tenantId: 't1', logger: silentLogger,
+  });
+  assert.strictEqual(res.successCount, 2);
+  assert.strictEqual(batchCalls.length, 1);
+  assert.strictEqual(batchCalls[0].batchNumber, 'JUICE500-20260616-001');
+  assert.strictEqual(adjustCalls.length, 2);
+});
+
+test('postReceivedStock uses a manual batch number when provided', async () => {
+  const batchCalls = [];
+  const purchaseOrder = {
+    poNumber: 'PO-2',
+    items: [{ subProductId: 'sp1', sizeId: 'sz1', quantity: 5, receivedQty: 5, tracksBatch: true,
+      sku: 'JUICE500', receivedBatchNumber: 'LOT-MANUAL', receivedExpiryDate: '2026-12-01' }],
+  };
+  await postReceivedStock({
+    purchaseOrder, targetWarehouseId: 'w1',
+    adjustStock: async () => {}, receiveBatch: async (p) => { batchCalls.push(p); return {}; },
+    generateBatchNumber: async () => 'SHOULD-NOT-BE-USED',
+    userId: 'u1', tenantId: 't1', logger: silentLogger,
+  });
+  assert.strictEqual(batchCalls[0].batchNumber, 'LOT-MANUAL');
+});

@@ -167,6 +167,14 @@ const PurchaseOrderSchema = new Schema(
           default: 0,
           min: 0,
         },
+        // Captured at receiving for batch-tracked products; consumed at validation
+        // to create the WarehouseBatch. Null for non-tracked lines.
+        receivedBatchNumber: {
+          type: String,
+        },
+        receivedExpiryDate: {
+          type: Date,
+        },
         uom: {
           type: String,
           default: "Units",

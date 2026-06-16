@@ -7,6 +7,7 @@ const SubProduct = require("../models/SubProduct");
 const Size = require("../models/Size");
 const Warehouse = require("../models/Warehouse");
 const warehouseService = require("../services/warehouse.service");
+const batchService = require("../services/batch.service");
 const inventoryService = require("../services/inventory.service");
 const {
   resolveTargetWarehouse,
@@ -512,6 +513,8 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
           );
         }
         item.receivedQty = qty;
+        item.receivedBatchNumber = receivedItem.batchNumber || null;
+        item.receivedExpiryDate = receivedItem.expiryDate || null;
       }
     }
   }
@@ -535,6 +538,22 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
 
     purchaseOrder.fullyReceivedDate = new Date();
 
+    // Resolve each line's parent-product batch-tracking flag (transient, not
+    // persisted) so postReceivedStock knows which lines need a WarehouseBatch.
+    const spIds = purchaseOrder.items
+      .map((i) => i.subProductId)
+      .filter(Boolean);
+    const subProducts = await SubProduct.find({ _id: { $in: spIds } })
+      .select("product")
+      .populate("product", "tracksBatch")
+      .lean();
+    const spMap = new Map(subProducts.map((sp) => [String(sp._id), sp]));
+    for (const item of purchaseOrder.items) {
+      const sp = spMap.get(String(item.subProductId));
+      item.tracksBatch = !!(sp && sp.product && sp.product.tracksBatch);
+      item.productId = sp && sp.product ? sp.product._id : undefined;
+    }
+
     console.log(
       `🔍 PO Validation Start: ${purchaseOrder.poNumber} → warehouse ${targetWarehouseId} — ${purchaseOrder.items?.length || 0} items`
     );
@@ -543,6 +562,8 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
       purchaseOrder,
       targetWarehouseId,
       adjustStock: warehouseService.adjustStock,
+      receiveBatch: batchService.receiveBatch,
+      generateBatchNumber: batchService.generateBatchNumber,
       userId: req.user?._id || purchaseOrder.createdBy,
       tenantId,
     });

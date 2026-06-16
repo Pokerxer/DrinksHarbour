@@ -27,6 +27,8 @@ async function postReceivedStock({
   purchaseOrder,
   targetWarehouseId,
   adjustStock,
+  receiveBatch,
+  generateBatchNumber,
   userId,
   tenantId,
   logger = console,
@@ -56,6 +58,30 @@ async function postReceivedStock({
     }
 
     try {
+      if (item.tracksBatch) {
+        const batchNumber =
+          (item.receivedBatchNumber && String(item.receivedBatchNumber).trim()) ||
+          (await generateBatchNumber({
+            tenantId,
+            warehouseId: targetWarehouseId,
+            subProduct: item.subProductId,
+            size: item.sizeId,
+            sku: item.sku || 'BATCH',
+            date: new Date(),
+          }));
+        await receiveBatch({
+          tenantId,
+          warehouseId: targetWarehouseId,
+          subProduct: item.subProductId,
+          size: item.sizeId,
+          product: item.productId,
+          batchNumber,
+          quantity: quantityToAdd,
+          expiryDate: item.receivedExpiryDate || null,
+          sourcePO: purchaseOrder._id,
+          poNumber: purchaseOrder.poNumber,
+        });
+      }
       await adjustStock(
         {
           warehouseId: targetWarehouseId,
