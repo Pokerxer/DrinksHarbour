@@ -4,6 +4,7 @@ const router     = express.Router();
 const Pricelist  = require('../models/Pricelist');
 const SubProduct = require('../models/SubProduct');
 const { authenticate, attachTenant, tenantAdminOrSuperAdmin } = require('../middleware/auth.middleware');
+const { enforceSingleDefault } = require('../services/pricelist.service');
 
 router.use(authenticate);
 router.use(attachTenant);
@@ -33,14 +34,19 @@ router.get('/', tenantAdminOrSuperAdmin, async (req, res, next) => {
 router.post('/', tenantAdminOrSuperAdmin, async (req, res, next) => {
   try {
     const tenantId = req.tenant?._id;
-    const { name, currency, countryGroups, website, isSelectable } = req.body;
+    const { name, currency, countryGroups, website, isSelectable, shops, warehouses, isDefault } = req.body;
     if (!name?.trim()) return res.status(400).json({ success: false, message: 'Name is required' });
 
     const pl = await Pricelist.create({
       name: name.trim(), currency: currency || 'NGN',
       countryGroups: countryGroups || [], website: website || '',
-      isSelectable: !!isSelectable, tenant: tenantId, rules: [],
+      isSelectable: !!isSelectable,
+      shops: Array.isArray(shops) ? shops.map(String) : [],
+      warehouses: Array.isArray(warehouses) ? warehouses : [],
+      isDefault: !!isDefault,
+      tenant: tenantId, rules: [],
     });
+    if (pl.isDefault) await enforceSingleDefault(tenantId, pl._id);
     res.status(201).json({ success: true, data: pl });
   } catch (err) { next(err); }
 });
@@ -63,16 +69,20 @@ router.get('/:id', tenantAdminOrSuperAdmin, async (req, res, next) => {
 // ── Update meta ───────────────────────────────────────────────────────────────
 router.patch('/:id', tenantAdminOrSuperAdmin, async (req, res, next) => {
   try {
-    const { name, currency, countryGroups, website, isSelectable } = req.body;
+    const { name, currency, countryGroups, website, isSelectable, shops, warehouses, isDefault } = req.body;
     const $set = {};
-    if (name         !== undefined) $set.name          = name;
-    if (currency     !== undefined) $set.currency       = currency;
-    if (countryGroups!== undefined) $set.countryGroups  = countryGroups;
-    if (website      !== undefined) $set.website        = website;
-    if (isSelectable !== undefined) $set.isSelectable   = isSelectable;
+    if (name          !== undefined) $set.name          = name;
+    if (currency      !== undefined) $set.currency       = currency;
+    if (countryGroups !== undefined) $set.countryGroups  = countryGroups;
+    if (website       !== undefined) $set.website        = website;
+    if (isSelectable  !== undefined) $set.isSelectable   = isSelectable;
+    if (shops         !== undefined) $set.shops          = Array.isArray(shops) ? shops.map(String) : [];
+    if (warehouses    !== undefined) $set.warehouses     = Array.isArray(warehouses) ? warehouses : [];
+    if (isDefault     !== undefined) $set.isDefault      = !!isDefault;
 
     const pl = await Pricelist.findByIdAndUpdate(req.params.id, { $set }, { new: true, runValidators: true }).lean();
     if (!pl) return res.status(404).json({ success: false, message: 'Pricelist not found' });
+    if ($set.isDefault === true) await enforceSingleDefault(req.tenant?._id, pl._id);
     res.json({ success: true, data: pl });
   } catch (err) { next(err); }
 });
