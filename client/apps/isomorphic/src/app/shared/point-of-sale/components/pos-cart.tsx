@@ -1948,7 +1948,12 @@ export default function POSCart() {
                   if (entry.kind === 'combo') {
                     const { instanceId, comboName, groupItems } = entry;
                     const comboTotal = groupItems.reduce(
-                      (s, i) => s + i.price * i.quantity,
+                      (s, i) => {
+                        const { price: effPrice } = selectedPricelist
+                          ? getEffectiveBundlePriceForItem(i, selectedPricelist)
+                          : getEffectiveBundlePrice(i);
+                        return s + effPrice * i.quantity;
+                      },
                       0
                     );
                     const anySelected = groupItems.some(

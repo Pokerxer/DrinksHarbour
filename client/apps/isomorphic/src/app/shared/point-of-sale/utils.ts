@@ -169,9 +169,11 @@ export function applyPricelistToProduct(product: any, pricelist: any): any {
   const priceRules = findMatchingPricelistRules(pricelist.rules, product._id, 1, 'price');
 
   if (priceRules.length > 0) {
-    // Use the true original base price — NOT the DB-sale-discounted baseSellingPrice.
-    // This keeps pricelist logic independent of DB-level flash/sale promotions.
-    const trueBase = Number(product.originalPrice) || Number(product.baseSellingPrice) || 0;
+    // Use baseSellingPrice as the starting point — it already reflects any active
+    // flash/regular sale discounts (set by getPOSProducts → computePOSPricing).
+    // Pricelist rules modify this price further on the server, so starting from
+    // the same post-sale base ensures client and server produce identical results.
+    const trueBase = Number(product.baseSellingPrice) || 0;
     let   newBase  = trueBase;
 
     const appliedSteps: any[] = [];
@@ -188,7 +190,7 @@ export function applyPricelistToProduct(product: any, pricelist: any): any {
 
     const newSizes = product.sizes?.map((s: any) => {
       const sizeCost    = Number(s.costPrice) > 0 ? Number(s.costPrice) : productCost;
-      const trueSzBase  = Number(s.originalPrice) || Number(s.sellingPrice) || 0;
+      const trueSzBase  = Number(s.sellingPrice) || 0;
       let   sizePrice   = trueSzBase;
       for (const rule of priceRules) {
         sizePrice = applyRuleTransform(sizePrice, rule, sizeCost);

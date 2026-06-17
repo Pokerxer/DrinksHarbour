@@ -2099,7 +2099,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
           } else if (plRule.priceType === 'formula') {
             const cost   = sizePricing.costPrice || 0;
             const markup = Number(plRule.markupPercentage || 0);
-            if (cost > 0 && markup > 0)
+            if (cost > 0)
               finalPrice = Math.round(cost * (1 + markup / 100) * 100) / 100;
           } else if (plRule.priceType === 'discount') {
             if (plRule.discountType === 'fixed') {
@@ -2405,8 +2405,12 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         discountTotal: orderDiscountAmount || 0,
         paymentMethod: order.paymentMethod,
         splitPayments: paymentMethod === 'split' ? splitPayments : undefined,
-        amountTendered: paymentMethod === 'cash' ? amountTendered : undefined,
-        change:        paymentMethod === 'cash' ? Math.max(0, amountTendered - total) : 0,
+        amountTendered: paymentMethod === 'split'
+          ? (amountTendered || 0)
+          : paymentMethod === 'cash' ? amountTendered : total,
+        change:        paymentMethod === 'split'
+          ? Math.max(0, (amountTendered || 0) - total)
+          : paymentMethod === 'cash' ? Math.max(0, amountTendered - total) : 0,
         items:         receiptItems,
         note:          note || '',
         placedAt:      order.placedAt,

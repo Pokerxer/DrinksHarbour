@@ -38,7 +38,6 @@ import { createOrder as createOrderOffline } from '@/app/shared/point-of-sale/of
 import { useOnlineStatus } from '@/app/shared/point-of-sale/offline/use-online-status';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import { POSOrderResponse } from '@/app/shared/point-of-sale/types';
-import { useTenant } from '@/context/TenantContext';
 import cn from '@core/utils/class-names';
 
 // ── Types & constants ─────────────────────────────────────────────────────────
@@ -115,8 +114,8 @@ function ReceiptScreen({
     import('@/app/shared/point-of-sale/types').POSNextOrderCouponConfig
   >;
 }) {
-  const { tenant } = useTenant();
-  const { staff } = usePOSAuth();
+  const { staff, tenant: posTenant } = usePOSAuth();
+  const posTenantName = posTenant?.name;
   const settings = usePOSSettings();
   const {
     subtotal: cartSubtotal,
@@ -134,7 +133,7 @@ function ReceiptScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const storeName = tenant?.name?.toUpperCase() || 'DRINKS HARBOUR';
+  const storeName = (posTenantName || 'DRINKS HARBOUR').toUpperCase();
   const staffName = staff
     ? staff.posName || `${staff.firstName} ${staff.lastName}`.trim()
     : '—';
@@ -170,8 +169,9 @@ function ReceiptScreen({
       <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{font-family:'Courier New',Courier,monospace;font-size:12px;
-             background:#fff;color:#111;width:360px;margin:0 auto;padding:12px 16px}
-        @media print{body{width:100%;padding:4px 8px}}
+             background:#fff;color:#111;max-width:384px;margin:0 auto;padding:8px 12px}
+        @page{margin:0}
+        @media print{body{width:100%;max-width:100%;padding:4px 6px;font-size:11px}}
       </style>
     </head><body>${el.innerHTML}</body></html>`);
     win.document.close();
@@ -306,27 +306,19 @@ function ReceiptScreen({
               padding: '24px 20px 20px',
             }}
           >
-            {/* Store header */}
+            {/* Store header — name from POS tenant, address from settings */}
             {!settings.basicReceipt && (
               <div style={{ ...R.center, marginBottom: 8 }}>
                 <p style={{ ...R.bold, fontSize: 15, letterSpacing: '0.1em' }}>
                   {storeName}
                 </p>
-                <p style={{ ...R.muted, fontSize: 10, marginTop: 2 }}>
-                  39 GANA ST, MAITAMA, ABUJA
-                </p>
-                <p style={{ ...R.muted, fontSize: 10 }}>NIGERIA</p>
-                <p style={{ color: '#888', fontSize: 10 }}>drinksharbour.com</p>
+                {settings.receiptHeader ? (
+                  <p style={{ ...R.muted, fontSize: 10, whiteSpace: 'pre-line', marginTop: 2 }}>
+                    {settings.receiptHeader}
+                  </p>
+                ) : null}
               </div>
             )}
-
-            {settings.receiptHeader ? (
-              <div style={{ ...R.center, marginBottom: 6 }}>
-                <p style={{ fontSize: 11, whiteSpace: 'pre-line' }}>
-                  {settings.receiptHeader}
-                </p>
-              </div>
-            ) : null}
 
             <div style={R.rule} />
 
@@ -340,6 +332,10 @@ function ReceiptScreen({
               <Row label="Cashier" value={staffName} />
             )}
             {custName && <Row label="Customer" value={custName} />}
+            <Row
+              label="Items"
+              value={String((order.items || []).reduce((s, it) => s + it.quantity, 0))}
+            />
 
             <div style={R.rule} />
 
@@ -671,16 +667,21 @@ function ReceiptScreen({
                 />
               ))
             ) : (
-              <Row
-                label={
-                  METHOD_LABELS[order.paymentMethod] ?? order.paymentMethod
-                }
-                value={formatCurrency(
-                  order.amountTendered && order.amountTendered > order.total
-                    ? order.amountTendered
-                    : order.total
+              <>
+                <Row
+                  label={
+                    METHOD_LABELS[order.paymentMethod] ?? order.paymentMethod
+                  }
+                  value={formatCurrency(order.total)}
+                />
+                {order.amountTendered != null && order.amountTendered !== order.total && (
+                  <Row
+                    label="TENDERED"
+                    value={formatCurrency(order.amountTendered)}
+                    vStyle={R.muted}
+                  />
                 )}
-              />
+              </>
             )}
             {order.change > 0 && (
               <Row
@@ -702,12 +703,12 @@ function ReceiptScreen({
 
             <div style={R.rule} />
 
-            {/* Tax line */}
+            {/* Tax line (estimated — prices assumed VAT-inclusive) */}
             {settings.showTaxOnReceipt && settings.taxRate > 0 && (
               <>
                 <div style={R.divider} />
                 <Row
-                  label={`Tax (${settings.taxRate}% incl.)`}
+                  label={`VAT ${settings.taxRate}%`}
                   value={formatCurrency(
                     (order.total * settings.taxRate) / (100 + settings.taxRate)
                   )}
