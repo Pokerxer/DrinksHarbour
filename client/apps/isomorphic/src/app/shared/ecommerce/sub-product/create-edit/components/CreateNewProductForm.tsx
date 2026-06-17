@@ -582,7 +582,7 @@ export function CreateNewProductForm({
             Sub-Type
           </label>
           <Input
-            value={formData.subType}
+            value={formData.subType ?? ''}
             onChange={(e) => handleChange('subType', e.target.value)}
             placeholder="e.g., Single Malt, Blended"
           />

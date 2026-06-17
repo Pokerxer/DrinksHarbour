@@ -707,14 +707,7 @@ const productSchema = new Schema(
       ref: 'Tenant',
       sparse: true,
     },
-    adminNotificationSent: {
-      type: Boolean,
-      default: false,
-    },
-    adminNotificationSentAt: {
-      type: Date,
-    },
-
+   
     // ════════════════════════════════════════════════════════════
     // SEO & DISCOVERABILITY
     // ════════════════════════════════════════════════════════════════════
@@ -855,9 +848,8 @@ productSchema.methods.updateRating = async function(newRating) {
 
 const { defaultTracksBatch } = require('../services/batch.helpers');
 
-productSchema.pre('validate', function applyTracksBatchDefault(next) {
+productSchema.pre('validate', function applyTracksBatchDefault() {
   this.tracksBatch = defaultTracksBatch(this.isAlcoholic, this.tracksBatch);
-  next();
 });
 
 const Product = mongoose.models.Product || mongoose.model('Product', productSchema);

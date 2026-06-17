@@ -218,7 +218,7 @@ purchaseAgreementSchema.virtual('remainingAmount').get(function() {
   return Math.max(0, this.totalAmount - this.consumedAmount);
 });
 
-purchaseAgreementSchema.pre('save', function(next) {
+purchaseAgreementSchema.pre('save', function() {
   if (this.isModified('items')) {
     // Mutate subdocs in place — spreading a mongoose subdocument copies its
     // internals instead of the schema fields, which zeroes out the totals.
@@ -228,7 +228,6 @@ purchaseAgreementSchema.pre('save', function(next) {
     this.totalQuantity = this.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
     this.totalAmount = this.items.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
   }
-  next();
 });
 
 const PurchaseAgreement = mongoose.models.PurchaseAgreement || mongoose.model('PurchaseAgreement', purchaseAgreementSchema);

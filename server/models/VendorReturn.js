@@ -175,12 +175,11 @@ VendorReturnSchema.virtual("remainingRefund").get(function () {
 });
 
 // Generate return number
-VendorReturnSchema.pre("save", async function (next) {
+VendorReturnSchema.pre("save", async function () {
   if (this.isNew && !this.returnNumber) {
     const count = await this.constructor.countDocuments({ tenant: this.tenant });
     this.returnNumber = `RET-${String(count + 1).padStart(5, "0")}`;
   }
-  next();
 });
 
 // Indexes

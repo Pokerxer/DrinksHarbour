@@ -262,7 +262,7 @@ saleSchema.virtual('displayDiscount').get(function () {
 });
 
 // Pre-save middleware to update status
-saleSchema.pre('save', function (next) {
+saleSchema.pre('save', function () {
   const now = new Date();
 
   // Auto-update status based on dates
@@ -275,8 +275,6 @@ saleSchema.pre('save', function (next) {
       this.status = 'active';
     }
   }
-
-  next();
 });
 
 // Static method to get active sales

@@ -478,7 +478,7 @@ promotionSchema.statics.findByCode = function(tenantId, code) {
 // ════════════════════════════════════════════════════════════
 // PRE-SAVE HOOKS
 // ════════════════════════════════════════════════════════════
-promotionSchema.pre('save', function(next) {
+promotionSchema.pre('save', function() {
   // Auto-generate slug
   if (this.isModified('name') && !this.slug) {
     this.slug = this.name
@@ -503,8 +503,6 @@ promotionSchema.pre('save', function(next) {
       this.isActive = false;
     }
   }
-  
-  next();
 });
 
 const Promotion = mongoose.models.Promotion || mongoose.model('Promotion', promotionSchema);
