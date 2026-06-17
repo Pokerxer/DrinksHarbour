@@ -514,6 +514,10 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
   const previousStatus = purchaseOrder.status;
   purchaseOrder.status = status;
 
+  // Surfaced (non-fatal) receipt warnings — lines that could not be posted while
+  // others were. Returned to the client so a partial receipt is never silent.
+  let receiveWarnings = null;
+
   // If receiving items, update received quantities
   if (status === "received" && receivedItems && Array.isArray(receivedItems)) {
     const receiveSettings = await getTenantPurchaseSettings(tenantId);
@@ -555,12 +559,15 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
     purchaseOrder.fullyReceivedDate = new Date();
 
     // Resolve each line's parent-product batch-tracking flag (transient, not
-    // persisted) so postReceivedStock knows which lines need a WarehouseBatch.
+    // persisted) so postReceivedStock knows which lines need a WarehouseBatch,
+    // and resolve a definitive sizeId so the received quantity lands on the right
+    // variant. WarehouseStock.size is required, so even sellWithoutSizeVariants
+    // products must resolve to their single/default Size — never silently dropped.
     const spIds = purchaseOrder.items
       .map((i) => i.subProductId)
       .filter(Boolean);
     const subProducts = await SubProduct.find({ _id: { $in: spIds } })
-      .select("product")
+      .select("product sizes defaultSize sellWithoutSizeVariants")
       .populate("product", "tracksBatch")
       .lean();
     const spMap = new Map(subProducts.map((sp) => [String(sp._id), sp]));
@@ -568,23 +575,57 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
       const sp = spMap.get(String(item.subProductId));
       item.tracksBatch = !!(sp && sp.product && sp.product.tracksBatch);
       item.productId = sp && sp.product ? sp.product._id : undefined;
+
+      // Right-size resolution for lines that arrive without an explicit sizeId.
+      if (sp && !item.sizeId) {
+        if (item.sizeName) {
+          const byName = await Size.findOne({
+            subproduct: sp._id,
+            size: item.sizeName,
+          })
+            .select("_id")
+            .lean();
+          if (byName) item.sizeId = byName._id;
+        }
+        if (!item.sizeId && sp.defaultSize) item.sizeId = sp.defaultSize;
+        if (!item.sizeId && Array.isArray(sp.sizes) && sp.sizes.length === 1) {
+          item.sizeId = sp.sizes[0];
+        }
+      }
     }
 
     console.log(
       `🔍 PO Validation Start: ${purchaseOrder.poNumber} → warehouse ${targetWarehouseId} — ${purchaseOrder.items?.length || 0} items`
     );
 
-    const { successCount, failCount } = await postReceivedStock({
+    const { successCount, failCount, failures } = await postReceivedStock({
       purchaseOrder,
       targetWarehouseId,
       adjustStock: warehouseService.adjustStock,
       receiveBatch: batchService.receiveBatch,
       generateBatchNumber: batchService.generateBatchNumber,
+      recordMovement: inventoryService.recordReceiptMovement,
       userId: req.user?._id || purchaseOrder.createdBy,
       tenantId,
     });
 
     console.log(`🏁 PO Validation Complete: ${successCount} succeeded, ${failCount} failed`);
+
+    // Never swallow a failed receipt. If nothing posted, reject so the PO is not
+    // marked validated with zero stock received; otherwise surface the bad lines
+    // as warnings alongside the lines that did receive.
+    if (failCount > 0 && successCount === 0) {
+      throw new ValidationError(
+        `Could not receive any items: ${(failures || [])
+          .map((f) => `${f.name} (${f.reason})`)
+          .join("; ")}`
+      );
+    }
+    if (failCount > 0) {
+      receiveWarnings = (failures || []).map(
+        (f) => `${f.name}: ${f.reason}`
+      );
+    }
 
     // Auto-sync the vendor's pricelist from this (latest) validated purchase.
     // Non-blocking: a pricelist failure must never block PO validation.
@@ -631,6 +672,9 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     data: purchaseOrder,
+    ...(receiveWarnings && receiveWarnings.length
+      ? { warnings: receiveWarnings }
+      : {}),
   });
 });
 

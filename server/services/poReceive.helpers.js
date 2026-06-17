@@ -19,9 +19,16 @@ function resolveTargetWarehouse(warehouseId, defaultWarehouseId) {
 }
 
 /**
- * Post each received PO line into the target warehouse via the injected adjustStock.
- * Lines missing subProductId or sizeId are skipped and counted as failures.
- * @returns {Promise<{ successCount: number, failCount: number }>}
+ * Post each received PO line into the target warehouse via the injected adjustStock,
+ * and write the sub-product history (InventoryMovement) via the injected recordMovement.
+ *
+ * Right-sizing is resolved upstream (controller) so every postable line carries a
+ * sizeId — WarehouseStock.size is required, so even sellWithoutSizeVariants products
+ * resolve to their single/default Size. A line that still lacks subProductId or sizeId
+ * is NOT silently dropped: it is recorded as a surfaced failure (returned in `failures`)
+ * so the caller can report it instead of losing stock quietly.
+ *
+ * @returns {Promise<{ successCount: number, failCount: number, failures: Array<{name: string, reason: string}> }>}
  */
 async function postReceivedStock({
   purchaseOrder,
@@ -29,12 +36,23 @@ async function postReceivedStock({
   adjustStock,
   receiveBatch,
   generateBatchNumber,
+  recordMovement,
   userId,
   tenantId,
   logger = console,
 }) {
   let successCount = 0;
   let failCount = 0;
+  const failures = [];
+
+  const lineLabel = (item) =>
+    item.subProductName || item.sku || String(item.subProductId || 'unknown item');
+
+  const fail = (item, reason) => {
+    logger.error(`   ❌ ${lineLabel(item)} — ${reason}`);
+    failures.push({ name: lineLabel(item), reason });
+    failCount++;
+  };
 
   for (const item of purchaseOrder.items) {
     const quantityToAdd =
@@ -48,19 +66,22 @@ async function postReceivedStock({
       continue;
     }
 
-    if (!item.subProductId || !item.sizeId) {
-      const missing = !item.subProductId ? 'subProductId' : 'sizeId';
-      logger.log(
-        `   ❌ Skipping line — missing ${missing} (${item.subProductName || item.sku || 'unknown item'})`
-      );
-      failCount++;
+    if (!item.subProductId) {
+      fail(item, 'missing sub-product reference');
+      continue;
+    }
+    if (!item.sizeId) {
+      fail(item, 'could not resolve a size variant to receive into');
       continue;
     }
 
     try {
+      const effectiveBatchNumber =
+        (item.receivedBatchNumber && String(item.receivedBatchNumber).trim()) || null;
+
       if (item.tracksBatch) {
         const batchNumber =
-          (item.receivedBatchNumber && String(item.receivedBatchNumber).trim()) ||
+          effectiveBatchNumber ||
           (await generateBatchNumber({
             tenantId,
             warehouseId: targetWarehouseId,
@@ -82,7 +103,8 @@ async function postReceivedStock({
           poNumber: purchaseOrder.poNumber,
         });
       }
-      await adjustStock(
+
+      const row = await adjustStock(
         {
           warehouseId: targetWarehouseId,
           subProduct: item.subProductId,
@@ -95,13 +117,44 @@ async function postReceivedStock({
         tenantId
       );
       successCount++;
+
+      // History is recorded after the stock posts. A history-write failure is logged
+      // loudly but does not flip the line to failed — the stock has already landed.
+      if (recordMovement) {
+        const balanceAfter = row && Number.isFinite(row.currentQuantity)
+          ? row.currentQuantity
+          : undefined;
+        try {
+          await recordMovement({
+            subProduct: item.subProductId,
+            tenant: tenantId,
+            product: item.productId,
+            size: item.sizeId,
+            warehouse: targetWarehouseId,
+            quantity: quantityToAdd,
+            balanceBefore:
+              balanceAfter !== undefined ? balanceAfter - quantityToAdd : undefined,
+            balanceAfter,
+            unitCost: item.unitCost,
+            supplierName: purchaseOrder.vendorName,
+            reference: purchaseOrder.poNumber,
+            relatedPurchaseOrder: purchaseOrder._id,
+            batchNumber: effectiveBatchNumber,
+            expirationDate: item.receivedExpiryDate || null,
+            performedBy: userId,
+          });
+        } catch (histErr) {
+          logger.error(
+            `   ⚠️ Stock posted but history write failed for ${lineLabel(item)}: ${histErr.message}`
+          );
+        }
+      }
     } catch (err) {
-      logger.error(`   ❌ Failed to post line to warehouse: ${err.message}`);
-      failCount++;
+      fail(item, err.message);
     }
   }
 
-  return { successCount, failCount };
+  return { successCount, failCount, failures };
 }
 
 module.exports = { resolveTargetWarehouse, postReceivedStock };

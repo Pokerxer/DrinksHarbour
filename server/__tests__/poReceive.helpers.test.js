@@ -47,7 +47,9 @@ test('postReceivedStock posts each qualifying line to the chosen warehouse', asy
     logger: silentLogger,
   });
 
-  assert.deepStrictEqual(result, { successCount: 2, failCount: 0 });
+  assert.strictEqual(result.successCount, 2);
+  assert.strictEqual(result.failCount, 0);
+  assert.deepStrictEqual(result.failures, []);
   assert.strictEqual(calls.length, 2);
   // Line 1 uses receivedQty (6); line 2 falls back to quantity (4).
   assert.deepStrictEqual(calls[0].payload, {
@@ -63,7 +65,7 @@ test('postReceivedStock posts each qualifying line to the chosen warehouse', asy
   assert.strictEqual(calls[0].tenantId, 't1');
 });
 
-test('postReceivedStock skips a line missing sizeId but posts the others', async () => {
+test('postReceivedStock surfaces (does not silently drop) a line missing sizeId but posts the others', async () => {
   const calls = [];
   const adjustStock = async (payload) => { calls.push(payload); };
   const purchaseOrder = {
@@ -83,17 +85,21 @@ test('postReceivedStock skips a line missing sizeId but posts the others', async
     logger: silentLogger,
   });
 
-  assert.deepStrictEqual(result, { successCount: 1, failCount: 1 });
+  assert.strictEqual(result.successCount, 1);
+  assert.strictEqual(result.failCount, 1);
+  assert.strictEqual(result.failures.length, 1);
+  assert.strictEqual(result.failures[0].name, 'NoSize');
+  assert.match(result.failures[0].reason, /size/i);
   assert.strictEqual(calls.length, 1);
   assert.strictEqual(calls[0].subProduct, 'sp2');
 });
 
-test('postReceivedStock skips a line missing subProductId', async () => {
+test('postReceivedStock surfaces a line missing subProductId', async () => {
   const calls = [];
   const adjustStock = async (payload) => { calls.push(payload); };
   const purchaseOrder = {
     poNumber: 'PO-1003',
-    items: [{ subProductId: null, sizeId: 'sz1', quantity: 5, receivedQty: 5 }],
+    items: [{ subProductId: null, sizeId: 'sz1', quantity: 5, receivedQty: 5, subProductName: 'NoSub' }],
   };
 
   const result = await postReceivedStock({
@@ -105,8 +111,71 @@ test('postReceivedStock skips a line missing subProductId', async () => {
     logger: silentLogger,
   });
 
-  assert.deepStrictEqual(result, { successCount: 0, failCount: 1 });
+  assert.strictEqual(result.successCount, 0);
+  assert.strictEqual(result.failCount, 1);
+  assert.strictEqual(result.failures.length, 1);
   assert.strictEqual(calls.length, 0);
+});
+
+test('postReceivedStock writes sub-product history for each posted line with size + warehouse balance', async () => {
+  const movements = [];
+  const adjustStock = async () => ({ currentQuantity: 16 }); // balance after a +6 receipt
+  const recordMovement = async (m) => { movements.push(m); };
+  const purchaseOrder = {
+    _id: 'po-id',
+    poNumber: 'PO-1006',
+    vendorName: 'Acme Drinks',
+    items: [
+      { subProductId: 'sp1', sizeId: 'sz1', productId: 'p1', quantity: 10, receivedQty: 6,
+        unitCost: 120, subProductName: 'A' },
+    ],
+  };
+
+  const result = await postReceivedStock({
+    purchaseOrder,
+    targetWarehouseId: 'wh-A',
+    adjustStock,
+    recordMovement,
+    userId: 'u1',
+    tenantId: 't1',
+    logger: silentLogger,
+  });
+
+  assert.strictEqual(result.successCount, 1);
+  assert.strictEqual(movements.length, 1);
+  const m = movements[0];
+  assert.strictEqual(m.subProduct, 'sp1');
+  assert.strictEqual(m.size, 'sz1');
+  assert.strictEqual(m.warehouse, 'wh-A');
+  assert.strictEqual(m.quantity, 6);
+  assert.strictEqual(m.balanceAfter, 16);
+  assert.strictEqual(m.balanceBefore, 10);
+  assert.strictEqual(m.relatedPurchaseOrder, 'po-id');
+  assert.strictEqual(m.reference, 'PO-1006');
+  assert.strictEqual(m.supplierName, 'Acme Drinks');
+  assert.strictEqual(m.unitCost, 120);
+});
+
+test('postReceivedStock keeps a line successful even if the history write throws', async () => {
+  const adjustStock = async () => ({ currentQuantity: 5 });
+  const recordMovement = async () => { throw new Error('history db down'); };
+  const purchaseOrder = {
+    poNumber: 'PO-1007',
+    items: [{ subProductId: 'sp1', sizeId: 'sz1', quantity: 5, receivedQty: 5, subProductName: 'A' }],
+  };
+
+  const result = await postReceivedStock({
+    purchaseOrder,
+    targetWarehouseId: 'wh-A',
+    adjustStock,
+    recordMovement,
+    userId: 'u1',
+    tenantId: 't1',
+    logger: silentLogger,
+  });
+
+  assert.strictEqual(result.successCount, 1);
+  assert.strictEqual(result.failCount, 0);
 });
 
 test('postReceivedStock ignores zero-quantity lines without counting them', async () => {
@@ -126,7 +195,9 @@ test('postReceivedStock ignores zero-quantity lines without counting them', asyn
     logger: silentLogger,
   });
 
-  assert.deepStrictEqual(result, { successCount: 0, failCount: 0 });
+  assert.strictEqual(result.successCount, 0);
+  assert.strictEqual(result.failCount, 0);
+  assert.deepStrictEqual(result.failures, []);
   assert.strictEqual(calls.length, 0);
 });
 
@@ -153,7 +224,9 @@ test('postReceivedStock counts an adjustStock throw as a failed line and continu
     logger: silentLogger,
   });
 
-  assert.deepStrictEqual(result, { successCount: 1, failCount: 1 });
+  assert.strictEqual(result.successCount, 1);
+  assert.strictEqual(result.failCount, 1);
+  assert.strictEqual(result.failures.length, 1);
   assert.strictEqual(calls.length, 1);
   assert.strictEqual(calls[0].subProduct, 'sp2');
 });

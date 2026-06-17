@@ -373,6 +373,73 @@ async function recordReceived(subProductId, tenantId, data, performedBy) {
 }
 
 /**
+ * Record the sub-product history for a single received PO line.
+ *
+ * This is an AUDIT-ONLY write plus the per-size + lastRestock bookkeeping that the
+ * warehouse posting path (warehouseService.adjustStock → recalcSubProductStock)
+ * does NOT do. It must NOT touch SubProduct.totalStock/availableStock — those are
+ * already recomputed from WarehouseStock by the caller, so mutating them here would
+ * double-count. It writes:
+ *   • an InventoryMovement (type 'received', category 'in') so the purchase shows in
+ *     the sub-product's History tab and the received totals,
+ *   • the per-size Size.stock/availableStock increment (POS/edit-page figure), and
+ *   • SubProduct.lastRestockDate.
+ *
+ * @returns {Promise<InventoryMovement>} the created movement
+ */
+async function recordReceiptMovement({
+  subProduct, tenant, product, size, warehouse,
+  quantity, balanceBefore, balanceAfter,
+  unitCost, supplierName, reference, relatedPurchaseOrder,
+  batchNumber, expirationDate, notes, performedBy,
+}) {
+  const before = Number.isFinite(balanceBefore) ? balanceBefore : 0;
+  const after  = Number.isFinite(balanceAfter)  ? balanceAfter  : before + quantity;
+
+  const movement = await InventoryMovement.create({
+    subProduct,
+    tenant,
+    product:        product || undefined,
+    size:           size || undefined,
+    warehouse:      warehouse || undefined,
+    type:           'received',
+    category:       'in',
+    quantity,
+    quantityBefore: before,
+    quantityAfter:  after,
+    reference:      reference || undefined,
+    referenceType:  'purchase_order',
+    relatedPurchaseOrder: relatedPurchaseOrder || undefined,
+    unitCost:       unitCost ?? undefined,
+    totalCost:      unitCost != null ? unitCost * quantity : undefined,
+    supplierName:   supplierName || undefined,
+    batchNumber:    batchNumber || undefined,
+    expirationDate: expirationDate || undefined,
+    reason:         'Purchase received',
+    notes:          notes || undefined,
+    performedBy,
+    performedAt:    new Date(),
+    source:         'system',
+    status:         'confirmed',
+    isVerified:     true,
+    verifiedAt:     new Date(),
+  });
+
+  // Keep the per-size figure (read by the POS and the sub-product edit page) moving
+  // with the receipt — adjustStock only updates WarehouseStock + the SubProduct rollup.
+  if (size) {
+    await Size.findByIdAndUpdate(size, {
+      $inc: { stock: quantity, availableStock: quantity },
+    }).catch(() => {});
+  }
+  await SubProduct.findByIdAndUpdate(subProduct, {
+    $set: { lastRestockDate: new Date() },
+  }).catch(() => {});
+
+  return movement;
+}
+
+/**
  * Adjust inventory by a signed delta (positive = add, negative = remove).
  */
 async function adjustInventory(subProductId, tenantId, adjustment, reason, performedBy, notes, reference) {
@@ -818,7 +885,7 @@ module.exports = {
   // Order lifecycle (used by order processing)
   reserve, releaseReserve, commitShipment, restoreStock, isShipped,
   // Admin / manual inventory management
-  recordReceived, adjustInventory, recordReturn, transferStock,
+  recordReceived, recordReceiptMovement, adjustInventory, recordReturn, transferStock,
   createMovement, getMovements, getInventorySummary,
   cancelMovement, getNextPONumber, getLowStockItems, getInventoryValuation,
   resolveMovementWarehouse,
