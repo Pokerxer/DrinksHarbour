@@ -26,6 +26,7 @@ import { GroupItem, SortIcon } from '@/components/list-controls';
 interface OrderItem {
   name: string; variant?: string; quantity: number;
   priceAtPurchase: number; itemSubtotal: number; discountAmount?: number;
+  warehouse?: { _id: string; name: string; code: string } | null;
 }
 interface OrderRefund {
   receiptNumber?: string; totalRefunded: number; paymentMethod?: string;
@@ -45,6 +46,10 @@ interface PosOrder {
   paymentDetails?: { splitPayments?: { method: string; amount: number }[]; change?: number; amount?: number };
   items?: OrderItem[];
   refunds?: OrderRefund[];
+}
+
+function getOrderWarehouse(order: { items?: OrderItem[] }) {
+  return order.items?.find((i) => i.warehouse)?.warehouse ?? null;
 }
 
 type SortCol = 'date' | 'receipt' | 'customer' | 'cashier' | 'session' | 'method' | 'total' | 'status';
@@ -453,6 +458,7 @@ function OrderDetail({ order, tenant, onClose }: { order: PosOrder; tenant?: POS
               { label:'Cashier',  value:cashierLabel(order.posStaff) },
               { label:'Customer', value:customerLabel(order.customer)||'Walk-in Customer' },
               { label:'Session',  value:sessionLabel(order.session) },
+              ...(getOrderWarehouse(order) ? [{ label:'Warehouse', value:getOrderWarehouse(order)!.name }] : []),
               { label:'Payment',  value:payLabel },
               ...(change>0?[{label:'Change', value:formatCurrency(change)}]:[]),
               { label:'Receipt #', value:order.receiptNumber||'—' },
@@ -770,6 +776,14 @@ export default function POSOrders() {
         </td>
         <td className={`px-3 py-2.5 text-xs font-semibold ${isSel?'text-white':'text-gray-800'}`} onClick={()=>setSelected(isSel?null:order)}>
           {order.receiptNumber || order.orderNumber || '—'}
+          {(() => {
+            const wh = getOrderWarehouse(order);
+            return wh ? (
+              <span className={`ml-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold ${isSel ? 'bg-white/20 text-white' : 'bg-blue-50 text-blue-700'}`}>
+                {wh.name}
+              </span>
+            ) : null;
+          })()}
         </td>
         <td className={`px-3 py-2.5 text-xs max-w-[88px] truncate ${isSel?'text-red-100':'text-gray-600'}`} onClick={()=>setSelected(isSel?null:order)}>
           {cust || <span className={isSel?'text-red-300 italic':'text-gray-300 italic'}>Walk-in</span>}

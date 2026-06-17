@@ -44,7 +44,7 @@ interface PosOrder {
 }
 
 type GroupByKey  = 'cashier' | 'payment_method' | 'product' | 'terminal'
-                 | 'product_category' | 'subcategory' | 'brand'
+                 | 'product_category' | 'subcategory' | 'brand' | 'warehouse'
                  | 'order_day' | 'order_week' | 'order_month' | 'order_quarter' | 'order_year';
 type Measure     = 'total_price' | 'count' | 'avg_price' | 'product_qty' | 'line_count' | 'subtotal' | 'total_discount' | 'profit' | 'delay_validation' | 'subtotal_notax';
 type ChartType     = 'bar' | 'line' | 'pie' | 'table';
@@ -87,6 +87,7 @@ const GROUP_BY_ITEMS: { key: GroupByKey; label: string }[] = [
   { key: 'subcategory',      label: 'Subcategory' },
   { key: 'brand',            label: 'Brand' },
   { key: 'payment_method',   label: 'Payment Method' },
+  { key: 'warehouse',        label: 'Warehouse' },
 ];
 
 const GROUP_BY_DATE_ITEMS: { key: GroupByKey; label: string }[] = [
@@ -362,6 +363,8 @@ function computeGroupData(
     } else if (groupBy === 'terminal') {
       const t = o.session?.terminalType || 'retail';
       key = t.charAt(0).toUpperCase() + t.slice(1);
+    } else if (groupBy === 'warehouse') {
+      key = orderWarehouseName(o);
     } else if (groupBy === 'order_day') {
       key = new Date(o.placedAt || o.createdAt).toISOString().split('T')[0];
     } else if (groupBy === 'order_week') {
@@ -476,12 +479,17 @@ function computeGroupData(
 
 // ── Multi-series (stacked) computation ────────────────────────────────────────
 
+function orderWarehouseName(o: PosOrder): string {
+  return o.items?.find((i) => (i as any).warehouse)?.warehouse?.name ?? 'No warehouse';
+}
+
 function getOrderG1Key(o: PosOrder, groupBy: GroupByKey, prodMeta: Record<string, ProdMeta>): string {
   if (groupBy === 'cashier') return cashierLabel(o.posStaff);
   if (groupBy === 'terminal') {
     const t = o.session?.terminalType || 'retail';
     return t.charAt(0).toUpperCase() + t.slice(1);
   }
+  if (groupBy === 'warehouse') return orderWarehouseName(o);
   if (groupBy === 'payment_method') return METHOD_LABEL[o.paymentMethod] || o.paymentMethod || 'Other';
   if (groupBy === 'order_day') return new Date(o.placedAt || o.createdAt).toISOString().split('T')[0];
   if (groupBy === 'order_week') {
