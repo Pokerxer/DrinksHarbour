@@ -39,6 +39,8 @@ const uomConversionRoutes    = require('./routes/uomConversion.routes');
 const exchangeRateRoutes     = require('./routes/exchangeRate.routes');
 const shippingRoutes         = require('./routes/shipping.routes');
 const analyticsRoutes        = require('./routes/analytics.routes');
+const geminiRoutes           = require('./routes/gemini.routes');
+const bannerGeminiRoutes     = require('./routes/banner-gemini.routes');
 
 const app = express();
 app.set('trust proxy', 1); // Trust first proxy (Vercel edge)
@@ -173,6 +175,8 @@ app.use('/api/uom-conversions',    uomConversionRoutes);
 app.use('/api/exchange-rates',     exchangeRateRoutes);
 app.use('/api/shipping',           shippingRoutes);
 app.use('/api/analytics',          analyticsRoutes);
+app.use('/api/gemini',             geminiRoutes);
+app.use('/api/banner-ai',          bannerGeminiRoutes);
 app.use('/api/tenants',            require('./routes/tenant.routes'));
 app.use('/api/pos',                require('./routes/pos.routes'));
 app.use('/api/pos-combos',         require('./routes/posCombo.routes'));
