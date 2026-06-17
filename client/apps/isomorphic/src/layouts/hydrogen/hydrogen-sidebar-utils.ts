@@ -17,10 +17,22 @@ const hydrogenSidebarExpandedAtomWithPersistence = atom(
 );
 
 export function useHydrogenSidebar() {
-  const [expanded, setExpanded] = useAtom(hydrogenSidebarExpandedAtomWithPersistence);
+  const [expanded, setExpanded] = useAtom(
+    hydrogenSidebarExpandedAtomWithPersistence
+  );
 
   return {
     expanded: expanded ?? true,
     setExpanded,
   };
+}
+
+// ── App launcher (full-screen Odoo-style apps overlay) ──────────────────────────
+// Replaces the persistent sidebar. Always starts closed on load (no persistence) —
+// it is a transient overlay toggled from the page-header launcher button.
+const appLauncherOpenAtom = atom(false);
+
+export function useAppLauncher() {
+  const [open, setOpen] = useAtom(appLauncherOpenAtom);
+  return { open, setOpen };
 }

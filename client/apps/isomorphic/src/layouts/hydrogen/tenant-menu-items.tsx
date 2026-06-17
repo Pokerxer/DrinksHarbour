@@ -16,25 +16,35 @@ import {
   PiUsersThreeDuotone,
   PiStorefrontDuotone,
   PiChatCircleDotsDuotone,
-  PiCurrencyDollarDuotone,
   PiArrowsDownUpDuotone,
   PiFilesDuotone,
+  PiWarehouseDuotone,
+  PiInvoiceDuotone,
+  PiGearDuotone,
 } from 'react-icons/pi';
 
 // ─── Plan hierarchy ──────────────────────────────────────────────────────────
 
-export type TenantPlan = 'free_trial' | 'starter' | 'pro' | 'enterprise' | 'custom';
+export type TenantPlan =
+  | 'free_trial'
+  | 'starter'
+  | 'pro'
+  | 'enterprise'
+  | 'custom';
 
 const PLAN_RANK: Record<TenantPlan, number> = {
   free_trial: 0,
-  starter:    1,
-  pro:        2,
+  starter: 1,
+  pro: 2,
   enterprise: 3,
-  custom:     4,
+  custom: 4,
 };
 
 /** Returns true if the tenant's plan meets or exceeds the required plan. */
-export function planAllows(tenantPlan: string | undefined, required: TenantPlan): boolean {
+export function planAllows(
+  tenantPlan: string | undefined,
+  required: TenantPlan
+): boolean {
   const rank = PLAN_RANK[tenantPlan as TenantPlan] ?? 0;
   return rank >= PLAN_RANK[required];
 }
@@ -118,6 +128,15 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     icon: <PiFilesDuotone />,
   },
 
+  // ─── Inventory ──────────────────────────────────────────────
+  { label: 'Inventory' },
+  {
+    name: 'Warehouses',
+    href: routes.warehouses.list,
+    icon: <PiWarehouseDuotone />,
+    // available on all plans
+  },
+
   // ─── Sales ──────────────────────────────────────────────────
   { label: 'Sales' },
   {
@@ -163,7 +182,6 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     name: 'Purchase Orders',
     href: '#',
     icon: <PiShoppingCartDuotone />,
-    requiredPlan: 'pro',
     dropdownItems: [
       { name: 'All Orders', href: routes.eCommerce.purchases },
       { name: 'New Purchase', href: routes.eCommerce.createPurchase },
@@ -173,8 +191,7 @@ export const tenantMenuItems: TenantMenuEntry[] = [
   {
     name: 'Vendor Bills',
     href: '#',
-    icon: <PiCurrencyDollarDuotone />,
-    requiredPlan: 'pro',
+    icon: <PiInvoiceDuotone />,
     dropdownItems: [
       { name: 'All Bills', href: routes.eCommerce.vendorBills },
       { name: 'New Bill', href: routes.eCommerce.createVendorBill },
@@ -218,6 +235,12 @@ export const tenantMenuItems: TenantMenuEntry[] = [
 
   // ─── Settings ───────────────────────────────────────────────
   { label: 'Settings' },
+  {
+    name: 'Settings',
+    href: '/settings',
+    icon: <PiGearDuotone />,
+    // available on all plans
+  },
   {
     name: 'Account Settings',
     href: routes.forms.profileSettings,

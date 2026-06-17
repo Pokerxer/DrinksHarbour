@@ -8,6 +8,7 @@ import { warehouseService, type Warehouse } from '@/services/warehouse.service';
 import { purchaseOrderService } from '@/services/purchaseOrder.service';
 import type { PurchaseSettings } from '@/services/purchaseOrder.service';
 import toast from 'react-hot-toast';
+import { LauncherButton } from '@/layouts/hydrogen/app-launcher';
 import {
   PiStorefront,
   PiGear,
@@ -1301,6 +1302,7 @@ export default function SettingsPage() {
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
         <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-200 bg-white px-6 py-3 shadow-sm">
+          <LauncherButton className="shrink-0" />
           <div className="flex flex-1 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 focus-within:border-gray-300 focus-within:ring-1 focus-within:ring-gray-200">
             <PiMagnifyingGlass size={15} className="shrink-0 text-gray-400" />
             <input

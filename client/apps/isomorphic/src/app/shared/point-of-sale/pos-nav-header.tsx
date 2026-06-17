@@ -12,6 +12,26 @@ import {
   PiStorefront,
   PiX,
   PiCheck,
+  PiGaugeDuotone,
+  PiReceiptDuotone,
+  PiPackageDuotone,
+  PiChartBarDuotone,
+  PiGearDuotone,
+  PiClockCounterClockwiseDuotone,
+  PiCreditCardDuotone,
+  PiPrinterDuotone,
+  PiMonitorDuotone,
+  PiUsersThreeDuotone,
+  PiStackDuotone,
+  PiTagDuotone,
+  PiListChecksDuotone,
+  PiGiftDuotone,
+  PiChartLineUpDuotone,
+  PiCoinsDuotone,
+  PiStorefrontDuotone,
+  PiNoteDuotone,
+  PiSquaresFourDuotone,
+  PiSlidersDuotone,
 } from 'react-icons/pi';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import {
@@ -20,58 +40,111 @@ import {
   usePOSActiveShop,
 } from '@/app/shared/point-of-sale/store';
 import type { POSShop } from '@/app/shared/point-of-sale/types';
+import { LauncherButton } from '@/layouts/hydrogen/app-launcher';
+import NavDropdownPanel, {
+  type NavSubItem,
+} from '@/app/shared/nav-dropdown-panel';
 
 type NavItem =
-  | { label: string; href: string; items?: never }
-  | { label: string; href?: never; items: { label: string; href: string }[] };
+  | { label: string; href: string; icon: React.ReactNode; items?: never }
+  | { label: string; href?: never; icon: React.ReactNode; items: NavSubItem[] };
 
 const navItems: NavItem[] = [
-  { label: 'Dashboard', href: routes.pos.index },
+  { label: 'Dashboard', href: routes.pos.index, icon: <PiGaugeDuotone /> },
   {
     label: 'Orders',
+    icon: <PiReceiptDuotone />,
     items: [
-      { label: 'Orders', href: routes.pos.orders },
-      { label: 'Sessions', href: routes.pos.sessions },
-      { label: 'Payments', href: '#' },
-      { label: 'Preparation Printers', href: '#' },
-      { label: 'Preparation Display', href: '#' },
-      { label: 'Customers', href: '#' },
+      { label: 'Orders', href: routes.pos.orders, icon: <PiReceiptDuotone /> },
+      {
+        label: 'Sessions',
+        href: routes.pos.sessions,
+        icon: <PiClockCounterClockwiseDuotone />,
+      },
+      { label: 'Payments', href: '#', icon: <PiCreditCardDuotone /> },
+      { label: 'Preparation Printers', href: '#', icon: <PiPrinterDuotone /> },
+      { label: 'Preparation Display', href: '#', icon: <PiMonitorDuotone /> },
+      { label: 'Customers', href: '#', icon: <PiUsersThreeDuotone /> },
     ],
   },
   {
     label: 'Products',
+    icon: <PiPackageDuotone />,
     items: [
-      { label: 'Products', href: `${routes.eCommerce.subProducts}?from=pos` },
+      {
+        label: 'Products',
+        href: `${routes.eCommerce.subProducts}?from=pos`,
+        icon: <PiPackageDuotone />,
+      },
       {
         label: 'Product Variants',
         href: `${routes.eCommerce.subProducts}?from=pos`,
+        icon: <PiStackDuotone />,
       },
-      { label: 'Combo Choices', href: routes.pos.combos },
-      { label: 'Pricelists', href: routes.pos.pricelists },
-      { label: 'Discount & Loyalty', href: routes.pos.loyalty },
-      { label: 'Gift cards & eWallet', href: '#' },
+      {
+        label: 'Combo Choices',
+        href: routes.pos.combos,
+        icon: <PiSquaresFourDuotone />,
+      },
+      {
+        label: 'Pricelists',
+        href: routes.pos.pricelists,
+        icon: <PiListChecksDuotone />,
+      },
+      {
+        label: 'Discount & Loyalty',
+        href: routes.pos.loyalty,
+        icon: <PiTagDuotone />,
+      },
+      { label: 'Gift cards & eWallet', href: '#', icon: <PiGiftDuotone /> },
     ],
   },
   {
     label: 'Reporting',
+    icon: <PiChartBarDuotone />,
     items: [
-      { label: 'Order Analysis', href: routes.pos.orderAnalysis },
-      { label: 'Orders', href: routes.pos.orders },
-      { label: 'Sales Details', href: routes.pos.salesDetails },
-      { label: 'Session Report', href: routes.pos.sessionReport },
+      {
+        label: 'Order Analysis',
+        href: routes.pos.orderAnalysis,
+        icon: <PiChartLineUpDuotone />,
+      },
+      { label: 'Orders', href: routes.pos.orders, icon: <PiReceiptDuotone /> },
+      {
+        label: 'Sales Details',
+        href: routes.pos.salesDetails,
+        icon: <PiChartBarDuotone />,
+      },
+      {
+        label: 'Session Report',
+        href: routes.pos.sessionReport,
+        icon: <PiClockCounterClockwiseDuotone />,
+      },
     ],
   },
   {
     label: 'Configuration',
+    icon: <PiGearDuotone />,
     items: [
-      { label: 'Settings', href: routes.pos.settings },
-      { label: 'Payment Methods', href: '#' },
-      { label: 'Coins/Bills', href: '#' },
-      { label: 'Point of Sales', href: routes.pos.index },
-      { label: 'Note Models', href: '#' },
-      { label: 'Products', href: `${routes.eCommerce.subProducts}?from=pos` },
-      { label: 'PoS Product Categories', href: routes.eCommerce.categories },
-      { label: 'Attributes', href: '#' },
+      { label: 'Settings', href: routes.pos.settings, icon: <PiGearDuotone /> },
+      { label: 'Payment Methods', href: '#', icon: <PiCreditCardDuotone /> },
+      { label: 'Coins/Bills', href: '#', icon: <PiCoinsDuotone /> },
+      {
+        label: 'Point of Sales',
+        href: routes.pos.index,
+        icon: <PiStorefrontDuotone />,
+      },
+      { label: 'Note Models', href: '#', icon: <PiNoteDuotone /> },
+      {
+        label: 'Products',
+        href: `${routes.eCommerce.subProducts}?from=pos`,
+        icon: <PiPackageDuotone />,
+      },
+      {
+        label: 'PoS Product Categories',
+        href: routes.eCommerce.categories,
+        icon: <PiTagDuotone />,
+      },
+      { label: 'Attributes', href: '#', icon: <PiSlidersDuotone /> },
     ],
   },
 ];
@@ -416,6 +489,9 @@ export default function POSNavHeader() {
       ref={navRef}
       className="relative mb-0 flex items-center border-b border-gray-200 bg-white"
     >
+      {/* App launcher toggle */}
+      <LauncherButton className="me-1 ms-3 shadow-none" />
+
       {/* Brand */}
       <Link
         href={routes.pos.index}
@@ -456,28 +532,36 @@ export default function POSNavHeader() {
               <Link
                 key={item.label}
                 href={item.href}
-                className={`relative px-4 py-3 text-sm transition-colors ${
+                className={`relative flex items-center gap-1.5 px-4 py-3 text-sm transition-colors ${
                   isActive
                     ? `${activeCls} text-[#b20202]`
                     : 'font-normal text-gray-600 hover:text-gray-900'
                 }`}
               >
+                <span className="[&>svg]:h-[18px] [&>svg]:w-[18px]">
+                  {item.icon}
+                </span>
                 {item.label}
               </Link>
             );
           }
+
+          const columns = (item.items?.length ?? 0) > 4 ? 2 : 1;
 
           return (
             <div key={item.label} className="relative">
               <button
                 type="button"
                 onClick={() => setOpenMenu(isOpen ? null : item.label)}
-                className={`relative flex items-center gap-1 px-4 py-3 text-sm transition-colors ${
+                className={`relative flex items-center gap-1.5 px-4 py-3 text-sm transition-colors ${
                   isActive || isOpen
                     ? `${activeCls} text-[#b20202]`
                     : 'font-normal text-gray-600 hover:text-gray-900'
                 }`}
               >
+                <span className="[&>svg]:h-[18px] [&>svg]:w-[18px]">
+                  {item.icon}
+                </span>
                 {item.label}
                 <PiCaretDown
                   className={`h-3 w-3 transition-transform ${isOpen ? 'rotate-180' : ''}`}
@@ -485,26 +569,12 @@ export default function POSNavHeader() {
               </button>
 
               {isOpen && (
-                <div className="absolute left-0 top-full z-50 min-w-[210px] rounded-b border border-t-0 border-gray-200 bg-white shadow-lg">
-                  {item.items?.map((sub) => {
-                    const isSubActive =
-                      sub.href !== '#' && pathname === sub.href;
-                    return (
-                      <Link
-                        key={sub.label}
-                        href={sub.href}
-                        onClick={close}
-                        className={`block px-4 py-2.5 text-sm transition-colors ${
-                          isSubActive
-                            ? 'bg-[#fef2f2] font-medium text-[#b20202]'
-                            : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-                        }`}
-                      >
-                        {sub.label}
-                      </Link>
-                    );
-                  })}
-                </div>
+                <NavDropdownPanel
+                  items={item.items!}
+                  pathname={pathname}
+                  onNavigate={close}
+                  columns={columns}
+                />
               )}
             </div>
           );
