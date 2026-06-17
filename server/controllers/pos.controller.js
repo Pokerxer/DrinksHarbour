@@ -928,8 +928,13 @@ exports.pinLogin = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'tenantSlug and pin are required' });
   }
 
-  const tenant = await Tenant.findOne({ slug: tenantSlug, isActive: true });
-  if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
+  // isActive is a Mongoose virtual (status === 'approved' && subscriptionStatus
+  // in active/trialing), not a stored field — so it can't be used in the query
+  // filter. Fetch by slug, then evaluate the virtual on the hydrated document.
+  const tenant = await Tenant.findOne({ slug: tenantSlug });
+  if (!tenant || !tenant.isActive) {
+    return res.status(404).json({ success: false, message: 'Tenant not found' });
+  }
 
   const users = await User.find({
     tenant:     tenant._id,
@@ -1611,8 +1616,13 @@ exports.staffLogin = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'tenantSlug and staffId required' });
   }
 
-  const tenant = await Tenant.findOne({ slug: tenantSlug, isActive: true });
-  if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
+  // isActive is a Mongoose virtual (status === 'approved' && subscriptionStatus
+  // in active/trialing), not a stored field — so it can't be used in the query
+  // filter. Fetch by slug, then evaluate the virtual on the hydrated document.
+  const tenant = await Tenant.findOne({ slug: tenantSlug });
+  if (!tenant || !tenant.isActive) {
+    return res.status(404).json({ success: false, message: 'Tenant not found' });
+  }
 
   const user = await User.findOne({
     _id: staffId,
@@ -1683,8 +1693,13 @@ exports.listPOSStaff = asyncHandler(async (req, res) => {
   const { tenantSlug } = req.query;
   if (!tenantSlug) return res.status(400).json({ success: false, message: 'tenantSlug required' });
 
-  const tenant = await Tenant.findOne({ slug: tenantSlug, isActive: true });
-  if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
+  // isActive is a Mongoose virtual (status === 'approved' && subscriptionStatus
+  // in active/trialing), not a stored field — so it can't be used in the query
+  // filter. Fetch by slug, then evaluate the virtual on the hydrated document.
+  const tenant = await Tenant.findOne({ slug: tenantSlug });
+  if (!tenant || !tenant.isActive) {
+    return res.status(404).json({ success: false, message: 'Tenant not found' });
+  }
 
   const staff = await User.find({
     tenant:    tenant._id,
