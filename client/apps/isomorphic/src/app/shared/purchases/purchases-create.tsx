@@ -21,7 +21,6 @@ import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { purchaseOrderService } from '@/services/purchaseOrder.service';
 import { vendorService } from '@/services/vendor.service';
-import { posApi } from '@/app/shared/point-of-sale/api';
 import { subproductService } from '@/services/subproduct.service';
 import { CURRENCIES } from './types';
 import type { Vendor } from './types';
@@ -368,8 +367,8 @@ function ProductSearch({
     if (initialLoaded || !token) return;
     setLoading(true);
     try {
-      const res = await posApi.getProducts(token, { limit: 8 });
-      const list = mapProducts(res?.products ?? []);
+      const res = await subproductService.getSubProducts(token, { limit: 50 });
+      const list = mapProducts(res?.data?.subProducts ?? []);
       setInitial(list);
       setProducts(list);
       setInitialLoaded(true);
@@ -389,11 +388,11 @@ function ProductSearch({
     const t = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await posApi.getProducts(token, {
+        const res = await subproductService.getSubProducts(token, {
           search: query.trim(),
-          limit: 8,
+          limit: 50,
         });
-        const list = mapProducts(res?.products ?? []);
+        const list = mapProducts(res?.data?.subProducts ?? []);
         setProducts(list);
         setExpandedId(null);
       } catch {

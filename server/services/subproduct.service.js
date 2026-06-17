@@ -169,10 +169,19 @@ const getMySubProducts = async (tenantId, options) => {
     query.status = status;
   }
 
-  // Search across product name and SKU
+  // Search across product name and SKU. Product name lives on the populated
+  // Product ref, so resolve matching product ids first, then OR them with SKU.
   if (search && search.trim().length > 0) {
+    const term = new RegExp(search.trim(), 'i');
+    // Products are platform-level (no tenant field); the outer query.tenant
+    // already scopes the SubProduct results, so match product name globally.
+    const matchingProductIds = await Product.find({ name: term })
+      .select('_id')
+      .lean()
+      .then((docs) => docs.map((d) => d._id));
     query.$or = [
-      { sku: new RegExp(search, 'i') },
+      { sku: term },
+      ...(matchingProductIds.length ? [{ product: { $in: matchingProductIds } }] : []),
     ];
   }
 
