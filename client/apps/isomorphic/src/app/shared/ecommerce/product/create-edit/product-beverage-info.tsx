@@ -141,7 +141,11 @@ export default function ProductBeverageInfo({
   // Per-field handlers
   const genAbv = () =>
     withAi('abv', async () => {
-      const res = await geminiService.generateVolumeAbv(productName, token, watch('type'));
+      const res = await geminiService.generateVolumeAbv(
+        productName,
+        token,
+        watch('type')
+      );
       const d = res.data;
       if (d.abv) {
         setValue('abv', d.abv);
@@ -153,30 +157,50 @@ export default function ProductBeverageInfo({
 
   const genVolume = () =>
     withAi('volumeMl', async () => {
-      const res = await geminiService.generateVolumeAbv(productName, token, watch('type'));
+      const res = await geminiService.generateVolumeAbv(
+        productName,
+        token,
+        watch('type')
+      );
       if (res.data.volumeMl) setValue('volumeMl', res.data.volumeMl);
       toast.success('Volume generated!');
     });
 
   const genStandardSizes = () =>
     withAi('standardSizes', async () => {
-      const res = await geminiService.generateStandardSizes(productName, token, watch('type'), watch('volumeMl'));
-      if (res.data.standardSizes) setValue('standardSizes', res.data.standardSizes);
+      const res = await geminiService.generateStandardSizes(
+        productName,
+        token,
+        watch('type'),
+        watch('volumeMl')
+      );
+      if (res.data.standardSizes)
+        setValue('standardSizes', res.data.standardSizes);
       toast.success('Bottle sizes generated!');
     });
 
   const genServingSize = () =>
     withAi('servingSize', async () => {
-      const res = await geminiService.generateBeverageInfo(productName, token, watch('type'));
+      const res = await geminiService.generateBeverageInfo(
+        productName,
+        token,
+        watch('type')
+      );
       if (res.data.servingSize) setValue('servingSize', res.data.servingSize);
-      if (res.data.servingsPerContainer) setValue('servingsPerContainer', res.data.servingsPerContainer);
+      if (res.data.servingsPerContainer)
+        setValue('servingsPerContainer', res.data.servingsPerContainer);
       toast.success('Serving info generated!');
     });
 
   const genServingsPerContainer = () =>
     withAi('servingsPerContainer', async () => {
-      const res = await geminiService.generateBeverageInfo(productName, token, watch('type'));
-      if (res.data.servingsPerContainer) setValue('servingsPerContainer', res.data.servingsPerContainer);
+      const res = await geminiService.generateBeverageInfo(
+        productName,
+        token,
+        watch('type')
+      );
+      if (res.data.servingsPerContainer)
+        setValue('servingsPerContainer', res.data.servingsPerContainer);
       toast.success('Servings per container generated!');
     });
 
@@ -186,7 +210,9 @@ export default function ProductBeverageInfo({
     if (!token) return toast.error('Please sign in to use AI features');
 
     setIsGenerating(true);
-    toast.loading('Generating beverage details with AI...', { id: 'ai-beverage' });
+    toast.loading('Generating beverage details with AI...', {
+      id: 'ai-beverage',
+    });
 
     try {
       const response = await geminiService.generateBeverageInfo(
@@ -203,14 +229,21 @@ export default function ProductBeverageInfo({
       setValue('proof', data.proof);
       setValue('standardSizes', data.standardSizes || []);
       if (data.servingSize) setValue('servingSize', data.servingSize);
-      if (data.servingsPerContainer) setValue('servingsPerContainer', data.servingsPerContainer);
+      if (data.servingsPerContainer)
+        setValue('servingsPerContainer', data.servingsPerContainer);
 
       toast.success('Beverage details generated!', { id: 'ai-beverage' });
     } catch (error: any) {
       console.error('AI generation error:', error);
-      const errorMessage = error.message || 'Failed to generate beverage details';
-      if (errorMessage.includes('Failed to fetch') || errorMessage.includes('connect')) {
-        toast.error('Cannot connect to server. Make sure backend is running.', { id: 'ai-beverage' });
+      const errorMessage =
+        error.message || 'Failed to generate beverage details';
+      if (
+        errorMessage.includes('Failed to fetch') ||
+        errorMessage.includes('connect')
+      ) {
+        toast.error('Cannot connect to server. Make sure backend is running.', {
+          id: 'ai-beverage',
+        });
       } else {
         toast.error(errorMessage, { id: 'ai-beverage' });
       }
@@ -281,8 +314,8 @@ export default function ProductBeverageInfo({
                 This is an alcoholic beverage
               </span>
               <span className="block text-sm text-gray-500">
-                Check this if the product contains alcohol. Age verification will
-                be required.
+                Check this if the product contains alcohol. Age verification
+                will be required.
               </span>
             </div>
             <Checkbox
@@ -344,7 +377,12 @@ export default function ProductBeverageInfo({
                   <label className="flex items-center gap-2 text-sm font-semibold text-gray-900">
                     <Droplets className="h-4 w-4 text-blue-500" />
                     ABV (Alcohol By Volume) %
-                    <AiBtn field="abv" generating={generating} onClick={genAbv} disabled={!hasName} />
+                    <AiBtn
+                      field="abv"
+                      generating={generating}
+                      onClick={genAbv}
+                      disabled={!hasName}
+                    />
                   </label>
                   <Tooltip content="Alcohol By Volume percentage">
                     <Info className="h-4 w-4 cursor-help text-gray-400" />
@@ -402,11 +440,7 @@ export default function ProductBeverageInfo({
                   >
                     <Badge
                       color={
-                        abv < 15
-                          ? 'success'
-                          : abv < 40
-                            ? 'warning'
-                            : 'danger'
+                        abv < 15 ? 'success' : abv < 40 ? 'warning' : 'danger'
                       }
                       className="text-xs"
                     >
@@ -471,7 +505,12 @@ export default function ProductBeverageInfo({
             <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
               <Scale className="h-4 w-4 text-indigo-500" />
               Volume (ml)
-              <AiBtn field="volumeMl" generating={generating} onClick={genVolume} disabled={!hasName} />
+              <AiBtn
+                field="volumeMl"
+                generating={generating}
+                onClick={genVolume}
+                disabled={!hasName}
+              />
             </label>
 
             <Input
@@ -516,7 +555,12 @@ export default function ProductBeverageInfo({
               <span className="text-xs font-normal text-gray-500">
                 ({selectedSizes.length} selected)
               </span>
-              <AiBtn field="standardSizes" generating={generating} onClick={genStandardSizes} disabled={!hasName} />
+              <AiBtn
+                field="standardSizes"
+                generating={generating}
+                onClick={genStandardSizes}
+                disabled={!hasName}
+              />
             </label>
 
             <motion.div
@@ -591,7 +635,12 @@ export default function ProductBeverageInfo({
             <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
               <GlassWater className="h-4 w-4 text-cyan-500" />
               Serving Size
-              <AiBtn field="servingSize" generating={generating} onClick={genServingSize} disabled={!hasName} />
+              <AiBtn
+                field="servingSize"
+                generating={generating}
+                onClick={genServingSize}
+                disabled={!hasName}
+              />
             </label>
 
             <Input
@@ -610,7 +659,12 @@ export default function ProductBeverageInfo({
           <div className="rounded-xl border border-gray-200 bg-white p-5">
             <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
               Servings Per Container
-              <AiBtn field="servingsPerContainer" generating={generating} onClick={genServingsPerContainer} disabled={!hasName} />
+              <AiBtn
+                field="servingsPerContainer"
+                generating={generating}
+                onClick={genServingsPerContainer}
+                disabled={!hasName}
+              />
             </label>
 
             <Input

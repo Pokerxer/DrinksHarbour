@@ -19,20 +19,20 @@ const sizeOptionSchema = z.object({
   weightGrams: z.number().nullable().optional(),
   servingsPerUnit: z.number().nullable().optional(),
   unitsPerPack: z.number().min(1).default(1),
-  
+
   // Pricing
   basePrice: z.number().min(0).nullable().optional(),
   compareAtPrice: z.number().min(0).nullable().optional(),
   costPrice: z.number().min(0).nullable().optional(),
   wholesalePrice: z.number().min(0).nullable().optional(),
   currency: z.string().default('NGN'),
-  
+
   // Auto-calculation fields
   markupPercentage: z.number().min(0).max(500).default(25),
   roundUp: z.enum(['none', '100', '1000']).default('none'),
   saleDiscountPercentage: z.number().min(0).max(100).default(0),
   salePrice: z.number().min(0).nullable().optional(),
-  
+
   // Inventory
   stock: z.number().min(0).default(0),
   reservedStock: z.number().min(0).default(0),
@@ -41,20 +41,20 @@ const sizeOptionSchema = z.object({
   reorderPoint: z.number().min(0).default(5),
   reorderQuantity: z.number().min(1).default(50),
   availability: z.string().optional(),
-  
+
   // Identification
   sku: z.string().optional(),
   barcode: z.string().optional(),
-  
+
   // Packaging & Details
   packaging: z.string().optional(),
-  
+
   // Order Constraints
   minOrderQuantity: z.number().min(1).optional(),
   maxOrderQuantity: z.number().min(1).optional(),
   orderIncrement: z.number().min(1).optional(),
   requiresAgeVerification: z.boolean().optional(),
-  
+
   // Flags
   isDefault: z.boolean().default(false),
   isOnSale: z.boolean().default(false),
@@ -62,7 +62,7 @@ const sizeOptionSchema = z.object({
   isBestSeller: z.boolean().default(false),
   isPopularSize: z.boolean().default(false),
   isLimitedEdition: z.boolean().default(false),
-  
+
   // Rank
   rank: z.number().min(1).optional(),
 });
@@ -79,7 +79,9 @@ const awardSchema = z.object({
   title: z.string().optional(),
   organization: z.string().optional(),
   year: z.number().nullable().optional(),
-  medal: z.enum(['gold', 'silver', 'bronze', 'platinum', 'double_gold']).optional(),
+  medal: z
+    .enum(['gold', 'silver', 'bronze', 'platinum', 'double_gold'])
+    .optional(),
   score: z.number().nullable().optional(),
 });
 
@@ -106,7 +108,8 @@ export const productFormSchema = z.object({
   // ═══════════════════════════════════════════════════════════════════
   // IDENTIFICATION
   // ═══════════════════════════════════════════════════════════════════
-  name: z.string({ required_error: 'Product name is required' })
+  name: z
+    .string({ required_error: 'Product name is required' })
     .min(1, 'Product name cannot be empty')
     .max(200, 'Product name must be 200 characters or less')
     .optional()
@@ -120,13 +123,36 @@ export const productFormSchema = z.object({
   // ═══════════════════════════════════════════════════════════════════
   // BEVERAGE-SPECIFIC ATTRIBUTES
   // ═══════════════════════════════════════════════════════════════════
-  type: z.enum([
-    'beer', 'wine', 'sparkling_wine', 'fortified_wine', 'spirit', 'liqueur', 
-    'cocktail_ready_to_drink', 'non_alcoholic', 'juice', 'tea', 'coffee', 
-    'energy_drink', 'water', 'mixer', 'snack', 'accessory', 'gift', 'other'
-  ], { 
-    errorMap: () => ({ message: 'Please select a valid product type from the list' })
-  }).optional().or(z.literal('')),
+  type: z
+    .enum(
+      [
+        'beer',
+        'wine',
+        'sparkling_wine',
+        'fortified_wine',
+        'spirit',
+        'liqueur',
+        'cocktail_ready_to_drink',
+        'non_alcoholic',
+        'juice',
+        'tea',
+        'coffee',
+        'energy_drink',
+        'water',
+        'mixer',
+        'snack',
+        'accessory',
+        'gift',
+        'other',
+      ],
+      {
+        errorMap: () => ({
+          message: 'Please select a valid product type from the list',
+        }),
+      }
+    )
+    .optional()
+    .or(z.literal('')),
   subType: z.string().optional(),
   isAlcoholic: z.boolean().default(false),
   tracksBatch: z.boolean().optional(),
@@ -145,11 +171,19 @@ export const productFormSchema = z.object({
   appellation: z.string().optional(),
   producer: z.string().optional(),
   brand: z.string().optional(),
-  vintage: z.preprocess((v) => {
-    if (v === '' || v === null || v === undefined) return undefined;
-    const num = Number(v);
-    return isNaN(num) ? undefined : num;
-  }, z.number().min(1800).max(new Date().getFullYear() + 1).nullable().optional()),
+  vintage: z.preprocess(
+    (v) => {
+      if (v === '' || v === null || v === undefined) return undefined;
+      const num = Number(v);
+      return isNaN(num) ? undefined : num;
+    },
+    z
+      .number()
+      .min(1800)
+      .max(new Date().getFullYear() + 1)
+      .nullable()
+      .optional()
+  ),
   age: z.preprocess((v) => {
     if (v === '' || v === null || v === undefined) return undefined;
     const num = Number(v);
@@ -177,51 +211,59 @@ export const productFormSchema = z.object({
   // ═══════════════════════════════════════════════════════════════════
   shortDescription: z.string().max(280).optional(),
   description: z.string().max(5000).optional(),
-  tastingNotes: z.object({
-    nose: z.array(z.string()).default([]),
-    aroma: z.array(z.string()).default([]),
-    palate: z.array(z.string()).default([]),
-    taste: z.array(z.string()).default([]),
-    finish: z.array(z.string()).default([]),
-    mouthfeel: z.array(z.string()).default([]),
-    appearance: z.string().optional(),
-    color: z.string().optional(),
-  }).default({}),
+  tastingNotes: z
+    .object({
+      nose: z.array(z.string()).default([]),
+      aroma: z.array(z.string()).default([]),
+      palate: z.array(z.string()).default([]),
+      taste: z.array(z.string()).default([]),
+      finish: z.array(z.string()).default([]),
+      mouthfeel: z.array(z.string()).default([]),
+      appearance: z.string().optional(),
+      color: z.string().optional(),
+    })
+    .default({}),
   flavorProfile: z.array(z.string()).default([]),
   foodPairings: z.array(z.string()).default([]),
-  servingSuggestions: z.object({
-    temperature: z.string().optional(),
-    glassware: z.string().optional(),
-    garnish: z.array(z.string()).default([]),
-    mixers: z.array(z.string()).default([]),
-  }).default({}),
+  servingSuggestions: z
+    .object({
+      temperature: z.string().optional(),
+      glassware: z.string().optional(),
+      garnish: z.array(z.string()).default([]),
+      mixers: z.array(z.string()).default([]),
+    })
+    .default({}),
 
   // ═══════════════════════════════════════════════════════════════════
   // DIETARY & ALLERGEN INFO
   // ═══════════════════════════════════════════════════════════════════
-  isDietary: z.object({
-    vegan: z.boolean().default(false),
-    vegetarian: z.boolean().default(false),
-    glutenFree: z.boolean().default(false),
-    dairyFree: z.boolean().default(false),
-    organic: z.boolean().default(false),
-    kosher: z.boolean().default(false),
-    halal: z.boolean().default(false),
-    sugarFree: z.boolean().default(false),
-    lowCalorie: z.boolean().default(false),
-    lowCarb: z.boolean().default(false),
-  }).default({}),
+  isDietary: z
+    .object({
+      vegan: z.boolean().default(false),
+      vegetarian: z.boolean().default(false),
+      glutenFree: z.boolean().default(false),
+      dairyFree: z.boolean().default(false),
+      organic: z.boolean().default(false),
+      kosher: z.boolean().default(false),
+      halal: z.boolean().default(false),
+      sugarFree: z.boolean().default(false),
+      lowCalorie: z.boolean().default(false),
+      lowCarb: z.boolean().default(false),
+    })
+    .default({}),
   allergens: z.array(z.string()).default([]),
   ingredients: z.array(z.string()).default([]),
-  nutritionalInfo: z.object({
-    calories: z.number().nullable().optional(),
-    carbohydrates: z.number().nullable().optional(),
-    sugar: z.number().nullable().optional(),
-    protein: z.number().nullable().optional(),
-    fat: z.number().nullable().optional(),
-    sodium: z.number().nullable().optional(),
-    caffeine: z.number().nullable().optional(),
-  }).default({}),
+  nutritionalInfo: z
+    .object({
+      calories: z.number().nullable().optional(),
+      carbohydrates: z.number().nullable().optional(),
+      sugar: z.number().nullable().optional(),
+      protein: z.number().nullable().optional(),
+      fat: z.number().nullable().optional(),
+      sodium: z.number().nullable().optional(),
+      caffeine: z.number().nullable().optional(),
+    })
+    .default({}),
 
   // ═══════════════════════════════════════════════════════════════════
   // CERTIFICATIONS & AWARDS
@@ -241,18 +283,26 @@ export const productFormSchema = z.object({
   // ═══════════════════════════════════════════════════════════════════
   images: z.array(mediaItemSchema).default([]),
   productImages: z.array(fileSchema).optional(),
-  uploadedImages: z.array(z.object({
-    url: z.string().optional(),
-    publicId: z.string().optional(),
-    thumbnail: z.string().optional(),
-    isPrimary: z.boolean().default(false),
-  })).default([]),
-  videos: z.array(z.object({
-    url: z.string().optional(),
-    type: z.enum(['youtube', 'vimeo', 'direct']).optional(),
-    thumbnail: z.string().optional(),
-    title: z.string().optional(),
-  })).default([]),
+  uploadedImages: z
+    .array(
+      z.object({
+        url: z.string().optional(),
+        publicId: z.string().optional(),
+        thumbnail: z.string().optional(),
+        isPrimary: z.boolean().default(false),
+      })
+    )
+    .default([]),
+  videos: z
+    .array(
+      z.object({
+        url: z.string().optional(),
+        type: z.enum(['youtube', 'vimeo', 'direct']).optional(),
+        thumbnail: z.string().optional(),
+        title: z.string().optional(),
+      })
+    )
+    .default([]),
 
   // ═══════════════════════════════════════════════════════════════════
   // RELATED PRODUCTS & EXTERNAL LINKS
@@ -291,158 +341,195 @@ export const productFormSchema = z.object({
   // ═══════════════════════════════════════════════════════════════════
   // SUBPRODUCT DATA (For initial creation)
   // ═══════════════════════════════════════════════════════════════════
-  subProductData: z.object({
-    // Core Relationships
-    product: z.string().optional(),
-    tenant: z.string().optional(),
-    createNewProduct: z.boolean().optional().default(false),
-    newProductData: z.object({
-      name: z.string().optional(),
-      type: z.string().optional(),
-      subType: z.string().optional(),
-      brand: z.string().optional(),
-      volumeMl: z.union([z.string(), z.number()]).optional(),
-      abv: z.union([z.string(), z.number()]).optional(),
-      proof: z.union([z.string(), z.number()]).optional(),
-      barcode: z.string().optional(),
-      category: z.string().optional(),
-      subCategory: z.string().optional(),
-      originCountry: z.string().optional(),
-      region: z.string().optional(),
-      producer: z.string().optional(),
-      description: z.string().optional(),
-      shortDescription: z.string().optional(),
-      isAlcoholic: z.boolean().optional().default(true),
-      style: z.string().optional(),
-      vintage: z.union([z.string(), z.number()]).optional(),
-    }).nullable().optional(),
-    
-    // Commercial Data
-    sku: z.string().optional(),
-    baseSellingPrice: z.number().min(0).nullable().optional(),
-    costPrice: z.number().min(0).nullable().optional(),
-    currency: z.string().default('NGN'),
-    taxRate: z.number().min(0).max(100).default(0),
-    marginPercentage: z.number().min(0).nullable().optional(),
-    markupPercentage: z.number().min(0).max(500).default(25),
-    roundUp: z.enum(['none', '100', '1000']).default('none'),
-    saleDiscountPercentage: z.number().min(0).max(100).default(0),
-    
-    // Sale / Discount Pricing
-    salePrice: z.number().min(0).nullable().optional(),
-    saleStartDate: z.preprocess((v) => {
-      if (v === '' || v === null || v === undefined) return null;
-      return v; // keep as string; server converts to Date
-    }, z.string().nullable().optional()),
-    saleEndDate: z.preprocess((v) => {
-      if (v === '' || v === null || v === undefined) return null;
-      return v;
-    }, z.string().nullable().optional()),
-    saleType: z.enum(['percentage', 'fixed', 'flash_sale', 'bundle', 'bogo']).nullable().optional(),
-    saleDiscountValue: z.number().min(0).nullable().optional(),
-    saleBanner: z.object({
-      url: z.string().optional(),
-      alt: z.string().optional(),
-    }).optional(),
-    isOnSale: z.boolean().default(false),
-    
-    // Tenant Overrides
-    shortDescriptionOverride: z.string().max(280).optional(),
-    descriptionOverride: z.string().max(5000).optional(),
-    imagesOverride: z.array(mediaItemSchema).default([]),
-    customKeywords: z.array(z.string()).default([]),
-    embeddingOverride: z.array(z.number()).default([]),
-    tenantNotes: z.string().max(1000).optional(),
-    
-    // Sizes
-    sizes: z.array(sizeOptionSchema).default([]),
-    sellWithoutSizeVariants: z.boolean().default(false),
-    defaultSize: z.string().optional(),
-    
-    // Inventory Management
-    stockStatus: z.enum(['in_stock', 'low_stock', 'out_of_stock', 'pre_order', 'discontinued']).default('in_stock'),
-    totalStock: z.number().min(0).default(0),
-    reservedStock: z.number().min(0).default(0),
-    availableStock: z.number().min(0).default(0),
-    lowStockThreshold: z.number().min(0).default(10),
-    reorderPoint: z.number().min(0).default(5),
-    reorderQuantity: z.number().min(1).default(50),
-    lastRestockDate: z.date().nullable().optional(),
-    nextRestockDate: z.date().nullable().optional(),
-    
-    // Vendor & Sourcing
-    vendor: z.string().optional(),
-    supplierSKU: z.string().optional(),
-    supplierPrice: z.number().min(0).nullable().optional(),
-    leadTimeDays: z.number().min(0).nullable().optional(),
-    minimumOrderQuantity: z.number().min(0).nullable().optional(),
-    
-    // Status fields
-    status: z.string().default('active'),
-    isFeaturedByTenant: z.boolean().default(false),
-    isNewArrival: z.boolean().default(false),
-    isBestSeller: z.boolean().default(false),
-    addedAt: z.date().optional().nullable().optional(),
-    activatedAt: z.date().optional().nullable().optional(),
-    deactivatedAt: z.date().optional().nullable().optional(),
-    discontinuedAt: z.date().optional().nullable().optional(),
-    
-    // Promotions & Discounts
-    discount: z.number().min(0).default(0),
-    discountType: z.enum(['fixed', 'percentage']).optional().nullable().optional(),
-    discountStart: z.date().optional().nullable().optional(),
-    discountEnd: z.date().optional().nullable().optional(),
-    flashSale: z.object({
-      isActive: z.boolean().default(false),
-      startDate: z.date().optional().nullable().optional(),
-      endDate: z.date().optional().nullable().optional(),
-      discountPercentage: z.number().min(0).nullable().optional(),
-      remainingQuantity: z.number().min(0).nullable().optional(),
-    }).optional(),
-    bundleDeals: z.array(z.object({
-      name: z.string().optional(),
-      products: z.array(z.string()).optional(),
-      discount: z.number().min(0).nullable().optional(),
-      validUntil: z.date().nullable().optional(),
-    })).default([]),
-    
-    // Shipping & Logistics
-    shipping: z.object({
-      weight: z.preprocess((v) => {
-        if (v === '' || v === null || v === undefined) return undefined;
-        const num = Number(v);
-        return isNaN(num) ? undefined : num;
-      }, z.number().nullable().optional()),
-      length: z.preprocess((v) => {
-        if (v === '' || v === null || v === undefined) return undefined;
-        const num = Number(v);
-        return isNaN(num) ? undefined : num;
-      }, z.number().nullable().optional()),
-      width: z.preprocess((v) => {
-        if (v === '' || v === null || v === undefined) return undefined;
-        const num = Number(v);
-        return isNaN(num) ? undefined : num;
-      }, z.number().nullable().optional()),
-      height: z.preprocess((v) => {
-        if (v === '' || v === null || v === undefined) return undefined;
-        const num = Number(v);
-        return isNaN(num) ? undefined : num;
-      }, z.number().nullable().optional()),
-      fragile: z.boolean().default(true),
-      requiresAgeVerification: z.boolean().default(true),
-      hazmat: z.boolean().default(false),
-      shippingClass: z.string().optional(),
-    }).default({}),
-    warehouse: z.object({
-      location: z.string().optional(),
-      zone: z.string().optional(),
-      aisle: z.string().optional(),
-      shelf: z.string().optional(),
-      bin: z.string().optional(),
-    }).default({}),
-  }).optional(),
+  subProductData: z
+    .object({
+      // Core Relationships
+      product: z.string().optional(),
+      tenant: z.string().optional(),
+      createNewProduct: z.boolean().optional().default(false),
+      newProductData: z
+        .object({
+          name: z.string().optional(),
+          type: z.string().optional(),
+          subType: z.string().optional(),
+          brand: z.string().optional(),
+          volumeMl: z.union([z.string(), z.number()]).optional(),
+          abv: z.union([z.string(), z.number()]).optional(),
+          proof: z.union([z.string(), z.number()]).optional(),
+          barcode: z.string().optional(),
+          category: z.string().optional(),
+          subCategory: z.string().optional(),
+          originCountry: z.string().optional(),
+          region: z.string().optional(),
+          producer: z.string().optional(),
+          description: z.string().optional(),
+          shortDescription: z.string().optional(),
+          isAlcoholic: z.boolean().optional().default(true),
+          style: z.string().optional(),
+          vintage: z.union([z.string(), z.number()]).optional(),
+        })
+        .nullable()
+        .optional(),
+
+      // Commercial Data
+      sku: z.string().optional(),
+      baseSellingPrice: z.number().min(0).nullable().optional(),
+      costPrice: z.number().min(0).nullable().optional(),
+      currency: z.string().default('NGN'),
+      taxRate: z.number().min(0).max(100).default(0),
+      marginPercentage: z.number().min(0).nullable().optional(),
+      markupPercentage: z.number().min(0).max(500).default(25),
+      roundUp: z.enum(['none', '100', '1000']).default('none'),
+      saleDiscountPercentage: z.number().min(0).max(100).default(0),
+
+      // Sale / Discount Pricing
+      salePrice: z.number().min(0).nullable().optional(),
+      saleStartDate: z.preprocess((v) => {
+        if (v === '' || v === null || v === undefined) return null;
+        return v; // keep as string; server converts to Date
+      }, z.string().nullable().optional()),
+      saleEndDate: z.preprocess((v) => {
+        if (v === '' || v === null || v === undefined) return null;
+        return v;
+      }, z.string().nullable().optional()),
+      saleType: z
+        .enum(['percentage', 'fixed', 'flash_sale', 'bundle', 'bogo'])
+        .nullable()
+        .optional(),
+      saleDiscountValue: z.number().min(0).nullable().optional(),
+      saleBanner: z
+        .object({
+          url: z.string().optional(),
+          alt: z.string().optional(),
+        })
+        .optional(),
+      isOnSale: z.boolean().default(false),
+
+      // Tenant Overrides
+      shortDescriptionOverride: z.string().max(280).optional(),
+      descriptionOverride: z.string().max(5000).optional(),
+      imagesOverride: z.array(mediaItemSchema).default([]),
+      customKeywords: z.array(z.string()).default([]),
+      embeddingOverride: z.array(z.number()).default([]),
+      tenantNotes: z.string().max(1000).optional(),
+
+      // Sizes
+      sizes: z.array(sizeOptionSchema).default([]),
+      sellWithoutSizeVariants: z.boolean().default(false),
+      defaultSize: z.string().optional(),
+
+      // Inventory Management
+      stockStatus: z
+        .enum([
+          'in_stock',
+          'low_stock',
+          'out_of_stock',
+          'pre_order',
+          'discontinued',
+        ])
+        .default('in_stock'),
+      totalStock: z.number().min(0).default(0),
+      reservedStock: z.number().min(0).default(0),
+      availableStock: z.number().min(0).default(0),
+      lowStockThreshold: z.number().min(0).default(10),
+      reorderPoint: z.number().min(0).default(5),
+      reorderQuantity: z.number().min(1).default(50),
+      lastRestockDate: z.date().nullable().optional(),
+      nextRestockDate: z.date().nullable().optional(),
+
+      // Vendor & Sourcing
+      vendor: z.string().optional(),
+      supplierSKU: z.string().optional(),
+      supplierPrice: z.number().min(0).nullable().optional(),
+      leadTimeDays: z.number().min(0).nullable().optional(),
+      minimumOrderQuantity: z.number().min(0).nullable().optional(),
+
+      // Status fields
+      status: z.string().default('active'),
+      isFeaturedByTenant: z.boolean().default(false),
+      isNewArrival: z.boolean().default(false),
+      isBestSeller: z.boolean().default(false),
+      addedAt: z.date().optional().nullable().optional(),
+      activatedAt: z.date().optional().nullable().optional(),
+      deactivatedAt: z.date().optional().nullable().optional(),
+      discontinuedAt: z.date().optional().nullable().optional(),
+
+      // Promotions & Discounts
+      discount: z.number().min(0).default(0),
+      discountType: z
+        .enum(['fixed', 'percentage'])
+        .optional()
+        .nullable()
+        .optional(),
+      discountStart: z.date().optional().nullable().optional(),
+      discountEnd: z.date().optional().nullable().optional(),
+      flashSale: z
+        .object({
+          isActive: z.boolean().default(false),
+          startDate: z.date().optional().nullable().optional(),
+          endDate: z.date().optional().nullable().optional(),
+          discountPercentage: z.number().min(0).nullable().optional(),
+          remainingQuantity: z.number().min(0).nullable().optional(),
+        })
+        .optional(),
+      bundleDeals: z
+        .array(
+          z.object({
+            name: z.string().optional(),
+            products: z.array(z.string()).optional(),
+            discount: z.number().min(0).nullable().optional(),
+            validUntil: z.date().nullable().optional(),
+          })
+        )
+        .default([]),
+
+      // Shipping & Logistics
+      shipping: z
+        .object({
+          weight: z.preprocess((v) => {
+            if (v === '' || v === null || v === undefined) return undefined;
+            const num = Number(v);
+            return isNaN(num) ? undefined : num;
+          }, z.number().nullable().optional()),
+          length: z.preprocess((v) => {
+            if (v === '' || v === null || v === undefined) return undefined;
+            const num = Number(v);
+            return isNaN(num) ? undefined : num;
+          }, z.number().nullable().optional()),
+          width: z.preprocess((v) => {
+            if (v === '' || v === null || v === undefined) return undefined;
+            const num = Number(v);
+            return isNaN(num) ? undefined : num;
+          }, z.number().nullable().optional()),
+          height: z.preprocess((v) => {
+            if (v === '' || v === null || v === undefined) return undefined;
+            const num = Number(v);
+            return isNaN(num) ? undefined : num;
+          }, z.number().nullable().optional()),
+          fragile: z.boolean().default(true),
+          requiresAgeVerification: z.boolean().default(true),
+          hazmat: z.boolean().default(false),
+          shippingClass: z.string().optional(),
+        })
+        .default({}),
+      warehouse: z
+        .object({
+          location: z.string().optional(),
+          zone: z.string().optional(),
+          aisle: z.string().optional(),
+          shelf: z.string().optional(),
+          bin: z.string().optional(),
+        })
+        .default({}),
+    })
+    .optional(),
 });
 
 export type CreateProductInput = z.infer<typeof productFormSchema>;
-export type { certificationSchema, awardSchema, externalLinkSchema, ratingsSchema };
+export type {
+  certificationSchema,
+  awardSchema,
+  externalLinkSchema,
+  ratingsSchema,
+};
 export type SizeOption = z.infer<typeof sizeOptionSchema>;

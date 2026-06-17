@@ -205,7 +205,12 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
     const missingExpiry = po.items.some((item, idx) => {
       const key = (item as any)._id?.toString() ?? String(idx);
       const receiving = receivedQtys[key] ?? 0;
-      return item.tracksBatch && !item.isAlcoholic && receiving > 0 && !expiryDates[key];
+      return (
+        item.tracksBatch &&
+        !item.isAlcoholic &&
+        receiving > 0 &&
+        !expiryDates[key]
+      );
     });
     if (missingExpiry) {
       toast.error(
@@ -517,7 +522,10 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
                             placeholder="Batch # (auto if blank)"
                             value={batchNumbers[key] ?? ''}
                             onChange={(e) =>
-                              setBatchNumbers((m) => ({ ...m, [key]: e.target.value }))
+                              setBatchNumbers((m) => ({
+                                ...m,
+                                [key]: e.target.value,
+                              }))
                             }
                             className="w-40 rounded border border-gray-200 px-2 py-1 text-xs"
                           />
@@ -525,7 +533,10 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
                             type="date"
                             value={expiryDates[key] ?? ''}
                             onChange={(e) =>
-                              setExpiryDates((m) => ({ ...m, [key]: e.target.value }))
+                              setExpiryDates((m) => ({
+                                ...m,
+                                [key]: e.target.value,
+                              }))
                             }
                             required={!item.isAlcoholic}
                             title={

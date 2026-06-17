@@ -120,7 +120,10 @@ export const warehouseService = {
     if (params.subProduct) qs.set('subProduct', params.subProduct);
     if (params.size) qs.set('size', params.size);
     const url = `${API_URL}/api/warehouses/${warehouseId}/batches${qs.toString() ? `?${qs}` : ''}`;
-    return handle(await fetch(url, { headers: auth(token) }), 'Failed to load batches');
+    return handle(
+      await fetch(url, { headers: auth(token) }),
+      'Failed to load batches'
+    );
   },
 };
 
