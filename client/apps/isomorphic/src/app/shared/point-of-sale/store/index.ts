@@ -1246,6 +1246,11 @@ export const usePOSPricelist = () => {
     setSelectedPricelist,
     clearOverride,
     isManualOverride,
+    // The effective shop key the allowed/resolved pricelists were fetched under.
+    // Checkout MUST send this as shopId so the server resolves the SAME pricelist
+    // (built-in terminals have no custom shop _id, so activeShop?._id is undefined
+    // and would otherwise drop a shop-scoped pricelist server-side).
+    shopKey,
   };
 };
 

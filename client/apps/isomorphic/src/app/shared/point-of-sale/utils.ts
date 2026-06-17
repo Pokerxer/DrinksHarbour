@@ -1,7 +1,10 @@
 export function formatCurrency(amount: number, currency = 'NGN'): string {
+  // `narrowSymbol` forces the ₦ glyph; the default en-US display for NGN is the
+  // ISO code ("NGN 1,234.50"), which is not receipt-friendly.
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
+    currencyDisplay: 'narrowSymbol',
     minimumFractionDigits: 2,
   }).format(amount);
 }

@@ -1016,7 +1016,7 @@ export default function POSPaymentModal() {
   const { setActiveView } = usePOSUI();
   const { token, terminal, tenant } = usePOSAuth();
   const { notifySale } = usePOSSaleSignal();
-  const { selectedPricelist } = usePOSPricelist();
+  const { selectedPricelist, shopKey } = usePOSPricelist();
   const { activeShop } = usePOSActiveShop();
   const posSettings = tenant?.posSettings;
   const settings = usePOSSettings();
@@ -1312,7 +1312,10 @@ export default function POSPaymentModal() {
         note: note || undefined,
         terminalType: terminal ?? 'retail',
         pricelistId: selectedPricelist?._id ?? undefined,
-        shopId: activeShop?._id,
+        // Send the resolved shop key (custom shop _id OR built-in 'retail'/
+        // 'wholesale'), matching how the allowed pricelists were fetched — so the
+        // server honors the selected pricelist instead of silently dropping it.
+        shopId: activeShop?._id ?? shopKey,
       });
 
       setCartSnapshot([...items]);
