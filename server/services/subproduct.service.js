@@ -938,7 +938,27 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
     } else {
       createdSubProduct.stockStatus = 'in_stock';
     }
-    
+
+    // Create a default "Unit" Size so WarehouseStock (size required) and
+    // the purchase receiving / audit trail always have a size to reference.
+    const Size = require('../models/Size');
+    const unitSize = new Size({
+      subproduct: createdSubProduct._id,
+      size: 'unit',
+      displayName: 'Unit',
+      stock: totalStock,
+      availableStock: totalStock,
+      sellingPrice: createdSubProduct.baseSellingPrice || 0,
+      costPrice: createdSubProduct.costPrice || 0,
+    });
+    if (session) {
+      await unitSize.save({ session });
+    } else {
+      await unitSize.save();
+    }
+    createdSubProduct.sizes = [unitSize._id];
+    createdSubProduct.defaultSize = unitSize._id;
+
     if (session) {
       await createdSubProduct.save({ session });
     } else {
@@ -1715,10 +1735,23 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
     const Size = require('../models/Size');
     
     if (data.sellWithoutSizeVariants) {
-      // If selling without variants, delete all existing sizes
+      // Delete all existing sizes and replace with a single Unit size so
+      // WarehouseStock (size required) and the purchase-receiving audit trail
+      // always have a size to reference.
       await Size.deleteMany({ subproduct: subProductId });
-      subProduct.sizes = [];
-      subProduct.defaultSize = null;
+
+      const Size = require('../models/Size');
+      const unitSize = await Size.create({
+        subproduct: subProductId,
+        size: 'unit',
+        displayName: 'Unit',
+        stock: subProduct.totalStock || 0,
+        availableStock: subProduct.availableStock || 0,
+        sellingPrice: subProduct.baseSellingPrice || 0,
+        costPrice: subProduct.costPrice || 0,
+      });
+      subProduct.sizes = [unitSize._id];
+      subProduct.defaultSize = unitSize._id;
     } else {
       // Get existing sizes to preserve IDs for updates
       const existingSizes = await Size.find({ subproduct: subProductId }).lean();

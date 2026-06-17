@@ -535,6 +535,10 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
         item.receivedQty = qty;
         item.receivedBatchNumber = receivedItem.batchNumber || null;
         item.receivedExpiryDate = receivedItem.expiryDate || null;
+        // Allow frontend to pass/override the sizeId at receive time.
+        if (receivedItem.sizeId) {
+          item.sizeId = receivedItem.sizeId;
+        }
       }
     }
   }
@@ -567,7 +571,7 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
       .map((i) => i.subProductId)
       .filter(Boolean);
     const subProducts = await SubProduct.find({ _id: { $in: spIds } })
-      .select("product sizes defaultSize sellWithoutSizeVariants")
+      .select("product sizes defaultSize sellWithoutSizeVariants baseSellingPrice costPrice")
       .populate("product", "tracksBatch")
       .lean();
     const spMap = new Map(subProducts.map((sp) => [String(sp._id), sp]));
@@ -590,6 +594,46 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
         if (!item.sizeId && sp.defaultSize) item.sizeId = sp.defaultSize;
         if (!item.sizeId && Array.isArray(sp.sizes) && sp.sizes.length === 1) {
           item.sizeId = sp.sizes[0];
+        }
+        // sellWithoutSizeVariants: ensure a default Unit Size exists so
+        // WarehouseStock.size (required) and the audit trail work.
+        if (!item.sizeId && sp.sellWithoutSizeVariants) {
+          let unitSize = sp.defaultSize
+            ? await Size.findById(sp.defaultSize).lean()
+            : null;
+          if (!unitSize && Array.isArray(sp.sizes) && sp.sizes.length > 0) {
+            unitSize = await Size.findById(sp.sizes[0]).lean();
+          }
+          if (!unitSize) {
+            // Seed stock from existing WarehouseStock so Size.stock does not drift.
+            const WarehouseStock = require('../models/WarehouseStock');
+            const wsRows = await WarehouseStock.find({
+              subProduct: sp._id,
+            })
+              .select('currentQuantity')
+              .lean();
+            const existingStock = wsRows.reduce(
+              (s, r) => s + (r.currentQuantity || 0),
+              0
+            );
+            unitSize = await Size.create({
+              subproduct: sp._id,
+              size: 'unit',
+              displayName: 'Unit',
+              stock: existingStock,
+              availableStock: existingStock,
+              sellingPrice: sp.baseSellingPrice || 0,
+              costPrice: sp.costPrice || 0,
+            });
+            await SubProduct.updateOne(
+              { _id: sp._id },
+              {
+                $set: { defaultSize: unitSize._id },
+                $push: { sizes: unitSize._id },
+              }
+            );
+          }
+          item.sizeId = unitSize._id;
         }
       }
     }
