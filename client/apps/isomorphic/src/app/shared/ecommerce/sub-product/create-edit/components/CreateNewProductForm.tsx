@@ -1,8 +1,24 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Text, Textarea, Input, Button, Select, type SelectOption, Badge } from 'rizzui';
-import { PiWarning, PiSparkle, PiSpinner, PiCaretRight, PiX, PiFolder, PiCheck } from 'react-icons/pi';
+import {
+  Text,
+  Textarea,
+  Input,
+  Button,
+  Select,
+  type SelectOption,
+  Badge,
+} from 'rizzui';
+import {
+  PiWarning,
+  PiSparkle,
+  PiSpinner,
+  PiCaretRight,
+  PiX,
+  PiFolder,
+  PiCheck,
+} from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSession } from 'next-auth/react';
 import { geminiService } from '@/services/gemini.service';
@@ -131,9 +147,9 @@ const STYLE_OPTIONS = [
   { value: 'unoaked', label: 'Unoaked' },
   { value: 'single_malt', label: 'Single Malt' },
   { value: 'blended', label: 'Blended' },
-  { value: 'craft', label: 'Craft' },
+  { value: 'artisanal', label: 'Artisanal' },
   { value: 'premium', label: 'Premium' },
-  { value: 'budget', label: 'Budget' },
+  { value: 'budget_friendly', label: 'Budget' },
 ];
 
 const defaultFormData: NewProductFormData = {
@@ -172,7 +188,10 @@ export function CreateNewProductForm({
   const [isLoadingSubCategories, setIsLoadingSubCategories] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const handleChange = (field: keyof NewProductFormData, fieldValue: string | boolean) => {
+  const handleChange = (
+    field: keyof NewProductFormData,
+    fieldValue: string | boolean
+  ) => {
     onChange({
       ...formData,
       [field]: fieldValue,
@@ -183,7 +202,7 @@ export function CreateNewProductForm({
   useEffect(() => {
     const fetchCategories = async () => {
       if (!session?.user?.token) return;
-      
+
       setIsLoadingCategories(true);
       try {
         const cats = await categoryService.getCategories(session.user.token);
@@ -225,69 +244,81 @@ export function CreateNewProductForm({
     fetchSubCategories();
   }, [formData.category, session]);
 
-  // Reset subcategory when category changes
-  useEffect(() => {
-    if (formData.category) {
-      handleChange('subCategory', '');
-    }
-  }, [formData.category]);
+  // NOTE: sub-category is intentionally NOT reset via a category-change effect.
+  // Auto-fill sets category + sub-category together in one update, and an effect
+  // keyed on formData.category would wipe the generated sub-category. User-driven
+  // category changes clear the sub-category directly in the category Select's
+  // onChange below.
 
   // Helper function to find category ID by name (case-insensitive, fuzzy match)
-  const findCategoryByName = useCallback((categoryName: string, categoriesList: Category[]): string | null => {
-    if (!categoryName || categoriesList.length === 0) return null;
-    
-    const normalizedName = categoryName.toLowerCase().trim();
-    
-    // Exact match first
-    const exactMatch = categoriesList.find(
-      cat => cat.name.toLowerCase().trim() === normalizedName
-    );
-    if (exactMatch) return exactMatch._id;
-    
-    // Partial match (contains)
-    const partialMatch = categoriesList.find(
-      cat => cat.name.toLowerCase().includes(normalizedName) || 
-             normalizedName.includes(cat.name.toLowerCase())
-    );
-    if (partialMatch) return partialMatch._id;
-    
-    // Fuzzy match by words
-    const words = normalizedName.split(/\s+/);
-    const fuzzyMatch = categoriesList.find(cat => {
-      const catWords = cat.name.toLowerCase().split(/\s+/);
-      return words.some(word => catWords.some(catWord => 
-        catWord.includes(word) || word.includes(catWord)
-      ));
-    });
-    
-    return fuzzyMatch?._id || null;
-  }, []);
+  const findCategoryByName = useCallback(
+    (categoryName: string, categoriesList: Category[]): string | null => {
+      if (!categoryName || categoriesList.length === 0) return null;
+
+      const normalizedName = categoryName.toLowerCase().trim();
+
+      // Exact match first
+      const exactMatch = categoriesList.find(
+        (cat) => cat.name.toLowerCase().trim() === normalizedName
+      );
+      if (exactMatch) return exactMatch._id;
+
+      // Partial match (contains)
+      const partialMatch = categoriesList.find(
+        (cat) =>
+          cat.name.toLowerCase().includes(normalizedName) ||
+          normalizedName.includes(cat.name.toLowerCase())
+      );
+      if (partialMatch) return partialMatch._id;
+
+      // Fuzzy match by words
+      const words = normalizedName.split(/\s+/);
+      const fuzzyMatch = categoriesList.find((cat) => {
+        const catWords = cat.name.toLowerCase().split(/\s+/);
+        return words.some((word) =>
+          catWords.some(
+            (catWord) => catWord.includes(word) || word.includes(catWord)
+          )
+        );
+      });
+
+      return fuzzyMatch?._id || null;
+    },
+    []
+  );
 
   // Helper function to find subcategory ID by name
-  const findSubCategoryByName = useCallback((subCategoryName: string, subCategoriesList: SubCategory[]): string | null => {
-    if (!subCategoryName || subCategoriesList.length === 0) return null;
-    
-    const normalizedName = subCategoryName.toLowerCase().trim();
-    
-    // Exact match first
-    const exactMatch = subCategoriesList.find(
-      sub => sub.name.toLowerCase().trim() === normalizedName
-    );
-    if (exactMatch) return exactMatch._id;
-    
-    // Partial match
-    const partialMatch = subCategoriesList.find(
-      sub => sub.name.toLowerCase().includes(normalizedName) || 
-             normalizedName.includes(sub.name.toLowerCase())
-    );
-    
-    return partialMatch?._id || null;
-  }, []);
+  const findSubCategoryByName = useCallback(
+    (
+      subCategoryName: string,
+      subCategoriesList: SubCategory[]
+    ): string | null => {
+      if (!subCategoryName || subCategoriesList.length === 0) return null;
+
+      const normalizedName = subCategoryName.toLowerCase().trim();
+
+      // Exact match first
+      const exactMatch = subCategoriesList.find(
+        (sub) => sub.name.toLowerCase().trim() === normalizedName
+      );
+      if (exactMatch) return exactMatch._id;
+
+      // Partial match
+      const partialMatch = subCategoriesList.find(
+        (sub) =>
+          sub.name.toLowerCase().includes(normalizedName) ||
+          normalizedName.includes(sub.name.toLowerCase())
+      );
+
+      return partialMatch?._id || null;
+    },
+    []
+  );
 
   // AI Auto-fill handler
   const handleAutoFill = useCallback(async () => {
     const productName = formData.name || initialName;
-    
+
     if (!productName || productName.length < 3) {
       toast.error('Please enter a product name first (at least 3 characters)');
       return;
@@ -299,7 +330,9 @@ export function CreateNewProductForm({
     }
 
     setIsGenerating(true);
-    toast.loading('Generating product details with AI...', { id: 'ai-generate' });
+    toast.loading('Generating product details with AI...', {
+      id: 'ai-generate',
+    });
 
     try {
       const response = await geminiService.generateProductDetails(
@@ -310,15 +343,30 @@ export function CreateNewProductForm({
 
       const data = response.data;
 
-      // Find matching category by name with improved fuzzy matching
+      // The server already resolves and returns the matched category _id.
+      // Use it directly when it's a known id; fall back to name matching otherwise.
       let matchedCategoryId = formData.category;
       if (data.category) {
-        const foundCategoryId = findCategoryByName(data.category, categories);
+        const serverProvidedId = categories.find(
+          (c) => c._id === data.category
+        )?._id;
+        const foundCategoryId =
+          serverProvidedId || findCategoryByName(data.category, categories);
         if (foundCategoryId) {
           matchedCategoryId = foundCategoryId;
-          console.log('Category matched:', data.category, '->', foundCategoryId);
+          console.log(
+            'Category matched:',
+            data.category,
+            '->',
+            foundCategoryId
+          );
         } else {
-          console.log('Category not matched:', data.category, 'Available:', categories.map(c => c.name));
+          console.log(
+            'Category not matched:',
+            data.category,
+            'Available:',
+            categories.map((c) => c.name)
+          );
         }
       }
 
@@ -329,15 +377,30 @@ export function CreateNewProductForm({
         // If category changed from what we had, fetch new subcategories
         if (matchedCategoryId !== formData.category) {
           try {
-            const subCats = await categoryService.getSubCategories(session.user.token, matchedCategoryId);
+            const subCats = await categoryService.getSubCategories(
+              session.user.token,
+              matchedCategoryId
+            );
             const freshSubCategories = Array.isArray(subCats) ? subCats : [];
-            const foundSubCategoryId = findSubCategoryByName(data.subCategory, freshSubCategories);
+            const foundSubCategoryId =
+              freshSubCategories.find((s) => s._id === data.subCategory)?._id ||
+              findSubCategoryByName(data.subCategory, freshSubCategories);
             if (foundSubCategoryId) {
               matchedSubCategoryId = foundSubCategoryId;
-              console.log('SubCategory matched (fresh fetch):', data.subCategory, '->', foundSubCategoryId);
+              console.log(
+                'SubCategory matched (fresh fetch):',
+                data.subCategory,
+                '->',
+                foundSubCategoryId
+              );
             } else {
               matchedSubCategoryId = ''; // Reset if not found
-              console.log('SubCategory not matched:', data.subCategory, 'Available:', freshSubCategories.map(s => s.name));
+              console.log(
+                'SubCategory not matched:',
+                data.subCategory,
+                'Available:',
+                freshSubCategories.map((s) => s.name)
+              );
             }
           } catch (err) {
             console.error('Failed to fetch subcategories for matching:', err);
@@ -345,12 +408,24 @@ export function CreateNewProductForm({
           }
         } else {
           // Category didn't change, use existing subcategories
-          const foundSubCategoryId = findSubCategoryByName(data.subCategory, subCategories);
+          const foundSubCategoryId =
+            subCategories.find((s) => s._id === data.subCategory)?._id ||
+            findSubCategoryByName(data.subCategory, subCategories);
           if (foundSubCategoryId) {
             matchedSubCategoryId = foundSubCategoryId;
-            console.log('SubCategory matched:', data.subCategory, '->', foundSubCategoryId);
+            console.log(
+              'SubCategory matched:',
+              data.subCategory,
+              '->',
+              foundSubCategoryId
+            );
           } else {
-            console.log('SubCategory not matched:', data.subCategory, 'Available:', subCategories.map(s => s.name));
+            console.log(
+              'SubCategory not matched:',
+              data.subCategory,
+              'Available:',
+              subCategories.map((s) => s.name)
+            );
           }
         }
       }
@@ -377,23 +452,41 @@ export function CreateNewProductForm({
         vintage: data.vintage?.toString() || formData.vintage,
       });
 
-      toast.success('Product details auto-filled successfully!', { id: 'ai-generate' });
+      toast.success('Product details auto-filled successfully!', {
+        id: 'ai-generate',
+      });
     } catch (error: any) {
       console.error('AI generation error:', error);
-      const errorMessage = error.message || 'Failed to generate product details';
-      
-      if (errorMessage.includes('Failed to fetch') || errorMessage.includes('connect')) {
-        toast.error('Cannot connect to server. Please make sure the backend is running.', {
-          id: 'ai-generate',
-          duration: 5000,
-        });
+      const errorMessage =
+        error.message || 'Failed to generate product details';
+
+      if (
+        errorMessage.includes('Failed to fetch') ||
+        errorMessage.includes('connect')
+      ) {
+        toast.error(
+          'Cannot connect to server. Please make sure the backend is running.',
+          {
+            id: 'ai-generate',
+            duration: 5000,
+          }
+        );
       } else {
         toast.error(errorMessage, { id: 'ai-generate' });
       }
     } finally {
       setIsGenerating(false);
     }
-  }, [formData, initialName, categories, subCategories, session, onChange, findCategoryByName, findSubCategoryByName]);
+  }, [
+    formData,
+    initialName,
+    categories,
+    subCategories,
+    session,
+    onChange,
+    findCategoryByName,
+    findSubCategoryByName,
+  ]);
 
   const showAlcoholFields = formData.isAlcoholic;
   const canUseAI = (formData.name || initialName).length >= 3;
@@ -403,15 +496,15 @@ export function CreateNewProductForm({
       {/* Pending Approval Notice */}
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
         <div className="flex items-start gap-3">
-          <PiWarning className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <PiWarning className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" />
           <div>
             <Text className="text-sm font-medium text-amber-800">
               New Product - Pending Approval
             </Text>
-            <Text className="text-xs text-amber-700 mt-1">
-              This product will be created as &quot;pending&quot; and requires admin approval 
-              before appearing on the main marketplace. Your SubProduct will be available 
-              immediately in your store.
+            <Text className="mt-1 text-xs text-amber-700">
+              This product will be created as &quot;pending&quot; and requires
+              admin approval before appearing on the main marketplace. Your
+              SubProduct will be available immediately in your store.
             </Text>
           </div>
         </div>
@@ -455,7 +548,8 @@ export function CreateNewProductForm({
           />
           <Text className="mt-1.5 flex items-center gap-1 text-xs text-gray-500">
             <PiSparkle className="h-3 w-3 text-purple-500" />
-            Enter a product name and click &quot;Auto-fill with AI&quot; to generate details
+            Enter a product name and click &quot;Auto-fill with AI&quot; to
+            generate details
           </Text>
         </div>
 
@@ -476,7 +570,9 @@ export function CreateNewProductForm({
             ))}
           </select>
           {errors.type?.message && (
-            <Text className="mt-1 text-xs text-red-500">{errors.type.message}</Text>
+            <Text className="mt-1 text-xs text-red-500">
+              {errors.type.message}
+            </Text>
           )}
         </div>
 
@@ -568,30 +664,49 @@ export function CreateNewProductForm({
             Category
           </label>
           <Select
-            placeholder={isLoadingCategories ? 'Loading categories...' : 'Search and select category'}
+            placeholder={
+              isLoadingCategories
+                ? 'Loading categories...'
+                : 'Search and select category'
+            }
             options={categories.map((cat) => ({
               value: cat._id,
               label: cat.name,
             }))}
-            value={categories.find((c) => c._id === formData.category) ? {
-              value: formData.category || '',
-              label: categories.find((c) => c._id === formData.category)?.name,
-            } : ''}
+            value={
+              categories.find((c) => c._id === formData.category)
+                ? {
+                    value: formData.category || '',
+                    label: categories.find((c) => c._id === formData.category)
+                      ?.name,
+                  }
+                : ''
+            }
             onChange={(option: SelectOption) => {
-              handleChange('category', option?.value as string || '');
+              // Clear sub-category together with the category in a single update so
+              // a user-initiated category change resets the now-stale sub-category.
+              // (Auto-fill sets both at once and must not be clobbered — which is
+              // why this lives here instead of a category-change effect.)
+              onChange({
+                ...formData,
+                category: (option?.value as string) || '',
+                subCategory: '',
+              });
             }}
             disabled={isLoadingCategories}
             className="w-full"
           />
           <Text className="mt-1 text-xs text-gray-400">
-            {categories.length > 0 ? `${categories.length} categories available` : 'Optional'}
+            {categories.length > 0
+              ? `${categories.length} categories available`
+              : 'Optional'}
           </Text>
         </div>
 
         {/* SubCategory - Enhanced Searchable Select */}
         <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+          <div className="mb-1.5 flex items-center justify-between">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
               <PiFolder className="h-4 w-4 text-gray-500" />
               Sub-Category
             </label>
@@ -599,7 +714,7 @@ export function CreateNewProductForm({
               <button
                 type="button"
                 onClick={() => handleChange('subCategory', '')}
-                className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1"
+                className="flex items-center gap-1 text-xs text-red-500 hover:text-red-600"
               >
                 <PiX className="h-3 w-3" />
                 Clear
@@ -612,21 +727,27 @@ export function CreateNewProductForm({
                 !formData.category
                   ? 'Select category first'
                   : isLoadingSubCategories
-                  ? 'Loading...'
-                  : subCategories.length === 0
-                  ? 'No sub-categories available'
-                  : 'Search and select sub-category'
+                    ? 'Loading...'
+                    : subCategories.length === 0
+                      ? 'No sub-categories available'
+                      : 'Search and select sub-category'
               }
               options={subCategories.map((subCat) => ({
                 value: subCat._id,
                 label: subCat.name,
               }))}
-              value={subCategories.find((s) => s._id === formData.subCategory) ? {
-                value: formData.subCategory || '',
-                label: subCategories.find((s) => s._id === formData.subCategory)?.name,
-              } : ''}
+              value={
+                subCategories.find((s) => s._id === formData.subCategory)
+                  ? {
+                      value: formData.subCategory || '',
+                      label: subCategories.find(
+                        (s) => s._id === formData.subCategory
+                      )?.name,
+                    }
+                  : ''
+              }
               onChange={(option: SelectOption) => {
-                handleChange('subCategory', option?.value as string || '');
+                handleChange('subCategory', (option?.value as string) || '');
               }}
               disabled={!formData.category || isLoadingSubCategories}
               className="w-full"
@@ -635,7 +756,7 @@ export function CreateNewProductForm({
               <div className="absolute right-10 top-1/2 -translate-y-1/2">
                 <motion.div
                   animate={{ rotate: 360 }}
-                  transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                  transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
                 >
                   <PiSpinner className="h-4 w-4 text-blue-600" />
                 </motion.div>
@@ -643,19 +764,22 @@ export function CreateNewProductForm({
             )}
           </div>
           <AnimatePresence>
-            {formData.category && subCategories.length > 0 && !formData.subCategory && (
-              <motion.div
-                initial={{ opacity: 0, y: -5 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -5 }}
-                className="mt-2"
-              >
-                <Text className="text-xs text-gray-500 flex items-center gap-1">
-                  <PiCaretRight className="h-3 w-3" />
-                  {subCategories.length} sub-categories available for selected category
-                </Text>
-              </motion.div>
-            )}
+            {formData.category &&
+              subCategories.length > 0 &&
+              !formData.subCategory && (
+                <motion.div
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
+                  className="mt-2"
+                >
+                  <Text className="flex items-center gap-1 text-xs text-gray-500">
+                    <PiCaretRight className="h-3 w-3" />
+                    {subCategories.length} sub-categories available for selected
+                    category
+                  </Text>
+                </motion.div>
+              )}
           </AnimatePresence>
           {formData.subCategory && (
             <motion.div
@@ -664,8 +788,11 @@ export function CreateNewProductForm({
               className="mt-2"
             >
               <Badge color="success" size="sm" variant="flat">
-                <PiCheck className="h-3 w-3 mr-1" />
-                {subCategories.find((s) => s._id === formData.subCategory)?.name}
+                <PiCheck className="mr-1 h-3 w-3" />
+                {
+                  subCategories.find((s) => s._id === formData.subCategory)
+                    ?.name
+                }
               </Badge>
             </motion.div>
           )}
@@ -776,7 +903,7 @@ export function CreateNewProductForm({
             maxLength={280}
           />
           <Text className="mt-1 text-xs text-gray-400">
-            {(formData.shortDescription?.length || 0)}/280 characters
+            {formData.shortDescription?.length || 0}/280 characters
           </Text>
         </div>
 

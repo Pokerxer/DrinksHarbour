@@ -1,6 +1,5 @@
 // controllers/gemini.controller.js
 const Anthropic = require('@anthropic-ai/sdk');
-const Groq = require('groq-sdk');
 const asyncHandler = require('express-async-handler');
 const Category = require('../models/Category');
 const SubCategory = require('../models/SubCategory');
@@ -8,22 +7,17 @@ const Product = require('../models/Product');
 const SubProduct = require('../models/SubProduct');
 const Brand = require('../models/Brand');
 
-// Primary provider: Claude (Anthropic). Groq is kept only as an automatic
-// fallback if the Anthropic call fails (and GROQ_API_KEY is configured).
+// AI provider: Claude (Anthropic). Requires ANTHROPIC_API_KEY in server/.env.
 const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8';
 const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   : null;
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' });
-const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 
 // Drop-in for the Gemini SDK API surface, now backed by Claude.
 // All handlers call genAI.getGenerativeModel() + model.generateContent() + result.response.text()
 // unchanged — only this shim selects the underlying AI provider.
 const genAI = {
   getGenerativeModel: ({ generationConfig = {} } = {}) => {
-    const temperature = generationConfig.temperature ?? 0.7;
     const maxTokens = generationConfig.maxOutputTokens ?? 2048;
     // Honor responseMimeType by enabling each provider's native JSON mode, which
     // guarantees syntactically valid JSON and avoids prose/markdown wrappers.
@@ -40,9 +34,9 @@ const genAI = {
       return String(promptOrObj);
     };
 
-    // Primary: Claude (Anthropic). Opus 4.8 rejects temperature/top_p/top_k,
-    // so they are intentionally omitted; JSON shape is enforced via the prompt
-    // + a JSON-only system instruction and parsed downstream.
+    // Claude (Anthropic). Opus 4.8 rejects temperature/top_p/top_k, so they are
+    // intentionally omitted; JSON shape is enforced via the prompt + a JSON-only
+    // system instruction and parsed downstream.
     const callClaude = async (content) => {
       const system = wantsJson
         ? 'You are an expert beverage industry data assistant. Respond with ONLY valid JSON — no markdown code fences, no explanation, no preamble.'
@@ -64,43 +58,13 @@ const genAI = {
       return text;
     };
 
-    // Fallback: Groq.
-    const callGroq = async (content) => {
-      // Groq JSON mode requires the word "json" somewhere in the prompt.
-      const messages = wantsJson && !/json/i.test(content)
-        ? [{ role: 'user', content: `${content}\n\nRespond with valid JSON only.` }]
-        : [{ role: 'user', content }];
-      // Groq's free tier caps input + requested output tokens per minute
-      // (e.g. 6000 TPM). Clamp max_tokens so prompt + completion stay under
-      // budget instead of failing with a 413 rate_limit_exceeded.
-      const tpmBudget = Number(process.env.GROQ_TPM_BUDGET) || 5800;
-      const estInputTokens = Math.ceil(messages[0].content.length / 4);
-      const safeMaxTokens = Math.max(
-        512,
-        Math.min(maxTokens, tpmBudget - estInputTokens)
-      );
-      const completion = await groq.chat.completions.create({
-        model: GROQ_MODEL,
-        messages,
-        temperature,
-        max_tokens: safeMaxTokens,
-        ...(wantsJson ? { response_format: { type: 'json_object' } } : {}),
-      });
-      return completion.choices[0]?.message?.content || '';
-    };
-
     return {
       generateContent: async (promptOrObj) => {
-        const content = extractContent(promptOrObj);
-        if (anthropic) {
-          try {
-            const text = await callClaude(content);
-            return { response: { text: () => text } };
-          } catch (err) {
-            console.warn('Claude unavailable, falling back to Groq:', err.message);
-          }
+        if (!anthropic) {
+          throw new Error('ANTHROPIC_API_KEY is not configured — set it in server/.env');
         }
-        const text = await callGroq(content);
+        const content = extractContent(promptOrObj);
+        const text = await callClaude(content);
         return { response: { text: () => text } };
       },
     };
@@ -294,6 +258,15 @@ const PRODUCT_ENUMS = {
   status: ['draft', 'pending', 'approved', 'rejected', 'archived', 'discontinued']
 };
 
+// Curated style values offered in the SubProduct "Create New Product" UI
+// (client STYLE_OPTIONS). The model must pick from these so a generated style
+// maps to a selectable option AND stays within the Product model's `style` enum.
+const GENERATED_STYLES = [
+  'dry', 'sweet', 'semi_dry', 'semi_sweet', 'sparkling', 'still',
+  'oaked', 'unoaked', 'single_malt', 'blended', 'artisanal',
+  'premium', 'budget_friendly',
+];
+
 /**
  * Fetch categories and subcategories from database
  */
@@ -348,9 +321,10 @@ SUBCATEGORIES: ${subCatList}
 TYPES: ${PRODUCT_ENUMS.type.slice(0, 25).join(', ')}
 SIZES: ${PRODUCT_ENUMS.standardSizes.slice(0, 12).join(', ')}
 FLAVORS: ${PRODUCT_ENUMS.flavorProfile.slice(0, 20).join(', ')}
+STYLES: ${GENERATED_STYLES.join(', ')} (pick the single closest "style" value, or "" if none clearly fit)
 
 Return this JSON (fill all fields accurately):
-{"name":"${name}","slug":"","type":"","subType":"","categoryName":"","subCategoryName":"","isAlcoholic":true,"abv":0,"proof":0,"volumeMl":750,"standardSizes":[],"servingSize":"","servingsPerContainer":0,"originCountry":"","region":"","appellation":null,"producer":"","brand":"","vintage":null,"age":null,"ageStatement":null,"distilleryName":null,"breweryName":null,"wineryName":null,"productionMethod":null,"caskType":null,"finish":null,"shortDescription":"","description":"","tastingNotes":{"nose":[],"aroma":[],"palate":[],"taste":[],"finish":[],"mouthfeel":[],"appearance":"","color":""},"flavorProfile":[],"foodPairings":[],"servingSuggestions":{"temperature":"","glassware":"","garnish":[],"mixers":[]},"isDietary":{"vegan":false,"vegetarian":false,"glutenFree":false,"dairyFree":false,"organic":false,"kosher":false,"halal":false,"sugarFree":false,"lowCalorie":false,"lowCarb":false},"allergens":[],"ingredients":[],"nutritionalInfo":{"calories":null,"carbohydrates":null,"sugar":null,"protein":null,"fat":null,"sodium":null,"caffeine":null},"metaTitle":"","metaDescription":"","keywords":[],"status":"draft"}`;
+{"name":"${name}","slug":"","type":"","subType":"","style":"","categoryName":"","subCategoryName":"","isAlcoholic":true,"abv":0,"proof":0,"volumeMl":750,"standardSizes":[],"servingSize":"","servingsPerContainer":0,"originCountry":"","region":"","appellation":null,"producer":"","brand":"","vintage":null,"age":null,"ageStatement":null,"distilleryName":null,"breweryName":null,"wineryName":null,"productionMethod":null,"caskType":null,"finish":null,"shortDescription":"","description":"","tastingNotes":{"nose":[],"aroma":[],"palate":[],"taste":[],"finish":[],"mouthfeel":[],"appearance":"","color":""},"flavorProfile":[],"foodPairings":[],"servingSuggestions":{"temperature":"","glassware":"","garnish":[],"mixers":[]},"isDietary":{"vegan":false,"vegetarian":false,"glutenFree":false,"dairyFree":false,"organic":false,"kosher":false,"halal":false,"sugarFree":false,"lowCalorie":false,"lowCarb":false},"allergens":[],"ingredients":[],"nutritionalInfo":{"calories":null,"carbohydrates":null,"sugar":null,"protein":null,"fat":null,"sodium":null,"caffeine":null},"metaTitle":"","metaDescription":"","keywords":[],"status":"draft"}`;
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
@@ -465,6 +439,7 @@ const sanitizeProductData = (data) => {
     slug: data.slug || '',
     type: PRODUCT_ENUMS.type.includes(data.type) ? data.type : 'other',
     subType: data.subType || '',
+    style: GENERATED_STYLES.includes(data.style) ? data.style : '',
     category: data.category || null,
     subCategory: data.subCategory || null,
     isAlcoholic: Boolean(data.isAlcoholic),
@@ -2401,7 +2376,7 @@ const callOllama = async (prompt) => {
   const ollamaModel = process.env.OLLAMA_MODEL || 'deepseek-v3.1:671b-cloud';
   const timeoutMs = Number(process.env.OLLAMA_TIMEOUT_MS) || 25000;
 
-  // Abort if Ollama is unreachable or slow so the caller can fall back to Groq
+  // Abort if Ollama is unreachable or slow so the caller can fall back to Claude
   // instead of hanging the whole request.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -2726,7 +2701,7 @@ Return ONLY valid JSON in exactly this shape, with no markdown or commentary:
   try {
     generated = await callOllama(prompt);
   } catch (ollamaErr) {
-    console.warn('Ollama unavailable, falling back to Groq:', ollamaErr.message);
+    console.warn('Ollama unavailable, falling back to Claude:', ollamaErr.message);
     const model = genAI.getGenerativeModel({ model: MODEL_NAME });
     const result = await model.generateContent(prompt);
     const text = result?.response?.text() || '';
