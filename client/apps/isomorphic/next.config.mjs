@@ -59,6 +59,11 @@ const nextConfig = {
     ],
   },
   reactStrictMode: true,
+  // Reduce peak webpack memory during the production build to avoid OOM on
+  // Vercel's 8GB build container (trades a slightly slower build for lower RAM).
+  experimental: {
+    webpackMemoryOptimizations: true,
+  },
   // Serve POS terminal pages (no admin header) under /point-of-sale/* URLs.
   // beforeFiles rewrites take priority over filesystem routes so the
   // (hydrogen) layout is bypassed and only the root layout is used.
