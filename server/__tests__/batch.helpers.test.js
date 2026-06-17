@@ -17,8 +17,8 @@ test('defaultTracksBatch defaults to true for non-alcoholic when unset', () => {
   assert.strictEqual(defaultTracksBatch(false, undefined), true);
 });
 
-test('defaultTracksBatch defaults to false for alcoholic when unset', () => {
-  assert.strictEqual(defaultTracksBatch(true, undefined), false);
+test('defaultTracksBatch defaults to true for alcoholic when unset', () => {
+  assert.strictEqual(defaultTracksBatch(true, undefined), true);
 });
 
 test('defaultTracksBatch respects an explicit override either way', () => {

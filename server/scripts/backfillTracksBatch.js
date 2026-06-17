@@ -1,5 +1,8 @@
 // server/scripts/backfillTracksBatch.js
-// One-time: set Product.tracksBatch = !isAlcoholic where currently unset.
+// Migrate Product.tracksBatch to the "on by default for all products" model.
+// Sets tracksBatch = true where unset, and flips alcoholic products that were
+// auto-defaulted to false by the previous (alcoholic → false) backfill. A
+// product whose tracksBatch is already true is left untouched.
 // Usage: node scripts/backfillTracksBatch.js
 require('dotenv').config();
 const { connectDB, disconnectDB } = require('../config/db');
@@ -7,16 +10,19 @@ const Product = require('../models/Product');
 
 (async () => {
   await connectDB();
-  const resTrue = await Product.updateMany(
-    { tracksBatch: { $exists: false }, isAlcoholic: false },
+  // Every product that never had the flag persisted → track batches.
+  const resUnset = await Product.updateMany(
+    { tracksBatch: { $exists: false } },
     { $set: { tracksBatch: true } }
   );
-  const resFalse = await Product.updateMany(
-    { tracksBatch: { $exists: false }, isAlcoholic: true },
-    { $set: { tracksBatch: false } }
+  // Alcoholic products previously forced to false by the old default → on.
+  const resAlcoholic = await Product.updateMany(
+    { isAlcoholic: true, tracksBatch: false },
+    { $set: { tracksBatch: true } }
   );
   console.log(
-    `tracksBatch backfill: ${resTrue.modifiedCount} non-alcoholic → true, ${resFalse.modifiedCount} alcoholic → false`
+    `tracksBatch backfill: ${resUnset.modifiedCount} unset → true, ` +
+      `${resAlcoholic.modifiedCount} alcoholic false → true`
   );
   await disconnectDB();
 })().catch((e) => { console.error(e); process.exit(1); });

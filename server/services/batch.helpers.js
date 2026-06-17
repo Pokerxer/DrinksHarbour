@@ -5,13 +5,16 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
  * Resolve a product's effective tracksBatch value.
- * @param {boolean} isAlcoholic
+ * Batch tracking defaults ON for every product (alcoholic included) — alcoholic
+ * drinks carry lot/batch numbers too, they just leave expiry optional. The
+ * per-product `current` flag overrides the default either way.
+ * @param {boolean} _isAlcoholic  retained for signature compatibility; no longer gates the default
  * @param {boolean|undefined|null} current  explicit per-product override
  * @returns {boolean}
  */
-function defaultTracksBatch(isAlcoholic, current) {
+function defaultTracksBatch(_isAlcoholic, current) {
   if (current === true || current === false) return current;
-  return !isAlcoholic;
+  return true;
 }
 
 /**

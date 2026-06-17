@@ -84,8 +84,9 @@ export default function ProductBeverageInfo({
 
   const isAlcoholic = watch('isAlcoholic');
   const tracksBatch = watch('tracksBatch');
-  // Falls back to the server default (!isAlcoholic) until explicitly toggled.
-  const effectiveTracksBatch = tracksBatch ?? !isAlcoholic;
+  // Falls back to the server default (on for every product) until explicitly
+  // toggled. Alcoholic drinks track batches too; expiry is just optional.
+  const effectiveTracksBatch = tracksBatch ?? true;
   const abv = watch('abv');
   const proof = watch('proof');
   const productName = watch('name') || '';
@@ -351,7 +352,8 @@ export default function ProductBeverageInfo({
               <span className="block text-sm text-gray-500">
                 When on, receiving this product captures a batch number (and an
                 expiry date for perishables), and stock is depleted
-                first-expiry-first-out. Defaults on for non-alcoholic products.
+                first-expiry-first-out. Defaults on for all products; alcoholic
+                drinks track batches too, with expiry optional.
               </span>
             </div>
             <Checkbox
