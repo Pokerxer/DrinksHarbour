@@ -198,7 +198,6 @@ function ProductPicker({
           limit: 8,
         });
         const picks: ProductPick[] = [];
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (res?.products ?? []).forEach((sp: any) => {
           const name = sp.product?.name ?? sp.name ?? sp.productName ?? '';
           const sizes = sp.sizes ?? [];
@@ -210,7 +209,6 @@ function ProductPicker({
               unitPrice: sp.costPrice ?? sp.platformCostPrice ?? 0,
             });
           } else {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             sizes.forEach((s: any) => {
               const sizeName = s.displayName ?? s.size ?? '';
               picks.push({
@@ -392,7 +390,6 @@ export default function PurchasesAgreementCreate() {
             quantity: it.quantity,
             unitPrice: it.unitPrice,
             leadTimeDays: it.leadTimeDays,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
           })) as any,
         },
         token

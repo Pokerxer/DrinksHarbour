@@ -335,7 +335,6 @@ function ProductSearch({
   const [loading, setLoading] = useState(false);
   const [initialLoaded, setInitialLoaded] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [expandedData, setExpandedData] = useState<Record<string, any>>({});
   const ref = useRef<HTMLDivElement>(null);
 
@@ -354,7 +353,6 @@ function ProductSearch({
     setQuery(value);
   }, [value]);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function mapProducts(raw: any[]): ProductOption[] {
     return raw.map((sp: any) => ({
       _id: sp._id,
