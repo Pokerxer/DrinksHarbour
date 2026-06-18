@@ -36,6 +36,9 @@ const {
   getPOSProducts,
   // Orders
   createPOSOrder,
+  holdPOSOrder,
+  getHeldPOSOrders,
+  recallPOSOrder,
   refundPOSOrder,
   voidPOSOrder,
   getAllPOSOrders,
@@ -98,6 +101,9 @@ router.get('/notifications',                  protectPOSOrAdmin, getPOSNotificat
 router.get('/products',                       protectPOSOrAdmin, getPOSProducts);
 router.get('/orders',                         protectPOSOrAdmin, getAllPOSOrders);
 router.post('/orders',                        protectPOS, requirePOSPermission('pos:sell'),   createPOSOrder);
+router.post('/orders/hold',                   protectPOS, requirePOSPermission('pos:sell'),   holdPOSOrder);
+router.get('/orders/held',                    protectPOS, getHeldPOSOrders);
+router.post('/orders/:id/recall',             protectPOS, requirePOSPermission('pos:sell'),   recallPOSOrder);
 router.post('/orders/:id/refund',             protectPOS, requirePOSPermission('pos:refund'), refundPOSOrder);
 router.post('/orders/:id/void',               protectPOS, requirePOSPermission('pos:void'),   voidPOSOrder);
 

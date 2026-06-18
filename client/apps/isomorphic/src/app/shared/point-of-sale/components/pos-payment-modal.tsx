@@ -30,6 +30,7 @@ import {
   usePOSPricelist,
   computeRewardDiscount,
   getEffectiveBundlePrice,
+  getEffectiveBundlePriceForItem,
   usePOSSettings,
   usePOSActiveShop,
 } from '@/app/shared/point-of-sale/store';
@@ -567,7 +568,8 @@ function ReceiptScreen({
               );
               const hasItemDisc = totalItemDisc > 0.005;
               const hasOrderDisc = displayDiscount > 0.005;
-              const showBreakdown = hasItemDisc || hasOrderDisc;
+              const hasPricelist = (order.pricelistSavings ?? 0) > 0.005;
+              const showBreakdown = hasItemDisc || hasOrderDisc || hasPricelist;
 
               // Build named discount rows; fall back to a single generic row
               const autoTotal = autoDiscounts.reduce(
@@ -584,6 +586,24 @@ function ReceiptScreen({
                 <>
                   {showBreakdown && (
                     <>
+                      {hasPricelist && (
+                        <>
+                          <Row
+                            label="Original Subtotal"
+                            value={formatCurrency(order.originalSubtotal ?? grossSubtotal)}
+                          />
+                          <Row
+                            label={
+                              order.pricelistName
+                                ? `Pricelist (${order.pricelistName})`
+                                : 'Pricelist'
+                            }
+                            value={`-${formatCurrency(order.pricelistSavings!)}`}
+                            vStyle={R.green}
+                          />
+                          <div style={R.divider} />
+                        </>
+                      )}
                       <Row
                         label="Gross Subtotal"
                         value={formatCurrency(grossSubtotal)}
@@ -1245,15 +1265,23 @@ export default function POSPaymentModal() {
     try {
       const orderItems = items.map((item) => {
         const isGet = item.bxgyRef?.role === 'get';
+        const effectivePrice = getEffectiveBundlePriceForItem(item, selectedPricelist).price;
         return {
           subProductId: item.subProductId,
           productId: item.productId,
           sizeId: item.sizeId || undefined,
           quantity: item.quantity,
-          price: item.price,
-          // BXGY get items: pass the discount % so the server applies it correctly
-          // (server ignores client price but does apply item.discount)
-          discount: isGet ? item.bxgyRef!.discPct : item.discount,
+          // BXGY get items: send the original pre-BXGY price for audit clarity.
+          // The server ignores client price and recomputes its own, but offline
+          // queues and receipt snapshots use this value.
+          price: isGet ? (item.bxgyRef?.originalPrice ?? item.price) : item.price,
+          // Authoritative client-computed price after pricelist + bundle rules.
+          // Server uses this as priceAtPurchase when present, ensuring the receipt
+          // charge matches what the cart displayed.
+          clientPrice: effectivePrice,
+          // BXGY get items: 0% item discount — the reward is applied at the
+          // order level via totalDisc. Non-BXGY items pass their cashier discount.
+          discount: isGet ? 0 : item.discount,
           sku: item.sku,
           variant: item.variant,
           name: item.name,
@@ -1277,29 +1305,30 @@ export default function POSPaymentModal() {
         amountTendered = lines.find((l) => l.method === 'cash')?.amount ?? 0;
       }
 
-      // Total discount = cart-level discount + non-BXGY rewards
-      // BXGY saving is excluded because get-item prices already reflect the discount
+      // Total discount = cart-level discount + all rewards (including BXGY).
+      // BXGY is now part of the order-level discount instead of item-level,
+      // so the receipt shows it as a named auto-discount rather than doubling
+      // it under "Item Discounts".
       const cartDiscFixed =
         discountValue > 0
           ? discountType === 'fixed'
             ? discountValue
             : (subtotal * discountValue) / 100
           : 0;
-      const bxgyDisc = appliedRewards
-        .filter((r) => r.kind === 'bxgy')
-        .reduce(
-          (s, r) =>
-            s +
-            computeRewardDiscount(
-              r,
-              items,
-              Math.max(0, subtotal - discountAmount)
-            ),
-          0
-        );
-      const totalDisc = cartDiscFixed + (rewardsDiscountTotal - bxgyDisc);
+      const totalDisc = cartDiscFixed + rewardsDiscountTotal;
       const effDiscType = totalDisc > 0 ? 'fixed' : undefined;
       const effDiscValue = totalDisc > 0 ? totalDisc : 0;
+
+      // Pre-pricelist "normal" subtotal as the cashier saw it in the cart.
+      // The server uses this to compute pricelist savings on the receipt.
+      // BXGY get items use bxgyRef.originalPrice (pre-BXGY baseline) since the
+      // BXGY discount is already embedded in item.discount (→ server's discountAmount).
+      const cartOriginalSubtotal = items.reduce((s, i) => {
+        const unitPrice = i.bxgyRef?.role === 'get'
+          ? (i.bxgyRef.originalPrice ?? i.price)
+          : i.price;
+        return s + unitPrice * i.quantity;
+      }, 0);
 
       const result = await createOrderOffline(token, terminal ?? 'retail', {
         items: orderItems,
@@ -1310,6 +1339,7 @@ export default function POSPaymentModal() {
         splitPayments,
         discountType: effDiscType,
         discountValue: effDiscValue,
+        cartOriginalSubtotal,
         note: note || undefined,
         terminalType: terminal ?? 'retail',
         pricelistId: selectedPricelist?._id ?? undefined,

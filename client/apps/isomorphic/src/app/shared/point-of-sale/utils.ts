@@ -195,12 +195,10 @@ export function applyPricelistToProduct(product: any, pricelist: any): any {
       for (const rule of priceRules) {
         sizePrice = applyRuleTransform(sizePrice, rule, sizeCost);
       }
-      const sizeChanged = Math.abs(sizePrice - trueSzBase) > 0.001;
       return {
         ...s,
         sellingPrice:          sizePrice,
         _priceBeforePricelist: trueSzBase,
-        originalPrice: sizeChanged ? trueSzBase : null,
       };
     });
 
@@ -210,9 +208,11 @@ export function applyPricelistToProduct(product: any, pricelist: any): any {
       _priceBeforePricelist:  trueBase,
       _appliedPricelistSteps: appliedSteps,
       _appliedPricelist:      { _id: pricelist._id, name: pricelist.name },
-      originalPrice: baseChanged ? trueBase : null,
-      isOnSale:    baseChanged && newBase < trueBase,
-      isFlashSale: lastRule?.priceType === 'flash_sale',
+      // Preserve server's originalPrice (pre-sale retail), isOnSale, and isFlashSale.
+      // The pricelist badges separately communicate rule-level savings.
+      // _pricelistOriginalPrice tracks the pre-pricelist (post-sale) base for any
+      // card display that wants to show "Was ₦X, now ₦Y" from pricelist alone.
+      _pricelistOriginalPrice: trueBase,
       sizes: newSizes || product.sizes,
     };
   }

@@ -197,7 +197,8 @@ function orderToRecord(o: any): OrderRecord {
 
 function mapPayloadItems(items: any[]): any[] {
   return (items ?? []).map((item: any) => {
-    const lineGross = (item.price ?? 0) * (item.quantity ?? 1);
+    const unitPrice = item.clientPrice ?? item.price ?? 0;
+    const lineGross = unitPrice * (item.quantity ?? 1);
     const discAmt =
       Math.round(lineGross * ((item.discount ?? 0) / 100) * 100) / 100;
     return {
@@ -205,7 +206,7 @@ function mapPayloadItems(items: any[]): any[] {
       variant: item.variant ?? '',
       sku: item.sku ?? '',
       quantity: item.quantity ?? 1,
-      priceAtPurchase: item.price ?? 0,
+      priceAtPurchase: unitPrice,
       itemSubtotal: lineGross - discAmt,
       discountAmount: discAmt,
       bxgyRole: item.bxgyRole,

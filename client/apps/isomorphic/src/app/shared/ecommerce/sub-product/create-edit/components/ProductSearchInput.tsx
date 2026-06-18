@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { PiMagnifyingGlass, PiX, PiBarcode, PiCamera } from 'react-icons/pi';
 import { Loader } from 'rizzui';
 
@@ -22,6 +22,21 @@ export function ProductSearchInput({
   const [barcodeValue, setBarcodeValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
+
+  // Keyboard shortcut: `/` to focus search input
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === '/' && document.activeElement !== inputRef.current) {
+        const tag = (document.activeElement as HTMLElement)?.tagName;
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+          e.preventDefault();
+          inputRef.current?.focus();
+        }
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const handleBarcodeSubmit = useCallback(() => {
     if (barcodeValue.trim()) {
@@ -58,9 +73,14 @@ export function ProductSearchInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className="w-full rounded-lg border border-gray-300 bg-white py-2.5 pl-10 pr-24 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all"
+          className="w-full rounded-lg border border-gray-300 bg-white py-2.5 pl-10 pr-28 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all"
         />
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+          {!value && !isLoading && (
+            <kbd className="hidden sm:inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-400">
+              /
+            </kbd>
+          )}
           {isLoading && <Loader variant="spinner" size="sm" />}
           
           {!showBarcodeInput && (

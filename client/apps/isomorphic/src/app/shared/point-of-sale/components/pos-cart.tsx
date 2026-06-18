@@ -1308,6 +1308,7 @@ export default function POSCart() {
     note,
     itemCount,
     removeItem,
+    addItem,
     removeComboGroup,
     setComboGroupQty,
     replaceComboGroup,
@@ -1353,6 +1354,7 @@ export default function POSCart() {
   const [showDiscount, setShowDiscount] = useState(false);
   const [showPricelist, setShowPricelist] = useState(false);
   const [showRewards, setShowRewards] = useState(false);
+  const [showHeldOrders, setShowHeldOrders] = useState(false);
 
   // Dialpad state
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -1808,6 +1810,40 @@ export default function POSCart() {
         )}
       </button>
     );
+  }
+
+  // ── Hold / Recall handlers ────────────────────────────────────────────────
+  async function handleHold() {
+    if (!token || items.length === 0) return;
+    try {
+      await posApi.holdOrder(token, {
+        items,
+        customer,
+        note: note || '',
+        discountType,
+        discountValue,
+        appliedRewards: appliedRewards.map((r) => ({
+          id: r.id,
+          kind: r.kind,
+          name: r.name,
+          color: r.color,
+          detail: r.detail,
+          discType: r.discType,
+          discValue: r.discValue,
+          applyOn: r.applyOn,
+          maxDiscount: r.maxDiscount,
+          code: r.code,
+          buyQty: r.buyQty,
+          getQty: r.getQty,
+          getDiscountPct: r.getDiscountPct,
+        })),
+        pricelistId: selectedPricelist?._id ?? undefined,
+      });
+      clearCart();
+      toast.success('Order held', { icon: '⏸' });
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to hold order');
+    }
   }
 
   return (
@@ -2312,13 +2348,22 @@ export default function POSCart() {
               <button
                 key="hold"
                 type="button"
-                onClick={() =>
-                  toast('Hold not yet wired to backend', { icon: '⏸' })
-                }
+                onClick={handleHold}
                 className="flex items-center justify-center gap-1 bg-white py-2.5 text-[11px] font-medium text-gray-600 transition-colors hover:bg-gray-50"
               >
                 <PiNote className="h-3.5 w-3.5" />
                 Hold
+              </button>
+            ) : null,
+            settings.holdOrders ? (
+              <button
+                key="held-orders"
+                type="button"
+                onClick={() => setShowHeldOrders(true)}
+                className="flex items-center justify-center gap-1 bg-white py-2.5 text-[11px] font-medium text-gray-600 transition-colors hover:bg-gray-50"
+              >
+                <PiArrowCounterClockwise className="h-3.5 w-3.5" />
+                Held
               </button>
             ) : null,
             <button
@@ -2508,6 +2553,174 @@ export default function POSCart() {
           }}
         />
       )}
+
+      {showHeldOrders && (
+        <HeldOrdersModal
+          token={token}
+          onRecall={(cart) => {
+            // Set customer
+            if (cart.customer?.firstName) {
+              setCustomer(cart.customer);
+            }
+            // Set note
+            if (cart.note) setNote(cart.note);
+            // Set discount
+            if (cart.discountValue > 0) {
+              setDiscount(cart.discountType, cart.discountValue);
+            }
+            // Add items — skip price 0 placeholders; the grid re-prices them
+            for (const ci of cart.items) {
+              addItem({
+                subProductId: ci.subProductId,
+                productId:    ci.productId,
+                sizeId:       ci.sizeId,
+                name:         ci.name,
+                variant:      ci.variant,
+                sku:          ci.sku,
+                quantity:     ci.quantity,
+                price:        ci.price,
+                discount:     ci.discount,
+                stock:        999, // client re-fetches from grid on mount
+              });
+            }
+            setShowHeldOrders(false);
+            toast.success('Order recalled', { icon: '↩️' });
+          }}
+          onClose={() => setShowHeldOrders(false)}
+        />
+      )}
     </>
+  );
+}
+
+// ── Held Orders Modal ──────────────────────────────────────────────────────────
+function HeldOrdersModal({
+  token,
+  onRecall,
+  onClose,
+}: {
+  token: string | null;
+  onRecall: (cart: import('@/app/shared/point-of-sale/types').POSRecallCart) => void;
+  onClose: () => void;
+}) {
+  const [orders, setOrders] = useState<
+    import('@/app/shared/point-of-sale/types').POSHoldOrder[]
+  >([]);
+  const [loading, setLoading] = useState(true);
+  const [recalling, setRecalling] = useState<string | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!token) return;
+    setLoading(true);
+    posApi
+      .getHeldOrders(token)
+      .then((data) => setOrders(data.orders || []))
+      .catch(() => setError('Could not load held orders'))
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  async function handleRecall(id: string) {
+    if (!token || recalling) return;
+    setRecalling(id);
+    try {
+      const data = await posApi.recallHeldOrder(token, id);
+      onRecall(data.cart);
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to recall order'
+      );
+    } finally {
+      setRecalling(null);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="flex max-h-[80vh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-w-md sm:rounded-2xl">
+        {/* Header */}
+        <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 py-4">
+          <div>
+            <h2 className="text-sm font-bold text-gray-900">Held Orders</h2>
+            <p className="text-[11px] text-gray-400">
+              Saved carts waiting to be recalled
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+          >
+            <PiX className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-xs text-gray-400">
+              <PiSpinner className="h-4 w-4 animate-spin" /> Loading…
+            </div>
+          ) : error ? (
+            <p className="px-5 py-8 text-center text-xs text-red-500">{error}</p>
+          ) : orders.length === 0 ? (
+            <div className="py-12 text-center">
+              <PiNote className="mx-auto mb-2 h-8 w-8 text-gray-300" />
+              <p className="text-xs text-gray-400">No held orders</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-50">
+              {orders.map((o) => (
+                <div
+                  key={o._id}
+                  className="flex items-center justify-between px-5 py-3.5"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-gray-900">
+                      {o.customer}
+                    </p>
+                    <p className="text-[11px] text-gray-400">
+                      {o.itemCount} item{o.itemCount !== 1 ? 's' : ''}
+                      {o.note ? ` · ${o.note}` : ''}
+                    </p>
+                    <p className="text-[10px] text-gray-300">
+                      {new Date(o.createdAt).toLocaleString('en-GB', {
+                        day: '2-digit',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRecall(o._id)}
+                    disabled={recalling === o._id}
+                    className="ml-3 shrink-0 rounded-lg bg-[#b20202] px-4 py-2 text-[11px] font-semibold text-white transition-colors hover:bg-[#910101] disabled:opacity-50"
+                  >
+                    {recalling === o._id ? (
+                      <PiSpinner className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      'Recall'
+                    )}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="shrink-0 border-t border-gray-100 px-5 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full rounded-lg bg-gray-100 py-2.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-200"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

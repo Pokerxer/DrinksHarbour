@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
 import { Text, Button, Badge } from 'rizzui';
 import { useSession } from 'next-auth/react';
-import { PiCheck, PiPackage, PiArrowLeft, PiTag, PiBarcode, PiHash, PiSpinner, PiUpload, PiX, PiPlusCircle, PiFunnel, PiImages, PiStar, PiTrash, PiCaretRight, PiWarning } from 'react-icons/pi';
+import { PiCheck, PiPackage, PiArrowLeft, PiTag, PiBarcode, PiHash, PiSpinner, PiUpload, PiX, PiFunnel, PiImages, PiStar, PiTrash, PiCaretRight, PiWarning } from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
 import { uploadService } from '@/services/upload.service';
@@ -257,13 +257,18 @@ export default function SubProductBasicInfo({
     setIsLoading(true);
     try {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
-      // Use getAllProducts with search parameter instead of search endpoint (which has embedding issues)
-      // Use inStock=false to get all products, and status= (empty) to include all statuses
-      let url = `${API_URL}/api/products?limit=15&inStock=false&status=&search=${encodeURIComponent(query)}`;
+      // Use search endpoint with text mode (avoids embedding issues) for relevance-scored results
+      // This searches across name, brand, type, origin, description, etc. with weighted relevance
+      const params = new URLSearchParams({
+        q: query,
+        limit: '15',
+        searchMode: 'text',
+        useEmbeddings: 'false',
+      });
       if (selectedTypeFilter) {
-        url += `&type=${encodeURIComponent(selectedTypeFilter)}`;
+        params.set('type', selectedTypeFilter);
       }
-      const response = await fetch(url, {
+      const response = await fetch(`${API_URL}/api/products/search?${params}`, {
         headers: {
           'Authorization': `Bearer ${session.user.token}`,
           'Content-Type': 'application/json',
@@ -588,25 +593,6 @@ export default function SubProductBasicInfo({
                           </Text>
                         )}
                       </div>
-                      
-                      {/* Create Product First Button */}
-                      {!selectedProductId && !isCreateMode && (
-                        <div className="pt-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleCreateNewProduct(searchQuery || '')}
-                            className="group relative inline-flex items-center gap-1.5 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 hover:border-blue-400 transition-all whitespace-nowrap"
-                            title="Create new product in central catalog (will require approval)"
-                          >
-                            <PiPlusCircle className="h-4 w-4" />
-                            <span className="hidden sm:inline">Create Product</span>
-                            <span className="sm:hidden">Create</span>
-                          </button>
-                          <p className="text-xs text-gray-500 mt-1 hidden lg:block">
-                            Creates central Product (pending approval)
-                          </p>
-                        </div>
-                      )}
                     </div>
 
                     {/* Search Results Dropdown - positioned relative to input container */}

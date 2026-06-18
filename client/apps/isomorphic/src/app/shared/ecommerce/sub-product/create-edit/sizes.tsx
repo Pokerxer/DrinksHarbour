@@ -326,6 +326,10 @@ export default function SubProductSizes() {
   const watch = methods?.watch;
   const setValue = methods?.setValue;
   const control = methods?.control;
+  const setError = methods?.setError;
+  const clearErrors = methods?.clearErrors;
+  const getValues = methods?.getValues;
+  const formState = methods?.formState;
 
   const { fields, append, remove } = useFieldArray({
     control,
@@ -758,6 +762,9 @@ export default function SubProductSizes() {
                       setValue={setValue}
                       watch={watch}
                       control={control}
+                      setError={setError}
+                      clearErrors={clearErrors}
+                      getValues={getValues}
                       remove={remove}
                       totalSizes={fields.length}
                       calculateBasePrice={calculateBasePrice}
@@ -829,6 +836,9 @@ function SizeVariantRow({
   setValue,
   watch,
   control,
+  setError,
+  clearErrors,
+  getValues,
   remove,
   totalSizes,
   calculateBasePrice,
@@ -838,6 +848,9 @@ function SizeVariantRow({
   setValue: any;
   watch: any;
   control: any;
+  setError: any;
+  clearErrors: any;
+  getValues: any;
   remove: (index: number) => void;
   totalSizes: number;
   calculateBasePrice: (
@@ -944,6 +957,25 @@ function SizeVariantRow({
   };
 
   const handleSizeChange = (sizeValue: string) => {
+    // Clear previous size error for this field
+    clearErrors?.(`subProductData.sizes.${index}.size`);
+
+    // Check for duplicate size value across all rows (excluding current)
+    if (sizeValue) {
+      const allSizes = getValues?.('subProductData.sizes') || [];
+      const duplicate = allSizes.findIndex(
+        (s: any, i: number) =>
+          i !== index && s?.size?.toLowerCase() === sizeValue.toLowerCase()
+      );
+      if (duplicate >= 0) {
+        setError?.(`subProductData.sizes.${index}.size`, {
+          type: 'manual',
+          message: `Size "${sizeValue}" is already used in row ${duplicate + 1}`,
+        });
+        return;
+      }
+    }
+
     const selectedOption = SIZE_OPTIONS.find((opt) => opt.value === sizeValue);
     if (selectedOption) {
       setValue(`subProductData.sizes.${index}.size`, sizeValue);
@@ -1543,13 +1575,38 @@ function SizeVariantRow({
           <Controller
             name={`subProductData.sizes.${index}.barcode`}
             control={control}
-            render={({ field }) => (
-              <input
-                {...field}
-                type="text"
-                placeholder="Barcode"
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
+            render={({ field, fieldState: { error } }) => (
+              <>
+                <input
+                  {...field}
+                  type="text"
+                  placeholder="Barcode"
+                  onChange={(e) => {
+                    field.onChange(e.target.value);
+                    // Clear barcode error on change
+                    clearErrors?.(`subProductData.sizes.${index}.barcode`);
+                    // Check for local barcode duplicates
+                    if (e.target.value) {
+                      const allSizes = getValues?.('subProductData.sizes') || [];
+                      const duplicate = allSizes.findIndex(
+                        (s: any, i: number) =>
+                          i !== index &&
+                          s?.barcode?.trim().toLowerCase() === e.target.value.trim().toLowerCase()
+                      );
+                      if (duplicate >= 0) {
+                        setError?.(`subProductData.sizes.${index}.barcode`, {
+                          type: 'manual',
+                          message: 'Barcode already used in row ' + (duplicate + 1),
+                        });
+                      }
+                    }
+                  }}
+                  className={`w-full rounded-lg border bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-1 ${error ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'}`}
+                />
+                {error && (
+                  <p className="mt-1 text-xs text-red-500">{error.message}</p>
+                )}
+              </>
             )}
           />
         </div>

@@ -330,7 +330,19 @@ const validateSubProductCreation = [
   body('sizes')
     .optional()
     .isArray()
-    .withMessage('Sizes must be an array'),
+    .withMessage('Sizes must be an array')
+    .custom((sizes) => {
+      if (!sizes || !Array.isArray(sizes)) return true;
+      const seen = new Set();
+      for (const s of sizes) {
+        if (!s.size) continue;
+        if (seen.has(s.size)) {
+          throw new Error(`Duplicate size value "${s.size}" in sizes array. Each size value can only appear once.`);
+        }
+        seen.add(s.size);
+      }
+      return true;
+    }),
 
   body('sizes.*.volumeMl')
     .optional({ nullable: true })
@@ -564,7 +576,19 @@ const validateSubProductUpdate = [
   body('sizes')
     .optional()
     .isArray()
-    .withMessage('Sizes must be an array'),
+    .withMessage('Sizes must be an array')
+    .custom((sizes) => {
+      if (!sizes || !Array.isArray(sizes)) return true;
+      const seen = new Set();
+      for (const s of sizes) {
+        if (!s.size) continue;
+        if (seen.has(s.size)) {
+          throw new Error(`Duplicate size value "${s.size}" in sizes array. Each size value can only appear once.`);
+        }
+        seen.add(s.size);
+      }
+      return true;
+    }),
 
   // Vendor & Sourcing
   body('vendor')

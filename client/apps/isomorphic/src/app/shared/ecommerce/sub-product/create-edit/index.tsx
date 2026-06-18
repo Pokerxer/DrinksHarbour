@@ -921,6 +921,21 @@ export default function CreateEditSubProduct({
         return false;
       }
 
+      // Guard: no duplicate size values in the sizes array
+      const seenSizes = new Set<string>();
+      for (const s of sp.sizes || []) {
+        if (!s.size) continue;
+        const key = String(s.size).toLowerCase().trim();
+        if (seenSizes.has(key)) {
+          if (!silent)
+            toast.error(
+              `Duplicate size value "${s.size}". Each size value can only appear once per product.`
+            );
+          return false;
+        }
+        seenSizes.add(key);
+      }
+
       const token = sessionRef.current?.user?.token;
       if (!token) {
         if (!silent)

@@ -34,6 +34,13 @@ const sizeSchema = new Schema(
       index: true,
     },
 
+    tenant: {
+      type: ObjectId,
+      ref: 'Tenant',
+      required: true,
+      index: true,
+    },
+
     // ════════════════════════════════════════════════════════════
     // SIZE SPECIFICATION
     // ════════════════════════════════════════════════════════════
@@ -300,11 +307,6 @@ const sizeSchema = new Schema(
     barcode: {
       type: String,
       trim: true,
-      index: {
-        unique: true,
-        sparse: true,
-        partialFilterExpression: { barcode: { $type: 'string', $ne: '' } }
-      }
     },
     
     gtin: {
@@ -703,7 +705,14 @@ sizeSchema.pre('save', function() {
 
 sizeSchema.index({ subproduct: 1, size: 1 }, { unique: true });
 // sku index comes from unique:true + sparse:true in the field definition
-// barcode index is defined inline with partialFilterExpression
+// Per-tenant barcode uniqueness — non-empty barcodes must be unique within a tenant
+sizeSchema.index(
+  { tenant: 1, barcode: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { barcode: { $gt: '' } }
+  }
+);
 // Remove duplicate index: sizeSchema.index({ availability: 1 });
 sizeSchema.index({ stock: 1 });
 sizeSchema.index({ subproduct: 1, totalSold: -1 });

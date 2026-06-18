@@ -4,6 +4,8 @@ import type {
   POSSessionInfo,
   POSProduct,
   POSOrderResponse,
+  POSHoldOrder,
+  POSRecallCart,
   POSRefundResponse,
   POSDashboardData,
   POSSession,
@@ -140,6 +142,27 @@ export const posApi = {
       headers: authHeaders(token),
       body: JSON.stringify(order),
     });
+  },
+
+  async holdOrder(token: string, data: Record<string, unknown>) {
+    return request<{ order: POSHoldOrder }>(`${API_URL}/api/pos/orders/hold`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getHeldOrders(token: string) {
+    return request<{ orders: POSHoldOrder[] }>(`${API_URL}/api/pos/orders/held`, {
+      headers: authHeaders(token),
+    });
+  },
+
+  async recallHeldOrder(token: string, orderId: string) {
+    return request<{ cart: POSRecallCart }>(
+      `${API_URL}/api/pos/orders/${orderId}/recall`,
+      { method: 'POST', headers: authHeaders(token) }
+    );
   },
 
   async refundOrder(

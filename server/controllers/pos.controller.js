@@ -1938,7 +1938,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   const staffId  = req.posUser._id;
 
   const {
-    items,            // [{ subProductId, sizeId?, quantity, price, discount? }]
+    items,            // [{ subProductId, sizeId?, quantity, price, discount?, clientPrice? }]
     customer = {},
     paymentMethod,    // 'cash' | 'card' | 'bank_transfer' | 'mobile_money' | 'split'
     amountTendered = 0,
@@ -1950,6 +1950,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     priceOverrides = {}, // { subProductId+sizeId key: newPrice } — requires pos:price_override
     pricelistId,         // selected pricelist _id — applied to prices at order time
     shopId,              // posSettings.shops._id — resolves a bound warehouse, if any
+    cartOriginalSubtotal,// client-computed pre-pricelist subtotal for receipt savings display
   } = req.body;
 
   if (!items?.length) return res.status(400).json({ success: false, message: 'No items in order' });
@@ -2020,6 +2021,11 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
           finalPrice = sizePricing.sellingPrice;
         }
       }
+
+      // Capture pre-pricelist unit price for receipt savings display.
+      // Always uses the system-computed price, not a cashier override,
+      // so "original" reflects the true baseline for pricelist comparison.
+      const originalUnitPrice = sizePricing.sellingPrice;
 
       // Deduct stock (throws on insufficient stock unless overselling is allowed)
       const deductedDoc = await deductStock({
@@ -2196,6 +2202,14 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         }
       }
 
+      // If the client sent its authoritative effectivePrice (computed after pricelist
+      // + bundle rules), trust it over the server's re-computation. This ensures the
+      // receipt charge always matches what the cart displayed, even when DB bundle
+      // deals have drifted from the client cache.
+      if (item.clientPrice != null && Number(item.clientPrice) > 0) {
+        effectivePrice = Number(item.clientPrice);
+      }
+
       // Item-level cashier discount (always percentage from the dialpad)
       const lineGross      = effectivePrice * quantity;
       const itemDiscPct    = Math.max(0, Math.min(100, item.discount || 0));
@@ -2227,6 +2241,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         quantity,
         batchAllocations:      deductedDoc?.batchAllocations || [],
         priceAtPurchase:       effectivePrice,
+        originalPriceAtPurchase: originalUnitPrice,
         itemSubtotal:          lineSubtotal,
         discountAmount:        itemDiscountAmount,
         appliedPricelistRule: appliedPlRuleSnapshot ? {
@@ -2266,6 +2281,15 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
 
   // Compute totals — itemSubtotal already has item-level discount applied
   const subtotal = orderItems.reduce((s, it) => s + it.itemSubtotal, 0);
+  // Gross before any per-item discounts (pricelist-effective price × qty).
+  // Used to compute pricelist savings against the client's pre-pricelist subtotal.
+  const grossBeforeDisc = orderItems.reduce(
+    (s, it) => s + it.priceAtPurchase * it.quantity, 0
+  );
+  const originalSubtotal = Number(cartOriginalSubtotal) > 0
+    ? Number(cartOriginalSubtotal)
+    : grossBeforeDisc;
+  const pricelistSavings = Math.max(0, originalSubtotal - grossBeforeDisc);
 
   let orderDiscountAmount = 0;
   if (discountValue > 0) {
@@ -2402,6 +2426,9 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         receiptNumber: order.receiptNumber,
         total:         order.totalAmount,
         subtotal:      subtotal,
+        originalSubtotal:  originalSubtotal,
+        pricelistSavings:  pricelistSavings > 0 ? pricelistSavings : undefined,
+        pricelistName:     selectedPricelist?.name || undefined,
         discountTotal: orderDiscountAmount || 0,
         paymentMethod: order.paymentMethod,
         splitPayments: paymentMethod === 'split' ? splitPayments : undefined,
@@ -2640,6 +2667,180 @@ exports.voidPOSOrder = asyncHandler(async (req, res) => {
   await order.save();
 
   res.json({ success: true, data: { order: { _id: order._id, receiptNumber: order.receiptNumber, isVoided: true } } });
+});
+
+// ─── Hold Order ────────────────────────────────────────────────────────────────
+/**
+ * POST /api/pos/orders/hold
+ * Body: { items, customer, note, discountType, discountValue, pricelistId,
+ *         shopId, terminalType, sessionId, appliedRewards }
+ *
+ * Saves a cart snapshot as an Order with status 'hold'. No stock is deducted.
+ * The held order can be recalled later to rehydrate the cart.
+ */
+exports.holdPOSOrder = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  const staffId  = req.posUser._id;
+
+  const {
+    items = [],
+    customer = {},
+    note = '',
+    discountType,
+    discountValue = 0,
+    pricelistId,
+    shopId,
+    terminalType = 'retail',
+    sessionId,
+    appliedRewards = [],
+  } = req.body;
+
+  if (!items.length) {
+    return res.status(400).json({ success: false, message: 'No items to hold' });
+  }
+
+  const orderNumber = await generateOrderNumber();
+
+  const holdItems = items.map((item) => ({
+    product:               item.productId,
+    subproduct:            item.subProductId,
+    size:                  item.sizeId || undefined,
+    quantity:              item.quantity,
+    priceAtPurchase:       0,
+    itemSubtotal:          0,
+    discountAmount:        0,
+    tenant:                tenantId,
+    _name:    item.name || 'Product',
+    _variant: item.variant || '',
+    _sku:     item.sku || '',
+  }));
+
+  // Session lookup — optional, for scoping holds to a session
+  let session = null;
+  if (sessionId) {
+    session = await POSSession.findOne({ _id: sessionId, tenant: tenantId, status: 'open' });
+  }
+  if (!session) {
+    session = await POSSession.findOne({ tenant: tenantId, status: 'open', terminalType })
+      .sort({ openedAt: -1 });
+  }
+
+  const order = await Order.create({
+    orderNumber,
+    tenant:        tenantId,
+    source:        'pos',
+    status:        'hold',
+    items:         holdItems,
+    subtotal:      0,
+    totalAmount:   0,
+    paymentMethod: 'cash',
+    paymentStatus: 'pending',
+    posSessionId:  session?._id || null,
+    posStaff:      staffId,
+    note,
+    discountTotal: 0,
+    shippingFee:   0,
+    appliedPricelist: pricelistId ? {
+      pricelistId,
+      pricelistName: '',
+    } : undefined,
+    holdMetadata: {
+      customer,
+      discountType,
+      discountValue,
+      terminalType,
+      appliedRewards,
+    },
+  });
+
+  res.status(201).json({
+    success: true,
+    data: {
+      order: {
+        _id:           order._id,
+        orderNumber:   order.orderNumber,
+        status:        order.status,
+        itemCount:     holdItems.reduce((s, i) => s + i.quantity, 0),
+        customer,
+        note,
+        createdAt:     order.createdAt,
+      },
+    },
+  });
+});
+
+// ─── Get Held Orders ───────────────────────────────────────────────────────────
+/**
+ * GET /api/pos/orders/held
+ * Returns all hold orders for the current tenant.
+ */
+exports.getHeldPOSOrders = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+
+  const holds = await Order.find({ tenant: tenantId, status: 'hold' })
+    .select('orderNumber items note createdAt holdMetadata')
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const result = holds.map((h) => {
+    const meta = h.holdMetadata || {};
+    const cust = meta.customer || {};
+    return {
+      _id:         h._id,
+      orderNumber: h.orderNumber,
+      itemCount:   h.items.reduce((s, i) => s + i.quantity, 0),
+      customer:    `${cust.firstName || ''} ${cust.lastName || ''}`.trim() || 'Walk-in Customer',
+      note:        h.note || '',
+      createdAt:   h.createdAt,
+    };
+  });
+
+  res.json({ success: true, data: { orders: result } });
+});
+
+// ─── Recall Held Order ─────────────────────────────────────────────────────────
+/**
+ * POST /api/pos/orders/:id/recall
+ * Returns the full cart data from a held order and removes it.
+ */
+exports.recallPOSOrder = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+
+  const order = await Order.findOne({ _id: req.params.id, tenant: tenantId, status: 'hold' }).lean();
+  if (!order) {
+    return res.status(404).json({ success: false, message: 'Held order not found' });
+  }
+
+  const meta = order.holdMetadata || {};
+
+  const cartItems = order.items.map((item) => ({
+    subProductId: String(item.subproduct || item.product),
+    productId:    String(item.product),
+    sizeId:       item.size ? String(item.size) : undefined,
+    name:         item._name || 'Product',
+    variant:      item._variant || '',
+    sku:          item._sku || '',
+    quantity:     item.quantity,
+    price:        0, // client recomputes from grid — server returns 0 as placeholder
+    discount:     0,
+  }));
+
+  // Delete the hold order so it can't be recalled twice
+  await Order.deleteOne({ _id: order._id });
+
+  res.json({
+    success: true,
+    data: {
+      cart: {
+        items:     cartItems,
+        customer:  meta.customer || { firstName: 'Walk-in', lastName: 'Customer', email: '', phone: '' },
+        note:      order.note || '',
+        discountType:  meta.discountType || 'percent',
+        discountValue: meta.discountValue || 0,
+        pricelistId:   order.appliedPricelist?.pricelistId || null,
+      },
+    },
+  });
 });
 
 // ─── Get POS Session Orders ───────────────────────────────────────────────────

@@ -651,11 +651,14 @@ export function computeRewardDiscount(
   const discType = reward.discType ?? 'pct';
   const discValue = reward.discValue ?? 0;
   if (discValue <= 0) return 0;
+  // Exclude BXGY "get" items — their price already reflects the BXGY discount
+  // and would give a wrong baseline for the cheapest/most_expensive selection.
+  const nonBxgyItems = items.filter((i) => i.bxgyRef?.role !== 'get');
   let applyBase = base;
-  if (reward.applyOn === 'cheapest' && items.length)
-    applyBase = Math.min(...items.map((i) => i.price));
-  else if (reward.applyOn === 'most_expensive' && items.length)
-    applyBase = Math.max(...items.map((i) => i.price));
+  if (reward.applyOn === 'cheapest' && nonBxgyItems.length)
+    applyBase = Math.min(...nonBxgyItems.map((i) => i.price));
+  else if (reward.applyOn === 'most_expensive' && nonBxgyItems.length)
+    applyBase = Math.max(...nonBxgyItems.map((i) => i.price));
   const raw =
     discType === 'pct'
       ? Math.round(((applyBase * discValue) / 100) * 100) / 100
@@ -801,6 +804,16 @@ export const usePOSCart = () => {
                   ? {
                       ...i,
                       quantity: i.quantity + item.quantity,
+                      price: item.price,
+                      costPrice: item.costPrice,
+                      originalPrice: item.originalPrice,
+                      stock: item.stock,
+                      name: item.name,
+                      variant: item.variant,
+                      sku: item.sku,
+                      image: item.image ?? i.image,
+                      categoryId: item.categoryId ?? i.categoryId,
+                      brandId: item.brandId ?? i.brandId,
                       activeBundles: item.activeBundles ?? i.activeBundles,
                     }
                   : i

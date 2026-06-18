@@ -105,7 +105,8 @@ export default function POSSell() {
       const size = sizeId
         ? product.sizes.find((s) => s._id === sizeId)
         : undefined;
-      if (size && size.availableStock <= 0) return;
+      const allowOverselling = settings?.allowOverselling ?? false;
+      if (size && size.availableStock <= 0 && !allowOverselling) return;
 
       // Store the raw (pre-pricelist) price so the cart can re-apply the
       // currently selected pricelist dynamically. _priceBeforePricelist is set
@@ -142,7 +143,7 @@ export default function POSSell() {
         brandId: product.product?.brand?._id,
       });
     },
-    [addItem]
+    [addItem, settings]
   );
 
   // Show nothing while Jotai hydrates (avoids flicker of empty content)

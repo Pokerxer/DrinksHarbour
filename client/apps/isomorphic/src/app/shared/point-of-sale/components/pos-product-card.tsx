@@ -390,9 +390,14 @@ function PricelistBreakdown({
                         {isManualOverride ? 'Manual' : 'Auto'}
                       </span>
                     )}
-                    {!isStd && !row.ruleSteps.length && (
+                    {!isStd && !row.ruleSteps.length && !row.bundleHints.length && (
                       <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-400">
                         No rule for this product
+                      </span>
+                    )}
+                    {!isStd && !row.ruleSteps.length && row.bundleHints.length > 0 && (
+                      <span className="rounded bg-purple-50 px-1.5 py-0.5 text-[9px] font-semibold text-purple-500">
+                        Bundle deals only
                       </span>
                     )}
                     {/* Rule type badges */}
@@ -416,15 +421,13 @@ function PricelistBreakdown({
                     )}
                   </div>
                   {/* Formula breakdown */}
-                  {hasFormula &&
-                    !row.needsCost &&
-                    usedCost > 0 &&
-                    !noChange && (
-                      <p className="mt-0.5 text-[9px] tabular-nums text-gray-400">
-                        Cost {formatCurrency(usedCost)} × (1 + markup%) ={' '}
-                        {formatCurrency(dp)}
-                      </p>
-                    )}
+                  {hasFormula && !row.needsCost && usedCost > 0 && (
+                    <p className="mt-0.5 text-[9px] tabular-nums text-gray-400">
+                      Cost {formatCurrency(usedCost)} × (1 + markup%) ={' '}
+                      {formatCurrency(dp)}
+                      {noChange ? ' (matches standard)' : ''}
+                    </p>
+                  )}
                   {hasFormula && row.needsCost && (
                     <p className="mt-0.5 text-[9px] text-orange-400">
                       Set vendor cost price on this product to calculate
@@ -443,7 +446,11 @@ function PricelistBreakdown({
                   </p>
                   {noChange ? (
                     <p className="text-[9px] leading-tight text-gray-300">
-                      {!isStd && row.ruleSteps.length > 0 ? '= standard' : '—'}
+                      {!isStd && row.ruleSteps.length > 0
+                        ? hasFormula && usedCost > 0
+                          ? 'Matches standard'
+                          : `= ${formatCurrency(dp)}`
+                        : '—'}
                     </p>
                   ) : (
                     <p
@@ -541,14 +548,18 @@ function ProductInfoModal({
   );
   const defaultPresets = [5, 10, 15, 20, 25, 30, 50];
 
-  // Reference price for the currently-selected size (or product base price)
+  // Reference price for the currently-selected size (or product base price).
+  // When a pricelist is active, use the pre-pricelist price so the cashier applies
+  // discounts on the standard price, not the pricelist-discounted one.
   const refPrice = useMemo(() => {
+    const plBase = (product as any)._pricelistOriginalPrice;
     if (hasSizes && discountSizeId) {
       const sz = validSizes.find((s) => s._id === discountSizeId);
-      return sz?.sellingPrice ?? product.baseSellingPrice;
+      const szPlBase = (sz as any)?._priceBeforePricelist || 0;
+      return szPlBase > 0 ? szPlBase : (sz?.sellingPrice ?? product.baseSellingPrice);
     }
-    return product.baseSellingPrice;
-  }, [hasSizes, discountSizeId, validSizes, product.baseSellingPrice]);
+    return plBase > 0 ? plBase : product.baseSellingPrice;
+  }, [hasSizes, discountSizeId, validSizes, product]);
 
   // Parse input → exact naira saving amount (avoids floating-point %-to-₦ drift)
   // We store everything as a naira amount internally; only convert to % at submission.
@@ -787,9 +798,26 @@ function ProductInfoModal({
                         {formatCurrency(product.originalPrice)}
                       </span>
                     )}
+                    {!product.originalPrice &&
+                      (product as any)._pricelistOriginalPrice &&
+                      Math.abs(
+                        (product as any)._pricelistOriginalPrice -
+                          product.baseSellingPrice
+                      ) > 0.001 && (
+                        <span className="text-xs tabular-nums leading-tight text-gray-400 line-through">
+                          {formatCurrency(
+                            (product as any)._pricelistOriginalPrice
+                          )}
+                        </span>
+                      )}
                     <span className="text-xl font-extrabold tabular-nums leading-tight text-gray-900">
                       {formatCurrency(product.baseSellingPrice)}
                     </span>
+                    {(product as any)._appliedPricelist && (
+                      <span className="mt-0.5 text-[9px] font-semibold text-amber-600">
+                        {(product as any)._appliedPricelist.name}
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
@@ -833,6 +861,18 @@ function ProductInfoModal({
                                     )}
                                   </span>
                                 )}
+                                {!(size as any).originalPrice &&
+                                  (size as any)._priceBeforePricelist &&
+                                  Math.abs(
+                                    (size as any)._priceBeforePricelist -
+                                      size.sellingPrice
+                                  ) > 0.001 && (
+                                    <span className="block text-[10px] leading-tight text-gray-400 line-through">
+                                      {formatCurrency(
+                                        (size as any)._priceBeforePricelist
+                                      )}
+                                    </span>
+                                  )}
                                 <span className="font-bold">
                                   {formatCurrency(size.sellingPrice)}
                                 </span>
@@ -1473,6 +1513,18 @@ function SizePickerModal({
                       {formatCurrency((size as any).originalPrice)}
                     </span>
                   )}
+                  {!(size as any).originalPrice &&
+                    (size as any)._priceBeforePricelist &&
+                    Math.abs(
+                      (size as any)._priceBeforePricelist -
+                        size.sellingPrice
+                    ) > 0.001 && (
+                      <span className="text-[10px] tabular-nums leading-tight text-gray-400 line-through">
+                        {formatCurrency(
+                          (size as any)._priceBeforePricelist
+                        )}
+                      </span>
+                    )}
                   <span
                     className={`text-sm font-bold tabular-nums leading-tight ${sel ? 'text-[#b20202]' : 'text-gray-700'}`}
                   >
@@ -1548,7 +1600,7 @@ export default function POSProductCard({
   className,
   flash = false,
 }: ProductCardProps) {
-  const { items, updateQuantity, addItem } = usePOSCart();
+  const { items, addItem } = usePOSCart();
   const settings = usePOSSettings();
   const allowOverselling = settings.allowOverselling;
   const showImage = !settings.hidePictures && settings.showProductImages;
@@ -1626,6 +1678,18 @@ export default function POSProductCard({
       originalDisplay = formatCurrency(product.originalPrice);
   }
 
+  // When a pricelist adjusted the price but there's no server sale to show a
+  // strikethrough, use _pricelistOriginalPrice as the reference "was" price.
+  // This ensures customers see "Was ₦X, now ₦Y" even without a server sale.
+  const plSteps = (product as any)._appliedPricelistSteps?.length > 0;
+  const plOrigPrice = (product as any)._pricelistOriginalPrice;
+  if (!originalDisplay && plSteps && plOrigPrice > 0) {
+    const singlePrice = singleSize?.sellingPrice || product.baseSellingPrice;
+    if (Math.abs(plOrigPrice - singlePrice) > 0.001) {
+      originalDisplay = formatCurrency(plOrigPrice);
+    }
+  }
+
   const imageUrl = getImageUrl(product);
   const name = getProductDisplayName(product);
   const vendorName = product.vendor
@@ -1653,31 +1717,22 @@ export default function POSProductCard({
     if (singleSize) {
       if (singleSize.availableStock <= 0 && !allowOverselling) return;
       const existing = cartLines.find((l) => l.sizeId === singleSize._id);
-      if (existing) {
-        if (existing.quantity < singleSize.availableStock) {
-          updateQuantity(
-            existing.subProductId,
-            existing.quantity + 1,
-            existing.sizeId
-          );
-        }
-      } else {
+      if (!existing || existing.quantity < singleSize.availableStock) {
         onAddToCart(product, singleSize._id, 1);
       }
       return;
     }
 
     // Multiple sizes
-    const activeLines = cartLines.filter((l) => l.sizeId); // lines with a size
+    const activeLines = cartLines.filter((l) => l.sizeId);
     if (activeLines.length === 1) {
-      // Exactly one size variant in cart → increment it directly
       const line = activeLines[0];
       const sizeDoc = validSizes.find((s) => s._id === line.sizeId);
       if (
         sizeDoc &&
         (allowOverselling || line.quantity < sizeDoc.availableStock)
       ) {
-        updateQuantity(line.subProductId, line.quantity + 1, line.sizeId);
+        onAddToCart(product, line.sizeId, 1);
         return;
       }
     }
@@ -1933,10 +1988,25 @@ export default function POSProductCard({
               )}
             </div>
             {/* Bundle deal hint */}
-            {bestBundle && (bestBundle.discount ?? 0) > 0 && (
-              <span className="mt-1 inline-flex items-center gap-1 rounded bg-purple-50 px-1.5 py-0.5 text-[9px] font-bold text-purple-600">
-                📦 Buy {bestBundle.quantity}+ · {bestBundle.discount}% off
-              </span>
+            {bestBundle && (
+              (() => {
+                const dt = bestBundle.discountType || 'percentage';
+                const hint =
+                  dt === 'markup_on_cost'
+                    ? `📦 Buy ${bestBundle.quantity}+ · Cost+${bestBundle.discount}%`
+                    : dt === 'no_discount'
+                      ? `📦 Buy ${bestBundle.quantity}+ · No discount`
+                      : dt === 'fixed'
+                        ? `📦 Buy ${bestBundle.quantity}+ · ₦${bestBundle.discount} off`
+                        : (bestBundle.discount ?? 0) > 0
+                          ? `📦 Buy ${bestBundle.quantity}+ · ${bestBundle.discount}% off`
+                          : null;
+                return hint ? (
+                  <span className="mt-1 inline-flex items-center gap-1 rounded bg-purple-50 px-1.5 py-0.5 text-[9px] font-bold text-purple-600">
+                    {hint}
+                  </span>
+                ) : null;
+              })()
             )}
           </div>
         </div>

@@ -448,6 +448,9 @@ export interface POSOrderResponse {
   receiptNumber: string;
   total: number;
   subtotal?: number;
+  originalSubtotal?: number;
+  pricelistSavings?: number;
+  pricelistName?: string;
   discountTotal?: number;
   paymentMethod: string;
   splitPayments?: { method: string; amount: number }[];
@@ -457,6 +460,39 @@ export interface POSOrderResponse {
   note?: string;
   placedAt: string;
   posStaff: string;
+}
+
+export interface POSHoldOrder {
+  _id: string;
+  orderNumber: string;
+  itemCount: number;
+  customer: string;
+  note: string;
+  createdAt: string;
+}
+
+export interface POSRecallCart {
+  items: {
+    subProductId: string;
+    productId: string;
+    sizeId?: string;
+    name: string;
+    variant: string;
+    sku: string;
+    quantity: number;
+    price: number;
+    discount: number;
+  }[];
+  customer: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+  };
+  note: string;
+  discountType: 'percent' | 'fixed';
+  discountValue: number;
+  pricelistId: string | null;
 }
 
 export interface POSRefundResponse {

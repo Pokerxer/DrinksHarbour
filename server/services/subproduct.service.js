@@ -895,6 +895,9 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
 
   // Create sizes if provided and not selling without variants
   if (!sellWithoutSizeVariants && sizes && sizes.length > 0) {
+    // Validate no duplicate size values in the request
+    validateDuplicateSizes(sizes);
+
     const createdSizes = session 
       ? await createSizeVariantsWithTransaction(sizes, createdSubProduct._id, currency, tenantId, session)
       : await createSizeVariantsWithoutTransaction(sizes, createdSubProduct._id, currency, tenantId);
@@ -944,6 +947,7 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
     const Size = require('../models/Size');
     const unitSize = new Size({
       subproduct: createdSubProduct._id,
+      tenant: tenantId,
       size: 'unit',
       displayName: 'Unit',
       stock: totalStock,
@@ -1732,6 +1736,9 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
   // HANDLE SIZE VARIANTS UPDATE
   // ========================================================================
   if (data.sizes !== undefined && Array.isArray(data.sizes)) {
+    // Validate no duplicate size values in the request
+    validateDuplicateSizes(data.sizes);
+
     const Size = require('../models/Size');
     
     if (data.sellWithoutSizeVariants) {
@@ -1743,6 +1750,7 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
       const Size = require('../models/Size');
       const unitSize = await Size.create({
         subproduct: subProductId,
+        tenant: tenantObjectId,
         size: 'unit',
         displayName: 'Unit',
         stock: subProduct.totalStock || 0,
@@ -2077,6 +2085,50 @@ const updateStockBulk = async (updates, tenantId) => {
 };
 
 /**
+ * Validation helper: Check for duplicate size values in a sizes array
+ */
+function validateDuplicateSizes(sizes) {
+  if (!sizes || !Array.isArray(sizes)) return;
+  const seen = new Set();
+  for (let i = 0; i < sizes.length; i++) {
+    const val = sizes[i]?.size;
+    if (!val) continue;
+    if (seen.has(val)) {
+      throw new ValidationError(
+        `Duplicate size value "${val}" at index ${i}. Each size value can only appear once per product.`
+      );
+    }
+    seen.add(val);
+  }
+}
+
+/**
+ * Validation helper: Check barcode uniqueness within a tenant
+ */
+async function validateBarcodeUniqueness(barcode, tenantId, excludeSizeId = null) {
+  if (!barcode || String(barcode).trim() === '') return;
+
+  const query = {
+    tenant: tenantId,
+    barcode: String(barcode).trim(),
+  };
+  if (excludeSizeId) {
+    query._id = { $ne: excludeSizeId };
+  }
+
+  const existing = await Size.findOne(query)
+    .populate({ path: 'subproduct', select: 'sku' })
+    .lean();
+
+  if (existing) {
+    const subproductSku = existing.subproduct?.sku || 'unknown';
+    throw new ValidationError(
+      `Barcode "${barcode}" is already in use by size on SubProduct "${subproductSku}".`
+    );
+  }
+}
+
+/**
  * Helper: Create size variants for SubProduct
  */
 const createSizeVariants = async (sizes, subProductId, defaultCurrency, tenantId) => {
@@ -2217,6 +2269,7 @@ const createSizeVariants = async (sizes, subProductId, defaultCurrency, tenantId
 
       const sizePayload = {
         subproduct: subProductId,
+        tenant: tenantId,
         size,
         displayName: displayName || size,
         sizeCategory: sizeCategory || 'standard',
@@ -2397,6 +2450,7 @@ const createSizeVariantsWithTransaction = async (sizes, subProductId, defaultCur
 
       const sizePayload = {
         subproduct: subProductId,
+        tenant: tenantId,
         size,
         displayName: displayName || size,
         sizeCategory: sizeCategory || 'standard',
@@ -2551,6 +2605,7 @@ const createSizeVariantsWithoutTransaction = async (sizes, subProductId, default
 
       const sizePayload = {
         subproduct: subProductId,
+        tenant: tenantId,
         size,
         displayName: displayName || size,
         sizeCategory: sizeCategory || 'standard',
@@ -4442,9 +4497,25 @@ const addSize = async (subProductId, sizeData, tenantId, user = null) => {
     subProduct.sizes = [];
   }
 
+  // Validate no duplicate size value on this SubProduct
+  if (sizeData.size) {
+    const existingSize = await Size.findOne({ subproduct: subProductId, size: sizeData.size });
+    if (existingSize) {
+      throw new ValidationError(
+        `A size with value "${sizeData.size}" already exists on this product.`
+      );
+    }
+  }
+
+  // Validate barcode uniqueness within tenant
+  if (sizeData.barcode) {
+    await validateBarcodeUniqueness(sizeData.barcode, tenantId);
+  }
+
   const newSize = {
     ...sizeData,
-    subProduct: subProductId,
+    subproduct: subProductId,
+    tenant: tenantId,
   };
 
   const Size = require('../models/Size');
@@ -4474,10 +4545,25 @@ const updateSize = async (subProductId, sizeId, updateData, tenantId, user = nul
   }
 
   const Size = require('../models/Size');
-  const size = await Size.findOne({ _id: sizeId, subProduct: subProductId });
+  const size = await Size.findOne({ _id: sizeId, subproduct: subProductId });
 
   if (!size) {
     throw new NotFoundError('Size not found');
+  }
+
+  // Validate duplicate size value if changing the size field
+  if (updateData.size && updateData.size !== size.size) {
+    const existingSize = await Size.findOne({ subproduct: subProductId, size: updateData.size });
+    if (existingSize) {
+      throw new ValidationError(
+        `A size with value "${updateData.size}" already exists on this product.`
+      );
+    }
+  }
+
+  // Validate barcode uniqueness within tenant if changing barcode
+  if (updateData.barcode && updateData.barcode !== size.barcode) {
+    await validateBarcodeUniqueness(updateData.barcode, tenantId, sizeId);
   }
 
   Object.assign(size, updateData);
@@ -4503,7 +4589,7 @@ const deleteSize = async (subProductId, sizeId, tenantId, user = null) => {
   }
 
   const Size = require('../models/Size');
-  const size = await Size.findOne({ _id: sizeId, subProduct: subProductId });
+  const size = await Size.findOne({ _id: sizeId, subproduct: subProductId });
 
   if (!size) {
     throw new NotFoundError('Size not found');
@@ -4528,7 +4614,7 @@ const updateStock = async (subProductId, stockData, tenantId, user = null) => {
 
   if (sizeId) {
     const Size = require('../models/Size');
-    const size = await Size.findOne({ _id: sizeId, subProduct: subProductId });
+    const size = await Size.findOne({ _id: sizeId, subproduct: subProductId });
 
     if (!size) {
       throw new NotFoundError('Size not found');

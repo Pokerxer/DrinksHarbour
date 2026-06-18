@@ -293,6 +293,7 @@ const orderSchema = new Schema(
       enum: [
         'pending',          // payment not completed / awaiting confirmation
         'confirmed',        // order confirmed by admin
+        'hold',             // saved cart, not yet paid — recalled orders are deleted
         'processing',       // being prepared / packed
         'partially_shipped',
         'shipped',          // handed to courier
@@ -374,6 +375,14 @@ const orderSchema = new Schema(
       pricelistId:   { type: Schema.Types.ObjectId, ref: 'Pricelist' },
       pricelistName: { type: String, default: '' },
     },
+
+    // Cart metadata for hold orders — stores client-side cart context so it
+    // can be fully restored on recall (customer, discounts, rewards, etc.).
+    holdMetadata: {
+      type: Schema.Types.Mixed,
+      default: null,
+    },
+
     refunds: [{
       receiptNumber:    String,
       items: [{
