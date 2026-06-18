@@ -12,6 +12,7 @@ export interface TransferItem {
   sizeName?: string;
   quantity: number;
   transferredQty: number;
+  costPrice?: number;
 }
 
 export interface StockTransfer {
@@ -24,12 +25,38 @@ export interface StockTransfer {
     | string
     | { _id: string; name: string; code: string; type?: string };
   status: TransferStatus;
+  currency?: string;
   items: TransferItem[];
   notes?: string;
   scheduledDate?: string;
   completedDate?: string;
+  confirmedAt?: string;
   createdAt?: string;
   updatedAt?: string;
+  createdBy?: { _id: string; name: string };
+  confirmedBy?: { _id: string; name: string };
+  completedBy?: { _id: string; name: string };
+  cancelledBy?: { _id: string; name: string };
+  cancelledAt?: string;
+}
+
+export interface TransferStats {
+  draft: number;
+  confirmed: number;
+  completed: number;
+  cancelled: number;
+}
+
+export interface ListResponse {
+  success: boolean;
+  data: StockTransfer[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
+  stats: TransferStats;
 }
 
 async function handle(res: Response, fallback: string) {
@@ -55,6 +82,7 @@ export const stockTransferService = {
       notes?: string;
       scheduledDate?: string;
       status?: 'draft' | 'confirmed';
+      currency?: string;
     },
     token: string
   ) {
@@ -71,7 +99,7 @@ export const stockTransferService = {
   async list(
     token: string,
     params?: { status?: string; page?: number; limit?: number; search?: string }
-  ) {
+  ): Promise<ListResponse> {
     const qs = new URLSearchParams();
     if (params?.status) qs.set('status', params.status);
     if (params?.page) qs.set('page', String(params.page));
@@ -81,7 +109,7 @@ export const stockTransferService = {
     return handle(
       await fetch(url, { headers: auth(token) }),
       'Failed to load transfers'
-    );
+    ) as Promise<ListResponse>;
   },
 
   async get(id: string, token: string) {

@@ -16,17 +16,19 @@ const resolveTenantId = (req) => {
 };
 
 async function generateTransferNumber(tenantId) {
-  const existing = await StockTransfer.find({
+  const year = new Date().getFullYear();
+  const prefix = `TRF-${year}-`;
+  const last = await StockTransfer.findOne({
     tenant: tenantId,
-    transferNumber: /^TRF-\d+$/,
+    transferNumber: new RegExp(`^${prefix}`),
   })
+    .sort({ transferNumber: -1 })
     .select("transferNumber")
     .lean();
-  const max = existing.reduce((m, t) => {
-    const n = parseInt(String(t.transferNumber).split("-")[1], 10);
-    return Number.isFinite(n) && n > m ? n : m;
-  }, 0);
-  return `TRF-${String(max + 1).padStart(6, "0")}`;
+  const seq = last
+    ? parseInt(String(last.transferNumber).split("-")[2], 10) + 1
+    : 1;
+  return `${prefix}${String(seq).padStart(6, "0")}`;
 }
 
 async function enrichItems(items, tenantId) {
@@ -67,6 +69,7 @@ const createStockTransfer = asyncHandler(async (req, res) => {
     notes,
     scheduledDate,
     status,
+    currency,
   } = req.body;
 
   if (!sourceWarehouse || !destinationWarehouse)
@@ -92,6 +95,7 @@ const createStockTransfer = asyncHandler(async (req, res) => {
     notes,
     scheduledDate,
     status: status === "confirmed" ? "confirmed" : "draft",
+    currency: currency || "NGN",
     createdBy: userId,
   });
 
@@ -108,18 +112,39 @@ const getStockTransfers = asyncHandler(async (req, res) => {
   if (search) query.transferNumber = new RegExp(search, "i");
 
   const skip = (Number(page) - 1) * Number(limit);
-  const [transfers, total] = await Promise.all([
+  const [transfers, total, stats] = await Promise.all([
     StockTransfer.find(query)
       .populate("sourceWarehouse", "name code type")
       .populate("destinationWarehouse", "name code type")
+      .populate("createdBy", "name")
+      .populate("confirmedBy", "name")
+      .populate("completedBy", "name")
+      .populate("cancelledBy", "name")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit))
       .lean(),
     StockTransfer.countDocuments(query),
+    StockTransfer.aggregate([
+      { $match: { tenant: tenantId } },
+      { $group: { _id: "$status", count: { $sum: 1 } } },
+    ]),
   ]);
 
-  res.json({ success: true, data: transfers, total, page: Number(page) });
+  const statsMap = { draft: 0, confirmed: 0, completed: 0, cancelled: 0 };
+  for (const s of stats) statsMap[s._id] = s.count;
+
+  res.json({
+    success: true,
+    data: transfers,
+    pagination: {
+      page: Number(page),
+      limit: Number(limit),
+      total,
+      pages: Math.ceil(total / Number(limit)),
+    },
+    stats: statsMap,
+  });
 });
 
 // GET /api/stock-transfers/:id
@@ -131,6 +156,10 @@ const getStockTransfer = asyncHandler(async (req, res) => {
   })
     .populate("sourceWarehouse", "name code type")
     .populate("destinationWarehouse", "name code type")
+    .populate("createdBy", "name")
+    .populate("confirmedBy", "name")
+    .populate("completedBy", "name")
+    .populate("cancelledBy", "name")
     .lean();
   if (!transfer) throw new NotFoundError("Stock transfer not found");
   res.json({ success: true, data: transfer });
@@ -147,13 +176,14 @@ const updateStockTransfer = asyncHandler(async (req, res) => {
   if (transfer.status !== "draft")
     throw new ValidationError("Only draft transfers can be edited");
 
-  const { sourceWarehouse, destinationWarehouse, items, notes, scheduledDate } =
+  const { sourceWarehouse, destinationWarehouse, items, notes, scheduledDate, currency } =
     req.body;
 
   if (sourceWarehouse) transfer.sourceWarehouse = sourceWarehouse;
   if (destinationWarehouse) transfer.destinationWarehouse = destinationWarehouse;
   if (notes !== undefined) transfer.notes = notes;
   if (scheduledDate !== undefined) transfer.scheduledDate = scheduledDate;
+  if (currency) transfer.currency = currency;
   if (items) {
     const enriched = await enrichItems(items, tenantId);
     transfer.items = enriched.map((it) => ({
@@ -211,24 +241,81 @@ const updateStockTransferStatus = asyncHandler(async (req, res) => {
     );
   }
 
+  const WarehouseStock = require("../models/WarehouseStock");
+  const WarehouseMovement = require("../models/WarehouseMovement");
+  const { recalcSubProductStock } = require("../services/warehouseStock.helpers");
+
+  if (status === "confirmed") {
+    for (const item of transfer.items) {
+      const q = {
+        tenant: tenantId,
+        warehouse: transfer.sourceWarehouse,
+        subProduct: item.subProductId,
+      };
+      if (item.sizeId) q.size = item.sizeId;
+      const stock = await WarehouseStock.findOne(q).lean();
+      const available = stock?.currentQuantity ?? 0;
+      if (available < item.quantity) {
+        throw new ValidationError(
+          `Insufficient stock for "${item.subProductName}"${item.sizeName ? ` (${item.sizeName})` : ""}: ` +
+            `${available} available, ${item.quantity} requested`
+        );
+      }
+    }
+    transfer.confirmedBy = userId;
+    transfer.confirmedAt = new Date();
+  }
+
   if (status === "completed") {
     for (const item of transfer.items) {
-      await warehouseService.transferStock(
-        {
-          subProduct: item.subProductId,
-          size: item.sizeId,
-          fromWarehouse: transfer.sourceWarehouse,
-          toWarehouse: transfer.destinationWarehouse,
-          quantity: item.quantity,
-          notes: `Stock transfer ${transfer.transferNumber}`,
-        },
-        userId,
-        tenantId
-      );
-      item.transferredQty = item.quantity;
+      const srcId = transfer.sourceWarehouse;
+      const dstId = transfer.destinationWarehouse;
+      const qty = item.quantity;
+      const subId = item.subProductId;
+      const szId = item.sizeId;
+
+      const srcQ = { tenant: tenantId, warehouse: srcId, subProduct: subId };
+      if (szId) srcQ.size = szId;
+      const src = await WarehouseStock.findOne(srcQ);
+      if (!src || src.currentQuantity < qty) {
+        throw new ValidationError(
+          `Insufficient stock for "${item.subProductName}"${item.sizeName ? ` (${item.sizeName})` : ""}`
+        );
+      }
+      src.currentQuantity -= qty;
+      await src.save();
+
+      const dstQ = { tenant: tenantId, warehouse: dstId, subProduct: subId };
+      if (szId) dstQ.size = szId;
+      let dst = await WarehouseStock.findOne(dstQ);
+      if (!dst) {
+        dst = new WarehouseStock({
+          tenant: tenantId,
+          warehouse: dstId,
+          subProduct: subId,
+          size: szId || src.size,
+        });
+      }
+      dst.currentQuantity += qty;
+      await dst.save();
+
+      await WarehouseMovement.create([
+        { tenant: tenantId, warehouse: srcId, subProduct: subId, size: src.size, type: 'transfer_out',
+          quantity: qty, balanceAfter: src.currentQuantity, reference: `Transfer ${transfer.transferNumber}`, performedBy: userId },
+        { tenant: tenantId, warehouse: dstId, subProduct: subId, size: dst.size, type: 'transfer_in',
+          quantity: qty, balanceAfter: dst.currentQuantity, reference: `Transfer ${transfer.transferNumber}`, performedBy: userId },
+      ]);
+
+      await recalcSubProductStock(subId);
+      item.transferredQty = qty;
     }
     transfer.completedDate = new Date();
     transfer.completedBy = userId;
+  }
+
+  if (status === "cancelled") {
+    transfer.cancelledBy = userId;
+    transfer.cancelledAt = new Date();
   }
 
   transfer.status = status;

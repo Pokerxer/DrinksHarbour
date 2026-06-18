@@ -12,6 +12,7 @@ const StockTransferItemSchema = new Schema(
     sizeName: { type: String, trim: true },
     quantity: { type: Number, required: true, min: 1 },
     transferredQty: { type: Number, default: 0, min: 0 },
+    costPrice: { type: Number, default: 0, min: 0 },
   },
   { _id: true }
 );
@@ -32,7 +33,16 @@ const StockTransferSchema = new Schema(
     scheduledDate: { type: Date },
     completedDate: { type: Date },
     completedBy: { type: ObjectId, ref: "User" },
+    confirmedBy: { type: ObjectId, ref: "User" },
+    confirmedAt: { type: Date },
+    cancelledBy: { type: ObjectId, ref: "User" },
+    cancelledAt: { type: Date },
     createdBy: { type: ObjectId, ref: "User" },
+    currency: {
+      type: String,
+      default: "NGN",
+      enum: ["NGN", "USD", "EUR", "GBP"],
+    },
   },
   { timestamps: true }
 );

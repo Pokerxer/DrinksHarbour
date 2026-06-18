@@ -273,15 +273,25 @@ export function buildTransferInvoice(transfer: StockTransfer, companyName: strin
         ? `<div style="position:fixed;top:40%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);font-size:80px;font-weight:900;color:rgba(239,68,68,0.12);pointer-events:none;white-space:nowrap">CANCELLED</div>`
         : '';
 
+  const currency = (transfer as any).currency || 'NGN';
+  const sym = { NGN: '₦', USD: '$', EUR: '€', GBP: '£' }[currency] || currency;
+  const fmt = (n: number) => `${sym}${n.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const totalCost = transfer.items.reduce(
+    (s, it) => s + (it.costPrice ?? 0) * it.quantity, 0
+  );
+
   const itemRows = transfer.items
     .map((item) => {
-      const name = item.sizeName
+      const name = item.sizeName && !item.subProductName.includes(item.sizeName)
         ? `${item.subProductName} – ${item.sizeName}`
         : item.subProductName;
       const done = item.transferredQty >= item.quantity;
+      const cost = (item.costPrice ?? 0) * item.quantity;
       return `<tr>
         <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6">${name}<div style="font-size:10px;color:#9ca3af">${item.sku || ''}</div></td>
         <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:right">${item.quantity}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:right">${fmt(item.costPrice ?? 0)}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:right">${fmt(cost)}</td>
         <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:right"><span style="color:${done ? '#16a34a' : '#6b7280'}">${item.transferredQty}</span></td>
       </tr>`;
     })
@@ -320,8 +330,10 @@ export function buildTransferInvoice(transfer: StockTransfer, companyName: strin
     <thead>
       <tr style="background:#b20202">
         <th style="padding:8px 10px;color:#fff;font-size:11px">Product</th>
-        <th style="padding:8px 10px;color:#fff;font-size:11px;text-align:right">Qty Requested</th>
-        <th style="padding:8px 10px;color:#fff;font-size:11px;text-align:right">Qty Transferred</th>
+        <th style="padding:8px 10px;color:#fff;font-size:11px;text-align:right">Qty</th>
+        <th style="padding:8px 10px;color:#fff;font-size:11px;text-align:right">Cost Price</th>
+        <th style="padding:8px 10px;color:#fff;font-size:11px;text-align:right">Total Cost</th>
+        <th style="padding:8px 10px;color:#fff;font-size:11px;text-align:right">Transferred</th>
       </tr>
     </thead>
     <tbody>${itemRows}</tbody>
@@ -329,6 +341,8 @@ export function buildTransferInvoice(transfer: StockTransfer, companyName: strin
       <tr style="background:#f9fafb">
         <td style="padding:10px;text-align:right;font-weight:700">Total</td>
         <td style="padding:10px;text-align:right;font-weight:700;font-size:14px">${totalQty}</td>
+        <td></td>
+        <td style="padding:10px;text-align:right;font-weight:700;font-size:14px">${fmt(totalCost)}</td>
         <td style="padding:10px;text-align:right;font-weight:700;font-size:14px;color:${transferredQty === totalQty ? '#16a34a' : '#6b7280'}">${transferredQty}</td>
       </tr>
     </tfoot>

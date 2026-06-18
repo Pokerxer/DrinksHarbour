@@ -50,6 +50,11 @@ export const routes = {
     // Exchange Rates
     exchangeRates: '/purchases/exchange-rates',
     createExchangeRate: '/purchases/exchange-rates/create',
+    // Stock Transfers
+    stockTransfers: '/purchases/transfers',
+    createStockTransfer: '/purchases/transfers/create',
+    stockTransferDetails: (id: string) => `/purchases/transfers/${id}`,
+    editStockTransfer: (id: string) => `/purchases/transfers/${id}/edit`,
     categories: '/ecommerce/categories',
     createCategory: '/ecommerce/categories/create',
     editCategory: (id: string) => `/ecommerce/categories/${id}/edit`,

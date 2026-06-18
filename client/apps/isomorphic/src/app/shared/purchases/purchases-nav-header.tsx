@@ -70,6 +70,12 @@ const navItems: NavItem[] = [
         icon: <PiCheckCircleDuotone />,
         desc: 'Confirm deliveries',
       },
+      {
+        label: 'Stock Transfers',
+        href: routes.eCommerce.stockTransfers,
+        icon: <PiArrowsLeftRightDuotone />,
+        desc: 'Move stock between warehouses',
+      },
     ],
   },
   {
