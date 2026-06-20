@@ -6,6 +6,11 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // ESLint over the full project during `next build` OOMs Vercel's 8GB
+  // container; lint runs as a separate CI step instead of blocking the build.
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   images: {
     remotePatterns: [
       {
