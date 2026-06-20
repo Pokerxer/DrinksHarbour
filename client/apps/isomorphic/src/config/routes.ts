@@ -4,7 +4,11 @@ export const routes = {
   signUp: '/signup',
   warehouses: {
     list: '/warehouses',
+    analysis: '/warehouses/analysis',
     detail: (id: string) => `/warehouses/${id}`,
+    // Warehouse / inventory settings (sections of the central settings page)
+    settings: '/settings#warehouses',
+    inventorySettings: '/settings#pos_inventory',
   },
   eCommerce: {
     dashboard: '/ecommerce',

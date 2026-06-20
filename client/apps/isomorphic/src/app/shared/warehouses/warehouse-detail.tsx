@@ -24,8 +24,15 @@ import {
   PiMapPin,
   PiEyeBold,
   PiStackBold,
+  PiSquaresFourBold,
+  PiRowsBold,
+  PiFileCsvBold,
+  PiFileXlsBold,
+  PiFilePdfBold,
 } from 'react-icons/pi';
-import { exportToCSV } from '@core/utils/export-to-csv';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 import {
   warehouseService,
   type Warehouse,
@@ -36,6 +43,7 @@ import {
   type WarehouseStockRow,
 } from '@/services/warehouseStock.service';
 import { routes } from '@/config/routes';
+import { fraunces } from '../purchases/purchases-fonts';
 
 const LOW_STOCK = 10;
 
@@ -87,38 +95,141 @@ const STATUS_LABEL: Record<StockStatus, string> = {
 const locationOf = (r: WarehouseStockRow) =>
   [r.zone, r.aisle, r.shelf, r.bin].filter(Boolean).join(' · ');
 
-// ── Stats header (gradient cards, click to filter) ────────────────────────────────
+// ── Export ──────────────────────────────────────────────────────────────────────────
 
-type StatColor = 'blue' | 'green' | 'amber' | 'red';
-const COLOR_MAP: Record<
-  StatColor,
-  { bg: string; text: string; iconBg: string; ring: string }
-> = {
-  blue: {
-    bg: 'from-blue-500/10 to-blue-500/5',
-    text: 'text-blue-600',
-    iconBg: 'bg-blue-500',
-    ring: 'ring-blue-500/30',
-  },
-  green: {
-    bg: 'from-green-500/10 to-green-500/5',
-    text: 'text-green-600',
-    iconBg: 'bg-green-500',
-    ring: 'ring-green-500/30',
-  },
-  amber: {
-    bg: 'from-amber-500/10 to-amber-500/5',
-    text: 'text-amber-600',
-    iconBg: 'bg-amber-500',
-    ring: 'ring-amber-500/30',
-  },
-  red: {
-    bg: 'from-red-500/10 to-red-500/5',
-    text: 'text-red-600',
-    iconBg: 'bg-red-500',
-    ring: 'ring-red-500/30',
-  },
+export type ExportFormat = 'csv' | 'excel' | 'pdf';
+
+type ExportColumn = {
+  key: string;
+  label: string;
+  value: (r: WarehouseStockRow) => string | number;
+  numeric?: boolean;
 };
+
+// Richer column set than the old CSV-only export: SKU, size, the full
+// zone/aisle/shelf/bin breakdown and the derived available/status fields.
+const EXPORT_COLUMNS: ExportColumn[] = [
+  {
+    key: 'product',
+    label: 'Product',
+    value: (r) => nameOf(r) || 'Unnamed product',
+  },
+  { key: 'sku', label: 'SKU', value: (r) => String(skuOf(r) ?? '') },
+  { key: 'size', label: 'Size', value: (r) => String(sizeOf(r) ?? '') },
+  { key: 'zone', label: 'Zone', value: (r) => r.zone ?? '' },
+  { key: 'aisle', label: 'Aisle', value: (r) => r.aisle ?? '' },
+  { key: 'shelf', label: 'Shelf', value: (r) => r.shelf ?? '' },
+  { key: 'bin', label: 'Bin', value: (r) => r.bin ?? '' },
+  {
+    key: 'onHand',
+    label: 'On Hand',
+    value: (r) => r.currentQuantity,
+    numeric: true,
+  },
+  {
+    key: 'reserved',
+    label: 'Reserved',
+    value: (r) => r.reservedQuantity,
+    numeric: true,
+  },
+  {
+    key: 'available',
+    label: 'Available',
+    value: (r) => availOf(r),
+    numeric: true,
+  },
+  { key: 'status', label: 'Status', value: (r) => STATUS_LABEL[statusOf(r)] },
+];
+
+// Index of the three numeric columns (for right-alignment in PDF/Excel).
+const NUMERIC_COL_INDEXES = EXPORT_COLUMNS.reduce<number[]>((acc, c, i) => {
+  if (c.numeric) acc.push(i);
+  return acc;
+}, []);
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+const RGB_BRAND: [number, number, number] = [178, 2, 2];
+const RGB_CREAM: [number, number, number] = [245, 240, 232];
+const RGB_INK: [number, number, number] = [42, 36, 32];
+const RGB_ALT: [number, number, number] = [250, 248, 243];
+
+// ── Stats dashboard (brand-themed cards, click to filter) ─────────────────────────
+
+function StatCard({
+  label,
+  value,
+  sub,
+  icon: Icon,
+  accent,
+  active,
+  clickable,
+  index,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  sub: string;
+  icon: React.ComponentType<{ className?: string }>;
+  accent: string;
+  active: boolean;
+  clickable: boolean;
+  index: number;
+  onClick: () => void;
+}) {
+  return (
+    <motion.button
+      type="button"
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.07 }}
+      whileHover={clickable ? { y: -2 } : undefined}
+      whileTap={clickable ? { scale: 0.99 } : undefined}
+      onClick={clickable ? onClick : undefined}
+      className={`group relative overflow-hidden rounded-2xl border bg-white p-5 text-left shadow-sm transition-all ${
+        active
+          ? 'border-[#b20202]/40 ring-2 ring-[#b20202]/15'
+          : 'border-[#ece4d6] hover:shadow-md'
+      } ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
+    >
+      {/* accent rule */}
+      <span
+        className="pointer-events-none absolute inset-x-0 top-0 h-1"
+        style={{ backgroundColor: accent }}
+      />
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#b20202]/70">
+            {label}
+          </p>
+          <p
+            className={`${fraunces.className} mt-1.5 text-3xl font-semibold tabular-nums text-[#2a2420]`}
+          >
+            {value.toLocaleString()}
+          </p>
+        </div>
+        <span
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-transform group-hover:scale-105"
+          style={{ backgroundColor: `${accent}1a`, color: accent }}
+        >
+          <Icon className="h-5 w-5" />
+        </span>
+      </div>
+      <p className="mt-3 border-t border-[#f1ece2] pt-3 text-xs text-gray-400">
+        {active ? 'Active — click to clear' : sub}
+      </p>
+    </motion.button>
+  );
+}
 
 function StatsHeader({
   stats,
@@ -129,13 +240,14 @@ function StatsHeader({
   activeFilter: string;
   onFilterChange: (filter: string) => void;
 }) {
+  // Accents drawn from the shared wine-label palette (warehouse-analysis-helpers).
   const cards = [
     {
       id: '',
       label: 'Stock Lines',
       value: stats.total,
       icon: PiPackageBold,
-      color: 'blue' as StatColor,
+      accent: '#5b7da0',
       sub: 'SKU · size combos',
     },
     {
@@ -143,7 +255,7 @@ function StatsHeader({
       label: 'Units On Hand',
       value: stats.units,
       icon: PiCubeBold,
-      color: 'green' as StatColor,
+      accent: '#3d6b5c',
       sub: 'Total quantity',
     },
     {
@@ -151,7 +263,7 @@ function StatsHeader({
       label: 'Reserved',
       value: stats.reserved,
       icon: PiLockKeyBold,
-      color: 'amber' as StatColor,
+      accent: '#c8932c',
       sub: 'Allocated to orders',
     },
     {
@@ -159,7 +271,7 @@ function StatsHeader({
       label: 'Low / Out',
       value: stats.lowOut,
       icon: PiWarningBold,
-      color: 'red' as StatColor,
+      accent: '#b20202',
       sub: 'Click to filter',
     },
   ];
@@ -170,44 +282,20 @@ function StatsHeader({
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       {cards.map((stat, index) => {
-        const colors = COLOR_MAP[stat.color];
         const isActive = activeFilter === stat.id;
-        const Icon = stat.icon;
-        const clickable = filterable[stat.id];
-
         return (
-          <motion.button
+          <StatCard
             key={stat.id}
-            type="button"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.08 }}
-            whileHover={clickable ? { scale: 1.02, y: -2 } : undefined}
-            whileTap={clickable ? { scale: 0.98 } : undefined}
-            onClick={() => clickable && onFilterChange(isActive ? '' : stat.id)}
-            className={`group relative overflow-hidden rounded-2xl bg-gradient-to-br p-5 text-left transition-all ${colors.bg} ${isActive ? 'ring-4 ' + colors.ring : ''} ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <p
-                  className={`text-xs font-bold uppercase tracking-wider opacity-70 ${colors.text}`}
-                >
-                  {stat.label}
-                </p>
-                <p className="mt-1 text-3xl font-black tabular-nums text-gray-900">
-                  {stat.value.toLocaleString()}
-                </p>
-              </div>
-              <div
-                className={`flex h-12 w-12 items-center justify-center rounded-xl text-white shadow-lg transition-transform group-hover:scale-110 ${colors.iconBg}`}
-              >
-                <Icon className="h-6 w-6" />
-              </div>
-            </div>
-            <p className="mt-3 border-t border-black/5 pt-3 text-xs text-gray-400">
-              {isActive ? 'Active — click to clear' : stat.sub}
-            </p>
-          </motion.button>
+            label={stat.label}
+            value={stat.value}
+            sub={stat.sub}
+            icon={stat.icon}
+            accent={stat.accent}
+            active={isActive}
+            clickable={!!filterable[stat.id]}
+            index={index}
+            onClick={() => onFilterChange(isActive ? '' : stat.id)}
+          />
         );
       })}
     </div>
@@ -325,9 +413,19 @@ function BatchPanel({
 
 // ── Product thumbnail ─────────────────────────────────────────────────────────────
 
-function Thumb({ src, alt }: { src: string | null; alt: string }) {
+function Thumb({
+  src,
+  alt,
+  className = 'h-11 w-11',
+}: {
+  src: string | null;
+  alt: string;
+  className?: string;
+}) {
   return (
-    <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-100 bg-gray-50">
+    <div
+      className={`flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-100 bg-gray-50 ${className}`}
+    >
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -411,6 +509,187 @@ function SortHeader({
   );
 }
 
+// ── Grid card (one stock line) ──────────────────────────────────────────────────────
+
+function StockCard({
+  r,
+  isOpen,
+  batchLoading,
+  batches,
+  onToggleBatches,
+}: {
+  r: WarehouseStockRow;
+  isOpen: boolean;
+  batchLoading: boolean;
+  batches: WarehouseBatch[] | undefined;
+  onToggleBatches: (r: WarehouseStockRow) => void;
+}) {
+  const status = statusOf(r);
+  const href = viewHrefOf(r);
+  const name = nameOf(r);
+  const loc = locationOf(r);
+  const thumb = (
+    <Thumb src={imageOf(r)} alt={name || skuOf(r)} className="h-14 w-14" />
+  );
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`group flex flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${
+        isOpen
+          ? 'border-[#b20202]/40 ring-1 ring-[#b20202]/10'
+          : 'border-[#ece4d6]'
+      }`}
+    >
+      {/* Header */}
+      <div className="flex items-start gap-3 p-4">
+        {href ? (
+          <Link href={href} className="shrink-0">
+            {thumb}
+          </Link>
+        ) : (
+          thumb
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            {href ? (
+              <Link
+                href={href}
+                className="line-clamp-2 font-semibold leading-snug text-gray-900 transition-colors hover:text-[#b20202]"
+              >
+                {name || 'Unnamed product'}
+              </Link>
+            ) : (
+              <p className="line-clamp-2 font-semibold leading-snug text-gray-900">
+                {name || <span className="text-gray-400">Unnamed product</span>}
+              </p>
+            )}
+            <StatusBadge status={status} />
+          </div>
+          <p className="mt-0.5 font-mono text-xs text-gray-400">{skuOf(r)}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded-md bg-gray-100 px-2 py-0.5 font-medium text-gray-600">
+              Size {sizeOf(r)}
+            </span>
+            {loc && (
+              <span className="inline-flex items-center gap-1 text-gray-400">
+                <PiMapPin className="h-3.5 w-3.5" />
+                {loc}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Quantities */}
+      <div className="grid grid-cols-3 divide-x divide-gray-100 border-t border-gray-100 bg-gray-50/60 text-center">
+        <div className="px-2 py-3">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+            On hand
+          </p>
+          <p className="mt-0.5 text-lg font-bold tabular-nums text-gray-900">
+            {r.currentQuantity}
+          </p>
+        </div>
+        <div className="px-2 py-3">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+            Reserved
+          </p>
+          <p className="mt-0.5 text-lg font-semibold tabular-nums text-gray-500">
+            {r.reservedQuantity}
+          </p>
+        </div>
+        <div className="px-2 py-3">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+            Available
+          </p>
+          <p className="mt-0.5 text-lg font-black tabular-nums text-[#b20202]">
+            {availOf(r)}
+          </p>
+        </div>
+      </div>
+
+      {/* Batches (expandable) */}
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            key="batches"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden border-t border-gray-100 bg-gray-50/40"
+          >
+            <div className="border-l-2 border-[#b20202]/40">
+              <BatchPanel loading={batchLoading} batches={batches} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Footer actions */}
+      <div className="mt-auto flex items-center gap-2 border-t border-gray-100 p-3">
+        <button
+          type="button"
+          onClick={() => onToggleBatches(r)}
+          aria-expanded={isOpen}
+          className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+            isOpen
+              ? 'border-[#b20202] bg-[#b20202]/5 text-[#b20202]'
+              : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          <PiStackBold className="h-3.5 w-3.5" />
+          Batches
+          {isOpen ? (
+            <PiCaretUpBold className="h-3 w-3" />
+          ) : (
+            <PiCaretDownBold className="h-3 w-3" />
+          )}
+        </button>
+        {href ? (
+          <Link
+            href={href}
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 transition-colors hover:border-[#b20202] hover:bg-[#b20202]/5 hover:text-[#b20202]"
+          >
+            <PiEyeBold className="h-3.5 w-3.5" /> View
+          </Link>
+        ) : (
+          <span className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-100 px-3 py-2 text-xs font-medium text-gray-300">
+            <PiEyeBold className="h-3.5 w-3.5" /> View
+          </span>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+function GridSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {[...Array(6)].map((_, i) => (
+        <motion.div
+          key={i}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: i * 0.06 }}
+          className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm"
+        >
+          <div className="flex items-start gap-3">
+            <div className="h-14 w-14 animate-pulse rounded-lg bg-gray-200" />
+            <div className="flex-1 space-y-2">
+              <div className="h-4 w-2/3 animate-pulse rounded bg-gray-200" />
+              <div className="h-3 w-1/3 animate-pulse rounded bg-gray-100" />
+            </div>
+          </div>
+          <div className="mt-4 h-12 animate-pulse rounded-lg bg-gray-100" />
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────────
 
 export default function WarehouseDetail({
@@ -425,6 +704,8 @@ export default function WarehouseDetail({
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('');
+  const [view, setView] = useState<'grid' | 'table'>('grid');
+  const [exportOpen, setExportOpen] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -549,30 +830,161 @@ export default function WarehouseDetail({
     [filteredRows]
   );
 
-  const handleExport = () => {
-    if (filteredRows.length === 0) {
-      toast.error('Nothing to export');
-      return;
-    }
-    const data = filteredRows.map((r) => ({
-      product: nameOf(r) || 'Unnamed product',
-      sku: skuOf(r),
-      size: sizeOf(r),
-      location: locationOf(r) || '—',
-      onHand: r.currentQuantity,
-      reserved: r.reservedQuantity,
-      available: availOf(r),
-      status: STATUS_LABEL[statusOf(r)],
-    }));
-    exportToCSV(
-      data,
-      'Product,SKU,Size,Location,On hand,Reserved,Available,Status',
-      `stock-${warehouse?.code ?? warehouseId}`
-    );
-  };
+  const handleExport = useCallback(
+    (format: ExportFormat) => {
+      if (filteredRows.length === 0) {
+        toast.error('Nothing to export');
+        return;
+      }
+
+      const stamp = new Date();
+      const code = warehouse?.code ?? warehouseId;
+      const fileBase = `stock-${code}-${stamp.toISOString().slice(0, 10)}`;
+      const warehouseName = warehouse?.name ?? 'Warehouse';
+
+      // Context note describing the active search / status filter.
+      const ctx: string[] = [];
+      if (filter === 'low_out') ctx.push('Low / Out only');
+      if (search.trim()) ctx.push(`Search: “${search.trim()}”`);
+      const ctxNote = ctx.length ? ` · ${ctx.join(' · ')}` : '';
+
+      // Footer totals cell per column.
+      const totalCell = (key: string): string | number => {
+        if (key === 'product') return `TOTAL · ${filteredRows.length} lines`;
+        if (key === 'onHand') return totals.onHand;
+        if (key === 'reserved') return totals.reserved;
+        if (key === 'available') return totals.available;
+        return '';
+      };
+
+      try {
+        if (format === 'csv') {
+          const esc = (v: string | number) => {
+            const s = String(v ?? '');
+            return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+          };
+          const lines = [
+            EXPORT_COLUMNS.map((c) => esc(c.label)).join(','),
+            ...filteredRows.map((r) =>
+              EXPORT_COLUMNS.map((c) => esc(c.value(r))).join(',')
+            ),
+            EXPORT_COLUMNS.map((c) => esc(totalCell(c.key))).join(','),
+          ];
+          downloadBlob(
+            new Blob(['﻿' + lines.join('\r\n')], {
+              type: 'text/csv;charset=utf-8;',
+            }),
+            `${fileBase}.csv`
+          );
+        } else if (format === 'excel') {
+          const aoa: (string | number)[][] = [
+            [warehouseName],
+            [`Stock on hand${ctxNote}`],
+            [
+              `Code: ${warehouse?.code ?? '—'}    Type: ${
+                warehouse?.type?.replace('_', ' ') ?? '—'
+              }`,
+            ],
+            [`Generated: ${stamp.toLocaleString()}`],
+            [],
+            EXPORT_COLUMNS.map((c) => c.label),
+            ...filteredRows.map((r) => EXPORT_COLUMNS.map((c) => c.value(r))),
+            EXPORT_COLUMNS.map((c) => totalCell(c.key)),
+          ];
+          const ws = XLSX.utils.aoa_to_sheet(aoa);
+          ws['!cols'] = [
+            { wch: 30 },
+            { wch: 16 },
+            { wch: 10 },
+            { wch: 8 },
+            { wch: 8 },
+            { wch: 8 },
+            { wch: 8 },
+            { wch: 10 },
+            { wch: 10 },
+            { wch: 10 },
+            { wch: 11 },
+          ];
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, 'Stock');
+          XLSX.writeFile(wb, `${fileBase}.xlsx`);
+        } else {
+          const doc = new jsPDF({
+            orientation: 'landscape',
+            unit: 'mm',
+            format: 'a4',
+          });
+          const pageW = doc.internal.pageSize.getWidth();
+          const M = 12;
+
+          // Branded header bar.
+          doc.setFillColor(...RGB_BRAND);
+          doc.rect(0, 0, pageW, 16, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(12);
+          doc.text(warehouseName, M, 10);
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.text('STOCK ON HAND', pageW / 2, 10, { align: 'center' });
+          doc.text(stamp.toLocaleString('en-GB'), pageW - M, 10, {
+            align: 'right',
+          });
+
+          // Meta line.
+          doc.setTextColor(90, 90, 90);
+          doc.setFontSize(8);
+          const addr = warehouse?.address
+            ? [warehouse.address.city, warehouse.address.state]
+                .filter(Boolean)
+                .join(', ')
+            : '';
+          const metaBits = [
+            warehouse?.code && `Code: ${warehouse.code}`,
+            warehouse?.type && `Type: ${warehouse.type.replace('_', ' ')}`,
+            addr && `Location: ${addr}`,
+            `${filteredRows.length} lines${ctxNote}`,
+          ]
+            .filter(Boolean)
+            .join('     ·     ');
+          doc.text(metaBits, M, 23);
+
+          autoTable(doc, {
+            startY: 27,
+            head: [EXPORT_COLUMNS.map((c) => c.label)],
+            body: filteredRows.map((r) =>
+              EXPORT_COLUMNS.map((c) => String(c.value(r)))
+            ),
+            foot: [EXPORT_COLUMNS.map((c) => String(totalCell(c.key)))],
+            styles: { fontSize: 7.5, cellPadding: 1.8, overflow: 'linebreak' },
+            headStyles: {
+              fillColor: RGB_BRAND,
+              textColor: 255,
+              fontStyle: 'bold',
+            },
+            footStyles: {
+              fillColor: RGB_CREAM,
+              textColor: RGB_INK,
+              fontStyle: 'bold',
+            },
+            alternateRowStyles: { fillColor: RGB_ALT },
+            columnStyles: Object.fromEntries(
+              NUMERIC_COL_INDEXES.map((i) => [i, { halign: 'right' as const }])
+            ),
+            margin: { left: M, right: M },
+          });
+          doc.save(`${fileBase}.pdf`);
+        }
+        toast.success(`Exported ${filteredRows.length} lines`);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Export failed');
+      }
+    },
+    [filteredRows, warehouse, warehouseId, filter, search, totals]
+  );
 
   return (
-    <div className="space-y-6">
+    <main className="mx-auto w-full max-w-7xl space-y-6 px-3 py-4 sm:px-4 sm:py-6">
       {/* ── Header ── */}
       <div>
         <Link
@@ -582,13 +994,15 @@ export default function WarehouseDetail({
           <PiArrowLeft className="h-4 w-4" /> Warehouses
         </Link>
 
-        <div className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-[#ece4d6] bg-white p-6 shadow-sm">
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#b20202]/10 text-[#b20202]">
               <PiPackageBold className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">
+              <h1
+                className={`${fraunces.className} text-2xl font-semibold text-[#2a2420]`}
+              >
                 {warehouse?.name ?? 'Warehouse'}
               </h1>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500">
@@ -618,14 +1032,74 @@ export default function WarehouseDetail({
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleExport}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
-            >
-              <PiDownloadSimpleBold className="h-4 w-4" />
-              Export
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setExportOpen((o) => !o)}
+                disabled={filteredRows.length === 0}
+                aria-haspopup="menu"
+                aria-expanded={exportOpen}
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <PiDownloadSimpleBold className="h-4 w-4" />
+                Export
+                <PiCaretDownBold
+                  className={`h-3 w-3 transition-transform ${exportOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+              {exportOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setExportOpen(false)}
+                  />
+                  <div
+                    role="menu"
+                    className="absolute right-0 z-20 mt-2 w-48 overflow-hidden rounded-xl border border-[#ece4d6] bg-white py-1 shadow-lg"
+                  >
+                    {(
+                      [
+                        {
+                          fmt: 'csv',
+                          label: 'CSV',
+                          ext: '.csv',
+                          icon: PiFileCsvBold,
+                        },
+                        {
+                          fmt: 'excel',
+                          label: 'Excel',
+                          ext: '.xlsx',
+                          icon: PiFileXlsBold,
+                        },
+                        {
+                          fmt: 'pdf',
+                          label: 'PDF',
+                          ext: '.pdf',
+                          icon: PiFilePdfBold,
+                        },
+                      ] as const
+                    ).map(({ fmt, label, ext, icon: Icon }) => (
+                      <button
+                        key={fmt}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setExportOpen(false);
+                          handleExport(fmt);
+                        }}
+                        className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-[#b20202]/5 hover:text-[#b20202]"
+                      >
+                        <Icon className="h-4 w-4 text-[#b20202]" />
+                        <span className="font-medium">{label}</span>
+                        <span className="ml-auto font-mono text-xs text-gray-400">
+                          {ext}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
             <button
               type="button"
               onClick={load}
@@ -685,13 +1159,51 @@ export default function WarehouseDetail({
         <span className="ml-auto text-sm text-gray-400">
           {filteredRows.length} of {rows.length} lines
         </span>
+
+        {/* View toggle */}
+        <div className="inline-flex items-center gap-1 rounded-xl border border-[#ece4d6] bg-white p-1">
+          <button
+            type="button"
+            onClick={() => setView('grid')}
+            aria-pressed={view === 'grid'}
+            title="Grid view"
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+              view === 'grid'
+                ? 'bg-[#b20202] text-white shadow-sm'
+                : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+            }`}
+          >
+            <PiSquaresFourBold className="h-4 w-4" />
+            Grid
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('table')}
+            aria-pressed={view === 'table'}
+            title="Table view"
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+              view === 'table'
+                ? 'bg-[#b20202] text-white shadow-sm'
+                : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+            }`}
+          >
+            <PiRowsBold className="h-4 w-4" />
+            Table
+          </button>
+        </div>
       </div>
 
-      {/* ── Table ── */}
-      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-        {loading ? (
-          <LoadingSkeleton />
-        ) : filteredRows.length === 0 ? (
+      {/* ── Stock ── */}
+      {loading ? (
+        view === 'grid' ? (
+          <GridSkeleton />
+        ) : (
+          <div className="overflow-hidden rounded-2xl border border-[#ece4d6] bg-white shadow-sm">
+            <LoadingSkeleton />
+          </div>
+        )
+      ) : filteredRows.length === 0 ? (
+        <div className="overflow-hidden rounded-2xl border border-[#ece4d6] bg-white shadow-sm">
           <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
               <PiPackageBold className="h-8 w-8 text-gray-400" />
@@ -719,7 +1231,49 @@ export default function WarehouseDetail({
               </button>
             )}
           </div>
-        ) : (
+        </div>
+      ) : view === 'grid' ? (
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <AnimatePresence initial={false}>
+              {filteredRows.map((r) => (
+                <StockCard
+                  key={r._id}
+                  r={r}
+                  isOpen={expanded === r._id}
+                  batchLoading={batchLoading === r._id}
+                  batches={batchesByRow[r._id]}
+                  onToggleBatches={toggleBatches}
+                />
+              ))}
+            </AnimatePresence>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-2xl border border-[#ece4d6] bg-white px-5 py-3 text-sm shadow-sm">
+            <span className="mr-auto font-bold text-gray-700">
+              Totals · {filteredRows.length} lines
+            </span>
+            <span className="text-gray-500">
+              On hand{' '}
+              <b className="tabular-nums text-gray-900">
+                {totals.onHand.toLocaleString()}
+              </b>
+            </span>
+            <span className="text-gray-500">
+              Reserved{' '}
+              <b className="tabular-nums text-gray-600">
+                {totals.reserved.toLocaleString()}
+              </b>
+            </span>
+            <span className="text-gray-500">
+              Available{' '}
+              <b className="tabular-nums text-[#b20202]">
+                {totals.available.toLocaleString()}
+              </b>
+            </span>
+          </div>
+        </>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-[#ece4d6] bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -914,8 +1468,8 @@ export default function WarehouseDetail({
               </tfoot>
             </table>
           </div>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+    </main>
   );
 }

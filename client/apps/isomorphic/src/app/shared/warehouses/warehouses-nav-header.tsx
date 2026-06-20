@@ -17,6 +17,9 @@ import {
   PiReceiptDuotone,
   PiArrowUUpLeftDuotone,
   PiCashRegisterDuotone,
+  PiChartLineUpDuotone,
+  PiGearSixDuotone,
+  PiSlidersHorizontalDuotone,
 } from 'react-icons/pi';
 import { routes } from '@/config/routes';
 import { LauncherButton } from '@/layouts/hydrogen/app-launcher';
@@ -33,6 +36,11 @@ const navItems: NavItem[] = [
     label: 'Warehouses',
     href: routes.warehouses.list,
     icon: <PiBuildingsDuotone />,
+  },
+  {
+    label: 'Analysis',
+    href: routes.warehouses.analysis,
+    icon: <PiChartLineUpDuotone />,
   },
   {
     label: 'Inventory',
@@ -98,6 +106,24 @@ const navItems: NavItem[] = [
     label: 'Point of Sale',
     href: routes.pos.index,
     icon: <PiCashRegisterDuotone />,
+  },
+  {
+    label: 'Configuration',
+    icon: <PiGearSixDuotone />,
+    items: [
+      {
+        label: 'Settings',
+        href: routes.warehouses.settings,
+        icon: <PiSlidersHorizontalDuotone />,
+        desc: 'Warehouse settings',
+      },
+      {
+        label: 'Inventory',
+        href: routes.warehouses.inventorySettings,
+        icon: <PiCubeDuotone />,
+        desc: 'Stock & valuation rules',
+      },
+    ],
   },
 ];
 

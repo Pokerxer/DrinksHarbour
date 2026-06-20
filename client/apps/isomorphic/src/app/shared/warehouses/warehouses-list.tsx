@@ -29,7 +29,6 @@ import {
   type WarehouseInput,
 } from '@/services/warehouse.service';
 import { routes } from '@/config/routes';
-import WarehousesNavHeader from './warehouses-nav-header';
 
 const EMPTY: WarehouseInput = {
   name: '',
@@ -594,12 +593,7 @@ export default function WarehousesList() {
   const defaultWh = items.find((w) => w.isDefault);
 
   return (
-    <div className="-mx-4 -mt-2 flex flex-col md:-mx-5 lg:-mx-6 3xl:-mx-8 4xl:-mx-10">
-      {/* ── Nav ── */}
-      <div className="px-4 md:px-5 lg:px-6 3xl:px-8 4xl:px-10">
-        <WarehousesNavHeader />
-      </div>
-
+    <div className="flex flex-col">
       {/* ── Hero ── */}
       <div
         className="relative overflow-hidden px-6 py-8 md:px-10 lg:px-14"
