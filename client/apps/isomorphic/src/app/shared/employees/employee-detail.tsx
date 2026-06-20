@@ -42,6 +42,7 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
   const token = (session?.user as { token?: string })?.token ?? '';
 
   const [employee, setEmployee] = useState<Employee | null>(null);
+  const [colleagues, setColleagues] = useState<Employee[]>([]);
   const [form, setForm] = useState<EmployeeInput | null>(null);
   // Snapshot of the last-saved form, used to detect unsaved changes.
   const [baseline, setBaseline] = useState('');
@@ -79,6 +80,24 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Fetch the full team once so the Work section can resolve the manager link
+  // and derive direct reports for the org chart.
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    employeeService
+      .getEmployees(token)
+      .then((res) => {
+        if (!cancelled) setColleagues(res.data?.employees ?? []);
+      })
+      .catch(() => {
+        /* org chart is non-critical; ignore load failures */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   // Warn before closing/reloading the tab with unsaved edits.
   useEffect(() => {
@@ -185,10 +204,7 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
 
   // Navigate to the list, guarding against losing unsaved edits.
   const cancel = () => {
-    if (
-      dirty &&
-      !confirm('Discard unsaved changes and leave this page?')
-    )
+    if (dirty && !confirm('Discard unsaved changes and leave this page?'))
       return;
     router.push(routes.employees.list);
   };
@@ -340,6 +356,7 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
                 setForm={setForm}
                 token={token}
                 editing={employee}
+                colleagues={colleagues}
               />
             </div>
           </motion.div>
@@ -397,7 +414,10 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
       </div>
 
       {showBadge && (
-        <EmployeeBadge employee={employee} onClose={() => setShowBadge(false)} />
+        <EmployeeBadge
+          employee={employee}
+          onClose={() => setShowBadge(false)}
+        />
       )}
     </div>
   );

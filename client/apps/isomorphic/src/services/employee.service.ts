@@ -82,6 +82,23 @@ export interface EmployeeProfile {
   planning?: { roles?: string[]; defaultRole?: string };
   appSettings?: { analyticDistribution?: string; hourlyCost?: number };
   attendance?: { rfidBadge?: string };
+  work?: {
+    department?: string;
+    jobPosition?: string;
+    jobTitle?: string;
+    /** Employee `_id` of this person's manager. */
+    manager?: string;
+    workAddress?: {
+      company?: string;
+      street?: string;
+      street2?: string;
+      city?: string;
+      zip?: string;
+      country?: string;
+    };
+    workLocation?: string;
+    note?: string;
+  };
   timezone?: string;
 }
 

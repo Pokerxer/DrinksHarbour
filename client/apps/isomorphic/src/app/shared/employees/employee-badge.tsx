@@ -91,7 +91,11 @@ export default function EmployeeBadge({
       // CR80 portrait card: 53.98 × 85.6 mm.
       const W = 53.98;
       const H = 85.6;
-      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [W, H] });
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: [W, H],
+      });
       const M = 5;
       const R: [number, number, number] = [178, 2, 2]; // brand red, numeric RGB
 
@@ -221,7 +225,9 @@ export default function EmployeeBadge({
         className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl"
       >
         <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
-          <h3 className="text-sm font-semibold text-gray-900">Employee badge</h3>
+          <h3 className="text-sm font-semibold text-gray-900">
+            Employee badge
+          </h3>
           <button
             type="button"
             onClick={onClose}
@@ -310,7 +316,13 @@ export default function EmployeeBadge({
 
       {/* Hidden hi-res QR used to rasterise into the PDF / print window. */}
       <div className="pointer-events-none absolute -left-[9999px] top-0">
-        <QRCodeCanvas ref={qrRef} value={qrValue} size={512} level="M" marginSize={2} />
+        <QRCodeCanvas
+          ref={qrRef}
+          value={qrValue}
+          size={512}
+          level="M"
+          marginSize={2}
+        />
       </div>
     </div>
   );

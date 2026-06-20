@@ -91,6 +91,7 @@ function EmployeeDrawer({
   setForm,
   saving,
   token,
+  colleagues,
   onClose,
   onSave,
 }: {
@@ -98,6 +99,7 @@ function EmployeeDrawer({
   setForm: (f: EmployeeInput) => void;
   saving: boolean;
   token: string;
+  colleagues: Employee[];
   onClose: () => void;
   onSave: () => void;
 }) {
@@ -142,6 +144,7 @@ function EmployeeDrawer({
             setForm={setForm}
             token={token}
             editing={null}
+            colleagues={colleagues}
           />
         </div>
 
@@ -589,6 +592,7 @@ export default function EmployeesList() {
             setForm={setForm}
             saving={saving}
             token={token}
+            colleagues={items}
             onClose={() => setShowForm(false)}
             onSave={save}
           />

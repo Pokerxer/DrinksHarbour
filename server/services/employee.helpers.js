@@ -345,6 +345,22 @@ function buildEmployeeProfile(input) {
     attendance: compact({
       rfidBadge: str(p.attendance?.rfidBadge),
     }),
+    work: compact({
+      department: str(p.work?.department),
+      jobPosition: str(p.work?.jobPosition),
+      jobTitle: str(p.work?.jobTitle),
+      manager: str(p.work?.manager),
+      workAddress: compact({
+        company: str(p.work?.workAddress?.company),
+        street: str(p.work?.workAddress?.street),
+        street2: str(p.work?.workAddress?.street2),
+        city: str(p.work?.workAddress?.city),
+        zip: str(p.work?.workAddress?.zip),
+        country: str(p.work?.workAddress?.country),
+      }),
+      workLocation: str(p.work?.workLocation),
+      note: str(p.work?.note),
+    }),
     timezone: str(p.timezone),
   });
 }

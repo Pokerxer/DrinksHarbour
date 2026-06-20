@@ -208,6 +208,29 @@ test('buildEmployeeProfile drops unknown keys and empty bank rows', () => {
   assert.deepStrictEqual(p.planning.roles, ['Bartender']);
 });
 
+test('buildEmployeeProfile keeps the work section and nested address', () => {
+  const p = buildEmployeeProfile({
+    work: {
+      department: ' Warehouse ',
+      jobPosition: 'Warehouse Manager',
+      jobTitle: 'Warehouse Manager',
+      manager: 'abc123',
+      workAddress: { company: 'CLOUD BAY', street: '39 Gana Street', city: '' },
+      workLocation: 'Building 2',
+      note: 'On probation',
+      bogus: 'x',
+    },
+  });
+  assert.strictEqual(p.work.department, 'Warehouse');
+  assert.strictEqual(p.work.jobPosition, 'Warehouse Manager');
+  assert.strictEqual(p.work.manager, 'abc123');
+  assert.strictEqual(p.work.workAddress.company, 'CLOUD BAY');
+  assert.strictEqual(p.work.workAddress.street, '39 Gana Street');
+  assert.strictEqual(p.work.workAddress.city, undefined);
+  assert.strictEqual(p.work.workLocation, 'Building 2');
+  assert.strictEqual(p.work.bogus, undefined);
+});
+
 test('buildEmployeeProfile tolerates non-object input', () => {
   assert.deepStrictEqual(buildEmployeeProfile(null), {});
   assert.deepStrictEqual(buildEmployeeProfile(undefined), {});

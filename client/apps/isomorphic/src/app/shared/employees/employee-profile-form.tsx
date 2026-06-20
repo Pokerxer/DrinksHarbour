@@ -31,6 +31,7 @@ import {
   type PosPermission,
 } from '@/services/employee.service';
 import { uploadService } from '@/services/upload.service';
+import { fraunces } from './employees-fonts';
 
 // ── metadata (shared by the list, the drawer and the detail page) ─────────────
 
@@ -132,6 +133,22 @@ export const EMPTY_PROFILE: EmployeeProfile = {
   planning: { roles: [], defaultRole: '' },
   appSettings: { analyticDistribution: '', hourlyCost: 0 },
   attendance: { rfidBadge: '' },
+  work: {
+    department: '',
+    jobPosition: '',
+    jobTitle: '',
+    manager: '',
+    workAddress: {
+      company: '',
+      street: '',
+      street2: '',
+      city: '',
+      zip: '',
+      country: '',
+    },
+    workLocation: '',
+    note: '',
+  },
   timezone: 'Africa/Lagos',
 };
 
@@ -155,6 +172,7 @@ export const EMPLOYEE_FORM_SECTIONS: { id: string; label: string }[] = [
   { id: 'details', label: 'Details' },
   { id: 'access', label: 'Access' },
   { id: 'pos', label: 'Point of Sale' },
+  { id: 'work', label: 'Work Information' },
   { id: 'private-contact', label: 'Private Contact' },
   { id: 'personal', label: 'Personal Information' },
   { id: 'emergency', label: 'Emergency Contact' },
@@ -377,6 +395,35 @@ function PSelect({
   );
 }
 
+function PTextArea({
+  label,
+  path,
+  profile,
+  setP,
+  placeholder,
+  rows = 3,
+}: {
+  label: string;
+  path: string;
+  profile: EmployeeProfile;
+  setP: (path: string, value: unknown) => void;
+  placeholder?: string;
+  rows?: number;
+}) {
+  return (
+    <label className="col-span-2 text-sm font-medium text-gray-700">
+      {label}
+      <textarea
+        rows={rows}
+        className={`mt-1.5 ${PFIELD} resize-y`}
+        value={(getIn(profile, path) as string | undefined) ?? ''}
+        onChange={(e) => setP(path, e.target.value)}
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
+
 function ProfileSection({
   id,
   title,
@@ -584,17 +631,119 @@ function AvatarField({
   );
 }
 
+// ── Organization chart ────────────────────────────────────────────────────────
+//
+// A simple vertical hierarchy: manager → current employee → direct reports.
+// Built entirely client-side from the colleague list passed into the form.
+
+function OrgNode({
+  e,
+  subtitle,
+  highlight = false,
+}: {
+  e: Employee;
+  subtitle?: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-2xl border px-4 py-2.5 ${
+        highlight
+          ? 'border-[#b20202]/30 bg-[#b20202]/5'
+          : 'border-gray-200 bg-white'
+      }`}
+    >
+      <Avatar e={e} size={36} />
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold text-gray-900">
+          {fullName(e)}
+        </p>
+        <p className="truncate text-xs text-gray-400">
+          {subtitle || e.email}
+        </p>
+      </div>
+      <span className="ml-auto shrink-0">
+        <RoleBadge role={e.role} />
+      </span>
+    </div>
+  );
+}
+
+function OrgConnector() {
+  return (
+    <div className="flex justify-center py-1.5">
+      <span className="h-4 w-px bg-gray-200" />
+    </div>
+  );
+}
+
+function OrgChart({
+  manager,
+  current,
+  reports,
+  currentTitle,
+}: {
+  manager: Employee | null;
+  current: Employee;
+  reports: Employee[];
+  currentTitle?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-gray-50/60 p-4">
+      {manager ? (
+        <>
+          <OrgNode
+            e={manager}
+            subtitle={manager.employeeProfile?.work?.jobTitle || 'Manager'}
+          />
+          <OrgConnector />
+        </>
+      ) : (
+        <p className="mb-2 text-center text-xs text-gray-400">
+          No manager assigned
+        </p>
+      )}
+
+      <OrgNode e={current} subtitle={currentTitle} highlight />
+
+      {reports.length > 0 && (
+        <>
+          <OrgConnector />
+          <p
+            className={`${fraunces.className} mb-2 text-center text-xs font-semibold text-gray-500`}
+          >
+            {reports.length} direct{' '}
+            {reports.length === 1 ? 'report' : 'reports'}
+          </p>
+          <div className="space-y-2">
+            {reports.map((r) => (
+              <OrgNode
+                key={r._id}
+                e={r}
+                subtitle={r.employeeProfile?.work?.jobTitle}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function EmployeeProfileForm({
   form,
   setForm,
   token,
   editing,
+  colleagues = [],
 }: {
   form: EmployeeInput;
   setForm: (f: EmployeeInput) => void;
   token: string;
   /** The employee being edited, or null when creating. */
   editing: Employee | null;
+  /** Other employees, used for the Manager picker and org chart. */
+  colleagues?: Employee[];
 }) {
   // The owner cannot be demoted/suspended, so lock those controls when editing one.
   const isOwner = editing?.role === 'tenant_owner';
@@ -634,6 +783,21 @@ export default function EmployeeProfileForm({
       'privateContact.bankAccounts',
       banks.filter((_, idx) => idx !== i)
     );
+
+  // ── Manager picker + org chart (derived from `colleagues`) ──
+  // Candidates exclude the person being edited (you can't be your own manager).
+  const managerOptions = colleagues.filter((c) => c._id !== editing?._id);
+  const managerId = profile.work?.manager ?? '';
+  const manager = managerId
+    ? colleagues.find((c) => c._id === managerId) ?? null
+    : null;
+  const reports = editing
+    ? colleagues.filter(
+        (c) =>
+          c._id !== editing._id &&
+          c.employeeProfile?.work?.manager === editing._id
+      )
+    : [];
 
   return (
     <div className="space-y-6">
@@ -825,6 +989,126 @@ export default function EmployeeProfileForm({
           </div>
         )}
       </section>
+
+      {/* Work information + org chart */}
+      <ProfileSection id="work" title="Work Information">
+        <PText
+          label="Department"
+          path="work.department"
+          profile={profile}
+          setP={setP}
+          placeholder="e.g. Sales"
+        />
+        <PText
+          label="Job Position"
+          path="work.jobPosition"
+          profile={profile}
+          setP={setP}
+          placeholder="e.g. Sales Associate"
+        />
+        <PText
+          label="Job Title"
+          path="work.jobTitle"
+          profile={profile}
+          setP={setP}
+          placeholder="e.g. Senior Bartender"
+          span2
+        />
+        <label className="col-span-2 text-sm font-medium text-gray-700">
+          Manager
+          <select
+            className={`mt-1.5 ${PFIELD}`}
+            value={managerId}
+            onChange={(e) => setP('work.manager', e.target.value)}
+          >
+            <option value="">—</option>
+            {managerOptions.map((c) => (
+              <option key={c._id} value={c._id}>
+                {fullName(c)}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="col-span-2 mt-1">
+          <p className="mb-2 text-sm font-medium text-gray-700">Work Address</p>
+          <div className="grid grid-cols-2 gap-4">
+            <PText
+              label="Company"
+              path="work.workAddress.company"
+              profile={profile}
+              setP={setP}
+              placeholder="DrinksHarbour"
+              span2
+            />
+            <PText
+              label="Street"
+              path="work.workAddress.street"
+              profile={profile}
+              setP={setP}
+              placeholder="Street…"
+              span2
+            />
+            <PText
+              label="Street 2"
+              path="work.workAddress.street2"
+              profile={profile}
+              setP={setP}
+              placeholder="Street 2…"
+              span2
+            />
+            <PText
+              label="City"
+              path="work.workAddress.city"
+              profile={profile}
+              setP={setP}
+            />
+            <PText
+              label="ZIP"
+              path="work.workAddress.zip"
+              profile={profile}
+              setP={setP}
+            />
+            <PText
+              label="Country"
+              path="work.workAddress.country"
+              profile={profile}
+              setP={setP}
+              span2
+            />
+          </div>
+        </div>
+
+        <PText
+          label="Work Location"
+          path="work.workLocation"
+          profile={profile}
+          setP={setP}
+          placeholder="e.g. Maitama Branch"
+          span2
+        />
+        <PTextArea
+          label="Note"
+          path="work.note"
+          profile={profile}
+          setP={setP}
+          placeholder="Anything worth noting about this role…"
+        />
+
+        {editing && (
+          <div className="col-span-2 mt-2">
+            <p className="mb-3 text-sm font-medium text-gray-700">
+              Organization Chart
+            </p>
+            <OrgChart
+              manager={manager}
+              current={editing}
+              reports={reports}
+              currentTitle={profile.work?.jobTitle || profile.work?.jobPosition}
+            />
+          </div>
+        )}
+      </ProfileSection>
 
       {/* ── HR profile ── */}
 
