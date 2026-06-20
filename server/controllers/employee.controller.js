@@ -14,6 +14,7 @@ const {
   buildEmployeeFilter,
   buildCreatePayload,
   buildUpdateChanges,
+  buildEmployeeProfile,
   canDeleteEmployee,
   isValidPin,
 } = require('../services/employee.helpers');
@@ -38,6 +39,7 @@ function present(user) {
     posName: user.posName || '',
     posPermissions: user.posPermissions || [],
     hasPin: Boolean(user.posPinHash),
+    employeeProfile: user.employeeProfile || {},
     createdAt: user.createdAt,
   };
 }
@@ -90,6 +92,10 @@ exports.createEmployee = asyncHandler(async (req, res) => {
     userData.posPinHash = await bcrypt.hash(String(pin), 10);
   }
 
+  if (req.body.employeeProfile) {
+    userData.employeeProfile = buildEmployeeProfile(req.body.employeeProfile);
+  }
+
   const user = await User.create(userData);
   res.status(201).json({ success: true, data: { employee: present(user) } });
 });
@@ -110,6 +116,13 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: built.message });
   }
   Object.assign(user, built.changes);
+
+  // Full-replace the HR profile when the client sends one (the edit form always
+  // submits the complete profile object).
+  if ('employeeProfile' in req.body) {
+    user.employeeProfile = buildEmployeeProfile(req.body.employeeProfile);
+    user.markModified('employeeProfile');
+  }
 
   // PIN may be set/cleared in the same request: '' or null clears it.
   if ('pin' in req.body) {

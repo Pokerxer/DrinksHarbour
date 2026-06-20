@@ -190,6 +190,142 @@ function buildUpdateChanges(target, body = {}) {
   return { ok: true, changes };
 }
 
+const GENDERS = ['male', 'female', 'other', ''];
+const MARITAL_STATUSES = ['single', 'married', 'divorced', 'widowed', 'cohabitant', ''];
+
+// String coercion helpers used by the profile sanitiser. Empty/blank strings
+// collapse to undefined so they're dropped rather than stored as "".
+const str = (v) => {
+  if (v === undefined || v === null) return undefined;
+  const s = String(v).trim();
+  return s === '' ? undefined : s;
+};
+const num = (v) => {
+  if (v === undefined || v === null || v === '') return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+};
+const dateVal = (v) => {
+  if (!v) return undefined;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+};
+const oneOf = (v, allowed) => (allowed.includes(v) ? v : undefined);
+
+// Drop keys whose value is undefined so we never overwrite stored data with
+// blanks the client didn't send.
+const compact = (obj) => {
+  const out = {};
+  for (const [k, val] of Object.entries(obj)) {
+    if (val === undefined) continue;
+    out[k] = val;
+  }
+  return out;
+};
+
+/**
+ * Whitelist + coerce an Odoo-style HR profile payload into a safe shape for the
+ * User.employeeProfile subdocument. Unknown keys are ignored; types are coerced;
+ * enums are validated. Returns a (possibly nested) plain object.
+ */
+function buildEmployeeProfile(input) {
+  if (!input || typeof input !== 'object') return {};
+  const p = input;
+
+  const bankAccounts = Array.isArray(p.privateContact?.bankAccounts)
+    ? p.privateContact.bankAccounts
+        .map((b) =>
+          compact({
+            bankName: str(b?.bankName),
+            accountNumber: str(b?.accountNumber),
+            accountName: str(b?.accountName),
+          })
+        )
+        .filter((b) => Object.keys(b).length > 0)
+    : undefined;
+
+  const roles = Array.isArray(p.planning?.roles)
+    ? p.planning.roles.map((r) => str(r)).filter(Boolean)
+    : undefined;
+
+  return compact({
+    privateContact: compact({
+      email: p.privateContact?.email ? String(p.privateContact.email).toLowerCase().trim() : undefined,
+      phone: str(p.privateContact?.phone),
+      bankAccounts,
+    }),
+    personal: compact({
+      legalName: str(p.personal?.legalName),
+      birthday: dateVal(p.personal?.birthday),
+      placeOfBirthCity: str(p.personal?.placeOfBirthCity),
+      placeOfBirthCountry: str(p.personal?.placeOfBirthCountry),
+      gender: oneOf(p.personal?.gender, GENDERS),
+      payslipLanguage: str(p.personal?.payslipLanguage),
+    }),
+    emergencyContact: compact({
+      name: str(p.emergencyContact?.name),
+      phone: str(p.emergencyContact?.phone),
+    }),
+    visaWorkPermit: compact({
+      visaNo: str(p.visaWorkPermit?.visaNo),
+      workPermitNo: str(p.visaWorkPermit?.workPermitNo),
+      documentUrl: str(p.visaWorkPermit?.documentUrl),
+    }),
+    citizenship: compact({
+      nationality: str(p.citizenship?.nationality),
+      nonResident: p.citizenship?.nonResident === undefined ? undefined : Boolean(p.citizenship.nonResident),
+      identificationNo: str(p.citizenship?.identificationNo),
+      ssnNo: str(p.citizenship?.ssnNo),
+      passportNo: str(p.citizenship?.passportNo),
+    }),
+    location: compact({
+      address: compact({
+        street: str(p.location?.address?.street),
+        street2: str(p.location?.address?.street2),
+        city: str(p.location?.address?.city),
+        state: str(p.location?.address?.state),
+        zip: str(p.location?.address?.zip),
+        country: str(p.location?.address?.country),
+      }),
+      homeWorkDistanceKm: num(p.location?.homeWorkDistanceKm),
+    }),
+    family: compact({
+      maritalStatus: oneOf(p.family?.maritalStatus, MARITAL_STATUSES),
+      dependentChildren: num(p.family?.dependentChildren),
+    }),
+    education: compact({
+      certificateLevel: str(p.education?.certificateLevel),
+      fieldOfStudy: str(p.education?.fieldOfStudy),
+    }),
+    documents: compact({
+      idCardUrl: str(p.documents?.idCardUrl),
+      drivingLicenseUrl: str(p.documents?.drivingLicenseUrl),
+      simCardUrl: str(p.documents?.simCardUrl),
+      internetInvoiceUrl: str(p.documents?.internetInvoiceUrl),
+    }),
+    appraisal: compact({
+      nextAppraisalDate: dateVal(p.appraisal?.nextAppraisalDate),
+    }),
+    approvers: compact({
+      hrResponsible: str(p.approvers?.hrResponsible),
+      expense: str(p.approvers?.expense),
+      timeOff: str(p.approvers?.timeOff),
+    }),
+    planning: compact({
+      roles,
+      defaultRole: str(p.planning?.defaultRole),
+    }),
+    appSettings: compact({
+      analyticDistribution: str(p.appSettings?.analyticDistribution),
+      hourlyCost: num(p.appSettings?.hourlyCost),
+    }),
+    attendance: compact({
+      rfidBadge: str(p.attendance?.rfidBadge),
+    }),
+    timezone: str(p.timezone),
+  });
+}
+
 /**
  * Authorisation check for deleting an employee.
  * @param {object} target            - the user being deleted
@@ -218,5 +354,8 @@ module.exports = {
   buildEmployeeFilter,
   buildCreatePayload,
   buildUpdateChanges,
+  buildEmployeeProfile,
   canDeleteEmployee,
+  GENDERS,
+  MARITAL_STATUSES,
 };

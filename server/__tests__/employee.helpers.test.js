@@ -8,6 +8,7 @@ const {
   buildEmployeeFilter,
   buildCreatePayload,
   buildUpdateChanges,
+  buildEmployeeProfile,
   canDeleteEmployee,
 } = require('../services/employee.helpers');
 
@@ -137,4 +138,57 @@ test('canDeleteEmployee blocks tenant_owner and self-deletion', () => {
   assert.strictEqual(canDeleteEmployee({ _id: '1', role: 'tenant_owner' }, '9').ok, false);
   assert.strictEqual(canDeleteEmployee({ _id: '9', role: 'tenant_staff' }, '9').ok, false);
   assert.strictEqual(canDeleteEmployee({ _id: '2', role: 'tenant_staff' }, '9').ok, true);
+});
+
+// ── HR profile sanitiser ─────────────────────────────────────────────────────
+
+test('buildEmployeeProfile coerces types and validates enums', () => {
+  const p = buildEmployeeProfile({
+    personal: { legalName: '  Alice  ', gender: 'female', birthday: '1990-05-01' },
+    family: { maritalStatus: 'single', dependentChildren: '2' },
+    location: { homeWorkDistanceKm: '5.5', address: { city: 'Lagos' } },
+    appSettings: { hourlyCost: '1500.50' },
+    citizenship: { nonResident: 1 },
+    attendance: { rfidBadge: '041667944074' },
+  });
+  assert.strictEqual(p.personal.legalName, 'Alice');
+  assert.strictEqual(p.personal.gender, 'female');
+  assert.ok(p.personal.birthday instanceof Date);
+  assert.strictEqual(p.family.maritalStatus, 'single');
+  assert.strictEqual(p.family.dependentChildren, 2);
+  assert.strictEqual(p.location.homeWorkDistanceKm, 5.5);
+  assert.strictEqual(p.location.address.city, 'Lagos');
+  assert.strictEqual(p.appSettings.hourlyCost, 1500.5);
+  assert.strictEqual(p.citizenship.nonResident, true);
+  assert.strictEqual(p.attendance.rfidBadge, '041667944074');
+});
+
+test('buildEmployeeProfile rejects invalid enum values', () => {
+  const p = buildEmployeeProfile({
+    personal: { gender: 'alien' },
+    family: { maritalStatus: 'complicated' },
+  });
+  assert.strictEqual(p.personal.gender, undefined);
+  assert.strictEqual(p.family.maritalStatus, undefined);
+});
+
+test('buildEmployeeProfile drops unknown keys and empty bank rows', () => {
+  const p = buildEmployeeProfile({
+    bogusTop: 'x',
+    privateContact: {
+      email: 'PRIV@X.COM',
+      bankAccounts: [{ bankName: 'GTB', accountNumber: '123' }, {}, { accountName: '   ' }],
+    },
+    planning: { roles: ['Bartender', '', '  '] },
+  });
+  assert.strictEqual(p.bogusTop, undefined);
+  assert.strictEqual(p.privateContact.email, 'priv@x.com');
+  assert.strictEqual(p.privateContact.bankAccounts.length, 1);
+  assert.deepStrictEqual(p.planning.roles, ['Bartender']);
+});
+
+test('buildEmployeeProfile tolerates non-object input', () => {
+  assert.deepStrictEqual(buildEmployeeProfile(null), {});
+  assert.deepStrictEqual(buildEmployeeProfile(undefined), {});
+  assert.deepStrictEqual(buildEmployeeProfile('nope'), {});
 });

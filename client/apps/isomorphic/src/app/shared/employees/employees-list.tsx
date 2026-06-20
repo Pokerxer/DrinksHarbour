@@ -26,16 +26,23 @@ import {
   PiPhone,
   PiStorefront,
   PiWarningCircle,
+  PiUploadSimple,
+  PiPaperclip,
+  PiSpinnerGap,
 } from 'react-icons/pi';
 import {
   employeeService,
   POS_PERMISSIONS,
+  GENDER_OPTIONS,
+  MARITAL_OPTIONS,
   type Employee,
   type EmployeeInput,
+  type EmployeeProfile,
   type EmployeeRole,
   type EmployeeStatus,
   type PosPermission,
 } from '@/services/employee.service';
+import { uploadService } from '@/services/upload.service';
 import { fraunces } from './employees-fonts';
 
 // ── metadata ─────────────────────────────────────────────────────────────────
@@ -95,6 +102,253 @@ const PERMISSION_LABELS: Record<PosPermission, string> = {
   'pos:terminal:wholesale': 'Wholesale terminal',
 };
 
+const EMPTY_PROFILE: EmployeeProfile = {
+  privateContact: { email: '', phone: '', bankAccounts: [] },
+  personal: {
+    legalName: '',
+    birthday: '',
+    placeOfBirthCity: '',
+    placeOfBirthCountry: '',
+    gender: '',
+    payslipLanguage: '',
+  },
+  emergencyContact: { name: '', phone: '' },
+  visaWorkPermit: { visaNo: '', workPermitNo: '', documentUrl: '' },
+  citizenship: {
+    nationality: '',
+    nonResident: false,
+    identificationNo: '',
+    ssnNo: '',
+    passportNo: '',
+  },
+  location: {
+    address: { street: '', street2: '', city: '', state: '', zip: '', country: '' },
+    homeWorkDistanceKm: 0,
+  },
+  family: { maritalStatus: '', dependentChildren: 0 },
+  education: { certificateLevel: '', fieldOfStudy: '' },
+  documents: {
+    idCardUrl: '',
+    drivingLicenseUrl: '',
+    simCardUrl: '',
+    internetInvoiceUrl: '',
+  },
+  appraisal: { nextAppraisalDate: '' },
+  approvers: { hrResponsible: '', expense: '', timeOff: '' },
+  planning: { roles: [], defaultRole: '' },
+  appSettings: { analyticDistribution: '', hourlyCost: 0 },
+  attendance: { rfidBadge: '' },
+  timezone: 'Africa/Lagos',
+};
+
+// ── nested profile get/set by dot-path (immutable) ──────────────────────────────
+
+type AnyRecord = Record<string, unknown>;
+
+function getIn(obj: unknown, path: string): unknown {
+  return path
+    .split('.')
+    .reduce<unknown>(
+      (acc, k) => (acc == null ? undefined : (acc as AnyRecord)[k]),
+      obj
+    );
+}
+
+function setIn(obj: AnyRecord, path: string, value: unknown): AnyRecord {
+  const keys = path.split('.');
+  const root: AnyRecord = { ...obj };
+  let cur = root;
+  for (let i = 0; i < keys.length - 1; i++) {
+    const k = keys[i];
+    const next = cur[k];
+    cur[k] =
+      next && typeof next === 'object' && !Array.isArray(next)
+        ? { ...(next as AnyRecord) }
+        : {};
+    cur = cur[k] as AnyRecord;
+  }
+  cur[keys[keys.length - 1]] = value;
+  return root;
+}
+
+const PFIELD =
+  'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20';
+
+// Reusable profile inputs (module-level so they don't remount/lose focus).
+
+function PText({
+  label,
+  path,
+  profile,
+  setP,
+  placeholder,
+  type = 'text',
+  span2 = false,
+}: {
+  label: string;
+  path: string;
+  profile: EmployeeProfile;
+  setP: (path: string, value: unknown) => void;
+  placeholder?: string;
+  type?: string;
+  span2?: boolean;
+}) {
+  return (
+    <label
+      className={`text-sm font-medium text-gray-700 ${span2 ? 'col-span-2' : ''}`}
+    >
+      {label}
+      <input
+        type={type}
+        className={`mt-1.5 ${PFIELD}`}
+        value={(getIn(profile, path) as string | number | undefined) ?? ''}
+        onChange={(e) =>
+          setP(
+            path,
+            type === 'number'
+              ? e.target.value === ''
+                ? ''
+                : Number(e.target.value)
+              : e.target.value
+          )
+        }
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
+
+function PSelect({
+  label,
+  path,
+  profile,
+  setP,
+  options,
+}: {
+  label: string;
+  path: string;
+  profile: EmployeeProfile;
+  setP: (path: string, value: unknown) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <label className="text-sm font-medium text-gray-700">
+      {label}
+      <select
+        className={`mt-1.5 ${PFIELD}`}
+        value={(getIn(profile, path) as string | undefined) ?? ''}
+        onChange={(e) => setP(path, e.target.value)}
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function ProfileSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="border-t border-gray-100 pt-5">
+      <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-gray-400">
+        {title}
+      </p>
+      <div className="grid grid-cols-2 gap-4">{children}</div>
+    </section>
+  );
+}
+
+function UploadField({
+  label,
+  path,
+  profile,
+  setP,
+  token,
+}: {
+  label: string;
+  path: string;
+  profile: EmployeeProfile;
+  setP: (path: string, value: unknown) => void;
+  token: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const url = (getIn(profile, path) as string | undefined) ?? '';
+
+  const onPick = async (file?: File) => {
+    if (!file) return;
+    if (!token) {
+      toast.error('Not authenticated');
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await uploadService.uploadImage(file, token, 'employee-docs');
+      setP(path, res.data.url);
+      toast.success('Uploaded');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Upload failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="col-span-2">
+      <p className="text-sm font-medium text-gray-700">{label}</p>
+      <div className="mt-1.5 flex items-center gap-2">
+        <label
+          className={`flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:border-gray-300 ${busy ? 'opacity-60' : ''}`}
+        >
+          {busy ? (
+            <PiSpinnerGap className="h-4 w-4 animate-spin" />
+          ) : (
+            <PiUploadSimple className="h-4 w-4" />
+          )}
+          {url ? 'Replace' : 'Upload'}
+          <input
+            type="file"
+            accept="image/*,application/pdf"
+            className="hidden"
+            disabled={busy}
+            onChange={(e) => onPick(e.target.files?.[0])}
+          />
+        </label>
+        {url ? (
+          <>
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="flex min-w-0 items-center gap-1 text-xs text-[#b20202] hover:underline"
+            >
+              <PiPaperclip className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">View file</span>
+            </a>
+            <button
+              type="button"
+              onClick={() => setP(path, '')}
+              className="rounded p-1 text-gray-400 hover:text-red-600"
+              title="Remove"
+            >
+              <PiX className="h-4 w-4" />
+            </button>
+          </>
+        ) : (
+          <span className="text-xs text-gray-400">No file</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const EMPTY_FORM: EmployeeInput = {
   firstName: '',
   lastName: '',
@@ -106,6 +360,7 @@ const EMPTY_FORM: EmployeeInput = {
   posName: '',
   posPermissions: ['pos:sell', 'pos:terminal:retail', 'pos:terminal:wholesale'],
   pin: '',
+  employeeProfile: EMPTY_PROFILE,
 };
 
 function fullName(e: Employee): string {
@@ -214,6 +469,7 @@ function EmployeeDrawer({
   form,
   setForm,
   saving,
+  token,
   onClose,
   onSave,
 }: {
@@ -221,6 +477,7 @@ function EmployeeDrawer({
   form: EmployeeInput;
   setForm: (f: EmployeeInput) => void;
   saving: boolean;
+  token: string;
   onClose: () => void;
   onSave: () => void;
 }) {
@@ -244,6 +501,35 @@ function EmployeeDrawer({
     else set.add(p);
     setForm({ ...form, posPermissions: [...set] });
   };
+
+  // Nested HR profile read/write by dot-path.
+  const profile = form.employeeProfile ?? {};
+  const setP = (path: string, value: unknown) =>
+    setForm({
+      ...form,
+      employeeProfile: setIn(
+        (form.employeeProfile ?? {}) as AnyRecord,
+        path,
+        value
+      ) as EmployeeProfile,
+    });
+
+  const roles = profile.planning?.roles ?? [];
+  const banks = profile.privateContact?.bankAccounts ?? [];
+  const setBank = (i: number, key: string, val: string) => {
+    const next = banks.map((b, idx) => (idx === i ? { ...b, [key]: val } : b));
+    setP('privateContact.bankAccounts', next);
+  };
+  const addBank = () =>
+    setP('privateContact.bankAccounts', [
+      ...banks,
+      { bankName: '', accountNumber: '', accountName: '' },
+    ]);
+  const removeBank = (i: number) =>
+    setP(
+      'privateContact.bankAccounts',
+      banks.filter((_, idx) => idx !== i)
+    );
 
   return (
     <div className="fixed inset-0 z-[200] flex justify-end bg-black/40 backdrop-blur-sm">
@@ -459,6 +745,140 @@ function EmployeeDrawer({
               </div>
             )}
           </section>
+
+          {/* ── HR profile ── */}
+
+          <ProfileSection title="Private Contact">
+            <PText label="Private email" path="privateContact.email" profile={profile} setP={setP} type="email" placeholder="myprivateemail@example.com" span2 />
+            <PText label="Private phone" path="privateContact.phone" profile={profile} setP={setP} type="tel" placeholder="+234…" span2 />
+            <div className="col-span-2">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-sm font-medium text-gray-700">Bank accounts</p>
+                <button type="button" onClick={addBank} className="flex items-center gap-1 text-xs font-semibold text-[#b20202] hover:underline">
+                  <PiPlus className="h-3.5 w-3.5" /> Add account
+                </button>
+              </div>
+              <div className="space-y-2">
+                {banks.length === 0 && <p className="text-xs text-gray-400">No bank accounts.</p>}
+                {banks.map((b, i) => (
+                  <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2">
+                    <input className={PFIELD} value={b.bankName ?? ''} onChange={(e) => setBank(i, 'bankName', e.target.value)} placeholder="Bank" />
+                    <input className={PFIELD} value={b.accountNumber ?? ''} onChange={(e) => setBank(i, 'accountNumber', e.target.value)} placeholder="Account no." />
+                    <input className={PFIELD} value={b.accountName ?? ''} onChange={(e) => setBank(i, 'accountName', e.target.value)} placeholder="Account name" />
+                    <button type="button" onClick={() => removeBank(i)} className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600" title="Remove">
+                      <PiTrash className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </ProfileSection>
+
+          <ProfileSection title="Personal Information">
+            <PText label="Legal name" path="personal.legalName" profile={profile} setP={setP} placeholder="Alice" span2 />
+            <PText label="Birthday" path="personal.birthday" profile={profile} setP={setP} type="date" />
+            <PSelect label="Gender" path="personal.gender" profile={profile} setP={setP} options={GENDER_OPTIONS} />
+            <PText label="Place of birth — city" path="personal.placeOfBirthCity" profile={profile} setP={setP} placeholder="City" />
+            <PText label="Place of birth — country" path="personal.placeOfBirthCountry" profile={profile} setP={setP} placeholder="Country" />
+            <PText label="Payslip language" path="personal.payslipLanguage" profile={profile} setP={setP} placeholder="User Language" span2 />
+          </ProfileSection>
+
+          <ProfileSection title="Emergency Contact">
+            <PText label="Contact" path="emergencyContact.name" profile={profile} setP={setP} placeholder="Full name" />
+            <PText label="Phone" path="emergencyContact.phone" profile={profile} setP={setP} type="tel" placeholder="+234…" />
+          </ProfileSection>
+
+          <ProfileSection title="Visa & Work Permit">
+            <PText label="Visa No" path="visaWorkPermit.visaNo" profile={profile} setP={setP} />
+            <PText label="Work Permit No" path="visaWorkPermit.workPermitNo" profile={profile} setP={setP} />
+            <UploadField label="Document" path="visaWorkPermit.documentUrl" profile={profile} setP={setP} token={token} />
+          </ProfileSection>
+
+          <ProfileSection title="Citizenship">
+            <PText label="Nationality (Country)" path="citizenship.nationality" profile={profile} setP={setP} span2 />
+            <button
+              type="button"
+              onClick={() => setP('citizenship.nonResident', !profile.citizenship?.nonResident)}
+              className={`col-span-2 flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${profile.citizenship?.nonResident ? 'border-[#b20202] bg-[#fef2f2] text-[#b20202]' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}
+            >
+              {profile.citizenship?.nonResident && <PiCheck className="h-4 w-4 shrink-0" />}
+              Non-resident
+            </button>
+            <PText label="Identification No" path="citizenship.identificationNo" profile={profile} setP={setP} />
+            <PText label="SSN No" path="citizenship.ssnNo" profile={profile} setP={setP} />
+            <PText label="Passport No" path="citizenship.passportNo" profile={profile} setP={setP} span2 />
+          </ProfileSection>
+
+          <ProfileSection title="Location">
+            <PText label="Street" path="location.address.street" profile={profile} setP={setP} placeholder="Street…" span2 />
+            <PText label="Street 2" path="location.address.street2" profile={profile} setP={setP} placeholder="Street 2…" span2 />
+            <PText label="City" path="location.address.city" profile={profile} setP={setP} />
+            <PText label="State" path="location.address.state" profile={profile} setP={setP} />
+            <PText label="ZIP" path="location.address.zip" profile={profile} setP={setP} />
+            <PText label="Country" path="location.address.country" profile={profile} setP={setP} />
+            <PText label="Home-Work Distance (km)" path="location.homeWorkDistanceKm" profile={profile} setP={setP} type="number" span2 />
+          </ProfileSection>
+
+          <ProfileSection title="Family">
+            <PSelect label="Marital Status" path="family.maritalStatus" profile={profile} setP={setP} options={MARITAL_OPTIONS} />
+            <PText label="Dependent Children" path="family.dependentChildren" profile={profile} setP={setP} type="number" />
+          </ProfileSection>
+
+          <ProfileSection title="Education">
+            <PText label="Certificate Level" path="education.certificateLevel" profile={profile} setP={setP} />
+            <PText label="Field of Study" path="education.fieldOfStudy" profile={profile} setP={setP} />
+          </ProfileSection>
+
+          <ProfileSection title="Documents">
+            <UploadField label="ID Card Copy" path="documents.idCardUrl" profile={profile} setP={setP} token={token} />
+            <UploadField label="Driving License" path="documents.drivingLicenseUrl" profile={profile} setP={setP} token={token} />
+            <UploadField label="SIM Card Copy" path="documents.simCardUrl" profile={profile} setP={setP} token={token} />
+            <UploadField label="Internet Subscription Invoice" path="documents.internetInvoiceUrl" profile={profile} setP={setP} token={token} />
+          </ProfileSection>
+
+          <ProfileSection title="Appraisal">
+            <PText label="Next Appraisal Date" path="appraisal.nextAppraisalDate" profile={profile} setP={setP} type="date" span2 />
+          </ProfileSection>
+
+          <ProfileSection title="Approvers">
+            <PText label="HR Responsible" path="approvers.hrResponsible" profile={profile} setP={setP} span2 />
+            <PText label="Expense" path="approvers.expense" profile={profile} setP={setP} />
+            <PText label="Time Off" path="approvers.timeOff" profile={profile} setP={setP} />
+          </ProfileSection>
+
+          <ProfileSection title="Planning">
+            <label className="col-span-2 text-sm font-medium text-gray-700">
+              Roles <span className="font-normal text-gray-400">(comma-separated)</span>
+              <input
+                className={`mt-1.5 ${PFIELD}`}
+                value={roles.join(', ')}
+                onChange={(e) =>
+                  setP(
+                    'planning.roles',
+                    e.target.value.split(',').map((r) => r.trim()).filter(Boolean)
+                  )
+                }
+                placeholder="e.g. Bartender"
+              />
+            </label>
+            <PText label="Default Role" path="planning.defaultRole" profile={profile} setP={setP} placeholder="e.g. Bartender" span2 />
+          </ProfileSection>
+
+          <ProfileSection title="Application Settings">
+            <PText label="Analytic Distribution" path="appSettings.analyticDistribution" profile={profile} setP={setP} span2 />
+            <PText label="Hourly Cost (₦)" path="appSettings.hourlyCost" profile={profile} setP={setP} type="number" span2 />
+          </ProfileSection>
+
+          <ProfileSection title="Attendance / Point of Sale">
+            <PText label="RFID / Badge Number" path="attendance.rfidBadge" profile={profile} setP={setP} placeholder="041667944074" span2 />
+            <p className="col-span-2 -mt-1 text-[11px] text-gray-400">
+              The POS PIN is set in the Point of Sale section above.
+            </p>
+          </ProfileSection>
+
+          <ProfileSection title="Timezone">
+            <PText label="Timezone" path="timezone" profile={profile} setP={setP} placeholder="Africa/Lagos" span2 />
+          </ProfileSection>
         </div>
 
         {/* Footer */}
@@ -526,6 +946,15 @@ export default function EmployeesList() {
 
   const openEdit = (e: Employee) => {
     setEditing(e);
+    // Date inputs need yyyy-mm-dd; the API returns full ISO timestamps.
+    const ep = e.employeeProfile ?? {};
+    const toDay = (v?: string | null) => (v ? String(v).slice(0, 10) : '');
+    const normProfile: EmployeeProfile = {
+      ...EMPTY_PROFILE,
+      ...ep,
+      personal: { ...ep.personal, birthday: toDay(ep.personal?.birthday) },
+      appraisal: { nextAppraisalDate: toDay(ep.appraisal?.nextAppraisalDate) },
+    };
     setForm({
       firstName: e.firstName,
       lastName: e.lastName,
@@ -537,6 +966,7 @@ export default function EmployeesList() {
       posName: e.posName,
       posPermissions: e.posPermissions,
       pin: '',
+      employeeProfile: normProfile,
     });
     setShowForm(true);
   };
@@ -566,6 +996,7 @@ export default function EmployeesList() {
           posAccess: form.posAccess,
           posName: form.posName,
           posPermissions: form.posPermissions,
+          employeeProfile: form.employeeProfile,
         };
         if (editing.role !== 'tenant_owner') {
           payload.role = form.role;
@@ -920,6 +1351,7 @@ export default function EmployeesList() {
             form={form}
             setForm={setForm}
             saving={saving}
+            token={token}
             onClose={() => setShowForm(false)}
             onSave={save}
           />

@@ -15,6 +15,76 @@ export const POS_PERMISSIONS = [
 ] as const;
 export type PosPermission = (typeof POS_PERMISSIONS)[number];
 
+export type Gender = 'male' | 'female' | 'other' | '';
+export type MaritalStatus =
+  | 'single'
+  | 'married'
+  | 'divorced'
+  | 'widowed'
+  | 'cohabitant'
+  | '';
+
+export interface BankAccount {
+  bankName?: string;
+  accountNumber?: string;
+  accountName?: string;
+}
+
+/** Odoo-style HR profile. Every section is optional. */
+export interface EmployeeProfile {
+  privateContact?: {
+    email?: string;
+    phone?: string;
+    bankAccounts?: BankAccount[];
+  };
+  personal?: {
+    legalName?: string;
+    birthday?: string | null;
+    placeOfBirthCity?: string;
+    placeOfBirthCountry?: string;
+    gender?: Gender;
+    payslipLanguage?: string;
+  };
+  emergencyContact?: { name?: string; phone?: string };
+  visaWorkPermit?: {
+    visaNo?: string;
+    workPermitNo?: string;
+    documentUrl?: string;
+  };
+  citizenship?: {
+    nationality?: string;
+    nonResident?: boolean;
+    identificationNo?: string;
+    ssnNo?: string;
+    passportNo?: string;
+  };
+  location?: {
+    address?: {
+      street?: string;
+      street2?: string;
+      city?: string;
+      state?: string;
+      zip?: string;
+      country?: string;
+    };
+    homeWorkDistanceKm?: number;
+  };
+  family?: { maritalStatus?: MaritalStatus; dependentChildren?: number };
+  education?: { certificateLevel?: string; fieldOfStudy?: string };
+  documents?: {
+    idCardUrl?: string;
+    drivingLicenseUrl?: string;
+    simCardUrl?: string;
+    internetInvoiceUrl?: string;
+  };
+  appraisal?: { nextAppraisalDate?: string | null };
+  approvers?: { hrResponsible?: string; expense?: string; timeOff?: string };
+  planning?: { roles?: string[]; defaultRole?: string };
+  appSettings?: { analyticDistribution?: string; hourlyCost?: number };
+  attendance?: { rfidBadge?: string };
+  timezone?: string;
+}
+
 export interface Employee {
   _id: string;
   firstName: string;
@@ -29,6 +99,7 @@ export interface Employee {
   posPermissions: PosPermission[];
   /** True when a POS PIN is set (the hash itself is never returned). */
   hasPin: boolean;
+  employeeProfile?: EmployeeProfile;
   createdAt: string;
 }
 
@@ -44,6 +115,7 @@ export interface EmployeeInput {
   posPermissions?: PosPermission[];
   /** 4–6 digit PIN. Omit to leave unchanged; '' or null clears it on update. */
   pin?: string | null;
+  employeeProfile?: EmployeeProfile;
 }
 
 export interface EmployeeListParams {
@@ -65,6 +137,22 @@ const jsonAuth = (token: string) => ({
   'Content-Type': 'application/json',
   ...auth(token),
 });
+
+export const GENDER_OPTIONS: { value: Gender; label: string }[] = [
+  { value: '', label: '—' },
+  { value: 'male', label: 'Male' },
+  { value: 'female', label: 'Female' },
+  { value: 'other', label: 'Other' },
+];
+
+export const MARITAL_OPTIONS: { value: MaritalStatus; label: string }[] = [
+  { value: '', label: '—' },
+  { value: 'single', label: 'Single' },
+  { value: 'married', label: 'Married' },
+  { value: 'divorced', label: 'Divorced' },
+  { value: 'widowed', label: 'Widowed' },
+  { value: 'cohabitant', label: 'Cohabitant' },
+];
 
 export const employeeService = {
   async getEmployees(

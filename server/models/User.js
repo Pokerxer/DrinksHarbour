@@ -215,6 +215,97 @@ const userSchema = new Schema(
       enum: ['pos:sell', 'pos:refund', 'pos:void', 'pos:price_override', 'pos:discount', 'pos:terminal:retail', 'pos:terminal:wholesale'],
       default: ['pos:sell', 'pos:terminal:retail', 'pos:terminal:wholesale'],
     },
+
+    // ── HR employee profile (tenant staff) ─────────────────────────────────
+    // Odoo-style employee record. Only relevant for tenant employees; left
+    // empty for customers. Document fields hold uploaded file URLs.
+    employeeProfile: {
+      privateContact: {
+        email: { type: String, trim: true, lowercase: true },
+        phone: { type: String, trim: true },
+        bankAccounts: [
+          {
+            _id: false,
+            bankName: { type: String, trim: true },
+            accountNumber: { type: String, trim: true },
+            accountName: { type: String, trim: true },
+          },
+        ],
+      },
+      personal: {
+        legalName: { type: String, trim: true },
+        birthday: { type: Date },
+        placeOfBirthCity: { type: String, trim: true },
+        placeOfBirthCountry: { type: String, trim: true },
+        gender: { type: String, enum: ['male', 'female', 'other', ''], default: '' },
+        payslipLanguage: { type: String, trim: true },
+      },
+      emergencyContact: {
+        name: { type: String, trim: true },
+        phone: { type: String, trim: true },
+      },
+      visaWorkPermit: {
+        visaNo: { type: String, trim: true },
+        workPermitNo: { type: String, trim: true },
+        documentUrl: { type: String, trim: true },
+      },
+      citizenship: {
+        nationality: { type: String, trim: true },
+        nonResident: { type: Boolean, default: false },
+        identificationNo: { type: String, trim: true },
+        ssnNo: { type: String, trim: true },
+        passportNo: { type: String, trim: true },
+      },
+      location: {
+        address: {
+          street: { type: String, trim: true },
+          street2: { type: String, trim: true },
+          city: { type: String, trim: true },
+          state: { type: String, trim: true },
+          zip: { type: String, trim: true },
+          country: { type: String, trim: true },
+        },
+        homeWorkDistanceKm: { type: Number, min: 0, default: 0 },
+      },
+      family: {
+        maritalStatus: {
+          type: String,
+          enum: ['single', 'married', 'divorced', 'widowed', 'cohabitant', ''],
+          default: '',
+        },
+        dependentChildren: { type: Number, min: 0, default: 0 },
+      },
+      education: {
+        certificateLevel: { type: String, trim: true },
+        fieldOfStudy: { type: String, trim: true },
+      },
+      documents: {
+        idCardUrl: { type: String, trim: true },
+        drivingLicenseUrl: { type: String, trim: true },
+        simCardUrl: { type: String, trim: true },
+        internetInvoiceUrl: { type: String, trim: true },
+      },
+      appraisal: {
+        nextAppraisalDate: { type: Date },
+      },
+      approvers: {
+        hrResponsible: { type: String, trim: true },
+        expense: { type: String, trim: true },
+        timeOff: { type: String, trim: true },
+      },
+      planning: {
+        roles: { type: [String], default: [] },
+        defaultRole: { type: String, trim: true },
+      },
+      appSettings: {
+        analyticDistribution: { type: String, trim: true },
+        hourlyCost: { type: Number, min: 0, default: 0 },
+      },
+      attendance: {
+        rfidBadge: { type: String, trim: true },
+      },
+      timezone: { type: String, trim: true, default: 'Africa/Lagos' },
+    },
   },
   {
     timestamps: true,
