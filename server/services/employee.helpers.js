@@ -366,6 +366,64 @@ function buildEmployeeProfile(input) {
 }
 
 /**
+ * Validate a proposed `work.manager` assignment against the tenant's reporting
+ * graph. Pure + DB-less so it can be unit-tested; the controller supplies the
+ * graph from a scoped query.
+ *
+ * Rules enforced:
+ *  - a falsy manager (none / cleared) is always allowed;
+ *  - the manager must be an existing employee in the same tenant;
+ *  - an employee cannot be their own manager;
+ *  - the assignment must not create a reporting cycle.
+ *
+ * @param {*} managerId            - proposed manager's _id (string/ObjectId) or falsy
+ * @param {object} opts
+ * @param {*}      [opts.selfId]   - the employee being edited (null/omitted on create)
+ * @param {Map<string,string>} opts.managerOf - employeeId → their current managerId,
+ *        for every employee in the tenant (existence + cycle source of truth)
+ * @returns {{ ok: true } | { ok: false, message: string }}
+ */
+function validateManagerAssignment(managerId, opts = {}) {
+  const { selfId = null, managerOf } = opts;
+  const mid = managerId ? String(managerId) : '';
+  if (!mid) return { ok: true };
+
+  const graph = managerOf instanceof Map ? managerOf : new Map();
+  if (!graph.has(mid)) {
+    return {
+      ok: false,
+      message: 'Manager must be an existing employee in your organisation',
+    };
+  }
+
+  const self = selfId ? String(selfId) : '';
+  if (self && mid === self) {
+    return { ok: false, message: 'An employee cannot be their own manager' };
+  }
+
+  // Walk up the chain from the proposed manager; reaching self means the new
+  // edge would close a loop. `seen` guards against any pre-existing cycle.
+  if (self) {
+    let cur = mid;
+    const seen = new Set();
+    while (cur) {
+      if (cur === self) {
+        return {
+          ok: false,
+          message: 'This manager assignment would create a reporting cycle',
+        };
+      }
+      if (seen.has(cur)) break;
+      seen.add(cur);
+      const up = graph.get(cur);
+      cur = up ? String(up) : '';
+    }
+  }
+
+  return { ok: true };
+}
+
+/**
  * Authorisation check for deleting an employee.
  * @param {object} target            - the user being deleted
  * @param {*}      requestingUserId   - id of the admin making the request
@@ -395,6 +453,7 @@ module.exports = {
   buildCreatePayload,
   buildUpdateChanges,
   buildEmployeeProfile,
+  validateManagerAssignment,
   canDeleteEmployee,
   GENDERS,
   MARITAL_STATUSES,

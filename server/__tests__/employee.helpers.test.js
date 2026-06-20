@@ -10,6 +10,7 @@ const {
   buildCreatePayload,
   buildUpdateChanges,
   buildEmployeeProfile,
+  validateManagerAssignment,
   canDeleteEmployee,
 } = require('../services/employee.helpers');
 
@@ -229,6 +230,63 @@ test('buildEmployeeProfile keeps the work section and nested address', () => {
   assert.strictEqual(p.work.workAddress.city, undefined);
   assert.strictEqual(p.work.workLocation, 'Building 2');
   assert.strictEqual(p.work.bogus, undefined);
+});
+
+// validateManagerAssignment — graph: a → b → c (a's manager is b, b's is c).
+const GRAPH = new Map([
+  ['a', 'b'],
+  ['b', 'c'],
+  ['c', ''],
+  ['d', ''],
+]);
+
+test('validateManagerAssignment allows no manager (create or clear)', () => {
+  assert.strictEqual(validateManagerAssignment('', { managerOf: GRAPH }).ok, true);
+  assert.strictEqual(
+    validateManagerAssignment(undefined, { selfId: 'a', managerOf: GRAPH }).ok,
+    true
+  );
+});
+
+test('validateManagerAssignment requires an existing tenant employee', () => {
+  const r = validateManagerAssignment('ghost', { selfId: 'd', managerOf: GRAPH });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /existing employee/i);
+});
+
+test('validateManagerAssignment rejects self-management', () => {
+  const r = validateManagerAssignment('a', { selfId: 'a', managerOf: GRAPH });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /own manager/i);
+});
+
+test('validateManagerAssignment rejects a reporting cycle', () => {
+  // c reporting to a would close a→b→c→a.
+  const r = validateManagerAssignment('a', { selfId: 'c', managerOf: GRAPH });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /cycle/i);
+});
+
+test('validateManagerAssignment accepts a valid manager', () => {
+  // d (no reports) reporting to a is fine.
+  assert.strictEqual(
+    validateManagerAssignment('a', { selfId: 'd', managerOf: GRAPH }).ok,
+    true
+  );
+  // On create (no self) any existing employee is allowed.
+  assert.strictEqual(
+    validateManagerAssignment('b', { selfId: null, managerOf: GRAPH }).ok,
+    true
+  );
+});
+
+test('validateManagerAssignment handles ObjectId-like values and a missing graph', () => {
+  assert.strictEqual(
+    validateManagerAssignment('a', { selfId: { toString: () => 'd' }, managerOf: GRAPH }).ok,
+    true
+  );
+  // No graph supplied → manager can't be proven to exist → rejected.
+  assert.strictEqual(validateManagerAssignment('a', {}).ok, false);
 });
 
 test('buildEmployeeProfile tolerates non-object input', () => {

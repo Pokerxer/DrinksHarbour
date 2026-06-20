@@ -11,14 +11,39 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const asyncHandler = require('../utils/asyncHandler');
 const {
+  EMPLOYEE_ROLES,
   buildEmployeeFilter,
   buildCreatePayload,
   buildUpdateChanges,
   buildEmployeeProfile,
+  validateManagerAssignment,
   canDeleteEmployee,
   isValidPin,
   sanitizeAvatar,
 } = require('../services/employee.helpers');
+
+/**
+ * Build the tenant's reporting graph: employeeId → their current managerId, for
+ * every non-deleted employee. Used to enforce that a `work.manager` points at a
+ * real colleague and never forms a cycle.
+ */
+async function loadManagerGraph(tenantId) {
+  const peers = await User.find({
+    tenant: tenantId,
+    role: { $in: EMPLOYEE_ROLES },
+    status: { $ne: 'deleted' },
+  })
+    .select('_id employeeProfile.work.manager')
+    .lean();
+  return new Map(
+    peers.map((p) => [
+      String(p._id),
+      p.employeeProfile?.work?.manager
+        ? String(p.employeeProfile.work.manager)
+        : '',
+    ])
+  );
+}
 
 // Fields safe to return to the client — never the password or PIN hash.
 const PUBLIC_FIELDS =
@@ -56,8 +81,10 @@ exports.listEmployees = asyncHandler(async (req, res) => {
     search: req.query.search,
   });
 
+  // Include only employeeProfile.work (manager + titles) — enough for the org
+  // chart and manager picker, without bulk-exposing sensitive HR fields.
   const employees = await User.find(filter)
-    .select(`${PUBLIC_FIELDS} posPinHash`)
+    .select(`${PUBLIC_FIELDS} posPinHash employeeProfile.work`)
     .sort({ createdAt: -1 })
     .lean();
 
@@ -113,7 +140,18 @@ exports.createEmployee = asyncHandler(async (req, res) => {
   }
 
   if (req.body.employeeProfile) {
-    userData.employeeProfile = buildEmployeeProfile(req.body.employeeProfile);
+    const profile = buildEmployeeProfile(req.body.employeeProfile);
+    const managerId = profile.work?.manager;
+    if (managerId) {
+      const check = validateManagerAssignment(managerId, {
+        selfId: null,
+        managerOf: await loadManagerGraph(tenantId),
+      });
+      if (!check.ok) {
+        return res.status(400).json({ success: false, message: check.message });
+      }
+    }
+    userData.employeeProfile = profile;
   }
 
   const user = await User.create(userData);
@@ -146,7 +184,18 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
   // Full-replace the HR profile when the client sends one (the edit form always
   // submits the complete profile object).
   if ('employeeProfile' in req.body) {
-    user.employeeProfile = buildEmployeeProfile(req.body.employeeProfile);
+    const profile = buildEmployeeProfile(req.body.employeeProfile);
+    const managerId = profile.work?.manager;
+    if (managerId) {
+      const check = validateManagerAssignment(managerId, {
+        selfId: user._id,
+        managerOf: await loadManagerGraph(tenantId),
+      });
+      if (!check.ok) {
+        return res.status(400).json({ success: false, message: check.message });
+      }
+    }
+    user.employeeProfile = profile;
     user.markModified('employeeProfile');
   }
 

@@ -304,6 +304,24 @@ const userSchema = new Schema(
       attendance: {
         rfidBadge: { type: String, trim: true },
       },
+      work: {
+        department: { type: String, trim: true },
+        jobPosition: { type: String, trim: true },
+        jobTitle: { type: String, trim: true },
+        // Reporting line: another employee in the same tenant. Existence,
+        // self-reference and cycles are enforced in the controller.
+        manager: { type: ObjectId, ref: 'User' },
+        workAddress: {
+          company: { type: String, trim: true },
+          street: { type: String, trim: true },
+          street2: { type: String, trim: true },
+          city: { type: String, trim: true },
+          zip: { type: String, trim: true },
+          country: { type: String, trim: true },
+        },
+        workLocation: { type: String, trim: true },
+        note: { type: String, trim: true },
+      },
       timezone: { type: String, trim: true, default: 'Africa/Lagos' },
     },
   },
