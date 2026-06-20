@@ -98,6 +98,24 @@ export const posApi = {
     );
   },
 
+  // Lightweight category/subcategory/brand map for every sub-product (not
+  // gated by visibleInPOS/limit). Used by purchases analytics for full
+  // attribution coverage.
+  async getProductMeta(token: string) {
+    return request<{
+      meta: {
+        _id: string;
+        categoryId: string | null;
+        categoryName: string | null;
+        subCategoryId: string | null;
+        subCategoryName: string | null;
+        brandId: string | null;
+        brandName: string | null;
+      }[];
+      total: number;
+    }>(`${API_URL}/api/pos/product-meta`, { headers: authHeaders(token) });
+  },
+
   async getPricelists(token: string, shopId?: string) {
     const qs = new URLSearchParams();
     if (shopId) qs.set('shopId', shopId);
@@ -153,9 +171,12 @@ export const posApi = {
   },
 
   async getHeldOrders(token: string) {
-    return request<{ orders: POSHoldOrder[] }>(`${API_URL}/api/pos/orders/held`, {
-      headers: authHeaders(token),
-    });
+    return request<{ orders: POSHoldOrder[] }>(
+      `${API_URL}/api/pos/orders/held`,
+      {
+        headers: authHeaders(token),
+      }
+    );
   },
 
   async recallHeldOrder(token: string, orderId: string) {

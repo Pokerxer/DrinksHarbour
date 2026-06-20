@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -20,6 +20,7 @@ import {
   PiArrowDown,
   PiArrowsDownUp,
   PiCaretRight,
+  PiCaretLeft,
   PiX,
   PiCheck,
   PiClock,
@@ -29,7 +30,7 @@ import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { vendorBillService } from '@/services/vendorBill.service';
 import type { VendorBill } from './types';
-import { STATUS_BADGE, statusLabel } from './types';
+import { STATUS_BADGE, statusLabel, fmtPrice } from './types';
 
 // ─── types ────────────────────────────────────────────────────────
 type StatusFilter = 'all' | 'draft' | 'posted' | 'paid' | 'overdue';
@@ -598,15 +599,38 @@ export default function PurchasesBills() {
   const [payBill, setPayBill] = useState<VendorBill | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const searchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const paramsRef = useRef({ page: 1, search: '', status: 'all' as StatusFilter, sortCol: 'billDate' as SortCol, sortDir: 'desc' as SortDir });
+
+  function syncParams() {
+    paramsRef.current = { page, search, status: statusFilter, sortCol, sortDir };
+  }
 
   const load = useCallback(async () => {
     if (!token) return;
+    syncParams();
+    const { page: p, search: q, status: s, sortCol: sc, sortDir: sd } = paramsRef.current;
     setLoading(true);
     try {
-      const res = await vendorBillService.getVendorBills(token, {
+      const queryParams: Record<string, string | number | undefined> = {
         vendor: vendorParam,
-      });
-      setBills(res.data ?? (res as any).bills ?? []);
+        page: p,
+        limit: 20,
+        sortField: sc === 'vendor' ? 'vendorName' : sc === 'total' ? 'totalAmount' : sc === 'amountDue' ? 'totalAmount' : sc,
+        sortDir: sd,
+      };
+      if (s && s !== 'all') queryParams.status = s;
+      if (q) queryParams.search = q;
+
+      const res = await vendorBillService.getVendorBills(token, queryParams as any);
+      setBills(res.data ?? []);
+      if (res.pagination) {
+        setTotalPages(res.pagination.totalPages);
+        setTotalCount(res.pagination.totalCount);
+      }
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to load bills');
     } finally {
@@ -614,16 +638,17 @@ export default function PurchasesBills() {
     }
   }, [token, vendorParam]);
 
+  // Re-fetch when pagination or sort changes
   useEffect(() => {
+    syncParams();
     load();
-  }, [load]);
+  }, [load, page, sortCol, sortDir]);
 
   function toggleSort(col: SortCol) {
-    if (sortCol === col) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else {
-      setSortCol(col);
-      setSortDir('asc');
-    }
+    const newDir = sortCol === col ? (sortDir === 'asc' ? 'desc' : 'asc') : 'asc';
+    setSortCol(col);
+    setSortDir(newDir);
+    setPage(1);
   }
 
   async function handleDelete(id: string) {
@@ -646,92 +671,36 @@ export default function PurchasesBills() {
     );
   }
 
+  function onSearchInput(val: string) {
+    setSearch(val);
+    clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      setPage(1);
+    }, 400);
+  }
+
+  function onStatusChange(key: StatusFilter) {
+    setStatusFilter(key);
+    setPage(1);
+  }
+
+  function goToPage(p: number) {
+    setPage(p);
+  }
+
   // ── derived ──────────────────────────────────────────────────────
   const now = useMemo(() => new Date(), []);
 
-  const tabCounts = useMemo(
-    () => ({
-      all: bills.length,
-      draft: bills.filter((b) => b.status === 'draft').length,
-      posted: bills.filter((b) => b.status === 'posted').length,
-      paid: bills.filter((b) => b.status === 'paid').length,
-      overdue: bills.filter(isOverdueFn).length,
-    }),
-    [bills]
-  );
-
-  const totalOwed = useMemo(
-    () => bills.reduce((s, b) => s + billAmountDue(b), 0),
-    [bills]
-  );
-
-  const paidThisMonth = useMemo(() => {
-    const m = now.getMonth();
-    const y = now.getFullYear();
-    return bills
-      .filter((b) => {
-        if (b.status !== 'paid' || !b.billDate) return false;
-        const d = new Date(b.billDate);
-        return d.getMonth() === m && d.getFullYear() === y;
-      })
-      .reduce((s, b) => s + billTotal(b), 0);
-  }, [bills, now]);
-
   const currency = bills[0]?.currency ?? 'NGN';
-
-  const tabFiltered = useMemo(() => {
-    if (statusFilter === 'draft')
-      return bills.filter((b) => b.status === 'draft');
-    if (statusFilter === 'posted')
-      return bills.filter((b) => b.status === 'posted');
-    if (statusFilter === 'paid')
-      return bills.filter((b) => b.status === 'paid');
-    if (statusFilter === 'overdue') return bills.filter(isOverdueFn);
-    return bills;
-  }, [bills, statusFilter]);
-
-  const filtered = useMemo(() => {
-    let list = tabFiltered;
-    if (search) {
-      const q = search.toLowerCase();
-      list = list.filter(
-        (b) =>
-          b.billNumber?.toLowerCase().includes(q) ||
-          b.vendorName?.toLowerCase().includes(q)
-      );
-    }
-    return [...list].sort((a, b) => {
-      let va: number | string = 0,
-        vb: number | string = 0;
-      if (sortCol === 'billNumber') {
-        va = a.billNumber ?? '';
-        vb = b.billNumber ?? '';
-      } else if (sortCol === 'vendor') {
-        va = a.vendorName ?? '';
-        vb = b.vendorName ?? '';
-      } else if (sortCol === 'status') {
-        va = a.status;
-        vb = b.status;
-      } else if (sortCol === 'total') {
-        va = a.total ?? 0;
-        vb = b.total ?? 0;
-      } else if (sortCol === 'amountDue') {
-        va = a.amountDue ?? 0;
-        vb = b.amountDue ?? 0;
-      } else if (sortCol === 'dueDate') {
-        va = a.dueDate ? new Date(a.dueDate).getTime() : 0;
-        vb = b.dueDate ? new Date(b.dueDate).getTime() : 0;
-      } else {
-        va = a.billDate ? new Date(a.billDate).getTime() : 0;
-        vb = b.billDate ? new Date(b.billDate).getTime() : 0;
-      }
-      const cmp =
-        typeof va === 'string'
-          ? va.localeCompare(vb as string)
-          : (va as number) - (vb as number);
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-  }, [tabFiltered, search, sortCol, sortDir]);
+  const overdueCount = bills.filter((b) => b.status === 'overdue').length;
+  const totalOwed = bills.reduce((s, b) => s + billAmountDue(b), 0);
+  const paidThisMonth = bills
+    .filter((b) => {
+      if (b.status !== 'paid' || !b.billDate) return false;
+      const d = new Date(b.billDate);
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    })
+    .reduce((s, b) => s + billTotal(b), 0);
 
   const Th = ({
     col,
@@ -822,7 +791,7 @@ export default function PurchasesBills() {
             icon: <PiWarning className="h-4 w-4" />,
             iconCls: 'text-red-600 bg-red-50',
             label: 'Overdue',
-            value: tabCounts.overdue,
+            value: overdueCount,
             fmt: (v: number) => String(v),
           },
           {
@@ -868,7 +837,7 @@ export default function PurchasesBills() {
             <button
               key={tab.key}
               type="button"
-              onClick={() => setStatusFilter(tab.key)}
+              onClick={() => onStatusChange(tab.key)}
               className={`relative flex shrink-0 items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${
                 statusFilter === tab.key
                   ? 'text-[#b20202] after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-[#b20202]'
@@ -884,7 +853,9 @@ export default function PurchasesBills() {
                       : 'bg-gray-100 text-gray-500'
                   }`}
                 >
-                  {tabCounts[tab.key]}
+                  {tab.key === 'all'
+                    ? (statusFilter === 'all' ? totalCount : bills.length)
+                    : bills.filter(b => tab.key === 'overdue' ? b.status === 'overdue' : b.status === tab.key).length}
                 </span>
               )}
             </button>
@@ -898,14 +869,14 @@ export default function PurchasesBills() {
           <PiMagnifyingGlass className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => onSearchInput(e.target.value)}
             placeholder="Search bill# or vendor…"
             className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-8 text-sm text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/15"
           />
           {search && (
             <button
               type="button"
-              onClick={() => setSearch('')}
+               onClick={() => { setSearch(''); load(); }}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
             >
               <PiX className="h-3.5 w-3.5" />
@@ -914,7 +885,7 @@ export default function PurchasesBills() {
         </div>
         {!loading && (
           <p className="shrink-0 text-sm text-gray-400">
-            {filtered.length} result{filtered.length !== 1 ? 's' : ''}
+            {bills.length} result{bills.length !== 1 ? 's' : ''}
           </p>
         )}
         <div className="ml-auto flex gap-0.5 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 p-0.5">
@@ -945,11 +916,11 @@ export default function PurchasesBills() {
               <SkeletonCard key={i} />
             ))}
           </div>
-        ) : filtered.length === 0 ? (
+        ) : bills.length === 0 ? (
           <EmptyState filter={statusFilter} />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((bill) => (
+            {bills.map((bill) => (
               <BillCard
                 key={bill._id}
                 bill={bill}
@@ -984,14 +955,14 @@ export default function PurchasesBills() {
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)
-              ) : filtered.length === 0 ? (
+              ) : bills.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-4">
                     <EmptyState filter={statusFilter} inline />
                   </td>
                 </tr>
               ) : (
-                filtered.map((bill) => {
+                bills.map((bill) => {
                   const overdue = isOverdueFn(bill);
                   const days = overdue ? daysOverdue(bill.dueDate) : 0;
                   const pct = paidPct(bill);
@@ -1187,32 +1158,66 @@ export default function PurchasesBills() {
             </tbody>
           </table>
 
-          {!loading && filtered.length > 0 && (
+          {!loading && bills.length > 0 && (
             <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50/50 px-4 py-2.5">
               <p className="text-xs text-gray-500">
-                {filtered.length} bill{filtered.length !== 1 ? 's' : ''}
+                Showing {bills.length} of {totalCount} bill{totalCount !== 1 ? 's' : ''}
               </p>
               <div className="flex items-center gap-4 text-xs">
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => goToPage(page - 1)}
+                      disabled={page <= 1}
+                      className="rounded border border-gray-200 px-2 py-1 text-gray-600 hover:bg-gray-100 disabled:opacity-30"
+                    >
+                      <PiCaretLeft className="h-3 w-3" />
+                    </button>
+                    {Array.from({ length: totalPages }, (_, i) => i + 1)
+                      .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+                      .map((p, idx, arr) => (
+                        <span key={p} className="flex items-center gap-1">
+                          {idx > 0 && arr[idx - 1] !== p - 1 && <span className="px-1 text-gray-300">…</span>}
+                          <button
+                            type="button"
+                            onClick={() => goToPage(p)}
+                            className={`min-w-[24px] rounded px-1.5 py-0.5 text-xs font-medium ${
+                              p === page
+                                ? 'bg-[#b20202] text-white'
+                                : 'text-gray-600 hover:bg-gray-100'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        </span>
+                      ))}
+                    <button
+                      type="button"
+                      onClick={() => goToPage(page + 1)}
+                      disabled={page >= totalPages}
+                      className="rounded border border-gray-200 px-2 py-1 text-gray-600 hover:bg-gray-100 disabled:opacity-30"
+                    >
+                      <PiCaretRight className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
                 <span className="text-gray-500">
                   Total:{' '}
                   <strong className="text-gray-800">
-                    {currency}{' '}
-                    {filtered
-                      .reduce((s, b) => s + billTotal(b), 0)
-                      .toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
+                    {fmtPrice(
+                      bills.reduce((s, b) => s + billTotal(b), 0),
+                      currency
+                    )}
                   </strong>
                 </span>
                 <span className="font-semibold text-red-600">
-                  Due: {currency}{' '}
-                  {filtered
-                    .reduce((s, b) => s + billAmountDue(b), 0)
-                    .toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
+                  Due:{' '}
+                  {fmtPrice(
+                    bills.reduce((s, b) => s + billAmountDue(b), 0),
+                    currency
+                  )}
                 </span>
               </div>
             </div>

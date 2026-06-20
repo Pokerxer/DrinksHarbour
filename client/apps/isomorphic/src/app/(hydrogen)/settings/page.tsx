@@ -4,7 +4,11 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import type { POSSettings, POSShop } from '@/app/shared/point-of-sale/types';
-import { warehouseService, type Warehouse } from '@/services/warehouse.service';
+import {
+  warehouseService,
+  type Warehouse,
+  type WarehouseSettings,
+} from '@/services/warehouse.service';
 import { purchaseOrderService } from '@/services/purchaseOrder.service';
 import type { PurchaseSettings } from '@/services/purchaseOrder.service';
 import toast from 'react-hot-toast';
@@ -34,6 +38,9 @@ import {
   PiCurrencyDollar,
   PiArrowUUpLeft,
   PiWarning,
+  PiWarehouse,
+  PiArrowsClockwise,
+  PiArrowsLeftRight,
 } from 'react-icons/pi';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -768,6 +775,11 @@ const MODULES = [
     label: 'Purchases',
     icon: <PiShoppingBag size={16} />,
   },
+  {
+    id: 'warehouses',
+    label: 'Warehouses',
+    icon: <PiWarehouse size={16} />,
+  },
 ] as const;
 
 type ModuleId = (typeof MODULES)[number]['id'];
@@ -860,6 +872,46 @@ const D_PURCH: PurchaseSettings = {
   defaultReceivingLocation: '',
 };
 
+const WAREHOUSE_ANCHORS = [
+  { id: 'wh_general', label: 'General', icon: <PiWarehouse size={12} /> },
+  { id: 'wh_stock', label: 'Stock Control', icon: <PiPackage size={12} /> },
+  {
+    id: 'wh_reorder',
+    label: 'Replenishment & Alerts',
+    icon: <PiArrowsClockwise size={12} />,
+  },
+  {
+    id: 'wh_transfers',
+    label: 'Transfers',
+    icon: <PiArrowsLeftRight size={12} />,
+  },
+  {
+    id: 'wh_batches',
+    label: 'Batches & Expiry',
+    icon: <PiWarning size={12} />,
+  },
+];
+
+const D_WH: WarehouseSettings = {
+  defaultWarehouse: '',
+  lowStockThreshold: 10,
+  valuationMethod: 'fifo',
+  allowNegativeStock: false,
+  batchTrackingEnabled: true,
+  nearExpiryDays: 30,
+  reorderPoint: 0,
+  reorderQuantity: 0,
+  flagBelowReorderPoint: false,
+  outOfStockAlert: true,
+  overstockCeiling: 0,
+  requireTransferApproval: false,
+  allowInterWarehouseTransfers: true,
+  transferApprovalThreshold: 0,
+  blockExpiredStock: false,
+  fefoPicking: false,
+  autoQuarantineExpired: false,
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Page
 // ─────────────────────────────────────────────────────────────────────────────
@@ -891,6 +943,8 @@ export default function SettingsPage() {
   const [savedBanks, setSavedBanks] = useState<BankAccount[]>([]);
   const [purch, setPurch] = useState<PurchaseSettings>(D_PURCH);
   const [savedPurch, setSavedPurch] = useState<PurchaseSettings>(D_PURCH);
+  const [wh, setWh] = useState<WarehouseSettings>(D_WH);
+  const [savedWh, setSavedWh] = useState<WarehouseSettings>(D_WH);
   const [shops, setShops] = useState<POSShop[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [shopForm, setShopForm] = useState({
@@ -920,14 +974,23 @@ export default function SettingsPage() {
     arrDirty(methods, savedMethods) ||
     arrDirty(terminals, savedTerminals) ||
     JSON.stringify(banks) !== JSON.stringify(savedBanks) ||
-    objDirty(purch, savedPurch);
+    objDirty(purch, savedPurch) ||
+    objDirty(wh, savedWh);
 
   // ── intersection observer for sidebar active anchor ───────────────────────
   useEffect(() => {
-    if (activeModule !== 'point_of_sale' && activeModule !== 'purchases')
+    if (
+      activeModule !== 'point_of_sale' &&
+      activeModule !== 'purchases' &&
+      activeModule !== 'warehouses'
+    )
       return;
     const anchors =
-      activeModule === 'purchases' ? PURCHASE_ANCHORS : POS_ANCHORS;
+      activeModule === 'purchases'
+        ? PURCHASE_ANCHORS
+        : activeModule === 'warehouses'
+          ? WAREHOUSE_ANCHORS
+          : POS_ANCHORS;
     const ids = anchors.map((a) => a.id);
     const els = ids
       .map((id) => document.getElementById(id))
@@ -957,16 +1020,29 @@ export default function SettingsPage() {
     if (!token) return;
     (async () => {
       try {
-        const [settingsRes, banksRes, shopsRes, purchRes] = await Promise.all([
-          posApi.getPOSSettings(token),
-          posApi.getBankAccounts(token),
-          posApi.listShops(token).catch(() => ({ shops: [] })),
-          purchaseOrderService.getPurchaseSettings(token).catch(() => null),
-        ]);
+        const [settingsRes, banksRes, shopsRes, purchRes, whRes] =
+          await Promise.all([
+            posApi.getPOSSettings(token),
+            posApi.getBankAccounts(token),
+            posApi.listShops(token).catch(() => ({ shops: [] })),
+            purchaseOrderService.getPurchaseSettings(token).catch(() => null),
+            warehouseService.getWarehouseSettings(token).catch(() => null),
+          ]);
         if (purchRes?.data?.purchaseSettings) {
           const p = { ...D_PURCH, ...purchRes.data.purchaseSettings };
           setPurch(p);
           setSavedPurch({ ...p });
+        }
+        if (whRes?.data?.warehouseSettings) {
+          const w = {
+            ...D_WH,
+            ...whRes.data.warehouseSettings,
+            // server may send null for an unset default warehouse
+            defaultWarehouse:
+              whRes.data.warehouseSettings.defaultWarehouse ?? '',
+          };
+          setWh(w);
+          setSavedWh({ ...w });
         }
         const s = settingsRes.posSettings ?? {};
         const loaded: PosState = {
@@ -1101,6 +1177,10 @@ export default function SettingsPage() {
         await purchaseOrderService.updatePurchaseSettings(token, purch);
         setSavedPurch({ ...purch });
       }
+      if (objDirty(wh, savedWh)) {
+        await warehouseService.updateWarehouseSettings(token, wh);
+        setSavedWh({ ...wh });
+      }
       setSavedPos({ ...pos });
       setSavedMethods([...methods]);
       setSavedTerminals([...terminals]);
@@ -1119,6 +1199,7 @@ export default function SettingsPage() {
     setTerminals([...savedTerminals]);
     setBanks(savedBanks.map((b) => ({ ...b })));
     setPurch({ ...savedPurch });
+    setWh({ ...savedWh });
   }
 
   function setPurchField<K extends keyof PurchaseSettings>(
@@ -1126,6 +1207,13 @@ export default function SettingsPage() {
     v: PurchaseSettings[K]
   ) {
     setPurch((p) => ({ ...p, [k]: v }));
+  }
+
+  function setWhField<K extends keyof WarehouseSettings>(
+    k: K,
+    v: WarehouseSettings[K]
+  ) {
+    setWh((p) => ({ ...p, [k]: v }));
   }
 
   function setField<K extends keyof PosState>(k: K, v: PosState[K]) {
@@ -1265,14 +1353,18 @@ export default function SettingsPage() {
           ))}
         </div>
 
-        {(activeModule === 'point_of_sale' || activeModule === 'purchases') && (
+        {(activeModule === 'point_of_sale' ||
+          activeModule === 'purchases' ||
+          activeModule === 'warehouses') && (
           <div className="mt-3 border-t border-gray-100 px-3 pb-6 pt-4">
             <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
               Jump to
             </p>
             {(activeModule === 'purchases'
               ? PURCHASE_ANCHORS
-              : POS_ANCHORS
+              : activeModule === 'warehouses'
+                ? WAREHOUSE_ANCHORS
+                : POS_ANCHORS
             ).map((a) => (
               <button
                 key={a.id}
@@ -1352,7 +1444,9 @@ export default function SettingsPage() {
                 ? 'General Settings'
                 : activeModule === 'purchases'
                   ? 'Purchases'
-                  : 'Point of Sale'}
+                  : activeModule === 'warehouses'
+                    ? 'Warehouses'
+                    : 'Point of Sale'}
             </h1>
             {dirty && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-amber-200">
@@ -1371,6 +1465,12 @@ export default function SettingsPage() {
             <p className="mt-0.5 text-xs text-gray-400">
               Configure approval, billing, and defaults for the purchase
               workflow.
+            </p>
+          )}
+          {activeModule === 'warehouses' && (
+            <p className="mt-0.5 text-xs text-gray-400">
+              Configure defaults, stock control, and batch tracking across your
+              warehouses.
             </p>
           )}
         </div>
@@ -1557,6 +1657,259 @@ export default function SettingsPage() {
                     }
                     placeholder="e.g. Main Warehouse"
                     maxLength={200}
+                  />
+                </SectionCard>
+              )}
+            </div>
+          )}
+
+          {activeModule === 'warehouses' && !loading && (
+            <div className="mx-auto max-w-3xl space-y-3 px-6 py-6">
+              {vis('warehouse default low stock threshold general') && (
+                <SectionCard
+                  id="wh_general"
+                  icon={<PiWarehouse size={16} />}
+                  title="General"
+                >
+                  <Row
+                    label="Default warehouse"
+                    sub="Pre-selected warehouse for new stock operations and receiving."
+                  >
+                    <select
+                      value={wh.defaultWarehouse}
+                      onChange={(e) =>
+                        setWhField('defaultWarehouse', e.target.value)
+                      }
+                      className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-900 shadow-sm focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
+                    >
+                      <option value="">No default</option>
+                      {warehouses.map((w) => (
+                        <option key={w._id} value={w._id}>
+                          {w.name}
+                          {w.code ? ` (${w.code})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </Row>
+                  <Row
+                    label="Low-stock threshold"
+                    sub="Stock at or below this quantity is flagged low across warehouse views."
+                  >
+                    <NumInput
+                      value={wh.lowStockThreshold}
+                      onChange={(v) =>
+                        setWhField(
+                          'lowStockThreshold',
+                          Math.max(0, Math.round(v))
+                        )
+                      }
+                      min={0}
+                      step={1}
+                      suffix="units"
+                    />
+                  </Row>
+                </SectionCard>
+              )}
+
+              {vis('valuation fifo average negative stock control') && (
+                <SectionCard
+                  id="wh_stock"
+                  icon={<PiPackage size={16} />}
+                  title="Stock Control"
+                >
+                  <Row
+                    label="Valuation method"
+                    sub="How inventory cost is calculated when stock is consumed."
+                  >
+                    <span />
+                  </Row>
+                  <RadioRow
+                    label="FIFO"
+                    sub="First-in, first-out — consume the oldest stock first"
+                    name="wh_valuation"
+                    value="fifo"
+                    checked={wh.valuationMethod === 'fifo'}
+                    onChange={() => setWhField('valuationMethod', 'fifo')}
+                  />
+                  <RadioRow
+                    label="Average cost"
+                    sub="Weighted average of all stock on hand"
+                    name="wh_valuation"
+                    value="average"
+                    checked={wh.valuationMethod === 'average'}
+                    onChange={() => setWhField('valuationMethod', 'average')}
+                  />
+                  <CbRow
+                    label="Allow negative stock"
+                    sub="Permit issuing or transferring more than the quantity on hand. Turn off to block operations that would drive stock below zero."
+                    checked={wh.allowNegativeStock}
+                    onChange={(v) => setWhField('allowNegativeStock', v)}
+                  />
+                </SectionCard>
+              )}
+
+              {vis('reorder point quantity replenishment overstock alert') && (
+                <SectionCard
+                  id="wh_reorder"
+                  icon={<PiArrowsClockwise size={16} />}
+                  title="Replenishment & Alerts"
+                >
+                  <Row
+                    label="Reorder point"
+                    sub="Default quantity at or below which an item is due for reorder."
+                  >
+                    <NumInput
+                      value={wh.reorderPoint}
+                      onChange={(v) =>
+                        setWhField('reorderPoint', Math.max(0, Math.round(v)))
+                      }
+                      min={0}
+                      step={1}
+                      suffix="units"
+                    />
+                  </Row>
+                  <Row
+                    label="Reorder quantity"
+                    sub="Default quantity suggested when an item is reordered."
+                  >
+                    <NumInput
+                      value={wh.reorderQuantity}
+                      onChange={(v) =>
+                        setWhField(
+                          'reorderQuantity',
+                          Math.max(0, Math.round(v))
+                        )
+                      }
+                      min={0}
+                      step={1}
+                      suffix="units"
+                    />
+                  </Row>
+                  <CbRow
+                    label="Flag items below reorder point"
+                    sub="Highlight items at or below the reorder point in warehouse views, alongside the low-stock flag."
+                    checked={wh.flagBelowReorderPoint}
+                    onChange={(v) => setWhField('flagBelowReorderPoint', v)}
+                  />
+                  <CbRow
+                    label="Out-of-stock alerts"
+                    sub="Surface an alert when an item reaches zero on hand."
+                    checked={wh.outOfStockAlert}
+                    onChange={(v) => setWhField('outOfStockAlert', v)}
+                  />
+                  <Row
+                    label="Overstock ceiling"
+                    sub="On-hand quantity above which an item is flagged overstocked. Set 0 to disable."
+                  >
+                    <NumInput
+                      value={wh.overstockCeiling}
+                      onChange={(v) =>
+                        setWhField(
+                          'overstockCeiling',
+                          Math.max(0, Math.round(v))
+                        )
+                      }
+                      min={0}
+                      step={1}
+                      suffix="units"
+                    />
+                  </Row>
+                </SectionCard>
+              )}
+
+              {vis(
+                'transfer approval inter-warehouse move stock threshold'
+              ) && (
+                <SectionCard
+                  id="wh_transfers"
+                  icon={<PiArrowsLeftRight size={16} />}
+                  title="Transfers"
+                >
+                  <CbRow
+                    label="Allow inter-warehouse transfers"
+                    sub="Permit moving stock between warehouses. Turn off to lock stock to its warehouse."
+                    checked={wh.allowInterWarehouseTransfers}
+                    onChange={(v) =>
+                      setWhField('allowInterWarehouseTransfers', v)
+                    }
+                  />
+                  <CbRow
+                    label="Require transfer approval"
+                    sub="Stock transfers must be approved before they are executed."
+                    checked={wh.requireTransferApproval}
+                    onChange={(v) => setWhField('requireTransferApproval', v)}
+                  />
+                  {wh.requireTransferApproval && (
+                    <Row
+                      label="Approval threshold"
+                      sub="Only transfers at or above this value need approval. Set 0 to require approval for every transfer."
+                      indent
+                    >
+                      <NumInput
+                        value={wh.transferApprovalThreshold}
+                        onChange={(v) =>
+                          setWhField(
+                            'transferApprovalThreshold',
+                            Math.max(0, Math.round(v))
+                          )
+                        }
+                        min={0}
+                        step={1000}
+                      />
+                    </Row>
+                  )}
+                </SectionCard>
+              )}
+
+              {vis('batch expiry tracking near warning days') && (
+                <SectionCard
+                  id="wh_batches"
+                  icon={<PiWarning size={16} />}
+                  title="Batches & Expiry"
+                >
+                  <CbRow
+                    label="Track batches & expiry"
+                    sub="Record batch numbers and expiry dates on received stock for traceability."
+                    checked={wh.batchTrackingEnabled}
+                    onChange={(v) => setWhField('batchTrackingEnabled', v)}
+                  />
+                  {wh.batchTrackingEnabled && (
+                    <Row
+                      label="Near-expiry warning"
+                      sub="Highlight batches this many days before they expire. Set 0 to disable."
+                      indent
+                    >
+                      <NumInput
+                        value={wh.nearExpiryDays}
+                        onChange={(v) =>
+                          setWhField(
+                            'nearExpiryDays',
+                            Math.min(365, Math.max(0, Math.round(v)))
+                          )
+                        }
+                        min={0}
+                        max={365}
+                        suffix="days"
+                      />
+                    </Row>
+                  )}
+                  <CbRow
+                    label="Block expired stock"
+                    sub="Prevent selling or picking stock whose batch has passed its expiry date."
+                    checked={wh.blockExpiredStock}
+                    onChange={(v) => setWhField('blockExpiredStock', v)}
+                  />
+                  <CbRow
+                    label="FEFO picking"
+                    sub="Prefer first-expired-first-out — pick the batch closest to expiry first."
+                    checked={wh.fefoPicking}
+                    onChange={(v) => setWhField('fefoPicking', v)}
+                  />
+                  <CbRow
+                    label="Auto-quarantine expired batches"
+                    sub="Automatically move batches out of available stock once they expire."
+                    checked={wh.autoQuarantineExpired}
+                    onChange={(v) => setWhField('autoQuarantineExpired', v)}
                   />
                 </SectionCard>
               )}

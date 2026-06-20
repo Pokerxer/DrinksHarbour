@@ -34,6 +34,7 @@ const {
   listPOSStaff,
   // Products
   getPOSProducts,
+  getPOSProductMeta,
   // Orders
   createPOSOrder,
   holdPOSOrder,
@@ -99,6 +100,7 @@ router.get('/staff',             listPOSStaff);  // staff grid (public, no secre
 router.get('/session-info',                   protectPOSOrAdmin, getPOSSessionInfo);
 router.get('/notifications',                  protectPOSOrAdmin, getPOSNotifications);
 router.get('/products',                       protectPOSOrAdmin, getPOSProducts);
+router.get('/product-meta',                   protectPOSOrAdmin, getPOSProductMeta);
 router.get('/orders',                         protectPOSOrAdmin, getAllPOSOrders);
 router.post('/orders',                        protectPOS, requirePOSPermission('pos:sell'),   createPOSOrder);
 router.post('/orders/hold',                   protectPOS, requirePOSPermission('pos:sell'),   holdPOSOrder);

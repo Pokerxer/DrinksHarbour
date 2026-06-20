@@ -273,6 +273,60 @@ const tenantSchema = new Schema(
     },
 
     // ────────────────────────────────────────────────
+    // Warehouse Settings
+    // ────────────────────────────────────────────────
+    warehouseSettings: {
+      // Pre-selected warehouse for new stock operations (null = none)
+      defaultWarehouse: {
+        type: Schema.Types.ObjectId,
+        ref: 'Warehouse',
+        default: null,
+      },
+      // Global low-stock threshold for warehouse stock highlighting
+      lowStockThreshold: { type: Number, min: 0, default: 10 },
+      // Inventory valuation method
+      valuationMethod: {
+        type: String,
+        enum: ['fifo', 'average'],
+        default: 'fifo',
+      },
+      // Allow stock to go below zero on issue/transfer
+      allowNegativeStock: { type: Boolean, default: false },
+      // Track batches and expiry dates on received stock
+      batchTrackingEnabled: { type: Boolean, default: true },
+      // Warn when a batch is within this many days of expiry
+      nearExpiryDays: { type: Number, min: 0, max: 365, default: 30 },
+
+      // ── Replenishment & alerts ────────────────────────────────────────────
+      // Global default reorder point; items at/below are due for reorder
+      reorderPoint: { type: Number, min: 0, default: 0 },
+      // Default quantity suggested when reordering
+      reorderQuantity: { type: Number, min: 0, default: 0 },
+      // Flag items at/below the reorder point in warehouse views
+      flagBelowReorderPoint: { type: Boolean, default: false },
+      // Surface an alert when an item reaches zero on hand
+      outOfStockAlert: { type: Boolean, default: true },
+      // Max on-hand before an item is flagged overstocked (0 = disabled)
+      overstockCeiling: { type: Number, min: 0, default: 0 },
+
+      // ── Transfers ─────────────────────────────────────────────────────────
+      // Require approval before a stock transfer is executed
+      requireTransferApproval: { type: Boolean, default: false },
+      // Permit moving stock between warehouses
+      allowInterWarehouseTransfers: { type: Boolean, default: true },
+      // Transfers at/above this value need approval (0 = all when approval on)
+      transferApprovalThreshold: { type: Number, min: 0, default: 0 },
+
+      // ── Expiry enforcement ────────────────────────────────────────────────
+      // Block selling/picking stock that has expired
+      blockExpiredStock: { type: Boolean, default: false },
+      // Prefer first-expired-first-out when picking stock
+      fefoPicking: { type: Boolean, default: false },
+      // Automatically quarantine batches once they expire
+      autoQuarantineExpired: { type: Boolean, default: false },
+    },
+
+    // ────────────────────────────────────────────────
     // POS Settings
     // ────────────────────────────────────────────────
     posSettings: {

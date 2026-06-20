@@ -131,24 +131,50 @@ const getVendorBills = asyncHandler(async (req, res) => {
 
   // Query parameters
   const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
+  const limit = parseInt(req.query.limit) || 20;
   const status = req.query.status;
   const vendor = req.query.vendor;
+  const purchaseOrder = req.query.purchaseOrder;
   const startDate = req.query.startDate;
   const endDate = req.query.endDate;
+  const search = req.query.search;
+  const allowedSortFields = ['billNumber', 'vendorName', 'status', 'totalAmount', 'billDate', 'dueDate', 'createdAt'];
+  const sortField = allowedSortFields.includes(req.query.sortField) ? req.query.sortField : 'createdAt';
+  const sortDir = req.query.sortDir === 'asc' ? 1 : -1;
+
+  // Auto-mark overdue bills (past due + unpaid)
+  const now = new Date();
+  await VendorBill.updateMany(
+    {
+      tenant: tenantId,
+      dueDate: { $lt: now },
+      status: { $in: ['confirmed', 'partial'] },
+    },
+    { $set: { status: 'overdue' } }
+  );
 
   // Build filter
   const filter = { tenant: tenantId };
   if (status) filter.status = status;
   if (vendor) filter.vendor = vendor;
+  if (purchaseOrder) filter.purchaseOrder = purchaseOrder;
   if (startDate || endDate) {
     filter.billDate = {};
     if (startDate) filter.billDate.$gte = new Date(startDate);
     if (endDate) filter.billDate.$lte = new Date(endDate);
   }
+  if (search) {
+    filter.$or = [
+      { billNumber: { $regex: search, $options: 'i' } },
+      { vendorName: { $regex: search, $options: 'i' } },
+    ];
+  }
+
+  const sortObj = {};
+  sortObj[sortField] = sortDir;
 
   const vendorBills = await VendorBill.find(filter)
-    .sort({ createdAt: -1 })
+    .sort(sortObj)
     .skip((page - 1) * limit)
     .limit(limit)
     .populate("vendor", "name")
@@ -282,9 +308,26 @@ const recordPayment = asyncHandler(async (req, res) => {
     throw new NotFoundError("Vendor Bill not found");
   }
 
+  if (vendorBill.status === "paid" || vendorBill.status === "cancelled") {
+    throw new ValidationError(`Cannot record payment on a ${vendorBill.status} bill`);
+  }
+
+  const remaining = Math.round((vendorBill.totalAmount - (vendorBill.paidAmount || 0)) * 100) / 100;
+  const payAmount = amount != null ? Math.round(amount * 100) / 100 : remaining;
+
+  if (payAmount <= 0) {
+    throw new ValidationError("Payment amount must be greater than zero");
+  }
+
+  if (payAmount > remaining) {
+    throw new ValidationError(
+      `Payment amount (${payAmount.toFixed(2)}) exceeds remaining balance (${remaining.toFixed(2)})`
+    );
+  }
+
   // Add payment
   const payment = {
-    amount: amount || vendorBill.remainingAmount,
+    amount: payAmount,
     date: date || new Date(),
     method,
     reference,
@@ -293,7 +336,7 @@ const recordPayment = asyncHandler(async (req, res) => {
   };
 
   vendorBill.payments.push(payment);
-  vendorBill.paidAmount = (vendorBill.paidAmount || 0) + payment.amount;
+  vendorBill.paidAmount = (vendorBill.paidAmount || 0) + payAmount;
 
   // Update status based on payment
   if (vendorBill.paidAmount >= vendorBill.totalAmount) {

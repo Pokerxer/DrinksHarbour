@@ -34,7 +34,7 @@ import {
   PiFloppyDisk,
   PiTable,
 } from 'react-icons/pi';
-import type { PurchaseOrder } from '@/services/purchaseOrder.service';
+import type { StockRow } from '@/services/warehouseStock.service';
 import {
   PALETTE,
   fmtAxisVal,
@@ -49,7 +49,7 @@ import {
   type ChartType,
   type GroupByKey,
   type HierPivotResult,
-} from './purchases-analytics-helpers';
+} from './warehouse-analysis-helpers';
 
 // ── Dropdown primitives (matches POS analysis styling) ────────────────────────
 
@@ -230,7 +230,7 @@ function EmptyState() {
         <PiWarning className="h-5 w-5 text-[#b20202]/40" />
       </span>
       <p className="text-sm text-gray-500">
-        No purchase orders match the current filters
+        No stock lines match the current filters
       </p>
     </div>
   );
@@ -253,7 +253,7 @@ function TableView({
   measureLabel: string;
   totalValue: number;
   totalOrders: number;
-  onRowClick: (label: string, orders: PurchaseOrder[]) => void;
+  onRowClick: (label: string, orders: StockRow[]) => void;
 }) {
   let cumulative = 0;
   return (
@@ -268,7 +268,7 @@ function TableView({
               {groupLabel}
             </th>
             <th className="px-4 py-2.5 text-right font-medium text-gray-500">
-              Orders
+              Lines
             </th>
             <th className="px-4 py-2.5 text-right font-medium text-gray-500">
               {measureLabel}
@@ -309,12 +309,12 @@ function TableView({
                   {fmtMeasureVal(row.value, measure)}
                 </td>
                 <td className="px-4 py-2.5 text-right text-gray-500">
-                  {totalValue > 0 && measure !== 'avg_order'
+                  {totalValue > 0 && true
                     ? `${((row.value / totalValue) * 100).toFixed(1)}%`
                     : '—'}
                 </td>
                 <td className="px-4 py-2.5 text-right text-gray-500">
-                  {totalValue > 0 && measure !== 'avg_order'
+                  {totalValue > 0 && true
                     ? `${((cumulative / totalValue) * 100).toFixed(1)}%`
                     : '—'}
                 </td>
@@ -322,7 +322,7 @@ function TableView({
             );
           })}
         </tbody>
-        {measure !== 'avg_order' && (
+        {true && (
           <tfoot>
             <tr className="border-t border-gray-200 bg-gray-50 font-semibold">
               <td />
@@ -350,7 +350,7 @@ function PieView({
 }: {
   data: GroupRow[];
   measure: Measure;
-  onSliceClick: (label: string, orders: PurchaseOrder[]) => void;
+  onSliceClick: (label: string, orders: StockRow[]) => void;
 }) {
   return (
     <div className="px-3 py-4" style={{ height: 420 }}>
@@ -418,7 +418,7 @@ function LineView({
   data: GroupRow[];
   measure: Measure;
   measureLabel: string;
-  onPointClick: (label: string, orders: PurchaseOrder[]) => void;
+  onPointClick: (label: string, orders: StockRow[]) => void;
 }) {
   const values = data.map((r) => r.value);
   const total = values.reduce((s, v) => s + v, 0);
@@ -508,7 +508,7 @@ function BarTooltip({
   const row = payload[0].payload;
   const val = row.value;
   const pct =
-    totalValue > 0 && measure !== 'avg_order'
+    totalValue > 0 && true
       ? ((val / totalValue) * 100).toFixed(1)
       : null;
   return (
@@ -518,9 +518,9 @@ function BarTooltip({
         {fmtMeasureVal(val, measure)}
       </p>
       {pct && <p className="text-[11px] text-gray-400">{pct}% of total</p>}
-      {row.orders > 0 && measure !== 'count' && (
+      {row.orders > 0 && true && (
         <p className="text-[10px] text-gray-400">
-          {row.orders} order{row.orders !== 1 ? 's' : ''}
+          {row.orders} line{row.orders !== 1 ? 's' : ''}
         </p>
       )}
     </div>
@@ -540,7 +540,7 @@ function BarView({
   measure: Measure;
   measureLabel: string;
   totalValue: number;
-  onBarClick: (label: string, orders: PurchaseOrder[]) => void;
+  onBarClick: (label: string, orders: StockRow[]) => void;
 }) {
   const manyItems = data.length > 8;
   const height = manyItems ? Math.max(320, data.length * 32) : 420;
@@ -619,7 +619,7 @@ function BarView({
             }
           />
           {avg > 0 &&
-            measure !== 'avg_order' &&
+            true &&
             (manyItems ? (
               <ReferenceLine
                 x={avg}
@@ -682,7 +682,7 @@ export function MainChart({
   measureLabel: string;
   totalValue: number;
   totalOrders: number;
-  onBarClick: (label: string, orders: PurchaseOrder[]) => void;
+  onBarClick: (label: string, orders: StockRow[]) => void;
 }) {
   if (data.length === 0) return <EmptyState />;
 
@@ -797,11 +797,11 @@ function StackedTableView({
   series: string[];
   measure: Measure;
   groupLabel: string;
-  orderMap: Record<string, Record<string, PurchaseOrder[]>>;
+  orderMap: Record<string, Record<string, StockRow[]>>;
   onCellClick: (
     rowLabel: string,
     seriesKey: string,
-    orders: PurchaseOrder[]
+    orders: StockRow[]
   ) => void;
 }) {
   return (
@@ -899,11 +899,11 @@ function StackedLineView({
   series: string[];
   measure: Measure;
   measureLabel: string;
-  orderMap: Record<string, Record<string, PurchaseOrder[]>>;
+  orderMap: Record<string, Record<string, StockRow[]>>;
   onCellClick: (
     rowLabel: string,
     seriesKey: string,
-    orders: PurchaseOrder[]
+    orders: StockRow[]
   ) => void;
 }) {
   return (
@@ -965,11 +965,11 @@ function StackedBarView({
   series: string[];
   measure: Measure;
   measureLabel: string;
-  orderMap: Record<string, Record<string, PurchaseOrder[]>>;
+  orderMap: Record<string, Record<string, StockRow[]>>;
   onCellClick: (
     rowLabel: string,
     seriesKey: string,
-    orders: PurchaseOrder[]
+    orders: StockRow[]
   ) => void;
 }) {
   const manyItems = rows.length > 8;
@@ -1115,11 +1115,11 @@ export function StackedChart({
   measure: Measure;
   groupLabel: string;
   measureLabel: string;
-  orderMap: Record<string, Record<string, PurchaseOrder[]>>;
+  orderMap: Record<string, Record<string, StockRow[]>>;
   onSegmentClick: (
     rowLabel: string,
     seriesKey: string,
-    orders: PurchaseOrder[]
+    orders: StockRow[]
   ) => void;
 }) {
   if (rows.length === 0) return <EmptyState />;
@@ -1478,7 +1478,7 @@ export function PivotView({
   setPivotRowSearch: Dispatch<SetStateAction<string>>;
   setExpandedRows: Dispatch<SetStateAction<Set<string>>>;
   setExpandedCols: Dispatch<SetStateAction<Set<string>>>;
-  onCellClick: (orders: PurchaseOrder[], title: string) => void;
+  onCellClick: (orders: StockRow[], title: string) => void;
 }) {
   const p = pivotData;
 
@@ -1600,7 +1600,7 @@ export function PivotView({
           <div className="text-[10px] text-gray-400">{pct.toFixed(1)}%</div>
         )}
         {pivotShowOrders && ords > 0 && !isTotal && (
-          <div className="text-[10px] text-gray-300">{ords} ord</div>
+          <div className="text-[10px] text-gray-300">{ords} ln</div>
         )}
       </td>
     );
@@ -1760,7 +1760,7 @@ export function PivotView({
           Heat map
         </button>
 
-        {/* Show orders toggle */}
+        {/* Show lines toggle */}
         <button
           type="button"
           onClick={() => setPivotShowOrders((s) => !s)}
@@ -1771,7 +1771,7 @@ export function PivotView({
           }`}
         >
           <PiShoppingCart className="h-3 w-3" />
-          Orders
+          Lines
         </button>
 
         {/* Row search */}
@@ -1899,7 +1899,7 @@ export function PivotView({
                   </div>
                   {pivotShowOrders && (
                     <div className="text-[10px] text-gray-300">
-                      {p.getOrderCount([], [])} ord
+                      {p.getOrderCount([], [])} ln
                     </div>
                   )}
                 </th>

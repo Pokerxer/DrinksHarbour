@@ -8,10 +8,18 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  ReferenceLine,
+  LabelList,
 } from 'recharts';
 import type { PurchaseAnalyticsSummary } from '@/services/purchaseAnalytics.service';
 import { fraunces } from './purchases-fonts';
-import { fmtNaira, fmtCompact, PALETTE } from './purchases-analytics-helpers';
+import {
+  fmtNaira,
+  fmtCompact,
+  fmtDataLabel,
+  PALETTE,
+  type GroupRow,
+} from './purchases-analytics-helpers';
 
 const STATUS_META: {
   key: keyof PurchaseAnalyticsSummary['statusBreakdown'];
@@ -157,15 +165,59 @@ function StatusBreakdownCard({
   );
 }
 
+function MonthlyTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: {
+    value: number;
+    payload: { amount: number; prevAmount: number | null };
+  }[];
+  label?: string;
+}) {
+  if (!active || !payload?.length) {
+    return <div style={{ display: 'none' }} />;
+  }
+  const d = payload[0].payload;
+  return (
+    <div className="rounded-xl border border-[#ece4d6] bg-white px-3 py-2 shadow-lg">
+      <p className="text-xs font-semibold text-[#2a2420]">{label}</p>
+      <p className="mt-0.5 text-sm font-bold tabular-nums text-[#b20202]">
+        {fmtNaira(d.amount)}
+      </p>
+      {d.prevAmount != null && d.prevAmount > 0 && (
+        <p
+          className={`mt-0.5 text-[11px] ${
+            d.amount >= d.prevAmount ? 'text-emerald-600' : 'text-red-500'
+          }`}
+        >
+          {d.amount >= d.prevAmount ? '▲' : '▼'}{' '}
+          {Math.abs(((d.amount - d.prevAmount) / d.prevAmount) * 100).toFixed(
+            1
+          )}
+          % vs prev month
+        </p>
+      )}
+    </div>
+  );
+}
+
 function MonthlyTrendCard({
   trend,
 }: {
   trend: PurchaseAnalyticsSummary['monthlyTrend'];
 }) {
-  const data = (trend ?? []).map((m) => ({
+  const raw = trend ?? [];
+  const data = raw.map((m, i, arr) => ({
     label: monthLabel(m.month),
     amount: m.amount,
+    prevAmount: i > 0 ? arr[i - 1].amount : null,
   }));
+  const avg =
+    data.length >= 2 ? data.reduce((s, d) => s + d.amount, 0) / data.length : 0;
+
   return (
     <div className="flex h-full flex-col rounded-2xl border border-[#ece4d6] bg-white p-5 shadow-sm">
       <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#b20202]/70">
@@ -185,8 +237,14 @@ function MonthlyTrendCard({
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={data}
-              margin={{ top: 8, right: 4, left: 0, bottom: 0 }}
+              margin={{ top: 20, right: 4, left: 0, bottom: 0 }}
             >
+              <defs>
+                <linearGradient id="mt-grad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#b20202" stopOpacity={0.7} />
+                  <stop offset="100%" stopColor="#b20202" stopOpacity={1} />
+                </linearGradient>
+              </defs>
               <CartesianGrid
                 strokeDasharray="3 3"
                 stroke="#f0ebe3"
@@ -205,15 +263,34 @@ function MonthlyTrendCard({
                 tickLine={false}
                 width={52}
               />
-              <Tooltip
-                formatter={(v: number) => fmtNaira(v)}
-                contentStyle={{
-                  borderRadius: 12,
-                  border: '1px solid #ece4d6',
-                  fontSize: 12,
-                }}
-              />
-              <Bar dataKey="amount" fill="#b20202" radius={[6, 6, 0, 0]} />
+              <Tooltip content={<MonthlyTooltip />} />
+              {avg > 0 && (
+                <ReferenceLine
+                  y={avg}
+                  stroke="#b20202"
+                  strokeDasharray="4 4"
+                  strokeWidth={1.2}
+                  strokeOpacity={0.5}
+                  label="Avg"
+                />
+              )}
+              <Bar
+                dataKey="amount"
+                fill="url(#mt-grad)"
+                radius={[6, 6, 0, 0]}
+                animationDuration={600}
+                animationBegin={0}
+              >
+                <LabelList
+                  dataKey="amount"
+                  position="top"
+                  offset={4}
+                  formatter={(v: number) =>
+                    v > 0 ? fmtDataLabel(v, 'total_cost') : ''
+                  }
+                  style={{ fontSize: 10, fontWeight: 600, fill: '#4a3f3a' }}
+                />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -271,10 +348,63 @@ function SizeBreakdownCard({
   );
 }
 
+function TopCategoriesCard({ rows }: { rows: GroupRow[] }) {
+  const top = (rows ?? []).slice(0, 6);
+  const max = top.reduce((m, r) => Math.max(m, r.value), 0);
+  return (
+    <div className="flex h-full flex-col rounded-2xl border border-[#ece4d6] bg-white p-5 shadow-sm">
+      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#b20202]/70">
+        By Category
+      </p>
+      <h2
+        className={`${fraunces.className} text-base font-semibold text-[#2a2420]`}
+      >
+        Top Categories
+      </h2>
+      {top.length === 0 ? (
+        <div className="flex flex-1 items-center justify-center py-10 text-sm text-gray-400">
+          No category data yet
+        </div>
+      ) : (
+        <div className="mt-4 flex flex-col gap-3">
+          {top.map((r, i) => (
+            <div key={r.isoKey} className="flex flex-col gap-1">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="truncate text-sm font-medium text-[#2a2420]">
+                  {r.label}
+                </span>
+                <span
+                  className={`${fraunces.className} shrink-0 text-sm font-semibold tabular-nums text-[#2a2420]`}
+                >
+                  {r.value.toLocaleString()}
+                  <span className="ml-1 text-[11px] font-normal text-gray-400">
+                    units
+                  </span>
+                </span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-[#f1ece2]">
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${max > 0 ? Math.max(2, (r.value / max) * 100) : 0}%`,
+                    backgroundColor: PALETTE[i % PALETTE.length],
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AnalyticsWidgetsGrid({
   summary,
+  topCategories,
 }: {
   summary: PurchaseAnalyticsSummary | null;
+  topCategories: GroupRow[];
 }) {
   if (!summary) return null;
 
@@ -291,6 +421,9 @@ export function AnalyticsWidgetsGrid({
       </div>
       <div>
         <SizeBreakdownCard sizes={summary.sizeBreakdown} />
+      </div>
+      <div className="lg:col-span-3">
+        <TopCategoriesCard rows={topCategories} />
       </div>
     </div>
   );

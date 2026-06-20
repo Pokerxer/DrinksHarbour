@@ -49,6 +49,7 @@ import {
   PiGlobe,
   PiArrowLineLeft,
   PiArrowLineRight,
+  PiArrowCounterClockwise,
   PiList,
   PiX,
   PiSparkle,
@@ -417,7 +418,7 @@ export default function CreateEditSubProduct({
   const [statSold, setStatSold] = useState<number | null>(null);
   const [statPurchased, setStatPurchased] = useState<number | null>(null);
   // Which history panel is open
-  const [historyPanel, setHistoryPanel] = useState<'purchased' | 'sold' | null>(
+  const [historyPanel, setHistoryPanel] = useState<'purchased' | 'sold' | 'returns' | null>(
     null
   );
 
@@ -1416,6 +1417,19 @@ export default function CreateEditSubProduct({
                     ).toLocaleString('en-NG', { maximumFractionDigits: 0 })}
                   </span>
                 </div>
+              )}
+              {/* Returns — clickable */}
+              {isEditMode && (
+                <button
+                  type="button"
+                  onClick={() => setHistoryPanel('returns')}
+                  className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 transition-colors hover:border-orange-300 hover:bg-orange-50"
+                >
+                  <PiArrowCounterClockwise className="h-3 w-3 text-gray-400" />
+                  <span className="text-[9px] uppercase tracking-wide text-gray-400">
+                    returns
+                  </span>
+                </button>
               )}
               {/* Purchased — clickable */}
               {isEditMode && statPurchased !== null && (

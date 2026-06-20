@@ -45,6 +45,7 @@ import {
 import { routes } from '@/config/routes';
 import { fraunces } from '../purchases/purchases-fonts';
 
+// Fallback low-stock threshold; overridden by the tenant's warehouse settings.
 const LOW_STOCK = 10;
 
 const skuOf = (r: WarehouseStockRow) =>
@@ -76,9 +77,12 @@ const availOf = (r: WarehouseStockRow) =>
   Math.max(0, r.currentQuantity - r.reservedQuantity);
 
 type StockStatus = 'in_stock' | 'low_stock' | 'out_of_stock';
-const statusOf = (r: WarehouseStockRow): StockStatus => {
+const statusOf = (
+  r: WarehouseStockRow,
+  lowStock: number = LOW_STOCK
+): StockStatus => {
   if (r.currentQuantity <= 0) return 'out_of_stock';
-  if (availOf(r) <= LOW_STOCK) return 'low_stock';
+  if (availOf(r) <= lowStock) return 'low_stock';
   return 'in_stock';
 };
 const STATUS_SEVERITY: Record<StockStatus, number> = {
@@ -108,7 +112,7 @@ type ExportColumn = {
 
 // Richer column set than the old CSV-only export: SKU, size, the full
 // zone/aisle/shelf/bin breakdown and the derived available/status fields.
-const EXPORT_COLUMNS: ExportColumn[] = [
+const buildExportColumns = (lowStock: number = LOW_STOCK): ExportColumn[] => [
   {
     key: 'product',
     label: 'Product',
@@ -138,14 +142,22 @@ const EXPORT_COLUMNS: ExportColumn[] = [
     value: (r) => availOf(r),
     numeric: true,
   },
-  { key: 'status', label: 'Status', value: (r) => STATUS_LABEL[statusOf(r)] },
+  {
+    key: 'status',
+    label: 'Status',
+    value: (r) => STATUS_LABEL[statusOf(r, lowStock)],
+  },
 ];
 
 // Index of the three numeric columns (for right-alignment in PDF/Excel).
-const NUMERIC_COL_INDEXES = EXPORT_COLUMNS.reduce<number[]>((acc, c, i) => {
-  if (c.numeric) acc.push(i);
-  return acc;
-}, []);
+// Column positions are fixed regardless of the low-stock threshold.
+const NUMERIC_COL_INDEXES = buildExportColumns().reduce<number[]>(
+  (acc, c, i) => {
+    if (c.numeric) acc.push(i);
+    return acc;
+  },
+  []
+);
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -517,14 +529,16 @@ function StockCard({
   batchLoading,
   batches,
   onToggleBatches,
+  lowStock,
 }: {
   r: WarehouseStockRow;
   isOpen: boolean;
   batchLoading: boolean;
   batches: WarehouseBatch[] | undefined;
   onToggleBatches: (r: WarehouseStockRow) => void;
+  lowStock: number;
 }) {
-  const status = statusOf(r);
+  const status = statusOf(r, lowStock);
   const href = viewHrefOf(r);
   const name = nameOf(r);
   const loc = locationOf(r);
@@ -713,6 +727,21 @@ export default function WarehouseDetail({
     Record<string, WarehouseBatch[]>
   >({});
   const [batchLoading, setBatchLoading] = useState<string | null>(null);
+  const [lowStock, setLowStock] = useState(LOW_STOCK);
+
+  // Tenant-global low-stock threshold from warehouse settings.
+  useEffect(() => {
+    if (!token) return;
+    warehouseService
+      .getWarehouseSettings(token)
+      .then((res) => {
+        const v = res?.data?.warehouseSettings?.lowStockThreshold;
+        if (typeof v === 'number') setLowStock(v);
+      })
+      .catch(() => {});
+  }, [token]);
+
+  const exportColumns = useMemo(() => buildExportColumns(lowStock), [lowStock]);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -776,14 +805,17 @@ export default function WarehouseDetail({
   const stats = useMemo(() => {
     const units = rows.reduce((s, r) => s + r.currentQuantity, 0);
     const reserved = rows.reduce((s, r) => s + r.reservedQuantity, 0);
-    const lowOut = rows.filter((r) => statusOf(r) !== 'in_stock').length;
+    const lowOut = rows.filter(
+      (r) => statusOf(r, lowStock) !== 'in_stock'
+    ).length;
     return { total: rows.length, units, reserved, lowOut };
-  }, [rows]);
+  }, [rows, lowStock]);
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     const out = rows.filter((r) => {
-      if (filter === 'low_out' && statusOf(r) === 'in_stock') return false;
+      if (filter === 'low_out' && statusOf(r, lowStock) === 'in_stock')
+        return false;
       if (!q) return true;
       return (
         String(nameOf(r)).toLowerCase().includes(q) ||
@@ -807,7 +839,7 @@ export default function WarehouseDetail({
           case 'available':
             return availOf(r);
           case 'status':
-            return STATUS_SEVERITY[statusOf(r)];
+            return STATUS_SEVERITY[statusOf(r, lowStock)];
         }
       };
       out.sort((a, b) => {
@@ -819,7 +851,7 @@ export default function WarehouseDetail({
       });
     }
     return out;
-  }, [rows, search, filter, sortKey, sortDir]);
+  }, [rows, search, filter, sortKey, sortDir, lowStock]);
 
   const totals = useMemo(
     () => ({
@@ -864,11 +896,11 @@ export default function WarehouseDetail({
             return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
           };
           const lines = [
-            EXPORT_COLUMNS.map((c) => esc(c.label)).join(','),
+            exportColumns.map((c) => esc(c.label)).join(','),
             ...filteredRows.map((r) =>
-              EXPORT_COLUMNS.map((c) => esc(c.value(r))).join(',')
+              exportColumns.map((c) => esc(c.value(r))).join(',')
             ),
-            EXPORT_COLUMNS.map((c) => esc(totalCell(c.key))).join(','),
+            exportColumns.map((c) => esc(totalCell(c.key))).join(','),
           ];
           downloadBlob(
             new Blob(['﻿' + lines.join('\r\n')], {
@@ -887,9 +919,9 @@ export default function WarehouseDetail({
             ],
             [`Generated: ${stamp.toLocaleString()}`],
             [],
-            EXPORT_COLUMNS.map((c) => c.label),
-            ...filteredRows.map((r) => EXPORT_COLUMNS.map((c) => c.value(r))),
-            EXPORT_COLUMNS.map((c) => totalCell(c.key)),
+            exportColumns.map((c) => c.label),
+            ...filteredRows.map((r) => exportColumns.map((c) => c.value(r))),
+            exportColumns.map((c) => totalCell(c.key)),
           ];
           const ws = XLSX.utils.aoa_to_sheet(aoa);
           ws['!cols'] = [
@@ -951,11 +983,11 @@ export default function WarehouseDetail({
 
           autoTable(doc, {
             startY: 27,
-            head: [EXPORT_COLUMNS.map((c) => c.label)],
+            head: [exportColumns.map((c) => c.label)],
             body: filteredRows.map((r) =>
-              EXPORT_COLUMNS.map((c) => String(c.value(r)))
+              exportColumns.map((c) => String(c.value(r)))
             ),
-            foot: [EXPORT_COLUMNS.map((c) => String(totalCell(c.key)))],
+            foot: [exportColumns.map((c) => String(totalCell(c.key)))],
             styles: { fontSize: 7.5, cellPadding: 1.8, overflow: 'linebreak' },
             headStyles: {
               fillColor: RGB_BRAND,
@@ -980,7 +1012,15 @@ export default function WarehouseDetail({
         toast.error(e instanceof Error ? e.message : 'Export failed');
       }
     },
-    [filteredRows, warehouse, warehouseId, filter, search, totals]
+    [
+      filteredRows,
+      warehouse,
+      warehouseId,
+      filter,
+      search,
+      totals,
+      exportColumns,
+    ]
   );
 
   return (
@@ -1244,6 +1284,7 @@ export default function WarehouseDetail({
                   batchLoading={batchLoading === r._id}
                   batches={batchesByRow[r._id]}
                   onToggleBatches={toggleBatches}
+                  lowStock={lowStock}
                 />
               ))}
             </AnimatePresence>
@@ -1394,7 +1435,7 @@ export default function WarehouseDetail({
                           {availOf(r)}
                         </td>
                         <td className="px-5 py-3.5">
-                          <StatusBadge status={statusOf(r)} />
+                          <StatusBadge status={statusOf(r, lowStock)} />
                         </td>
                         <td className="px-5 py-3.5">
                           <div className="flex items-center justify-end gap-2">

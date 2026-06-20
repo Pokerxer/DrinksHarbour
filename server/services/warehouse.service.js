@@ -225,6 +225,72 @@ async function getBatches({ warehouseId, subProduct, size } = {}, tenantId) {
     .lean();
 }
 
+/**
+ * Aggregate every WarehouseStock row across all warehouses for a tenant, flattened
+ * for the warehouse-analysis reporting page. Mirrors getPOSProductMeta's lean
+ * pattern (one query + lean) instead of N per-warehouse calls. Each row carries its
+ * own cost basis (size.costPrice, falling back to subProduct.costPrice) and the
+ * earliest expiry among its still-stocked batches, so the client can attribute
+ * stock value and expiry buckets without extra round-trips.
+ */
+async function getAllStock(tenantId) {
+  const WarehouseBatch = require('../models/WarehouseBatch');
+  const [rows, batches] = await Promise.all([
+    WarehouseStock.find({ tenant: tenantId })
+      .populate({
+        path: 'subProduct',
+        select: 'sku costPrice product',
+        populate: { path: 'product', select: 'name' },
+      })
+      .populate('size', 'size costPrice')
+      .populate('warehouse', 'name code')
+      .lean(),
+    WarehouseBatch.find({
+      tenant: tenantId,
+      quantity: { $gt: 0 },
+      expiryDate: { $ne: null },
+    })
+      .select('warehouse subProduct size expiryDate')
+      .lean(),
+  ]);
+
+  // Earliest (most-urgent) expiry per (warehouse, subProduct, size) line.
+  const expMap = new Map();
+  for (const b of batches) {
+    if (!b.expiryDate) continue;
+    const key = `${b.warehouse}|${b.subProduct}|${b.size}`;
+    const t = new Date(b.expiryDate).getTime();
+    const cur = expMap.get(key);
+    if (cur == null || t < cur) expMap.set(key, t);
+  }
+
+  return rows.map((r) => {
+    const sp = r.subProduct || {};
+    const sz = r.size || {};
+    const wh = r.warehouse || {};
+    const cost = (sz.costPrice > 0 ? sz.costPrice : null) ?? sp.costPrice ?? 0;
+    const whId = String(wh._id || r.warehouse || '');
+    const spId = String(sp._id || r.subProduct || '');
+    const szId = String(sz._id || r.size || '');
+    const exp = expMap.get(`${whId}|${spId}|${szId}`);
+    return {
+      _id: String(r._id),
+      warehouseId: whId,
+      warehouseName: wh.name || 'Unknown Warehouse',
+      subProductId: spId,
+      productName: sp.product?.name || sp.sku || 'Unknown Product',
+      sku: sp.sku || '',
+      sizeId: szId,
+      sizeName: sz.size || '—',
+      currentQuantity: r.currentQuantity || 0,
+      reservedQuantity: r.reservedQuantity || 0,
+      costPrice: cost,
+      minStockLevel: r.minStockLevel || 0,
+      earliestExpiry: exp != null ? new Date(exp).toISOString() : null,
+    };
+  });
+}
+
 async function getStockByWarehouse(subProductId, tenantId) {
   return WarehouseStock.find({ tenant: tenantId, subProduct: subProductId })
     .populate('warehouse', 'name code type')
@@ -320,5 +386,5 @@ async function resolveShopWarehouse(tenant, tenantId, shopId) {
 module.exports = {
   createWarehouse, getWarehouses, getWarehouseById, updateWarehouse, deleteWarehouse,
   getWarehouseStock, adjustStock, transferStock, getStockByWarehouse,
-  sellStock, returnStock, resolveShopWarehouse, getBatches,
+  sellStock, returnStock, resolveShopWarehouse, getBatches, getAllStock,
 };

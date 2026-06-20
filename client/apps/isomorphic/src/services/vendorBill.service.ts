@@ -87,6 +87,7 @@ export interface Payment {
   method?: string;
   reference?: string;
   notes?: string;
+  recordedBy?: string | { _id: string; name?: string };
 }
 
 export const vendorBillService = {
@@ -136,6 +137,7 @@ export const vendorBillService = {
       limit?: number;
       status?: string;
       vendor?: string;
+      purchaseOrder?: string;
       startDate?: string;
       endDate?: string;
     } = {}
@@ -155,6 +157,7 @@ export const vendorBillService = {
     if (params.vendor) queryParams.set('vendor', params.vendor);
     if (params.startDate) queryParams.set('startDate', params.startDate);
     if (params.endDate) queryParams.set('endDate', params.endDate);
+    if (params.purchaseOrder) queryParams.set('purchaseOrder', params.purchaseOrder);
 
     const response = await fetch(
       `${API_URL}/api/vendor-bills?${queryParams.toString()}`,

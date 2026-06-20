@@ -1436,9 +1436,140 @@ function PurchasedPanel({ subProductId, productName, token, onClose }: {
   );
 }
 
+// ── Vendor Returns Panel ───────────────────────────────────────────────────────
+function VendorReturnsPanel({ subProductId, productName, token, onClose }: {
+  subProductId: string; productName: string; token: string; onClose: ()=>void;
+}) {
+  const [rows,    setRows]    = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [page,    setPage]    = useState(1);
+  const PAGE_SIZE = 50;
+
+  const fetchData = useCallback(()=>{
+    setLoading(true);
+    apiFetch(`${API_URL}/api/vendor-returns?subProductId=${subProductId}&limit=500`, token)
+      .then(body=>setRows(body.data||[]))
+      .catch(()=>{})
+      .finally(()=>setLoading(false));
+  },[subProductId,token]);
+
+  useEffect(()=>{ fetchData(); },[fetchData]);
+
+  const statusColor: Record<string,string> = {
+    draft:'bg-gray-100 text-gray-600', confirmed:'bg-blue-100 text-blue-700',
+    requested:'bg-amber-100 text-amber-700', shipped:'bg-indigo-100 text-indigo-700',
+    in_transit:'bg-purple-100 text-purple-700', received:'bg-green-100 text-green-700',
+    refunded:'bg-emerald-100 text-emerald-700', rejected:'bg-red-100 text-red-700',
+    cancelled:'bg-gray-100 text-gray-500',
+  };
+
+  return (
+    <div className="flex h-full flex-col bg-gray-50">
+      {/* Header */}
+      <div className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-5 py-3">
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100">
+            <PiX className="h-5 w-5" />
+          </button>
+          <div>
+            <h2 className="text-sm font-bold text-gray-900">Vendor Returns</h2>
+            <p className="text-xs text-gray-500">{productName}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Results */}
+        <div className="flex-1 overflow-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-20 text-sm text-gray-400">Loading…</div>
+          ) : rows.length === 0 ? (
+            <div className="flex items-center justify-center py-20 text-sm text-gray-400">No returns found</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50 sticky top-0">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Return #</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Vendor / PO</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Qty</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Total</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">Status</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">Refund</th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {rows
+                  .slice((page-1)*PAGE_SIZE, page*PAGE_SIZE)
+                  .map(r => {
+                    const item = (r.items||[]).find((i:any)=>i.subProductId===subProductId);
+                    return (
+                      <tr key={r._id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium text-gray-900">{r.returnNumber}</td>
+                        <td className="px-4 py-3 text-gray-600">{fmtDate(r.returnDate)}</td>
+                        <td className="px-4 py-3 text-gray-600">
+                          <div>{r.vendorName||'—'}</div>
+                          {r.poNumber && <div className="text-[11px] text-gray-400">{r.poNumber}</div>}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums text-gray-700">
+                          {item ? item.quantity : r.items.reduce((s:number,i:any)=>s+i.quantity,0)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-medium tabular-nums text-gray-900">
+                          {fmt(r.totalAmount)}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ${statusColor[r.status]||'bg-gray-100 text-gray-600'}`}>
+                            {r.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {r.refundStatus && r.refundStatus !== 'none' ? (
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ${
+                              r.refundStatus==='completed'?'bg-green-100 text-green-700':
+                              r.refundStatus==='processing'?'bg-blue-100 text-blue-700':
+                              r.refundStatus==='rejected'?'bg-red-100 text-red-700':
+                              'bg-amber-100 text-amber-700'
+                            }`}>{r.refundStatus}</span>
+                          ) : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <a href={`/purchases/returns/${r._id}`}
+                            className="text-xs font-medium text-[#b20202] hover:underline"
+                            target="_blank" rel="noopener noreferrer">
+                            View
+                          </a>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          )}
+        </div>
+        {rows.length > PAGE_SIZE && (
+          <div className="flex shrink-0 items-center justify-between border-t border-gray-100 bg-white px-4 py-2.5 text-xs text-gray-500">
+            <span>Showing {(page-1)*PAGE_SIZE+1}–{Math.min(page*PAGE_SIZE,rows.length)} of {rows.length}</span>
+            <div className="flex gap-1">
+              {Array.from({length:Math.min(Math.ceil(rows.length/PAGE_SIZE),7)},(_,i)=>{
+                const tp=Math.ceil(rows.length/PAGE_SIZE);
+                const p=tp<=7?i+1:i===0?1:i===6?tp:page-2+i;
+                return <button key={p} type="button" onClick={()=>setPage(p)}
+                  className={`flex h-7 w-7 items-center justify-center rounded-lg border text-[11px] font-semibold ${p===page?'text-white':'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                  style={p===page?{backgroundColor:'#b20202',borderColor:'#b20202'}:{}}>{p}</button>;
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Full-screen overlay ───────────────────────────────────────────────────────
 interface ProductHistoryPanelProps {
-  type: 'purchased'|'sold';
+  type: 'purchased'|'sold'|'returns';
   subProductId: string;
   productName: string;
   token: string;
@@ -1463,7 +1594,9 @@ export default function ProductHistoryPanel({
     <div className="fixed inset-0 z-[9999] flex flex-col" style={{top:0,left:0,right:0,bottom:0,width:'100vw',height:'100vh'}}>
       {type === 'purchased'
         ? <PurchasedPanel subProductId={subProductId} productName={productName} token={token} onClose={onClose} />
-        : <SoldPanel      subProductId={subProductId} productName={productName} token={token} onClose={onClose} />
+        : type === 'returns'
+          ? <VendorReturnsPanel subProductId={subProductId} productName={productName} token={token} onClose={onClose} />
+          : <SoldPanel      subProductId={subProductId} productName={productName} token={token} onClose={onClose} />
       }
     </div>,
     document.body

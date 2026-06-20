@@ -8,7 +8,7 @@ export type POStatus =
   | 'cancelled';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 export type BillStatus = 'draft' | 'posted' | 'paid' | 'cancelled';
-export type ReturnStatus = 'draft' | 'confirmed' | 'refunded' | 'cancelled';
+export type ReturnStatus = 'draft' | 'confirmed' | 'requested' | 'shipped' | 'in_transit' | 'received' | 'refunded' | 'rejected' | 'cancelled';
 export type AgreementStatus =
   | 'draft'
   | 'active'
@@ -108,22 +108,55 @@ export interface BillItem {
 export interface VendorReturn {
   _id: string;
   returnNumber: string;
-  purchaseOrder?: string;
-  vendor?: string;
+  vendor?: string | { _id: string; name?: string; email?: string; phone?: string };
   vendorName?: string;
+  purchaseOrder?: string | { _id: string; poNumber?: string };
+  poNumber?: string;
+  vendorBill?: string;
+  billNumber?: string;
+  currency: string;
   items: ReturnItem[];
+  subtotal: number;
+  taxAmount: number;
+  totalAmount: number;
   status: ReturnStatus;
+  returnDate?: string;
+  requestedDate?: string;
+  shippedDate?: string;
+  receivedDate?: string;
+  refundedDate?: string;
+  reason?: string;
   notes?: string;
-  refundAmount?: number;
+  internalNotes?: string;
+  shippingCarrier?: string;
+  trackingNumber?: string;
+  returnAddress?: string;
+  refundAmount: number;
+  refundStatus: string;
+  refundMethod?: string;
+  refundReference?: string;
+  refundDate?: string;
+  createdBy?: string | { _id: string; name?: string; email?: string };
+  confirmedBy?: string | { _id: string; name?: string; email?: string };
+  confirmedAt?: string;
+  receivedBy?: string | { _id: string; name?: string; email?: string };
+  receivedByName?: string;
   createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ReturnItem {
-  subProductId: string;
-  productName: string;
+  subProductId?: string;
+  subProductName?: string;
+  sku?: string;
+  sizeId?: string;
+  sizeName?: string;
   quantity: number;
   unitPrice: number;
+  amount: number;
   reason?: string;
+  condition?: string;
+  taxRate?: number;
 }
 
 export interface Vendor {
@@ -287,6 +320,12 @@ export const CURRENCY_SYMBOLS: Record<string, string> = {
   GBP: '£',
 };
 
+export function fmtPrice(n: number | undefined | null, currency = 'NGN'): string {
+  const safe = (typeof n === 'number' && !Number.isNaN(n)) ? n : 0;
+  const symbol = CURRENCY_SYMBOLS[currency] ?? currency;
+  return `${symbol}${safe.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 export interface PurchaseAnalyticsSummary {
   totalOrders: number;
   totalSpend: number;
@@ -317,6 +356,9 @@ export const STATUS_BADGE: Record<string, string> = {
   pending: 'bg-amber-200 text-amber-800',
   approved: 'bg-emerald-200 text-emerald-800',
   rejected: 'bg-red-200 text-red-700',
+  requested: 'bg-blue-200 text-blue-800',
+  shipped: 'bg-cyan-200 text-cyan-800',
+  in_transit: 'bg-indigo-200 text-indigo-800',
 };
 
 export function statusLabel(status: string): string {
@@ -338,6 +380,25 @@ export function statusLabel(status: string): string {
     approved: 'Approved',
     rejected: 'Rejected',
     refunded: 'Refunded',
+    requested: 'Requested',
+    shipped: 'Shipped',
+    in_transit: 'In Transit',
+  };
+  return labels[status] ?? status;
+}
+
+/** Status labels for return-specific contexts (avoids PO-centric defaults) */
+export function returnStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    draft: 'Draft',
+    confirmed: 'Confirmed',
+    requested: 'Requested',
+    shipped: 'Shipped',
+    in_transit: 'In Transit',
+    received: 'Received',
+    refunded: 'Refunded',
+    rejected: 'Rejected',
+    cancelled: 'Cancelled',
   };
   return labels[status] ?? status;
 }

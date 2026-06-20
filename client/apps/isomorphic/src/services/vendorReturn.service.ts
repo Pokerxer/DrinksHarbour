@@ -4,9 +4,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 export interface VendorReturn {
   _id: string;
   returnNumber: string;
-  vendor?: string;
+  vendor?: string | { _id: string; name?: string; email?: string; phone?: string };
   vendorName: string;
-  purchaseOrder?: string;
+  purchaseOrder?: string | { _id: string; poNumber?: string };
   poNumber?: string;
   vendorBill?: string;
   billNumber?: string;
@@ -17,11 +17,28 @@ export interface VendorReturn {
   totalAmount: number;
   status: string;
   returnDate: string;
+  requestedDate?: string;
+  shippedDate?: string;
+  receivedDate?: string;
+  refundedDate?: string;
   reason?: string;
   notes?: string;
+  internalNotes?: string;
+  shippingCarrier?: string;
+  trackingNumber?: string;
+  returnAddress?: string;
   refundAmount: number;
   refundStatus: string;
+  refundMethod?: string;
+  refundReference?: string;
+  refundDate?: string;
+  createdBy?: string | { _id: string; name?: string; email?: string };
+  confirmedBy?: string | { _id: string; name?: string; email?: string };
+  confirmedAt?: string;
+  receivedBy?: string | { _id: string; name?: string; email?: string };
+  receivedByName?: string;
   createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ReturnItem {
@@ -35,6 +52,7 @@ export interface ReturnItem {
   amount: number;
   reason?: string;
   condition?: string;
+  taxRate?: number;
 }
 
 export const vendorReturnService = {
@@ -84,8 +102,10 @@ export const vendorReturnService = {
       limit?: number;
       status?: string;
       vendor?: string;
+      purchaseOrder?: string;
       startDate?: string;
       endDate?: string;
+      search?: string;
     } = {}
   ): Promise<{
     success: boolean;
@@ -95,6 +115,15 @@ export const vendorReturnService = {
       totalPages: number;
       totalCount: number;
     };
+    stats: {
+      totalCount: number;
+      totalValue: number;
+      totalRefunded: number;
+      draftCount: number;
+      confirmedCount: number;
+      refundedCount: number;
+      cancelledCount: number;
+    };
   }> {
     const queryParams = new URLSearchParams();
     if (params.page) queryParams.set('page', params.page.toString());
@@ -103,6 +132,8 @@ export const vendorReturnService = {
     if (params.vendor) queryParams.set('vendor', params.vendor);
     if (params.startDate) queryParams.set('startDate', params.startDate);
     if (params.endDate) queryParams.set('endDate', params.endDate);
+    if (params.search) queryParams.set('search', params.search);
+    if (params.purchaseOrder) queryParams.set('purchaseOrder', params.purchaseOrder);
 
     const response = await fetch(
       `${API_URL}/api/vendor-returns?${queryParams.toString()}`,

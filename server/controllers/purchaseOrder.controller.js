@@ -224,9 +224,10 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
     throw new ValidationError("Required fields missing");
   }
 
-  // Auto-generate poNumber if not provided. Derive from the highest existing
-  // number rather than a document count — counts shrink after deletes and
-  // would re-issue a number that still exists (unique-index crash).
+  // Auto-generate poNumber if not provided. Orders start as RFQ- (not yet
+  // received); the prefix flips to PO- when status reaches "received".
+  // Derive from the highest existing number — not a count — so deletes
+  // never re-issue a number still in use (unique-index crash).
   let poNumber = poNumberRaw;
   if (!poNumber) {
     const last = await PurchaseOrder.findOne({
@@ -541,6 +542,19 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
         }
       }
     }
+  }
+
+  // When first transitioning to "received", rename RFQ- → PO- prefix
+  if (status === "received" && previousStatus !== "received" && purchaseOrder.poNumber?.startsWith("RFQ-")) {
+    const lastPO = await PurchaseOrder.findOne({
+      tenant: tenantId,
+      poNumber: { $regex: /^PO-\d+$/ },
+    })
+      .sort({ poNumber: -1 })
+      .select("poNumber")
+      .lean();
+    const lastSeq = lastPO ? parseInt(lastPO.poNumber.split("-")[1], 10) : 0;
+    purchaseOrder.poNumber = `PO-${String(lastSeq + 1).padStart(6, "0")}`;
   }
 
   // Track fully received date and create inventory movements
@@ -1336,9 +1350,17 @@ const convertRFQToPO = asyncHandler(async (req, res) => {
     throw new ValidationError("Invalid vendor selection");
   }
 
-  // Generate new PO number
-  const poCount = await PurchaseOrder.countDocuments({ tenant: tenantId, type: "po" });
-  const poNumber = `PO-${String(poCount + 1).padStart(6, "0")}`;
+  // Generate new PO number from highest existing, not count (avoids reuse after deletes)
+  const lastPO = await PurchaseOrder.findOne({
+    tenant: tenantId,
+    poNumber: { $regex: /^PO-\d+$/ },
+    type: "po",
+  })
+    .sort({ poNumber: -1 })
+    .select("poNumber")
+    .lean();
+  const lastSeq = lastPO ? parseInt(lastPO.poNumber.split("-")[1], 10) : 0;
+  const poNumber = `PO-${String(lastSeq + 1).padStart(6, "0")}`;
 
   // Create PO from RFQ with selected vendor's prices
   const poItems = rfq.items.map((item, idx) => {

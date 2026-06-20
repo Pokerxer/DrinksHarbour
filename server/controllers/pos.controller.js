@@ -1793,11 +1793,13 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
     ].join(' '))
     .populate({
       path:     'product',
-      // platformMarkup and platformDiscount are needed for the pricing pipeline
-      select:   'name images type brand category platformMarkup platformDiscount',
+      // platformMarkup and platformDiscount are needed for the pricing pipeline.
+      // subCategory is needed by the purchases-analytics "Group By" feature.
+      select:   'name images type brand category subCategory platformMarkup platformDiscount',
       populate: [
-        { path: 'brand',    select: '_id name' },
-        { path: 'category', select: '_id name' },
+        { path: 'brand',       select: '_id name' },
+        { path: 'category',    select: '_id name' },
+        { path: 'subCategory', select: '_id name' },
       ],
     })
     .populate('sizes', 'displayName sellingPrice costPrice availableStock stock _id sku barcode')
@@ -1925,6 +1927,48 @@ exports.getPOSProducts = asyncHandler(async (req, res) => {
 
   res.set('Cache-Control', 'private, max-age=60');
   res.json({ success: true, data: { products: filtered, total: filtered.length, resolvedPricelistId } });
+});
+
+// ─── Sub-Product metadata (category / subcategory / brand) ───────────────────
+/**
+ * GET /api/pos/product-meta
+ * Lightweight map of every tenant SubProduct → its product's category,
+ * subcategory and brand names. Unlike getPOSProducts this is NOT gated by
+ * visibleInPOS / status / limit, so purchase analytics can attribute PO lines
+ * that reference sub-products not currently sold in POS. Returns _id + names
+ * only — no pricing, stock, or sizes.
+ */
+exports.getPOSProductMeta = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+
+  const subProducts = await SubProduct.find({ tenant: tenantId })
+    .select('_id product')
+    .populate({
+      path:     'product',
+      select:   'category subCategory brand',
+      populate: [
+        { path: 'brand',       select: '_id name' },
+        { path: 'category',    select: '_id name' },
+        { path: 'subCategory', select: '_id name' },
+      ],
+    })
+    .lean();
+
+  const meta = subProducts.map((sp) => {
+    const prod = sp.product || {};
+    return {
+      _id:         String(sp._id),
+      categoryId:    prod.category?._id ? String(prod.category._id) : null,
+      categoryName:  prod.category?.name || null,
+      subCategoryId:   prod.subCategory?._id ? String(prod.subCategory._id) : null,
+      subCategoryName: prod.subCategory?.name || null,
+      brandId:     prod.brand?._id ? String(prod.brand._id) : null,
+      brandName:   prod.brand?.name || null,
+    };
+  });
+
+  res.set('Cache-Control', 'private, max-age=300');
+  res.json({ success: true, data: { meta, total: meta.length } });
 });
 
 // ─── Create POS Order (with atomic stock deduction) ──────────────────────────

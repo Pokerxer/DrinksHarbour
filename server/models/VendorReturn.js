@@ -174,11 +174,18 @@ VendorReturnSchema.virtual("remainingRefund").get(function () {
   return this.totalAmount - (this.refundAmount || 0);
 });
 
-// Generate return number
+// Generate return number (max + 1, not count, to avoid reuse after deletes)
 VendorReturnSchema.pre("save", async function () {
   if (this.isNew && !this.returnNumber) {
-    const count = await this.constructor.countDocuments({ tenant: this.tenant });
-    this.returnNumber = `RET-${String(count + 1).padStart(5, "0")}`;
+    const last = await this.constructor
+      .findOne({ tenant: this.tenant, returnNumber: { $regex: /^RET-\d+$/ } })
+      .sort({ returnNumber: -1 })
+      .select("returnNumber")
+      .lean();
+    const seq = last
+      ? parseInt(last.returnNumber.split("-")[1], 10) + 1
+      : 1;
+    this.returnNumber = `RET-${String(seq).padStart(5, "0")}`;
   }
 });
 

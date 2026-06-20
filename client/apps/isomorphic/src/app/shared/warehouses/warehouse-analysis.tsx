@@ -4,18 +4,15 @@ import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import {
   PiArrowsClockwise,
   PiCurrencyNgn,
-  PiShoppingCart,
-  PiReceipt,
+  PiCube,
   PiChartBar,
-  PiClock,
   PiPackage,
-  PiTrendUp,
   PiFunnel,
   PiStack,
   PiX,
   PiMagnifyingGlass,
   PiTable,
-  PiStorefront,
+  PiBuildings,
   PiChartLine,
   PiChartPieSlice,
   PiStar,
@@ -27,33 +24,35 @@ import {
   PiArrowCounterClockwise,
   PiCheck,
   PiTag,
+  PiWarning,
+  PiClock,
 } from 'react-icons/pi';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
-import { purchaseOrderService } from '@/services/purchaseOrder.service';
-import type { PurchaseOrder } from '@/services/purchaseOrder.service';
 import {
-  purchaseAnalyticsService,
-  type PurchaseAnalyticsSummary,
-} from '@/services/purchaseAnalytics.service';
+  warehouseStockService,
+  type StockRow,
+} from '@/services/warehouseStock.service';
 import { useExchangeRates } from '@/hooks/use-exchange-rates';
-import { BASE_CURRENCY } from './types';
+import { BASE_CURRENCY } from '../purchases/types';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import {
   SAVED_KEY,
   FILTER_STATIC,
   GROUP_BY_ITEMS,
-  GROUP_BY_DATE_ITEMS,
   ALL_GROUP_ITEMS,
   MEASURES,
   fmtNaira,
   fmtCompact,
+  fmtCount,
   fmtMeasureVal,
-  buildDateFilterItems,
   applyFilters,
   computeGroupData,
   computeMultiSeries,
   computeHierarchicalPivot,
+  stockStatus,
+  expiryBucket,
+  availableQty,
   type GroupByKey,
   type ViewMode,
   type HierPivotResult,
@@ -65,7 +64,7 @@ import {
   type CatItem,
   type BrandItem,
   type ProdMeta,
-} from './purchases-analytics-helpers';
+} from './warehouse-analysis-helpers';
 import {
   Dropdown,
   DropItem,
@@ -74,10 +73,10 @@ import {
   MainChart,
   StackedChart,
   PivotView,
-} from './purchases-analytics-charts';
-import { PODrillDrawer } from './po-drill-drawer';
-import { AnalyticsWidgetsGrid } from './purchases-analytics-widgets';
-import { fraunces } from './purchases-fonts';
+} from './warehouse-analysis-charts';
+import { StockDrillDrawer } from './stock-drill-drawer';
+import { AnalyticsWidgetsGrid } from './warehouse-analysis-widgets';
+import { fraunces } from '../purchases/purchases-fonts';
 
 const SORT_FIELD_LABELS: {
   field: SortField;
@@ -95,28 +94,27 @@ const SORT_FIELD_LABELS: {
     icon: <PiTag className="h-3.5 w-3.5 text-gray-400" />,
   },
   {
-    field: 'orders',
-    label: 'Orders',
-    icon: <PiShoppingCart className="h-3.5 w-3.5 text-gray-400" />,
+    field: 'lines',
+    label: 'Lines',
+    icon: <PiCube className="h-3.5 w-3.5 text-gray-400" />,
   },
 ];
 
-export default function PurchasesAnalytics() {
+export default function WarehouseAnalysis() {
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
   const { getRate } = useExchangeRates();
 
-  const [orders, setOrders] = useState<PurchaseOrder[]>([]);
-  const [summary, setSummary] = useState<PurchaseAnalyticsSummary | null>(null);
+  const [stock, setStock] = useState<StockRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [categories, setCategories] = useState<CatItem[]>([]);
   const [brands, setBrands] = useState<BrandItem[]>([]);
   const [prodMeta, setProdMeta] = useState<Record<string, ProdMeta>>({});
 
-  const [filters, setFilters] = useState<string[]>(['not_cancelled']);
-  const [groupByStack, setGroupByStack] = useState<GroupByKey[]>(['vendor']);
-  const [measure, setMeasure] = useState<Measure>('total_cost');
+  const [filters, setFilters] = useState<string[]>([]);
+  const [groupByStack, setGroupByStack] = useState<GroupByKey[]>(['warehouse']);
+  const [measure, setMeasure] = useState<Measure>('stock_value');
   const [chartType, setChartType] = useState<ChartType>('bar');
   const [sortStack, setSortStack] = useState<SortCriterion[]>([]);
   const [sortPickerOpen, setSortPickerOpen] = useState(false);
@@ -135,12 +133,12 @@ export default function PurchasesAnalytics() {
   );
 
   const [drillData, setDrillData] = useState<{
-    orders: PurchaseOrder[];
+    rows: StockRow[];
     title: string;
   } | null>(null);
 
   const [viewMode, setViewMode] = useState<ViewMode>('graph');
-  const [pivotRowDims, setPivotRowDims] = useState<GroupByKey[]>(['vendor']);
+  const [pivotRowDims, setPivotRowDims] = useState<GroupByKey[]>(['warehouse']);
   const [pivotColDims, setPivotColDims] = useState<GroupByKey[]>([]);
   const [pivotHeatMap, setPivotHeatMap] = useState(true);
   const [pivotShowOrders, setPivotShowOrders] = useState(false);
@@ -155,15 +153,11 @@ export default function PurchasesAnalytics() {
     if (!token) return;
     setLoading(true);
     try {
-      const [poRes, sumRes] = await Promise.all([
-        purchaseOrderService.getPurchaseOrders(token, { limit: 1000 }),
-        purchaseAnalyticsService.getSummary(token).catch(() => null),
-      ]);
-      setOrders((poRes?.data as PurchaseOrder[]) ?? []);
-      if (sumRes?.data) setSummary(sumRes.data);
+      const res = await warehouseStockService.getAllStock(token);
+      setStock((res?.data as StockRow[]) ?? []);
     } catch (err: unknown) {
       toast.error(
-        err instanceof Error ? err.message : 'Failed to load purchase data'
+        err instanceof Error ? err.message : 'Failed to load warehouse stock'
       );
     } finally {
       setLoading(false);
@@ -174,31 +168,29 @@ export default function PurchasesAnalytics() {
     load();
   }, [load]);
 
-  // Categories & brands (public endpoints)
+  // Categories & brands (public endpoints) for the filter panel.
   useEffect(() => {
-    if (!token) return;
     posApi
-      .getCategories(token)
-      .then((d) => setCategories(Array.isArray(d) ? d : []))
+      .getCategories()
+      .then((d) => setCategories(d?.categories ?? []))
       .catch(() => {});
     posApi
-      .getBrands(token, { limit: 200 })
-      .then((d) => setBrands(Array.isArray(d) ? d : []))
+      .getBrands({ limit: 200 })
+      .then((d) => setBrands(d?.brands ?? []))
       .catch(() => {});
-  }, [token]);
+  }, []);
 
   // SubProduct → category/subcategory/brand metadata map, keyed by SubProduct
-  // _id. Uses the dedicated /product-meta endpoint which (unlike the POS grid)
-  // is not gated by visibleInPOS/status/limit, so PO lines referencing
-  // non-POS sub-products still attribute correctly.
+  // _id. The /product-meta endpoint is not gated by visibleInPOS, so it covers
+  // non-POS items too. WarehouseStock.subProduct is the join key.
   useEffect(() => {
     if (!token) return;
     posApi
       .getProductMeta(token)
       .then((res) => {
-        const rows = (res as any)?.data?.meta || (res as any)?.meta || [];
+        const rows = (res as { meta?: unknown[] })?.meta ?? [];
         const map: Record<string, ProdMeta> = {};
-        for (const r of rows as any[]) {
+        for (const r of rows as Record<string, string>[]) {
           if (!r?._id) continue;
           map[String(r._id)] = {
             catId: r.categoryId || '',
@@ -234,7 +226,8 @@ export default function PurchasesAnalytics() {
     return () => document.removeEventListener('mousedown', onClick);
   }, []);
 
-  // Convert any PO currency to the NGN base using live/manual exchange rates
+  // Stock costs are stored in the NGN base; the toBase plumbing is kept for
+  // parity with purchases analytics (and future multi-currency cost support).
   const toBase = useCallback(
     (amount: number, currency: string): number => {
       if (!currency || currency === BASE_CURRENCY) return amount;
@@ -245,8 +238,8 @@ export default function PurchasesAnalytics() {
   );
 
   const filtered = useMemo(
-    () => applyFilters(orders, filters, prodMeta),
-    [orders, filters, prodMeta]
+    () => applyFilters(stock, filters, prodMeta),
+    [stock, filters, prodMeta]
   );
 
   const groupData = useMemo(() => {
@@ -296,53 +289,96 @@ export default function PurchasesAnalytics() {
 
   // KPI totals (always in base currency)
   const kpis = useMemo(() => {
-    const live = filtered.filter(
-      (o) => o.status !== 'cancelled' && o.status !== 'cancel'
-    );
-    const totalSpend = live.reduce(
-      (s, o) =>
-        s +
-        toBase(
-          (o.items || []).reduce(
-            (a, i) =>
-              a +
-              (i.unitCost ?? i.unitPrice ?? 0) *
-                (i.quantity ?? 0) *
-                (1 + (i.taxRate ?? 0) / 100),
-            0
-          ),
-          o.currency || BASE_CURRENCY
-        ),
-      0
-    );
-    let ordered = 0;
-    let received = 0;
-    live.forEach((o) =>
-      (o.items || []).forEach((i) => {
-        ordered += i.quantity ?? 0;
-        received += Math.min(i.receivedQty ?? 0, i.quantity ?? 0);
-      })
-    );
+    let value = 0;
+    let onHand = 0;
+    let available = 0;
+    let lowLines = 0;
+    let outLines = 0;
+    let riskValue = 0;
+    const skus = new Set<string>();
+    filtered.forEach((r) => {
+      value += toBase(
+        (r.currentQuantity || 0) * (r.costPrice || 0),
+        BASE_CURRENCY
+      );
+      onHand += r.currentQuantity || 0;
+      available += availableQty(r);
+      if ((r.currentQuantity || 0) > 0) skus.add(String(r.subProductId));
+      const st = stockStatus(r);
+      if (st === 'low') lowLines += 1;
+      if (st === 'out') outLines += 1;
+      const eb = expiryBucket(r);
+      if (eb === 'expired' || eb === 'd30' || eb === 'd90')
+        riskValue += toBase(
+          (r.currentQuantity || 0) * (r.costPrice || 0),
+          BASE_CURRENCY
+        );
+    });
+    const lineTotal = filtered.length || 1;
     return {
-      totalSpend,
-      orderCount: live.length,
-      avgOrder: live.length > 0 ? totalSpend / live.length : 0,
-      receiptPct: ordered > 0 ? (received / ordered) * 100 : 0,
+      value,
+      onHand,
+      available,
+      skuCount: skus.size,
+      lowLines,
+      outLines,
+      riskValue,
+      lowOutPct: ((lowLines + outLines) / lineTotal) * 100,
     };
   }, [filtered, toBase]);
 
-  const dateItems = useMemo(() => buildDateFilterItems(new Date()), []);
-
+  // Widget group rollups
+  const topProducts = useMemo(
+    () =>
+      computeGroupData(
+        filtered,
+        'product',
+        'stock_value',
+        prodMeta,
+        toBase,
+        []
+      ),
+    [filtered, prodMeta, toBase]
+  );
+  const byWarehouse = useMemo(
+    () =>
+      computeGroupData(
+        filtered,
+        'warehouse',
+        'stock_value',
+        prodMeta,
+        toBase,
+        []
+      ),
+    [filtered, prodMeta, toBase]
+  );
   const topCategoryGroups = useMemo(
     () =>
       computeGroupData(
         filtered,
         'product_category',
-        'product_qty',
+        'on_hand_qty',
         prodMeta,
         toBase,
         []
       ),
+    [filtered, prodMeta, toBase]
+  );
+  const statusRows = useMemo(
+    () =>
+      computeGroupData(
+        filtered,
+        'stock_status',
+        'stock_value',
+        prodMeta,
+        toBase,
+        []
+      ),
+    [filtered, prodMeta, toBase]
+  );
+  const expiryRows = useMemo(
+    () =>
+      computeGroupData(filtered, 'expiry', 'stock_value', prodMeta, toBase, []),
     [filtered, prodMeta, toBase]
   );
 
@@ -391,7 +427,7 @@ export default function PurchasesAnalytics() {
   }, []);
 
   function addSearchFilter(
-    prefix: 'vendor_search:' | 'product_search:' | 'catname_search:'
+    prefix: 'product_search:' | 'warehouse_search:' | 'catname_search:'
   ) {
     const q = searchText.trim();
     if (!q) return;
@@ -452,12 +488,17 @@ export default function PurchasesAnalytics() {
   );
 
   function getFilterLabel(key: string): string {
-    if (key.startsWith('vendor_search:')) return `Vendor: ${key.slice(14)}`;
     if (key.startsWith('product_search:')) return `Product: ${key.slice(15)}`;
-    if (key.startsWith('catname_search:')) return `Category: ${key.slice(16)}`;
+    if (key.startsWith('warehouse_search:'))
+      return `Warehouse: ${key.slice(17)}`;
+    if (key.startsWith('catname_search:')) return `Category: ${key.slice(15)}`;
     if (key.startsWith('category_')) {
       const id = key.slice(9);
       return categories.find((c) => c._id === id)?.name || 'Category';
+    }
+    if (key.startsWith('subcategory_')) {
+      const id = key.slice(12);
+      return categories.find((c) => c._id === id)?.name || 'Subcategory';
     }
     if (key.startsWith('brand_')) {
       const id = key.slice(6);
@@ -465,17 +506,6 @@ export default function PurchasesAnalytics() {
     }
     const stat = FILTER_STATIC.find((f) => f.key === key);
     if (stat) return stat.label;
-    if (key === 'date_today') return 'Today';
-    if (key === 'date_week') return 'This Week';
-    if (key.startsWith('date_m_')) {
-      const m = dateItems.months.find((x) => x.key === key);
-      return m?.label ?? key;
-    }
-    if (key.startsWith('date_q_')) {
-      const q = dateItems.quarters.find((x) => x.key === key);
-      return q?.label ?? key;
-    }
-    if (key.startsWith('date_y_')) return key.replace('date_y_', '');
     return key;
   }
 
@@ -486,7 +516,7 @@ export default function PurchasesAnalytics() {
 
   const groupLabel = groupBy
     ? (ALL_GROUP_ITEMS.find((g) => g.key === groupBy)?.label ?? groupBy)
-    : 'Vendor';
+    : 'Warehouse';
   const groupLabel2 = groupBy2
     ? (ALL_GROUP_ITEMS.find((g) => g.key === groupBy2)?.label ?? groupBy2)
     : null;
@@ -496,22 +526,14 @@ export default function PurchasesAnalytics() {
   const totalValue = multiSeries
     ? multiSeries.rows.reduce((s, r) => s + r.__total__, 0)
     : groupData.reduce((s, r) => s + r.value, 0);
-  const totalOrders = filtered.length;
+  const totalLines = filtered.length;
 
-  const hasForeign = filtered.some(
-    (o) => o.currency && o.currency !== BASE_CURRENCY
-  );
-
-  function openDrill(
-    label: string,
-    poList: PurchaseOrder[],
-    seriesKey?: string
-  ) {
-    if (poList.length === 0) return;
+  function openDrill(label: string, list: StockRow[], seriesKey?: string) {
+    if (list.length === 0) return;
     const title = seriesKey
       ? `${groupLabel}: ${label} · ${groupLabel2}: ${seriesKey || '—'}`
       : `${groupLabel}: ${label}`;
-    setDrillData({ orders: poList, title });
+    setDrillData({ rows: list, title });
   }
 
   if (loading) {
@@ -550,10 +572,10 @@ export default function PurchasesAnalytics() {
             <h1
               className={`${fraunces.className} mt-1 text-[28px] font-semibold leading-tight text-[#2a2420] sm:text-[32px]`}
             >
-              Purchase Analysis
+              Warehouse Analysis
             </h1>
             <p className="mt-1 text-sm text-gray-500">
-              Spend, volumes, and vendor performance across purchase orders
+              Stock value, on-hand levels, and expiry risk across warehouses
             </p>
           </div>
           <button
@@ -569,17 +591,17 @@ export default function PurchasesAnalytics() {
       </div>
 
       {/* ── KPI cards ── */}
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-6">
-        {/* Hero: Total Spend */}
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-6">
+        {/* Hero: Total Stock Value */}
         <div
-          title={fmtNaira(kpis.totalSpend)}
+          title={fmtNaira(kpis.value)}
           className="relative col-span-2 overflow-hidden rounded-2xl bg-gradient-to-br from-[#8a0202] via-[#b20202] to-[#6b0101] p-5 text-white shadow-md lg:col-span-2"
         >
           <div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full border border-white/10" />
           <div className="pointer-events-none absolute -bottom-14 -right-6 h-28 w-28 rounded-full border border-white/10" />
           <div className="relative flex items-center justify-between">
             <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/65">
-              Total Spend
+              Total Stock Value
             </p>
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/15">
               <PiCurrencyNgn className="h-4 w-4" />
@@ -588,40 +610,45 @@ export default function PurchasesAnalytics() {
           <p
             className={`${fraunces.className} relative mt-3 text-[34px] font-semibold tabular-nums leading-none`}
           >
-            {fmtCompact(kpis.totalSpend)}
+            {fmtCompact(kpis.value)}
           </p>
           <p className="relative mt-1.5 text-[11px] text-white/55">
-            {fmtNaira(kpis.totalSpend)}
+            {fmtNaira(kpis.value)}
           </p>
         </div>
 
         {[
           {
-            label: 'Purchase Orders',
-            value: String(kpis.orderCount),
-            icon: <PiShoppingCart className="h-4 w-4" />,
+            label: 'Units On Hand',
+            value: fmtCount(kpis.onHand),
+            full: `${kpis.onHand.toLocaleString()} units`,
+            icon: <PiCube className="h-4 w-4" />,
             color: 'text-blue-600 bg-blue-50',
           },
           {
-            label: 'Avg Order Value',
-            value: fmtCompact(kpis.avgOrder),
-            full: fmtNaira(kpis.avgOrder),
-            icon: <PiTrendUp className="h-4 w-4" />,
+            label: 'SKUs In Stock',
+            value: kpis.skuCount.toLocaleString(),
+            icon: <PiPackage className="h-4 w-4" />,
             color: 'text-emerald-600 bg-emerald-50',
           },
           {
-            label: 'Receipt Rate',
-            value: `${kpis.receiptPct.toFixed(0)}%`,
-            icon: <PiPackage className="h-4 w-4" />,
-            color: 'text-violet-600 bg-violet-50',
+            label: 'Low / Out',
+            value: `${kpis.lowOutPct.toFixed(0)}%`,
+            full: `${kpis.lowLines} low · ${kpis.outLines} out`,
+            icon: <PiWarning className="h-4 w-4" />,
+            color:
+              kpis.lowLines + kpis.outLines > 0
+                ? 'text-amber-600 bg-amber-50'
+                : 'text-gray-500 bg-gray-100',
           },
           {
-            label: 'Pending Approvals',
-            value: String(summary?.pendingApprovals ?? 0),
-            icon: <PiReceipt className="h-4 w-4" />,
+            label: 'At Expiry Risk',
+            value: fmtCompact(kpis.riskValue),
+            full: fmtNaira(kpis.riskValue),
+            icon: <PiClock className="h-4 w-4" />,
             color:
-              (summary?.pendingApprovals ?? 0) > 0
-                ? 'text-amber-600 bg-amber-50'
+              kpis.riskValue > 0
+                ? 'text-rose-600 bg-rose-50'
                 : 'text-gray-500 bg-gray-100',
           },
         ].map(({ label, value, full, icon, color }) => (
@@ -798,9 +825,9 @@ export default function PurchasesAnalytics() {
               }}
               onFocus={() => setSearchOpen(true)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') addSearchFilter('vendor_search:');
+                if (e.key === 'Enter') addSearchFilter('product_search:');
               }}
-              placeholder="Search vendor, product, or category…"
+              placeholder="Search product, warehouse, or category…"
               className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-xs text-gray-700 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
             />
           </div>
@@ -808,19 +835,21 @@ export default function PurchasesAnalytics() {
             <div className="absolute left-0 z-30 mt-1 w-full overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl">
               <button
                 type="button"
-                onMouseDown={() => addSearchFilter('vendor_search:')}
-                className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
-              >
-                <PiStorefront className="h-3.5 w-3.5 text-gray-400" />
-                Search <strong>Vendor</strong> for "{searchText.trim()}"
-              </button>
-              <button
-                type="button"
                 onMouseDown={() => addSearchFilter('product_search:')}
                 className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
               >
                 <PiPackage className="h-3.5 w-3.5 text-gray-400" />
-                Search <strong>Product</strong> for "{searchText.trim()}"
+                Search <strong>Product</strong> for &quot;{searchText.trim()}
+                &quot;
+              </button>
+              <button
+                type="button"
+                onMouseDown={() => addSearchFilter('warehouse_search:')}
+                className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
+              >
+                <PiBuildings className="h-3.5 w-3.5 text-gray-400" />
+                Search <strong>Warehouse</strong> for &quot;{searchText.trim()}
+                &quot;
               </button>
               <button
                 type="button"
@@ -828,7 +857,8 @@ export default function PurchasesAnalytics() {
                 className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
               >
                 <PiTag className="h-3.5 w-3.5 text-gray-400" />
-                Search <strong>Category</strong> for "{searchText.trim()}"
+                Search <strong>Category</strong> for &quot;{searchText.trim()}
+                &quot;
               </button>
             </div>
           )}
@@ -914,51 +944,13 @@ export default function PurchasesAnalytics() {
                   className="w-full rounded-lg border border-gray-200 bg-gray-50 py-1.5 pl-7 pr-2 text-xs outline-none focus:border-[#b20202] focus:bg-white"
                 />
               </div>
-              <DropSection title="Status" />
+              <DropSection title="Stock" />
               {FILTER_STATIC.map((f) => (
                 <DropItem
                   key={f.key}
                   label={f.label}
                   selected={filters.includes(f.key)}
                   onClick={() => toggleFilter(f.key)}
-                />
-              ))}
-              <DropSection title="Date" />
-              <DropItem
-                label="Today"
-                selected={filters.includes('date_today')}
-                onClick={() => toggleFilter('date_today')}
-              />
-              <DropItem
-                label="This Week"
-                selected={filters.includes('date_week')}
-                onClick={() => toggleFilter('date_week')}
-              />
-              <DropSection title="Months" />
-              {dateItems.months.map((m) => (
-                <DropItem
-                  key={m.key}
-                  label={m.label}
-                  selected={filters.includes(m.key)}
-                  onClick={() => toggleFilter(m.key)}
-                />
-              ))}
-              <DropSection title="Quarters" />
-              {dateItems.quarters.map((q) => (
-                <DropItem
-                  key={q.key}
-                  label={q.label}
-                  selected={filters.includes(q.key)}
-                  onClick={() => toggleFilter(q.key)}
-                />
-              ))}
-              <DropSection title="Years" />
-              {dateItems.years.map((y) => (
-                <DropItem
-                  key={y.key}
-                  label={y.label}
-                  selected={filters.includes(y.key)}
-                  onClick={() => toggleFilter(y.key)}
                 />
               ))}
               {topCategories.length > 0 && (
@@ -1023,25 +1015,6 @@ export default function PurchasesAnalytics() {
               </p>
               <DropSection title="Dimensions" />
               {GROUP_BY_ITEMS.map((g) => {
-                const idx = groupByStack.indexOf(g.key);
-                return (
-                  <DropItem
-                    key={g.key}
-                    label={g.label}
-                    selected={idx >= 0}
-                    onClick={() => toggleGroupBy(g.key)}
-                    badge={
-                      idx >= 0 ? (
-                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700">
-                          {idx + 1}
-                        </span>
-                      ) : undefined
-                    }
-                  />
-                );
-              })}
-              <DropSection title="Order Date" />
-              {GROUP_BY_DATE_ITEMS.map((g) => {
                 const idx = groupByStack.indexOf(g.key);
                 return (
                   <DropItem
@@ -1229,14 +1202,6 @@ export default function PurchasesAnalytics() {
         </div>
       )}
 
-      {hasForeign && (
-        <p className="mb-3 flex items-center gap-1.5 text-[11px] text-gray-400">
-          <PiClock className="h-3 w-3" />
-          Foreign-currency orders are converted to ₦ using current exchange
-          rates.
-        </p>
-      )}
-
       {/* ── Chart / table / pivot ── */}
       {viewMode === 'pivot' ? (
         <PivotView
@@ -1256,7 +1221,7 @@ export default function PurchasesAnalytics() {
           setPivotRowSearch={setPivotRowSearch}
           setExpandedRows={setExpandedRows}
           setExpandedCols={setExpandedCols}
-          onCellClick={(orders, title) => setDrillData({ orders, title })}
+          onCellClick={(rows, title) => setDrillData({ rows, title })}
         />
       ) : (
         <div className="overflow-hidden rounded-2xl border border-[#ece4d6] bg-white shadow-sm">
@@ -1266,9 +1231,7 @@ export default function PurchasesAnalytics() {
               {groupLabel2 ? ` & ${groupLabel2}` : ''}
             </h2>
             <span className="bg-[#b20202]/8 rounded-full px-2.5 py-1 text-xs font-semibold text-[#b20202]">
-              {measure === 'avg_order'
-                ? `${totalOrders} orders`
-                : `Total: ${fmtMeasureVal(totalValue, measure)}`}
+              Total: {fmtMeasureVal(totalValue, measure)}
             </span>
           </div>
 
@@ -1282,8 +1245,8 @@ export default function PurchasesAnalytics() {
                 groupLabel={groupLabel}
                 measureLabel={measureLabel}
                 orderMap={multiSeries.orderMap}
-                onSegmentClick={(rowLabel, seriesKey, poList) =>
-                  openDrill(rowLabel, poList, seriesKey)
+                onSegmentClick={(rowLabel, seriesKey, list) =>
+                  openDrill(rowLabel, list, seriesKey)
                 }
               />
             ) : (
@@ -1294,74 +1257,28 @@ export default function PurchasesAnalytics() {
                 groupLabel={groupLabel}
                 measureLabel={measureLabel}
                 totalValue={totalValue}
-                totalOrders={totalOrders}
-                onBarClick={(label, poList) => openDrill(label, poList)}
+                totalOrders={totalLines}
+                onBarClick={(label, list) => openDrill(label, list)}
               />
             )}
           </div>
         </div>
       )}
 
-      {/* Top vendors quick table (from server summary) */}
-      {summary?.topVendors && summary.topVendors.length > 0 && (
-        <div className="mt-5 overflow-hidden rounded-2xl border border-[#ece4d6] bg-white shadow-sm">
-          <div className="border-b border-[#ece4d6] px-5 py-3">
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#b20202]/70">
-              Leaderboard
-            </p>
-            <h2
-              className={`${fraunces.className} text-base font-semibold text-[#2a2420]`}
-            >
-              Top Vendors by Spend
-            </h2>
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[#ece4d6] bg-[#FAF8F3] text-xs">
-                <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                  Vendor
-                </th>
-                <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                  Orders
-                </th>
-                <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                  Total Spend
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#f1ece2]">
-              {summary.topVendors.map((v, i) => (
-                <tr key={i} className="transition-colors hover:bg-[#FAF8F3]">
-                  <td className="px-4 py-2.5 font-medium text-[#2a2420]">
-                    {v.name}
-                  </td>
-                  <td className="px-4 py-2.5 text-right text-gray-500">
-                    {v.count}
-                  </td>
-                  <td
-                    className={`${fraunces.className} px-4 py-2.5 text-right font-semibold tabular-nums text-[#2a2420]`}
-                  >
-                    {fmtNaira(v.amount ?? 0)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* ── Additional ledger widgets ── */}
+      {/* ── Additional widgets ── */}
       <AnalyticsWidgetsGrid
-        summary={summary}
+        topProducts={topProducts}
+        byWarehouse={byWarehouse}
         topCategories={topCategoryGroups}
+        statusRows={statusRows}
+        expiryRows={expiryRows}
       />
 
-      {/* ── PO Drill-down drawer ── */}
+      {/* ── Stock drill-down drawer ── */}
       {drillData && (
-        <PODrillDrawer
-          orders={drillData.orders}
+        <StockDrillDrawer
+          rows={drillData.rows}
           title={drillData.title}
-          toBase={toBase}
           onClose={() => setDrillData(null)}
         />
       )}

@@ -1,6 +1,7 @@
 import type { VendorBill } from '@/services/vendorBill.service';
 import type { PurchaseOrder } from '@/app/shared/purchases/types';
 import type { StockTransfer } from '@/services/stockTransfer.service';
+import type { VendorReturn } from '@/services/vendorReturn.service';
 
 function fmtDate(d?: string) {
   if (!d) return '—';
@@ -370,4 +371,96 @@ export function buildTransferInvoice(transfer: StockTransfer, companyName: strin
 
 export function printTransferInvoice(transfer: StockTransfer, companyName: string): void {
   openPrint(buildTransferInvoice(transfer, companyName));
+}
+
+export function buildReturnInvoice(ret: VendorReturn, companyName: string): string {
+  const itemRows = ret.items
+    .map((item) => {
+      const name = item.subProductName ?? '—';
+      const size = item.sizeName;
+      const displayName = size && !name.includes(size) ? `${name} – ${size}` : name;
+      return `<tr>
+        <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6">${displayName}<div style="font-size:10px;color:#9ca3af">${item.sku ?? ''}</div></td>
+        <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:center;text-transform:capitalize">${(item.reason ?? '—').replace(/_/g, ' ')}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:right">${item.quantity}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:right">${fmtAmt(item.unitPrice, ret.currency)}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #f3f4f6;text-align:right;font-weight:600">${fmtAmt(item.amount, ret.currency)}</td>
+      </tr>`;
+    })
+    .join('');
+
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Return ${ret.returnNumber}</title><style>${BASE_STYLE}</style></head><body>
+  ${headerBand(ret.returnNumber, `Status: ${ret.status.toUpperCase()}`, companyName)}
+
+  <div style="display:flex;gap:16px;margin-bottom:14px">
+    <div style="flex:1;border:1px solid #e5e7eb;border-radius:6px;padding:10px 14px">
+      <div style="font-size:10px;color:#9ca3af;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">Vendor</div>
+      <div style="font-weight:600;color:#111">${ret.vendorName ?? '—'}</div>
+    </div>
+    <div style="flex:1;border:1px solid #e5e7eb;border-radius:6px;padding:10px 14px">
+      <div style="font-size:10px;color:#9ca3af;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">Return From</div>
+      <div style="font-weight:600;color:#111">${companyName}</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:10px;margin-bottom:14px">
+    ${[
+      ['Currency', ret.currency],
+      ['Return Date', fmtDate(ret.returnDate)],
+      ['PO Reference', ret.poNumber ?? '—'],
+      ['Bill Reference', ret.billNumber ?? '—'],
+    ]
+      .map(
+        ([l, v]) =>
+          `<div style="flex:1;border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px"><div style="font-size:10px;color:#9ca3af">${l}</div><div style="font-weight:600;color:#111;margin-top:2px">${v}</div></div>`
+      )
+      .join('')}
+  </div>
+
+  ${ret.reason ? `<div style="border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;margin-bottom:14px"><div style="font-size:10px;color:#9ca3af;margin-bottom:2px">RETURN REASON</div><div style="font-size:12px;color:#374151">${ret.reason}</div></div>` : ''}
+
+  <table style="margin-bottom:4px">
+    <thead>
+      <tr style="background:#b20202">
+        <th style="padding:8px 10px;color:#fff;font-size:11px">Product</th>
+        <th style="padding:8px 10px;color:#fff;font-size:11px;text-align:center">Reason</th>
+        <th style="padding:8px 10px;color:#fff;font-size:11px;text-align:right">Qty</th>
+        <th style="padding:8px 10px;color:#fff;font-size:11px;text-align:right">Unit Price</th>
+        <th style="padding:8px 10px;color:#fff;font-size:11px;text-align:right">Total</th>
+      </tr>
+    </thead>
+    <tbody>${itemRows}</tbody>
+    <tfoot>
+      <tr style="background:#f9fafb">
+        <td colspan="3" style="padding:10px;text-align:right;font-weight:700">Subtotal</td>
+        <td style="padding:10px;text-align:right">${fmtAmt(ret.subtotal, ret.currency)}</td>
+      </tr>
+      <tr style="background:#f9fafb">
+        <td colspan="3" style="padding:10px;text-align:right;font-weight:700">Tax</td>
+        <td style="padding:10px;text-align:right">${fmtAmt(ret.taxAmount, ret.currency)}</td>
+      </tr>
+      <tr style="background:#f9fafb">
+        <td colspan="3" style="padding:10px;text-align:right;font-weight:700">Total</td>
+        <td style="padding:10px;text-align:right;font-weight:700;font-size:14px">${fmtAmt(ret.totalAmount, ret.currency)}</td>
+      </tr>
+      ${ret.refundAmount ? `<tr style="background:#f9fafb"><td colspan="3" style="padding:10px;text-align:right;font-weight:700">Refunded</td><td style="padding:10px;text-align:right;color:#16a34a">${fmtAmt(ret.refundAmount, ret.currency)}</td></tr>` : ''}
+    </tfoot>
+  </table>
+
+  <div style="display:flex;gap:16px;margin-top:28px">
+    <div style="flex:1;border-top:1px solid #d1d5db;padding-top:6px">
+      <div style="font-size:10px;color:#9ca3af">Authorised Signature</div>
+    </div>
+    <div style="flex:1;border-top:1px solid #d1d5db;padding-top:6px">
+      <div style="font-size:10px;color:#9ca3af">Vendor Acknowledgement</div>
+    </div>
+  </div>
+
+  ${footerRow(companyName)}
+  <script>window.addEventListener('load',function(){window.print();});</script>
+  </body></html>`;
+}
+
+export function printReturnInvoice(ret: VendorReturn, companyName: string): void {
+  openPrint(buildReturnInvoice(ret, companyName));
 }

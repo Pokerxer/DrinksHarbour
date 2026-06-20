@@ -25,6 +25,7 @@ import { vendorBillService } from '@/services/vendorBill.service';
 import type { VendorBill } from '@/services/vendorBill.service';
 import { vendorService } from '@/services/vendor.service';
 import type { Vendor } from '@/services/vendor.service';
+import { fmtPrice } from './types';
 
 // ─── Types ────────────────────────────────────────────────────────
 type AgingBucket = 'current' | '1-30' | '31-60' | '60+';
@@ -32,9 +33,6 @@ type SortCol = 'billNumber' | 'billDate' | 'dueDate' | 'total' | 'due' | 'age';
 type SortDir = 'asc' | 'desc';
 
 // ─── Helpers ──────────────────────────────────────────────────────
-function fmt(n: number, cur = 'NGN') {
-  return `${cur} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
 function fmtShort(n: number) {
   if (n >= 1_000_000) return `₦${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `₦${(n / 1_000).toFixed(1)}k`;
@@ -221,7 +219,7 @@ function PayModal({
       return;
     }
     if (amt > remaining) {
-      toast.error(`Cannot exceed balance due ${fmt(remaining)}`);
+      toast.error(`Cannot exceed balance due ${fmtPrice(remaining)}`);
       return;
     }
     setSaving(true);
@@ -479,11 +477,11 @@ function BillRow({
           {fmtDate(bill.dueDate)}
         </td>
         <td className="px-4 py-3.5 text-xs text-gray-700">
-          {fmt(bill.totalAmount, bill.currency)}
+          {fmtPrice(bill.totalAmount, bill.currency)}
         </td>
         <td className="px-4 py-3.5">
           <div className="text-xs font-bold text-gray-900">
-            {fmt(due, bill.currency)}
+            {fmtPrice(due, bill.currency)}
           </div>
           {pct > 0 && (
             <div className="mt-1 h-1 w-20 overflow-hidden rounded-full bg-gray-100">
@@ -543,7 +541,7 @@ function BillRow({
                           </div>
                         </div>
                         <span className="text-sm font-bold text-emerald-600">
-                          +{fmt(p.amount, bill.currency)}
+                          +{fmtPrice(p.amount, bill.currency)}
                         </span>
                       </div>
                     ))}
@@ -565,27 +563,27 @@ function BillRow({
                     <div className="flex justify-between py-2 text-xs">
                       <span className="text-gray-500">Subtotal</span>
                       <span className="font-medium text-gray-700">
-                        {fmt(bill.subtotal, bill.currency)}
+                        {fmtPrice(bill.subtotal, bill.currency)}
                       </span>
                     </div>
                     {bill.taxAmount > 0 && (
                       <div className="flex justify-between py-2 text-xs">
                         <span className="text-gray-500">Tax</span>
                         <span className="font-medium text-gray-700">
-                          {fmt(bill.taxAmount, bill.currency)}
+                          {fmtPrice(bill.taxAmount, bill.currency)}
                         </span>
                       </div>
                     )}
                     <div className="flex justify-between py-2 text-xs">
                       <span className="font-semibold text-gray-700">Total</span>
                       <span className="font-bold text-gray-900">
-                        {fmt(bill.totalAmount, bill.currency)}
+                        {fmtPrice(bill.totalAmount, bill.currency)}
                       </span>
                     </div>
                     <div className="flex justify-between py-2 text-xs">
                       <span className="text-gray-500">Paid</span>
                       <span className="font-semibold text-emerald-600">
-                        {fmt(bill.paidAmount, bill.currency)}
+                        {fmtPrice(bill.paidAmount, bill.currency)}
                       </span>
                     </div>
                     <div className="flex justify-between py-2 text-xs">
@@ -593,7 +591,7 @@ function BillRow({
                         Balance Due
                       </span>
                       <span className="font-black text-[#b20202]">
-                        {fmt(due, bill.currency)}
+                        {fmtPrice(due, bill.currency)}
                       </span>
                     </div>
                   </div>
@@ -978,7 +976,7 @@ export default function PurchasesVendorOutstanding({
                   key={d.key}
                   className={`${d.barColor} transition-all first:rounded-l-full last:rounded-r-full`}
                   style={{ width: `${(d.total / totalOutstanding) * 100}%` }}
-                  title={`${d.label}: ${fmt(d.total)}`}
+                  title={`${d.label}: ${fmtPrice(d.total)}`}
                 />
               ))}
           </div>
@@ -1134,10 +1132,10 @@ export default function PurchasesVendorOutstanding({
                     {displayed.length} bill{displayed.length !== 1 ? 's' : ''}
                   </td>
                   <td className="px-4 py-3 text-xs font-bold text-gray-700">
-                    {fmt(displayedTotal, 'NGN')}
+                    {fmtPrice(displayedTotal, 'NGN')}
                   </td>
                   <td className="px-4 py-3 text-xs font-black text-[#b20202]">
-                    {fmt(displayedDue, 'NGN')}
+                    {fmtPrice(displayedDue, 'NGN')}
                   </td>
                   <td colSpan={3} />
                 </tr>

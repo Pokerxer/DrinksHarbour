@@ -28,7 +28,7 @@ import { vendorService } from '@/services/vendor.service';
 import type { Vendor } from '@/services/vendor.service';
 import { vendorBillService } from '@/services/vendorBill.service';
 import type { VendorBill, Payment } from '@/services/vendorBill.service';
-import { STATUS_BADGE } from './types';
+import { STATUS_BADGE, fmtPrice } from './types';
 
 // ─── types ────────────────────────────────────────────────────────
 type SortCol =
@@ -68,9 +68,6 @@ const DATE_RANGES: { key: DateRange; label: string; days: number }[] = [
 ];
 
 // ─── helpers ─────────────────────────────────────────────────────
-function fmt(n: number, cur = 'NGN') {
-  return `${cur} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
 function fmtShort(n: number) {
   if (n >= 1_000_000) return `₦${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `₦${(n / 1_000).toFixed(1)}k`;
@@ -257,7 +254,7 @@ function PaymentTimeline({ bills }: { bills: VendorBill[] }) {
         <div>
           <div className="text-[11px] text-gray-400">Total Paid Out</div>
           <div className="text-sm font-bold text-emerald-600">
-            {fmt(totalPaidAmt)}
+            {fmtPrice(totalPaidAmt)}
           </div>
         </div>
       </div>
@@ -272,7 +269,7 @@ function PaymentTimeline({ bills }: { bills: VendorBill[] }) {
               </span>
               <div className="flex-1 border-t border-gray-100" />
               <span className="text-[11px] text-gray-400">
-                {fmt(entries.reduce((s, p) => s + p.amount, 0))}
+                {fmtPrice(entries.reduce((s, p) => s + p.amount, 0))}
               </span>
             </div>
             <div className="relative pl-5">
@@ -288,7 +285,7 @@ function PaymentTimeline({ bills }: { bills: VendorBill[] }) {
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <span className="text-[12px] font-bold text-gray-800">
-                            {fmt(p.amount)}
+                            {fmtPrice(p.amount)}
                           </span>
                           <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium capitalize text-gray-500">
                             {(p.method ?? 'bank transfer').replace(/_/g, ' ')}
@@ -878,12 +875,12 @@ export default function PurchasesInvoiced({ vendorId }: { vendorId: string }) {
                             </td>
                             <td className="px-4 py-3.5 text-right">
                               <span className="text-[12px] font-semibold text-gray-800">
-                                {fmt(b.totalAmount, b.currency)}
+                                {fmtPrice(b.totalAmount, b.currency)}
                               </span>
                             </td>
                             <td className="px-4 py-3.5 text-right">
                               <span className="text-[12px] font-semibold text-emerald-600">
-                                {fmt(b.paidAmount, b.currency)}
+                                {fmtPrice(b.paidAmount, b.currency)}
                               </span>
                               {b.totalAmount > 0 && (
                                 <div className="ml-auto mt-1 h-1 w-20 overflow-hidden rounded-full bg-gray-100">
@@ -898,7 +895,7 @@ export default function PurchasesInvoiced({ vendorId }: { vendorId: string }) {
                               <span
                                 className={`text-[12px] font-bold ${due > 0 ? (over ? 'text-[#b20202]' : 'text-amber-600') : 'text-gray-300'}`}
                               >
-                                {due > 0 ? fmt(due, b.currency) : '—'}
+                                {due > 0 ? fmtPrice(due, b.currency) : '—'}
                               </span>
                             </td>
                             <td className="px-4 py-3.5 text-right">
@@ -925,13 +922,13 @@ export default function PurchasesInvoiced({ vendorId }: { vendorId: string }) {
                           {filtered.length} of {bills.length} bills
                         </td>
                         <td className="px-4 py-3 text-right text-[12px] font-bold text-gray-900">
-                          {fmt(footerTotals.total)}
+                          {fmtPrice(footerTotals.total)}
                         </td>
                         <td className="px-4 py-3 text-right text-[12px] font-bold text-emerald-600">
-                          {fmt(footerTotals.paid)}
+                          {fmtPrice(footerTotals.paid)}
                         </td>
                         <td className="px-4 py-3 text-right text-[12px] font-bold text-[#b20202]">
-                          {footerTotals.due > 0 ? fmt(footerTotals.due) : '—'}
+                          {footerTotals.due > 0 ? fmtPrice(footerTotals.due) : '—'}
                         </td>
                         <td />
                       </tr>

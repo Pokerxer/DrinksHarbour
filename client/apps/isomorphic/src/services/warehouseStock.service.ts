@@ -28,6 +28,27 @@ export interface WarehouseStockRow {
   bin?: string;
 }
 
+/**
+ * Flattened stock line returned by GET /api/warehouses/stock/all and consumed by
+ * the warehouse-analysis page. One row = one (warehouse, subProduct, size) line,
+ * carrying its own cost basis and earliest batch expiry.
+ */
+export interface StockRow {
+  _id: string;
+  warehouseId: string;
+  warehouseName: string;
+  subProductId: string;
+  productName: string;
+  sku: string;
+  sizeId: string;
+  sizeName: string;
+  currentQuantity: number;
+  reservedQuantity: number;
+  costPrice: number;
+  minStockLevel: number;
+  earliestExpiry: string | null;
+}
+
 export type AdjustType = 'received' | 'shipped' | 'adjusted';
 
 async function handle(res: Response, fallback: string) {
@@ -44,6 +65,16 @@ const jsonAuth = (token: string) => ({
 });
 
 export const warehouseStockService = {
+  async getAllStock(
+    token: string
+  ): Promise<{ success: boolean; data: StockRow[] }> {
+    return handle(
+      await fetch(`${API_URL}/api/warehouses/stock/all`, {
+        headers: auth(token),
+      }),
+      'Failed to load warehouse stock'
+    );
+  },
   async getWarehouseStock(warehouseId: string, token: string) {
     return handle(
       await fetch(`${API_URL}/api/warehouses/${warehouseId}/stock`, {

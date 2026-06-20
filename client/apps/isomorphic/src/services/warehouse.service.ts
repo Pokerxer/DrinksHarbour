@@ -42,6 +42,44 @@ export type WarehouseInput = {
   isDefault?: boolean;
 };
 
+export interface WarehouseSettings {
+  /** Pre-selected warehouse id for new stock operations; '' = none */
+  defaultWarehouse: string;
+  /** Global low-stock threshold for warehouse stock highlighting */
+  lowStockThreshold: number;
+  valuationMethod: 'fifo' | 'average';
+  allowNegativeStock: boolean;
+  batchTrackingEnabled: boolean;
+  /** Warn when a batch is within this many days of expiry */
+  nearExpiryDays: number;
+
+  // Replenishment & alerts
+  /** Global default reorder point */
+  reorderPoint: number;
+  /** Default quantity suggested when reordering */
+  reorderQuantity: number;
+  /** Flag items at/below the reorder point in warehouse views */
+  flagBelowReorderPoint: boolean;
+  /** Surface an alert when an item reaches zero on hand */
+  outOfStockAlert: boolean;
+  /** Max on-hand before an item is flagged overstocked; 0 = disabled */
+  overstockCeiling: number;
+
+  // Transfers
+  requireTransferApproval: boolean;
+  allowInterWarehouseTransfers: boolean;
+  /** Transfers at/above this value need approval; 0 = all when approval on */
+  transferApprovalThreshold: number;
+
+  // Expiry enforcement
+  /** Block selling/picking stock that has expired */
+  blockExpiredStock: boolean;
+  /** Prefer first-expired-first-out when picking stock */
+  fefoPicking: boolean;
+  /** Automatically quarantine batches once they expire */
+  autoQuarantineExpired: boolean;
+}
+
 async function handle(res: Response, fallback: string) {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -123,6 +161,35 @@ export const warehouseService = {
     return handle(
       await fetch(url, { headers: auth(token) }),
       'Failed to load batches'
+    );
+  },
+
+  async getWarehouseSettings(token: string): Promise<{
+    success: boolean;
+    data: { warehouseSettings: WarehouseSettings };
+  }> {
+    return handle(
+      await fetch(`${API_URL}/api/warehouses/settings`, {
+        headers: auth(token),
+      }),
+      'Failed to load warehouse settings'
+    );
+  },
+
+  async updateWarehouseSettings(
+    token: string,
+    warehouseSettings: Partial<WarehouseSettings>
+  ): Promise<{
+    success: boolean;
+    data: { warehouseSettings: WarehouseSettings };
+  }> {
+    return handle(
+      await fetch(`${API_URL}/api/warehouses/settings`, {
+        method: 'PATCH',
+        headers: jsonAuth(token),
+        body: JSON.stringify({ warehouseSettings }),
+      }),
+      'Failed to update warehouse settings'
     );
   },
 };

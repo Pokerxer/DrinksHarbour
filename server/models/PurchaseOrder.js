@@ -206,6 +206,11 @@ const PurchaseOrderSchema = new Schema(
           type: Number,
           default: 0,
         },
+        returnedQty: {
+          type: Number,
+          default: 0,
+          min: 0,
+        },
       },
     ],
     notes: {

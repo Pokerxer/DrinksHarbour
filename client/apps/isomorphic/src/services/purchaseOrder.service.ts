@@ -80,6 +80,7 @@ export interface POItem {
   packaging?: string;
   taxRate?: number;
   totalCost?: number;
+  returnedQty?: number;
 }
 
 export interface PurchaseSettings {

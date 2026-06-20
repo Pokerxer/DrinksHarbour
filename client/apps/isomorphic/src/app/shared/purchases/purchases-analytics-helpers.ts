@@ -69,6 +69,33 @@ export interface ProdMeta {
   brandName: string;
 }
 
+/**
+ * Builds the subProductId → metadata map used for Group By
+ * category/subcategory/brand. The POS products endpoint (`/api/pos/products`)
+ * returns SubProduct documents whose real metadata is nested under `.product`,
+ * so category/subCategory/brand are read from there — not the SubProduct top
+ * level. The map is keyed by the SubProduct `_id` because PO line items store a
+ * matching `subProductId`; the textual `subProductName` is unreliable as a key
+ * (it can carry a size suffix, e.g. "… – 70cl (Standard)") (see resolveItemDimKey).
+ */
+export function buildProdMeta(subProducts: any[]): Record<string, ProdMeta> {
+  const meta: Record<string, ProdMeta> = {};
+  for (const sp of subProducts || []) {
+    const id = sp?._id ? String(sp._id) : '';
+    const prod = sp?.product;
+    if (!id || !prod) continue;
+    meta[id] = {
+      catId: prod.category?._id || '',
+      catName: prod.category?.name || '',
+      subCatId: prod.subCategory?._id || undefined,
+      subCatName: prod.subCategory?.name || undefined,
+      brandId: prod.brand?._id || '',
+      brandName: prod.brand?.name || '',
+    };
+  }
+  return meta;
+}
+
 export interface GroupRow {
   label: string;
   isoKey: string;
@@ -192,10 +219,7 @@ export function fmtNaira(v: number): string {
 }
 
 /** Formats an amount using the symbol for its own currency (not converted). */
-export function fmtCur(v: number, currency: string): string {
-  const symbol = CURRENCY_SYMBOLS[currency] ?? currency;
-  return `${symbol}${v.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+export { fmtPrice as fmtCur } from './types';
 
 export function fmtCompact(v: number): string {
   if (v >= 1_000_000_000) return `₦${(v / 1_000_000_000).toFixed(1)}B`;
@@ -206,10 +230,11 @@ export function fmtCompact(v: number): string {
 }
 
 export function fmtAxisVal(v: number, measure: Measure): string {
+  const sym = CURRENCY_SYMBOLS['NGN'];
   if (IS_CURRENCY[measure]) {
-    if (v >= 1_000_000) return `₦${(v / 1_000_000).toFixed(1)}M`;
-    if (v >= 1_000) return `₦${Math.round(v / 1_000)}K`;
-    return `₦${v}`;
+    if (v >= 1_000_000) return `${sym}${(v / 1_000_000).toFixed(1)}M`;
+    if (v >= 1_000) return `${sym}${Math.round(v / 1_000)}K`;
+    return `${sym}${v}`;
   }
   if (v >= 1_000) return `${Math.round(v / 1_000)}K`;
   return String(v);
@@ -217,6 +242,27 @@ export function fmtAxisVal(v: number, measure: Measure): string {
 
 export function fmtMeasureVal(v: number, measure: Measure): string {
   return IS_CURRENCY[measure] ? fmtNaira(v) : String(Math.round(v));
+}
+
+/** Compact label for bar data labels – full for small values, compact for large. */
+export function fmtDataLabel(v: number, measure: Measure): string {
+  if (!IS_CURRENCY[measure]) {
+    if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+    if (v >= 1_000) return `${Math.round(v / 1_000)}K`;
+    return String(Math.round(v));
+  }
+  if (v >= 1_000_000) {
+    const sym = CURRENCY_SYMBOLS['NGN'];
+    return `${sym}${(v / 1_000_000).toFixed(v >= 10_000_000 ? 1 : 2)}M`;
+  }
+  return fmtNaira(v);
+}
+
+/** Computes the average value (or 0 if not applicable) for a set of rows. */
+export function computeAvg(rows: { value: number }[]): number {
+  if (rows.length === 0) return 0;
+  const sum = rows.reduce((s, r) => s + r.value, 0);
+  return sum / rows.length;
 }
 
 export function buildDateFilterItems(now: Date) {
@@ -248,6 +294,19 @@ export function itemName(i: POItem): string {
   return i.subProductName || i.productName || i.sku || 'Unknown';
 }
 
+/**
+ * Normalises a line item's sub-product reference to the bare id string used as
+ * the `prodMeta` key. The purchase-orders feed populates `subProductId` into an
+ * object (`{ _id, name, sku }`), while other feeds leave it a raw id string —
+ * handle both so the metadata lookup never silently misses.
+ */
+export function itemSubProductKey(i: POItem): string {
+  const ref = i.subProductId as unknown;
+  if (ref && typeof ref === 'object')
+    return String((ref as { _id?: unknown })._id ?? '');
+  return String(ref ?? '');
+}
+
 // Line cost helpers — unitCost is the canonical purchase price
 export function lineUntaxed(i: POItem): number {
   return (i.unitCost ?? i.unitPrice ?? 0) * (i.quantity ?? 0);
@@ -264,7 +323,7 @@ export function resolveItemDimKey(
   dim: GroupByKey,
   prodMeta: Record<string, ProdMeta>
 ): string {
-  const meta = prodMeta[item.productName];
+  const meta = prodMeta[itemSubProductKey(item)];
   switch (dim) {
     case 'product':
       return itemName(item);
@@ -385,7 +444,7 @@ export function applyFilters(
   if (catNameVals.length > 0)
     r = r.filter((o) =>
       (o.items || []).some((i) => {
-        const meta = prodMeta[i.productName];
+        const meta = prodMeta[itemSubProductKey(i)];
         const cat = (meta?.catName || '').toLowerCase();
         const sub = (meta?.subCatName || '').toLowerCase();
         return catNameVals.some((q) => cat.includes(q) || sub.includes(q));
@@ -398,7 +457,17 @@ export function applyFilters(
   if (categoryIds.length > 0)
     r = r.filter((o) =>
       (o.items || []).some((i) =>
-        categoryIds.includes(prodMeta[i.productName]?.catId || '')
+        categoryIds.includes(prodMeta[itemSubProductKey(i)]?.catId || '')
+      )
+    );
+
+  const subcatIds = filters
+    .filter((f) => f.startsWith('subcategory_'))
+    .map((f) => f.slice(12));
+  if (subcatIds.length > 0)
+    r = r.filter((o) =>
+      (o.items || []).some((i) =>
+        subcatIds.includes(prodMeta[itemSubProductKey(i)]?.subCatId || '')
       )
     );
 
@@ -408,7 +477,7 @@ export function applyFilters(
   if (brandIds.length > 0)
     r = r.filter((o) =>
       (o.items || []).some((i) =>
-        brandIds.includes(prodMeta[i.productName]?.brandId || '')
+        brandIds.includes(prodMeta[itemSubProductKey(i)]?.brandId || '')
       )
     );
 
@@ -595,16 +664,71 @@ export function computeMultiSeries(
   const seriesSet = new Set<string>();
   const g1Order: string[] = [];
 
-  orders.forEach((o) => {
-    const g1 = getPOG1Key(o, groupBy, prodMeta);
-    const g2 = getPOG1Key(o, groupBy2, prodMeta);
+  // Per-cell line items, keyed [g1][g2]. Attributing item-level dimensions
+  // (product/category/subcategory/brand) per line item — rather than collapsing
+  // each PO to items[0] — is what lets a multi-line PO contribute to several
+  // brands/categories at once instead of dumping its whole value into one bucket.
+  const cellItems: Record<
+    string,
+    Record<string, { item: POItem; currency: string }[]>
+  > = {};
+  // Deduped orders per cell, used both for drill-down (orderMap) and for
+  // order-level measures (count / avg_order).
+  const cellOrderSets: Record<string, Record<string, Set<PurchaseOrder>>> = {};
+
+  const g1IsItem = ITEM_DIMS.has(groupBy);
+  const g2IsItem = ITEM_DIMS.has(groupBy2);
+  const itemDimFallback = (dim: GroupByKey): string =>
+    dim === 'product'
+      ? 'Unknown'
+      : dim === 'brand'
+        ? 'No Brand'
+        : 'Uncategorized';
+
+  const register = (g1: string, g2: string): void => {
     seriesSet.add(g2);
     if (!orderMap[g1]) {
       orderMap[g1] = {};
+      cellItems[g1] = {};
+      cellOrderSets[g1] = {};
       g1Order.push(g1);
     }
-    if (!orderMap[g1][g2]) orderMap[g1][g2] = [];
-    orderMap[g1][g2].push(o);
+    if (!orderMap[g1][g2]) {
+      orderMap[g1][g2] = [];
+      cellItems[g1][g2] = [];
+      cellOrderSets[g1][g2] = new Set();
+    }
+  };
+
+  orders.forEach((o) => {
+    const currency = o.currency || BASE_CURRENCY;
+    const items = o.items || [];
+    // Order-level dimension keys are constant across the PO's lines.
+    const g1o = g1IsItem ? null : getPOG1Key(o, groupBy, prodMeta);
+    const g2o = g2IsItem ? null : getPOG1Key(o, groupBy2, prodMeta);
+
+    if (items.length === 0) {
+      // No lines — still place the PO so order-level measures (count) are correct.
+      const g1 = g1o ?? itemDimFallback(groupBy);
+      const g2 = g2o ?? itemDimFallback(groupBy2);
+      register(g1, g2);
+      if (!cellOrderSets[g1][g2].has(o)) {
+        cellOrderSets[g1][g2].add(o);
+        orderMap[g1][g2].push(o);
+      }
+      return;
+    }
+
+    items.forEach((item) => {
+      const g1 = g1IsItem ? resolveItemDimKey(item, groupBy, prodMeta) : g1o!;
+      const g2 = g2IsItem ? resolveItemDimKey(item, groupBy2, prodMeta) : g2o!;
+      register(g1, g2);
+      cellItems[g1][g2].push({ item, currency });
+      if (!cellOrderSets[g1][g2].has(o)) {
+        cellOrderSets[g1][g2].add(o);
+        orderMap[g1][g2].push(o);
+      }
+    });
   });
 
   const series = Array.from(seriesSet).sort();
@@ -621,10 +745,8 @@ export function computeMultiSeries(
 
     series.forEach((s) => {
       const poList = orderMap[g1][s] || [];
-      const items: { item: POItem; currency: string }[] = [];
+      const items = cellItems[g1]?.[s] || [];
       poList.forEach((o) => {
-        const currency = o.currency || BASE_CURRENCY;
-        (o.items || []).forEach((item) => items.push({ item, currency }));
         if (!seen.has(o._id)) {
           seen.add(o._id);
           row.orderList.push(o);
