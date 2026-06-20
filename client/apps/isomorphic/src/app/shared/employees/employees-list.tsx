@@ -284,7 +284,9 @@ function EmployeeDrawer({
                 <input
                   className={`mt-1.5 ${field}`}
                   value={form.firstName}
-                  onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, firstName: e.target.value })
+                  }
                   placeholder="Ada"
                 />
               </label>
@@ -293,7 +295,9 @@ function EmployeeDrawer({
                 <input
                   className={`mt-1.5 ${field}`}
                   value={form.lastName ?? ''}
-                  onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, lastName: e.target.value })
+                  }
                   placeholder="Obi"
                 />
               </label>
@@ -309,7 +313,8 @@ function EmployeeDrawer({
                 />
               </label>
               <label className="col-span-2 text-sm font-medium text-gray-700">
-                Phone <span className="font-normal text-gray-400">(optional)</span>
+                Phone{' '}
+                <span className="font-normal text-gray-400">(optional)</span>
                 <input
                   type="tel"
                   className={`mt-1.5 ${field}`}
@@ -334,7 +339,10 @@ function EmployeeDrawer({
                   className={`mt-1.5 ${field} ${isOwner ? 'cursor-not-allowed bg-gray-50 text-gray-500' : ''}`}
                   value={isOwner ? 'tenant_owner' : form.role}
                   onChange={(e) =>
-                    setForm({ ...form, role: e.target.value as EmployeeInput['role'] })
+                    setForm({
+                      ...form,
+                      role: e.target.value as EmployeeInput['role'],
+                    })
                   }
                 >
                   {isOwner && <option value="tenant_owner">Owner</option>}
@@ -349,7 +357,10 @@ function EmployeeDrawer({
                   className={`mt-1.5 ${field} ${isOwner ? 'cursor-not-allowed bg-gray-50 text-gray-500' : ''}`}
                   value={form.status}
                   onChange={(e) =>
-                    setForm({ ...form, status: e.target.value as EmployeeStatus })
+                    setForm({
+                      ...form,
+                      status: e.target.value as EmployeeStatus,
+                    })
                   }
                 >
                   <option value="active">Active</option>
@@ -391,13 +402,17 @@ function EmployeeDrawer({
                   <input
                     className={`mt-1.5 ${field} bg-white`}
                     value={form.posName ?? ''}
-                    onChange={(e) => setForm({ ...form, posName: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, posName: e.target.value })
+                    }
                     placeholder={form.firstName || 'Cashier name'}
                   />
                 </label>
 
                 <div>
-                  <p className="mb-2 text-sm font-medium text-gray-700">Permissions</p>
+                  <p className="mb-2 text-sm font-medium text-gray-700">
+                    Permissions
+                  </p>
                   <div className="flex flex-wrap gap-2">
                     {POS_PERMISSIONS.map((p) => {
                       const on = (form.posPermissions ?? []).includes(p);
@@ -620,7 +635,7 @@ export default function EmployeesList() {
     'rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20';
 
   return (
-    <div className="-mx-4 -mt-2 flex min-h-screen flex-col bg-[#FAF8F3] md:-mx-5 lg:-mx-6 3xl:-mx-8 4xl:-mx-10">
+    <div className="flex flex-col">
       {/* ── Hero ── */}
       <div
         className="relative overflow-hidden px-6 py-8 md:px-10 lg:px-14"
@@ -647,7 +662,9 @@ export default function EmployeesList() {
               <p className="text-xs font-semibold uppercase tracking-[0.15em] text-red-200">
                 DrinksHarbour
               </p>
-              <h1 className={`${fraunces.className} mt-0.5 text-3xl font-semibold text-white`}>
+              <h1
+                className={`${fraunces.className} mt-0.5 text-3xl font-semibold text-white`}
+              >
                 Employees
               </h1>
               <p className="mt-0.5 text-sm text-red-200">
@@ -667,7 +684,9 @@ export default function EmployeesList() {
               className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-white transition-colors hover:bg-white/20 disabled:opacity-50"
               title="Refresh"
             >
-              <PiArrowsClockwise className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              <PiArrowsClockwise
+                className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
+              />
             </button>
             <button
               type="button"
@@ -715,7 +734,8 @@ export default function EmployeesList() {
         {/* Toolbar */}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-gray-700">
-            {filtered.length} of {total} {total === 1 ? 'employee' : 'employees'}
+            {filtered.length} of {total}{' '}
+            {total === 1 ? 'employee' : 'employees'}
           </h2>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
@@ -729,7 +749,9 @@ export default function EmployeesList() {
             </div>
             <select
               value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value as '' | EmployeeRole)}
+              onChange={(e) =>
+                setRoleFilter(e.target.value as '' | EmployeeRole)
+              }
               className={selectCls}
             >
               <option value="">All roles</option>
@@ -739,7 +761,9 @@ export default function EmployeesList() {
             </select>
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as '' | EmployeeStatus)}
+              onChange={(e) =>
+                setStatusFilter(e.target.value as '' | EmployeeStatus)
+              }
               className={selectCls}
             >
               <option value="">All statuses</option>
@@ -848,9 +872,7 @@ export default function EmployeesList() {
                         {e.posAccess ? (
                           <span className="inline-flex items-center gap-1.5 rounded-full bg-[#b20202]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#b20202]">
                             <PiStorefront className="h-3.5 w-3.5" />
-                            {e.hasPin ? (
-                              <PiKey className="h-3 w-3" />
-                            ) : null}
+                            {e.hasPin ? <PiKey className="h-3 w-3" /> : null}
                             Enabled
                           </span>
                         ) : (
