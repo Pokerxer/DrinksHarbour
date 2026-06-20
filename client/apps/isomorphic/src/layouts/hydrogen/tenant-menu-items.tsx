@@ -14,6 +14,7 @@ import {
   PiTruckDuotone,
   PiUserGearDuotone,
   PiUsersThreeDuotone,
+  PiAddressBookDuotone,
   PiStorefrontDuotone,
   PiChatCircleDotsDuotone,
   PiArrowsDownUpDuotone,
@@ -250,6 +251,12 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     name: 'Employees',
     href: routes.employees.list,
     icon: <PiUsersThreeDuotone />,
+    // available on all plans
+  },
+  {
+    name: 'Contacts',
+    href: routes.contacts.list,
+    icon: <PiAddressBookDuotone />,
     // available on all plans
   },
   {

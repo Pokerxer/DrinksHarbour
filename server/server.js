@@ -181,6 +181,7 @@ app.use('/api/gemini',             geminiRoutes);
 app.use('/api/banner-ai',          bannerGeminiRoutes);
 app.use('/api/tenants',            require('./routes/tenant.routes'));
 app.use('/api/employees',          require('./routes/employee.routes'));
+app.use('/api/contacts',           require('./routes/contact.routes'));
 app.use('/api/pos',                require('./routes/pos.routes'));
 app.use('/api/pos-combos',         require('./routes/posCombo.routes'));
 

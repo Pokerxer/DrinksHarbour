@@ -14,6 +14,11 @@ export const routes = {
     list: '/employees',
     detail: (id: string) => `/employees/${id}`,
   },
+  contacts: {
+    list: '/contacts',
+    // `key` is the "source:id" handle returned on each Contact.
+    detail: (key: string) => `/contacts/${key}`,
+  },
   eCommerce: {
     dashboard: '/ecommerce',
     products: '/ecommerce/products',
