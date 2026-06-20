@@ -129,6 +129,7 @@ export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
         firstName: form.firstName,
         lastName: form.lastName,
         phone: form.phone,
+        avatar: form.avatar ?? null,
         posAccess: form.posAccess,
         posName: form.posName,
         posPermissions: form.posPermissions,
