@@ -10,6 +10,9 @@ export const routes = {
     settings: '/settings#warehouses',
     inventorySettings: '/settings#pos_inventory',
   },
+  employees: {
+    list: '/employees',
+  },
   eCommerce: {
     dashboard: '/ecommerce',
     products: '/ecommerce/products',

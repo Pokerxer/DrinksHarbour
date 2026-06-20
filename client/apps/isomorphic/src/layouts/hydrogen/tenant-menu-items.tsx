@@ -247,6 +247,12 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     icon: <PiUserGearDuotone />,
   },
   {
+    name: 'Employees',
+    href: routes.employees.list,
+    icon: <PiUsersThreeDuotone />,
+    // available on all plans
+  },
+  {
     name: 'Users & Roles',
     href: routes.rolesPermissions,
     icon: <PiShieldCheckDuotone />,
