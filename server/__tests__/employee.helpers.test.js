@@ -4,6 +4,7 @@ const assert = require('node:assert');
 const {
   isValidPin,
   isValidEmail,
+  sanitizeAvatar,
   sanitizePermissions,
   buildEmployeeFilter,
   buildCreatePayload,
@@ -22,6 +23,26 @@ test('isValidPin accepts 4–6 digit numeric strings only', () => {
   assert.ok(!isValidPin('123'));
   assert.ok(!isValidPin('1234567'));
   assert.ok(!isValidPin('12ab'));
+});
+
+test('sanitizeAvatar normalises strings, objects and empties', () => {
+  assert.deepStrictEqual(sanitizeAvatar('https://cdn/x.png'), {
+    url: 'https://cdn/x.png',
+  });
+  assert.deepStrictEqual(
+    sanitizeAvatar({ url: ' https://cdn/x.png ', publicId: ' emp/1 ' }),
+    { url: 'https://cdn/x.png', publicId: 'emp/1' }
+  );
+  // url without a publicId drops the key rather than storing ''
+  assert.deepStrictEqual(sanitizeAvatar({ url: 'https://cdn/x.png' }), {
+    url: 'https://cdn/x.png',
+  });
+  // anything without a usable url clears (null)
+  assert.strictEqual(sanitizeAvatar(''), null);
+  assert.strictEqual(sanitizeAvatar(null), null);
+  assert.strictEqual(sanitizeAvatar(undefined), null);
+  assert.strictEqual(sanitizeAvatar({ publicId: 'only-id' }), null);
+  assert.strictEqual(sanitizeAvatar({ url: '   ' }), null);
 });
 
 test('isValidEmail catches obviously malformed addresses', () => {

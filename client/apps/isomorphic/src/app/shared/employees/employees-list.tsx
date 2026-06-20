@@ -22,6 +22,7 @@ import {
   PiPhone,
   PiStorefront,
   PiWarningCircle,
+  PiIdentificationCard,
 } from 'react-icons/pi';
 import {
   employeeService,
@@ -39,6 +40,7 @@ import EmployeeProfileForm, {
   StatusBadge,
   fullName,
 } from './employee-profile-form';
+import EmployeeBadge from './employee-badge';
 
 // ── Stat card ────────────────────────────────────────────────────────────────
 
@@ -182,6 +184,7 @@ export default function EmployeesList() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<EmployeeInput>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [badgeFor, setBadgeFor] = useState<Employee | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -205,7 +208,8 @@ export default function EmployeesList() {
     setShowForm(true);
   };
 
-  const openDetail = (e: Employee) => router.push(routes.employees.detail(e._id));
+  const openDetail = (e: Employee) =>
+    router.push(routes.employees.detail(e._id));
 
   const save = async () => {
     if (!form.firstName.trim()) {
@@ -396,7 +400,9 @@ export default function EmployeesList() {
             </div>
             <select
               value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value as '' | EmployeeRole)}
+              onChange={(e) =>
+                setRoleFilter(e.target.value as '' | EmployeeRole)
+              }
               className={selectCls}
             >
               <option value="">All roles</option>
@@ -531,6 +537,17 @@ export default function EmployeesList() {
                             type="button"
                             onClick={(ev) => {
                               ev.stopPropagation();
+                              setBadgeFor(e);
+                            }}
+                            title="Generate badge"
+                            className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-[#b20202]/10 hover:text-[#b20202]"
+                          >
+                            <PiIdentificationCard className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
                               openDetail(e);
                             }}
                             title="Edit"
@@ -577,6 +594,10 @@ export default function EmployeesList() {
           />
         )}
       </AnimatePresence>
+
+      {badgeFor && (
+        <EmployeeBadge employee={badgeFor} onClose={() => setBadgeFor(null)} />
+      )}
     </div>
   );
 }

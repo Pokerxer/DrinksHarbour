@@ -22,6 +22,7 @@ import {
   POS_PERMISSIONS,
   GENDER_OPTIONS,
   MARITAL_OPTIONS,
+  type AvatarInput,
   type Employee,
   type EmployeeInput,
   type EmployeeProfile,
@@ -139,6 +140,7 @@ export const EMPTY_FORM: EmployeeInput = {
   lastName: '',
   email: '',
   phone: '',
+  avatar: null,
   role: 'tenant_staff',
   status: 'active',
   posAccess: false,
@@ -202,6 +204,7 @@ export function employeeToForm(e: Employee): EmployeeInput {
     lastName: e.lastName,
     email: e.email,
     phone: e.phone,
+    avatar: e.avatar ? { url: e.avatar } : null,
     role: e.role === 'tenant_owner' ? 'tenant_admin' : e.role,
     status: e.status,
     posAccess: e.posAccess,
@@ -214,13 +217,7 @@ export function employeeToForm(e: Employee): EmployeeInput {
 
 // ── Avatar + badges ─────────────────────────────────────────────────────────
 
-export function Avatar({
-  e,
-  size = 40,
-}: {
-  e: Employee;
-  size?: number;
-}) {
+export function Avatar({ e, size = 40 }: { e: Employee; size?: number }) {
   if (e.avatar) {
     return (
       <Image
@@ -488,6 +485,105 @@ function UploadField({
 // Renders only the form sections; the caller supplies any header / scroll
 // container / save footer.
 
+// Circular profile-photo picker. Uploads via Cloudinary and reports the
+// resulting { url, publicId } (or null when cleared) back to the form.
+function AvatarField({
+  url,
+  seed,
+  token,
+  onChange,
+}: {
+  url: string;
+  seed: string;
+  token: string;
+  onChange: (avatar: AvatarInput | null) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const letters =
+    seed
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((s) => s[0]?.toUpperCase())
+      .join('') || '?';
+
+  const onPick = async (file?: File) => {
+    if (!file) return;
+    if (!token) {
+      toast.error('Not authenticated');
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please choose an image file');
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await uploadService.uploadImage(file, token, 'employee-avatars');
+      onChange({ url: res.data.url, publicId: res.data.publicId });
+      toast.success('Photo updated');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Upload failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="col-span-2 flex items-center gap-4">
+      <div className="relative h-20 w-20 shrink-0">
+        {url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={url}
+            alt="Employee photo"
+            className="h-20 w-20 rounded-full object-cover ring-2 ring-[#b20202]/15"
+          />
+        ) : (
+          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#b20202]/10 text-xl font-bold text-[#b20202] ring-2 ring-[#b20202]/15">
+            {letters}
+          </div>
+        )}
+        {busy && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-full bg-white/70">
+            <PiSpinnerGap className="h-5 w-5 animate-spin text-[#b20202]" />
+          </div>
+        )}
+      </div>
+      <div>
+        <p className="text-sm font-medium text-gray-700">Profile photo</p>
+        <p className="mt-0.5 text-xs text-gray-400">
+          JPG or PNG, used on the employee badge.
+        </p>
+        <div className="mt-2 flex items-center gap-2">
+          <label
+            className={`flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 transition-colors hover:border-[#b20202] hover:text-[#b20202] ${busy ? 'pointer-events-none opacity-60' : ''}`}
+          >
+            <PiUploadSimple className="h-4 w-4" />
+            {url ? 'Replace' : 'Upload'}
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              disabled={busy}
+              onChange={(e) => onPick(e.target.files?.[0])}
+            />
+          </label>
+          {url && (
+            <button
+              type="button"
+              onClick={() => onChange(null)}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+            >
+              <PiTrash className="h-3.5 w-3.5" /> Remove
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function EmployeeProfileForm({
   form,
   setForm,
@@ -547,6 +643,15 @@ export default function EmployeeProfileForm({
           Details
         </p>
         <div className="grid grid-cols-2 gap-4">
+          <AvatarField
+            url={form.avatar?.url ?? ''}
+            seed={
+              [form.firstName, form.lastName].filter(Boolean).join(' ') ||
+              form.email
+            }
+            token={token}
+            onChange={(avatar) => setForm({ ...form, avatar })}
+          />
           <label className="text-sm font-medium text-gray-700">
             First name
             <input
@@ -590,7 +695,10 @@ export default function EmployeeProfileForm({
       </section>
 
       {/* Role & status */}
-      <section id="access" className="scroll-mt-28 border-t border-gray-100 pt-5">
+      <section
+        id="access"
+        className="scroll-mt-28 border-t border-gray-100 pt-5"
+      >
         <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-gray-400">
           Access
         </p>
@@ -602,7 +710,10 @@ export default function EmployeeProfileForm({
               className={`mt-1.5 ${PFIELD} ${isOwner ? 'cursor-not-allowed bg-gray-50 text-gray-500' : ''}`}
               value={isOwner ? 'tenant_owner' : form.role}
               onChange={(e) =>
-                setForm({ ...form, role: e.target.value as EmployeeInput['role'] })
+                setForm({
+                  ...form,
+                  role: e.target.value as EmployeeInput['role'],
+                })
               }
             >
               {isOwner && <option value="tenant_owner">Owner</option>}

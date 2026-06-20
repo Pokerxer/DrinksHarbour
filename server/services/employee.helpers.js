@@ -39,6 +39,29 @@ function isValidEmail(email) {
 }
 
 /**
+ * Normalise an avatar payload into the `{ url, publicId }` shape stored on the
+ * User model. Accepts either a plain URL string or an object from the upload
+ * service. Returns null when there's nothing usable (so callers can "clear").
+ */
+function sanitizeAvatar(input) {
+  if (!input) return null;
+  if (typeof input === 'string') {
+    const url = input.trim();
+    return url ? { url } : null;
+  }
+  if (typeof input === 'object') {
+    const url = typeof input.url === 'string' ? input.url.trim() : '';
+    if (!url) return null;
+    const out = { url };
+    const publicId =
+      typeof input.publicId === 'string' ? input.publicId.trim() : '';
+    if (publicId) out.publicId = publicId;
+    return out;
+  }
+  return null;
+}
+
+/**
  * Keep only recognised POS permissions, de-duplicated. Returns undefined when
  * the input isn't an array so callers can "leave unchanged".
  */
@@ -350,6 +373,7 @@ module.exports = {
   POS_PERMISSIONS,
   isValidPin,
   isValidEmail,
+  sanitizeAvatar,
   sanitizePermissions,
   buildEmployeeFilter,
   buildCreatePayload,

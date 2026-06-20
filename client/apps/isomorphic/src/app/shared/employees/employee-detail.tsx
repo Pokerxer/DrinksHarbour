@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -16,6 +16,8 @@ import {
   PiPhone,
   PiKey,
   PiStorefront,
+  PiIdentificationCard,
+  PiArrowCounterClockwise,
 } from 'react-icons/pi';
 import {
   employeeService,
@@ -32,22 +34,28 @@ import EmployeeProfileForm, {
   fullName,
   employeeToForm,
 } from './employee-profile-form';
+import EmployeeBadge from './employee-badge';
 
-export default function EmployeeDetail({
-  employeeId,
-}: {
-  employeeId: string;
-}) {
+export default function EmployeeDetail({ employeeId }: { employeeId: string }) {
   const router = useRouter();
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
 
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [form, setForm] = useState<EmployeeInput | null>(null);
+  // Snapshot of the last-saved form, used to detect unsaved changes.
+  const [baseline, setBaseline] = useState('');
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showBadge, setShowBadge] = useState(false);
+  const [activeSection, setActiveSection] = useState('details');
+
+  const dirty = useMemo(
+    () => !!form && JSON.stringify(form) !== baseline,
+    [form, baseline]
+  );
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -56,8 +64,10 @@ export default function EmployeeDetail({
     try {
       const res = await employeeService.getEmployeeById(employeeId, token);
       const e = res.data.employee;
+      const f = employeeToForm(e);
       setEmployee(e);
-      setForm(employeeToForm(e));
+      setForm(f);
+      setBaseline(JSON.stringify(f));
     } catch (e) {
       setNotFound(true);
       toast.error(e instanceof Error ? e.message : 'Failed to load employee');
@@ -69,6 +79,37 @@ export default function EmployeeDetail({
   useEffect(() => {
     load();
   }, [load]);
+
+  // Warn before closing/reloading the tab with unsaved edits.
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [dirty]);
+
+  // Scroll-spy: highlight the section nearest the top of the viewport.
+  useEffect(() => {
+    if (loading || notFound) return;
+    const els = EMPLOYEE_FORM_SECTIONS.map((s) =>
+      document.getElementById(s.id)
+    ).filter((el): el is HTMLElement => !!el);
+    if (els.length === 0) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]?.target.id) setActiveSection(visible[0].target.id);
+      },
+      { rootMargin: '-20% 0px -70% 0px', threshold: 0 }
+    );
+    els.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, [loading, notFound]);
 
   const save = async () => {
     if (!employee || !form) return;
@@ -104,8 +145,10 @@ export default function EmployeeDetail({
         token
       );
       const updated = res.data.employee;
+      const f = employeeToForm(updated);
       setEmployee(updated);
-      setForm(employeeToForm(updated));
+      setForm(f);
+      setBaseline(JSON.stringify(f));
       toast.success('Employee updated');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Save failed');
@@ -131,6 +174,22 @@ export default function EmployeeDetail({
       toast.error(e instanceof Error ? e.message : 'Remove failed');
       setDeleting(false);
     }
+  };
+
+  // Revert in-progress edits back to the last saved state.
+  const reset = () => {
+    if (!employee) return;
+    setForm(employeeToForm(employee));
+  };
+
+  // Navigate to the list, guarding against losing unsaved edits.
+  const cancel = () => {
+    if (
+      dirty &&
+      !confirm('Discard unsaved changes and leave this page?')
+    )
+      return;
+    router.push(routes.employees.list);
   };
 
   // ── Loading ──
@@ -182,12 +241,22 @@ export default function EmployeeDetail({
         <div className="pointer-events-none absolute -bottom-10 right-40 h-48 w-48 rounded-full bg-white/5" />
 
         <div className="relative">
-          <Link
-            href={routes.employees.list}
-            className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-red-200 transition-colors hover:text-white"
-          >
-            <PiArrowLeft className="h-4 w-4" /> Employees
-          </Link>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <Link
+              href={routes.employees.list}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-red-200 transition-colors hover:text-white"
+            >
+              <PiArrowLeft className="h-4 w-4" /> Employees
+            </Link>
+            <button
+              type="button"
+              onClick={() => setShowBadge(true)}
+              className="inline-flex items-center gap-2 rounded-xl bg-white/15 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/20 transition-colors hover:bg-white/25"
+            >
+              <PiIdentificationCard className="h-4 w-4" />
+              Generate badge
+            </button>
+          </div>
 
           <div className="flex flex-wrap items-center gap-4">
             <div className="rounded-full ring-2 ring-white/30">
@@ -240,7 +309,11 @@ export default function EmployeeDetail({
                 <a
                   key={s.id}
                   href={`#${s.id}`}
-                  className="block rounded-lg px-3 py-1.5 text-sm text-gray-600 transition-colors hover:bg-[#b20202]/5 hover:text-[#b20202]"
+                  className={`block rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                    activeSection === s.id
+                      ? 'bg-[#b20202]/10 font-semibold text-[#b20202]'
+                      : 'text-gray-600 hover:bg-[#b20202]/5 hover:text-[#b20202]'
+                  }`}
                 >
                   {s.label}
                 </a>
@@ -286,16 +359,33 @@ export default function EmployeeDetail({
             {deleting ? 'Removing…' : 'Delete'}
           </button>
           <div className="flex items-center gap-3">
-            <Link
-              href={routes.employees.list}
+            {dirty && (
+              <span className="hidden items-center gap-1.5 text-xs font-medium text-amber-600 sm:inline-flex">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                Unsaved changes
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={reset}
+              disabled={!dirty || saving || deleting}
+              title="Revert unsaved changes"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <PiArrowCounterClockwise className="h-4 w-4" />
+              Reset
+            </button>
+            <button
+              type="button"
+              onClick={cancel}
               className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
             >
               Cancel
-            </Link>
+            </button>
             <button
               type="button"
               onClick={save}
-              disabled={saving || deleting}
+              disabled={saving || deleting || !dirty}
               className="inline-flex items-center gap-1.5 rounded-lg bg-[#b20202] px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#9f0101] disabled:opacity-60"
             >
               <PiFloppyDisk className="h-4 w-4" />
@@ -304,6 +394,10 @@ export default function EmployeeDetail({
           </div>
         </div>
       </div>
+
+      {showBadge && (
+        <EmployeeBadge employee={employee} onClose={() => setShowBadge(false)} />
+      )}
     </div>
   );
 }

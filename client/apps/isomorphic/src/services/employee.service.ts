@@ -103,11 +103,19 @@ export interface Employee {
   createdAt: string;
 }
 
+/** Avatar payload sent to the API. `null` clears the stored photo. */
+export interface AvatarInput {
+  url?: string;
+  publicId?: string;
+}
+
 export interface EmployeeInput {
   firstName: string;
   lastName?: string;
   email: string;
   phone?: string;
+  /** Profile photo. Send `null` to remove the current one. */
+  avatar?: AvatarInput | null;
   role: 'tenant_admin' | 'tenant_staff';
   status: EmployeeStatus;
   posAccess: boolean;

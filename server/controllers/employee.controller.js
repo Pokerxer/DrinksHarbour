@@ -17,6 +17,7 @@ const {
   buildEmployeeProfile,
   canDeleteEmployee,
   isValidPin,
+  sanitizeAvatar,
 } = require('../services/employee.helpers');
 
 // Fields safe to return to the client — never the password or PIN hash.
@@ -32,7 +33,8 @@ function present(user) {
     lastName: user.lastName,
     email: user.email,
     phone: user.phone || '',
-    avatar: user.avatar || '',
+    // Stored as { url, publicId }; the client only needs the URL string.
+    avatar: user.avatar?.url || '',
     role: user.role,
     status: user.status,
     posAccess: Boolean(user.posAccess),
@@ -105,6 +107,11 @@ exports.createEmployee = asyncHandler(async (req, res) => {
     userData.posPinHash = await bcrypt.hash(String(pin), 10);
   }
 
+  if ('avatar' in req.body) {
+    const avatar = sanitizeAvatar(req.body.avatar);
+    if (avatar) userData.avatar = avatar;
+  }
+
   if (req.body.employeeProfile) {
     userData.employeeProfile = buildEmployeeProfile(req.body.employeeProfile);
   }
@@ -129,6 +136,12 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: built.message });
   }
   Object.assign(user, built.changes);
+
+  // Avatar set/clear: a URL/object sets it, '' or null removes it.
+  if ('avatar' in req.body) {
+    user.avatar = sanitizeAvatar(req.body.avatar) || undefined;
+    user.markModified('avatar');
+  }
 
   // Full-replace the HR profile when the client sends one (the edit form always
   // submits the complete profile object).
