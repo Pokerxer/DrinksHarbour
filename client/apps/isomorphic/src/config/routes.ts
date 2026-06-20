@@ -12,6 +12,7 @@ export const routes = {
   },
   employees: {
     list: '/employees',
+    detail: (id: string) => `/employees/${id}`,
   },
   eCommerce: {
     dashboard: '/ecommerce',

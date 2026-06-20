@@ -170,6 +170,16 @@ export const employeeService = {
     );
   },
 
+  async getEmployeeById(
+    id: string,
+    token: string
+  ): Promise<{ success: boolean; data: { employee: Employee } }> {
+    return handle(
+      await fetch(`${API_URL}/api/employees/${id}`, { headers: auth(token) }),
+      'Failed to load employee'
+    );
+  },
+
   async createEmployee(
     data: EmployeeInput,
     token: string

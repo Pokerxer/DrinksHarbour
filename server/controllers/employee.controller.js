@@ -65,6 +65,19 @@ exports.listEmployees = asyncHandler(async (req, res) => {
   });
 });
 
+// ─── Get one ───────────────────────────────────────────────────────────────────
+
+exports.getEmployee = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  // +posPinHash so the response's hasPin flag is accurate (the field is
+  // select:false by default).
+  const user = await User.findOne({ _id: req.params.id, tenant: tenantId }).select('+posPinHash');
+  if (!user || user.status === 'deleted') {
+    return res.status(404).json({ success: false, message: 'Employee not found' });
+  }
+  res.json({ success: true, data: { employee: present(user) } });
+});
+
 // ─── Create ────────────────────────────────────────────────────────────────────
 
 exports.createEmployee = asyncHandler(async (req, res) => {

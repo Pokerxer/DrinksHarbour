@@ -12,6 +12,7 @@ router.route('/')
   .post(tenantAdminOrSuperAdmin, c.createEmployee);
 
 router.route('/:id')
+  .get(tenantAdminOrSuperAdmin, c.getEmployee)
   .patch(tenantAdminOrSuperAdmin, c.updateEmployee)
   .delete(tenantAdminOrSuperAdmin, c.deleteEmployee);
 
