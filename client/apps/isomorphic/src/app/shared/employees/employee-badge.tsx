@@ -77,54 +77,12 @@ export default function EmployeeBadge({
 
   const qrDataUrl = () => qrRef.current?.toDataURL('image/png') ?? '';
 
+  // Print the on-screen badge directly via the browser's print dialog. A
+  // print-only stylesheet (rendered below) hides everything except the badge
+  // card, so there's no pop-up to be blocked and the photo/QR already on screen
+  // are guaranteed to be loaded.
   const handlePrint = () => {
-    const qr = qrDataUrl();
-    const photo = employee.avatar
-      ? `<img src="${employee.avatar}" alt="" style="width:96px;height:96px;border-radius:50%;object-fit:cover;border:3px solid #fff;box-shadow:0 0 0 2px ${BRAND}33"/>`
-      : `<div style="width:96px;height:96px;border-radius:50%;background:#fff;color:${BRAND};display:flex;align-items:center;justify-content:center;font:700 30px/1 Arial">${initials(employee)}</div>`;
-    const win = window.open('', '_blank', 'width=420,height=680');
-    if (!win) {
-      toast.error('Allow pop-ups to print the badge');
-      return;
-    }
-    win.document.write(`<!doctype html><html><head><title>Badge — ${name}</title>
-      <style>
-        *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
-        body{display:flex;align-items:center;justify-content:center;padding:24px}
-        .card{width:320px;border-radius:18px;overflow:hidden;border:1px solid #eee;box-shadow:0 10px 30px rgba(0,0,0,.12)}
-        .head{background:${BRAND};color:#fff;padding:18px 16px;text-align:center}
-        .head .brand{font-size:10px;letter-spacing:2px;text-transform:uppercase;opacity:.85}
-        .head .title{font-size:18px;font-weight:800;margin-top:2px}
-        .photo{display:flex;justify-content:center;margin-top:-40px}
-        .body{padding:14px 18px 18px;text-align:center}
-        .name{font-size:20px;font-weight:800;color:#1f2937;margin-top:8px}
-        .role{display:inline-block;margin-top:6px;background:${BRAND}1a;color:${BRAND};font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px}
-        .rows{margin-top:14px;text-align:left}
-        .row{display:flex;justify-content:space-between;border-bottom:1px dashed #e5e7eb;padding:6px 0;font-size:13px}
-        .row .k{color:#9ca3af;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
-        .row .v{color:#374151;font-weight:700}
-        .qr{margin-top:14px;display:flex;flex-direction:column;align-items:center;gap:6px}
-        .qr img{width:120px;height:120px}
-        .qr code{font-size:11px;color:#6b7280}
-        .foot{background:#faf8f3;color:${BRAND};font-size:10px;letter-spacing:1px;text-transform:uppercase;text-align:center;padding:8px;font-weight:700}
-      </style></head><body onload="window.print()">
-      <div class="card">
-        <div class="head"><div class="brand">DrinksHarbour</div><div class="title">Staff ID Card</div></div>
-        <div class="photo">${photo}</div>
-        <div class="body">
-          <div class="name">${name}</div>
-          <div><span class="role">${role.label}</span></div>
-          <div class="rows">
-            <div class="row"><span class="k">Employee ID</span><span class="v">${code}</span></div>
-            <div class="row"><span class="k">Badge / RFID</span><span class="v">${rfid || '—'}</span></div>
-            <div class="row"><span class="k">Email</span><span class="v">${employee.email}</span></div>
-            <div class="row"><span class="k">Issued</span><span class="v">${issued}</span></div>
-          </div>
-          <div class="qr">${qr ? `<img src="${qr}"/>` : ''}<code>${qrValue}</code></div>
-        </div>
-        <div class="foot">DrinksHarbour · Property of the company</div>
-      </div></body></html>`);
-    win.document.close();
+    window.print();
   };
 
   const handleDownloadPdf = async () => {
@@ -238,6 +196,25 @@ export default function EmployeeBadge({
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+      {/* When printing, hide the whole app and show only the badge card. */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `@media print {
+            body * { visibility: hidden !important; }
+            #employee-badge-print, #employee-badge-print * { visibility: visible !important; }
+            #employee-badge-print {
+              position: fixed !important;
+              left: 50% !important;
+              top: 24px !important;
+              transform: translateX(-50%) !important;
+              margin: 0 !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            @page { margin: 12mm; }
+          }`,
+        }}
+      />
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -256,7 +233,10 @@ export default function EmployeeBadge({
 
         {/* Preview */}
         <div className="bg-gray-50 px-5 py-6">
-          <div className="mx-auto w-72 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-md">
+          <div
+            id="employee-badge-print"
+            className="mx-auto w-72 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-md print:shadow-none"
+          >
             <div
               className="px-4 py-4 text-center text-white"
               style={{ background: BRAND }}
