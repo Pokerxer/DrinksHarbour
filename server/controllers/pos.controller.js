@@ -12,6 +12,7 @@ const SubProduct      = require('../models/SubProduct');
 const Warehouse       = require('../models/Warehouse');
 const WarehouseStock  = require('../models/WarehouseStock');
 const { sellStock, returnStock, resolveShopWarehouse } = require('../services/warehouse.service');
+const { getTenantWarehouseSettings } = require('./warehouse.controller');
 const InventoryMovement = require('../models/InventoryMovement');
 const inventoryService = require('../services/inventory.service');
 const { generateOrderNumber, generateReceiptNumber, generateReturnNumber } = require('../utils/orderUtils');
@@ -43,14 +44,14 @@ function resolveSubProductStatus(availableStock, lowStockThreshold = 10) {
  * Creates an InventoryMovement audit record.
  * Throws if insufficient stock.
  */
-async function deductStock({ subProductId, sizeId, quantity, tenantId, staffId, receiptNumber, productId, finalPrice, costPrice, allowOverselling = false, warehouseId = null, defaultSizeId = null, tracksBatch = false }) {
+async function deductStock({ subProductId, sizeId, quantity, tenantId, staffId, receiptNumber, productId, finalPrice, costPrice, allowOverselling = false, allowNegativeStock = false, warehouseId = null, defaultSizeId = null, tracksBatch = false, blockExpiredStock = false, fefoPicking = false }) {
   if (warehouseId) {
     // ── Warehouse-scoped deduction ────────────────────────────────────────
     // Decrement WarehouseStock directly; recalcSubProductStock refreshes the
     // SubProduct rollup, so the legacy $inc path below must NOT also run.
     const whSizeId = sizeId || defaultSizeId;
     const { before, after, batchAllocations } = await sellStock(
-      { warehouseId, subProduct: subProductId, size: whSizeId, quantity, allowOverselling, tracksBatch },
+      { warehouseId, subProduct: subProductId, size: whSizeId, quantity, allowOverselling, allowNegativeStock, tracksBatch, blockExpiredStock, fefoPicking },
       staffId, tenantId
     );
 
@@ -2027,6 +2028,12 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
 
   // Read tenant POS settings for stock enforcement
   const allowOverselling = req.tenant?.posSettings?.allowOverselling === true;
+  // Warehouse-level policy: negative stock and the batch-tracking master switch.
+  const whSettings = await getTenantWarehouseSettings(tenantId);
+  const allowNegativeStock = whSettings.allowNegativeStock === true;
+  const batchTrackingEnabled = whSettings.batchTrackingEnabled !== false;
+  const blockExpiredStock = whSettings.blockExpiredStock === true;
+  const fefoPicking = whSettings.fefoPicking === true;
 
   // Resolve the active shop's bound warehouse. Built-in shops (retail/
   // wholesale) and unbound custom shops fall back to the tenant's default
@@ -2083,9 +2090,12 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         finalPrice,
         costPrice:       sizePricing.costPrice,
         allowOverselling,
+        allowNegativeStock,
         warehouseId,
         defaultSizeId:   sp?.defaultSize || null,
-        tracksBatch:     !!sp?.product?.tracksBatch,
+        tracksBatch:     batchTrackingEnabled && !!sp?.product?.tracksBatch,
+        blockExpiredStock,
+        fefoPicking,
       });
 
       deductedItems.push({

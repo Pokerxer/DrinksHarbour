@@ -3,7 +3,8 @@ const mongoose = require('mongoose');
 const Warehouse = require('../models/Warehouse');
 const WarehouseStock = require('../models/WarehouseStock');
 const WarehouseMovement = require('../models/WarehouseMovement');
-const { recalcSubProductStock } = require('./warehouseStock.helpers');
+const { recalcSubProductStock, computeStockFlags } = require('./warehouseStock.helpers');
+const { valuationCost } = require('./batch.helpers');
 const batchService = require('./batch.service');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 
@@ -92,16 +93,47 @@ async function deleteWarehouse(id, tenantId) {
 }
 
 // ── Stock ───────────────────────────────────────────────────
-async function getWarehouseStock(warehouseId, tenantId) {
-  return WarehouseStock.find({ tenant: tenantId, warehouse: warehouseId })
-    .populate({
-      path: 'subProduct',
-      select: 'sku product imagesOverride',
-      populate: { path: 'product', select: 'name slug images' },
+async function getWarehouseStock(warehouseId, tenantId, settings = null) {
+  const WarehouseBatch = require('../models/WarehouseBatch');
+  const [rows, batches] = await Promise.all([
+    WarehouseStock.find({ tenant: tenantId, warehouse: warehouseId })
+      .populate({
+        path: 'subProduct',
+        select: 'sku product imagesOverride',
+        populate: { path: 'product', select: 'name slug images' },
+      })
+      .populate('size', 'size')
+      .sort({ updatedAt: -1 })
+      .lean(),
+    WarehouseBatch.find({
+      tenant: tenantId, warehouse: warehouseId, quantity: { $gt: 0 }, expiryDate: { $ne: null }, quarantined: { $ne: true },
     })
-    .populate('size', 'size')
-    .sort({ updatedAt: -1 })
-    .lean();
+      .select('subProduct size expiryDate')
+      .lean(),
+  ]);
+
+  // Earliest (most-urgent) expiry per (subProduct, size) line in this warehouse.
+  const expMap = new Map();
+  for (const b of batches) {
+    if (!b.expiryDate) continue;
+    const key = `${b.subProduct}|${b.size}`;
+    const t = new Date(b.expiryDate).getTime();
+    const cur = expMap.get(key);
+    if (cur == null || t < cur) expMap.set(key, t);
+  }
+
+  const now = new Date();
+  return rows.map((r) => {
+    const spId = String(typeof r.subProduct === 'object' && r.subProduct ? r.subProduct._id : r.subProduct);
+    const szId = String(typeof r.size === 'object' && r.size ? r.size._id : r.size);
+    const exp = expMap.get(`${spId}|${szId}`);
+    const earliestExpiry = exp != null ? new Date(exp).toISOString() : null;
+    return {
+      ...r,
+      earliestExpiry,
+      flags: computeStockFlags({ ...r, earliestExpiry }, settings || {}, now),
+    };
+  });
 }
 
 /**
@@ -109,7 +141,7 @@ async function getWarehouseStock(warehouseId, tenantId) {
  * type: 'received' | 'shipped' | 'adjusted'
  *   received → +quantity, shipped → -quantity, adjusted → set to quantity (absolute)
  */
-async function adjustStock({ warehouseId, subProduct, size, quantity, type, notes, tracksBatch = false }, userId, tenantId) {
+async function adjustStock({ warehouseId, subProduct, size, quantity, type, notes, tracksBatch = false, allowNegativeStock = false, fefoPicking = false }, userId, tenantId) {
   if (!['received', 'shipped', 'adjusted'].includes(type)) {
     throw new ValidationError('Invalid adjustment type');
   }
@@ -120,9 +152,18 @@ async function adjustStock({ warehouseId, subProduct, size, quantity, type, note
     row = new WarehouseStock({ tenant: tenantId, warehouse: warehouseId, subProduct, size });
   }
   const before = row.currentQuantity || 0;
+  // When negative stock is disallowed, reject a down-adjustment that would drive
+  // on-hand below zero rather than silently flooring (which would lose the
+  // shortfall). When allowed, the WarehouseStock schema still clamps at min:0 on
+  // save, so on-hand bottoms out at 0 here — overselling to a true negative
+  // happens only on the atomic sellStock path.
   if (type === 'received') row.currentQuantity += quantity;
-  else if (type === 'shipped') row.currentQuantity = Math.max(0, row.currentQuantity - quantity);
-  else if (type === 'adjusted') row.currentQuantity = Math.max(0, quantity);
+  else if (type === 'shipped') {
+    if (!allowNegativeStock && before < quantity) {
+      throw new ValidationError('Insufficient stock to issue — negative stock is disabled for this tenant');
+    }
+    row.currentQuantity = Math.max(0, before - quantity);
+  } else if (type === 'adjusted') row.currentQuantity = Math.max(0, quantity);
   await row.save();
 
   await WarehouseMovement.create({
@@ -139,7 +180,10 @@ async function adjustStock({ warehouseId, subProduct, size, quantity, type, note
       : type === 'adjusted' && row.currentQuantity < before ? before - row.currentQuantity
       : 0;
     if (removed > 0) {
-      await batchService.depleteBatchesFefo({ tenantId, warehouseId, subProduct, size, quantity: removed });
+      await batchService.depleteBatchesFefo({
+        tenantId, warehouseId, subProduct, size, quantity: removed,
+        order: fefoPicking ? 'fefo' : 'fifo',
+      });
     }
   }
   return row;
@@ -149,10 +193,13 @@ async function adjustStock({ warehouseId, subProduct, size, quantity, type, note
  * Move quantity of one (subProduct, size) from one warehouse to another, atomically.
  */
 async function transferStock(
-  { subProduct, size, fromWarehouse, toWarehouse, quantity, notes, tracksBatch = false },
+  { subProduct, size, fromWarehouse, toWarehouse, quantity, notes, tracksBatch = false, allowInterWarehouseTransfers = true, allowNegativeStock = false, fefoPicking = false },
   userId,
   tenantId
 ) {
+  if (!allowInterWarehouseTransfers) {
+    throw new ValidationError('Inter-warehouse transfers are disabled for this tenant');
+  }
   if (String(fromWarehouse) === String(toWarehouse)) {
     throw new ValidationError('Source and destination warehouses must differ');
   }
@@ -165,10 +212,12 @@ async function transferStock(
       const src = await WarehouseStock.findOne(
         { tenant: tenantId, warehouse: fromWarehouse, subProduct, size }
       ).session(session);
-      if (!src || src.currentQuantity < quantity) {
+      // A missing source row always blocks (nothing to move). An insufficient
+      // balance only blocks when negative stock is disallowed.
+      if (!src || (!allowNegativeStock && src.currentQuantity < quantity)) {
         throw new ValidationError('Insufficient stock in source warehouse');
       }
-      src.currentQuantity -= quantity;
+      src.currentQuantity = Math.max(0, src.currentQuantity - quantity);
       await src.save({ session });
 
       let dest = await WarehouseStock.findOne(
@@ -184,7 +233,7 @@ async function transferStock(
 
       if (tracksBatch) {
         await batchService.transferBatchesFefo(
-          { tenantId, subProduct, size, fromWarehouse, toWarehouse, quantity },
+          { tenantId, subProduct, size, fromWarehouse, toWarehouse, quantity, order: fefoPicking ? 'fefo' : 'fifo' },
           session
         );
       }
@@ -233,7 +282,7 @@ async function getBatches({ warehouseId, subProduct, size } = {}, tenantId) {
  * earliest expiry among its still-stocked batches, so the client can attribute
  * stock value and expiry buckets without extra round-trips.
  */
-async function getAllStock(tenantId) {
+async function getAllStock(tenantId, settings = null) {
   const WarehouseBatch = require('../models/WarehouseBatch');
   const [rows, batches] = await Promise.all([
     WarehouseStock.find({ tenant: tenantId })
@@ -248,31 +297,43 @@ async function getAllStock(tenantId) {
     WarehouseBatch.find({
       tenant: tenantId,
       quantity: { $gt: 0 },
-      expiryDate: { $ne: null },
+      quarantined: { $ne: true },
     })
-      .select('warehouse subProduct size expiryDate')
+      .select('warehouse subProduct size expiryDate quantity unitCost receivedDate')
       .lean(),
   ]);
 
-  // Earliest (most-urgent) expiry per (warehouse, subProduct, size) line.
+  const valuationMethod = (settings && settings.valuationMethod) || 'fifo';
+
+  // Earliest (most-urgent) expiry per line, and the on-hand lots per line (for
+  // FIFO / weighted-average valuation).
   const expMap = new Map();
+  const lotsMap = new Map();
   for (const b of batches) {
-    if (!b.expiryDate) continue;
     const key = `${b.warehouse}|${b.subProduct}|${b.size}`;
-    const t = new Date(b.expiryDate).getTime();
-    const cur = expMap.get(key);
-    if (cur == null || t < cur) expMap.set(key, t);
+    if (b.expiryDate) {
+      const t = new Date(b.expiryDate).getTime();
+      const cur = expMap.get(key);
+      if (cur == null || t < cur) expMap.set(key, t);
+    }
+    if (!lotsMap.has(key)) lotsMap.set(key, []);
+    lotsMap.get(key).push(b);
   }
 
+  const now = new Date();
   return rows.map((r) => {
     const sp = r.subProduct || {};
     const sz = r.size || {};
     const wh = r.warehouse || {};
-    const cost = (sz.costPrice > 0 ? sz.costPrice : null) ?? sp.costPrice ?? 0;
+    const standardCost = (sz.costPrice > 0 ? sz.costPrice : null) ?? sp.costPrice ?? 0;
     const whId = String(wh._id || r.warehouse || '');
     const spId = String(sp._id || r.subProduct || '');
     const szId = String(sz._id || r.size || '');
+    // Cost basis honours the tenant's valuationMethod, falling back to the
+    // product/size standard cost when no batch carries a captured unit cost.
+    const cost = valuationCost(lotsMap.get(`${whId}|${spId}|${szId}`), valuationMethod, standardCost);
     const exp = expMap.get(`${whId}|${spId}|${szId}`);
+    const earliestExpiry = exp != null ? new Date(exp).toISOString() : null;
     return {
       _id: String(r._id),
       warehouseId: whId,
@@ -285,8 +346,14 @@ async function getAllStock(tenantId) {
       currentQuantity: r.currentQuantity || 0,
       reservedQuantity: r.reservedQuantity || 0,
       costPrice: cost,
+      valuationMethod,
       minStockLevel: r.minStockLevel || 0,
-      earliestExpiry: exp != null ? new Date(exp).toISOString() : null,
+      earliestExpiry,
+      flags: computeStockFlags(
+        { currentQuantity: r.currentQuantity, reservedQuantity: r.reservedQuantity, minStockLevel: r.minStockLevel, earliestExpiry },
+        settings || {},
+        now
+      ),
     };
   });
 }
@@ -303,16 +370,35 @@ async function getStockByWarehouse(subProductId, tenantId) {
  * Unless allowOverselling is true, the decrement is guarded so it fails (returns null
  * from findOneAndUpdate) when currentQuantity < quantity, throwing a ValidationError.
  */
-async function sellStock({ warehouseId, subProduct, size, quantity, allowOverselling = false, tracksBatch = false }, userId, tenantId) {
+async function sellStock({ warehouseId, subProduct, size, quantity, allowOverselling = false, allowNegativeStock = false, tracksBatch = false, blockExpiredStock = false, fefoPicking = false }, userId, tenantId) {
+  // Block the sale up front when the only stock that could satisfy it is expired.
+  // Sellable = on-hand − expired-batch quantity, so untracked slack (on-hand not
+  // attributed to any batch) stays sellable and we don't over-reject.
+  if (tracksBatch && blockExpiredStock) {
+    const [cur, expired] = await Promise.all([
+      WarehouseStock.findOne({ tenant: tenantId, warehouse: warehouseId, subProduct, size })
+        .select('currentQuantity').lean(),
+      batchService.expiredQuantity({ tenantId, warehouseId, subProduct, size }),
+    ]);
+    const sellable = (cur?.currentQuantity || 0) - expired;
+    if (sellable < quantity) {
+      throw new ValidationError('Cannot fulfil sale — only expired stock is available');
+    }
+  }
+
+  // Either the POS oversell toggle OR the tenant's negative-stock policy lets a
+  // sale proceed past available on-hand (driving currentQuantity negative on this
+  // atomic path, which skips the schema min:0 validator).
+  const overdraw = allowOverselling || allowNegativeStock;
   const filter = { tenant: tenantId, warehouse: warehouseId, subProduct, size };
-  if (!allowOverselling) {
+  if (!overdraw) {
     filter.currentQuantity = { $gte: quantity };
   }
 
   const row = await WarehouseStock.findOneAndUpdate(
     filter,
     { $inc: { currentQuantity: -quantity } },
-    { new: true, upsert: allowOverselling, setDefaultsOnInsert: allowOverselling }
+    { new: true, upsert: overdraw, setDefaultsOnInsert: overdraw }
   );
   if (!row) {
     throw new ValidationError('Insufficient stock for this sale');
@@ -329,6 +415,8 @@ async function sellStock({ warehouseId, subProduct, size, quantity, allowOversel
   if (tracksBatch) {
     batchAllocations = await batchService.depleteBatchesFefo({
       tenantId, warehouseId, subProduct, size, quantity,
+      order: fefoPicking ? 'fefo' : 'fifo',
+      excludeExpired: blockExpiredStock,
     });
   }
 

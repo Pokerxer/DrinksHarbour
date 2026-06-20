@@ -40,6 +40,16 @@ const STATUS_STYLE: Record<string, { badge: string; dot: string; label: string }
     dot: 'bg-gray-400',
     label: 'Draft',
   },
+  pending_approval: {
+    badge: 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-300',
+    dot: 'bg-amber-500',
+    label: 'Pending approval',
+  },
+  rejected: {
+    badge: 'bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-300',
+    dot: 'bg-rose-500',
+    label: 'Rejected',
+  },
   confirmed: {
     badge: 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-300',
     dot: 'bg-blue-500',
@@ -276,8 +286,13 @@ export default function StockTransferDetail({ id }: { id: string }) {
   const style = STATUS_STYLE[transfer.status] ?? STATUS_STYLE.draft;
   const canEdit = transfer.status === 'draft';
   const canConfirm = transfer.status === 'draft';
+  const canApprove = transfer.status === 'pending_approval';
+  const canReject = transfer.status === 'pending_approval';
   const canComplete = transfer.status === 'confirmed';
-  const canCancel = transfer.status === 'draft' || transfer.status === 'confirmed';
+  const canCancel =
+    transfer.status === 'draft' ||
+    transfer.status === 'confirmed' ||
+    transfer.status === 'pending_approval';
   const totalUnits = transfer.items.reduce((s, it) => s + it.quantity, 0);
   const totalTransferred = transfer.items.reduce((s, it) => s + it.transferredQty, 0);
   const totalCost = transfer.items.reduce((s, it) => s + (it.costPrice ?? 0) * it.quantity, 0);
@@ -364,6 +379,43 @@ export default function StockTransferDetail({ id }: { id: string }) {
             >
               {acting ? <PiSpinner className="h-4 w-4 animate-spin" /> : <PiCheck className="h-4 w-4" />}
               Confirm Transfer
+            </button>
+          )}
+          {canApprove && (
+            <button
+              type="button"
+              disabled={acting}
+              onClick={() => setConfirmAction({
+                title: 'Approve Transfer',
+                message: `Approve transfer ${transfer.transferNumber} (value ${(transfer.totalValue ?? totalCost).toLocaleString()})? It will move to Confirmed.`,
+                confirmLabel: 'Approve',
+                confirmColor: 'bg-emerald-600 hover:bg-emerald-700',
+                action: () => stockTransferService.approve(id, token),
+              })}
+              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {acting ? <PiSpinner className="h-4 w-4 animate-spin" /> : <PiCheckCircle className="h-4 w-4" />}
+              Approve
+            </button>
+          )}
+          {canReject && (
+            <button
+              type="button"
+              disabled={acting}
+              onClick={() => {
+                const reason = window.prompt('Reason for rejecting this transfer (optional):') ?? '';
+                setConfirmAction({
+                  title: 'Reject Transfer',
+                  message: `Reject transfer ${transfer.transferNumber}? It cannot be confirmed afterwards.`,
+                  confirmLabel: 'Reject',
+                  confirmColor: 'bg-rose-600 hover:bg-rose-700',
+                  action: () => stockTransferService.reject(id, reason, token),
+                });
+              }}
+              className="flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+            >
+              {acting ? <PiSpinner className="h-4 w-4 animate-spin" /> : <PiX className="h-4 w-4" />}
+              Reject
             </button>
           )}
           {canComplete && (
@@ -576,6 +628,12 @@ export default function StockTransferDetail({ id }: { id: string }) {
         <div className="space-y-0">
           {[
             { label: 'Draft created', date: transfer.createdAt, user: transfer.createdBy, dotColor: 'bg-gray-400' },
+            ...(transfer.approvedAt
+              ? [{ label: 'Approved', date: transfer.approvedAt, user: transfer.approvedBy, dotColor: 'bg-emerald-500' }]
+              : []),
+            ...(transfer.rejectedAt
+              ? [{ label: transfer.rejectionReason ? `Rejected — ${transfer.rejectionReason}` : 'Rejected', date: transfer.rejectedAt, user: transfer.rejectedBy, dotColor: 'bg-rose-500' }]
+              : []),
             ...(transfer.confirmedAt
               ? [{ label: 'Confirmed', date: transfer.confirmedAt, user: transfer.confirmedBy, dotColor: 'bg-blue-500' }]
               : []),

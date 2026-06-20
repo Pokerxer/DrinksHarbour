@@ -35,15 +35,43 @@ function orderBatchesFefo(batches) {
 }
 
 /**
- * Allocate `quantity` across batches FEFO without mutating them.
+ * Order batches FIFO: oldest received first (then createdAt), ignoring expiry.
+ * Used when the tenant disables fefoPicking.
+ */
+function orderBatchesFifo(batches) {
+  const time = (d) => (d ? new Date(d).getTime() : 0);
+  return [...batches].sort(
+    (a, b) =>
+      (time(a.receivedDate) || time(a.createdAt)) -
+      (time(b.receivedDate) || time(b.createdAt))
+  );
+}
+
+/** True when a batch carries an expiry date that is on/before `now`. */
+function isExpired(batch, now = new Date()) {
+  if (!batch || !batch.expiryDate) return false;
+  return new Date(batch.expiryDate).getTime() <= new Date(now).getTime();
+}
+
+/**
+ * Allocate `quantity` across batches without mutating them.
+ * @param {object} [opts]
+ * @param {'fefo'|'fifo'} [opts.order='fefo']  picking order
+ * @param {boolean} [opts.excludeExpired=false]  skip already-expired batches
+ * @param {Date} [opts.now]
  * @returns {{ allocations: Array<{batch, batchNumber, quantity, expiryDate}>, remainder: number }}
  *   remainder > 0 means batches could not fully cover the quantity (drawn from
  *   untracked slack by the caller).
  */
-function allocateFefo(batches, quantity) {
+function allocateFefo(batches, quantity, opts = {}) {
+  const { order = 'fefo', excludeExpired = false, now = new Date() } = opts;
+  let pool = batches;
+  if (excludeExpired) pool = pool.filter((b) => !isExpired(b, now));
+  const ordered = order === 'fifo' ? orderBatchesFifo(pool) : orderBatchesFefo(pool);
+
   let need = quantity;
   const allocations = [];
-  for (const b of orderBatchesFefo(batches)) {
+  for (const b of ordered) {
     if (need <= 0) break;
     const take = Math.min(need, b.quantity || 0);
     if (take <= 0) continue;
@@ -56,6 +84,35 @@ function allocateFefo(batches, quantity) {
     need -= take;
   }
   return { allocations, remainder: Math.max(0, need) };
+}
+
+/**
+ * Pure: per-unit cost basis for a line's on-hand batches under a valuation method.
+ *  - 'average' → quantity-weighted average of lot unit costs
+ *  - 'fifo'    → unit cost of the oldest-received remaining lot (next to issue)
+ *  - anything else (standard) → fallbackCost
+ * Falls back to fallbackCost whenever no lot carries a usable (>0) unit cost.
+ * @param {Array<{quantity?:number, unitCost?:number, receivedDate?:any}>} batches
+ */
+function valuationCost(batches, method, fallbackCost = 0) {
+  const lots = (batches || []).filter((b) => (b.quantity || 0) > 0 && (b.unitCost || 0) > 0);
+  if (lots.length === 0) return fallbackCost;
+
+  if (method === 'average') {
+    let totalQty = 0;
+    let totalVal = 0;
+    for (const b of lots) {
+      totalQty += b.quantity;
+      totalVal += b.quantity * b.unitCost;
+    }
+    return totalQty > 0 ? totalVal / totalQty : fallbackCost;
+  }
+  if (method === 'fifo') {
+    const time = (d) => (d ? new Date(d).getTime() : 0);
+    const oldest = lots.reduce((a, b) => (time(a.receivedDate) <= time(b.receivedDate) ? a : b));
+    return oldest.unitCost;
+  }
+  return fallbackCost;
 }
 
 /** YYYYMMDD in UTC. */
@@ -108,7 +165,10 @@ function expiryAlertPriority(expiryDate, now = new Date()) {
 module.exports = {
   defaultTracksBatch,
   orderBatchesFefo,
+  orderBatchesFifo,
+  isExpired,
   allocateFefo,
+  valuationCost,
   formatBatchDate,
   nextBatchSeq,
   buildBatchNumber,

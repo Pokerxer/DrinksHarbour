@@ -17,7 +17,6 @@ import {
   PiCheckCircle,
   PiClock,
   PiXCircle,
-  PiFileDashed,
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
@@ -32,18 +31,23 @@ const PAGE_SIZE = 15;
 
 const STATUS_BADGE: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-600 ring-1 ring-inset ring-gray-300',
+  pending_approval:
+    'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-300',
   confirmed:
     'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-300',
   completed:
     'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-300',
   cancelled: 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-300',
+  rejected: 'bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-300',
 };
 
 const STATUS_LABEL: Record<string, string> = {
   draft: 'Draft',
+  pending_approval: 'Pending approval',
   confirmed: 'Confirmed',
   completed: 'Completed',
   cancelled: 'Cancelled',
+  rejected: 'Rejected',
 };
 
 function warehouseName(
@@ -113,9 +117,11 @@ export default function StockTransfersList() {
   const [transfers, setTransfers] = useState<StockTransfer[]>([]);
   const [stats, setStats] = useState<TransferStats>({
     draft: 0,
+    pending_approval: 0,
     confirmed: 0,
     completed: 0,
     cancelled: 0,
+    rejected: 0,
   });
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
@@ -134,7 +140,16 @@ export default function StockTransfersList() {
         search: search || undefined,
       });
       setTransfers(res.data ?? []);
-      setStats(res.stats ?? { draft: 0, confirmed: 0, completed: 0, cancelled: 0 });
+      setStats(
+        res.stats ?? {
+          draft: 0,
+          pending_approval: 0,
+          confirmed: 0,
+          completed: 0,
+          cancelled: 0,
+          rejected: 0,
+        }
+      );
       setTotal(res.pagination?.total ?? 0);
       setPages(res.pagination?.pages ?? 1);
     } catch (e) {
@@ -199,7 +214,12 @@ export default function StockTransfersList() {
         <StatsCard
           label="Total Transfers"
           value={
-            stats.draft + stats.confirmed + stats.completed + stats.cancelled
+            stats.draft +
+            stats.pending_approval +
+            stats.confirmed +
+            stats.completed +
+            stats.cancelled +
+            stats.rejected
           }
           color="bg-gray-100 text-gray-600"
           icon={<PiArrowsDownUp className="h-4 w-4" />}
@@ -211,16 +231,16 @@ export default function StockTransfersList() {
           icon={<PiCheckCircle className="h-4 w-4" />}
         />
         <StatsCard
+          label="Pending Approval"
+          value={stats.pending_approval}
+          color="bg-amber-100 text-amber-600"
+          icon={<PiClock className="h-4 w-4" />}
+        />
+        <StatsCard
           label="In Progress"
           value={stats.confirmed}
           color="bg-blue-100 text-blue-600"
           icon={<PiClock className="h-4 w-4" />}
-        />
-        <StatsCard
-          label="Drafts + Cancelled"
-          value={stats.draft + stats.cancelled}
-          color="bg-gray-100 text-gray-500"
-          icon={<PiFileDashed className="h-4 w-4" />}
         />
       </div>
 
@@ -267,9 +287,11 @@ export default function StockTransfersList() {
         {[
           { key: 'all', label: 'All' },
           { key: 'draft', label: `Draft (${stats.draft})` },
+          { key: 'pending_approval', label: `Pending (${stats.pending_approval})` },
           { key: 'confirmed', label: `Confirmed (${stats.confirmed})` },
           { key: 'completed', label: `Completed (${stats.completed})` },
           { key: 'cancelled', label: `Cancelled (${stats.cancelled})` },
+          { key: 'rejected', label: `Rejected (${stats.rejected})` },
         ].map((t) => (
           <button
             key={t.key}

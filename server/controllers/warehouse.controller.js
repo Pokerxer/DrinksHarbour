@@ -1,8 +1,21 @@
 // controllers/warehouse.controller.js
 const warehouseService = require('../services/warehouse.service');
 const Tenant = require('../models/Tenant');
+const SubProduct = require('../models/SubProduct');
 const asyncHandler = require('../utils/asyncHandler');
 const { ValidationError } = require('../utils/errors');
+
+// Resolve whether a stock mutation on this sub-product should write the batch
+// sub-ledger: the tenant master switch (batchTrackingEnabled) AND the product's
+// own tracksBatch flag must both be on.
+const resolveTracksBatch = async (subProductId, batchTrackingEnabled) => {
+  if (!batchTrackingEnabled) return false;
+  const sp = await SubProduct.findById(subProductId)
+    .select('product')
+    .populate('product', 'tracksBatch')
+    .lean();
+  return !!(sp && sp.product && sp.product.tracksBatch);
+};
 
 // Tenant-level warehouse settings with schema defaults applied
 const WAREHOUSE_SETTINGS_DEFAULTS = {
@@ -86,13 +99,15 @@ const deleteWarehouse = asyncHandler(async (req, res) => {
 
 const getWarehouseStock = asyncHandler(async (req, res) => {
   const tenantId = requireTenant(req);
-  const data = await warehouseService.getWarehouseStock(req.params.id, tenantId);
+  const settings = await getTenantWarehouseSettings(tenantId);
+  const data = await warehouseService.getWarehouseStock(req.params.id, tenantId, settings);
   res.json({ success: true, data });
 });
 
 const getAllWarehouseStock = asyncHandler(async (req, res) => {
   const tenantId = requireTenant(req);
-  const data = await warehouseService.getAllStock(tenantId);
+  const settings = await getTenantWarehouseSettings(tenantId);
+  const data = await warehouseService.getAllStock(tenantId, settings);
   res.json({ success: true, data });
 });
 
@@ -109,8 +124,14 @@ const getWarehouseBatches = asyncHandler(async (req, res) => {
 const adjustWarehouseStock = asyncHandler(async (req, res) => {
   const tenantId = requireTenant(req);
   const { subProduct, size, quantity, type, notes } = req.body;
+  const settings = await getTenantWarehouseSettings(tenantId);
+  const tracksBatch = await resolveTracksBatch(subProduct, settings.batchTrackingEnabled);
   const data = await warehouseService.adjustStock(
-    { warehouseId: req.params.id, subProduct, size, quantity: Number(quantity), type, notes },
+    {
+      warehouseId: req.params.id, subProduct, size, quantity: Number(quantity), type, notes,
+      tracksBatch, allowNegativeStock: settings.allowNegativeStock,
+      fefoPicking: settings.fefoPicking,
+    },
     req.user._id,
     tenantId
   );
@@ -120,8 +141,16 @@ const adjustWarehouseStock = asyncHandler(async (req, res) => {
 const transferStock = asyncHandler(async (req, res) => {
   const tenantId = requireTenant(req);
   const { subProduct, size, fromWarehouse, toWarehouse, quantity, notes } = req.body;
+  const settings = await getTenantWarehouseSettings(tenantId);
+  const tracksBatch = await resolveTracksBatch(subProduct, settings.batchTrackingEnabled);
   const data = await warehouseService.transferStock(
-    { subProduct, size, fromWarehouse, toWarehouse, quantity: Number(quantity), notes },
+    {
+      subProduct, size, fromWarehouse, toWarehouse, quantity: Number(quantity), notes,
+      tracksBatch,
+      allowInterWarehouseTransfers: settings.allowInterWarehouseTransfers,
+      allowNegativeStock: settings.allowNegativeStock,
+      fefoPicking: settings.fefoPicking,
+    },
     req.user._id,
     tenantId
   );
@@ -192,5 +221,5 @@ const updateWarehouseSettings = asyncHandler(async (req, res) => {
 module.exports = {
   createWarehouse, getWarehouses, getWarehouseById, updateWarehouse, deleteWarehouse,
   getWarehouseStock, getAllWarehouseStock, getWarehouseBatches, adjustWarehouseStock, transferStock,
-  getWarehouseSettings, updateWarehouseSettings,
+  getWarehouseSettings, updateWarehouseSettings, getTenantWarehouseSettings,
 };

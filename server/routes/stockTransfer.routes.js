@@ -8,6 +8,8 @@ const {
   updateStockTransfer,
   deleteStockTransfer,
   updateStockTransferStatus,
+  approveStockTransfer,
+  rejectStockTransfer,
 } = require("../controllers/stockTransfer.controller");
 const {
   protect,
@@ -30,5 +32,7 @@ router
   .delete(tenantAdminOrSuperAdmin, deleteStockTransfer);
 
 router.patch("/:id/status", tenantAdminOrSuperAdmin, updateStockTransferStatus);
+router.patch("/:id/approve", tenantAdminOrSuperAdmin, approveStockTransfer);
+router.patch("/:id/reject", tenantAdminOrSuperAdmin, rejectStockTransfer);
 
 module.exports = router;

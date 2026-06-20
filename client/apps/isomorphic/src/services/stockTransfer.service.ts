@@ -1,7 +1,13 @@
 // services/stockTransfer.service.ts
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
-export type TransferStatus = 'draft' | 'confirmed' | 'completed' | 'cancelled';
+export type TransferStatus =
+  | 'draft'
+  | 'pending_approval'
+  | 'confirmed'
+  | 'completed'
+  | 'cancelled'
+  | 'rejected';
 
 export interface TransferItem {
   _id?: string;
@@ -38,13 +44,22 @@ export interface StockTransfer {
   completedBy?: { _id: string; name: string };
   cancelledBy?: { _id: string; name: string };
   cancelledAt?: string;
+  /** Snapshot value (Σ qty × unit cost) used by the approval gate. */
+  totalValue?: number;
+  approvedBy?: { _id: string; name: string };
+  approvedAt?: string;
+  rejectedBy?: { _id: string; name: string };
+  rejectedAt?: string;
+  rejectionReason?: string;
 }
 
 export interface TransferStats {
   draft: number;
+  pending_approval: number;
   confirmed: number;
   completed: number;
   cancelled: number;
+  rejected: number;
 }
 
 export interface ListResponse {
@@ -160,6 +175,27 @@ export const stockTransferService = {
         body: JSON.stringify({ status }),
       }),
       'Failed to update transfer status'
+    );
+  },
+
+  async approve(id: string, token: string) {
+    return handle(
+      await fetch(`${API_URL}/api/stock-transfers/${id}/approve`, {
+        method: 'PATCH',
+        headers: jsonAuth(token),
+      }),
+      'Failed to approve transfer'
+    );
+  },
+
+  async reject(id: string, reason: string, token: string) {
+    return handle(
+      await fetch(`${API_URL}/api/stock-transfers/${id}/reject`, {
+        method: 'PATCH',
+        headers: jsonAuth(token),
+        body: JSON.stringify({ reason }),
+      }),
+      'Failed to reject transfer'
     );
   },
 };

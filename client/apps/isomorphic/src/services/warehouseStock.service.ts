@@ -1,6 +1,25 @@
 // services/warehouseStock.service.ts
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
+/**
+ * Server-computed warehouse reporting status for one stock line, derived from the
+ * tenant's warehouseSettings (low-stock / reorder / overstock / near-expiry
+ * thresholds). The server is the source of truth; the client renders these flags.
+ */
+export interface StockFlags {
+  status: 'in_stock' | 'low_stock' | 'out_of_stock';
+  outOfStock: boolean;
+  lowStock: boolean;
+  belowReorder: boolean;
+  overstocked: boolean;
+  nearExpiry: boolean;
+  available: number;
+  reorderPoint: number;
+  reorderQuantity: number;
+  outOfStockAlert: boolean;
+  expiryDays: number | null;
+}
+
 export interface WarehouseStockRow {
   _id: string;
   warehouse:
@@ -26,6 +45,10 @@ export interface WarehouseStockRow {
   aisle?: string;
   shelf?: string;
   bin?: string;
+  /** Earliest batch expiry across this line's still-stocked lots (ISO), or null. */
+  earliestExpiry?: string | null;
+  /** Server-computed reporting flags from warehouseSettings thresholds. */
+  flags?: StockFlags;
 }
 
 /**
@@ -45,8 +68,12 @@ export interface StockRow {
   currentQuantity: number;
   reservedQuantity: number;
   costPrice: number;
+  /** Valuation method used to derive costPrice (fifo | average | standard). */
+  valuationMethod?: string;
   minStockLevel: number;
   earliestExpiry: string | null;
+  /** Server-computed reporting flags from warehouseSettings thresholds. */
+  flags?: StockFlags;
 }
 
 export type AdjustType = 'received' | 'shipped' | 'adjusted';
