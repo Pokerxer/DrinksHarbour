@@ -4,6 +4,9 @@ const assert = require('node:assert');
 const {
   resolveTargetWarehouse,
   postReceivedStock,
+  applyReceipt,
+  poReceiptStatus,
+  outstanding,
 } = require('../services/poReceive.helpers');
 const { ValidationError } = require('../utils/errors');
 
@@ -254,6 +257,148 @@ test('postReceivedStock creates a batch for tracked lines and always adjusts sto
   assert.strictEqual(batchCalls.length, 1);
   assert.strictEqual(batchCalls[0].batchNumber, 'JUICE500-20260616-001');
   assert.strictEqual(adjustCalls.length, 2);
+});
+
+// ── Phase 1: pure receiving math ────────────────────────────────────────────
+
+test('outstanding = quantity - receivedQty - returnedQty', () => {
+  assert.strictEqual(outstanding({ quantity: 100, receivedQty: 0, returnedQty: 0 }), 100);
+  assert.strictEqual(outstanding({ quantity: 100, receivedQty: 60, returnedQty: 0 }), 40);
+  assert.strictEqual(outstanding({ quantity: 100, receivedQty: 100, returnedQty: 0 }), 0);
+  // A returned unit is accounted for (received then sent back) — not still outstanding.
+  assert.strictEqual(outstanding({ quantity: 10, receivedQty: 7, returnedQty: 3 }), 0);
+  // Missing fields default to zero.
+  assert.strictEqual(outstanding({ quantity: 5 }), 5);
+});
+
+test('applyReceipt accumulates a first partial receipt and reports the delta to post', () => {
+  const poItems = [{ itemId: 'l1', quantity: 100, receivedQty: 0 }];
+  const result = applyReceipt(poItems, [{ itemId: 'l1', receivedQty: 60 }]);
+
+  assert.strictEqual(result.lines.length, 1);
+  const line = result.lines[0];
+  assert.strictEqual(line.itemId, 'l1');
+  assert.strictEqual(line.previousReceivedQty, 0);
+  assert.strictEqual(line.newReceivedQty, 60);
+  assert.strictEqual(line.delta, 60);
+});
+
+test('applyReceipt does not mutate the input poItems', () => {
+  const poItems = [{ itemId: 'l1', quantity: 100, receivedQty: 0 }];
+  applyReceipt(poItems, [{ itemId: 'l1', receivedQty: 60 }]);
+  assert.strictEqual(poItems[0].receivedQty, 0);
+});
+
+test('applyReceipt accumulates a second partial that completes the line', () => {
+  const poItems = [{ itemId: 'l1', quantity: 100, receivedQty: 60 }];
+  const result = applyReceipt(poItems, [{ itemId: 'l1', receivedQty: 40 }]);
+
+  assert.strictEqual(result.lines[0].newReceivedQty, 100);
+  assert.strictEqual(result.lines[0].delta, 40);
+});
+
+test('applyReceipt clamps an over-receipt to the ordered quantity by default', () => {
+  const poItems = [{ itemId: 'l1', quantity: 100, receivedQty: 0 }];
+  const result = applyReceipt(poItems, [{ itemId: 'l1', receivedQty: 120 }]);
+
+  assert.strictEqual(result.lines[0].newReceivedQty, 100);
+  assert.strictEqual(result.lines[0].delta, 100);
+});
+
+test('applyReceipt allows over-receipt when explicitly enabled', () => {
+  const poItems = [{ itemId: 'l1', quantity: 100, receivedQty: 0 }];
+  const result = applyReceipt(
+    poItems,
+    [{ itemId: 'l1', receivedQty: 120 }],
+    { allowOverReceipt: true }
+  );
+
+  assert.strictEqual(result.lines[0].newReceivedQty, 120);
+  assert.strictEqual(result.lines[0].delta, 120);
+});
+
+test('applyReceipt clamps a second receipt against the already-received amount', () => {
+  // 90 already in; a receipt of 30 can only add 10 more before hitting 100.
+  const poItems = [{ itemId: 'l1', quantity: 100, receivedQty: 90 }];
+  const result = applyReceipt(poItems, [{ itemId: 'l1', receivedQty: 30 }]);
+
+  assert.strictEqual(result.lines[0].newReceivedQty, 100);
+  assert.strictEqual(result.lines[0].delta, 10);
+});
+
+test('applyReceipt only touches the lines named in the receipt; one full, one short', () => {
+  const poItems = [
+    { itemId: 'a', quantity: 10, receivedQty: 0 },
+    { itemId: 'b', quantity: 5, receivedQty: 0 },
+  ];
+  const result = applyReceipt(poItems, [
+    { itemId: 'a', receivedQty: 10 },
+    { itemId: 'b', receivedQty: 2 },
+  ]);
+
+  const a = result.lines.find((l) => l.itemId === 'a');
+  const b = result.lines.find((l) => l.itemId === 'b');
+  assert.strictEqual(a.newReceivedQty, 10);
+  assert.strictEqual(a.delta, 10);
+  assert.strictEqual(b.newReceivedQty, 2);
+  assert.strictEqual(b.delta, 2);
+});
+
+test('applyReceipt skips zero/negative receipt lines and unknown item ids', () => {
+  const poItems = [{ itemId: 'a', quantity: 10, receivedQty: 3 }];
+  const result = applyReceipt(poItems, [
+    { itemId: 'a', receivedQty: 0 },
+    { itemId: 'ghost', receivedQty: 5 },
+  ]);
+  assert.strictEqual(result.lines.length, 0);
+});
+
+test('applyReceipt matches Mongoose-style lines by _id when itemId is absent', () => {
+  const poItems = [{ _id: { toString: () => 'oid1' }, quantity: 10, receivedQty: 0 }];
+  const result = applyReceipt(poItems, [{ itemId: 'oid1', receivedQty: 4 }]);
+  assert.strictEqual(result.lines[0].newReceivedQty, 4);
+  assert.strictEqual(result.lines[0].delta, 4);
+});
+
+test('poReceiptStatus is "received" only when every line is fully received', () => {
+  assert.strictEqual(
+    poReceiptStatus([
+      { quantity: 10, receivedQty: 10 },
+      { quantity: 5, receivedQty: 5 },
+    ]),
+    'received'
+  );
+});
+
+test('poReceiptStatus is "partially_received" when some but not all is received', () => {
+  assert.strictEqual(
+    poReceiptStatus([
+      { quantity: 10, receivedQty: 10 },
+      { quantity: 5, receivedQty: 2 },
+    ]),
+    'partially_received'
+  );
+  assert.strictEqual(
+    poReceiptStatus([{ quantity: 10, receivedQty: 1 }]),
+    'partially_received'
+  );
+});
+
+test('poReceiptStatus returns null (unchanged) when nothing is received', () => {
+  assert.strictEqual(
+    poReceiptStatus([
+      { quantity: 10, receivedQty: 0 },
+      { quantity: 5, receivedQty: 0 },
+    ]),
+    null
+  );
+});
+
+test('poReceiptStatus counts over-received lines as fully received', () => {
+  assert.strictEqual(
+    poReceiptStatus([{ quantity: 10, receivedQty: 12 }]),
+    'received'
+  );
 });
 
 test('postReceivedStock uses a manual batch number when provided', async () => {
