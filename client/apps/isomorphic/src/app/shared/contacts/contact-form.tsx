@@ -222,8 +222,7 @@ export default function ContactForm({
             />
           </label>
           <label className="col-span-2 text-sm font-medium text-gray-700">
-            Email{' '}
-            <span className="font-normal text-gray-400">(optional)</span>
+            Email <span className="font-normal text-gray-400">(optional)</span>
             <input
               type="email"
               disabled={ecommerceLocked}
@@ -332,7 +331,10 @@ export default function ContactForm({
       </section>
 
       {/* Notes */}
-      <section id="notes" className="scroll-mt-28 border-t border-gray-100 pt-5">
+      <section
+        id="notes"
+        className="scroll-mt-28 border-t border-gray-100 pt-5"
+      >
         <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-gray-400">
           Notes
         </p>

@@ -40,8 +40,7 @@ import ContactForm, {
   fullName,
 } from './contact-form';
 
-const naira = (n: number) =>
-  `₦${Math.round(n).toLocaleString('en-NG')}`;
+const naira = (n: number) => `₦${Math.round(n).toLocaleString('en-NG')}`;
 
 // ── Stat card ────────────────────────────────────────────────────────────────
 
@@ -207,8 +206,7 @@ export default function ContactsList() {
     setShowForm(true);
   };
 
-  const openDetail = (c: Contact) =>
-    router.push(routes.contacts.detail(c.key));
+  const openDetail = (c: Contact) => router.push(routes.contacts.detail(c.key));
 
   const save = async () => {
     if (!form.firstName.trim()) {
@@ -371,8 +369,7 @@ export default function ContactsList() {
         {/* Toolbar */}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-gray-700">
-            {filtered.length} of {total}{' '}
-            {total === 1 ? 'contact' : 'contacts'}
+            {filtered.length} of {total} {total === 1 ? 'contact' : 'contacts'}
           </h2>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
