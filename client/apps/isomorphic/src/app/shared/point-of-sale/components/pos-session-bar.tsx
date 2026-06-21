@@ -499,10 +499,10 @@ function PricelistPicker({ token }: { token: string }) {
     if (token) load(token);
   }, [token, activeShopId, load]);
 
-  // The active (Auto) selection comes from the customer when their assigned
-  // pricelist is what resolved — and the cashier hasn't manually overridden it.
+  // The active selection comes from the customer when the applied pricelist is
+  // their assigned one (it's auto-selected on customer selection; the cashier can
+  // still pick a different one, which clears this).
   const isFromCustomer =
-    !isManualOverride &&
     !!customer.pricelistId &&
     selectedPricelist?._id === customer.pricelistId;
 
@@ -571,11 +571,9 @@ function PricelistPicker({ token }: { token: string }) {
             <span className="flex-1 text-left">
               Auto
               <span className="ml-1 text-[10px] text-gray-400">
-                {isFromCustomer
-                  ? `· from customer${customer.pricelistName ? ` (${customer.pricelistName})` : ''}`
-                  : resolvedId
-                    ? `· ${pricelists.find((p) => p._id === resolvedId)?.name ?? 'resolved'}`
-                    : '· no pricelist'}
+                {resolvedId
+                  ? `· ${pricelists.find((p) => p._id === resolvedId)?.name ?? 'resolved'}`
+                  : '· no pricelist'}
               </span>
             </span>
           </button>
