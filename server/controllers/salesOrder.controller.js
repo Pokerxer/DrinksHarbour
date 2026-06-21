@@ -2,6 +2,7 @@
 const asyncHandler = require("express-async-handler");
 const SalesOrder = require('../models/SalesOrder');
 const svc = require('../services/salesOrder.service');
+const salesPayment = require('../services/salesPayment.service');
 
 exports.createSalesOrder = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
@@ -91,4 +92,30 @@ exports.convertQuotation = asyncHandler(async (req, res) => {
   }
   const order = await svc.convertQuotationToOrder(so);
   res.status(201).json({ success: true, data: order });
+});
+
+exports.confirmSalesOrder = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  const so = await SalesOrder.findOne({ _id: req.params.id, tenant: tenantId, docType: 'order' });
+  if (!so) return res.status(404).json({ success: false, message: 'Order not found' });
+  if (so.orderStatus !== 'draft') return res.status(409).json({ success: false, message: 'Only a draft order can be confirmed' });
+
+  const { paymentMethod, amountTendered, splitPayments } = req.body;
+  if (!paymentMethod) return res.status(400).json({ success: false, message: 'Payment method required' });
+
+  const result = await salesPayment.capturePayment({
+    salesOrder: so, tenantId, paymentMethod, amountTendered, splitPayments,
+    userId: req.user?._id || req.posUser?._id,
+    posSettings: req.tenant?.posSettings || {},
+  });
+  if (!result.ok) return res.status(result.status || 409).json({ success: false, message: result.message });
+
+  so.orderStatus = 'confirmed';
+  so.paymentMethod = paymentMethod;
+  so.paymentStatus = 'paid';
+  so.amountPaid = so.total;
+  so.walletTxRef = result.walletTx?._id || undefined;
+  so.loyaltyEarned = result.loyaltyEarned || 0;
+  await so.save();
+  res.json({ success: true, data: so });
 });
