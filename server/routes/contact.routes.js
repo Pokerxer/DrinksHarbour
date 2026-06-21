@@ -20,4 +20,10 @@ router.route('/:source/:id')
 router.get('/:source/:id/orders', tenantAdminOrSuperAdmin, c.listContactOrders);
 router.get('/:source/:id/spending', tenantAdminOrSuperAdmin, c.getContactSpending);
 
+// Wallet (stored value / store credit): read the ledger + balance, then admin
+// top-up / adjust. Mutations are atomic and never overdraw — see the controller.
+router.get('/:source/:id/wallet', tenantAdminOrSuperAdmin, c.getContactWallet);
+router.post('/:source/:id/wallet/topup', tenantAdminOrSuperAdmin, c.topUpWallet);
+router.post('/:source/:id/wallet/adjust', tenantAdminOrSuperAdmin, c.adjustWallet);
+
 module.exports = router;

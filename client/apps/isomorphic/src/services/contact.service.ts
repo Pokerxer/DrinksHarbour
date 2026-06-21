@@ -29,6 +29,8 @@ export interface Contact {
   avatar: string;
   status: ContactStatus;
   loyaltyPoints: number;
+  /** Stored-value wallet balance (NGN). A 'both' contact's lives on its in-store record. */
+  walletBalance: number;
   totalSpent: number;
   totalOrders: number;
   notes: string;
@@ -84,6 +86,66 @@ export interface ContactSpending {
   byPaymentMethod: { method: string; total: number; count: number }[];
   byStatus: { status: string; total: number; count: number }[];
   topProducts: { name: string; quantity: number; total: number }[];
+}
+
+// ── Wallet (stored value / store credit) ──────────────────────────────────────
+
+export type WalletTxType = 'credit' | 'debit' | 'adjustment' | 'refund';
+
+export interface WalletTransaction {
+  _id: string;
+  type: WalletTxType;
+  /** Positive integer NGN; direction comes from `type` (debit lowers the balance). */
+  amount: number;
+  /** Owner balance immediately after this transaction. */
+  balanceAfter: number;
+  reason: string;
+  reference?: string;
+  relatedOrder?: { _id: string; orderNumber: string } | null;
+  createdBy?: { _id: string; firstName?: string; lastName?: string } | null;
+  createdAt: string;
+}
+
+export interface WalletStats {
+  /** Authoritative current balance, read from the owner record. */
+  balance: number;
+  credited: number;
+  debited: number;
+  net: number;
+  count: number;
+  lastActivityAt: string | null;
+}
+
+export interface ContactWallet {
+  contact: Contact;
+  balance: number;
+  stats: WalletStats;
+  transactions: WalletTransaction[];
+  pagination: ContactOrdersPagination;
+}
+
+/** Type / date-range / pagination filters for a contact's wallet ledger. */
+export interface WalletParams {
+  type?: WalletTxType;
+  /** ISO date (yyyy-mm-dd) lower bound, inclusive. */
+  from?: string;
+  /** ISO date (yyyy-mm-dd) upper bound, inclusive of the whole day. */
+  to?: string;
+  page?: number;
+  limit?: number;
+}
+
+/** Admin top-up: always a credit. */
+export interface WalletTopUpInput {
+  amount: number;
+  reason?: string;
+}
+
+/** Admin correction: a credit OR debit (a debit may not overdraw). */
+export interface WalletAdjustInput {
+  type: 'credit' | 'debit';
+  amount: number;
+  reason?: string;
 }
 
 /** Status / date-range / pagination filters for a contact's orders. */
@@ -235,6 +297,66 @@ export const contactService = {
         headers: auth(token),
       }),
       'Failed to load spending'
+    );
+  },
+
+  /** Stored-value wallet: balance + lifetime stats + a paginated, filterable ledger. */
+  async getContactWallet(
+    key: string,
+    token: string,
+    params?: WalletParams
+  ): Promise<{ success: boolean; data: ContactWallet }> {
+    const qs = new URLSearchParams();
+    if (params?.type) qs.set('type', params.type);
+    if (params?.from) qs.set('from', params.from);
+    if (params?.to) qs.set('to', params.to);
+    if (params?.page) qs.set('page', String(params.page));
+    if (params?.limit) qs.set('limit', String(params.limit));
+    const suffix = qs.toString() ? `?${qs}` : '';
+    return handle(
+      await fetch(
+        `${API_URL}/api/contacts/${key.replace(':', '/')}/wallet${suffix}`,
+        { headers: auth(token) }
+      ),
+      'Failed to load wallet'
+    );
+  },
+
+  /** Admin top-up — credits the wallet. Returns the new balance + the ledger row. */
+  async topUpWallet(
+    key: string,
+    token: string,
+    data: WalletTopUpInput
+  ): Promise<{
+    success: boolean;
+    data: { balance: number; transaction: WalletTransaction };
+  }> {
+    return handle(
+      await fetch(`${API_URL}/api/contacts/${key.replace(':', '/')}/wallet/topup`, {
+        method: 'POST',
+        headers: jsonAuth(token),
+        body: JSON.stringify(data),
+      }),
+      'Failed to top up wallet'
+    );
+  },
+
+  /** Admin correction — credits OR debits the wallet (a debit may not overdraw). */
+  async adjustWallet(
+    key: string,
+    token: string,
+    data: WalletAdjustInput
+  ): Promise<{
+    success: boolean;
+    data: { balance: number; transaction: WalletTransaction };
+  }> {
+    return handle(
+      await fetch(`${API_URL}/api/contacts/${key.replace(':', '/')}/wallet/adjust`, {
+        method: 'POST',
+        headers: jsonAuth(token),
+        body: JSON.stringify(data),
+      }),
+      'Failed to adjust wallet'
     );
   },
 };

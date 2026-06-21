@@ -163,6 +163,15 @@ const userSchema = new Schema(
     passwordResetToken: String,
     passwordResetExpires: Date,
 
+    // Authoritative stored-value wallet balance (NGN) for an ecommerce customer.
+    // Mutated only alongside an appended WalletTransaction; never goes negative.
+    // (A 'both' contact's wallet lives on its in-store POSCustomer record.)
+    walletBalance: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     // ────────────────────────────────────────────────
     // Customer preferences & personalization
     // ────────────────────────────────────────────────

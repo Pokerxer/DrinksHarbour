@@ -9,6 +9,9 @@ const POSCustomerSchema = new mongoose.Schema(
     phone:         { type: String, default: '', trim: true },
     avatar:        { url: String, publicId: String },
     loyaltyPoints: { type: Number, default: 0, min: 0 },
+    // Authoritative stored-value wallet balance (NGN). Mutated only alongside an
+    // appended WalletTransaction; guarded so it never goes negative.
+    walletBalance: { type: Number, default: 0, min: 0 },
     totalSpent:    { type: Number, default: 0 },
     totalOrders:   { type: Number, default: 0 },
     notes:         { type: String, default: '' },

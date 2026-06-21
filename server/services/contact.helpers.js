@@ -88,6 +88,7 @@ function normalizePosCustomer(doc = {}) {
     avatar: doc.avatar?.url || '',
     status: 'active',
     loyaltyPoints: doc.loyaltyPoints || 0,
+    walletBalance: doc.walletBalance || 0,
     totalSpent: doc.totalSpent || 0,
     totalOrders: doc.totalOrders || 0,
     notes: doc.notes || '',
@@ -108,6 +109,7 @@ function normalizeEcommerceUser(doc = {}) {
     avatar: doc.avatar?.url || '',
     status: doc.status || 'active',
     loyaltyPoints: 0,
+    walletBalance: doc.walletBalance || 0,
     totalSpent: 0,
     totalOrders: 0,
     notes: '',
@@ -152,6 +154,9 @@ function mergePair(ins, eco) {
     avatar: eco.avatar || '',
     status: eco.status || 'active',
     loyaltyPoints: (ins.loyaltyPoints || 0) + (eco.loyaltyPoints || 0),
+    // The wallet is single-sided: it lives on the in-store record a 'both'
+    // contact routes to (see contactKey), so its balance is the POSCustomer's.
+    walletBalance: ins.walletBalance || 0,
     totalSpent: (ins.totalSpent || 0) + (eco.totalSpent || 0),
     totalOrders: (ins.totalOrders || 0) + (eco.totalOrders || 0),
     notes: ins.notes || '',
@@ -561,10 +566,108 @@ function validateContactUpdate(source, body = {}) {
   return { ok: true, changes };
 }
 
+// ── Wallet (stored value / store credit) ────────────────────────────────────────
+//
+// A per-contact wallet: a running balance held on the owner record (POSCustomer
+// or User) plus an append-only ledger of WalletTransactions. These helpers are
+// pure so the money rules (positive-integer NGN amounts, overdraw guard, ledger
+// roll-up) can be unit-tested without Mongo — the controller pairs them with an
+// atomic balance mutation. A 'both' contact's wallet lives on its POSCustomer
+// record, consistent with contactKey.
+
+// WalletTransaction.type enum. Direction is derived from the type: a 'debit'
+// lowers the balance; every other type ('credit'/'refund'/'adjustment') raises
+// it. The admin "adjust" endpoint sends 'credit'|'debit' to pick the direction.
+const WALLET_TX_TYPES = ['credit', 'debit', 'adjustment', 'refund'];
+
+// Free-text reason cap, mirroring the model's maxlength.
+const WALLET_REASON_MAX = 280;
+
+/**
+ * Validate + normalise a wallet transaction request. Amount must be a positive
+ * integer (NGN has no sub-units here); type must be allowed; reason is optional,
+ * trimmed and length-capped.
+ * @returns {{ ok: true, value: { type, amount, reason } } | { ok: false, message: string }}
+ */
+function validateWalletTx(body = {}) {
+  const { type, amount, reason } = body;
+
+  if (!WALLET_TX_TYPES.includes(type)) {
+    return { ok: false, message: `Type must be one of: ${WALLET_TX_TYPES.join(', ')}` };
+  }
+
+  const n = Number(amount);
+  if (!Number.isInteger(n) || n <= 0) {
+    return { ok: false, message: 'Amount must be a positive integer' };
+  }
+
+  const r = reason === undefined || reason === null ? '' : String(reason).trim();
+  if (r.length > WALLET_REASON_MAX) {
+    return { ok: false, message: `Reason must be ${WALLET_REASON_MAX} characters or fewer` };
+  }
+
+  return { ok: true, value: { type, amount: n, reason: r } };
+}
+
+/**
+ * Apply a transaction to a balance, returning the new balance. Debits subtract
+ * (and are refused when they would overdraw — the wallet never goes negative);
+ * every other type adds. The amount is re-validated here so a balance is never
+ * mutated by a bad value even if a caller skipped validateWalletTx.
+ * @returns {{ ok: true, balanceAfter: number } | { ok: false, message: string }}
+ */
+function applyWalletDelta(currentBalance, type, amount) {
+  const bal = Number(currentBalance) || 0;
+  const n = Number(amount);
+  if (!Number.isInteger(n) || n <= 0) {
+    return { ok: false, message: 'Amount must be a positive integer' };
+  }
+  const balanceAfter = type === 'debit' ? bal - n : bal + n;
+  if (balanceAfter < 0) {
+    return { ok: false, message: 'Insufficient wallet balance' };
+  }
+  return { ok: true, balanceAfter };
+}
+
+/**
+ * Roll a contact's ledger up into the headline figures the /wallet page renders:
+ * lifetime credited vs debited, the net (== current balance for a consistent
+ * ledger), the transaction count and the most recent activity timestamp. Pure
+ * (no DB / no Date.now). Debits are summed under `debited`; all other types
+ * under `credited`, mirroring applyWalletDelta's direction rule.
+ */
+function summarizeWallet(transactions = []) {
+  let credited = 0;
+  let debited = 0;
+  let lastActivityAt = null;
+
+  for (const t of transactions) {
+    const amt = t.amount || 0;
+    if (t.type === 'debit') debited += amt;
+    else credited += amt;
+
+    const when = t.createdAt;
+    const ts = when ? new Date(when).getTime() : NaN;
+    if (!Number.isNaN(ts) && (lastActivityAt === null || ts > lastActivityAt)) {
+      lastActivityAt = ts;
+    }
+  }
+
+  return {
+    credited,
+    debited,
+    net: credited - debited,
+    count: transactions.length,
+    lastActivityAt: lastActivityAt === null ? null : new Date(lastActivityAt).toISOString(),
+  };
+}
+
 module.exports = {
   CONTACT_SOURCES,
   SETTABLE_STATUSES,
   ORDER_STATUSES,
+  WALLET_TX_TYPES,
+  WALLET_REASON_MAX,
   isValidEmail,
   normalizeEmail,
   normalizePhone,
@@ -584,4 +687,7 @@ module.exports = {
   summarizeSpending,
   validateContactCreate,
   validateContactUpdate,
+  validateWalletTx,
+  applyWalletDelta,
+  summarizeWallet,
 };

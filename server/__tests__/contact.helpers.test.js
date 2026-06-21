@@ -21,6 +21,9 @@ const {
   summarizeSpending,
   validateContactCreate,
   validateContactUpdate,
+  validateWalletTx,
+  applyWalletDelta,
+  summarizeWallet,
 } = require('../services/contact.helpers');
 
 const TENANT = 'tenant-1';
@@ -115,6 +118,17 @@ test('normalizePosCustomer fills ecommerce-only defaults', () => {
   assert.strictEqual(c.loyaltyPoints, 12);
   assert.strictEqual(c.totalSpent, 5000);
   assert.strictEqual(c.notes, 'VIP');
+});
+
+test('normalizers surface the wallet balance (default 0)', () => {
+  assert.strictEqual(normalizePosCustomer({ _id: 'p1', walletBalance: 2500 }).walletBalance, 2500);
+  assert.strictEqual(normalizePosCustomer({ _id: 'p1' }).walletBalance, 0);
+  assert.strictEqual(normalizeEcommerceUser({ _id: 'u1', walletBalance: 700 }).walletBalance, 700);
+  assert.strictEqual(normalizeEcommerceUser({ _id: 'u1' }).walletBalance, 0);
+  // a 'both' contact's wallet lives on the in-store record (loyalty/notes side)
+  const ins = normalizePosCustomer({ _id: 'p1', walletBalance: 1000 });
+  const eco = normalizeEcommerceUser({ _id: 'u1', walletBalance: 999 });
+  assert.strictEqual(mergePair(ins, eco).walletBalance, 1000);
 });
 
 test('normalizeEcommerceUser fills instore-only defaults + reads avatar url', () => {
@@ -515,4 +529,82 @@ test('contactOrderTotals is zero for an unmatched / index-less contact', () => {
     contactOrderTotals({ ids: { ecommerce: 'u1' } }, null),
     { totalOrders: 0, totalSpent: 0 }
   );
+});
+
+// ── wallet: tx validation ──────────────────────────────────────────────────────
+
+test('validateWalletTx accepts an allowed type + positive integer amount', () => {
+  const r = validateWalletTx({ type: 'credit', amount: 5000, reason: ' Top up ' });
+  assert.ok(r.ok);
+  assert.deepStrictEqual(r.value, { type: 'credit', amount: 5000, reason: 'Top up' });
+  // numeric-string amounts coerce; reason is optional
+  const s = validateWalletTx({ type: 'debit', amount: '250' });
+  assert.ok(s.ok);
+  assert.strictEqual(s.value.amount, 250);
+  assert.strictEqual(s.value.reason, '');
+});
+
+test('validateWalletTx rejects bad types and non-positive / non-integer amounts', () => {
+  assert.strictEqual(validateWalletTx({ type: 'bogus', amount: 100 }).ok, false);
+  assert.strictEqual(validateWalletTx({ type: 'credit', amount: 0 }).ok, false);
+  assert.strictEqual(validateWalletTx({ type: 'credit', amount: -50 }).ok, false);
+  assert.strictEqual(validateWalletTx({ type: 'credit', amount: 12.5 }).ok, false);
+  assert.strictEqual(validateWalletTx({ type: 'credit', amount: 'abc' }).ok, false);
+  assert.strictEqual(validateWalletTx({ amount: 100 }).ok, false); // missing type
+});
+
+test('validateWalletTx caps an over-long reason', () => {
+  const long = 'x'.repeat(300);
+  assert.strictEqual(validateWalletTx({ type: 'credit', amount: 10, reason: long }).ok, false);
+});
+
+// ── wallet: balance delta ──────────────────────────────────────────────────────
+
+test('applyWalletDelta credits add and debits subtract', () => {
+  assert.deepStrictEqual(applyWalletDelta(1000, 'credit', 500), { ok: true, balanceAfter: 1500 });
+  assert.deepStrictEqual(applyWalletDelta(1000, 'refund', 200), { ok: true, balanceAfter: 1200 });
+  assert.deepStrictEqual(applyWalletDelta(1000, 'adjustment', 200), { ok: true, balanceAfter: 1200 });
+  assert.deepStrictEqual(applyWalletDelta(1000, 'debit', 400), { ok: true, balanceAfter: 600 });
+  // a debit to exactly zero is allowed
+  assert.deepStrictEqual(applyWalletDelta(400, 'debit', 400), { ok: true, balanceAfter: 0 });
+});
+
+test('applyWalletDelta refuses a debit that would overdraw', () => {
+  const r = applyWalletDelta(300, 'debit', 400);
+  assert.strictEqual(r.ok, false);
+  assert.ok(/insufficient/i.test(r.message));
+});
+
+test('applyWalletDelta treats a missing balance as zero and validates the amount', () => {
+  assert.deepStrictEqual(applyWalletDelta(undefined, 'credit', 100), { ok: true, balanceAfter: 100 });
+  assert.strictEqual(applyWalletDelta(100, 'credit', 0).ok, false);
+  assert.strictEqual(applyWalletDelta(100, 'debit', -5).ok, false);
+});
+
+// ── wallet: ledger summary ─────────────────────────────────────────────────────
+
+const WALLET_TX = [
+  { type: 'credit', amount: 5000, createdAt: '2026-01-10' },
+  { type: 'debit', amount: 1500, createdAt: '2026-02-01' },
+  { type: 'refund', amount: 1000, createdAt: '2026-01-20' },
+  { type: 'adjustment', amount: 200, createdAt: '2026-01-05' },
+];
+
+test('summarizeWallet totals credits vs debits, net and last activity', () => {
+  const s = summarizeWallet(WALLET_TX);
+  assert.strictEqual(s.credited, 6200); // credit 5000 + refund 1000 + adjustment 200
+  assert.strictEqual(s.debited, 1500);
+  assert.strictEqual(s.net, 4700);
+  assert.strictEqual(s.count, 4);
+  assert.strictEqual(s.lastActivityAt, new Date('2026-02-01').toISOString());
+});
+
+test('summarizeWallet handles an empty ledger', () => {
+  assert.deepStrictEqual(summarizeWallet([]), {
+    credited: 0,
+    debited: 0,
+    net: 0,
+    count: 0,
+    lastActivityAt: null,
+  });
 });

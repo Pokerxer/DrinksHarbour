@@ -23,6 +23,7 @@ import {
   PiGlobeSimple,
   PiUsersThree,
   PiCoins,
+  PiWallet,
   PiShoppingBag,
   PiNotePencil,
   PiArrowSquareOut,
@@ -465,6 +466,13 @@ export default function ContactDetail({ contactKey }: { contactKey: string }) {
                 }
                 href={`${routes.contacts.detail(contact.key)}/spent`}
                 highlight={contact.totalSpent > 0}
+              />
+              <SmartButton
+                icon={<PiWallet />}
+                label="Wallet"
+                count={money(contact.walletBalance)}
+                href={`${routes.contacts.detail(contact.key)}/wallet`}
+                highlight={contact.walletBalance > 0}
               />
               <SmartButton
                 icon={<PiCoins />}

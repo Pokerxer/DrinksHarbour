@@ -12,6 +12,7 @@
 const POSCustomer = require('../models/POSCustomer');
 const User = require('../models/User');
 const Order = require('../models/Order');
+const WalletTransaction = require('../models/WalletTransaction');
 const asyncHandler = require('../utils/asyncHandler');
 const {
   buildContactFilter,
@@ -26,6 +27,9 @@ const {
   contactKey,
   validateContactCreate,
   validateContactUpdate,
+  validateWalletTx,
+  summarizeWallet,
+  WALLET_TX_TYPES,
 } = require('../services/contact.helpers');
 
 // Attach the client routing key (`source:id`) to a normalised contact.
@@ -46,7 +50,7 @@ exports.listContacts = asyncHandler(async (req, res) => {
       : Promise.resolve([]),
     filters.ecommerce
       ? User.find(filters.ecommerce)
-          .select('firstName lastName email phone avatar status createdAt')
+          .select('firstName lastName email phone avatar status walletBalance createdAt')
           .sort({ createdAt: -1 })
           .lean()
       : Promise.resolve([]),
@@ -99,7 +103,7 @@ async function loadContact(source, id, tenantId) {
       _id: id,
       tenant: tenantId,
       role: 'customer',
-    }).select('firstName lastName email phone avatar status createdAt');
+    }).select('firstName lastName email phone avatar status walletBalance createdAt');
     if (!user || user.status === 'deleted') return null;
     return normalizeEcommerceUser(user);
   }
@@ -302,3 +306,214 @@ exports.getContactSpending = asyncHandler(async (req, res) => {
     data: { contact: present(contact), spending: summarizeSpending(orders) },
   });
 });
+
+// ─── Wallet (stored value / store credit) ────────────────────────────────────────
+//
+// A per-contact wallet: an authoritative running balance held on the owner record
+// (POSCustomer.walletBalance / User.walletBalance) plus an append-only ledger of
+// WalletTransactions. The owner record + a ledger row are mutated together; the
+// balance change is an atomic, guarded $inc so it can never overdraw and never
+// trusts a client-supplied figure (balanceAfter is always read back from the DB).
+// A 'both' contact's wallet lives on its in-store POSCustomer record, consistent
+// with contactKey. Every query is scoped to the tenant.
+
+// Resolve which store record holds a contact's wallet + the model that owns it.
+function walletOwner(contact) {
+  if (contact.source === 'ecommerce') {
+    return {
+      Model: User,
+      ownerType: 'User',
+      ownerId: contact.ids.ecommerce,
+      // re-assert the customer scope at write time, never touch a deleted account
+      filter: (tenantId) => ({
+        _id: contact.ids.ecommerce,
+        tenant: tenantId,
+        role: 'customer',
+        status: { $ne: 'deleted' },
+      }),
+    };
+  }
+  // instore + both both address the POSCustomer record.
+  return {
+    Model: POSCustomer,
+    ownerType: 'POSCustomer',
+    ownerId: contact.ids.instore,
+    filter: (tenantId) => ({ _id: contact.ids.instore, tenant: tenantId }),
+  };
+}
+
+// Parse the wallet ledger listing query (type / date range / pagination), mirroring
+// parseOrderListQuery but over WalletTransaction's `type` + `createdAt`.
+function parseWalletListQuery(query = {}) {
+  const match = {};
+
+  const type = typeof query.type === 'string' ? query.type.trim() : '';
+  if (type && WALLET_TX_TYPES.includes(type)) match.type = type;
+
+  const createdAt = {};
+  const from = query.from ? new Date(query.from) : null;
+  if (from && !Number.isNaN(from.getTime())) createdAt.$gte = from;
+  const to = query.to ? new Date(query.to) : null;
+  if (to && !Number.isNaN(to.getTime())) {
+    to.setHours(23, 59, 59, 999); // inclusive of the whole "to" day
+    createdAt.$lte = to;
+  }
+  if (Object.keys(createdAt).length) match.createdAt = createdAt;
+
+  const page = Math.max(1, parseInt(query.page, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(query.limit, 10) || 20));
+  return { match, page, limit, skip: (page - 1) * limit };
+}
+
+/**
+ * Atomically move a contact's wallet balance and append the matching ledger row.
+ * The balance is changed with a guarded $inc — for a debit the filter also requires
+ * `walletBalance >= amount`, so concurrent debits can never drive it negative. The
+ * post-update balance is read straight from the DB into `balanceAfter`. If the
+ * ledger insert fails after the balance moved, the balance is compensated back so
+ * the two never drift (no multi-document transaction needed on standalone Mongo).
+ */
+async function mutateWallet({ owner, tenantId, value, reference, relatedOrder, createdBy }) {
+  const { Model, ownerType, ownerId } = owner;
+  const { type, amount, reason } = value;
+  const inc = type === 'debit' ? -amount : amount;
+
+  const filter = owner.filter(tenantId);
+  if (type === 'debit') filter.walletBalance = { $gte: amount };
+
+  const updated = await Model.findOneAndUpdate(
+    filter,
+    { $inc: { walletBalance: inc } },
+    { new: true }
+  ).select('walletBalance');
+
+  if (!updated) {
+    // Either the owner vanished, or (for a debit) the balance was insufficient.
+    return { ok: false, status: type === 'debit' ? 400 : 404,
+      message: type === 'debit' ? 'Insufficient wallet balance' : 'Contact not found' };
+  }
+
+  try {
+    const tx = await WalletTransaction.create({
+      tenant: tenantId,
+      ownerType,
+      ownerId,
+      type,
+      amount,
+      balanceAfter: updated.walletBalance,
+      reason,
+      reference,
+      relatedOrder,
+      createdBy,
+    });
+    return { ok: true, balance: updated.walletBalance, tx };
+  } catch (err) {
+    // Ledger write failed — undo the balance move to keep the two consistent.
+    await Model.updateOne({ _id: updated._id }, { $inc: { walletBalance: -inc } });
+    throw err;
+  }
+}
+
+// GET /api/contacts/:source/:id/wallet — balance + lifetime stats + a paginated,
+// optionally filtered (type / date) ledger. Stats are lifetime (identity-only) so
+// the cards stay stable while the table is filtered.
+exports.getContactWallet = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  const { source, id } = req.params;
+
+  const contact = await loadContact(source, id, tenantId);
+  if (!contact) {
+    return res.status(404).json({ success: false, message: 'Contact not found' });
+  }
+
+  const owner = walletOwner(contact);
+  const baseMatch = { tenant: tenantId, ownerType: owner.ownerType, ownerId: owner.ownerId };
+  const { match, page, limit, skip } = parseWalletListQuery(req.query);
+  const listMatch = { ...baseMatch, ...match };
+
+  const [allTx, total, transactions] = await Promise.all([
+    WalletTransaction.find(baseMatch).select('type amount createdAt').lean(),
+    WalletTransaction.countDocuments(listMatch),
+    WalletTransaction.find(listMatch)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('createdBy', 'firstName lastName')
+      .populate('relatedOrder', 'orderNumber')
+      .lean(),
+  ]);
+
+  const summary = summarizeWallet(allTx);
+  const stats = {
+    balance: contact.walletBalance, // authoritative, from the owner record
+    credited: summary.credited,
+    debited: summary.debited,
+    net: summary.net,
+    count: summary.count,
+    lastActivityAt: summary.lastActivityAt,
+  };
+
+  res.json({
+    success: true,
+    data: {
+      contact: present(contact),
+      balance: contact.walletBalance,
+      stats,
+      transactions,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    },
+  });
+});
+
+// Shared body for the two admin mutations. `forcedType` pins top-up to a credit;
+// adjust passes null and accepts a credit OR debit from the body.
+async function handleWalletMutation(req, res, forcedType) {
+  const tenantId = req.tenant?._id;
+  const { source, id } = req.params;
+
+  const contact = await loadContact(source, id, tenantId);
+  if (!contact) {
+    return res.status(404).json({ success: false, message: 'Contact not found' });
+  }
+
+  const body = forcedType ? { ...req.body, type: forcedType } : req.body;
+  const built = validateWalletTx(body);
+  if (!built.ok) {
+    return res.status(400).json({ success: false, message: built.message });
+  }
+  // An admin correction can only move money in or out — never a programmatic type.
+  if (!forcedType && !['credit', 'debit'].includes(built.value.type)) {
+    return res.status(400).json({ success: false, message: 'Adjustment must be a credit or debit' });
+  }
+
+  const result = await mutateWallet({
+    owner: walletOwner(contact),
+    tenantId,
+    value: built.value,
+    createdBy: req.user?._id,
+  });
+  if (!result.ok) {
+    return res.status(result.status).json({ success: false, message: result.message });
+  }
+
+  res.status(201).json({
+    success: true,
+    data: { balance: result.balance, transaction: result.tx },
+  });
+}
+
+// POST /api/contacts/:source/:id/wallet/topup — credit the wallet (admin top-up).
+exports.topUpWallet = asyncHandler((req, res) => handleWalletMutation(req, res, 'credit'));
+
+// POST /api/contacts/:source/:id/wallet/adjust — credit OR debit (admin correction).
+// A debit that would overdraw is rejected.
+exports.adjustWallet = asyncHandler((req, res) => handleWalletMutation(req, res, null));
+
+// ─── Phase 2 (not yet wired): POS wallet tender ──────────────────────────────────
+//
+// Order.paymentMethod already allows 'wallet'. To pay with the wallet at POS, the
+// sale path in pos.controller.js (the Order.create branch) would, for a named
+// customer (paymentDetails.customer.customerId) paying by 'wallet', call
+// mutateWallet({ owner, tenantId, value:{ type:'debit', amount: order.totalAmount },
+// reference: receiptNumber, relatedOrder: order._id, createdBy }) — blocking the
+// sale when the guarded $inc returns insufficient — and credit it back on refund.
