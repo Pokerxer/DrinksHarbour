@@ -3190,6 +3190,18 @@ exports.getPOSSessionOrders = asyncHandler(async (req, res) => {
 
 // ─── POS Customer endpoints ───────────────────────────────────────────────────
 
+// Flatten a (lean) POSCustomer whose `pricelist` ref was populated with `name`
+// into the wire shape the POS client expects: `pricelist` stays an id string (or
+// null) and a sibling `pricelistName` carries the label for the selector badge.
+function flattenCustomerPricelist(doc) {
+  if (!doc) return doc;
+  const pl = doc.pricelist;
+  if (pl && typeof pl === 'object' && pl._id) {
+    return { ...doc, pricelist: String(pl._id), pricelistName: pl.name || '' };
+  }
+  return { ...doc, pricelist: pl ? String(pl) : null, pricelistName: '' };
+}
+
 exports.searchPOSCustomers = asyncHandler(async (req, res) => {
   const POSCustomer = require('../models/POSCustomer');
   const tenantId = req.tenant?._id;
@@ -3214,10 +3226,11 @@ exports.searchPOSCustomers = asyncHandler(async (req, res) => {
   const customers = await POSCustomer.find(filter)
     .sort({ updatedAt: -1 })
     .limit(lim)
-    .select('firstName lastName email phone loyaltyPoints walletBalance totalSpent totalOrders')
+    .select('firstName lastName email phone loyaltyPoints walletBalance totalSpent totalOrders pricelist')
+    .populate('pricelist', 'name')
     .lean();
 
-  res.json({ success: true, data: { customers } });
+  res.json({ success: true, data: { customers: customers.map(flattenCustomerPricelist) } });
 });
 
 exports.createPOSCustomer = asyncHandler(async (req, res) => {
@@ -3254,11 +3267,12 @@ exports.getPOSCustomer = asyncHandler(async (req, res) => {
   const POSCustomer = require('../models/POSCustomer');
   const tenantId = req.tenant?._id;
   const customer = await POSCustomer.findOne({ _id: req.params.id, tenant: tenantId })
-    .select('firstName lastName email phone loyaltyPoints walletBalance totalSpent totalOrders notes')
+    .select('firstName lastName email phone loyaltyPoints walletBalance totalSpent totalOrders notes pricelist')
+    .populate('pricelist', 'name')
     .lean();
   if (!customer)
     return res.status(404).json({ success: false, message: 'Customer not found' });
-  res.json({ success: true, data: { customer } });
+  res.json({ success: true, data: { customer: flattenCustomerPricelist(customer) } });
 });
 
 exports.updatePOSCustomerLoyalty = asyncHandler(async (req, res) => {

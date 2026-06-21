@@ -149,6 +149,8 @@ export type CartCustomer = {
   phone: string;
   loyaltyPoints?: number; // live balance fetched from DB on customer selection
   walletBalance?: number; // live store-credit balance fetched from DB on customer selection
+  pricelistId?: string; // customer-assigned pricelist id — auto-picked on selection
+  pricelistName?: string; // its label, for the "from customer" badge on the selector
 };
 
 /** A reward/discount the cashier has explicitly applied to the current cart. */
@@ -1268,28 +1270,52 @@ export const usePOSPricelist = () => {
   };
 };
 
-/** Shop-scoped allowed pricelists + auto-resolved id (fetched on shop change). */
+/** The active terminal's selected-customer id ('' for a walk-in / no DB customer). */
+function useActiveCustomerId() {
+  const { terminal } = usePOSAuth();
+  const cartAtom =
+    terminal === 'wholesale' ? cartsAtoms.wholesale : cartsAtoms.retail;
+  const activeCartAtom =
+    terminal === 'wholesale'
+      ? activeCartIdAtoms.wholesale
+      : activeCartIdAtoms.retail;
+  const carts = useAtomValue(cartAtom);
+  const activeCartId = useAtomValue(activeCartAtom);
+  const activeCart =
+    carts.find((c) => c.id === activeCartId) ?? carts[0] ?? INITIAL_CART;
+  return activeCart.customer.customerId ?? '';
+}
+
+/**
+ * Shop-scoped allowed pricelists + auto-resolved id. Keyed by shop AND the
+ * selected customer: a customer with an assigned pricelist changes both the
+ * auto-resolved id and the allowed set (their pricelist is folded in, with
+ * rules), so selecting/clearing a customer refetches. The customer id is read
+ * from the active cart, so every `load(token)` caller stays consistent.
+ */
 export const usePOSAvailablePricelists = () => {
   const { activeShopId } = usePOSActiveShop();
   const shopKey = effectiveShopKey(activeShopId);
+  const customerId = useActiveCustomerId();
   const [pricelists, setPricelists] = useAtom(posAllowedPricelistsAtom);
   const [resolvedId, setResolvedId] = useAtom(posResolvedPricelistIdAtom);
   const [loadedShop, setLoadedShop] = useAtom(posPricelistLoadedShopAtom);
 
   const load = useCallback(
     async (token: string) => {
-      if (loadedShop === shopKey) return;
+      const key = `${shopKey}::${customerId}`;
+      if (loadedShop === key) return;
       try {
         const { posApi } = await import('@/app/shared/point-of-sale/api');
-        const data = await posApi.getPricelists(token, shopKey);
+        const data = await posApi.getPricelists(token, shopKey, customerId || undefined);
         setPricelists(data.pricelists || []);
         setResolvedId(data.resolvedId ?? null);
-        setLoadedShop(shopKey);
+        setLoadedShop(key);
       } catch {
         /* silent — picker shows empty gracefully */
       }
     },
-    [loadedShop, shopKey, setPricelists, setResolvedId, setLoadedShop]
+    [loadedShop, shopKey, customerId, setPricelists, setResolvedId, setLoadedShop]
   );
 
   const invalidate = useCallback(() => setLoadedShop(null), [setLoadedShop]);
@@ -1297,7 +1323,10 @@ export const usePOSAvailablePricelists = () => {
   return {
     pricelists,
     resolvedId,
-    loaded: loadedShop === shopKey,
+    // `loaded` is true once data for the active shop has been fetched (under any
+    // customer key), so the picker renders without flicker while a customer
+    // selection triggers a background refetch.
+    loaded: typeof loadedShop === 'string' && loadedShop.startsWith(`${shopKey}::`),
     load,
     invalidate,
   };

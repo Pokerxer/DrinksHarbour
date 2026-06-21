@@ -33,6 +33,8 @@ export interface Contact {
   walletBalance: number;
   totalSpent: number;
   totalOrders: number;
+  /** Customer-assigned pricelist id (in-store only); null when none. */
+  pricelist: string | null;
   notes: string;
   createdAt: string;
 }
@@ -56,6 +58,8 @@ export interface ContactInput {
   loyaltyPoints?: number;
   totalSpent?: number;
   totalOrders?: number;
+  /** Assigned pricelist id; send `null` to clear. In-store only. */
+  pricelist?: string | null;
   /** Profile photo. Send `null` to remove the current one. */
   avatar?: AvatarInput | null;
   /** Ecommerce-only: the one field an admin may change on a storefront customer. */
