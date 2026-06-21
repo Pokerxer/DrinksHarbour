@@ -13,6 +13,9 @@ const Warehouse       = require('../models/Warehouse');
 const WarehouseStock  = require('../models/WarehouseStock');
 const { sellStock, returnStock, resolveShopWarehouse } = require('../services/warehouse.service');
 const InventoryMovement = require('../models/InventoryMovement');
+const POSCustomer = require('../models/POSCustomer');
+const WalletTransaction = require('../models/WalletTransaction');
+const { mutateWallet } = require('../services/wallet.service');
 const inventoryService = require('../services/inventory.service');
 const { generateOrderNumber, generateReceiptNumber, generateReturnNumber } = require('../utils/orderUtils');
 const { calcPlatformCostPrice, calcPlatformSellingPrice, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
@@ -2000,6 +2003,13 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   if (!items?.length) return res.status(400).json({ success: false, message: 'No items in order' });
   if (!paymentMethod)  return res.status(400).json({ success: false, message: 'Payment method required' });
 
+  // Wallet tender (store credit) needs a saved customer to draw the balance from —
+  // a walk-in has no wallet. The actual debit (with an atomic overdraw guard) runs
+  // once the order total is known, below.
+  if (paymentMethod === 'wallet' && !customer.customerId) {
+    return res.status(400).json({ success: false, message: 'Wallet payment requires a saved customer' });
+  }
+
   // Check price override permission
   const hasOverrides = Object.keys(priceOverrides).length > 0;
   if (hasOverrides && !req.posPermissions.includes('pos:price_override')) {
@@ -2304,7 +2314,14 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       });
     }
   } catch (stockErr) {
-    // Rollback already-deducted stock on failure
+    await rollbackDeductedStock();
+    return res.status(409).json({ success: false, message: stockErr.message });
+  }
+
+  // Restore every already-deducted stock line — used on a stock failure above and,
+  // below, when a wallet-tendered sale can't be paid for (so we never leave stock
+  // committed for a sale that didn't go through).
+  async function rollbackDeductedStock() {
     for (const d of deductedItems) {
       if (warehouseId) {
         await returnStock(
@@ -2320,7 +2337,6 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         await SubProduct.findByIdAndUpdate(d.subProductId, { $inc: { availableStock: d.quantity, totalStock: d.quantity } });
       }
     }
-    return res.status(409).json({ success: false, message: stockErr.message });
   }
 
   // Compute totals — itemSubtotal already has item-level discount applied
@@ -2357,7 +2373,36 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       .sort({ openedAt: -1 });
   }
 
-  const order = await Order.create({
+  // ── Wallet tender ──
+  // Charge the customer's stored-value wallet for the order total. The debit is an
+  // atomic, guarded $inc (see wallet.service) so a balance that's too low blocks
+  // the sale here — after which we roll the just-deducted stock back. A zero-total
+  // sale (fully discounted) charges nothing.
+  let walletTx = null;
+  if (paymentMethod === 'wallet' && total > 0) {
+    const walletResult = await mutateWallet({
+      owner: {
+        Model: POSCustomer,
+        ownerType: 'POSCustomer',
+        ownerId: customer.customerId,
+        filter: { _id: customer.customerId, tenant: tenantId },
+      },
+      tenantId,
+      value: { type: 'debit', amount: total, reason: `POS sale — receipt ${receiptNumber}` },
+      reference: receiptNumber,
+      createdBy: staffId,
+    });
+    if (!walletResult.ok) {
+      await rollbackDeductedStock();
+      return res.status(walletResult.status === 404 ? 404 : 409)
+        .json({ success: false, message: walletResult.message });
+    }
+    walletTx = walletResult.tx;
+  }
+
+  let order;
+  try {
+    order = await Order.create({
     orderNumber,                          // required unique string
     tenant:        tenantId,
     source:        'pos',
@@ -2392,7 +2437,35 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       pricelistId:   selectedPricelist._id,
       pricelistName: selectedPricelist.name || '',
     } : undefined,
-  });
+    });
+  } catch (orderErr) {
+    // The order failed to persist. Undo any wallet charge (append a compensating
+    // credit — the ledger is never edited) and restore the stock, so a failed sale
+    // leaves balance, ledger and inventory all consistent.
+    if (walletTx) {
+      await mutateWallet({
+        owner: {
+          Model: POSCustomer,
+          ownerType: 'POSCustomer',
+          ownerId: customer.customerId,
+          filter: { _id: customer.customerId, tenant: tenantId },
+        },
+        tenantId,
+        value: { type: 'refund', amount: total, reason: `Reversed — failed POS sale ${receiptNumber}` },
+        reference: receiptNumber,
+        createdBy: staffId,
+      }).catch(() => {});
+    }
+    await rollbackDeductedStock();
+    throw orderErr;
+  }
+
+  // Link the wallet debit to the now-persisted order (best-effort; the receipt
+  // number on the tx already ties the two together).
+  if (walletTx) {
+    WalletTransaction.updateOne({ _id: walletTx._id }, { $set: { relatedOrder: order._id } })
+      .catch(err => console.error('[Wallet] link tx to order failed:', err.message));
+  }
 
   // Back-link InventoryMovement records to this order (non-blocking)
   InventoryMovement.updateMany(
@@ -2491,6 +2564,30 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     },
   });
 });
+
+// Credit a POS customer's wallet back when a wallet-paid sale is refunded or
+// voided. POS orders always carry the customer on paymentDetails.customer.customerId
+// (a POSCustomer), so the wallet owner is unambiguous. Best-effort: the refund /
+// void itself has already committed, so a wallet hiccup is logged, not fatal. The
+// amount is rounded to a whole naira and a non-positive amount is a no-op.
+async function creditWalletRefund({ order, tenantId, amount, reference, reason, staffId }) {
+  const customerId = order.paymentDetails?.customer?.customerId;
+  const amt = Math.round(Number(amount) || 0);
+  if (!customerId || amt <= 0) return;
+  await mutateWallet({
+    owner: {
+      Model: POSCustomer,
+      ownerType: 'POSCustomer',
+      ownerId: customerId,
+      filter: { _id: customerId, tenant: tenantId },
+    },
+    tenantId,
+    value: { type: 'refund', amount: amt, reason },
+    reference,
+    relatedOrder: order._id,
+    createdBy: staffId,
+  }).catch((err) => console.error('[Wallet] refund credit failed:', err.message));
+}
 
 // ─── Refund (item-level) ──────────────────────────────────────────────────────
 /**
@@ -2634,6 +2731,23 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
 
   await order.save();
 
+  // Settle a wallet refund: when the refund is going to store credit — explicitly,
+  // or by default when the sale itself was wallet-paid — credit the refunded amount
+  // back to the customer's wallet as an append-only ledger row.
+  const refundToWallet =
+    refundPaymentMethod === 'wallet' ||
+    (!refundPaymentMethod && order.paymentMethod === 'wallet');
+  if (refundToWallet) {
+    await creditWalletRefund({
+      order,
+      tenantId: req.tenant?._id,
+      amount: totalRefunded,
+      reference: returnNumber,
+      reason: `Refund — ${returnNumber}`,
+      staffId: performer._id,
+    });
+  }
+
   // Back-link all InventoryMovement records created for this return to the order
   InventoryMovement.updateMany(
     { reference: returnNumber, tenant: req.tenant?._id },
@@ -2709,6 +2823,20 @@ exports.voidPOSOrder = asyncHandler(async (req, res) => {
   order.paymentStatus = 'refunded';
   order.status    = 'cancelled';
   await order.save();
+
+  // Void of a wallet-paid sale returns the still-outstanding amount to the wallet
+  // (anything already refunded was settled by those refunds, so don't double-credit).
+  if (order.paymentMethod === 'wallet') {
+    const alreadyRefunded = (order.refunds || []).reduce((s, r) => s + (r.totalRefunded || 0), 0);
+    await creditWalletRefund({
+      order,
+      tenantId: req.tenant?._id,
+      amount: (order.totalAmount || 0) - alreadyRefunded,
+      reference: voidNumber,
+      reason: `Void — ${voidNumber}`,
+      staffId: req.posUser._id,
+    });
+  }
 
   res.json({ success: true, data: { order: { _id: order._id, receiptNumber: order.receiptNumber, isVoided: true } } });
 });

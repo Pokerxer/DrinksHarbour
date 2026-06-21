@@ -13,6 +13,7 @@ const POSCustomer = require('../models/POSCustomer');
 const User = require('../models/User');
 const Order = require('../models/Order');
 const WalletTransaction = require('../models/WalletTransaction');
+const { mutateWallet } = require('../services/wallet.service');
 const asyncHandler = require('../utils/asyncHandler');
 const {
   buildContactFilter,
@@ -317,20 +318,21 @@ exports.getContactSpending = asyncHandler(async (req, res) => {
 // A 'both' contact's wallet lives on its in-store POSCustomer record, consistent
 // with contactKey. Every query is scoped to the tenant.
 
-// Resolve which store record holds a contact's wallet + the model that owns it.
-function walletOwner(contact) {
+// Resolve which store record holds a contact's wallet + the model and tenant-scoped
+// filter that own it. A 'both' contact's wallet lives on its in-store POSCustomer.
+function walletOwner(contact, tenantId) {
   if (contact.source === 'ecommerce') {
     return {
       Model: User,
       ownerType: 'User',
       ownerId: contact.ids.ecommerce,
       // re-assert the customer scope at write time, never touch a deleted account
-      filter: (tenantId) => ({
+      filter: {
         _id: contact.ids.ecommerce,
         tenant: tenantId,
         role: 'customer',
         status: { $ne: 'deleted' },
-      }),
+      },
     };
   }
   // instore + both both address the POSCustomer record.
@@ -338,7 +340,7 @@ function walletOwner(contact) {
     Model: POSCustomer,
     ownerType: 'POSCustomer',
     ownerId: contact.ids.instore,
-    filter: (tenantId) => ({ _id: contact.ids.instore, tenant: tenantId }),
+    filter: { _id: contact.ids.instore, tenant: tenantId },
   };
 }
 
@@ -365,55 +367,6 @@ function parseWalletListQuery(query = {}) {
   return { match, page, limit, skip: (page - 1) * limit };
 }
 
-/**
- * Atomically move a contact's wallet balance and append the matching ledger row.
- * The balance is changed with a guarded $inc — for a debit the filter also requires
- * `walletBalance >= amount`, so concurrent debits can never drive it negative. The
- * post-update balance is read straight from the DB into `balanceAfter`. If the
- * ledger insert fails after the balance moved, the balance is compensated back so
- * the two never drift (no multi-document transaction needed on standalone Mongo).
- */
-async function mutateWallet({ owner, tenantId, value, reference, relatedOrder, createdBy }) {
-  const { Model, ownerType, ownerId } = owner;
-  const { type, amount, reason } = value;
-  const inc = type === 'debit' ? -amount : amount;
-
-  const filter = owner.filter(tenantId);
-  if (type === 'debit') filter.walletBalance = { $gte: amount };
-
-  const updated = await Model.findOneAndUpdate(
-    filter,
-    { $inc: { walletBalance: inc } },
-    { new: true }
-  ).select('walletBalance');
-
-  if (!updated) {
-    // Either the owner vanished, or (for a debit) the balance was insufficient.
-    return { ok: false, status: type === 'debit' ? 400 : 404,
-      message: type === 'debit' ? 'Insufficient wallet balance' : 'Contact not found' };
-  }
-
-  try {
-    const tx = await WalletTransaction.create({
-      tenant: tenantId,
-      ownerType,
-      ownerId,
-      type,
-      amount,
-      balanceAfter: updated.walletBalance,
-      reason,
-      reference,
-      relatedOrder,
-      createdBy,
-    });
-    return { ok: true, balance: updated.walletBalance, tx };
-  } catch (err) {
-    // Ledger write failed — undo the balance move to keep the two consistent.
-    await Model.updateOne({ _id: updated._id }, { $inc: { walletBalance: -inc } });
-    throw err;
-  }
-}
-
 // GET /api/contacts/:source/:id/wallet — balance + lifetime stats + a paginated,
 // optionally filtered (type / date) ledger. Stats are lifetime (identity-only) so
 // the cards stay stable while the table is filtered.
@@ -426,7 +379,7 @@ exports.getContactWallet = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Contact not found' });
   }
 
-  const owner = walletOwner(contact);
+  const owner = walletOwner(contact, tenantId);
   const baseMatch = { tenant: tenantId, ownerType: owner.ownerType, ownerId: owner.ownerId };
   const { match, page, limit, skip } = parseWalletListQuery(req.query);
   const listMatch = { ...baseMatch, ...match };
@@ -487,7 +440,7 @@ async function handleWalletMutation(req, res, forcedType) {
   }
 
   const result = await mutateWallet({
-    owner: walletOwner(contact),
+    owner: walletOwner(contact, tenantId),
     tenantId,
     value: built.value,
     createdBy: req.user?._id,
@@ -509,11 +462,6 @@ exports.topUpWallet = asyncHandler((req, res) => handleWalletMutation(req, res, 
 // A debit that would overdraw is rejected.
 exports.adjustWallet = asyncHandler((req, res) => handleWalletMutation(req, res, null));
 
-// ─── Phase 2 (not yet wired): POS wallet tender ──────────────────────────────────
-//
-// Order.paymentMethod already allows 'wallet'. To pay with the wallet at POS, the
-// sale path in pos.controller.js (the Order.create branch) would, for a named
-// customer (paymentDetails.customer.customerId) paying by 'wallet', call
-// mutateWallet({ owner, tenantId, value:{ type:'debit', amount: order.totalAmount },
-// reference: receiptNumber, relatedOrder: order._id, createdBy }) — blocking the
-// sale when the guarded $inc returns insufficient — and credit it back on refund.
+// POS wallet tender (the 'wallet' paymentMethod) is wired in pos.controller.js's
+// createPOSOrder / refundPOSOrder / voidPOSOrder, sharing this same atomic
+// mutateWallet via services/wallet.service.js.
