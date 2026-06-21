@@ -121,6 +121,23 @@ exports.getContact = asyncHandler(async (req, res) => {
   if (!contact) {
     return res.status(404).json({ success: false, message: 'Contact not found' });
   }
+
+  // Overlay live order activity so the detail page's Orders/Spent buttons agree
+  // with the /orders and /spent pages (both compute from real orders). The stored
+  // totalOrders/totalSpent are only hand-entered fallbacks — when the contact has
+  // real orders we trust those, mirroring listContacts. Scoped to this contact's
+  // identities so we never scan the whole orders collection.
+  const or = buildContactOrderMatch(contact);
+  if (or.length > 0) {
+    const orderDocs = await Order.find({ 'items.tenant': tenantId, $or: or })
+      .select('totalAmount')
+      .lean();
+    if (orderDocs.length > 0) {
+      contact.totalOrders = orderDocs.length;
+      contact.totalSpent = orderDocs.reduce((s, o) => s + (o.totalAmount || 0), 0);
+    }
+  }
+
   res.json({ success: true, data: { contact: present(contact) } });
 });
 
