@@ -51,7 +51,14 @@ const PurchaseOrderSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ["draft", "confirmed", "received", "validated", "cancelled"],
+      enum: [
+        "draft",
+        "confirmed",
+        "partially_received",
+        "received",
+        "validated",
+        "cancelled",
+      ],
       default: "draft",
     },
     // RFQ (Request for Quotation) specific fields
@@ -167,6 +174,14 @@ const PurchaseOrderSchema = new Schema(
           default: 0,
           min: 0,
         },
+        // How much of receivedQty has already been posted to inventory (via a
+        // validate). The unposted delta is receivedQty - postedQty; this keeps
+        // repeated validates across partial receipts from double-posting stock.
+        postedQty: {
+          type: Number,
+          default: 0,
+          min: 0,
+        },
         // Captured at receiving for batch-tracked products; consumed at validation
         // to create the WarehouseBatch. Null for non-tracked lines.
         receivedBatchNumber: {
@@ -243,6 +258,12 @@ const PurchaseOrderSchema = new Schema(
           type: Date,
           default: Date.now,
         },
+        // Destination warehouse chosen at receive time; used when this receipt is
+        // validated/posted to inventory.
+        warehouseId: {
+          type: ObjectId,
+          ref: 'Warehouse',
+        },
         items: [
           {
             subProductId: {
@@ -268,6 +289,9 @@ const PurchaseOrderSchema = new Schema(
               type: Number,
               default: 0,
             },
+            // Per-receipt batch capture for batch-tracked products.
+            batchNumber: String,
+            expiryDate: Date,
             packaging: String,
             notes: String,
             status: {

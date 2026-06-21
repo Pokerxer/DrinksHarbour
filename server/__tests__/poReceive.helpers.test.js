@@ -7,6 +7,7 @@ const {
   applyReceipt,
   poReceiptStatus,
   outstanding,
+  buildPostingLines,
 } = require('../services/poReceive.helpers');
 const { ValidationError } = require('../utils/errors');
 
@@ -398,6 +399,46 @@ test('poReceiptStatus counts over-received lines as fully received', () => {
   assert.strictEqual(
     poReceiptStatus([{ quantity: 10, receivedQty: 12 }]),
     'received'
+  );
+});
+
+test('buildPostingLines emits only lines with unposted units, receivedQty set to the delta', () => {
+  const lines = buildPostingLines([
+    { subProductId: 'sp1', quantity: 100, receivedQty: 100, postedQty: 60 }, // 40 to post
+    { subProductId: 'sp2', quantity: 50, receivedQty: 50, postedQty: 50 },   // nothing
+    { subProductId: 'sp3', quantity: 30, receivedQty: 20, postedQty: 0 },    // 20 to post
+  ]);
+
+  assert.strictEqual(lines.length, 2);
+  assert.strictEqual(lines[0].subProductId, 'sp1');
+  assert.strictEqual(lines[0].receivedQty, 40);
+  assert.strictEqual(lines[1].subProductId, 'sp3');
+  assert.strictEqual(lines[1].receivedQty, 20);
+});
+
+test('buildPostingLines treats a missing postedQty as zero (first validate)', () => {
+  const lines = buildPostingLines([{ subProductId: 'sp1', quantity: 10, receivedQty: 10 }]);
+  assert.strictEqual(lines.length, 1);
+  assert.strictEqual(lines[0].receivedQty, 10);
+});
+
+test('buildPostingLines preserves the other fields postReceivedStock needs', () => {
+  const lines = buildPostingLines([
+    { subProductId: 'sp1', sizeId: 'sz1', productId: 'p1', tracksBatch: true,
+      receivedBatchNumber: 'LOT-1', unitCost: 5, quantity: 10, receivedQty: 10, postedQty: 0 },
+  ]);
+  const l = lines[0];
+  assert.strictEqual(l.sizeId, 'sz1');
+  assert.strictEqual(l.productId, 'p1');
+  assert.strictEqual(l.tracksBatch, true);
+  assert.strictEqual(l.receivedBatchNumber, 'LOT-1');
+  assert.strictEqual(l.unitCost, 5);
+});
+
+test('buildPostingLines returns empty when everything is already posted', () => {
+  assert.deepStrictEqual(
+    buildPostingLines([{ subProductId: 'sp1', quantity: 10, receivedQty: 10, postedQty: 10 }]),
+    []
   );
 });
 

@@ -12,6 +12,10 @@ const inventoryService = require("../services/inventory.service");
 const {
   resolveTargetWarehouse,
   postReceivedStock,
+  applyReceipt,
+  poReceiptStatus,
+  outstanding,
+  buildPostingLines,
 } = require("../services/poReceive.helpers");
 const VendorBill = require("../models/VendorBill");
 const { syncVendorPricelistFromPO } = require("../services/vendorPricelistSync.service");
@@ -360,6 +364,12 @@ const getPurchaseOrder = asyncHandler(async (req, res) => {
       ...item,
       tracksBatch: !!(product && product.tracksBatch),
       isAlcoholic: !!(product && product.isAlcoholic),
+      // Receiving progress so the UI can render ordered / received / outstanding.
+      orderedQty: item.quantity || 0,
+      receivedQty: item.receivedQty || 0,
+      postedQty: item.postedQty || 0,
+      returnedQty: item.returnedQty || 0,
+      outstandingQty: outstanding(item),
     };
   });
 
@@ -496,11 +506,13 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
     }
   }
 
-  // Validate status transition
+  // Validate status transition. A partially_received PO stays open and remains
+  // receivable (and validatable) until every line's outstanding hits zero.
   const validTransitions = {
-    draft: ["confirmed", "received", "cancelled"],
-    confirmed: ["received", "cancelled"],
-    received: ["validated", "cancelled"],
+    draft: ["confirmed", "partially_received", "received", "cancelled"],
+    confirmed: ["partially_received", "received", "cancelled"],
+    partially_received: ["partially_received", "received", "validated", "cancelled"],
+    received: ["partially_received", "validated", "cancelled"],
     validated: ["cancelled"],
     cancelled: [],
   };
@@ -542,6 +554,12 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
         }
       }
     }
+    // Refine the requested 'received' down to 'partially_received' when only some
+    // units arrived, so the PO stays open for the remainder (back-order on the
+    // same PO). Stock is not posted here — that happens at validate.
+    const derived = poReceiptStatus(purchaseOrder.items);
+    if (derived) purchaseOrder.status = derived;
+    purchaseOrder.isPartiallyReceived = derived === "partially_received";
   }
 
   // When first transitioning to "received", rename RFQ- → PO- prefix
@@ -573,8 +591,6 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
       defaultWarehouseId = null;
     }
     const targetWarehouseId = resolveTargetWarehouse(warehouseId, defaultWarehouseId);
-
-    purchaseOrder.fullyReceivedDate = new Date();
 
     // Resolve each line's parent-product batch-tracking flag (transient, not
     // persisted) so postReceivedStock knows which lines need a WarehouseBatch,
@@ -652,20 +668,53 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
       }
     }
 
+    // Post ONLY the not-yet-posted delta (receivedQty - postedQty) per line, so
+    // validating again after a later partial receipt never double-posts stock.
+    const resolvedPlain = purchaseOrder.items.map((item) => ({
+      _id: item._id,
+      subProductId: item.subProductId,
+      sizeId: item.sizeId,
+      productId: item.productId,
+      tracksBatch: item.tracksBatch,
+      subProductName: item.subProductName,
+      sku: item.sku,
+      unitCost: item.unitCost,
+      quantity: item.quantity,
+      receivedQty: item.receivedQty || 0,
+      postedQty: item.postedQty || 0,
+      receivedBatchNumber: item.receivedBatchNumber,
+      receivedExpiryDate: item.receivedExpiryDate,
+    }));
+    const postingItems = buildPostingLines(resolvedPlain);
+
     console.log(
-      `🔍 PO Validation Start: ${purchaseOrder.poNumber} → warehouse ${targetWarehouseId} — ${purchaseOrder.items?.length || 0} items`
+      `🔍 PO Validation Start: ${purchaseOrder.poNumber} → warehouse ${targetWarehouseId} — posting ${postingItems.length}/${purchaseOrder.items?.length || 0} lines (unposted delta)`
     );
 
-    const { successCount, failCount, failures } = await postReceivedStock({
-      purchaseOrder,
-      targetWarehouseId,
-      adjustStock: warehouseService.adjustStock,
-      receiveBatch: batchService.receiveBatch,
-      generateBatchNumber: batchService.generateBatchNumber,
-      recordMovement: inventoryService.recordReceiptMovement,
-      userId: req.user?._id || purchaseOrder.createdBy,
-      tenantId,
-    });
+    let successCount = 0;
+    let failCount = 0;
+    let failures = [];
+    if (postingItems.length > 0) {
+      ({ successCount, failCount, failures } = await postReceivedStock({
+        purchaseOrder: {
+          _id: purchaseOrder._id,
+          poNumber: purchaseOrder.poNumber,
+          vendorName: purchaseOrder.vendorName,
+          items: postingItems,
+        },
+        targetWarehouseId,
+        adjustStock: warehouseService.adjustStock,
+        receiveBatch: batchService.receiveBatch,
+        generateBatchNumber: batchService.generateBatchNumber,
+        recordMovement: inventoryService.recordReceiptMovement,
+        userId: req.user?._id || purchaseOrder.createdBy,
+        tenantId,
+      }));
+    } else {
+      throw new ValidationError(
+        "Nothing left to post — every received unit on this PO has already been validated."
+      );
+    }
 
     console.log(`🏁 PO Validation Complete: ${successCount} succeeded, ${failCount} failed`);
 
@@ -685,6 +734,43 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
       );
     }
 
+    // Advance postedQty for every line that actually posted (skip surfaced
+    // failures by label) so the next validate only posts newly-received units.
+    const failedLabels = new Set((failures || []).map((f) => f.name));
+    for (const item of purchaseOrder.items) {
+      const label =
+        item.subProductName || item.sku || String(item.subProductId || "unknown item");
+      const delta = (item.receivedQty || 0) - (item.postedQty || 0);
+      if (delta > 0 && !failedLabels.has(label)) {
+        item.postedQty = item.receivedQty;
+      }
+    }
+
+    // Mark any pending partial receipts as validated (stock for them just posted).
+    for (const r of purchaseOrder.partialReceipts || []) {
+      if (r.status !== "validated") {
+        r.status = "validated";
+        r.isValidated = true;
+        r.validatedAt = new Date();
+        for (const ri of r.items || []) ri.status = "validated";
+      }
+    }
+
+    // Close the PO only when nothing is outstanding; otherwise the posted-but-
+    // incomplete PO stays open as partially_received so the remainder (back-order)
+    // can still be received on this same PO — the shortfall is never lost.
+    const fullyReceived = purchaseOrder.items.every((it) => outstanding(it) === 0);
+    if (fullyReceived) {
+      purchaseOrder.status = "validated";
+      purchaseOrder.fullyReceivedDate = new Date();
+      purchaseOrder.isPartiallyReceived = false;
+    } else {
+      purchaseOrder.status = "partially_received";
+      purchaseOrder.isPartiallyReceived = true;
+    }
+
+    // Close-only steps (pricelist sync + auto-bill) run once the PO is complete.
+    if (fullyReceived) {
     // Auto-sync the vendor's pricelist from this (latest) validated purchase.
     // Non-blocking: a pricelist failure must never block PO validation.
     try {
@@ -723,6 +809,7 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
     } catch (billError) {
       console.error(`⚠️ Auto-bill failed for ${purchaseOrder.poNumber}:`, billError.message);
     }
+    } // end close-only steps (fullyReceived)
   }
 
   await purchaseOrder.save();
@@ -733,6 +820,126 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
     ...(receiveWarnings && receiveWarnings.length
       ? { warnings: receiveWarnings }
       : {}),
+  });
+});
+
+// @desc    Record a (partial) receipt against a PO without posting stock.
+//          Accumulates receivedQty, appends a partialReceipts audit entry, and
+//          keeps the PO open (partially_received) until outstanding hits zero.
+//          Stock posts later at validate (PATCH /:id/status -> 'validated').
+// @route   POST /api/purchase-orders/:id/receive
+// @access  Private (Tenant admin)
+const receivePurchaseOrder = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { receiptLines = [], warehouseId, notes } = req.body;
+  const tenantId = await resolveTenantId(req);
+
+  const po = await PurchaseOrder.findOne({ _id: id, tenant: tenantId });
+  if (!po) throw new NotFoundError("Purchase Order not found");
+  if (po.status === "cancelled") {
+    throw new ValidationError("Cannot receive against a cancelled purchase order");
+  }
+  if (po.status === "validated") {
+    throw new ValidationError("Purchase order is fully validated and closed");
+  }
+  if (!Array.isArray(receiptLines) || receiptLines.length === 0) {
+    throw new ValidationError("No receipt lines provided");
+  }
+
+  const settings = await getTenantPurchaseSettings(tenantId);
+  const allowOverReceipt = !!settings.allowOverReceipt;
+
+  // Enforce the partial-receipt setting: when disabled, each named line must be
+  // brought to its full ordered quantity in this receipt.
+  if (!settings.allowPartialReceipts) {
+    for (const rl of receiptLines) {
+      const item = po.items.find((i) => i._id.toString() === String(rl.itemId));
+      if (!item) continue;
+      const willReceive =
+        (item.receivedQty || 0) + Math.max(0, Number(rl.receivedQty) || 0);
+      if (willReceive < (item.quantity || 0)) {
+        throw new ValidationError(
+          `Partial receipts are disabled — ${item.subProductName} must be received in full (${item.quantity}).`
+        );
+      }
+    }
+  }
+
+  const { lines } = applyReceipt(po.items, receiptLines, { allowOverReceipt });
+  if (lines.length === 0) {
+    throw new ValidationError(
+      "Nothing to receive — these lines are already fully received."
+    );
+  }
+
+  // Apply the accepted accumulation to the PO lines + capture batch/expiry/size,
+  // and build this receipt's audit items (each carrying just THIS receipt's qty).
+  const receiptItems = [];
+  for (const ln of lines) {
+    const item = po.items.find((i) => i._id.toString() === ln.itemId);
+    const rl = receiptLines.find((r) => String(r.itemId) === ln.itemId);
+    item.receivedQty = ln.newReceivedQty;
+    if (rl.sizeId) item.sizeId = rl.sizeId;
+    if (rl.batchNumber) item.receivedBatchNumber = rl.batchNumber;
+    if (rl.expiryDate) item.receivedExpiryDate = rl.expiryDate;
+    receiptItems.push({
+      subProductId: item.subProductId,
+      subProductName: item.subProductName,
+      sizeId: item.sizeId,
+      sizeName: item.sizeName,
+      quantityOrdered: item.quantity,
+      quantityReceived: ln.delta,
+      batchNumber: rl.batchNumber || undefined,
+      expiryDate: rl.expiryDate || undefined,
+      status: "pending",
+    });
+  }
+
+  // First receive on an RFQ-numbered doc renames it to a PO- sequence (mirrors
+  // the status handler) so receipts and bills reference a stable PO number.
+  if (po.status !== "received" && po.status !== "partially_received" &&
+      po.poNumber?.startsWith("RFQ-")) {
+    const lastPO = await PurchaseOrder.findOne({
+      tenant: tenantId,
+      poNumber: { $regex: /^PO-\d+$/ },
+    })
+      .sort({ poNumber: -1 })
+      .select("poNumber")
+      .lean();
+    const lastSeq = lastPO ? parseInt(lastPO.poNumber.split("-")[1], 10) : 0;
+    po.poNumber = `PO-${String(lastSeq + 1).padStart(6, "0")}`;
+  }
+
+  const seq = (po.partialReceipts?.length || 0) + 1;
+  const receivedByName = req.user
+    ? [req.user.firstName, req.user.lastName].filter(Boolean).join(" ") ||
+      req.user.name ||
+      req.user.posName
+    : undefined;
+  po.partialReceipts.push({
+    receiptNumber: `${po.poNumber}-R${String(seq).padStart(2, "0")}`,
+    receiptDate: new Date(),
+    warehouseId: warehouseId || undefined,
+    items: receiptItems,
+    receivedBy: req.user?._id,
+    receivedByName,
+    notes,
+    status: "pending",
+  });
+
+  // Status from accumulated receipts (partially_received / received). Stock is
+  // NOT posted here — validate is the posting step.
+  const derived = poReceiptStatus(po.items);
+  if (derived) po.status = derived;
+  po.isPartiallyReceived = derived === "partially_received";
+
+  await po.save();
+
+  const postedUnits = lines.reduce((s, l) => s + l.delta, 0);
+  res.status(200).json({
+    success: true,
+    data: po,
+    message: `Receipt recorded (${postedUnits} unit${postedUnits === 1 ? "" : "s"}). Validate to post to inventory.`,
   });
 });
 
@@ -1925,6 +2132,7 @@ module.exports = {
   getPurchaseOrders,
   updatePurchaseOrder,
   updatePurchaseOrderStatus,
+  receivePurchaseOrder,
   deletePurchaseOrder,
   generatePurchaseOrderReceipt,
   approvePO,

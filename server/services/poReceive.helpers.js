@@ -240,10 +240,28 @@ function poReceiptStatus(poItems) {
   return null;
 }
 
+/**
+ * Project PO lines into the lines that still need to post to inventory, with
+ * receivedQty set to the UNPOSTED delta (receivedQty - postedQty). Feed the
+ * result to postReceivedStock so a validate posts only what has not yet been
+ * posted — making repeated validates across partial receipts idempotent.
+ * @returns {Array} shallow clones (receivedQty = delta); empty when nothing pending
+ */
+function buildPostingLines(poItems) {
+  const out = [];
+  for (const it of poItems || []) {
+    const delta = (it.receivedQty || 0) - (it.postedQty || 0);
+    if (delta <= 0) continue;
+    out.push({ ...it, receivedQty: delta });
+  }
+  return out;
+}
+
 module.exports = {
   resolveTargetWarehouse,
   postReceivedStock,
   applyReceipt,
   poReceiptStatus,
   outstanding,
+  buildPostingLines,
 };
