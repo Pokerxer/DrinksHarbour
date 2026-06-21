@@ -24,6 +24,11 @@ function isValidEmail(email) {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
+/** True for a 24-char hex string (Mongo ObjectId shape). DB-less guard. */
+function isObjectIdLike(value) {
+  return typeof value === 'string' && /^[a-fA-F0-9]{24}$/.test(value.trim());
+}
+
 /** Lower-cased, trimmed email used as a dedupe key. '' when absent. */
 function normalizeEmail(email) {
   return typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -91,6 +96,9 @@ function normalizePosCustomer(doc = {}) {
     walletBalance: doc.walletBalance || 0,
     totalSpent: doc.totalSpent || 0,
     totalOrders: doc.totalOrders || 0,
+    // Customer-assigned pricelist id (or null) — drives the POS sell-page
+    // auto-pick. In-store only; ecommerce contacts never carry one.
+    pricelist: doc.pricelist ? String(doc.pricelist) : null,
     notes: doc.notes || '',
     createdAt: doc.createdAt,
   };
@@ -112,6 +120,8 @@ function normalizeEcommerceUser(doc = {}) {
     walletBalance: doc.walletBalance || 0,
     totalSpent: 0,
     totalOrders: 0,
+    // Pricelists are an in-store concept; ecommerce contacts never carry one.
+    pricelist: null,
     notes: '',
     createdAt: doc.createdAt,
   };
@@ -159,6 +169,9 @@ function mergePair(ins, eco) {
     walletBalance: ins.walletBalance || 0,
     totalSpent: (ins.totalSpent || 0) + (eco.totalSpent || 0),
     totalOrders: (ins.totalOrders || 0) + (eco.totalOrders || 0),
+    // The pricelist binding is single-sided: it lives on the in-store record a
+    // 'both' contact routes to (see contactKey).
+    pricelist: ins.pricelist || null,
     notes: ins.notes || '',
     createdAt: earliest(ins.createdAt, eco.createdAt),
   };
@@ -546,6 +559,21 @@ function validateContactUpdate(source, body = {}) {
   if (phone !== undefined) changes.phone = phone ? String(phone).trim() : '';
   if (notes !== undefined) changes.notes = notes ? String(notes).trim() : '';
   if ('avatar' in body) changes.avatar = sanitizeAvatar(body.avatar) || undefined;
+
+  // Customer-assigned pricelist: an ObjectId string sets the binding, null/''
+  // clears it; anything else is rejected. The id's tenant-membership is enforced
+  // downstream at pricing time (pricelist.service), so a stale id never charges
+  // an off-tenant price.
+  if ('pricelist' in body) {
+    const { pricelist } = body;
+    if (pricelist === null || pricelist === '') {
+      changes.pricelist = null;
+    } else if (isObjectIdLike(pricelist)) {
+      changes.pricelist = String(pricelist).trim();
+    } else {
+      return { ok: false, message: 'Pricelist is not a valid id' };
+    }
+  }
 
   if (loyaltyPoints !== undefined) {
     const lp = num(loyaltyPoints);

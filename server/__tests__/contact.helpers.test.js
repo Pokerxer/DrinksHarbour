@@ -364,6 +364,43 @@ test('validateContactUpdate (instore) allows clearing email + phone', () => {
   assert.strictEqual(r.changes.phone, '');
 });
 
+test('validateContactUpdate (instore) accepts a valid pricelist ObjectId', () => {
+  const id = '507f1f77bcf86cd799439011';
+  const r = validateContactUpdate('instore', { pricelist: id });
+  assert.ok(r.ok);
+  assert.strictEqual(r.changes.pricelist, id);
+});
+
+test('validateContactUpdate (instore) clears the pricelist on null or empty string', () => {
+  assert.strictEqual(validateContactUpdate('instore', { pricelist: null }).changes.pricelist, null);
+  assert.strictEqual(validateContactUpdate('instore', { pricelist: '' }).changes.pricelist, null);
+});
+
+test('validateContactUpdate (instore) rejects a junk pricelist id', () => {
+  assert.strictEqual(validateContactUpdate('instore', { pricelist: 'not-an-id' }).ok, false);
+  assert.strictEqual(validateContactUpdate('instore', { pricelist: 123 }).ok, false);
+});
+
+test('validateContactUpdate (instore) leaves pricelist untouched when omitted', () => {
+  const r = validateContactUpdate('instore', { firstName: 'Ada' });
+  assert.ok(r.ok);
+  assert.strictEqual('pricelist' in r.changes, false);
+});
+
+test('validateContactUpdate (ecommerce) ignores a pricelist field', () => {
+  // Pricelists are an in-store concept; the ecommerce branch never accepts one.
+  const r = validateContactUpdate('ecommerce', { pricelist: '507f1f77bcf86cd799439011' });
+  assert.ok(r.ok);
+  assert.strictEqual('pricelist' in r.changes, false);
+});
+
+test('normalizePosCustomer surfaces an assigned pricelist id', () => {
+  const c = normalizePosCustomer({ _id: 'p1', firstName: 'Ada', pricelist: '507f1f77bcf86cd799439011' });
+  assert.strictEqual(c.pricelist, '507f1f77bcf86cd799439011');
+  // absent → null, never undefined
+  assert.strictEqual(normalizePosCustomer({ _id: 'p2', firstName: 'B' }).pricelist, null);
+});
+
 // ── order matching ────────────────────────────────────────────────────────────
 
 test('buildContactOrderMatch matches a both-contact across user, POS id, email + phone', () => {

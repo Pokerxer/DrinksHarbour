@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import {
   usePOSAuth,
+  usePOSCart,
   usePOSSaleSignal,
   usePOSPricelist,
   usePOSAvailablePricelists,
@@ -488,13 +489,22 @@ function PricelistPicker({ token }: { token: string }) {
   } = usePOSPricelist();
   const { pricelists, resolvedId, loaded, load } = usePOSAvailablePricelists();
   const { activeShopId } = usePOSActiveShop();
+  const { customer } = usePOSCart();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Load the shop-scoped allowed set + resolved id; refetch when the shop changes.
+  // Load the shop-scoped allowed set + resolved id; refetch when the shop OR the
+  // selected customer changes (a customer's assigned pricelist alters both).
   useEffect(() => {
     if (token) load(token);
   }, [token, activeShopId, load]);
+
+  // The active selection comes from the customer when the applied pricelist is
+  // their assigned one (it's auto-selected on customer selection; the cashier can
+  // still pick a different one, which clears this).
+  const isFromCustomer =
+    !!customer.pricelistId &&
+    selectedPricelist?._id === customer.pricelistId;
 
   useEffect(() => {
     function onOut(e: MouseEvent) {
@@ -524,10 +534,16 @@ function PricelistPicker({ token }: { token: string }) {
         <span className="hidden max-w-[120px] truncate sm:inline">
           {selectedPricelist?.name || 'Auto'}
         </span>
-        {!isManualOverride && (
-          <span className="hidden rounded bg-white/20 px-1 text-[9px] font-bold uppercase sm:inline">
-            Auto
+        {isFromCustomer ? (
+          <span className="hidden rounded bg-white/30 px-1 text-[9px] font-bold uppercase sm:inline">
+            Customer
           </span>
+        ) : (
+          !isManualOverride && (
+            <span className="hidden rounded bg-white/20 px-1 text-[9px] font-bold uppercase sm:inline">
+              Auto
+            </span>
+          )
         )}
         <PiCaretDown
           className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`}

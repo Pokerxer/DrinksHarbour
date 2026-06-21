@@ -2016,13 +2016,26 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     return res.status(403).json({ success: false, message: 'Price override permission required' });
   }
 
-  // Resolve the pricelist AUTHORITATIVELY from the shop. The client may request
-  // an override via pricelistId, but it is honored only if it belongs to the
-  // shop's allowed set; otherwise we use the auto-resolved pricelist.
+  // A saved customer may have an assigned pricelist; it takes top precedence in
+  // resolution (it's the per-customer auto-pick) but is still bounded by the
+  // allowed set, so a customer can never be charged an off-tenant pricelist.
+  let customerPricelistId = null;
+  if (customer.customerId) {
+    try {
+      const cust = await POSCustomer.findOne({ _id: customer.customerId, tenant: tenantId })
+        .select('pricelist').lean();
+      customerPricelistId = cust?.pricelist ? String(cust.pricelist) : null;
+    } catch (_) { /* non-fatal — fall back to shop resolution */ }
+  }
+
+  // Resolve the pricelist AUTHORITATIVELY from the shop (and the customer, if
+  // assigned). The client may request an override via pricelistId, but it is
+  // honored only if it belongs to the allowed set; otherwise we use the
+  // auto-resolved pricelist (customer → shop → warehouse → default).
   let selectedPricelist = null;
   try {
     const { resolveShopPricelist } = require('../services/pricelist.service');
-    const { resolved, allowed } = await resolveShopPricelist(req.tenant, tenantId, shopId);
+    const { resolved, allowed } = await resolveShopPricelist(req.tenant, tenantId, shopId, customerPricelistId);
     if (pricelistId) {
       const override = allowed.find((p) => String(p._id) === String(pricelistId));
       selectedPricelist = override || resolved || null;
@@ -3177,6 +3190,18 @@ exports.getPOSSessionOrders = asyncHandler(async (req, res) => {
 
 // ─── POS Customer endpoints ───────────────────────────────────────────────────
 
+// Flatten a (lean) POSCustomer whose `pricelist` ref was populated with `name`
+// into the wire shape the POS client expects: `pricelist` stays an id string (or
+// null) and a sibling `pricelistName` carries the label for the selector badge.
+function flattenCustomerPricelist(doc) {
+  if (!doc) return doc;
+  const pl = doc.pricelist;
+  if (pl && typeof pl === 'object' && pl._id) {
+    return { ...doc, pricelist: String(pl._id), pricelistName: pl.name || '' };
+  }
+  return { ...doc, pricelist: pl ? String(pl) : null, pricelistName: '' };
+}
+
 exports.searchPOSCustomers = asyncHandler(async (req, res) => {
   const POSCustomer = require('../models/POSCustomer');
   const tenantId = req.tenant?._id;
@@ -3201,10 +3226,11 @@ exports.searchPOSCustomers = asyncHandler(async (req, res) => {
   const customers = await POSCustomer.find(filter)
     .sort({ updatedAt: -1 })
     .limit(lim)
-    .select('firstName lastName email phone loyaltyPoints walletBalance totalSpent totalOrders')
+    .select('firstName lastName email phone loyaltyPoints walletBalance totalSpent totalOrders pricelist')
+    .populate('pricelist', 'name')
     .lean();
 
-  res.json({ success: true, data: { customers } });
+  res.json({ success: true, data: { customers: customers.map(flattenCustomerPricelist) } });
 });
 
 exports.createPOSCustomer = asyncHandler(async (req, res) => {
@@ -3241,11 +3267,12 @@ exports.getPOSCustomer = asyncHandler(async (req, res) => {
   const POSCustomer = require('../models/POSCustomer');
   const tenantId = req.tenant?._id;
   const customer = await POSCustomer.findOne({ _id: req.params.id, tenant: tenantId })
-    .select('firstName lastName email phone loyaltyPoints walletBalance totalSpent totalOrders notes')
+    .select('firstName lastName email phone loyaltyPoints walletBalance totalSpent totalOrders notes pricelist')
+    .populate('pricelist', 'name')
     .lean();
   if (!customer)
     return res.status(404).json({ success: false, message: 'Customer not found' });
-  res.json({ success: true, data: { customer } });
+  res.json({ success: true, data: { customer: flattenCustomerPricelist(customer) } });
 });
 
 exports.updatePOSCustomerLoyalty = asyncHandler(async (req, res) => {

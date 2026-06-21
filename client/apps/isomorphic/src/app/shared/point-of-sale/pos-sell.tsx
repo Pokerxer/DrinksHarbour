@@ -13,6 +13,7 @@ import {
   usePOSUI,
   usePOSAuth,
   usePOSSettings,
+  usePOSCustomerPricelistSync,
 } from '@/app/shared/point-of-sale/store';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { POSProduct, POSSession } from '@/app/shared/point-of-sale/types';
@@ -31,6 +32,8 @@ export default function POSSell() {
   const settings = usePOSSettings();
   const isOnline = useOnlineStatus();
   useRegisterSW();
+  // Auto-select & apply the selected customer's assigned pricelist (reverts on clear).
+  usePOSCustomerPricelistSync(token ?? '');
 
   // Whether Jotai has finished hydrating from localStorage
   const [hydrated, setHydrated] = useState(false);

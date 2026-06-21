@@ -115,7 +115,7 @@ router.get('/pricelists', protectPOS, async (req, res, next) => {
   try {
     const Pricelist = require('../models/Pricelist');
     const tenantId = req.tenant?._id;
-    const { shopId } = req.query;
+    const { shopId, customerId } = req.query;
 
     // Without a shop, fall back to the legacy all-selectable list.
     if (!shopId) {
@@ -127,9 +127,19 @@ router.get('/pricelists', protectPOS, async (req, res, next) => {
       return res.json({ success: true, data: { pricelists, resolvedId: null } });
     }
 
+    // A selected customer may have an assigned pricelist; it takes top precedence
+    // so the auto-resolved id reflects the customer's pricelist on the selector.
+    let customerPricelistId = null;
+    if (customerId) {
+      const POSCustomer = require('../models/POSCustomer');
+      const cust = await POSCustomer.findOne({ _id: customerId, tenant: tenantId })
+        .select('pricelist').lean();
+      customerPricelistId = cust?.pricelist ? String(cust.pricelist) : null;
+    }
+
     // Shop-scoped: return the allowed set (with rules) + the auto-resolved id.
     const { resolveShopPricelist } = require('../services/pricelist.service');
-    const { resolved, allowed } = await resolveShopPricelist(req.tenant, tenantId, shopId);
+    const { resolved, allowed } = await resolveShopPricelist(req.tenant, tenantId, shopId, customerPricelistId);
     res.json({
       success: true,
       data: {
