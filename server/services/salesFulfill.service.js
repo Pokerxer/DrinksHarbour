@@ -14,12 +14,13 @@ async function fulfillOrder({ salesOrder, tenantId, warehouseId, fulfillLines, u
   const adjustStock = deps.adjustStock || require('./warehouse.service').adjustStock;
   const SalesModel = deps.SalesModel || require('../models/Sales');
 
-  // 1 + 2: accumulate fulfilledQty
+  // 1 + 2: accumulate fulfilledQty (optimistic; rolled back below for lines that fail to post)
   const { lines } = applyFulfillment(salesOrder.items, fulfillLines);
   if (lines.length === 0) {
-    return { order: salesOrder, salesRows: [], posting: { successCount: 0, failCount: 0, failures: [] } };
+    return { order: salesOrder, salesRows: [], posting: { successCount: 0, failCount: 0, failures: [], postedLineIds: [] } };
   }
   const byId = new Map(salesOrder.items.map((it) => [String(it._id), it]));
+  const previousFulfilledById = new Map(lines.map((l) => [String(l.lineId), l.previousFulfilledQty]));
   for (const l of lines) {
     const item = byId.get(String(l.lineId));
     if (item) item.fulfilledQty = l.newFulfilledQty;
@@ -30,17 +31,28 @@ async function fulfillOrder({ salesOrder, tenantId, warehouseId, fulfillLines, u
   const posting = await postShippedStock({
     salesOrder, targetWarehouseId: warehouseId, postingLines, adjustStock, userId, tenantId,
   });
-  // advance postedQty for the lines we just posted (only the successfully-posted set)
-  for (const pl of postingLines) {
-    const item = byId.get(String(pl._id));
-    if (item) item.postedQty = item.fulfilledQty;
-  }
+  const postedIdSet = new Set((posting.postedLineIds || []).map(String));
 
-  // 4: write Sales rows for the shipped delta
+  // advance postedQty / write Sales rows ONLY for lines that actually posted;
+  // roll back the optimistic fulfilledQty bump for lines whose adjustStock failed
+  // so they stay outstanding and get retried on the next /fulfill call.
   const salesRows = [];
+  const postedLines = [];
   for (const pl of postingLines) {
-    const item = byId.get(String(pl._id));
+    const id = String(pl._id);
+    const item = byId.get(id);
     if (!item) continue;
+
+    if (!postedIdSet.has(id)) {
+      if (previousFulfilledById.has(id)) {
+        item.fulfilledQty = previousFulfilledById.get(id);
+      }
+      continue;
+    }
+
+    item.postedQty = item.fulfilledQty;
+    postedLines.push(pl);
+
     const qty = pl.qty;
     const priceAtSale = Math.max(0, (item.unitPrice || 0) - (item.discount || 0));
     const row = await SalesModel.create({
@@ -49,17 +61,20 @@ async function fulfillOrder({ salesOrder, tenantId, warehouseId, fulfillLines, u
       quantity: qty, priceAtSale, itemSubtotal: priceAtSale * qty,
       channel: 'tenant_manual', channelDetail: `Sales order ${salesOrder.soNumber}`,
     });
-    salesRows.push(row._id || row);
+    const rowId = row._id || row;
+    salesRows.push(rowId);
+    if (!Array.isArray(salesOrder.relatedSales)) salesOrder.relatedSales = [];
+    salesOrder.relatedSales.push(rowId);
   }
-  if (!Array.isArray(salesOrder.relatedSales)) salesOrder.relatedSales = [];
-  salesOrder.relatedSales.push(...salesRows);
 
-  // 5: fulfillment entry + status
-  salesOrder.fulfillments.push({
-    warehouseId,
-    items: postingLines.map((pl) => ({ lineId: String(pl._id), qty: pl.qty })),
-    status: 'posted', at: new Date(), by: userId,
-  });
+  // 5: fulfillment entry (only successfully-posted lines) + status from actual shipped qtys
+  if (postedLines.length > 0) {
+    salesOrder.fulfillments.push({
+      warehouseId,
+      items: postedLines.map((pl) => ({ lineId: String(pl._id), qty: pl.qty })),
+      status: 'posted', at: new Date(), by: userId,
+    });
+  }
   const status = fulfillStatus(salesOrder.items);
   if (status) salesOrder.orderStatus = status;
 

@@ -91,20 +91,22 @@ function buildPostingLines(soItems) {
  * Post each shipped posting line OUT of the target warehouse via the injected
  * adjustStock(type:'shipped'). A line missing subproduct/size is surfaced as a
  * failure, not silently dropped.
- * @returns {Promise<{ successCount, failCount, failures: Array<{name, reason}> }>}
+ * @returns {Promise<{ successCount, failCount, failures: Array<{lineId, name, reason}>, postedLineIds: Array<string> }>}
  */
 async function postShippedStock({
   salesOrder, targetWarehouseId, postingLines, adjustStock, userId, tenantId, logger = console,
 }) {
   let successCount = 0, failCount = 0;
   const failures = [];
+  const postedLineIds = [];
   const label = (l) => l.name || l.sku || String(l.subproduct || 'unknown item');
 
   for (const line of postingLines || []) {
     const qty = Number(line.qty) || 0;
     if (qty <= 0) continue;
+    const id = lineId(line);
     if (!line.subproduct || !line.size) {
-      failures.push({ name: label(line), reason: 'missing subproduct/size to ship from' });
+      failures.push({ lineId: id, name: label(line), reason: 'missing subproduct/size to ship from' });
       failCount++; continue;
     }
     try {
@@ -114,13 +116,14 @@ async function postShippedStock({
         userId, tenantId
       );
       successCount++;
+      postedLineIds.push(id);
     } catch (err) {
       logger.error(`   ❌ ${label(line)} — ${err.message}`);
-      failures.push({ name: label(line), reason: err.message });
+      failures.push({ lineId: id, name: label(line), reason: err.message });
       failCount++;
     }
   }
-  return { successCount, failCount, failures };
+  return { successCount, failCount, failures, postedLineIds };
 }
 
 module.exports = { lineId, outstanding, applyFulfillment, fulfillStatus, buildPostingLines, postShippedStock };

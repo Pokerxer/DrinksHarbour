@@ -49,3 +49,61 @@ test('fulfillOrder posts only the unposted delta and advances postedQty/fulfille
   const totalShipped = adjusted.reduce((s, a) => s + a.quantity, 0);
   assert.strictEqual(totalShipped, 100);
 });
+
+test('fulfillOrder gates postedQty/Sales-row on per-line shipping success and rolls back failed lines', async () => {
+  const salesRowsCreated = [];
+  const so = {
+    soNumber: 'SO-3', _id: 'so3', tenant: 't1',
+    items: [
+      { _id: 'L1', product: 'p1', subproduct: 'sp1', size: 'sz1', quantity: 100, unitPrice: 500, discount: 0, fulfilledQty: 0, postedQty: 0, returnedQty: 0 },
+      { _id: 'L2', product: 'p2', subproduct: 'sp2', size: 'sz2', quantity: 50, unitPrice: 300, discount: 0, fulfilledQty: 0, postedQty: 0, returnedQty: 0 },
+    ],
+    fulfillments: [],
+    relatedSales: [],
+    save: async function () { return this; },
+  };
+  const SalesModel = { create: async (row) => { salesRowsCreated.push(row); return row; } };
+  const deps = {
+    // L1 (sp1) succeeds; L2 (sp2) throws — simulating insufficient stock / missing batch / DB error.
+    adjustStock: async (a) => {
+      if (a.subProduct === 'sp2') throw new Error('Insufficient stock');
+      return { currentQuantity: 0 };
+    },
+    SalesModel,
+  };
+
+  const result = await fulfillOrder({
+    salesOrder: so, tenantId: 't1', warehouseId: 'wh1',
+    fulfillLines: [{ lineId: 'L1', qty: 100 }, { lineId: 'L2', qty: 50 }],
+    userId: 'u1', deps,
+  });
+
+  const L1 = so.items.find((it) => it._id === 'L1');
+  const L2 = so.items.find((it) => it._id === 'L2');
+
+  // L1 posted successfully: advanced fully, one Sales row.
+  assert.strictEqual(L1.fulfilledQty, 100);
+  assert.strictEqual(L1.postedQty, 100);
+
+  // L2 failed to post: rolled back to its previous state — never advanced, never posted.
+  assert.strictEqual(L2.fulfilledQty, 0);
+  assert.strictEqual(L2.postedQty, 0);
+
+  // Exactly one Sales row written (for L1); none for the failed L2.
+  assert.strictEqual(salesRowsCreated.length, 1);
+  assert.strictEqual(salesRowsCreated[0].subproduct, 'sp1');
+  assert.strictEqual(result.salesRows.length, 1);
+
+  // Failure surfaced.
+  assert.strictEqual(result.posting.failCount, 1);
+  assert.strictEqual(result.posting.successCount, 1);
+  assert.ok(result.posting.failures.some((f) => f.lineId === 'L2'));
+  assert.ok(result.posting.postedLineIds.includes('L1'));
+  assert.ok(!result.posting.postedLineIds.includes('L2'));
+
+  // Order status reflects only what actually shipped — must not jump to 'fulfilled'.
+  assert.strictEqual(so.orderStatus, 'partially_fulfilled');
+
+  // L2 stays outstanding: a future /fulfill call would retry it (delta still > 0).
+  assert.strictEqual(Math.max(0, L2.quantity - L2.fulfilledQty - (L2.returnedQty || 0)), 50);
+});
