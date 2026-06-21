@@ -5,6 +5,7 @@ const {
   isValidEmail,
   normalizeEmail,
   normalizePhone,
+  sanitizeAvatar,
   normalizePosCustomer,
   normalizeEcommerceUser,
   contactKey,
@@ -41,7 +42,53 @@ test('normalizePhone strips formatting + leading +', () => {
   assert.strictEqual(normalizePhone(null), '');
 });
 
+test('sanitizeAvatar normalises strings, objects and empties', () => {
+  assert.deepStrictEqual(sanitizeAvatar('https://cdn/x.png'), {
+    url: 'https://cdn/x.png',
+  });
+  assert.deepStrictEqual(
+    sanitizeAvatar({ url: ' https://cdn/x.png ', publicId: ' c/1 ' }),
+    { url: 'https://cdn/x.png', publicId: 'c/1' }
+  );
+  assert.strictEqual(sanitizeAvatar(''), null);
+  assert.strictEqual(sanitizeAvatar(null), null);
+  assert.strictEqual(sanitizeAvatar({ publicId: 'only-id' }), null);
+});
+
+test('validateContactCreate stores a sanitised avatar', () => {
+  const r = validateContactCreate(
+    { firstName: 'Ada', avatar: { url: 'https://cdn/a.png', publicId: 'a' } },
+    'tenant-1'
+  );
+  assert.ok(r.ok);
+  assert.deepStrictEqual(r.value.avatar, {
+    url: 'https://cdn/a.png',
+    publicId: 'a',
+  });
+});
+
+test('validateContactUpdate (instore) sets + clears the avatar', () => {
+  assert.deepStrictEqual(
+    validateContactUpdate('instore', { avatar: 'https://cdn/a.png' }).changes
+      .avatar,
+    { url: 'https://cdn/a.png' }
+  );
+  assert.strictEqual(
+    validateContactUpdate('instore', { avatar: null }).changes.avatar,
+    undefined
+  );
+});
+
 // ── document normalisers ──────────────────────────────────────────────────────
+
+test('normalizePosCustomer reads a stored avatar url', () => {
+  const c = normalizePosCustomer({
+    _id: 'p1',
+    firstName: 'Ada',
+    avatar: { url: 'https://cdn/a.png', publicId: 'a' },
+  });
+  assert.strictEqual(c.avatar, 'https://cdn/a.png');
+});
 
 test('normalizePosCustomer fills ecommerce-only defaults', () => {
   const c = normalizePosCustomer({

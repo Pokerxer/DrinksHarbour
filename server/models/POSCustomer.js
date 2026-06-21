@@ -7,6 +7,7 @@ const POSCustomerSchema = new mongoose.Schema(
     lastName:      { type: String, default: '', trim: true },
     email:         { type: String, default: '', trim: true, lowercase: true },
     phone:         { type: String, default: '', trim: true },
+    avatar:        { url: String, publicId: String },
     loyaltyPoints: { type: Number, default: 0, min: 0 },
     totalSpent:    { type: Number, default: 0 },
     totalOrders:   { type: Number, default: 0 },

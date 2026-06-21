@@ -3,9 +3,17 @@
 // One surface over BOTH in-store (POSCustomer) and ecommerce (User customer)
 // customers. The `source` discriminator tells them apart; `key` ("source:id")
 // is the opaque handle used for the detail route and every per-contact call.
+import type { Order } from './order.service';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
 export type ContactSource = 'instore' | 'ecommerce' | 'both';
+
+/** Avatar payload sent to the API. `null` clears the stored photo. */
+export interface AvatarInput {
+  url?: string;
+  publicId?: string;
+}
 export type ContactStatus = 'active' | 'inactive' | 'suspended';
 
 export interface Contact {
@@ -46,8 +54,17 @@ export interface ContactInput {
   loyaltyPoints?: number;
   totalSpent?: number;
   totalOrders?: number;
+  /** Profile photo. Send `null` to remove the current one. */
+  avatar?: AvatarInput | null;
   /** Ecommerce-only: the one field an admin may change on a storefront customer. */
   status?: ContactStatus;
+}
+
+export interface ContactOrderStats {
+  count: number;
+  totalSpent: number;
+  delivered: number;
+  cancelled: number;
 }
 
 export interface ContactListParams {
@@ -142,6 +159,23 @@ export const contactService = {
         headers: auth(token),
       }),
       'Failed to remove contact'
+    );
+  },
+
+  /** Tenant-scoped orders for one contact (by ecommerce account or POS snapshot). */
+  async getContactOrders(
+    key: string,
+    token: string
+  ): Promise<{
+    success: boolean;
+    data: { contact: Contact; orders: Order[]; stats: ContactOrderStats };
+  }> {
+    return handle(
+      await fetch(
+        `${API_URL}/api/contacts/${key.replace(':', '/')}/orders`,
+        { headers: auth(token) }
+      ),
+      'Failed to load orders'
     );
   },
 };

@@ -72,6 +72,7 @@ export const EMPTY_FORM: ContactInput = {
   loyaltyPoints: 0,
   totalSpent: 0,
   totalOrders: 0,
+  avatar: null,
   status: 'active',
 };
 
@@ -105,6 +106,7 @@ export function contactToForm(c: Contact): ContactInput {
     loyaltyPoints: c.loyaltyPoints,
     totalSpent: c.totalSpent,
     totalOrders: c.totalOrders,
+    avatar: c.avatar ? { url: c.avatar } : null,
     status: c.status,
   };
 }

@@ -17,4 +17,6 @@ router.route('/:source/:id')
   .patch(tenantAdminOrSuperAdmin, c.updateContact)
   .delete(tenantAdminOrSuperAdmin, c.deleteContact);
 
+router.get('/:source/:id/orders', tenantAdminOrSuperAdmin, c.listContactOrders);
+
 module.exports = router;

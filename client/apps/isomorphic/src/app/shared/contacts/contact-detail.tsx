@@ -28,6 +28,7 @@ import {
   PiArrowSquareOut,
   PiIdentificationCard,
   PiClock,
+  PiCamera,
 } from 'react-icons/pi';
 import {
   contactService,
@@ -35,6 +36,7 @@ import {
   type ContactInput,
   type ContactStatus,
 } from '@/services/contact.service';
+import { uploadService } from '@/services/upload.service';
 import { routes } from '@/config/routes';
 import { SOURCE_META, fullName, initials, contactToForm } from './contact-form';
 
@@ -134,6 +136,8 @@ export default function ContactDetail({ contactKey }: { contactKey: string }) {
   const [saving, setSaving] = useState(false);
   const [gearOpen, setGearOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<DetailTab>('notes');
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const isDirty = !!form && JSON.stringify(form) !== baseline;
 
   // Ecommerce customers are storefront-owned: only status is editable here.
@@ -219,7 +223,11 @@ export default function ContactDetail({ contactKey }: { contactKey: string }) {
             totalSpent: form.totalSpent,
             totalOrders: form.totalOrders,
           };
-      const res = await contactService.updateContact(contact.key, payload, token);
+      const res = await contactService.updateContact(
+        contact.key,
+        payload,
+        token
+      );
       const updated = res.data.contact;
       const f = contactToForm(updated);
       setContact(updated);
@@ -235,6 +243,35 @@ export default function ContactDetail({ contactKey }: { contactKey: string }) {
 
   const handleDiscard = () => {
     if (contact) setForm(contactToForm(contact));
+  };
+
+  // Upload + persist the customer photo immediately (in-store contacts only —
+  // ecommerce avatars are owned by the storefront).
+  const handlePhotoUpload = async (file?: File) => {
+    if (!file || !contact) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please choose an image file');
+      return;
+    }
+    setUploadingPhoto(true);
+    try {
+      const up = await uploadService.uploadImage(file, token, 'contact-avatars');
+      const res = await contactService.updateContact(
+        contact.key,
+        { avatar: { url: up.data.url, publicId: up.data.publicId } },
+        token
+      );
+      const updated = res.data.contact;
+      const f = contactToForm(updated);
+      setContact(updated);
+      setForm(f);
+      setBaseline(JSON.stringify(f));
+      toast.success('Photo updated');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Upload failed');
+    } finally {
+      setUploadingPhoto(false);
+    }
   };
 
   const handleDelete = async () => {
@@ -288,8 +325,8 @@ export default function ContactDetail({ contactKey }: { contactKey: string }) {
     : '—';
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6">
-      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+    <div className="min-h-screen w-full bg-white">
+      <div>
         {/* ── Action Bar ── */}
         <div className="flex flex-wrap items-stretch border-b border-gray-200 bg-white">
           {/* ① New + Breadcrumb + Gear */}
@@ -413,12 +450,15 @@ export default function ContactDetail({ contactKey }: { contactKey: string }) {
                 icon={<PiShoppingBag />}
                 label="Orders"
                 count={contact.totalOrders}
+                href={`${routes.contacts.detail(contact.key)}/orders`}
                 highlight={contact.totalOrders > 0}
               />
               <SmartButton
                 icon={<PiCoins />}
                 label="Spent"
-                count={contact.totalSpent > 0 ? money(contact.totalSpent) : '₦0'}
+                count={
+                  contact.totalSpent > 0 ? money(contact.totalSpent) : '₦0'
+                }
                 highlight={contact.totalSpent > 0}
               />
               <SmartButton
@@ -501,20 +541,26 @@ export default function ContactDetail({ contactKey }: { contactKey: string }) {
 
           {/* Source pill — read-only (source isn't an editable property) */}
           <div className="bg-white/8 mb-5 inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3.5 py-1 text-xs font-semibold text-white/80 backdrop-blur-sm">
-            <span className="[&>svg]:h-3.5 [&>svg]:w-3.5">{sourceMeta.icon}</span>
+            <span className="[&>svg]:h-3.5 [&>svg]:w-3.5">
+              {sourceMeta.icon}
+            </span>
             {sourceMeta.label === 'In both'
               ? 'In-store + Online'
               : `${sourceMeta.label} customer`}
           </div>
 
           <div className="flex items-center gap-5">
-            {/* Avatar + status dot */}
-            <div className="relative shrink-0">
+            {/* Avatar + status dot (click to upload for in-store contacts) */}
+            <div
+              className={`group relative shrink-0 ${locked ? '' : 'cursor-pointer'}`}
+              onClick={() => !locked && photoInputRef.current?.click()}
+              title={locked ? undefined : 'Click to upload photo'}
+            >
               <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-[#b20202] to-[#6b0101] text-2xl font-black text-white shadow-2xl shadow-[#b20202]/40 ring-2 ring-white/10">
-                {contact.avatar ? (
+                {form.avatar?.url || contact.avatar ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={contact.avatar}
+                    src={form.avatar?.url || contact.avatar}
                     alt={fullName(contact)}
                     className="h-full w-full object-cover"
                   />
@@ -522,6 +568,27 @@ export default function ContactDetail({ contactKey }: { contactKey: string }) {
                   initials(contact)
                 )}
               </div>
+              {!locked && (
+                <>
+                  <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+                    {uploadingPhoto ? (
+                      <PiSpinnerGap className="animate-spin text-xl text-white" />
+                    ) : (
+                      <PiCamera className="text-xl text-white" />
+                    )}
+                  </div>
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      handlePhotoUpload(e.target.files?.[0]);
+                      e.target.value = '';
+                    }}
+                  />
+                </>
+              )}
               <span
                 className={`absolute -bottom-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-[#111111] text-[9px] font-bold shadow-sm ${
                   contact.status === 'active' ? 'bg-emerald-500' : 'bg-gray-500'
@@ -554,7 +621,9 @@ export default function ContactDetail({ contactKey }: { contactKey: string }) {
                       : 'bg-white/10 text-white/40 ring-1 ring-white/10'
                   }`}
                 >
-                  {contact.status === 'active' ? '● Active' : `○ ${contact.status}`}
+                  {contact.status === 'active'
+                    ? '● Active'
+                    : `○ ${contact.status}`}
                 </span>
 
                 {contact.email && (
@@ -756,7 +825,11 @@ export default function ContactDetail({ contactKey }: { contactKey: string }) {
             {(
               [
                 { id: 'notes', label: 'Notes', icon: <PiNotePencil /> },
-                { id: 'meta', label: 'Details', icon: <PiIdentificationCard /> },
+                {
+                  id: 'meta',
+                  label: 'Details',
+                  icon: <PiIdentificationCard />,
+                },
               ] as { id: DetailTab; label: string; icon: React.ReactNode }[]
             ).map((tab) => (
               <button

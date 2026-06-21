@@ -11,6 +11,7 @@
 
 const POSCustomer = require('../models/POSCustomer');
 const User = require('../models/User');
+const Order = require('../models/Order');
 const asyncHandler = require('../utils/asyncHandler');
 const {
   buildContactFilter,
@@ -179,4 +180,50 @@ exports.deleteContact = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Contact not found' });
   }
   res.json({ success: true, message: 'Contact removed' });
+});
+
+// ─── Orders for a contact ──────────────────────────────────────────────────────
+//
+// Returns the tenant's orders for one contact. An order belongs to the contact
+// when it was placed by their ecommerce account (`user`) or carries their POS
+// customer snapshot (email / phone). Every query is scoped to the tenant's own
+// order lines via `items.tenant` so one tenant never sees another's sales.
+
+exports.listContactOrders = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  const { source, id } = req.params;
+
+  const contact = await loadContact(source, id, tenantId);
+  if (!contact) {
+    return res.status(404).json({ success: false, message: 'Contact not found' });
+  }
+
+  const or = [];
+  if (contact.ids.ecommerce) or.push({ user: contact.ids.ecommerce });
+  const email = (contact.email || '').toLowerCase().trim();
+  if (email) or.push({ 'customer.email': email });
+  const phone = (contact.phone || '').trim();
+  if (phone) or.push({ 'customer.phone': phone });
+
+  let orders = [];
+  if (or.length > 0) {
+    orders = await Order.find({ 'items.tenant': tenantId, $or: or })
+      .sort({ placedAt: -1 })
+      .limit(100)
+      .populate('user', 'firstName lastName email')
+      .populate('items.product', 'name images')
+      .lean();
+  }
+
+  const stats = {
+    count: orders.length,
+    totalSpent: orders.reduce((s, o) => s + (o.totalAmount || 0), 0),
+    delivered: orders.filter((o) => o.status === 'delivered').length,
+    cancelled: orders.filter((o) => o.status === 'cancelled').length,
+  };
+
+  res.json({
+    success: true,
+    data: { contact: present(contact), orders, stats },
+  });
 });

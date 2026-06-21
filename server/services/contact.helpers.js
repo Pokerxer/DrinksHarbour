@@ -44,6 +44,29 @@ function escapeRegex(term) {
   return term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Normalise an avatar payload into the `{ url, publicId }` shape stored on the
+ * POSCustomer model. Accepts a plain URL string or an object from the upload
+ * service. Returns null when there's nothing usable (so callers can "clear").
+ */
+function sanitizeAvatar(input) {
+  if (!input) return null;
+  if (typeof input === 'string') {
+    const url = input.trim();
+    return url ? { url } : null;
+  }
+  if (typeof input === 'object') {
+    const url = typeof input.url === 'string' ? input.url.trim() : '';
+    if (!url) return null;
+    const out = { url };
+    const publicId =
+      typeof input.publicId === 'string' ? input.publicId.trim() : '';
+    if (publicId) out.publicId = publicId;
+    return out;
+  }
+  return null;
+}
+
 // ── Normalisers ────────────────────────────────────────────────────────────────
 //
 // Map a raw store document into the single canonical Contact shape:
@@ -62,7 +85,7 @@ function normalizePosCustomer(doc = {}) {
     lastName: doc.lastName || '',
     email: doc.email || '',
     phone: doc.phone || '',
-    avatar: '',
+    avatar: doc.avatar?.url || '',
     status: 'active',
     loyaltyPoints: doc.loyaltyPoints || 0,
     totalSpent: doc.totalSpent || 0,
@@ -261,6 +284,10 @@ function validateContactCreate(body = {}, tenantId) {
     phone: phone ? String(phone).trim() : '',
     notes: notes ? String(notes).trim() : '',
   };
+  if ('avatar' in body) {
+    const avatar = sanitizeAvatar(body.avatar);
+    if (avatar) value.avatar = avatar;
+  }
   const lp = num(loyaltyPoints);
   if (lp !== undefined) value.loyaltyPoints = Math.max(0, lp);
   const ts = num(totalSpent);
@@ -303,6 +330,7 @@ function validateContactUpdate(source, body = {}) {
   }
   if (phone !== undefined) changes.phone = phone ? String(phone).trim() : '';
   if (notes !== undefined) changes.notes = notes ? String(notes).trim() : '';
+  if ('avatar' in body) changes.avatar = sanitizeAvatar(body.avatar) || undefined;
 
   if (loyaltyPoints !== undefined) {
     const lp = num(loyaltyPoints);
@@ -329,6 +357,7 @@ module.exports = {
   isValidEmail,
   normalizeEmail,
   normalizePhone,
+  sanitizeAvatar,
   normalizePosCustomer,
   normalizeEcommerceUser,
   contactKey,
