@@ -1,5 +1,6 @@
 // controllers/pos.controller.js
 
+const mongoose = require('mongoose');
 const POSSession = require('../models/POSSession');
 const Order = require('../models/Order');
 const asyncHandler = require('../utils/asyncHandler');
@@ -15,7 +16,10 @@ const { sellStock, returnStock, resolveShopWarehouse } = require('../services/wa
 const InventoryMovement = require('../models/InventoryMovement');
 const POSCustomer = require('../models/POSCustomer');
 const WalletTransaction = require('../models/WalletTransaction');
+const LoyaltyTransaction = require('../models/LoyaltyTransaction');
 const { mutateWallet } = require('../services/wallet.service');
+const { mutateLoyalty } = require('../services/loyalty.service');
+const { loyaltyDelta } = require('../services/contact.helpers');
 const inventoryService = require('../services/inventory.service');
 const { generateOrderNumber, generateReceiptNumber, generateReturnNumber } = require('../utils/orderUtils');
 const { calcPlatformCostPrice, calcPlatformSellingPrice, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
@@ -2589,6 +2593,42 @@ async function creditWalletRefund({ order, tenantId, amount, reference, reason, 
   }).catch((err) => console.error('[Wallet] refund credit failed:', err.message));
 }
 
+// Reverse the loyalty points a POS sale earned/redeemed when it is fully refunded or
+// voided, mirroring creditWalletRefund. The order's loyalty rows (earn/redeem, plus
+// any prior reversal) carry relatedOrder, so we net them with loyaltyDelta and write
+// one compensating 'adjustment' that zeroes the order out — making this idempotent: a
+// second call (e.g. void after a full refund) finds a net of 0 and does nothing.
+// Best-effort: the refund/void itself has already committed, so a points hiccup is
+// logged, not fatal. The atomic guard blocks a reversal that would overdraw.
+async function reverseLoyaltyForOrder({ order, tenantId, reference, reason, staffId }) {
+  const customerId = order.paymentDetails?.customer?.customerId;
+  if (!customerId) return;
+
+  const rows = await LoyaltyTransaction.find({
+    tenant: tenantId,
+    ownerType: 'POSCustomer',
+    owner: customerId,
+    relatedOrder: order._id,
+  }).select('type points').lean();
+
+  const net = rows.reduce((s, r) => s + loyaltyDelta(r.type, r.points), 0);
+  if (net === 0) return; // nothing earned/redeemed, or already reversed
+
+  await mutateLoyalty({
+    owner: {
+      Model: POSCustomer,
+      ownerType: 'POSCustomer',
+      ownerId: customerId,
+      filter: { _id: customerId, tenant: tenantId },
+    },
+    tenantId,
+    value: { type: 'adjustment', points: -net, reason },
+    reference,
+    relatedOrder: order._id,
+    createdBy: staffId,
+  }).catch((err) => console.error('[Loyalty] reversal failed:', err.message));
+}
+
 // ─── Refund (item-level) ──────────────────────────────────────────────────────
 /**
  * POST /api/pos/orders/:id/refund
@@ -2748,6 +2788,17 @@ exports.refundPOSOrder = asyncHandler(async (req, res) => {
     });
   }
 
+  // Once the sale is fully refunded, unwind its loyalty earn/redeem (idempotent).
+  if (cumulativeRefunded >= order.totalAmount) {
+    await reverseLoyaltyForOrder({
+      order,
+      tenantId: req.tenant?._id,
+      reference: returnNumber,
+      reason: `Reversed — refund ${returnNumber}`,
+      staffId: performer._id,
+    });
+  }
+
   // Back-link all InventoryMovement records created for this return to the order
   InventoryMovement.updateMany(
     { reference: returnNumber, tenant: req.tenant?._id },
@@ -2837,6 +2888,16 @@ exports.voidPOSOrder = asyncHandler(async (req, res) => {
       staffId: req.posUser._id,
     });
   }
+
+  // Unwind any loyalty earned/redeemed on the voided sale (idempotent — a no-op if a
+  // prior full refund already reversed it).
+  await reverseLoyaltyForOrder({
+    order,
+    tenantId: req.tenant?._id,
+    reference: voidNumber,
+    reason: `Reversed — void ${voidNumber}`,
+    staffId: req.posUser._id,
+  });
 
   res.json({ success: true, data: { order: { _id: order._id, receiptNumber: order.receiptNumber, isVoided: true } } });
 });
@@ -3249,23 +3310,62 @@ exports.getPOSCustomer = asyncHandler(async (req, res) => {
 });
 
 exports.updatePOSCustomerLoyalty = asyncHandler(async (req, res) => {
-  const POSCustomer = require('../models/POSCustomer');
   const tenantId = req.tenant?._id;
-  const { earned = 0, redeemed = 0, orderTotal = 0 } = req.body;
+  const { earned = 0, redeemed = 0, orderTotal = 0, orderId } = req.body;
 
   const customer = await POSCustomer.findOne({ _id: req.params.id, tenant: tenantId });
   if (!customer)
     return res.status(404).json({ success: false, message: 'Customer not found' });
 
-  const delta = Math.floor(earned) - Math.floor(redeemed);
-  customer.loyaltyPoints = Math.max(0, customer.loyaltyPoints + delta);
-  if (orderTotal > 0) {
-    customer.totalSpent  += orderTotal;
-    customer.totalOrders += 1;
-  }
-  await customer.save();
+  // Route the points move through mutateLoyalty so an append-only LoyaltyTransaction
+  // is written per direction (loyaltyPoints stays the single source of truth). A
+  // valid orderId links the rows back to the sale so refund/void can reverse them.
+  const owner = {
+    Model: POSCustomer,
+    ownerType: 'POSCustomer',
+    ownerId: customer._id,
+    filter: { _id: customer._id, tenant: tenantId },
+  };
+  const staffId = req.posUser?._id;
+  const relatedOrder =
+    orderId && mongoose.Types.ObjectId.isValid(orderId) ? orderId : undefined;
+  const earn = Math.max(0, Math.floor(Number(earned) || 0));
+  const redeem = Math.max(0, Math.floor(Number(redeemed) || 0));
 
-  res.json({ success: true, data: { customer } });
+  // Redeem (debit) first, then earn — best-effort so a post-sale points hiccup never
+  // fails the already-committed sale. The atomic guard blocks an overdraw.
+  if (redeem > 0) {
+    await mutateLoyalty({
+      owner,
+      tenantId,
+      value: { type: 'redeem', points: redeem, reason: 'POS reward redemption' },
+      relatedOrder,
+      createdBy: staffId,
+    }).catch((err) => console.error('[Loyalty] POS redeem failed:', err.message));
+  }
+  if (earn > 0) {
+    await mutateLoyalty({
+      owner,
+      tenantId,
+      value: { type: 'earn', points: earn, reason: 'POS sale earn' },
+      relatedOrder,
+      createdBy: staffId,
+    }).catch((err) => console.error('[Loyalty] POS earn failed:', err.message));
+  }
+
+  // Lifetime spend/order counters live alongside loyaltyPoints; bump them with a
+  // targeted $inc so we never clobber the atomic loyaltyPoints move above.
+  if (orderTotal > 0) {
+    await POSCustomer.updateOne(
+      { _id: customer._id, tenant: tenantId },
+      { $inc: { totalSpent: orderTotal, totalOrders: 1 } }
+    );
+  }
+
+  const fresh = await POSCustomer.findOne({ _id: customer._id, tenant: tenantId }).select(
+    'firstName lastName email phone loyaltyPoints walletBalance totalSpent totalOrders notes'
+  );
+  res.json({ success: true, data: { customer: fresh } });
 });
 
 // ─── POS Notifications — online platform orders for this tenant ───────────────

@@ -1461,7 +1461,8 @@ export default function POSPaymentModal() {
             customer.customerId,
             earned,
             redeemed,
-            effectiveTotal
+            effectiveTotal,
+            result.order?._id
           )
           .catch(() => {});
       }

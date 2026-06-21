@@ -459,14 +459,16 @@ export const posApi = {
     id: string,
     earned: number,
     redeemed: number,
-    orderTotal: number
+    orderTotal: number,
+    // Links the earn/redeem ledger rows to the sale so a refund/void can reverse them.
+    orderId?: string
   ) {
     return request<{ customer: POSCustomer }>(
       `${API_URL}/api/pos/customers/${id}/loyalty`,
       {
         method: 'PATCH',
         headers: authHeaders(token),
-        body: JSON.stringify({ earned, redeemed, orderTotal }),
+        body: JSON.stringify({ earned, redeemed, orderTotal, orderId }),
       }
     );
   },
