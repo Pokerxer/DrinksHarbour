@@ -411,10 +411,7 @@ export default function ContactOrders({ contactKey }: { contactKey: string }) {
               Showing{' '}
               <span className="font-semibold text-gray-700">
                 {(pagination.page - 1) * pagination.limit + 1}–
-                {Math.min(
-                  pagination.page * pagination.limit,
-                  pagination.total
-                )}
+                {Math.min(pagination.page * pagination.limit, pagination.total)}
               </span>{' '}
               of{' '}
               <span className="font-semibold text-gray-700">

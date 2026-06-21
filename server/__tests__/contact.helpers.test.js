@@ -18,6 +18,7 @@ const {
   parseOrderListQuery,
   buildOrderIndex,
   contactOrderTotals,
+  summarizeSpending,
   validateContactCreate,
   validateContactUpdate,
 } = require('../services/contact.helpers');
@@ -433,6 +434,75 @@ test('contactOrderTotals counts each matching order once across all keys', () =>
   );
   assert.strictEqual(totals.totalOrders, 3);
   assert.strictEqual(totals.totalSpent, 1750);
+});
+
+// ── spending summary ──────────────────────────────────────────────────────────
+
+const SPEND_ORDERS = [
+  {
+    totalAmount: 1000, status: 'delivered', paymentMethod: 'card',
+    placedAt: '2026-01-15',
+    items: [
+      { product: { name: 'Whisky' }, quantity: 2, itemSubtotal: 800 },
+      { product: { name: 'Gin' }, quantity: 1, itemSubtotal: 200 },
+    ],
+  },
+  {
+    totalAmount: 500, status: 'delivered', paymentMethod: 'cash',
+    placedAt: '2026-01-20',
+    items: [{ product: { name: 'Whisky' }, quantity: 1, itemSubtotal: 500 }],
+  },
+  {
+    totalAmount: 300, status: 'cancelled', paymentMethod: 'card',
+    placedAt: '2026-02-02',
+    items: [{ subproduct: { name: 'House Lager' }, quantity: 3, itemSubtotal: 300 }],
+  },
+];
+
+test('summarizeSpending rolls up totals, average and first/last dates', () => {
+  const s = summarizeSpending(SPEND_ORDERS);
+  assert.strictEqual(s.totalSpent, 1800);
+  assert.strictEqual(s.orderCount, 3);
+  assert.strictEqual(s.avgOrderValue, 600);
+  assert.strictEqual(s.firstOrderAt, new Date('2026-01-15').toISOString());
+  assert.strictEqual(s.lastOrderAt, new Date('2026-02-02').toISOString());
+});
+
+test('summarizeSpending buckets by month, method, status and top products', () => {
+  const s = summarizeSpending(SPEND_ORDERS);
+
+  // months ascending
+  assert.deepStrictEqual(s.byMonth.map((m) => m.month), ['2026-01', '2026-02']);
+  assert.strictEqual(s.byMonth[0].total, 1500); // Jan: 1000 + 500
+  assert.strictEqual(s.byMonth[0].count, 2);
+
+  // payment methods sorted by total desc (card 1300 > cash 500)
+  assert.deepStrictEqual(s.byPaymentMethod[0], { method: 'card', total: 1300, count: 2 });
+  assert.deepStrictEqual(s.byPaymentMethod[1], { method: 'cash', total: 500, count: 1 });
+
+  // status buckets
+  const delivered = s.byStatus.find((x) => x.status === 'delivered');
+  assert.strictEqual(delivered.count, 2);
+
+  // top product by spend is Whisky (800 + 500 = 1300, 3 units)
+  assert.deepStrictEqual(s.topProducts[0], { name: 'Whisky', quantity: 3, total: 1300 });
+  // subproduct name is used when no central product
+  assert.ok(s.topProducts.some((p) => p.name === 'House Lager'));
+});
+
+test('summarizeSpending handles empty input + falls back to createdAt + item names', () => {
+  const empty = summarizeSpending([]);
+  assert.strictEqual(empty.totalSpent, 0);
+  assert.strictEqual(empty.avgOrderValue, 0);
+  assert.strictEqual(empty.firstOrderAt, null);
+  assert.deepStrictEqual(empty.byMonth, []);
+
+  const s = summarizeSpending([
+    { totalAmount: 50, createdAt: '2026-03-01', items: [{ quantity: 1, itemSubtotal: 50 }] },
+  ]);
+  assert.strictEqual(s.byMonth[0].month, '2026-03'); // createdAt used when no placedAt
+  assert.strictEqual(s.topProducts[0].name, 'Unknown item'); // nameless item
+  assert.strictEqual(s.byPaymentMethod[0].method, 'unknown'); // missing method
 });
 
 test('contactOrderTotals is zero for an unmatched / index-less contact', () => {

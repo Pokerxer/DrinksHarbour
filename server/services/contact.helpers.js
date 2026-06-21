@@ -376,6 +376,93 @@ function contactOrderTotals(contact = {}, index) {
   return { totalOrders: matched.size, totalSpent };
 }
 
+// ── Spending summary ─────────────────────────────────────────────────────────
+//
+// Roll a contact's orders up into the analytics the /spent page renders: lifetime
+// totals + breakdowns by month, payment method, status and top products. Kept
+// pure (no DB / no Date.now) so the grouping is unit-testable. Amounts mirror the
+// orders page — every matched order's totalAmount counts, so the headline "Total
+// Spent" is identical across both pages.
+
+/** 'YYYY-MM' bucket for a date, or null when unparseable. */
+function monthKey(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * @param {Array} orders lean orders with { totalAmount, status, paymentMethod,
+ *   placedAt|createdAt, items:[{ product:{name}, subproduct:{name}, quantity,
+ *   itemSubtotal }] }.
+ * @returns spending analytics for one contact.
+ */
+function summarizeSpending(orders = []) {
+  let totalSpent = 0;
+  let firstOrderAt = null;
+  let lastOrderAt = null;
+  const months = new Map();   // 'YYYY-MM'  → { total, count }
+  const methods = new Map();  // method     → { total, count }
+  const statuses = new Map(); // status     → { total, count }
+  const products = new Map(); // name       → { quantity, total }
+
+  const bump = (map, key, total, qty) => {
+    const cur = map.get(key) || { total: 0, count: 0, quantity: 0 };
+    cur.total += total;
+    if (qty === undefined) cur.count += 1;
+    else cur.quantity += qty;
+    map.set(key, cur);
+  };
+
+  for (const o of orders) {
+    const amt = o.totalAmount || 0;
+    totalSpent += amt;
+
+    const when = o.placedAt || o.createdAt;
+    const t = when ? new Date(when).getTime() : NaN;
+    if (!Number.isNaN(t)) {
+      if (firstOrderAt === null || t < firstOrderAt) firstOrderAt = t;
+      if (lastOrderAt === null || t > lastOrderAt) lastOrderAt = t;
+      const mk = monthKey(when);
+      if (mk) bump(months, mk, amt);
+    }
+
+    bump(methods, o.paymentMethod || 'unknown', amt);
+    bump(statuses, o.status || 'unknown', amt);
+
+    for (const it of o.items || []) {
+      const name =
+        (it.product && it.product.name) ||
+        (it.subproduct && it.subproduct.name) ||
+        'Unknown item';
+      bump(products, name, it.itemSubtotal || 0, it.quantity || 0);
+    }
+  }
+
+  const orderCount = orders.length;
+  return {
+    totalSpent,
+    orderCount,
+    avgOrderValue: orderCount ? totalSpent / orderCount : 0,
+    firstOrderAt: firstOrderAt === null ? null : new Date(firstOrderAt).toISOString(),
+    lastOrderAt: lastOrderAt === null ? null : new Date(lastOrderAt).toISOString(),
+    byMonth: [...months.entries()]
+      .map(([month, v]) => ({ month, total: v.total, count: v.count }))
+      .sort((a, b) => (a.month < b.month ? -1 : 1))
+      .slice(-12),
+    byPaymentMethod: [...methods.entries()]
+      .map(([method, v]) => ({ method, total: v.total, count: v.count }))
+      .sort((a, b) => b.total - a.total),
+    byStatus: [...statuses.entries()]
+      .map(([status, v]) => ({ status, total: v.total, count: v.count }))
+      .sort((a, b) => b.count - a.count),
+    topProducts: [...products.entries()]
+      .map(([name, v]) => ({ name, quantity: v.quantity, total: v.total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5),
+  };
+}
+
 // ── Create / update validation ─────────────────────────────────────────────────
 
 const num = (v) => {
@@ -494,6 +581,7 @@ module.exports = {
   parseOrderListQuery,
   buildOrderIndex,
   contactOrderTotals,
+  summarizeSpending,
   validateContactCreate,
   validateContactUpdate,
 };

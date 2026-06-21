@@ -19,6 +19,7 @@ const {
   parseOrderListQuery,
   buildOrderIndex,
   contactOrderTotals,
+  summarizeSpending,
   normalizePosCustomer,
   normalizeEcommerceUser,
   mergeContacts,
@@ -267,5 +268,37 @@ exports.listContactOrders = asyncHandler(async (req, res) => {
       stats,
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     },
+  });
+});
+
+// ─── Spending analytics for a contact ───────────────────────────────────────────
+//
+// Lifetime spend rolled up for the /spent page: totals + breakdowns by month,
+// payment method, status and top products. Matches the same orders as
+// listContactOrders (see buildContactOrderMatch), so the headline spend agrees
+// across both pages.
+
+exports.getContactSpending = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  const { source, id } = req.params;
+
+  const contact = await loadContact(source, id, tenantId);
+  if (!contact) {
+    return res.status(404).json({ success: false, message: 'Contact not found' });
+  }
+
+  const or = buildContactOrderMatch(contact);
+  let orders = [];
+  if (or.length > 0) {
+    orders = await Order.find({ 'items.tenant': tenantId, $or: or })
+      .select('totalAmount status paymentMethod placedAt createdAt items.product items.subproduct items.quantity items.itemSubtotal')
+      .populate('items.product', 'name')
+      .populate('items.subproduct', 'name')
+      .lean();
+  }
+
+  res.json({
+    success: true,
+    data: { contact: present(contact), spending: summarizeSpending(orders) },
   });
 });

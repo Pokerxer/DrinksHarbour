@@ -74,6 +74,18 @@ export interface ContactOrdersPagination {
   pages: number;
 }
 
+export interface ContactSpending {
+  totalSpent: number;
+  orderCount: number;
+  avgOrderValue: number;
+  firstOrderAt: string | null;
+  lastOrderAt: string | null;
+  byMonth: { month: string; total: number; count: number }[];
+  byPaymentMethod: { method: string; total: number; count: number }[];
+  byStatus: { status: string; total: number; count: number }[];
+  topProducts: { name: string; quantity: number; total: number }[];
+}
+
 /** Status / date-range / pagination filters for a contact's orders. */
 export interface ContactOrdersParams {
   status?: string;
@@ -207,6 +219,23 @@ export const contactService = {
         { headers: auth(token) }
       ),
       'Failed to load orders'
+    );
+  },
+
+  /** Lifetime spending analytics for one contact (totals + breakdowns). */
+  async getContactSpending(
+    key: string,
+    token: string
+  ): Promise<{
+    success: boolean;
+    data: { contact: Contact; spending: ContactSpending };
+  }> {
+    return handle(
+      await fetch(
+        `${API_URL}/api/contacts/${key.replace(':', '/')}/spending`,
+        { headers: auth(token) }
+      ),
+      'Failed to load spending'
     );
   },
 };

@@ -463,6 +463,7 @@ export default function ContactDetail({ contactKey }: { contactKey: string }) {
                 count={
                   contact.totalSpent > 0 ? money(contact.totalSpent) : '₦0'
                 }
+                href={`${routes.contacts.detail(contact.key)}/spent`}
                 highlight={contact.totalSpent > 0}
               />
               <SmartButton

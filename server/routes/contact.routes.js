@@ -18,5 +18,6 @@ router.route('/:source/:id')
   .delete(tenantAdminOrSuperAdmin, c.deleteContact);
 
 router.get('/:source/:id/orders', tenantAdminOrSuperAdmin, c.listContactOrders);
+router.get('/:source/:id/spending', tenantAdminOrSuperAdmin, c.getContactSpending);
 
 module.exports = router;
