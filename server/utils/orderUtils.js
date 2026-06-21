@@ -1,6 +1,7 @@
 // utils/orderUtils.js
 
 const Order = require('../models/Order');
+const SalesOrder = require('../models/SalesOrder');
 
 async function generateOrderNumber() {
   const date = new Date();
@@ -50,8 +51,29 @@ async function generateReturnNumber() {
   return `RTN-${y}${m}${d}-${(count + 1).toString().padStart(4, '0')}`;
 }
 
+async function generateSalesOrderNumber() {
+  const date = new Date();
+  const year = date.getFullYear().toString().slice(-2);
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+
+  const prefix = `SO${year}${month}${day}`;
+
+  const todayStart = new Date(date.setHours(0, 0, 0, 0));
+  const todayEnd = new Date(date.setHours(23, 59, 59, 999));
+
+  const count = await SalesOrder.countDocuments({
+    createdAt: { $gte: todayStart, $lte: todayEnd },
+  });
+
+  const sequence = (count + 1).toString().padStart(4, '0');
+
+  return `${prefix}${sequence}`;
+}
+
 module.exports = {
   generateOrderNumber,
   generateReceiptNumber,
   generateReturnNumber,
+  generateSalesOrderNumber,
 };
