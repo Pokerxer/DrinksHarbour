@@ -440,6 +440,58 @@ async function recordReceiptMovement({
 }
 
 /**
+ * Audit-only mirror of recordReceiptMovement for vendor returns: writes an
+ * InventoryMovement (type 'return' / category 'out') so the return shows in the
+ * product History tab, and decrements the per-size figure (Size.stock) that the
+ * POS and sub-product edit page read. It does NOT touch SubProduct.total/available
+ * — adjustStock's rollup owns those, so calling both never double-counts.
+ */
+async function recordReturnMovement({
+  subProduct, tenant, product, size, warehouse,
+  quantity, balanceBefore, balanceAfter,
+  unitCost, supplierName, reference, relatedPurchaseOrder,
+  reason, notes, performedBy,
+}) {
+  const before = Number.isFinite(balanceBefore) ? balanceBefore : 0;
+  const after  = Number.isFinite(balanceAfter)  ? balanceAfter  : Math.max(0, before - quantity);
+
+  const movement = await InventoryMovement.create({
+    subProduct,
+    tenant,
+    product:        product || undefined,
+    size:           size || undefined,
+    warehouse:      warehouse || undefined,
+    type:           'return',
+    category:       'out',
+    quantity,
+    quantityBefore: before,
+    quantityAfter:  after,
+    reference:      reference || undefined,
+    referenceType:  'return',
+    relatedPurchaseOrder: relatedPurchaseOrder || undefined,
+    unitCost:       unitCost ?? undefined,
+    totalCost:      unitCost != null ? unitCost * quantity : undefined,
+    supplierName:   supplierName || undefined,
+    reason:         reason || 'Return to vendor',
+    notes:          notes || undefined,
+    performedBy,
+    performedAt:    new Date(),
+    source:         'manual',
+    status:         'confirmed',
+    isVerified:     true,
+    verifiedAt:     new Date(),
+  });
+
+  if (size) {
+    await Size.findByIdAndUpdate(size, {
+      $inc: { stock: -quantity, availableStock: -quantity },
+    }).catch(() => {});
+  }
+
+  return movement;
+}
+
+/**
  * Adjust inventory by a signed delta (positive = add, negative = remove).
  */
 async function adjustInventory(subProductId, tenantId, adjustment, reason, performedBy, notes, reference) {
@@ -885,7 +937,7 @@ module.exports = {
   // Order lifecycle (used by order processing)
   reserve, releaseReserve, commitShipment, restoreStock, isShipped,
   // Admin / manual inventory management
-  recordReceived, recordReceiptMovement, adjustInventory, recordReturn, transferStock,
+  recordReceived, recordReceiptMovement, recordReturnMovement, adjustInventory, recordReturn, transferStock,
   createMovement, getMovements, getInventorySummary,
   cancelMovement, getNextPONumber, getLowStockItems, getInventoryValuation,
   resolveMovementWarehouse,

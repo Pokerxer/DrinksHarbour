@@ -1990,8 +1990,6 @@ const returnPurchaseOrder = asyncHandler(async (req, res) => {
   const { items: returnItems = [], reason = '', isExchange = false } = req.body;
   const tenantId = await resolveTenantId(req);
 
-  const InventoryMovement = require('../models/InventoryMovement');
-
   if (!returnItems.length) {
     return res.status(400).json({ success: false, message: 'No items provided for return' });
   }
@@ -2005,6 +2003,15 @@ const returnPurchaseOrder = asyncHandler(async (req, res) => {
   const errors   = [];
   const movementIds = [];
   const returnWarehouse = await inventoryService.resolveMovementWarehouse(tenantId, undefined);
+
+  // Resolve batch-tracking + parent product per returned sub-product so the
+  // warehouse decrement can deplete batches FEFO and the movement carries product.
+  const retSpIds = [...new Set(returnItems.map((r) => r.subProductId).filter(Boolean))];
+  const retSps = await SubProduct.find({ _id: { $in: retSpIds } })
+    .select('product')
+    .populate('product', 'tracksBatch')
+    .lean();
+  const retSpMap = new Map(retSps.map((sp) => [String(sp._id), sp]));
 
   for (const retItem of returnItems) {
     const { subProductId, quantity, reason: lineReason } = retItem;
@@ -2026,38 +2033,35 @@ const returnPurchaseOrder = asyncHandler(async (req, res) => {
     }
 
     const effSizeId = poLine.sizeId?.toString() || null;
-    let quantityBefore = 0;
-    let quantityAfter  = 0;
+    const sp = retSpMap.get(String(subProductId));
+    const tracksBatch = !!(sp && sp.product && sp.product.tracksBatch);
+    const productId = sp && sp.product ? sp.product._id : undefined;
+    let warehouseBalanceAfter;
 
     try {
-      if (effSizeId) {
-        const sizeAfter = await Size.findByIdAndUpdate(
-          effSizeId,
-          { $inc: { availableStock: -quantity, stock: -quantity } },
-          { new: true }
+      if (effSizeId && returnWarehouse) {
+        // Ledger (a)+(b): decrement WarehouseStock + SubProduct rollup, FEFO batches.
+        // Same path receiving uses (postReceivedStock -> adjustStock), so returns no
+        // longer drift from the multi-warehouse truth.
+        const row = await warehouseService.adjustStock(
+          {
+            warehouseId: returnWarehouse,
+            subProduct: subProductId,
+            size: effSizeId,
+            quantity,
+            type: 'shipped',
+            tracksBatch,
+            notes: `Vendor return — PO ${po.poNumber}`,
+          },
+          req.user._id,
+          tenantId
         );
-        quantityBefore = (sizeAfter?.availableStock ?? 0) + quantity;
-        quantityAfter  = sizeAfter?.availableStock ?? 0;
-
-        if (sizeAfter) {
-          await Size.findByIdAndUpdate(effSizeId, {
-            availability: sizeAfter.availableStock <= 0 ? 'out_of_stock'
-                        : sizeAfter.availableStock <= (sizeAfter.lowStockThreshold || 5) ? 'low_stock'
-                        : 'in_stock',
-          });
-        }
-
+        warehouseBalanceAfter = row?.currentQuantity;
+      } else {
+        // Sizeless fallback (no WarehouseStock row to touch): keep SubProduct in step.
         await SubProduct.findByIdAndUpdate(subProductId, {
           $inc: { availableStock: -quantity, totalStock: -quantity },
         });
-      } else {
-        const spAfter = await SubProduct.findByIdAndUpdate(
-          subProductId,
-          { $inc: { availableStock: -quantity, totalStock: -quantity } },
-          { new: true }
-        );
-        quantityBefore = (spAfter?.availableStock ?? 0) + quantity;
-        quantityAfter  = spAfter?.availableStock ?? 0;
       }
     } catch (stockErr) {
       errors.push(`Stock update failed for "${poLine.subProductName}": ${stockErr.message}`);
@@ -2065,27 +2069,27 @@ const returnPurchaseOrder = asyncHandler(async (req, res) => {
     }
 
     try {
-      const movement = await InventoryMovement.create({
-        subProduct:          subProductId,
-        tenant:              tenantId,
-        warehouse:           returnWarehouse || undefined,
-        size:                effSizeId || undefined,
-        type:                'return',
-        category:            'out',
+      // Ledger (c) + product History tab: decrement Size.stock and write the
+      // InventoryMovement (type 'return'). referenceType 'return' is a valid enum
+      // value (the old 'purchase_order_return' silently failed schema validation).
+      const movement = await inventoryService.recordReturnMovement({
+        subProduct:           subProductId,
+        tenant:               tenantId,
+        product:              productId,
+        size:                 effSizeId || undefined,
+        warehouse:            returnWarehouse || undefined,
         quantity,
-        quantityBefore,
-        quantityAfter,
-        reference:           po.poNumber,
-        referenceType:       'purchase_order_return',
+        balanceAfter:         warehouseBalanceAfter,
+        balanceBefore: Number.isFinite(warehouseBalanceAfter)
+          ? warehouseBalanceAfter + quantity
+          : undefined,
+        unitCost:             poLine.unitCost || 0,
+        supplierName:         po.vendorName || undefined,
+        reference:            po.poNumber,
         relatedPurchaseOrder: po._id,
-        reason:              lineReason || reason || (isExchange ? 'Return for exchange' : 'Return to vendor'),
-        unitCost:            poLine.unitCost || 0,
-        supplierName:        po.vendorName   || undefined,
-        performedBy:         req.user._id,
-        performedAt:         new Date(),
-        source:              'manual',
-        status:              'confirmed',
-        notes:               `Vendor return — PO ${po.poNumber}${isExchange ? ' (Exchange)' : ''}`,
+        reason: lineReason || reason || (isExchange ? 'Return for exchange' : 'Return to vendor'),
+        notes: `Vendor return — PO ${po.poNumber}${isExchange ? ' (Exchange)' : ''}`,
+        performedBy:          req.user._id,
       });
       movementIds.push(movement._id);
     } catch (mvErr) {
@@ -2093,26 +2097,27 @@ const returnPurchaseOrder = asyncHandler(async (req, res) => {
       continue;
     }
 
-    // Decrement received qty on the PO line in-memory (saved below)
+    // Reflect the return on the PO line: lower receivedQty, raise returnedQty by the
+    // same amount (so outstanding = ordered - received - returned is unchanged — a
+    // return does not reopen the back-order), and clamp postedQty so a later validate
+    // does not try to re-post the returned units.
     poLine.receivedQty = Math.max(0, availableToReturn - quantity);
+    poLine.returnedQty = (poLine.returnedQty || 0) + quantity;
+    poLine.postedQty   = Math.min(poLine.postedQty || 0, poLine.receivedQty);
   }
 
   if (errors.length && movementIds.length === 0) {
     return res.status(400).json({ success: false, message: errors.join('; ') });
   }
 
-  // Re-evaluate PO receipt flags
-  const totalOrdered  = po.items.reduce((s, it) => s + (it.quantity    || 0), 0);
-  const totalReceived = po.items.reduce((s, it) => s + (it.receivedQty || 0), 0);
-
-  if (totalReceived <= 0) {
-    po.isPartiallyReceived = false;
-    po.fullyReceivedDate   = undefined;
-    if (po.status === 'received' || po.status === 'validated') po.status = 'confirmed';
-  } else if (totalReceived < totalOrdered) {
-    po.isPartiallyReceived = true;
-    po.fullyReceivedDate   = undefined;
-    if (po.status === 'validated') po.status = 'received';
+  // Refresh receipt flags. A return moves units from received -> returned without
+  // changing outstanding, so it does not reopen a completed PO; only update the
+  // partial flag and clear the fully-received date once nothing remains received.
+  const anyReceived = po.items.some((it) => (it.receivedQty || 0) > 0);
+  const allComplete = po.items.every((it) => outstanding(it) === 0);
+  po.isPartiallyReceived = anyReceived && !allComplete;
+  if (!anyReceived) {
+    po.fullyReceivedDate = undefined;
   }
 
   await po.save();
