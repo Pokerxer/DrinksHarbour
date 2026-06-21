@@ -13,7 +13,9 @@ const POSCustomer = require('../models/POSCustomer');
 const User = require('../models/User');
 const Order = require('../models/Order');
 const WalletTransaction = require('../models/WalletTransaction');
+const LoyaltyTransaction = require('../models/LoyaltyTransaction');
 const { mutateWallet } = require('../services/wallet.service');
+const { mutateLoyalty } = require('../services/loyalty.service');
 const asyncHandler = require('../utils/asyncHandler');
 const {
   buildContactFilter,
@@ -31,6 +33,9 @@ const {
   validateWalletTx,
   summarizeWallet,
   WALLET_TX_TYPES,
+  validateLoyaltyTx,
+  summarizeLoyalty,
+  LOYALTY_TX_TYPES,
 } = require('../services/contact.helpers');
 
 // Attach the client routing key (`source:id`) to a normalised contact.
@@ -482,3 +487,180 @@ exports.adjustWallet = asyncHandler((req, res) => handleWalletMutation(req, res,
 // POS wallet tender (the 'wallet' paymentMethod) is wired in pos.controller.js's
 // createPOSOrder / refundPOSOrder / voidPOSOrder, sharing this same atomic
 // mutateWallet via services/wallet.service.js.
+
+// ─── Loyalty points ──────────────────────────────────────────────────────────────
+//
+// A per-contact loyalty-points balance held on the in-store POSCustomer record
+// (loyaltyPoints) plus an append-only ledger of LoyaltyTransactions. The owner
+// record + a ledger row are mutated together; the balance change is an atomic,
+// guarded $inc so it can never overdraw and never trusts a client-supplied figure
+// (balanceAfter is always read back from the DB). Loyalty is IN-STORE ONLY — a
+// 'both' contact's loyalty lives on its POSCustomer record and an ecommerce-only
+// contact has none. Every query is scoped to the tenant.
+
+// Resolve the POSCustomer that holds a contact's loyalty + the model and
+// tenant-scoped filter that own it. Returns null when the contact has no in-store
+// record (ecommerce-only) — loyalty is then not applicable.
+function loyaltyOwner(contact, tenantId) {
+  const instoreId = contact.ids?.instore;
+  if (!instoreId) return null;
+  return {
+    Model: POSCustomer,
+    ownerType: 'POSCustomer',
+    ownerId: instoreId,
+    filter: { _id: instoreId, tenant: tenantId },
+  };
+}
+
+// Parse the loyalty ledger listing query (type / date range / pagination), mirroring
+// parseWalletListQuery but over LoyaltyTransaction's `type` + `createdAt`.
+function parseLoyaltyListQuery(query = {}) {
+  const match = {};
+
+  const type = typeof query.type === 'string' ? query.type.trim() : '';
+  if (type && LOYALTY_TX_TYPES.includes(type)) match.type = type;
+
+  const createdAt = {};
+  const from = query.from ? new Date(query.from) : null;
+  if (from && !Number.isNaN(from.getTime())) createdAt.$gte = from;
+  const to = query.to ? new Date(query.to) : null;
+  if (to && !Number.isNaN(to.getTime())) {
+    to.setHours(23, 59, 59, 999); // inclusive of the whole "to" day
+    createdAt.$lte = to;
+  }
+  if (Object.keys(createdAt).length) match.createdAt = createdAt;
+
+  const page = Math.max(1, parseInt(query.page, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(query.limit, 10) || 20));
+  return { match, page, limit, skip: (page - 1) * limit };
+}
+
+// GET /api/contacts/:source/:id/loyalty — balance + lifetime stats + a paginated,
+// optionally filtered (type / date) ledger. Stats are lifetime (identity-only) so
+// the cards stay stable while the table is filtered. An ecommerce-only contact has
+// no in-store record, so it returns an empty ledger flagged `instoreOnly` for the
+// client to render its "in-store only" empty state.
+exports.getContactLoyalty = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  const { source, id } = req.params;
+
+  const contact = await loadContact(source, id, tenantId);
+  if (!contact) {
+    return res.status(404).json({ success: false, message: 'Contact not found' });
+  }
+
+  const owner = loyaltyOwner(contact, tenantId);
+  if (!owner) {
+    // Ecommerce-only contact: loyalty is in-store only.
+    return res.json({
+      success: true,
+      data: {
+        contact: present(contact),
+        balance: 0,
+        instoreOnly: true,
+        stats: { balance: 0, earned: 0, redeemed: 0, net: 0, count: 0, lastActivityAt: null },
+        transactions: [],
+        pagination: { page: 1, limit: 20, total: 0, pages: 0 },
+      },
+    });
+  }
+
+  const baseMatch = { tenant: tenantId, ownerType: owner.ownerType, owner: owner.ownerId };
+  const { match, page, limit, skip } = parseLoyaltyListQuery(req.query);
+  const listMatch = { ...baseMatch, ...match };
+
+  const [allTx, total, transactions] = await Promise.all([
+    LoyaltyTransaction.find(baseMatch).select('type points createdAt').lean(),
+    LoyaltyTransaction.countDocuments(listMatch),
+    LoyaltyTransaction.find(listMatch)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('createdBy', 'firstName lastName')
+      .populate('relatedOrder', 'orderNumber')
+      .lean(),
+  ]);
+
+  const summary = summarizeLoyalty(allTx);
+  const stats = {
+    balance: contact.loyaltyPoints, // authoritative, from the owner record
+    earned: summary.earned,
+    redeemed: summary.redeemed,
+    net: summary.net,
+    count: summary.count,
+    lastActivityAt: summary.lastActivityAt,
+  };
+
+  res.json({
+    success: true,
+    data: {
+      contact: present(contact),
+      balance: contact.loyaltyPoints,
+      instoreOnly: false,
+      stats,
+      transactions,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    },
+  });
+});
+
+// Shared body for the two admin mutations. `mode='award'` grants points (a 'bonus');
+// `mode='adjust'` applies a signed 'adjustment' from a credit/debit direction.
+async function handleLoyaltyMutation(req, res, mode) {
+  const tenantId = req.tenant?._id;
+  const { source, id } = req.params;
+
+  const contact = await loadContact(source, id, tenantId);
+  if (!contact) {
+    return res.status(404).json({ success: false, message: 'Contact not found' });
+  }
+
+  const owner = loyaltyOwner(contact, tenantId);
+  if (!owner) {
+    return res.status(400).json({
+      success: false,
+      message: 'Loyalty points are tracked for in-store customers only',
+    });
+  }
+
+  let body;
+  if (mode === 'award') {
+    body = { type: 'bonus', points: req.body.points, reason: req.body.reason };
+  } else {
+    // A signed correction: a 'debit' direction deducts, 'credit' adds.
+    const raw = Number(req.body.points);
+    const signed = req.body.direction === 'debit' ? -Math.abs(raw) : Math.abs(raw);
+    body = { type: 'adjustment', points: signed, reason: req.body.reason };
+  }
+
+  const built = validateLoyaltyTx(body, contact.loyaltyPoints);
+  if (!built.ok) {
+    return res.status(400).json({ success: false, message: built.message });
+  }
+
+  const result = await mutateLoyalty({
+    owner,
+    tenantId,
+    value: built.value,
+    createdBy: req.user?._id,
+  });
+  if (!result.ok) {
+    return res.status(result.status).json({ success: false, message: result.message });
+  }
+
+  res.status(201).json({
+    success: true,
+    data: { balance: result.balance, transaction: result.tx },
+  });
+}
+
+// POST /api/contacts/:source/:id/loyalty/award — grant points (a 'bonus').
+exports.awardLoyalty = asyncHandler((req, res) => handleLoyaltyMutation(req, res, 'award'));
+
+// POST /api/contacts/:source/:id/loyalty/adjust — signed correction (an 'adjustment').
+// A debit that would overdraw is rejected.
+exports.adjustLoyalty = asyncHandler((req, res) => handleLoyaltyMutation(req, res, 'adjust'));
+
+// POS loyalty earn/redeem is wired in pos.controller.js's updatePOSCustomerLoyalty
+// (and reversed on refundPOSOrder / voidPOSOrder), sharing this same atomic
+// mutateLoyalty via services/loyalty.service.js.
