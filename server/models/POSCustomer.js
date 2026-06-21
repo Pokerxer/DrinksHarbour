@@ -14,6 +14,10 @@ const POSCustomerSchema = new mongoose.Schema(
     walletBalance: { type: Number, default: 0, min: 0 },
     totalSpent:    { type: Number, default: 0 },
     totalOrders:   { type: Number, default: 0 },
+    // Customer-assigned pricelist: when set, this pricelist is auto-selected and
+    // used for pricing whenever this customer is chosen on the POS sell page.
+    // Resolution still bounds it to the tenant's pricelists (see pricelist.service).
+    pricelist:     { type: mongoose.Schema.Types.ObjectId, ref: 'Pricelist', default: null },
     notes:         { type: String, default: '' },
   },
   { timestamps: true }

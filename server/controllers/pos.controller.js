@@ -2016,13 +2016,26 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     return res.status(403).json({ success: false, message: 'Price override permission required' });
   }
 
-  // Resolve the pricelist AUTHORITATIVELY from the shop. The client may request
-  // an override via pricelistId, but it is honored only if it belongs to the
-  // shop's allowed set; otherwise we use the auto-resolved pricelist.
+  // A saved customer may have an assigned pricelist; it takes top precedence in
+  // resolution (it's the per-customer auto-pick) but is still bounded by the
+  // allowed set, so a customer can never be charged an off-tenant pricelist.
+  let customerPricelistId = null;
+  if (customer.customerId) {
+    try {
+      const cust = await POSCustomer.findOne({ _id: customer.customerId, tenant: tenantId })
+        .select('pricelist').lean();
+      customerPricelistId = cust?.pricelist ? String(cust.pricelist) : null;
+    } catch (_) { /* non-fatal — fall back to shop resolution */ }
+  }
+
+  // Resolve the pricelist AUTHORITATIVELY from the shop (and the customer, if
+  // assigned). The client may request an override via pricelistId, but it is
+  // honored only if it belongs to the allowed set; otherwise we use the
+  // auto-resolved pricelist (customer → shop → warehouse → default).
   let selectedPricelist = null;
   try {
     const { resolveShopPricelist } = require('../services/pricelist.service');
-    const { resolved, allowed } = await resolveShopPricelist(req.tenant, tenantId, shopId);
+    const { resolved, allowed } = await resolveShopPricelist(req.tenant, tenantId, shopId, customerPricelistId);
     if (pricelistId) {
       const override = allowed.find((p) => String(p._id) === String(pricelistId));
       selectedPricelist = override || resolved || null;

@@ -98,3 +98,48 @@ test('no warehouseId: warehouse tier is skipped safely', () => {
   assert.strictEqual(resolved, null);
   assert.deepStrictEqual(allowed, []);
 });
+
+// ── Customer-assigned pricelist (top precedence) ─────────────────────────────
+
+test('customer pricelist wins over shop, warehouse and default', () => {
+  const custPL = pl({ _id: 'c' });
+  const shopPL = pl({ _id: 's', shops: ['shop1'] });
+  const whPL = pl({ _id: 'w', warehouses: ['wh1'] });
+  const defPL = pl({ _id: 'd', isDefault: true });
+  const { resolved } = pickPricelistForShop({
+    pricelists: [defPL, whPL, shopPL, custPL],
+    shopId: 'shop1', warehouseId: 'wh1', customerPricelistId: 'c',
+  });
+  assert.strictEqual(String(resolved._id), 'c');
+});
+
+test('a customer pricelist id not in the tenant list is ignored (falls through to shop)', () => {
+  const shopPL = pl({ _id: 's', shops: ['shop1'] });
+  const { resolved } = pickPricelistForShop({
+    pricelists: [shopPL],
+    shopId: 'shop1', warehouseId: 'wh1', customerPricelistId: 'ghost',
+  });
+  assert.strictEqual(String(resolved._id), 's');
+});
+
+test("customer pricelist is added to allowed even when otherwise unreachable", () => {
+  // Bound to a DIFFERENT shop, so it would never be in allowed on its own —
+  // assigning it to the customer must surface it so a manual override validates.
+  const custPL = pl({ _id: 'c', shops: ['otherShop'] });
+  const shopPL = pl({ _id: 's', shops: ['shop1'] });
+  const { resolved, allowed } = pickPricelistForShop({
+    pricelists: [shopPL, custPL],
+    shopId: 'shop1', warehouseId: 'wh1', customerPricelistId: 'c',
+  });
+  assert.strictEqual(String(resolved._id), 'c');
+  const ids = allowed.map((p) => String(p._id)).sort();
+  assert.deepStrictEqual(ids, ['c', 's']);
+});
+
+test('customer precedence does not change resolution when no customer id is given', () => {
+  const shopPL = pl({ _id: 's', shops: ['shop1'] });
+  const { resolved } = pickPricelistForShop({
+    pricelists: [shopPL], shopId: 'shop1', warehouseId: 'wh1',
+  });
+  assert.strictEqual(String(resolved._id), 's');
+});
