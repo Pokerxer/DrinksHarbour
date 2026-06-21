@@ -231,10 +231,9 @@ export const contactService = {
     data: { contact: Contact; spending: ContactSpending };
   }> {
     return handle(
-      await fetch(
-        `${API_URL}/api/contacts/${key.replace(':', '/')}/spending`,
-        { headers: auth(token) }
-      ),
+      await fetch(`${API_URL}/api/contacts/${key.replace(':', '/')}/spending`, {
+        headers: auth(token),
+      }),
       'Failed to load spending'
     );
   },

@@ -201,7 +201,9 @@ export default function ContactSpending({
               </h1>
               <div className="mt-1.5 flex items-center gap-2">
                 <SourceBadge source={contact.source} />
-                <span className="text-sm text-red-100">{fullName(contact)}</span>
+                <span className="text-sm text-red-100">
+                  {fullName(contact)}
+                </span>
               </div>
             </div>
           </div>
