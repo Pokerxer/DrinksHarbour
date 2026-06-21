@@ -1984,15 +1984,12 @@ export default function POSCart() {
                 return entries.map((entry) => {
                   if (entry.kind === 'combo') {
                     const { instanceId, comboName, groupItems } = entry;
-                    const comboTotal = groupItems.reduce(
-                      (s, i) => {
-                        const { price: effPrice } = selectedPricelist
-                          ? getEffectiveBundlePriceForItem(i, selectedPricelist)
-                          : getEffectiveBundlePrice(i);
-                        return s + effPrice * i.quantity;
-                      },
-                      0
-                    );
+                    const comboTotal = groupItems.reduce((s, i) => {
+                      const { price: effPrice } = selectedPricelist
+                        ? getEffectiveBundlePriceForItem(i, selectedPricelist)
+                        : getEffectiveBundlePrice(i);
+                      return s + effPrice * i.quantity;
+                    }, 0);
                     const anySelected = groupItems.some(
                       (i) => selectedKey === itemKey(i)
                     );
@@ -2573,15 +2570,15 @@ export default function POSCart() {
             for (const ci of cart.items) {
               addItem({
                 subProductId: ci.subProductId,
-                productId:    ci.productId,
-                sizeId:       ci.sizeId,
-                name:         ci.name,
-                variant:      ci.variant,
-                sku:          ci.sku,
-                quantity:     ci.quantity,
-                price:        ci.price,
-                discount:     ci.discount,
-                stock:        999, // client re-fetches from grid on mount
+                productId: ci.productId,
+                sizeId: ci.sizeId,
+                name: ci.name,
+                variant: ci.variant,
+                sku: ci.sku,
+                quantity: ci.quantity,
+                price: ci.price,
+                discount: ci.discount,
+                stock: 999, // client re-fetches from grid on mount
               });
             }
             setShowHeldOrders(false);
@@ -2601,7 +2598,9 @@ function HeldOrdersModal({
   onClose,
 }: {
   token: string | null;
-  onRecall: (cart: import('@/app/shared/point-of-sale/types').POSRecallCart) => void;
+  onRecall: (
+    cart: import('@/app/shared/point-of-sale/types').POSRecallCart
+  ) => void;
   onClose: () => void;
 }) {
   const [orders, setOrders] = useState<
@@ -2663,7 +2662,9 @@ function HeldOrdersModal({
               <PiSpinner className="h-4 w-4 animate-spin" /> Loading…
             </div>
           ) : error ? (
-            <p className="px-5 py-8 text-center text-xs text-red-500">{error}</p>
+            <p className="px-5 py-8 text-center text-xs text-red-500">
+              {error}
+            </p>
           ) : orders.length === 0 ? (
             <div className="py-12 text-center">
               <PiNote className="mx-auto mb-2 h-8 w-8 text-gray-300" />

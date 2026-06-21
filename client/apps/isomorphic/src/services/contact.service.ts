@@ -332,11 +332,14 @@ export const contactService = {
     data: { balance: number; transaction: WalletTransaction };
   }> {
     return handle(
-      await fetch(`${API_URL}/api/contacts/${key.replace(':', '/')}/wallet/topup`, {
-        method: 'POST',
-        headers: jsonAuth(token),
-        body: JSON.stringify(data),
-      }),
+      await fetch(
+        `${API_URL}/api/contacts/${key.replace(':', '/')}/wallet/topup`,
+        {
+          method: 'POST',
+          headers: jsonAuth(token),
+          body: JSON.stringify(data),
+        }
+      ),
       'Failed to top up wallet'
     );
   },
@@ -351,11 +354,14 @@ export const contactService = {
     data: { balance: number; transaction: WalletTransaction };
   }> {
     return handle(
-      await fetch(`${API_URL}/api/contacts/${key.replace(':', '/')}/wallet/adjust`, {
-        method: 'POST',
-        headers: jsonAuth(token),
-        body: JSON.stringify(data),
-      }),
+      await fetch(
+        `${API_URL}/api/contacts/${key.replace(':', '/')}/wallet/adjust`,
+        {
+          method: 'POST',
+          headers: jsonAuth(token),
+          body: JSON.stringify(data),
+        }
+      ),
       'Failed to adjust wallet'
     );
   },
