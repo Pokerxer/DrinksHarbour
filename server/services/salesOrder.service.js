@@ -52,4 +52,35 @@ async function createSalesOrderDoc({ tenantId, body }) {
   });
 }
 
-module.exports = { lineTotalOf, computeTotals, createSalesOrderDoc };
+function canEdit(so) {
+  if (so.docType === 'quotation') return ['draft', 'sent'].includes(so.quoteStatus);
+  return so.orderStatus === 'draft';
+}
+
+function canCancel(so) {
+  if (so.docType === 'quotation') return !['converted', 'rejected'].includes(so.quoteStatus);
+  return !['fulfilled', 'cancelled'].includes(so.orderStatus);
+}
+
+/** Re-snapshot line prices + totals from an edit body. Mutates `so` in place. */
+function applyEdit(so, body) {
+  if (Array.isArray(body.items)) {
+    so.items = body.items.map((it) => ({
+      product: it.product, subproduct: it.subproduct, size: it.size,
+      sku: it.sku, name: it.name,
+      quantity: Number(it.quantity) || 0,
+      unitPrice: Number(it.unitPrice) || 0,
+      discount: Number(it.discount) || 0,
+      lineTotal: lineTotalOf(it),
+    }));
+    const totals = computeTotals(so.items);
+    so.subtotal = totals.subtotal;
+    so.discountTotal = totals.discountTotal;
+    so.total = totals.total;
+  }
+  if (body.notes !== undefined) so.notes = body.notes;
+  if (body.terms !== undefined) so.terms = body.terms;
+  if (body.validUntil !== undefined) so.validUntil = body.validUntil;
+}
+
+module.exports = { lineTotalOf, computeTotals, createSalesOrderDoc, canEdit, canCancel, applyEdit };

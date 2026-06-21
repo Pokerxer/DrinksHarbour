@@ -29,9 +29,26 @@ exports.getSalesOrder = asyncHandler(async (req, res) => {
 });
 
 exports.updateSalesOrder = asyncHandler(async (req, res) => {
-  res.status(501).json({ success: false, message: 'Not implemented yet' }); // Task 4
+  const tenantId = req.tenant?._id;
+  const so = await SalesOrder.findOne({ _id: req.params.id, tenant: tenantId });
+  if (!so) return res.status(404).json({ success: false, message: 'Sales order not found' });
+  if (!svc.canEdit(so)) {
+    return res.status(409).json({ success: false, message: 'This document can no longer be edited' });
+  }
+  svc.applyEdit(so, req.body);
+  await so.save();
+  res.json({ success: true, data: so });
 });
 
 exports.deleteSalesOrder = asyncHandler(async (req, res) => {
-  res.status(501).json({ success: false, message: 'Not implemented yet' }); // Task 4
+  const tenantId = req.tenant?._id;
+  const so = await SalesOrder.findOne({ _id: req.params.id, tenant: tenantId });
+  if (!so) return res.status(404).json({ success: false, message: 'Sales order not found' });
+  if (!svc.canCancel(so)) {
+    return res.status(409).json({ success: false, message: 'This document cannot be cancelled' });
+  }
+  if (so.docType === 'order') so.orderStatus = 'cancelled';
+  else so.quoteStatus = 'rejected';
+  await so.save();
+  res.json({ success: true, data: so });
 });
