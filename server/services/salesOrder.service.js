@@ -83,4 +83,41 @@ function applyEdit(so, body) {
   if (body.validUntil !== undefined) so.validUntil = body.validUntil;
 }
 
-module.exports = { lineTotalOf, computeTotals, createSalesOrderDoc, canEdit, canCancel, applyEdit };
+/**
+ * Convert an accepted/draft/sent quotation into a new draft order.
+ * Copies the pricing snapshot verbatim (no re-pricing); resets fulfillment
+ * counters on each line. Links both docs and marks the quotation converted.
+ */
+async function convertQuotationToOrder(quotation) {
+  const soNumber = await generateSalesOrderNumber();
+  const order = await SalesOrder.create({
+    tenant: quotation.tenant,
+    soNumber,
+    docType: 'order',
+    customer: quotation.customer,
+    customerSnapshot: quotation.customerSnapshot,
+    pricelist: quotation.pricelist,
+    appliedPricelist: quotation.appliedPricelist,
+    currency: quotation.currency,
+    items: quotation.items.map((it) => ({
+      product: it.product, subproduct: it.subproduct, size: it.size,
+      sku: it.sku, name: it.name,
+      quantity: it.quantity, unitPrice: it.unitPrice, discount: it.discount,
+      lineTotal: it.lineTotal,
+      fulfilledQty: 0, postedQty: 0, returnedQty: 0,
+    })),
+    subtotal: quotation.subtotal, discountTotal: quotation.discountTotal, total: quotation.total,
+    notes: quotation.notes, terms: quotation.terms,
+    orderStatus: 'draft',
+    convertedFrom: quotation._id,
+  });
+  quotation.quoteStatus = 'converted';
+  quotation.convertedTo = order._id;
+  await quotation.save();
+  return order;
+}
+
+module.exports = {
+  lineTotalOf, computeTotals, createSalesOrderDoc, canEdit, canCancel, applyEdit,
+  convertQuotationToOrder,
+};
