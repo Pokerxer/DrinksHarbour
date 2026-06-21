@@ -491,6 +491,7 @@ export default function ContactDetail({ contactKey }: { contactKey: string }) {
                 icon={<PiCoins />}
                 label="Loyalty"
                 count={contact.loyaltyPoints}
+                href={`${routes.contacts.detail(contact.key)}/loyalty`}
                 highlight={contact.loyaltyPoints > 0}
               />
               <SmartButton
