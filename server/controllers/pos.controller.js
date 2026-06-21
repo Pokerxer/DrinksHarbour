@@ -3201,7 +3201,7 @@ exports.searchPOSCustomers = asyncHandler(async (req, res) => {
   const customers = await POSCustomer.find(filter)
     .sort({ updatedAt: -1 })
     .limit(lim)
-    .select('firstName lastName email phone loyaltyPoints totalSpent totalOrders')
+    .select('firstName lastName email phone loyaltyPoints walletBalance totalSpent totalOrders')
     .lean();
 
   res.json({ success: true, data: { customers } });
@@ -3241,7 +3241,7 @@ exports.getPOSCustomer = asyncHandler(async (req, res) => {
   const POSCustomer = require('../models/POSCustomer');
   const tenantId = req.tenant?._id;
   const customer = await POSCustomer.findOne({ _id: req.params.id, tenant: tenantId })
-    .select('firstName lastName email phone loyaltyPoints totalSpent totalOrders notes')
+    .select('firstName lastName email phone loyaltyPoints walletBalance totalSpent totalOrders notes')
     .lean();
   if (!customer)
     return res.status(404).json({ success: false, message: 'Customer not found' });

@@ -21,6 +21,7 @@ import {
   PiGift,
   PiWarning,
   PiStar,
+  PiWallet,
 } from 'react-icons/pi';
 import {
   usePOSCart,
@@ -79,6 +80,7 @@ const METHOD_LABELS: Record<string, string> = {
   card: 'CARD / POS',
   bank_transfer: 'BANK TRANSFER',
   mobile_money: 'MOBILE MONEY',
+  wallet: 'WALLET',
   split: 'SPLIT',
 };
 
@@ -1076,6 +1078,15 @@ export default function POSPaymentModal() {
     : 0;
   const newBalance = Math.max(0, currentPts + earnedPts - redeemedPts);
 
+  // ── Wallet (store credit) ────────────────────────────────────────────────────
+  // Wallet is a FULL-payment single tender: the server only debits the wallet for
+  // paymentMethod === 'wallet' as a lone tender, never inside a split. So the
+  // button is offered only to a real customer whose balance covers the whole
+  // total, and selecting it replaces all lines with one fixed wallet line.
+  const walletBalance = customer.walletBalance ?? 0;
+  const walletEligible =
+    hasCustomer && effectiveTotal > 0 && walletBalance >= effectiveTotal;
+
   // Build AppliedDiscount list from appliedRewards for the breakdown UI + receipt
   const autoDiscounts: AppliedDiscount[] = appliedRewards.map((r) => ({
     id: r.id,
@@ -1138,6 +1149,16 @@ export default function POSPaymentModal() {
     setActiveId(id);
     setInputStr(amt === 0 ? '0' : String(amt));
     setFreshInput(true);
+  }
+
+  // Wallet pays the entire order as a single fixed tender. Clear any other lines
+  // and don't make it the active numpad line — its amount must stay at the total.
+  function selectWallet() {
+    const id = `ln-wallet-${Date.now()}`;
+    setLines([{ id, method: 'wallet', label: 'Wallet', amount: effectiveTotal }]);
+    setActiveId(null);
+    setInputStr('0');
+    setFreshInput(false);
   }
 
   function removeLine(id: string) {
@@ -1261,6 +1282,23 @@ export default function POSPaymentModal() {
 
   async function handleValidate() {
     if (!canValidate || loading || !token) return;
+
+    // Wallet single-tender contract — the server is authoritative, but enforce it
+    // here too: a wallet line must be the ONLY line, exactly cover the total, and
+    // be backed by sufficient balance. Never allow wallet inside a split.
+    if (lines.some((l) => l.method === 'wallet')) {
+      const ok =
+        lines.length === 1 &&
+        Math.abs(lines[0].amount - effectiveTotal) < 0.01 &&
+        (customer.walletBalance ?? 0) >= effectiveTotal;
+      if (!ok) {
+        toast.error(
+          'Wallet must cover the full order total as the only payment method.'
+        );
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       const orderItems = items.map((item) => {
@@ -1542,6 +1580,40 @@ export default function POSPaymentModal() {
               </button>
             );
           })}
+
+          {/* Wallet — full-payment single tender, only when the customer's store
+              credit covers the whole total (server only debits a lone 'wallet'). */}
+          {walletEligible &&
+            (() => {
+              const inUse = lines.some((l) => l.method === 'wallet');
+              return (
+                <button
+                  type="button"
+                  onClick={selectWallet}
+                  className={cn(
+                    'flex w-full items-center gap-3 rounded-xl border px-4 py-3.5 text-left text-sm font-semibold shadow-sm transition-all active:scale-[0.98]',
+                    inUse
+                      ? 'border-green-300 bg-green-50 text-green-700 hover:border-green-400'
+                      : 'border-gray-200 bg-white text-gray-800 hover:border-[#b20202] hover:shadow-md'
+                  )}
+                >
+                  <span className={inUse ? 'text-green-600' : 'text-gray-400'}>
+                    <PiWallet className="h-5 w-5" />
+                  </span>
+                  <span className="flex-1">
+                    Wallet
+                    <p className="mt-0.5 text-[11px] text-gray-500">
+                      Balance {formatCurrency(walletBalance)}
+                    </p>
+                  </span>
+                  {inUse && (
+                    <span className="text-[10px] font-bold uppercase tracking-wide text-green-600">
+                      added
+                    </span>
+                  )}
+                </button>
+              );
+            })()}
         </div>
 
         {/* Tips — shown when tipsEnabled */}

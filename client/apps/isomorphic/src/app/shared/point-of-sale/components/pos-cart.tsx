@@ -1514,6 +1514,7 @@ export default function POSCart() {
         email: c.email || 'walkin@pos.local',
         phone: c.phone || '',
         loyaltyPoints: c.loyaltyPoints,
+        walletBalance: c.walletBalance,
       });
     }
     setShowCustomer(false);

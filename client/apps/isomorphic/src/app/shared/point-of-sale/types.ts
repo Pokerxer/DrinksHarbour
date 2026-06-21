@@ -20,6 +20,7 @@ export interface POSCustomer {
   email?: string;
   phone?: string;
   loyaltyPoints: number;
+  walletBalance: number;
   totalSpent?: number;
   totalOrders?: number;
   notes?: string;

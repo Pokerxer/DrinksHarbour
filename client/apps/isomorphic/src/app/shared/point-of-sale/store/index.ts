@@ -148,6 +148,7 @@ export type CartCustomer = {
   email: string;
   phone: string;
   loyaltyPoints?: number; // live balance fetched from DB on customer selection
+  walletBalance?: number; // live store-credit balance fetched from DB on customer selection
 };
 
 /** A reward/discount the cashier has explicitly applied to the current cart. */
