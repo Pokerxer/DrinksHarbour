@@ -87,4 +87,40 @@ function buildPostingLines(soItems) {
   return out;
 }
 
-module.exports = { lineId, outstanding, applyFulfillment, fulfillStatus, buildPostingLines };
+/**
+ * Post each shipped posting line OUT of the target warehouse via the injected
+ * adjustStock(type:'shipped'). A line missing subproduct/size is surfaced as a
+ * failure, not silently dropped.
+ * @returns {Promise<{ successCount, failCount, failures: Array<{name, reason}> }>}
+ */
+async function postShippedStock({
+  salesOrder, targetWarehouseId, postingLines, adjustStock, userId, tenantId, logger = console,
+}) {
+  let successCount = 0, failCount = 0;
+  const failures = [];
+  const label = (l) => l.name || l.sku || String(l.subproduct || 'unknown item');
+
+  for (const line of postingLines || []) {
+    const qty = Number(line.qty) || 0;
+    if (qty <= 0) continue;
+    if (!line.subproduct || !line.size) {
+      failures.push({ name: label(line), reason: 'missing subproduct/size to ship from' });
+      failCount++; continue;
+    }
+    try {
+      await adjustStock(
+        { warehouseId: targetWarehouseId, subProduct: line.subproduct, size: line.size,
+          quantity: qty, type: 'shipped', notes: `Sales fulfillment: ${salesOrder.soNumber}` },
+        userId, tenantId
+      );
+      successCount++;
+    } catch (err) {
+      logger.error(`   ❌ ${label(line)} — ${err.message}`);
+      failures.push({ name: label(line), reason: err.message });
+      failCount++;
+    }
+  }
+  return { successCount, failCount, failures };
+}
+
+module.exports = { lineId, outstanding, applyFulfillment, fulfillStatus, buildPostingLines, postShippedStock };

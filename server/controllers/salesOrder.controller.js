@@ -3,6 +3,7 @@ const asyncHandler = require("express-async-handler");
 const SalesOrder = require('../models/SalesOrder');
 const svc = require('../services/salesOrder.service');
 const salesPayment = require('../services/salesPayment.service');
+const salesFulfillSvc = require('../services/salesFulfill.service');
 
 exports.createSalesOrder = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
@@ -118,4 +119,21 @@ exports.confirmSalesOrder = asyncHandler(async (req, res) => {
   so.loyaltyEarned = result.loyaltyEarned || 0;
   await so.save();
   res.json({ success: true, data: so });
+});
+
+exports.fulfillSalesOrder = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  const so = await SalesOrder.findOne({ _id: req.params.id, tenant: tenantId, docType: 'order' });
+  if (!so) return res.status(404).json({ success: false, message: 'Order not found' });
+  if (!['confirmed', 'partially_fulfilled'].includes(so.orderStatus)) {
+    return res.status(409).json({ success: false, message: 'Only a confirmed order can be fulfilled' });
+  }
+  const { warehouseId, items: fulfillLines } = req.body;
+  if (!warehouseId) return res.status(400).json({ success: false, message: 'Destination warehouse required' });
+
+  const { order, posting } = await salesFulfillSvc.fulfillOrder({
+    salesOrder: so, tenantId, warehouseId, fulfillLines: fulfillLines || [],
+    userId: req.user?._id || req.posUser?._id, deps: {},
+  });
+  res.json({ success: true, data: order, posting });
 });
