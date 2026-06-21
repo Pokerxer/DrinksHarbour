@@ -253,6 +253,129 @@ function buildContactFilter(tenantId, opts = {}) {
   };
 }
 
+// ── Orders for a contact ─────────────────────────────────────────────────────
+//
+// An order belongs to a contact when it was placed by their ecommerce account
+// (`user`), tied to their POS customer record (`paymentDetails.customer.customerId`),
+// or carries their email / phone snapshot. The two stores write different shapes:
+//   • ecommerce checkout → `user` + `shippingAddress.{email,phone}`
+//   • POS sale           → `paymentDetails.customer.{customerId,phone}` (NO email;
+//                           walk-ins have no customerId and match by phone only)
+
+// Order.status enum, mirrored here so the listing can validate a status filter.
+const ORDER_STATUSES = [
+  'pending', 'confirmed', 'hold', 'processing', 'partially_shipped',
+  'shipped', 'delivered', 'cancelled', 'refunded',
+];
+
+/**
+ * Build the Mongo `$or` clauses that match every order belonging to a contact,
+ * across both stores. Returns [] when the contact carries no usable identity
+ * (the caller should then return an empty result rather than query for `{}`).
+ */
+function buildContactOrderMatch(contact = {}) {
+  const ids = contact.ids || {};
+  const or = [];
+  if (ids.ecommerce) or.push({ user: ids.ecommerce });
+  if (ids.instore) or.push({ 'paymentDetails.customer.customerId': ids.instore });
+
+  const email = normalizeEmail(contact.email);
+  if (email) {
+    // shippingAddress.email is stored as the shopper typed it, so match loosely.
+    or.push({ 'shippingAddress.email': new RegExp(`^${escapeRegex(email)}$`, 'i') });
+  }
+
+  const phone = typeof contact.phone === 'string' ? contact.phone.trim() : '';
+  if (phone) {
+    or.push({ 'shippingAddress.phone': phone });
+    or.push({ 'paymentDetails.customer.phone': phone });
+  }
+  return or;
+}
+
+/**
+ * Parse + clamp the listing query (status / date range / pagination) for a
+ * contact's orders. `match` holds the status/date clauses to AND with the
+ * identity match; page/limit/skip drive pagination (limit 1–100, default 20).
+ */
+function parseOrderListQuery(query = {}) {
+  const match = {};
+
+  const status = typeof query.status === 'string' ? query.status.trim() : '';
+  if (status && ORDER_STATUSES.includes(status)) match.status = status;
+
+  const placedAt = {};
+  const from = query.from ? new Date(query.from) : null;
+  if (from && !Number.isNaN(from.getTime())) placedAt.$gte = from;
+  const to = query.to ? new Date(query.to) : null;
+  if (to && !Number.isNaN(to.getTime())) {
+    to.setHours(23, 59, 59, 999); // inclusive of the whole "to" day
+    placedAt.$lte = to;
+  }
+  if (Object.keys(placedAt).length) match.placedAt = placedAt;
+
+  const page = Math.max(1, parseInt(query.page, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(query.limit, 10) || 20));
+  return { match, page, limit, skip: (page - 1) * limit };
+}
+
+/**
+ * Index a tenant's orders so each contact's lifetime totals can be computed in
+ * one pass. Every order is bucketed under each identity key it carries, and its
+ * amount recorded, so a contact can sum DISTINCT matching orders (a single order
+ * matched by both `user` and email is never counted twice). DB-less + pure.
+ */
+function buildOrderIndex(orders = []) {
+  const amount = new Map();       // orderId → totalAmount
+  const byUser = new Map();       // userId → Set(orderId)
+  const byCustomerId = new Map(); // POSCustomer id → Set(orderId)
+  const byEmail = new Map();      // normalised email → Set(orderId)
+  const byPhone = new Map();      // trimmed phone → Set(orderId)
+
+  const add = (map, key, id) => {
+    if (!key) return;
+    let set = map.get(key);
+    if (!set) { set = new Set(); map.set(key, set); }
+    set.add(id);
+  };
+
+  for (const o of orders) {
+    const id = String(o._id);
+    amount.set(id, o.totalAmount || 0);
+    if (o.user) add(byUser, String(o.user), id);
+    const cust = (o.paymentDetails && o.paymentDetails.customer) || {};
+    if (cust.customerId) add(byCustomerId, String(cust.customerId), id);
+    if (cust.phone) add(byPhone, String(cust.phone).trim(), id);
+    const ship = o.shippingAddress || {};
+    if (ship.email) add(byEmail, normalizeEmail(ship.email), id);
+    if (ship.phone) add(byPhone, String(ship.phone).trim(), id);
+  }
+
+  return { amount, byUser, byCustomerId, byEmail, byPhone };
+}
+
+/**
+ * Lifetime { totalOrders, totalSpent } for a contact from a buildOrderIndex
+ * result, counting each matching order once across all of the contact's keys.
+ */
+function contactOrderTotals(contact = {}, index) {
+  if (!index) return { totalOrders: 0, totalSpent: 0 };
+  const ids = contact.ids || {};
+  const matched = new Set();
+  const pull = (set) => { if (set) for (const id of set) matched.add(id); };
+
+  if (ids.ecommerce) pull(index.byUser.get(String(ids.ecommerce)));
+  if (ids.instore) pull(index.byCustomerId.get(String(ids.instore)));
+  const email = normalizeEmail(contact.email);
+  if (email) pull(index.byEmail.get(email));
+  const phone = typeof contact.phone === 'string' ? contact.phone.trim() : '';
+  if (phone) pull(index.byPhone.get(phone));
+
+  let totalSpent = 0;
+  for (const id of matched) totalSpent += index.amount.get(id) || 0;
+  return { totalOrders: matched.size, totalSpent };
+}
+
 // ── Create / update validation ─────────────────────────────────────────────────
 
 const num = (v) => {
@@ -354,6 +477,7 @@ function validateContactUpdate(source, body = {}) {
 module.exports = {
   CONTACT_SOURCES,
   SETTABLE_STATUSES,
+  ORDER_STATUSES,
   isValidEmail,
   normalizeEmail,
   normalizePhone,
@@ -366,6 +490,10 @@ module.exports = {
   buildInstoreFilter,
   buildEcommerceFilter,
   buildContactFilter,
+  buildContactOrderMatch,
+  parseOrderListQuery,
+  buildOrderIndex,
+  contactOrderTotals,
   validateContactCreate,
   validateContactUpdate,
 };

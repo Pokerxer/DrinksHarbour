@@ -15,6 +15,10 @@ const Order = require('../models/Order');
 const asyncHandler = require('../utils/asyncHandler');
 const {
   buildContactFilter,
+  buildContactOrderMatch,
+  parseOrderListQuery,
+  buildOrderIndex,
+  contactOrderTotals,
   normalizePosCustomer,
   normalizeEcommerceUser,
   mergeContacts,
@@ -54,6 +58,21 @@ exports.listContacts = asyncHandler(async (req, res) => {
   // `source:'both'` is a post-merge property, so honour that filter here.
   if (source === 'both') {
     contacts = contacts.filter((c) => c.source === 'both');
+  }
+
+  // Overlay real order activity. The stored totalSpent/totalOrders are only ever
+  // hand-entered on in-store POSCustomers (ecommerce rows carry none), so when a
+  // contact has actual orders we trust those; otherwise we keep the stored value.
+  const orderDocs = await Order.find({ 'items.tenant': tenantId })
+    .select('user totalAmount paymentDetails.customer.customerId paymentDetails.customer.phone shippingAddress.email shippingAddress.phone')
+    .lean();
+  const orderIndex = buildOrderIndex(orderDocs);
+  for (const c of contacts) {
+    const { totalOrders, totalSpent } = contactOrderTotals(c, orderIndex);
+    if (totalOrders > 0) {
+      c.totalOrders = totalOrders;
+      c.totalSpent = totalSpent;
+    }
   }
 
   contacts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -184,10 +203,12 @@ exports.deleteContact = asyncHandler(async (req, res) => {
 
 // ─── Orders for a contact ──────────────────────────────────────────────────────
 //
-// Returns the tenant's orders for one contact. An order belongs to the contact
-// when it was placed by their ecommerce account (`user`) or carries their POS
-// customer snapshot (email / phone). Every query is scoped to the tenant's own
-// order lines via `items.tenant` so one tenant never sees another's sales.
+// Returns the tenant's orders for one contact, paginated and optionally filtered
+// by status / date range. An order belongs to the contact when it was placed by
+// their ecommerce account (`user`/`shippingAddress`) or tied to their POS record
+// (`paymentDetails.customer.customerId` / phone). Every query is scoped to the
+// tenant's own order lines via `items.tenant` so one tenant never sees another's
+// sales. See buildContactOrderMatch for the exact identity rules.
 
 exports.listContactOrders = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
@@ -198,32 +219,53 @@ exports.listContactOrders = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Contact not found' });
   }
 
-  const or = [];
-  if (contact.ids.ecommerce) or.push({ user: contact.ids.ecommerce });
-  const email = (contact.email || '').toLowerCase().trim();
-  if (email) or.push({ 'customer.email': email });
-  const phone = (contact.phone || '').trim();
-  if (phone) or.push({ 'customer.phone': phone });
+  const or = buildContactOrderMatch(contact);
 
-  let orders = [];
-  if (or.length > 0) {
-    orders = await Order.find({ 'items.tenant': tenantId, $or: or })
-      .sort({ placedAt: -1 })
-      .limit(100)
-      .populate('user', 'firstName lastName email')
-      .populate('items.product', 'name images')
-      .lean();
+  // No identity to match on → no orders (never query the whole collection).
+  if (or.length === 0) {
+    return res.json({
+      success: true,
+      data: {
+        contact: present(contact),
+        orders: [],
+        stats: { count: 0, totalSpent: 0, delivered: 0, cancelled: 0 },
+        pagination: { page: 1, limit: 20, total: 0, pages: 0 },
+      },
+    });
   }
 
+  const baseMatch = { 'items.tenant': tenantId, $or: or };
+  const { match, page, limit, skip } = parseOrderListQuery(req.query);
+  const listMatch = { ...baseMatch, ...match };
+
+  // Stats are lifetime (identity-only), so the cards stay stable as the table is
+  // filtered by status / date; the table + count honour the active filters.
+  const [statDocs, total, orders] = await Promise.all([
+    Order.find(baseMatch).select('status totalAmount').lean(),
+    Order.countDocuments(listMatch),
+    Order.find(listMatch)
+      .sort({ placedAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('user', 'firstName lastName email')
+      .populate('items.product', 'name images')
+      .lean(),
+  ]);
+
   const stats = {
-    count: orders.length,
-    totalSpent: orders.reduce((s, o) => s + (o.totalAmount || 0), 0),
-    delivered: orders.filter((o) => o.status === 'delivered').length,
-    cancelled: orders.filter((o) => o.status === 'cancelled').length,
+    count: statDocs.length,
+    totalSpent: statDocs.reduce((s, o) => s + (o.totalAmount || 0), 0),
+    delivered: statDocs.filter((o) => o.status === 'delivered').length,
+    cancelled: statDocs.filter((o) => o.status === 'cancelled').length,
   };
 
   res.json({
     success: true,
-    data: { contact: present(contact), orders, stats },
+    data: {
+      contact: present(contact),
+      orders,
+      stats,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    },
   });
 });

@@ -255,7 +255,11 @@ export default function ContactDetail({ contactKey }: { contactKey: string }) {
     }
     setUploadingPhoto(true);
     try {
-      const up = await uploadService.uploadImage(file, token, 'contact-avatars');
+      const up = await uploadService.uploadImage(
+        file,
+        token,
+        'contact-avatars'
+      );
       const res = await contactService.updateContact(
         contact.key,
         { avatar: { url: up.data.url, publicId: up.data.publicId } },

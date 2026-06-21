@@ -67,6 +67,24 @@ export interface ContactOrderStats {
   cancelled: number;
 }
 
+export interface ContactOrdersPagination {
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
+/** Status / date-range / pagination filters for a contact's orders. */
+export interface ContactOrdersParams {
+  status?: string;
+  /** ISO date (yyyy-mm-dd) lower bound, inclusive. */
+  from?: string;
+  /** ISO date (yyyy-mm-dd) upper bound, inclusive of the whole day. */
+  to?: string;
+  page?: number;
+  limit?: number;
+}
+
 export interface ContactListParams {
   source?: ContactSource;
   status?: ContactStatus;
@@ -165,14 +183,27 @@ export const contactService = {
   /** Tenant-scoped orders for one contact (by ecommerce account or POS snapshot). */
   async getContactOrders(
     key: string,
-    token: string
+    token: string,
+    params?: ContactOrdersParams
   ): Promise<{
     success: boolean;
-    data: { contact: Contact; orders: Order[]; stats: ContactOrderStats };
+    data: {
+      contact: Contact;
+      orders: Order[];
+      stats: ContactOrderStats;
+      pagination: ContactOrdersPagination;
+    };
   }> {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set('status', params.status);
+    if (params?.from) qs.set('from', params.from);
+    if (params?.to) qs.set('to', params.to);
+    if (params?.page) qs.set('page', String(params.page));
+    if (params?.limit) qs.set('limit', String(params.limit));
+    const suffix = qs.toString() ? `?${qs}` : '';
     return handle(
       await fetch(
-        `${API_URL}/api/contacts/${key.replace(':', '/')}/orders`,
+        `${API_URL}/api/contacts/${key.replace(':', '/')}/orders${suffix}`,
         { headers: auth(token) }
       ),
       'Failed to load orders'

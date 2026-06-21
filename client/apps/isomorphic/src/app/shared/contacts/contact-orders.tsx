@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import {
@@ -13,11 +14,15 @@ import {
   PiXCircle,
   PiReceipt,
   PiWarningCircle,
+  PiCaretLeft,
+  PiCaretRight,
+  PiCaretRightBold,
 } from 'react-icons/pi';
 import {
   contactService,
   type Contact,
   type ContactOrderStats,
+  type ContactOrdersPagination,
 } from '@/services/contact.service';
 import type { Order } from '@/services/order.service';
 import { routes } from '@/config/routes';
@@ -25,6 +30,21 @@ import { fraunces } from './contacts-fonts';
 import { Avatar, fullName, SourceBadge } from './contact-form';
 
 const naira = (n: number) => `₦${Math.round(n).toLocaleString('en-NG')}`;
+
+const PAGE_SIZE = 20;
+
+// Order.status values an admin can filter the table by.
+const STATUS_OPTIONS = [
+  'pending',
+  'confirmed',
+  'processing',
+  'partially_shipped',
+  'shipped',
+  'delivered',
+  'cancelled',
+  'refunded',
+  'hold',
+] as const;
 
 const STATUS_CLS: Record<string, string> = {
   pending: 'bg-gray-100 text-gray-500',
@@ -71,14 +91,24 @@ function StatCard({
 }
 
 export default function ContactOrders({ contactKey }: { contactKey: string }) {
+  const router = useRouter();
   const { data: session, status } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
 
   const [contact, setContact] = useState<Contact | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [stats, setStats] = useState<ContactOrderStats | null>(null);
+  const [pagination, setPagination] = useState<ContactOrdersPagination | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+
+  // Filters + paging. Changing a filter resets the page back to 1.
+  const [statusFilter, setStatusFilter] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
     if (status === 'loading') return;
@@ -89,23 +119,43 @@ export default function ContactOrders({ contactKey }: { contactKey: string }) {
     setLoading(true);
     setNotFound(false);
     try {
-      const res = await contactService.getContactOrders(contactKey, token);
+      const res = await contactService.getContactOrders(contactKey, token, {
+        status: statusFilter || undefined,
+        from: fromDate || undefined,
+        to: toDate || undefined,
+        page,
+        limit: PAGE_SIZE,
+      });
       setContact(res.data.contact);
       setOrders(res.data.orders ?? []);
       setStats(res.data.stats ?? null);
+      setPagination(res.data.pagination ?? null);
     } catch (e) {
       setNotFound(true);
       toast.error(e instanceof Error ? e.message : 'Failed to load orders');
     } finally {
       setLoading(false);
     }
-  }, [contactKey, token, status]);
+  }, [contactKey, token, status, statusFilter, fromDate, toDate, page]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  if (loading) {
+  const openOrder = (id: string) =>
+    router.push(routes.eCommerce.orderDetails(id));
+
+  const hasFilters = Boolean(statusFilter || fromDate || toDate);
+  const resetFilters = () => {
+    setStatusFilter('');
+    setFromDate('');
+    setToDate('');
+    setPage(1);
+  };
+
+  // Full-screen spinner only on the very first load; later refetches (filter /
+  // page changes) keep the UI mounted and show the inline spinner instead.
+  if (loading && !contact) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <PiSpinnerGap className="animate-spin text-4xl text-[#b20202]" />
@@ -194,6 +244,72 @@ export default function ContactOrders({ contactKey }: { contactKey: string }) {
           />
         </div>
 
+        {/* Filters */}
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              Status
+            </span>
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm capitalize text-gray-600 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
+            >
+              <option value="">All statuses</option>
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s} className="capitalize">
+                  {s.replace('_', ' ')}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              From
+            </span>
+            <input
+              type="date"
+              value={fromDate}
+              max={toDate || undefined}
+              onChange={(e) => {
+                setFromDate(e.target.value);
+                setPage(1);
+              }}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              To
+            </span>
+            <input
+              type="date"
+              value={toDate}
+              min={fromDate || undefined}
+              onChange={(e) => {
+                setToDate(e.target.value);
+                setPage(1);
+              }}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
+            />
+          </label>
+          {hasFilters && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
+            >
+              Clear
+            </button>
+          )}
+          {loading && (
+            <PiSpinnerGap className="mb-1.5 animate-spin text-lg text-[#b20202]" />
+          )}
+        </div>
+
         {/* Table */}
         <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
@@ -206,22 +322,34 @@ export default function ContactOrders({ contactKey }: { contactKey: string }) {
                   <th className="px-5 py-3">Status</th>
                   <th className="px-5 py-3">Payment</th>
                   <th className="px-5 py-3 text-right">Total</th>
+                  <th className="w-10 px-5 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {orders.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-5 py-16">
+                    <td colSpan={7} className="px-5 py-16">
                       <div className="flex flex-col items-center justify-center text-center">
                         <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
                           <PiWarningCircle className="h-8 w-8 text-gray-400" />
                         </div>
                         <h3 className="text-base font-semibold text-gray-700">
-                          No orders yet
+                          {hasFilters ? 'No matching orders' : 'No orders yet'}
                         </h3>
                         <p className="mt-1 text-sm text-gray-400">
-                          This contact has no orders with your store yet.
+                          {hasFilters
+                            ? 'Try a different status or date range.'
+                            : 'This contact has no orders with your store yet.'}
                         </p>
+                        {hasFilters && (
+                          <button
+                            type="button"
+                            onClick={resetFilters}
+                            className="mt-4 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                          >
+                            Clear filters
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -229,10 +357,11 @@ export default function ContactOrders({ contactKey }: { contactKey: string }) {
                   orders.map((o) => (
                     <tr
                       key={o._id}
-                      className="transition-colors hover:bg-gray-50/70"
+                      onClick={() => openOrder(o._id)}
+                      className="group cursor-pointer transition-colors hover:bg-gray-50/70"
                     >
                       <td className="px-5 py-3.5">
-                        <span className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                        <span className="flex items-center gap-2 text-sm font-semibold text-gray-900 group-hover:text-[#b20202]">
                           <PiReceipt className="h-4 w-4 text-gray-400" />
                           {o.orderNumber}
                         </span>
@@ -264,6 +393,9 @@ export default function ContactOrders({ contactKey }: { contactKey: string }) {
                       <td className="px-5 py-3.5 text-right text-sm font-semibold tabular-nums text-gray-800">
                         {naira(o.totalAmount ?? 0)}
                       </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <PiCaretRightBold className="ml-auto h-3.5 w-3.5 text-gray-300 transition-colors group-hover:text-[#b20202]" />
+                      </td>
                     </tr>
                   ))
                 )}
@@ -271,6 +403,50 @@ export default function ContactOrders({ contactKey }: { contactKey: string }) {
             </table>
           </div>
         </div>
+
+        {/* Pagination */}
+        {pagination && pagination.total > PAGE_SIZE && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-gray-500">
+              Showing{' '}
+              <span className="font-semibold text-gray-700">
+                {(pagination.page - 1) * pagination.limit + 1}–
+                {Math.min(
+                  pagination.page * pagination.limit,
+                  pagination.total
+                )}
+              </span>{' '}
+              of{' '}
+              <span className="font-semibold text-gray-700">
+                {pagination.total}
+              </span>{' '}
+              orders
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={pagination.page <= 1 || loading}
+                className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <PiCaretLeft className="h-3.5 w-3.5" /> Prev
+              </button>
+              <span className="text-xs font-semibold text-gray-500">
+                Page {pagination.page} of {pagination.pages}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setPage((p) => Math.min(pagination.pages, p + 1))
+                }
+                disabled={pagination.page >= pagination.pages || loading}
+                className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next <PiCaretRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

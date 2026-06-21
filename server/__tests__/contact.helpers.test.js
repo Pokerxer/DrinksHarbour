@@ -14,6 +14,10 @@ const {
   buildInstoreFilter,
   buildEcommerceFilter,
   buildContactFilter,
+  buildContactOrderMatch,
+  parseOrderListQuery,
+  buildOrderIndex,
+  contactOrderTotals,
   validateContactCreate,
   validateContactUpdate,
 } = require('../services/contact.helpers');
@@ -343,4 +347,102 @@ test('validateContactUpdate (instore) allows clearing email + phone', () => {
   assert.ok(r.ok);
   assert.strictEqual(r.changes.email, '');
   assert.strictEqual(r.changes.phone, '');
+});
+
+// ── order matching ────────────────────────────────────────────────────────────
+
+test('buildContactOrderMatch matches a both-contact across user, POS id, email + phone', () => {
+  const or = buildContactOrderMatch({
+    ids: { instore: 'p1', ecommerce: 'u1' },
+    email: 'Ada@X.com',
+    phone: ' 0801 ',
+  });
+  // user + POS customerId + email + (shipping phone, POS phone)
+  assert.strictEqual(or.length, 5);
+  assert.deepStrictEqual(or[0], { user: 'u1' });
+  assert.deepStrictEqual(or[1], { 'paymentDetails.customer.customerId': 'p1' });
+  // email is matched case-insensitively + anchored
+  assert.ok(or[2]['shippingAddress.email'] instanceof RegExp);
+  assert.strictEqual(or[2]['shippingAddress.email'].source, '^ada@x\\.com$');
+  assert.ok(or[2]['shippingAddress.email'].flags.includes('i'));
+  // phone is trimmed and matched on both stores
+  assert.deepStrictEqual(or[3], { 'shippingAddress.phone': '0801' });
+  assert.deepStrictEqual(or[4], { 'paymentDetails.customer.phone': '0801' });
+});
+
+test('buildContactOrderMatch returns [] for an identity-less contact', () => {
+  assert.deepStrictEqual(buildContactOrderMatch({ ids: {} }), []);
+  assert.deepStrictEqual(buildContactOrderMatch({}), []);
+});
+
+test('parseOrderListQuery validates status, builds an inclusive date range, clamps paging', () => {
+  const r = parseOrderListQuery({
+    status: 'delivered',
+    from: '2026-01-01',
+    to: '2026-01-31',
+    page: '3',
+    limit: '25',
+  });
+  assert.strictEqual(r.match.status, 'delivered');
+  assert.ok(r.match.placedAt.$gte instanceof Date);
+  assert.ok(r.match.placedAt.$lte instanceof Date);
+  // `to` is pushed to the end of its day so the whole day is included
+  assert.strictEqual(r.match.placedAt.$lte.getHours(), 23);
+  assert.strictEqual(r.page, 3);
+  assert.strictEqual(r.limit, 25);
+  assert.strictEqual(r.skip, 50);
+});
+
+test('parseOrderListQuery ignores a bogus status + clamps limit to 1..100, page to >=1', () => {
+  assert.strictEqual(parseOrderListQuery({ status: 'bogus' }).match.status, undefined);
+  assert.strictEqual(parseOrderListQuery({ limit: '999' }).limit, 100);
+  assert.strictEqual(parseOrderListQuery({ limit: '-5' }).limit, 1); // clamped up to 1
+  assert.strictEqual(parseOrderListQuery({ limit: '0' }).limit, 20); // 0 → falsy → default
+  assert.strictEqual(parseOrderListQuery({ page: '-2' }).page, 1);
+  const def = parseOrderListQuery({});
+  assert.strictEqual(def.page, 1);
+  assert.strictEqual(def.limit, 20);
+  assert.deepStrictEqual(def.match, {});
+});
+
+// ── order index + per-contact totals ──────────────────────────────────────────
+
+const ORDERS = [
+  { _id: 'o1', user: 'u1', totalAmount: 1000 },                                    // ecommerce account
+  { _id: 'o2', shippingAddress: { email: 'ADA@x.com', phone: '0801' }, totalAmount: 500 }, // guest, same person as u1/ada
+  { _id: 'o3', paymentDetails: { customer: { customerId: 'p1', phone: '0801' } }, totalAmount: 250 }, // POS named customer
+  { _id: 'o4', paymentDetails: { customer: { phone: '0900' } }, totalAmount: 80 }, // POS walk-in, other phone
+];
+
+test('buildOrderIndex buckets each order under every identity key it carries', () => {
+  const idx = buildOrderIndex(ORDERS);
+  assert.strictEqual(idx.amount.get('o1'), 1000);
+  assert.deepStrictEqual([...idx.byUser.get('u1')], ['o1']);
+  assert.deepStrictEqual([...idx.byCustomerId.get('p1')], ['o3']);
+  assert.deepStrictEqual([...idx.byEmail.get('ada@x.com')], ['o2']);
+  // both o2 (shipping) and o3 (POS) carry phone 0801
+  assert.deepStrictEqual([...idx.byPhone.get('0801')].sort(), ['o2', 'o3']);
+});
+
+test('contactOrderTotals counts each matching order once across all keys', () => {
+  const idx = buildOrderIndex(ORDERS);
+  // a "both" contact owning u1 + p1 + ada@x.com + 0801 matches o1,o2,o3 (not o4)
+  const totals = contactOrderTotals(
+    { ids: { instore: 'p1', ecommerce: 'u1' }, email: 'ada@x.com', phone: '0801' },
+    idx
+  );
+  assert.strictEqual(totals.totalOrders, 3);
+  assert.strictEqual(totals.totalSpent, 1750);
+});
+
+test('contactOrderTotals is zero for an unmatched / index-less contact', () => {
+  const idx = buildOrderIndex(ORDERS);
+  assert.deepStrictEqual(
+    contactOrderTotals({ ids: { ecommerce: 'nobody' }, email: '', phone: '' }, idx),
+    { totalOrders: 0, totalSpent: 0 }
+  );
+  assert.deepStrictEqual(
+    contactOrderTotals({ ids: { ecommerce: 'u1' } }, null),
+    { totalOrders: 0, totalSpent: 0 }
+  );
 });

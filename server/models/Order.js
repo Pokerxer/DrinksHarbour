@@ -221,11 +221,15 @@ const orderSchema = new Schema(
       channel: String,
       change: Number,
       splitPayments: [{ method: String, amount: Number }],
-      // POS customer snapshot (walk-in or named customer)
+      // POS customer snapshot (walk-in or named customer). `customerId` links
+      // back to the POSCustomer record when a named customer was attached at the
+      // till — it's what the Contacts directory matches an in-store contact's
+      // orders on (walk-ins leave it null and are matched by phone only).
       customer: {
-        firstName: String,
-        lastName:  String,
-        phone:     String,
+        firstName:  String,
+        lastName:   String,
+        phone:      String,
+        customerId: { type: ObjectId, ref: 'POSCustomer', default: null },
       },
     },
 
