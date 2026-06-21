@@ -172,6 +172,15 @@ const userSchema = new Schema(
       min: 0,
     },
 
+    // Authoritative PLATFORM-WIDE stored-value balance (NGN), tenant-agnostic and
+    // DISTINCT from the tenant-scoped `walletBalance` above. Mutated only alongside
+    // an appended PlatformWalletTransaction (platformWallet.service); never negative.
+    platformWalletBalance: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     // ────────────────────────────────────────────────
     // Customer preferences & personalization
     // ────────────────────────────────────────────────
