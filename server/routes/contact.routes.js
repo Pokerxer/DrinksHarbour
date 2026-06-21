@@ -26,4 +26,10 @@ router.get('/:source/:id/wallet', tenantAdminOrSuperAdmin, c.getContactWallet);
 router.post('/:source/:id/wallet/topup', tenantAdminOrSuperAdmin, c.topUpWallet);
 router.post('/:source/:id/wallet/adjust', tenantAdminOrSuperAdmin, c.adjustWallet);
 
+// Loyalty points (in-store only): read the ledger + balance, then admin award /
+// adjust. Mutations are atomic and never overdraw — see the controller.
+router.get('/:source/:id/loyalty', tenantAdminOrSuperAdmin, c.getContactLoyalty);
+router.post('/:source/:id/loyalty/award', tenantAdminOrSuperAdmin, c.awardLoyalty);
+router.post('/:source/:id/loyalty/adjust', tenantAdminOrSuperAdmin, c.adjustLoyalty);
+
 module.exports = router;

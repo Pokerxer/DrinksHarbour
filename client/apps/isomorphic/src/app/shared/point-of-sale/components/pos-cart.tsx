@@ -1515,6 +1515,9 @@ export default function POSCart() {
         phone: c.phone || '',
         loyaltyPoints: c.loyaltyPoints,
         walletBalance: c.walletBalance,
+        // Customer-assigned pricelist drives the POS auto-pick (server re-validates).
+        pricelistId: c.pricelist || undefined,
+        pricelistName: c.pricelistName || undefined,
       });
     }
     setShowCustomer(false);

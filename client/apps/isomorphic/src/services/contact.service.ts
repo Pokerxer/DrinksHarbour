@@ -33,6 +33,8 @@ export interface Contact {
   walletBalance: number;
   totalSpent: number;
   totalOrders: number;
+  /** Customer-assigned pricelist id (in-store only); null when none. */
+  pricelist: string | null;
   notes: string;
   createdAt: string;
 }
@@ -56,6 +58,8 @@ export interface ContactInput {
   loyaltyPoints?: number;
   totalSpent?: number;
   totalOrders?: number;
+  /** Assigned pricelist id; send `null` to clear. In-store only. */
+  pricelist?: string | null;
   /** Profile photo. Send `null` to remove the current one. */
   avatar?: AvatarInput | null;
   /** Ecommerce-only: the one field an admin may change on a storefront customer. */
@@ -146,6 +150,69 @@ export interface WalletAdjustInput {
   type: 'credit' | 'debit';
   amount: number;
   reason?: string;
+}
+
+// ── Loyalty points (in-store only) ─────────────────────────────────────────────
+
+export type LoyaltyTxType = 'earn' | 'redeem' | 'adjustment' | 'bonus' | 'expiry';
+
+export interface LoyaltyTransaction {
+  _id: string;
+  type: LoyaltyTxType;
+  /** Positive magnitude; signed for 'adjustment' (negative deducts). Direction comes
+   * from `type` (earn/bonus add, redeem/expiry subtract) or, for adjustment, the sign. */
+  points: number;
+  /** Owner balance immediately after this transaction. */
+  balanceAfter: number;
+  reason: string;
+  reference?: string;
+  relatedOrder?: { _id: string; orderNumber: string } | null;
+  createdBy?: { _id: string; firstName?: string; lastName?: string } | null;
+  createdAt: string;
+}
+
+export interface LoyaltyStats {
+  /** Authoritative current balance, read from the in-store owner record. */
+  balance: number;
+  earned: number;
+  redeemed: number;
+  net: number;
+  count: number;
+  lastActivityAt: string | null;
+}
+
+export interface ContactLoyalty {
+  contact: Contact;
+  balance: number;
+  /** True for an ecommerce-only contact — loyalty is tracked for in-store only. */
+  instoreOnly: boolean;
+  stats: LoyaltyStats;
+  transactions: LoyaltyTransaction[];
+  pagination: ContactOrdersPagination;
+}
+
+/** Type / date-range / pagination filters for a contact's loyalty ledger. */
+export interface LoyaltyParams {
+  type?: LoyaltyTxType;
+  /** ISO date (yyyy-mm-dd) lower bound, inclusive. */
+  from?: string;
+  /** ISO date (yyyy-mm-dd) upper bound, inclusive of the whole day. */
+  to?: string;
+  page?: number;
+  limit?: number;
+}
+
+/** Admin award: grants points (a bonus). */
+export interface LoyaltyAwardInput {
+  points: number;
+  reason: string;
+}
+
+/** Admin correction: a credit OR debit (a debit may not overdraw). */
+export interface LoyaltyAdjustInput {
+  direction: 'credit' | 'debit';
+  points: number;
+  reason: string;
 }
 
 /** Status / date-range / pagination filters for a contact's orders. */
@@ -363,6 +430,66 @@ export const contactService = {
         }
       ),
       'Failed to adjust wallet'
+    );
+  },
+
+  /** Loyalty points: balance + lifetime stats + a paginated, filterable ledger. */
+  async getContactLoyalty(
+    key: string,
+    token: string,
+    params?: LoyaltyParams
+  ): Promise<{ success: boolean; data: ContactLoyalty }> {
+    const qs = new URLSearchParams();
+    if (params?.type) qs.set('type', params.type);
+    if (params?.from) qs.set('from', params.from);
+    if (params?.to) qs.set('to', params.to);
+    if (params?.page) qs.set('page', String(params.page));
+    if (params?.limit) qs.set('limit', String(params.limit));
+    const suffix = qs.toString() ? `?${qs}` : '';
+    return handle(
+      await fetch(
+        `${API_URL}/api/contacts/${key.replace(':', '/')}/loyalty${suffix}`,
+        { headers: auth(token) }
+      ),
+      'Failed to load loyalty'
+    );
+  },
+
+  /** Admin award — grants points. Returns the new balance + the ledger row. */
+  async awardLoyalty(
+    key: string,
+    token: string,
+    data: LoyaltyAwardInput
+  ): Promise<{
+    success: boolean;
+    data: { balance: number; transaction: LoyaltyTransaction };
+  }> {
+    return handle(
+      await fetch(`${API_URL}/api/contacts/${key.replace(':', '/')}/loyalty/award`, {
+        method: 'POST',
+        headers: jsonAuth(token),
+        body: JSON.stringify(data),
+      }),
+      'Failed to award points'
+    );
+  },
+
+  /** Admin correction — adds OR deducts points (a deduction may not overdraw). */
+  async adjustLoyalty(
+    key: string,
+    token: string,
+    data: LoyaltyAdjustInput
+  ): Promise<{
+    success: boolean;
+    data: { balance: number; transaction: LoyaltyTransaction };
+  }> {
+    return handle(
+      await fetch(`${API_URL}/api/contacts/${key.replace(':', '/')}/loyalty/adjust`, {
+        method: 'POST',
+        headers: jsonAuth(token),
+        body: JSON.stringify(data),
+      }),
+      'Failed to adjust points'
     );
   },
 };

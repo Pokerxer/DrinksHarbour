@@ -116,9 +116,12 @@ export const posApi = {
     }>(`${API_URL}/api/pos/product-meta`, { headers: authHeaders(token) });
   },
 
-  async getPricelists(token: string, shopId?: string) {
+  async getPricelists(token: string, shopId?: string, customerId?: string) {
     const qs = new URLSearchParams();
     if (shopId) qs.set('shopId', shopId);
+    // When a saved customer is selected, the server folds their assigned pricelist
+    // into the allowed set and resolves it as the auto-pick.
+    if (customerId) qs.set('customerId', customerId);
     return request<{ pricelists: any[]; resolvedId: string | null }>(
       `${API_URL}/api/pos/pricelists?${qs}`,
       { headers: authHeaders(token) }
@@ -459,14 +462,16 @@ export const posApi = {
     id: string,
     earned: number,
     redeemed: number,
-    orderTotal: number
+    orderTotal: number,
+    // Links the earn/redeem ledger rows to the sale so a refund/void can reverse them.
+    orderId?: string
   ) {
     return request<{ customer: POSCustomer }>(
       `${API_URL}/api/pos/customers/${id}/loyalty`,
       {
         method: 'PATCH',
         headers: authHeaders(token),
-        body: JSON.stringify({ earned, redeemed, orderTotal }),
+        body: JSON.stringify({ earned, redeemed, orderTotal, orderId }),
       }
     );
   },

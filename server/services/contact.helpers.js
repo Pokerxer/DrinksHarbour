@@ -24,6 +24,11 @@ function isValidEmail(email) {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
+/** True for a 24-char hex string (Mongo ObjectId shape). DB-less guard. */
+function isObjectIdLike(value) {
+  return typeof value === 'string' && /^[a-fA-F0-9]{24}$/.test(value.trim());
+}
+
 /** Lower-cased, trimmed email used as a dedupe key. '' when absent. */
 function normalizeEmail(email) {
   return typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -91,6 +96,9 @@ function normalizePosCustomer(doc = {}) {
     walletBalance: doc.walletBalance || 0,
     totalSpent: doc.totalSpent || 0,
     totalOrders: doc.totalOrders || 0,
+    // Customer-assigned pricelist id (or null) — drives the POS sell-page
+    // auto-pick. In-store only; ecommerce contacts never carry one.
+    pricelist: doc.pricelist ? String(doc.pricelist) : null,
     notes: doc.notes || '',
     createdAt: doc.createdAt,
   };
@@ -112,6 +120,8 @@ function normalizeEcommerceUser(doc = {}) {
     walletBalance: doc.walletBalance || 0,
     totalSpent: 0,
     totalOrders: 0,
+    // Pricelists are an in-store concept; ecommerce contacts never carry one.
+    pricelist: null,
     notes: '',
     createdAt: doc.createdAt,
   };
@@ -159,6 +169,9 @@ function mergePair(ins, eco) {
     walletBalance: ins.walletBalance || 0,
     totalSpent: (ins.totalSpent || 0) + (eco.totalSpent || 0),
     totalOrders: (ins.totalOrders || 0) + (eco.totalOrders || 0),
+    // The pricelist binding is single-sided: it lives on the in-store record a
+    // 'both' contact routes to (see contactKey).
+    pricelist: ins.pricelist || null,
     notes: ins.notes || '',
     createdAt: earliest(ins.createdAt, eco.createdAt),
   };
@@ -547,6 +560,21 @@ function validateContactUpdate(source, body = {}) {
   if (notes !== undefined) changes.notes = notes ? String(notes).trim() : '';
   if ('avatar' in body) changes.avatar = sanitizeAvatar(body.avatar) || undefined;
 
+  // Customer-assigned pricelist: an ObjectId string sets the binding, null/''
+  // clears it; anything else is rejected. The id's tenant-membership is enforced
+  // downstream at pricing time (pricelist.service), so a stale id never charges
+  // an off-tenant price.
+  if ('pricelist' in body) {
+    const { pricelist } = body;
+    if (pricelist === null || pricelist === '') {
+      changes.pricelist = null;
+    } else if (isObjectIdLike(pricelist)) {
+      changes.pricelist = String(pricelist).trim();
+    } else {
+      return { ok: false, message: 'Pricelist is not a valid id' };
+    }
+  }
+
   if (loyaltyPoints !== undefined) {
     const lp = num(loyaltyPoints);
     if (lp === undefined) return { ok: false, message: 'Loyalty points must be a number' };
@@ -662,12 +690,126 @@ function summarizeWallet(transactions = []) {
   };
 }
 
+// ── Loyalty points ──────────────────────────────────────────────────────────────
+//
+// A per-contact loyalty-points balance held on the in-store POSCustomer record
+// (loyaltyPoints) plus an append-only ledger of LoyaltyTransactions. Loyalty is
+// IN-STORE ONLY — ecommerce customers have no points — so the owner is always the
+// POSCustomer; a 'both' contact uses its in-store record. These helpers are pure so
+// the points rules (positive-integer points, signed adjustments, debit-direction
+// overdraw guard, ledger roll-up) can be unit-tested without Mongo — the controller
+// pairs them with an atomic balance mutation (loyalty.service.js).
+
+// LoyaltyTransaction.type enum. Direction is derived from the type: 'earn'/'bonus'
+// add points; 'redeem'/'expiry' subtract them; 'adjustment' is signed (a positive
+// `points` adds, a negative one subtracts).
+const LOYALTY_TX_TYPES = ['earn', 'redeem', 'adjustment', 'bonus', 'expiry'];
+
+// Debit-direction types always lower the balance (subtract their magnitude). A
+// signed 'adjustment' with negative points is a debit too — handled separately.
+const LOYALTY_DEBIT_TYPES = ['redeem', 'expiry'];
+
+// Free-text reason cap, mirroring the model's maxlength.
+const LOYALTY_REASON_MAX = 280;
+
+/**
+ * Signed effect a transaction has on the points balance. Add-types contribute
+ * their magnitude; debit-types subtract it; a signed 'adjustment' contributes its
+ * own sign. Shared by validateLoyaltyTx's overdraw guard, summarizeLoyalty and the
+ * service's atomic $inc so the three never disagree on direction.
+ */
+function loyaltyDelta(type, points) {
+  const n = Number(points) || 0;
+  if (type === 'adjustment') return n;          // signed
+  if (LOYALTY_DEBIT_TYPES.includes(type)) return -Math.abs(n);
+  return Math.abs(n);                            // earn / bonus
+}
+
+/**
+ * Validate + normalise a loyalty transaction request. Points must be a positive
+ * integer for every type except 'adjustment', which is signed (a non-zero integer,
+ * negative to deduct). Type must be allowed; reason is required, trimmed and
+ * length-capped. When `currentBalance` is supplied, a debit-direction transaction
+ * that would drive the balance below 0 is refused (the balance never goes negative).
+ * @returns {{ ok: true, value: { type, points, reason } } | { ok: false, message: string }}
+ */
+function validateLoyaltyTx(body = {}, currentBalance) {
+  const { type, points, reason } = body;
+
+  if (!LOYALTY_TX_TYPES.includes(type)) {
+    return { ok: false, message: `Type must be one of: ${LOYALTY_TX_TYPES.join(', ')}` };
+  }
+
+  const n = Number(points);
+  if (!Number.isInteger(n)) {
+    return { ok: false, message: 'Points must be an integer' };
+  }
+  if (type === 'adjustment') {
+    if (n === 0) return { ok: false, message: 'Adjustment points cannot be zero' };
+  } else if (n <= 0) {
+    return { ok: false, message: 'Points must be a positive integer' };
+  }
+
+  const r = reason === undefined || reason === null ? '' : String(reason).trim();
+  if (!r) {
+    return { ok: false, message: 'Reason is required' };
+  }
+  if (r.length > LOYALTY_REASON_MAX) {
+    return { ok: false, message: `Reason must be ${LOYALTY_REASON_MAX} characters or fewer` };
+  }
+
+  if (currentBalance !== undefined) {
+    const delta = loyaltyDelta(type, n);
+    if (delta < 0 && (Number(currentBalance) || 0) + delta < 0) {
+      return { ok: false, message: 'Insufficient loyalty points' };
+    }
+  }
+
+  return { ok: true, value: { type, points: n, reason: r } };
+}
+
+/**
+ * Roll a contact's ledger up into the headline figures the /loyalty page renders:
+ * lifetime points earned vs redeemed, the net (== current balance for a consistent
+ * ledger), the transaction count and the most recent activity timestamp. Pure (no
+ * DB / no Date.now). Each row is classified by its signed effect (loyaltyDelta):
+ * positive contributes to `earned`, negative to `redeemed`.
+ */
+function summarizeLoyalty(transactions = []) {
+  let earned = 0;
+  let redeemed = 0;
+  let lastActivityAt = null;
+
+  for (const t of transactions) {
+    const delta = loyaltyDelta(t.type, t.points);
+    if (delta >= 0) earned += delta;
+    else redeemed += -delta;
+
+    const when = t.createdAt;
+    const ts = when ? new Date(when).getTime() : NaN;
+    if (!Number.isNaN(ts) && (lastActivityAt === null || ts > lastActivityAt)) {
+      lastActivityAt = ts;
+    }
+  }
+
+  return {
+    earned,
+    redeemed,
+    net: earned - redeemed,
+    count: transactions.length,
+    lastActivityAt: lastActivityAt === null ? null : new Date(lastActivityAt).toISOString(),
+  };
+}
+
 module.exports = {
   CONTACT_SOURCES,
   SETTABLE_STATUSES,
   ORDER_STATUSES,
   WALLET_TX_TYPES,
   WALLET_REASON_MAX,
+  LOYALTY_TX_TYPES,
+  LOYALTY_DEBIT_TYPES,
+  LOYALTY_REASON_MAX,
   isValidEmail,
   normalizeEmail,
   normalizePhone,
@@ -690,4 +832,7 @@ module.exports = {
   validateWalletTx,
   applyWalletDelta,
   summarizeWallet,
+  loyaltyDelta,
+  validateLoyaltyTx,
+  summarizeLoyalty,
 };

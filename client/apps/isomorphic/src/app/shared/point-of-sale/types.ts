@@ -24,6 +24,10 @@ export interface POSCustomer {
   totalSpent?: number;
   totalOrders?: number;
   notes?: string;
+  // Customer-assigned pricelist (in-store only): id + label for the POS
+  // sell-page auto-pick. Absent/null when the customer has no assigned pricelist.
+  pricelist?: string | null;
+  pricelistName?: string;
 }
 
 export interface POSTenantBankAccount {

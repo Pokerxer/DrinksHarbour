@@ -18,7 +18,7 @@ import {
   findMatchingPricelistRules,
   applyRuleTransform,
 } from '@/app/shared/point-of-sale/utils';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 // ─── Auth (persisted) ────────────────────────────────────────────────────────
 
@@ -149,6 +149,8 @@ export type CartCustomer = {
   phone: string;
   loyaltyPoints?: number; // live balance fetched from DB on customer selection
   walletBalance?: number; // live store-credit balance fetched from DB on customer selection
+  pricelistId?: string; // customer-assigned pricelist id — auto-picked on selection
+  pricelistName?: string; // its label, for the "from customer" badge on the selector
 };
 
 /** A reward/discount the cashier has explicitly applied to the current cart. */
@@ -1268,28 +1270,63 @@ export const usePOSPricelist = () => {
   };
 };
 
-/** Shop-scoped allowed pricelists + auto-resolved id (fetched on shop change). */
+/** The active terminal's selected-customer id ('' for a walk-in / no DB customer). */
+function useActiveCartCustomer(): CartCustomer {
+  const { terminal } = usePOSAuth();
+  const cartAtom =
+    terminal === 'wholesale' ? cartsAtoms.wholesale : cartsAtoms.retail;
+  const activeCartAtom =
+    terminal === 'wholesale'
+      ? activeCartIdAtoms.wholesale
+      : activeCartIdAtoms.retail;
+  const carts = useAtomValue(cartAtom);
+  const activeCartId = useAtomValue(activeCartAtom);
+  const activeCart =
+    carts.find((c) => c.id === activeCartId) ?? carts[0] ?? INITIAL_CART;
+  return activeCart.customer;
+}
+
+/**
+ * Shop-scoped allowed pricelists + auto-resolved id. Keyed by shop AND the
+ * selected customer: a customer with an assigned pricelist changes both the
+ * auto-resolved id and the allowed set (their pricelist is folded in, with
+ * rules), so selecting/clearing a customer refetches. The customer id is read
+ * from the active cart, so every `load(token)` caller stays consistent.
+ */
 export const usePOSAvailablePricelists = () => {
   const { activeShopId } = usePOSActiveShop();
   const shopKey = effectiveShopKey(activeShopId);
+  const customerId = useActiveCartCustomer().customerId ?? '';
   const [pricelists, setPricelists] = useAtom(posAllowedPricelistsAtom);
   const [resolvedId, setResolvedId] = useAtom(posResolvedPricelistIdAtom);
   const [loadedShop, setLoadedShop] = useAtom(posPricelistLoadedShopAtom);
 
   const load = useCallback(
     async (token: string) => {
-      if (loadedShop === shopKey) return;
+      const key = `${shopKey}::${customerId}`;
+      if (loadedShop === key) return;
       try {
         const { posApi } = await import('@/app/shared/point-of-sale/api');
-        const data = await posApi.getPricelists(token, shopKey);
+        const data = await posApi.getPricelists(
+          token,
+          shopKey,
+          customerId || undefined
+        );
         setPricelists(data.pricelists || []);
         setResolvedId(data.resolvedId ?? null);
-        setLoadedShop(shopKey);
+        setLoadedShop(key);
       } catch {
         /* silent — picker shows empty gracefully */
       }
     },
-    [loadedShop, shopKey, setPricelists, setResolvedId, setLoadedShop]
+    [
+      loadedShop,
+      shopKey,
+      customerId,
+      setPricelists,
+      setResolvedId,
+      setLoadedShop,
+    ]
   );
 
   const invalidate = useCallback(() => setLoadedShop(null), [setLoadedShop]);
@@ -1297,10 +1334,58 @@ export const usePOSAvailablePricelists = () => {
   return {
     pricelists,
     resolvedId,
-    loaded: loadedShop === shopKey,
+    // `loaded` is true once data for the active shop has been fetched (under any
+    // customer key), so the picker renders without flicker while a customer
+    // selection triggers a background refetch.
+    loaded:
+      typeof loadedShop === 'string' && loadedShop.startsWith(`${shopKey}::`),
     load,
     invalidate,
   };
+};
+
+/**
+ * Keeps the active terminal's selected pricelist in sync with the selected
+ * customer: when a customer with an assigned pricelist is chosen, that pricelist
+ * is actively selected AND applied (it wins over any stale manual override);
+ * clearing the customer (or choosing one without a pricelist) reverts to the
+ * shop's auto-resolved pricelist. The cashier can still manually pick a different
+ * pricelist afterwards — that only re-syncs when the customer next changes, so a
+ * deliberate override is never clobbered mid-sale.
+ *
+ * Mount ONCE on the sell page (POSSell) so exactly one effect drives the sync.
+ */
+export const usePOSCustomerPricelistSync = (token: string) => {
+  const { activeShopId } = usePOSActiveShop();
+  const shopKey = effectiveShopKey(activeShopId);
+  const customer = useActiveCartCustomer();
+  const { load } = usePOSAvailablePricelists();
+  const [, setOverrides] = useAtom(posPricelistOverrideAtom);
+
+  // Refetch the allowed/resolved set whenever the shop or customer changes, so
+  // the customer's pricelist (with rules) is folded into `allowed` and pricing
+  // can resolve it. `load` is keyed by shop+customer and self-deduplicates.
+  useEffect(() => {
+    if (token) load(token);
+  }, [token, load]);
+
+  // Apply (or revert) the customer's pricelist — but only on an actual change of
+  // the active shop+customer, so we never fight a manual cashier override.
+  const lastKeyRef = useRef<string | null>(null);
+  const cid = customer.customerId ?? '';
+  const plId = customer.pricelistId ?? '';
+  useEffect(() => {
+    const key = `${shopKey}::${cid}`;
+    if (lastKeyRef.current === key) return;
+    lastKeyRef.current = key;
+    setOverrides((prev) => {
+      if (plId) return { ...prev, [shopKey]: plId };
+      // No assigned pricelist → drop the override so Auto (shop) resolves.
+      const next = { ...prev };
+      delete next[shopKey];
+      return next;
+    });
+  }, [shopKey, cid, plId, setOverrides]);
 };
 
 // ─── Sale refresh signal ──────────────────────────────────────────────────────

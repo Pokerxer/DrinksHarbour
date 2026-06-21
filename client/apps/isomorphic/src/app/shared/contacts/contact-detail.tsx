@@ -38,6 +38,7 @@ import {
   type ContactStatus,
 } from '@/services/contact.service';
 import { uploadService } from '@/services/upload.service';
+import { pricelistService } from '@/services/pricelist.service';
 import { routes } from '@/config/routes';
 import { SOURCE_META, fullName, initials, contactToForm } from './contact-form';
 
@@ -138,6 +139,8 @@ export default function ContactDetail({ contactKey }: { contactKey: string }) {
   const [gearOpen, setGearOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<DetailTab>('notes');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  // Tenant pricelists for the in-store customer-assignment select.
+  const [pricelists, setPricelists] = useState<{ _id: string; name: string }[]>([]);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const isDirty = !!form && JSON.stringify(form) !== baseline;
 
@@ -178,6 +181,15 @@ export default function ContactDetail({ contactKey }: { contactKey: string }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Load the tenant's pricelists once (for the in-store assignment select).
+  useEffect(() => {
+    if (!token) return;
+    pricelistService
+      .list(token)
+      .then((res) => setPricelists(res.data?.pricelists ?? []))
+      .catch(() => {});
+  }, [token]);
 
   // Warn before leaving with unsaved edits.
   useEffect(() => {
@@ -223,6 +235,7 @@ export default function ContactDetail({ contactKey }: { contactKey: string }) {
             loyaltyPoints: form.loyaltyPoints,
             totalSpent: form.totalSpent,
             totalOrders: form.totalOrders,
+            pricelist: form.pricelist ?? null,
           };
       const res = await contactService.updateContact(
         contact.key,
@@ -478,6 +491,7 @@ export default function ContactDetail({ contactKey }: { contactKey: string }) {
                 icon={<PiCoins />}
                 label="Loyalty"
                 count={contact.loyaltyPoints}
+                href={`${routes.contacts.detail(contact.key)}/loyalty`}
                 highlight={contact.loyaltyPoints > 0}
               />
               <SmartButton
@@ -826,6 +840,23 @@ export default function ContactDetail({ contactKey }: { contactKey: string }) {
                     }
                     className={INPUT_CLS}
                   />
+                </Field>
+                <Field label="Pricelist">
+                  <select
+                    value={form.pricelist ?? ''}
+                    onChange={(e) => set('pricelist', e.target.value)}
+                    className={INPUT_CLS}
+                  >
+                    <option value="">No pricelist (use shop default)</option>
+                    {pricelists.map((pl) => (
+                      <option key={pl._id} value={pl._id}>
+                        {pl.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-[11px] text-gray-400">
+                    Auto-selected for this customer on the POS sell page.
+                  </p>
                 </Field>
               </div>
             )}

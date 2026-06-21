@@ -24,6 +24,8 @@ const {
   validateWalletTx,
   applyWalletDelta,
   summarizeWallet,
+  validateLoyaltyTx,
+  summarizeLoyalty,
 } = require('../services/contact.helpers');
 
 const TENANT = 'tenant-1';
@@ -364,6 +366,43 @@ test('validateContactUpdate (instore) allows clearing email + phone', () => {
   assert.strictEqual(r.changes.phone, '');
 });
 
+test('validateContactUpdate (instore) accepts a valid pricelist ObjectId', () => {
+  const id = '507f1f77bcf86cd799439011';
+  const r = validateContactUpdate('instore', { pricelist: id });
+  assert.ok(r.ok);
+  assert.strictEqual(r.changes.pricelist, id);
+});
+
+test('validateContactUpdate (instore) clears the pricelist on null or empty string', () => {
+  assert.strictEqual(validateContactUpdate('instore', { pricelist: null }).changes.pricelist, null);
+  assert.strictEqual(validateContactUpdate('instore', { pricelist: '' }).changes.pricelist, null);
+});
+
+test('validateContactUpdate (instore) rejects a junk pricelist id', () => {
+  assert.strictEqual(validateContactUpdate('instore', { pricelist: 'not-an-id' }).ok, false);
+  assert.strictEqual(validateContactUpdate('instore', { pricelist: 123 }).ok, false);
+});
+
+test('validateContactUpdate (instore) leaves pricelist untouched when omitted', () => {
+  const r = validateContactUpdate('instore', { firstName: 'Ada' });
+  assert.ok(r.ok);
+  assert.strictEqual('pricelist' in r.changes, false);
+});
+
+test('validateContactUpdate (ecommerce) ignores a pricelist field', () => {
+  // Pricelists are an in-store concept; the ecommerce branch never accepts one.
+  const r = validateContactUpdate('ecommerce', { pricelist: '507f1f77bcf86cd799439011' });
+  assert.ok(r.ok);
+  assert.strictEqual('pricelist' in r.changes, false);
+});
+
+test('normalizePosCustomer surfaces an assigned pricelist id', () => {
+  const c = normalizePosCustomer({ _id: 'p1', firstName: 'Ada', pricelist: '507f1f77bcf86cd799439011' });
+  assert.strictEqual(c.pricelist, '507f1f77bcf86cd799439011');
+  // absent → null, never undefined
+  assert.strictEqual(normalizePosCustomer({ _id: 'p2', firstName: 'B' }).pricelist, null);
+});
+
 // ── order matching ────────────────────────────────────────────────────────────
 
 test('buildContactOrderMatch matches a both-contact across user, POS id, email + phone', () => {
@@ -603,6 +642,87 @@ test('summarizeWallet handles an empty ledger', () => {
   assert.deepStrictEqual(summarizeWallet([]), {
     credited: 0,
     debited: 0,
+    net: 0,
+    count: 0,
+    lastActivityAt: null,
+  });
+});
+
+// ── loyalty: tx validation ───────────────────────────────────────────────────
+
+test('validateLoyaltyTx accepts an allowed type + positive integer points + reason', () => {
+  const r = validateLoyaltyTx({ type: 'bonus', points: 50, reason: ' Welcome ' });
+  assert.ok(r.ok);
+  assert.deepStrictEqual(r.value, { type: 'bonus', points: 50, reason: 'Welcome' });
+  // numeric-string points coerce; earn is an add-type
+  const s = validateLoyaltyTx({ type: 'earn', points: '120', reason: 'Sale' });
+  assert.ok(s.ok);
+  assert.strictEqual(s.value.points, 120);
+});
+
+test('validateLoyaltyTx rejects bad types and non-positive / non-integer points', () => {
+  assert.strictEqual(validateLoyaltyTx({ type: 'bogus', points: 10, reason: 'x' }).ok, false);
+  assert.strictEqual(validateLoyaltyTx({ type: 'earn', points: 0, reason: 'x' }).ok, false);
+  assert.strictEqual(validateLoyaltyTx({ type: 'earn', points: -5, reason: 'x' }).ok, false);
+  assert.strictEqual(validateLoyaltyTx({ type: 'earn', points: 2.5, reason: 'x' }).ok, false);
+  assert.strictEqual(validateLoyaltyTx({ type: 'earn', points: 'abc', reason: 'x' }).ok, false);
+  assert.strictEqual(validateLoyaltyTx({ points: 10, reason: 'x' }).ok, false); // missing type
+});
+
+test('validateLoyaltyTx requires a non-empty reason and caps an over-long one', () => {
+  assert.strictEqual(validateLoyaltyTx({ type: 'bonus', points: 10 }).ok, false); // missing reason
+  assert.strictEqual(validateLoyaltyTx({ type: 'bonus', points: 10, reason: '   ' }).ok, false);
+  const long = 'x'.repeat(300);
+  assert.strictEqual(validateLoyaltyTx({ type: 'bonus', points: 10, reason: long }).ok, false);
+});
+
+test('validateLoyaltyTx treats adjustment as signed (negative allowed, zero rejected)', () => {
+  const minus = validateLoyaltyTx({ type: 'adjustment', points: -30, reason: 'Fix' });
+  assert.ok(minus.ok);
+  assert.strictEqual(minus.value.points, -30);
+  const plus = validateLoyaltyTx({ type: 'adjustment', points: 30, reason: 'Fix' });
+  assert.ok(plus.ok);
+  assert.strictEqual(plus.value.points, 30);
+  assert.strictEqual(validateLoyaltyTx({ type: 'adjustment', points: 0, reason: 'Fix' }).ok, false);
+});
+
+test('validateLoyaltyTx guards debit-direction against driving the balance below 0', () => {
+  // a redeem larger than the balance is refused
+  const over = validateLoyaltyTx({ type: 'redeem', points: 200, reason: 'Spend' }, 150);
+  assert.strictEqual(over.ok, false);
+  assert.ok(/insufficient/i.test(over.message));
+  // a redeem to exactly zero is allowed
+  assert.ok(validateLoyaltyTx({ type: 'redeem', points: 150, reason: 'Spend' }, 150).ok);
+  // a negative adjustment is a debit-direction too
+  assert.strictEqual(validateLoyaltyTx({ type: 'adjustment', points: -200, reason: 'Fix' }, 150).ok, false);
+  // add-types never overdraw regardless of balance
+  assert.ok(validateLoyaltyTx({ type: 'earn', points: 999, reason: 'Sale' }, 0).ok);
+});
+
+// ── loyalty: ledger summary ──────────────────────────────────────────────────
+
+const LOYALTY_TX = [
+  { type: 'earn', points: 120, createdAt: '2026-01-10' },
+  { type: 'redeem', points: 50, createdAt: '2026-02-01' },
+  { type: 'bonus', points: 100, createdAt: '2026-01-20' },
+  { type: 'adjustment', points: 30, createdAt: '2026-01-05' },   // signed +: earned
+  { type: 'adjustment', points: -10, createdAt: '2026-01-06' },  // signed −: redeemed
+  { type: 'expiry', points: 20, createdAt: '2026-01-07' },
+];
+
+test('summarizeLoyalty totals earned vs redeemed, net, count and last activity', () => {
+  const s = summarizeLoyalty(LOYALTY_TX);
+  assert.strictEqual(s.earned, 250);   // earn 120 + bonus 100 + adjustment +30
+  assert.strictEqual(s.redeemed, 80);  // redeem 50 + expiry 20 + adjustment −10
+  assert.strictEqual(s.net, 170);
+  assert.strictEqual(s.count, 6);
+  assert.strictEqual(s.lastActivityAt, new Date('2026-02-01').toISOString());
+});
+
+test('summarizeLoyalty handles an empty ledger', () => {
+  assert.deepStrictEqual(summarizeLoyalty([]), {
+    earned: 0,
+    redeemed: 0,
     net: 0,
     count: 0,
     lastActivityAt: null,
