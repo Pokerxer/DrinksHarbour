@@ -221,25 +221,29 @@ export default function PurchasesReceiptDetail({ id }: { id: string }) {
 
     setValidating(true);
     try {
-      const receivedItems = po.items.map((item, idx) => {
-        const key = (item as any)._id?.toString() ?? String(idx);
-        return {
-          itemId: key,
-          receivedQty: receivedQtys[key] ?? 0,
-          batchNumber: batchNumbers[key] || undefined,
-          expiryDate: expiryDates[key] || undefined,
-        };
-      });
-      // Only (re)post received quantities when something is actually being
-      // received now. For an already-received PO we skip this — otherwise the
-      // server would overwrite the recorded receivedQty with 0s.
-      const anyNewlyReceived = receivedItems.some((r) => r.receivedQty > 0);
-      if (anyNewlyReceived) {
-        await purchaseOrderService.updatePurchaseOrderStatus(
+      // Quantities entered here are what's arriving NOW. The receive endpoint is
+      // additive (accumulates onto receivedQty + appends a partial-receipt entry),
+      // so we send only the lines with a positive quantity. Validate then posts the
+      // not-yet-posted delta to inventory. For an already-received PO with nothing
+      // new, we skip the receive call and just validate to post any pending stock.
+      const receiptLines = po.items
+        .map((item, idx) => {
+          const key = (item as any)._id?.toString() ?? String(idx);
+          return {
+            itemId: key,
+            receivedQty: receivedQtys[key] ?? 0,
+            batchNumber: batchNumbers[key] || undefined,
+            expiryDate: expiryDates[key] || undefined,
+          };
+        })
+        .filter((r) => r.receivedQty > 0);
+
+      if (receiptLines.length > 0) {
+        await purchaseOrderService.receivePurchaseOrder(
           id,
-          'received',
+          receiptLines,
           token,
-          receivedItems
+          warehouseId
         );
       }
       await purchaseOrderService.updatePurchaseOrderStatus(

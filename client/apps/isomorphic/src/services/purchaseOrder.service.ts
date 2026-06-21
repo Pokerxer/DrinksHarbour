@@ -74,6 +74,10 @@ export interface POItem {
   unitCost?: number;
   packPrice: number;
   receivedQty: number;
+  // Receiving progress surfaced by getPurchaseOrder.
+  orderedQty?: number;
+  postedQty?: number;
+  outstandingQty?: number;
   type: string;
   uom?: string;
   packagingQty?: number;
@@ -161,6 +165,48 @@ export const purchaseOrderService = {
       throw new Error(
         error.message || 'Failed to update purchase order status'
       );
+    }
+
+    return response.json();
+  },
+
+  /**
+   * Record a (partial) receipt against a PO. Quantities are ADDITIVE — each call
+   * accumulates onto the line's receivedQty and appends a partial-receipt entry.
+   * Stock is NOT posted here; posting happens when the PO is validated.
+   */
+  async receivePurchaseOrder(
+    id: string,
+    receiptLines: {
+      itemId: string;
+      receivedQty: number;
+      batchNumber?: string;
+      expiryDate?: string;
+      sizeId?: string;
+    }[],
+    token: string,
+    warehouseId?: string,
+    notes?: string
+  ): Promise<CreatePOResponse> {
+    const response = await fetch(
+      `${API_URL}/api/purchase-orders/${id}/receive`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          receiptLines,
+          ...(warehouseId && { warehouseId }),
+          ...(notes && { notes }),
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to record receipt');
     }
 
     return response.json();
