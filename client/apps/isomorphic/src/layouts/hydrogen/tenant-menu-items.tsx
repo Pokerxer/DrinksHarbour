@@ -22,6 +22,9 @@ import {
   PiWarehouseDuotone,
   PiInvoiceDuotone,
   PiGearDuotone,
+  PiFileTextDuotone,
+  PiTrayArrowDownDuotone,
+  PiArrowUUpLeftDuotone,
 } from 'react-icons/pi';
 
 // ─── Plan hierarchy ──────────────────────────────────────────────────────────
@@ -198,6 +201,29 @@ export const tenantMenuItems: TenantMenuEntry[] = [
       { name: 'New Bill', href: routes.eCommerce.createVendorBill },
       { name: 'Vendor Returns', href: routes.eCommerce.vendorReturns },
     ],
+  },
+
+  // ─── Sales ──────────────────────────────────────────────────
+  { label: 'Sales' },
+  {
+    name: 'Quotations & Orders',
+    href: '#',
+    icon: <PiFileTextDuotone />,
+    dropdownItems: [
+      { name: 'Quotations', href: routes.eCommerce.salesQuotations },
+      { name: 'Orders', href: routes.eCommerce.salesOrders },
+      { name: 'New Sale', href: routes.eCommerce.createSale },
+    ],
+  },
+  {
+    name: 'Fulfillment',
+    href: routes.eCommerce.salesFulfillList,
+    icon: <PiTrayArrowDownDuotone />,
+  },
+  {
+    name: 'Sales Returns',
+    href: routes.eCommerce.salesReturns,
+    icon: <PiArrowUUpLeftDuotone />,
   },
 
   // ─── Logistics ──────────────────────────────────────────────
