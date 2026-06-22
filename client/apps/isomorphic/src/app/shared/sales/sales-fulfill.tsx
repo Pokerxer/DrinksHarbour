@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { PiArrowClockwise, PiTrayArrowDown, PiTruck } from 'react-icons/pi';
+import { PiArrowClockwise, PiTruck } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { salesOrderService, type SalesOrder } from '@/services/salesOrder.service';

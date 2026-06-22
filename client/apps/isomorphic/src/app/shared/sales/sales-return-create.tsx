@@ -9,7 +9,6 @@ import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { salesOrderService, type SalesOrder, type SalesLineItem } from '@/services/salesOrder.service';
 import { warehouseService, type Warehouse } from '@/services/warehouse.service';
-import { fmtCur } from '../purchases/purchases-analytics-helpers';
 
 /** Units still returnable on a line: shipped minus already-returned. */
 function returnable(line: SalesLineItem): number {
