@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import { salesOrderService, type SalesOrder } from '@/services/salesOrder.service';
 import SalesQuotationDetail from './sales-quotation-detail';
+import SalesOrderDetail from './sales-order-detail';
 
 function DetailSkeleton() {
   return (
@@ -44,6 +45,5 @@ export default function SalesDetail({ id }: { id: string }) {
   if (so.docType === 'quotation') {
     return <SalesQuotationDetail so={so} onChanged={load} />;
   }
-  // docType === 'order' — replaced with the real SalesOrderDetail import in Task 5.
-  return <div className="py-20 text-center text-sm text-gray-500">Order detail view not yet available</div>;
+  return <SalesOrderDetail so={so} onChanged={load} />;
 }
