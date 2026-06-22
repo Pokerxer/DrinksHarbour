@@ -82,4 +82,52 @@ async function fulfillOrder({ salesOrder, tenantId, warehouseId, fulfillLines, u
   return { order: salesOrder, salesRows, posting };
 }
 
-module.exports = { fulfillOrder };
+/**
+ * Restock returned units and reverse the ledger. returnedQty advances (clamped to
+ * fulfilledQty). Stock goes back via adjustStock(type:'received'); an
+ * InventoryMovement is recorded with referenceType:'return' (valid enum member).
+ * deps = { adjustStock, recordMovement }
+ */
+async function returnOrder({ salesOrder, tenantId, warehouseId, returnLines, userId, deps }) {
+  const adjustStock = deps.adjustStock || require('./warehouse.service').adjustStock;
+  const recordMovement = deps.recordMovement || null;
+
+  const byId = new Map(salesOrder.items.map((it) => [String(it._id), it]));
+  const restock = { successCount: 0, failures: [] };
+
+  for (const rl of returnLines || []) {
+    const item = byId.get(String(rl.lineId));
+    if (!item) continue;
+    const maxReturnable = (item.fulfilledQty || 0) - (item.returnedQty || 0);
+    const qty = Math.min(Math.max(0, Number(rl.qty) || 0), maxReturnable);
+    if (qty <= 0) continue;
+
+    try {
+      const row = await adjustStock(
+        { warehouseId, subProduct: item.subproduct, size: item.size, quantity: qty,
+          type: 'received', notes: `Sales return: ${salesOrder.soNumber}` },
+        userId, tenantId
+      );
+      item.returnedQty = (item.returnedQty || 0) + qty;
+      restock.successCount++;
+
+      if (recordMovement) {
+        try {
+          await recordMovement({
+            subProduct: item.subproduct, tenant: tenantId, product: item.product, size: item.size,
+            warehouse: warehouseId, quantity: qty,
+            balanceAfter: row && Number.isFinite(row.currentQuantity) ? row.currentQuantity : undefined,
+            reference: salesOrder.soNumber, referenceType: 'return', performedBy: userId,
+          });
+        } catch (_) { /* history non-fatal */ }
+      }
+    } catch (err) {
+      restock.failures.push({ lineId: String(rl.lineId), reason: err.message });
+    }
+  }
+
+  await salesOrder.save();
+  return { order: salesOrder, restock };
+}
+
+module.exports = { fulfillOrder, returnOrder };

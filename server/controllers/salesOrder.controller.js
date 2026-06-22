@@ -137,3 +137,41 @@ exports.fulfillSalesOrder = asyncHandler(async (req, res) => {
   });
   res.json({ success: true, data: order, posting });
 });
+
+exports.returnSalesOrder = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  const so = await SalesOrder.findOne({ _id: req.params.id, tenant: tenantId, docType: 'order' });
+  if (!so) return res.status(404).json({ success: false, message: 'Order not found' });
+  if (!['partially_fulfilled', 'fulfilled'].includes(so.orderStatus)) {
+    return res.status(409).json({ success: false, message: 'Only a fulfilled order can be returned' });
+  }
+  const { warehouseId, items: returnLines } = req.body;
+  if (!warehouseId) return res.status(400).json({ success: false, message: 'Restock warehouse required' });
+
+  const recordMovement = async (m) => {
+    const InventoryMovement = require('../models/InventoryMovement');
+    await InventoryMovement.create({
+      subProduct: m.subProduct,
+      tenant: m.tenant,
+      product: m.product,
+      size: m.size,
+      warehouse: m.warehouse,
+      type: 'return',
+      category: 'in',
+      quantity: m.quantity,
+      quantityBefore: Number.isFinite(m.balanceAfter) ? m.balanceAfter - m.quantity : 0,
+      quantityAfter: Number.isFinite(m.balanceAfter) ? m.balanceAfter : m.quantity,
+      reference: m.reference,
+      referenceType: 'return',
+      performedBy: m.performedBy,
+      source: 'return',
+      notes: `Sales return: ${m.reference}`,
+    });
+  };
+
+  const { order, restock } = await salesFulfillSvc.returnOrder({
+    salesOrder: so, tenantId, warehouseId, returnLines: returnLines || [],
+    userId: req.user?._id || req.posUser?._id, deps: { recordMovement },
+  });
+  res.json({ success: true, data: order, restock });
+});
