@@ -114,11 +114,14 @@ test('quotation -> convert -> confirm -> fulfill 60 -> fulfill 40 -> return 20: 
 
   const lineId = String(order.items[0]._id);
   const warehouseId = oid();
+  const getUnitCost = async () => 0;
+  const revenue = { revenueModel: 'markup' };
+  const paymentMethod = 'cash';
 
   await fulfillOrder({
     salesOrder: order, tenantId, warehouseId,
     fulfillLines: [{ lineId, qty: 60 }],
-    userId, deps: { adjustStock, SalesModel },
+    userId, deps: { adjustStock, SalesModel, getUnitCost }, revenue, paymentMethod,
   });
   assert.strictEqual(order.orderStatus, 'partially_fulfilled');
   assert.strictEqual(order.items[0].fulfilledQty, 60);
@@ -127,7 +130,7 @@ test('quotation -> convert -> confirm -> fulfill 60 -> fulfill 40 -> return 20: 
   await fulfillOrder({
     salesOrder: order, tenantId, warehouseId,
     fulfillLines: [{ lineId, qty: 40 }],
-    userId, deps: { adjustStock, SalesModel },
+    userId, deps: { adjustStock, SalesModel, getUnitCost }, revenue, paymentMethod,
   });
   assert.strictEqual(order.orderStatus, 'fulfilled');
   assert.strictEqual(order.items[0].fulfilledQty, 100);

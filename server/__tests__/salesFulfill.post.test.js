@@ -33,16 +33,19 @@ test('fulfillOrder posts only the unposted delta and advances postedQty/fulfille
   const deps = {
     adjustStock: async (a) => { adjusted.push(a); return { currentQuantity: 0 }; },
     SalesModel,
+    getUnitCost: async () => 0,
   };
+  const revenue = { revenueModel: 'markup' };
+  const paymentMethod = 'cash';
   // First fulfillment: 60
-  await fulfillOrder({ salesOrder: so, tenantId: 't1', warehouseId: 'wh1', fulfillLines: [{ lineId: 'L1', qty: 60 }], userId: 'u1', deps });
+  await fulfillOrder({ salesOrder: so, tenantId: 't1', warehouseId: 'wh1', fulfillLines: [{ lineId: 'L1', qty: 60 }], userId: 'u1', deps, revenue, paymentMethod });
   assert.strictEqual(so.items[0].fulfilledQty, 60);
   assert.strictEqual(so.items[0].postedQty, 60);
   assert.strictEqual(so.orderStatus, 'partially_fulfilled');
   assert.strictEqual(adjusted[0].quantity, 60);
 
   // Second fulfillment: 40 -> posts only 40, total stock decrement = 100
-  await fulfillOrder({ salesOrder: so, tenantId: 't1', warehouseId: 'wh1', fulfillLines: [{ lineId: 'L1', qty: 40 }], userId: 'u1', deps });
+  await fulfillOrder({ salesOrder: so, tenantId: 't1', warehouseId: 'wh1', fulfillLines: [{ lineId: 'L1', qty: 40 }], userId: 'u1', deps, revenue, paymentMethod });
   assert.strictEqual(so.items[0].fulfilledQty, 100);
   assert.strictEqual(so.items[0].postedQty, 100);
   assert.strictEqual(so.orderStatus, 'fulfilled');
@@ -70,12 +73,13 @@ test('fulfillOrder gates postedQty/Sales-row on per-line shipping success and ro
       return { currentQuantity: 0 };
     },
     SalesModel,
+    getUnitCost: async () => 0,
   };
 
   const result = await fulfillOrder({
     salesOrder: so, tenantId: 't1', warehouseId: 'wh1',
     fulfillLines: [{ lineId: 'L1', qty: 100 }, { lineId: 'L2', qty: 50 }],
-    userId: 'u1', deps,
+    userId: 'u1', deps, revenue: { revenueModel: 'markup' }, paymentMethod: 'cash',
   });
 
   const L1 = so.items.find((it) => it._id === 'L1');

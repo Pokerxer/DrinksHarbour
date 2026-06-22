@@ -126,4 +126,71 @@ async function postShippedStock({
   return { successCount, failCount, failures, postedLineIds };
 }
 
-module.exports = { lineId, outstanding, applyFulfillment, fulfillStatus, buildPostingLines, postShippedStock };
+/** Sales.paymentMethod enum — anything outside this set (incl. 'split') maps to 'other'. */
+const SALES_PAYMENT_METHODS = new Set([
+  'card', 'bank_transfer', 'mobile_money', 'cash', 'pos_terminal', 'wallet', 'invoice', 'other',
+]);
+
+/** Map an arbitrary order-level payment method onto the Sales schema's enum. */
+function mapPaymentMethod(paymentMethod) {
+  if (paymentMethod && SALES_PAYMENT_METHODS.has(paymentMethod) && paymentMethod !== 'split') {
+    return paymentMethod;
+  }
+  return 'other';
+}
+
+/**
+ * Build a COMPLETE Sales document payload (every field the real Sales schema
+ * requires) for one shipped line. Pure — no DB access; unitCost is passed in.
+ *
+ * @param {Object} args
+ * @param {string} args.tenantId
+ * @param {{ product, subproduct, size, unitPrice?, discount? }} args.item  SO line
+ * @param {number} args.qty                                                shipped delta
+ * @param {string} [args.paymentMethod]                                    order-level method
+ * @param {number} [args.unitCost]                                         cost per unit (markup model)
+ * @param {{ revenueModel?: 'commission'|'markup', commissionPct?: number }} [args.revenue]
+ * @param {string} [args.channelDetail]
+ * @returns {Object} a payload satisfying every `required: true` field on Sales
+ */
+function buildSalesRow({ tenantId, item, qty, paymentMethod, unitCost = 0, revenue = {}, channelDetail }) {
+  const priceAtSale = Math.max(0, (item.unitPrice || 0) - (item.discount || 0));
+  const itemSubtotal = priceAtSale * qty;
+  const finalItemPrice = priceAtSale;
+
+  const isCommission = revenue.revenueModel === 'commission';
+  const revenueModelUsed = isCommission ? 'commission' : 'markup';
+
+  let tenantAmount;
+  if (isCommission) {
+    const commissionPct = Number(revenue.commissionPct) || 0;
+    tenantAmount = Math.round(itemSubtotal * (1 - commissionPct / 100));
+  } else {
+    tenantAmount = Math.min((Number(unitCost) || 0) * qty, itemSubtotal);
+    tenantAmount = Math.round(tenantAmount);
+  }
+  tenantAmount = Math.max(0, Math.min(tenantAmount, itemSubtotal));
+  const platformAmount = Math.max(0, Math.round(itemSubtotal) - tenantAmount);
+
+  return {
+    tenant: tenantId,
+    product: item.product,
+    subproduct: item.subproduct,
+    size: item.size,
+    quantity: qty,
+    priceAtSale,
+    itemSubtotal,
+    finalItemPrice,
+    revenueModelUsed,
+    platformAmount,
+    tenantAmount,
+    paymentMethod: mapPaymentMethod(paymentMethod),
+    channel: 'tenant_manual',
+    channelDetail,
+  };
+}
+
+module.exports = {
+  lineId, outstanding, applyFulfillment, fulfillStatus, buildPostingLines, postShippedStock,
+  buildSalesRow, mapPaymentMethod,
+};

@@ -1,18 +1,27 @@
 // server/services/salesFulfill.service.js
-const { applyFulfillment, buildPostingLines, fulfillStatus, postShippedStock } = require('./salesFulfill.helpers');
+const { applyFulfillment, buildPostingLines, fulfillStatus, postShippedStock, buildSalesRow } = require('./salesFulfill.helpers');
+
+/** Default unit-cost lookup: SubProduct.costPrice (0 if missing/not found). */
+async function defaultGetUnitCost(subproductId) {
+  const SubProduct = require('../models/SubProduct');
+  const sp = await SubProduct.findById(subproductId).select('costPrice').lean();
+  return sp?.costPrice || 0;
+}
 
 /**
  * Apply one additive fulfillment to an order:
  *  1. applyFulfillment -> per-line deltas (clamped to outstanding)
  *  2. advance fulfilledQty on the lines
  *  3. post the UNPOSTED delta to stock (adjustStock type:'shipped'); advance postedQty
- *  4. write Sales rows for the shipped delta (channel: 'tenant_manual')
+ *  4. write Sales rows for the shipped delta (channel: 'tenant_manual'), with the
+ *     full revenue split (buildSalesRow) so every required Sales field is populated
  *  5. append a fulfillments[] entry + recompute orderStatus
- * deps = { adjustStock, SalesModel }
+ * deps = { adjustStock, SalesModel, getUnitCost }
  */
-async function fulfillOrder({ salesOrder, tenantId, warehouseId, fulfillLines, userId, deps }) {
+async function fulfillOrder({ salesOrder, tenantId, warehouseId, fulfillLines, userId, deps, revenue = {}, paymentMethod }) {
   const adjustStock = deps.adjustStock || require('./warehouse.service').adjustStock;
   const SalesModel = deps.SalesModel || require('../models/Sales');
+  const getUnitCost = deps.getUnitCost || defaultGetUnitCost;
 
   // 1 + 2: accumulate fulfilledQty (optimistic; rolled back below for lines that fail to post)
   const { lines } = applyFulfillment(salesOrder.items, fulfillLines);
@@ -54,13 +63,12 @@ async function fulfillOrder({ salesOrder, tenantId, warehouseId, fulfillLines, u
     postedLines.push(pl);
 
     const qty = pl.qty;
-    const priceAtSale = Math.max(0, (item.unitPrice || 0) - (item.discount || 0));
-    const row = await SalesModel.create({
-      tenant: tenantId,
-      product: item.product, subproduct: item.subproduct, size: item.size,
-      quantity: qty, priceAtSale, itemSubtotal: priceAtSale * qty,
-      channel: 'tenant_manual', channelDetail: `Sales order ${salesOrder.soNumber}`,
+    const unitCost = await getUnitCost(item.subproduct, item.size);
+    const payload = buildSalesRow({
+      tenantId, item, qty, paymentMethod, unitCost, revenue,
+      channelDetail: `Sales order ${salesOrder.soNumber}`,
     });
+    const row = await SalesModel.create(payload);
     const rowId = row._id || row;
     salesRows.push(rowId);
     if (!Array.isArray(salesOrder.relatedSales)) salesOrder.relatedSales = [];

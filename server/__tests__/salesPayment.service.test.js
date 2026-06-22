@@ -46,3 +46,20 @@ test('cash payment with loyalty disabled earns zero and skips mutateLoyalty', as
   assert.strictEqual(result.loyaltyEarned, 0);
   assert.strictEqual(called, false);
 });
+
+test('wallet payment without a saved customer is rejected before touching the wallet', async () => {
+  let walletCalled = false;
+  const deps = {
+    mutateWallet: async () => { walletCalled = true; return { ok: true }; },
+    mutateLoyalty: async () => ({ ok: true }),
+  };
+  const order = { _id: 'so2', tenant: 't1', total: 5000, customer: null, customerSnapshot: null };
+  const result = await capturePayment({
+    salesOrder: order, tenantId: 't1', paymentMethod: 'wallet', userId: 'u1',
+    posSettings: {}, deps,
+  });
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.status, 400);
+  assert.match(result.message, /saved customer/);
+  assert.strictEqual(walletCalled, false);
+});
