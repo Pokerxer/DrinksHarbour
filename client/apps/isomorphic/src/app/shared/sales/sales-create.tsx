@@ -24,6 +24,7 @@ import ProductLineSearch, {
   type ProductLineSelection,
 } from './product-line-search';
 import { useSalesCustomerPricelist } from './use-sales-customer-pricelist';
+import { PAYMENT_TERMS } from './sales-helpers';
 
 const INPUT_CLS =
   'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20';
@@ -108,6 +109,7 @@ export default function SalesCreate() {
   const [notes, setNotes] = useState('');
   const [terms, setTerms] = useState('');
   const [validUntil, setValidUntil] = useState('');
+  const [paymentTerms, setPaymentTerms] = useState('immediate');
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<CreateTab>('lines');
 
@@ -195,6 +197,7 @@ export default function SalesCreate() {
             taxRate: l.taxRate,
           })),
           validUntil: validUntil || undefined,
+          paymentTerms,
           notes: notes || undefined,
           terms: terms || undefined,
         },
@@ -477,6 +480,22 @@ export default function SalesCreate() {
             </>
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-gray-600">
+                  Payment Terms
+                </label>
+                <select
+                  value={paymentTerms}
+                  onChange={(e) => setPaymentTerms(e.target.value)}
+                  className={INPUT_CLS}
+                >
+                  {PAYMENT_TERMS.map((t) => (
+                    <option key={t.key} value={t.key}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="sm:col-span-2">
                 <label className="mb-1.5 block text-xs font-medium text-gray-600">
                   Notes

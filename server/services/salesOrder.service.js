@@ -2,6 +2,41 @@
 const SalesOrder = require('../models/SalesOrder');
 const { generateSalesOrderNumber } = require('../utils/orderUtils');
 
+/**
+ * Odoo-style payment-term presets. `days` is the offset from the document's
+ * base (creation) date; `end_of_month` is special-cased in computeDueDate.
+ */
+const PAYMENT_TERMS = [
+  { key: 'immediate',    label: 'Immediate Payment', days: 0 },
+  { key: 'net_7',        label: '7 Days',            days: 7 },
+  { key: 'net_15',       label: '15 Days',           days: 15 },
+  { key: 'net_30',       label: '30 Days',           days: 30 },
+  { key: 'net_45',       label: '45 Days',           days: 45 },
+  { key: 'net_60',       label: '60 Days',           days: 60 },
+  { key: 'end_of_month', label: 'End of this Month', days: null },
+];
+const PAYMENT_TERM_KEYS = PAYMENT_TERMS.map((t) => t.key);
+
+/** Resolve a payment term to a concrete due date off the given base date. */
+function computeDueDate(termKey, baseDate = new Date()) {
+  const base = baseDate instanceof Date ? baseDate : new Date(baseDate);
+  if (termKey === 'end_of_month') {
+    // Day 0 of the *next* month is the last day of this month.
+    return new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + 1, 0,
+      base.getUTCHours(), base.getUTCMinutes(), base.getUTCSeconds(), base.getUTCMilliseconds()));
+  }
+  const term = PAYMENT_TERMS.find((t) => t.key === termKey);
+  const days = term ? term.days : 0; // unknown/blank => immediate
+  const due = new Date(base);
+  due.setUTCDate(due.getUTCDate() + (days || 0));
+  return due;
+}
+
+/** Normalize an inbound payment-term key, defaulting to 'immediate'. */
+function normalizePaymentTerms(termKey) {
+  return PAYMENT_TERM_KEYS.includes(termKey) ? termKey : 'immediate';
+}
+
 /** Compute a single line's UNTAXED total: (unitPrice - discount) * quantity, floored at 0. */
 function lineTotalOf(item) {
   const unit = Math.max(0, (Number(item.unitPrice) || 0) - (Number(item.discount) || 0));
@@ -37,10 +72,6 @@ function computeTotals(items) {
   return { subtotal, discountTotal, taxTotal, total: untaxed + taxTotal };
 }
 
-/**
- * Build + persist a SalesOrder. Snapshots line totals and order totals.
- * docType 'quotation' starts quoteStatus='draft'; 'order' starts orderStatus='draft'.
- */
 /** Normalize one inbound line into a stored line, snapshotting tax + totals. */
 function mapLine(it) {
   return {
@@ -55,11 +86,16 @@ function mapLine(it) {
   };
 }
 
+/**
+ * Build + persist a SalesOrder. Snapshots line totals and order totals.
+ * docType 'quotation' starts quoteStatus='draft'; 'order' starts orderStatus='draft'.
+ */
 async function createSalesOrderDoc({ tenantId, body }) {
   const docType = body.docType === 'quotation' ? 'quotation' : 'order';
   const items = (body.items || []).map(mapLine);
   const totals = computeTotals(items);
   const soNumber = await generateSalesOrderNumber();
+  const paymentTerms = normalizePaymentTerms(body.paymentTerms);
 
   return SalesOrder.create({
     tenant: tenantId,
@@ -73,6 +109,8 @@ async function createSalesOrderDoc({ tenantId, body }) {
     items,
     ...totals, // subtotal, discountTotal, taxTotal, total
     validUntil: body.validUntil || undefined,
+    paymentTerms,
+    dueDate: computeDueDate(paymentTerms),
     notes: body.notes, terms: body.terms,
     ...(docType === 'quotation' ? { quoteStatus: 'draft' } : { orderStatus: 'draft' }),
   });
@@ -101,6 +139,11 @@ function applyEdit(so, body) {
   if (body.notes !== undefined) so.notes = body.notes;
   if (body.terms !== undefined) so.terms = body.terms;
   if (body.validUntil !== undefined) so.validUntil = body.validUntil;
+  if (body.paymentTerms !== undefined) {
+    so.paymentTerms = normalizePaymentTerms(body.paymentTerms);
+    // Recompute due date off the original document date, not "now".
+    so.dueDate = computeDueDate(so.paymentTerms, so.createdAt || new Date());
+  }
 }
 
 /**
@@ -129,6 +172,8 @@ async function convertQuotationToOrder(quotation) {
     })),
     subtotal: quotation.subtotal, discountTotal: quotation.discountTotal,
     taxTotal: quotation.taxTotal, total: quotation.total,
+    paymentTerms: quotation.paymentTerms || 'immediate',
+    dueDate: computeDueDate(quotation.paymentTerms || 'immediate'),
     notes: quotation.notes, terms: quotation.terms,
     orderStatus: 'draft',
     convertedFrom: quotation._id,
@@ -142,4 +187,5 @@ async function convertQuotationToOrder(quotation) {
 module.exports = {
   lineTotalOf, lineTaxOf, mapLine, computeTotals, createSalesOrderDoc,
   canEdit, canCancel, applyEdit, convertQuotationToOrder,
+  PAYMENT_TERMS, computeDueDate, normalizePaymentTerms,
 };

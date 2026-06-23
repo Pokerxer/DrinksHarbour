@@ -67,6 +67,8 @@ export interface SalesOrder {
   quoteStatus?: QuoteStatus;
   validUntil?: string;
   orderStatus?: OrderStatus;
+  paymentTerms?: string;
+  dueDate?: string;
   paymentMethod?: string;
   paymentStatus?: 'unpaid' | 'paid';
   amountPaid?: number;
@@ -101,6 +103,7 @@ export interface CreateSalesOrderInput {
   appliedPricelist?: { pricelistId?: string; pricelistName?: string };
   items: SalesOrderLineInput[];
   validUntil?: string;
+  paymentTerms?: string;
   notes?: string;
   terms?: string;
 }
@@ -110,6 +113,7 @@ export interface UpdateSalesOrderInput {
   notes?: string;
   terms?: string;
   validUntil?: string;
+  paymentTerms?: string;
 }
 
 export interface FulfillPosting {

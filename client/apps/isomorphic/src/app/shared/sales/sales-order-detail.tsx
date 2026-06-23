@@ -22,6 +22,7 @@ import {
   ORDER_STATUS_BADGE,
   orderStatusLabel,
   outstanding,
+  paymentTermsLabel,
 } from './sales-helpers';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
 import SalesInvoiceView from './sales-invoice-view';
@@ -321,6 +322,17 @@ export default function SalesOrderDetail({
               {so.paymentStatus === 'paid'
                 ? `Paid via ${so.paymentMethod ?? '—'}`
                 : 'Unpaid'}
+            </p>
+            <p className="mb-1 text-xs font-semibold text-gray-500">
+              Payment Terms
+            </p>
+            <p className="mb-3 text-gray-900">
+              {paymentTermsLabel(so.paymentTerms)}
+              {so.dueDate && (
+                <span className="ml-1 text-gray-500">
+                  · due {new Date(so.dueDate).toLocaleDateString()}
+                </span>
+              )}
             </p>
             <div className="space-y-1 border-t border-gray-100 pt-3">
               <div className="flex items-center justify-between text-xs text-gray-500">

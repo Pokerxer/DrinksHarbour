@@ -17,7 +17,11 @@ import {
   salesOrderService,
   type SalesOrder,
 } from '@/services/salesOrder.service';
-import { QUOTE_STATUS_BADGE, quoteStatusLabel } from './sales-helpers';
+import {
+  QUOTE_STATUS_BADGE,
+  quoteStatusLabel,
+  paymentTermsLabel,
+} from './sales-helpers';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
 
 export default function SalesQuotationDetail({
@@ -230,6 +234,17 @@ export default function SalesQuotationDetail({
                 </p>
               </>
             )}
+            <p className="mb-1 text-xs font-semibold text-gray-500">
+              Payment Terms
+            </p>
+            <p className="mb-3 text-gray-900">
+              {paymentTermsLabel(so.paymentTerms)}
+              {so.dueDate && (
+                <span className="ml-1 text-gray-500">
+                  · due {new Date(so.dueDate).toLocaleDateString()}
+                </span>
+              )}
+            </p>
             <div className="space-y-1 border-t border-gray-100 pt-3">
               <div className="flex items-center justify-between text-xs text-gray-500">
                 <span>Untaxed Amount</span>

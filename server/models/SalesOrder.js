@@ -83,6 +83,14 @@ const SalesOrderSchema = new Schema(
     relatedInvoice: { type: ObjectId, sparse: true },
     relatedSales:   [{ type: ObjectId, ref: 'Sales' }],
 
+    // Payment terms (Odoo-style): named term + its resolved due date
+    paymentTerms: {
+      type: String,
+      enum: ['immediate', 'net_7', 'net_15', 'net_30', 'net_45', 'net_60', 'end_of_month'],
+      default: 'immediate',
+    },
+    dueDate: { type: Date },
+
     notes: { type: String, maxlength: 2000 },
     terms: { type: String, maxlength: 2000 },
   },

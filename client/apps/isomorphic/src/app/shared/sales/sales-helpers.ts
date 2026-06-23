@@ -58,3 +58,18 @@ export const ORDER_STATUS_BADGE: Record<OrderStatus, string> = {
   fulfilled: 'bg-emerald-100 text-emerald-700',
   cancelled: 'bg-red-100 text-red-700',
 };
+
+/** Odoo-style payment-term presets — keys mirror the server enum on SalesOrder. */
+export const PAYMENT_TERMS: { key: string; label: string }[] = [
+  { key: 'immediate', label: 'Immediate Payment' },
+  { key: 'net_7', label: '7 Days' },
+  { key: 'net_15', label: '15 Days' },
+  { key: 'net_30', label: '30 Days' },
+  { key: 'net_45', label: '45 Days' },
+  { key: 'net_60', label: '60 Days' },
+  { key: 'end_of_month', label: 'End of this Month' },
+];
+
+export function paymentTermsLabel(key?: string): string {
+  return PAYMENT_TERMS.find((t) => t.key === key)?.label ?? 'Immediate Payment';
+}
