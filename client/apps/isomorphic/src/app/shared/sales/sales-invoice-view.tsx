@@ -160,6 +160,14 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
               {fmtCur(so.discountTotal, so.currency)}
             </Text>
           </Text>
+          {(so.promotionTotal ?? 0) > 0 && (
+            <Text className="flex items-center justify-between border-b border-gray-100 py-2 text-emerald-600">
+              Promotions:{' '}
+              <Text as="span" className="font-semibold text-emerald-600">
+                −{fmtCur(so.promotionTotal ?? 0, so.currency)}
+              </Text>
+            </Text>
+          )}
           <Text className="flex items-center justify-between border-b border-gray-100 py-2">
             Tax:{' '}
             <Text as="span" className="font-semibold">

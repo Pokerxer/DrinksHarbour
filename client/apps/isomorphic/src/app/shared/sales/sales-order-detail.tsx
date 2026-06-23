@@ -352,9 +352,20 @@ export default function SalesOrderDetail({
               )}
             </p>
             <div className="space-y-1 border-t border-gray-100 pt-3">
+              {(so.promotionTotal ?? 0) > 0 && (
+                <div className="flex items-center justify-between text-xs text-emerald-600">
+                  <span>Promotions</span>
+                  <span>−{fmtCur(so.promotionTotal ?? 0, so.currency)}</span>
+                </div>
+              )}
               <div className="flex items-center justify-between text-xs text-gray-500">
                 <span>Untaxed Amount</span>
-                <span>{fmtCur(so.subtotal - so.discountTotal, so.currency)}</span>
+                <span>
+                  {fmtCur(
+                    so.subtotal - so.discountTotal - (so.promotionTotal ?? 0),
+                    so.currency
+                  )}
+                </span>
               </div>
               <div className="flex items-center justify-between text-xs text-gray-500">
                 <span>Tax</span>

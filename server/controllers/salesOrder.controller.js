@@ -53,7 +53,7 @@ exports.updateSalesOrder = asyncHandler(async (req, res) => {
   if (!svc.canEdit(so)) {
     return res.status(409).json({ success: false, message: 'This document can no longer be edited' });
   }
-  svc.applyEdit(so, req.body);
+  await svc.applyEdit(so, req.body);
   await so.save();
   res.json({ success: true, data: so });
 });

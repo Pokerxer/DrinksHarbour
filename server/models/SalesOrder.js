@@ -13,7 +13,9 @@ const lineSchema = new Schema({
   unitPrice:   { type: Number, required: true, min: 0 }, // snapshot at line creation
   discount:    { type: Number, default: 0, min: 0 },
   taxRate:     { type: Number, default: 0, min: 0, max: 100 }, // % snapshot from SubProduct.taxRate, editable
-  taxAmount:   { type: Number, default: 0, min: 0 },           // tax on this line (untaxed lineTotal * taxRate/100)
+  promoDiscount: { type: Number, default: 0, min: 0 },         // ₦ off this line from an auto-applied promotion
+  promoName:     { type: String, trim: true },                 // snapshot of the applied promotion's name
+  taxAmount:   { type: Number, default: 0, min: 0 },           // tax on this line (post-promo untaxed base * taxRate/100)
   lineTotal:   { type: Number, required: true, min: 0 },       // UNTAXED: (unitPrice - discount) * quantity
   fulfilledQty: { type: Number, default: 0, min: 0 },
   postedQty:    { type: Number, default: 0, min: 0 },
@@ -62,7 +64,8 @@ const SalesOrderSchema = new Schema(
     items: [lineSchema],
     subtotal:      { type: Number, default: 0 }, // gross: sum(unitPrice * qty), pre-discount
     discountTotal: { type: Number, default: 0 }, // sum(discount * qty)
-    taxTotal:      { type: Number, default: 0 }, // sum(line taxAmount); untaxed = subtotal - discountTotal
+    promotionTotal:{ type: Number, default: 0 }, // sum(line promoDiscount) from auto-applied promotions
+    taxTotal:      { type: Number, default: 0 }, // sum(line taxAmount); untaxed = subtotal - discountTotal - promotionTotal
     total:         { type: Number, default: 0 }, // grand total: (subtotal - discountTotal) + taxTotal
 
     // Quotation lifecycle (only when docType === 'quotation')

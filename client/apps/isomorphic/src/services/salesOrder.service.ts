@@ -12,6 +12,8 @@ export interface SalesLineItem {
   discount: number;
   taxRate?: number;
   taxAmount?: number;
+  promoDiscount?: number;
+  promoName?: string;
   lineTotal: number;
   fulfilledQty: number;
   postedQty: number;
@@ -71,6 +73,7 @@ export interface SalesOrder {
   items: SalesLineItem[];
   subtotal: number;
   discountTotal: number;
+  promotionTotal?: number;
   taxTotal?: number;
   total: number;
   quoteStatus?: QuoteStatus;

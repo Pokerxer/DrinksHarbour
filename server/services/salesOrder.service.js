@@ -69,7 +69,56 @@ function lineTotalOf(item) {
 function lineTaxOf(item) {
   const rate = Math.max(0, Number(item.taxRate) || 0);
   if (rate <= 0) return 0;
-  return Math.round(lineTotalOf(item) * (rate / 100));
+  // Tax is charged on the post-promotion untaxed base (discount-before-tax).
+  const base = Math.max(0, lineTotalOf(item) - (Number(item.promoDiscount) || 0));
+  return Math.round(base * (rate / 100));
+}
+
+/**
+ * The real promotion engine, but ONLY when a DB connection is live. Without one
+ * (unit tests, offline) it returns null so resolveLinePromotions skips the
+ * lookup instead of hanging on Mongoose command buffering.
+ */
+function defaultPromotionEngine() {
+  try {
+    const mongoose = require('mongoose');
+    if (mongoose.connection && mongoose.connection.readyState === 1) {
+      return require('./promotion.service').calculateDiscountForItem;
+    }
+  } catch {
+    // mongoose/promotion.service unavailable — treat as no promotions
+  }
+  return null;
+}
+
+/**
+ * Resolve automatic promotions per product line. For each line with a
+ * subproduct + positive untaxed base, ask the promotion engine for the best
+ * applicable discount and attach `promoDiscount` (₦ off the line, capped at the
+ * base) + `promoName`. Best-effort: a promotion failure never blocks the order.
+ * The engine fn is injected for test isolation; defaults to promotion.service.
+ */
+async function resolveLinePromotions(items, deps = {}) {
+  const tenantId = deps.tenantId;
+  const calc = deps.calculateDiscountForItem || defaultPromotionEngine();
+  const out = [];
+  for (const it of items) {
+    let promoDiscount = 0;
+    let promoName = '';
+    const base = lineTotalOf(it);
+    if (calc && it.subproduct && base > 0) {
+      try {
+        const r = await calc(tenantId, it.subproduct, it.size, base, Number(it.quantity) || 0);
+        promoDiscount = Math.min(base, Math.max(0, Math.round(Number(r && r.discount) || 0)));
+        promoName =
+          (r && r.appliedPromotions && r.appliedPromotions[0] && r.appliedPromotions[0].name) || '';
+      } catch {
+        // promotions are best-effort; never block order creation/edit
+      }
+    }
+    out.push({ ...it, promoDiscount, promoName });
+  }
+  return out;
 }
 
 /**
@@ -81,14 +130,15 @@ function lineTaxOf(item) {
  * The "Untaxed Amount" Odoo row is (subtotal - discountTotal).
  */
 function computeTotals(items) {
-  let subtotal = 0, discountTotal = 0, taxTotal = 0;
+  let subtotal = 0, discountTotal = 0, promotionTotal = 0, taxTotal = 0;
   for (const it of items) {
     subtotal += (Number(it.unitPrice) || 0) * (Number(it.quantity) || 0);
     discountTotal += (Number(it.discount) || 0) * (Number(it.quantity) || 0);
+    promotionTotal += Number(it.promoDiscount) || 0;
     taxTotal += lineTaxOf(it);
   }
-  const untaxed = Math.max(0, subtotal - discountTotal);
-  return { subtotal, discountTotal, taxTotal, total: untaxed + taxTotal };
+  const untaxed = Math.max(0, subtotal - discountTotal - promotionTotal);
+  return { subtotal, discountTotal, promotionTotal, taxTotal, total: untaxed + taxTotal };
 }
 
 /** Normalize one inbound line into a stored line, snapshotting tax + totals. */
@@ -100,6 +150,8 @@ function mapLine(it) {
     unitPrice: Number(it.unitPrice) || 0,
     discount: Number(it.discount) || 0,
     taxRate: Math.max(0, Number(it.taxRate) || 0),
+    promoDiscount: Math.max(0, Number(it.promoDiscount) || 0),
+    promoName: it.promoName || '',
     taxAmount: lineTaxOf(it),
     lineTotal: lineTotalOf(it),
   };
@@ -111,7 +163,8 @@ function mapLine(it) {
  */
 async function createSalesOrderDoc({ tenantId, body }) {
   const docType = body.docType === 'quotation' ? 'quotation' : 'order';
-  const items = (body.items || []).map(mapLine);
+  const withPromos = await resolveLinePromotions(body.items || [], { tenantId });
+  const items = withPromos.map(mapLine);
   const totals = computeTotals(items);
   const soNumber = await generateSalesOrderNumber();
   const paymentTerms = normalizePaymentTerms(body.paymentTerms);
@@ -148,12 +201,14 @@ function canCancel(so) {
 }
 
 /** Re-snapshot line prices + totals from an edit body. Mutates `so` in place. */
-function applyEdit(so, body) {
+async function applyEdit(so, body) {
   if (Array.isArray(body.items)) {
-    so.items = body.items.map(mapLine);
+    const withPromos = await resolveLinePromotions(body.items, { tenantId: so.tenant });
+    so.items = withPromos.map(mapLine);
     const totals = computeTotals(so.items);
     so.subtotal = totals.subtotal;
     so.discountTotal = totals.discountTotal;
+    so.promotionTotal = totals.promotionTotal;
     so.taxTotal = totals.taxTotal;
     so.total = totals.total;
   }
@@ -190,10 +245,12 @@ async function convertQuotationToOrder(quotation) {
       sku: it.sku, name: it.name,
       quantity: it.quantity, unitPrice: it.unitPrice, discount: it.discount,
       taxRate: it.taxRate, taxAmount: it.taxAmount,
+      promoDiscount: it.promoDiscount, promoName: it.promoName,
       lineTotal: it.lineTotal,
       fulfilledQty: 0, postedQty: 0, returnedQty: 0,
     })),
     subtotal: quotation.subtotal, discountTotal: quotation.discountTotal,
+    promotionTotal: quotation.promotionTotal,
     taxTotal: quotation.taxTotal, total: quotation.total,
     paymentTerms: quotation.paymentTerms || 'immediate',
     dueDate: computeDueDate(quotation.paymentTerms || 'immediate'),
@@ -213,4 +270,5 @@ module.exports = {
   lineTotalOf, lineTaxOf, mapLine, computeTotals, createSalesOrderDoc,
   canEdit, canCancel, applyEdit, convertQuotationToOrder,
   PAYMENT_TERMS, computeDueDate, normalizePaymentTerms, normalizeAddress,
+  resolveLinePromotions,
 };
