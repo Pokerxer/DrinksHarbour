@@ -17,7 +17,12 @@ import {
   salesOrderService,
   type SalesOrder,
 } from '@/services/salesOrder.service';
-import { QUOTE_STATUS_BADGE, quoteStatusLabel } from './sales-helpers';
+import {
+  QUOTE_STATUS_BADGE,
+  addressLines,
+  quoteStatusLabel,
+  paymentTermsLabel,
+} from './sales-helpers';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
 
 export default function SalesQuotationDetail({
@@ -217,9 +222,25 @@ export default function SalesQuotationDetail({
         <div className="space-y-5">
           <div className="rounded-xl border border-gray-200 bg-white p-5 text-sm">
             <p className="mb-1 text-xs font-semibold text-gray-500">Customer</p>
-            <p className="mb-3 text-gray-900">
+            <p className="mb-1 text-gray-900">
               {so.customerSnapshot?.name ?? 'Walk-in / none'}
             </p>
+            {addressLines(so.invoiceAddress).map((l) => (
+              <p key={l} className="text-xs text-gray-500">
+                {l}
+              </p>
+            ))}
+            <div className="mb-3" />
+            {so.appliedPricelist?.pricelistName && (
+              <>
+                <p className="mb-1 text-xs font-semibold text-gray-500">
+                  Pricelist
+                </p>
+                <p className="mb-3 text-gray-900">
+                  {so.appliedPricelist.pricelistName}
+                </p>
+              </>
+            )}
             {so.validUntil && (
               <>
                 <p className="mb-1 text-xs font-semibold text-gray-500">
@@ -230,9 +251,41 @@ export default function SalesQuotationDetail({
                 </p>
               </>
             )}
-            <div className="flex items-center justify-between border-t border-gray-100 pt-3 text-base font-semibold text-gray-900">
-              <span>Total</span>
-              <span>{fmtCur(so.total, so.currency)}</span>
+            <p className="mb-1 text-xs font-semibold text-gray-500">
+              Payment Terms
+            </p>
+            <p className="mb-3 text-gray-900">
+              {paymentTermsLabel(so.paymentTerms)}
+              {so.dueDate && (
+                <span className="ml-1 text-gray-500">
+                  · due {new Date(so.dueDate).toLocaleDateString()}
+                </span>
+              )}
+            </p>
+            <div className="space-y-1 border-t border-gray-100 pt-3">
+              {(so.promotionTotal ?? 0) > 0 && (
+                <div className="flex items-center justify-between text-xs text-emerald-600">
+                  <span>Promotions</span>
+                  <span>−{fmtCur(so.promotionTotal ?? 0, so.currency)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span>Untaxed Amount</span>
+                <span>
+                  {fmtCur(
+                    so.subtotal - so.discountTotal - (so.promotionTotal ?? 0),
+                    so.currency
+                  )}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span>Tax</span>
+                <span>{fmtCur(so.taxTotal ?? 0, so.currency)}</span>
+              </div>
+              <div className="flex items-center justify-between pt-1 text-base font-semibold text-gray-900">
+                <span>Total</span>
+                <span>{fmtCur(so.total, so.currency)}</span>
+              </div>
             </div>
           </div>
         </div>

@@ -1,7 +1,7 @@
 // client/apps/isomorphic/src/app/shared/sales/sales-create.tsx
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -14,7 +14,10 @@ import {
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
-import { salesOrderService } from '@/services/salesOrder.service';
+import {
+  salesOrderService,
+  type SalesOrderAddress,
+} from '@/services/salesOrder.service';
 import type { POSCustomer } from '@/app/shared/point-of-sale/types';
 import type { POSCartItem } from '@/app/shared/point-of-sale/types';
 import { computeItemPriceWithPricelist } from '@/app/shared/point-of-sale/store';
@@ -24,6 +27,7 @@ import ProductLineSearch, {
   type ProductLineSelection,
 } from './product-line-search';
 import { useSalesCustomerPricelist } from './use-sales-customer-pricelist';
+import { PAYMENT_TERMS } from './sales-helpers';
 
 const INPUT_CLS =
   'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20';
@@ -42,6 +46,7 @@ interface DraftLine {
   quantity: number;
   baseUnitPrice: number;
   discount: number;
+  taxRate: number;
   costPrice: number;
 }
 
@@ -54,6 +59,7 @@ function blankLine(): DraftLine {
     quantity: 1,
     baseUnitPrice: 0,
     discount: 0,
+    taxRate: 0,
     costPrice: 0,
   };
 }
@@ -81,6 +87,42 @@ function lineTotalOf(unitPrice: number, discount: number, quantity: number) {
   return Math.max(0, unitPrice - discount) * quantity;
 }
 
+const ADDRESS_FIELDS: { key: keyof SalesOrderAddress; label: string; span?: boolean }[] = [
+  { key: 'name', label: 'Name' },
+  { key: 'phone', label: 'Phone' },
+  { key: 'street', label: 'Street', span: true },
+  { key: 'city', label: 'City' },
+  { key: 'state', label: 'State' },
+  { key: 'country', label: 'Country' },
+];
+
+/** Two-column block of the 6 structured address inputs. */
+function AddressFields({
+  value,
+  onChange,
+}: {
+  value: SalesOrderAddress;
+  onChange: (patch: SalesOrderAddress) => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {ADDRESS_FIELDS.map((f) => (
+        <div key={f.key} className={f.span ? 'sm:col-span-2' : undefined}>
+          <label className="mb-1.5 block text-xs font-medium text-gray-600">
+            {f.label}
+          </label>
+          <input
+            type="text"
+            value={value[f.key] ?? ''}
+            onChange={(e) => onChange({ [f.key]: e.target.value })}
+            className={INPUT_CLS}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type CreateTab = 'lines' | 'other';
 
 /** Non-interactive lifecycle-stage indicator — visual parity only, no click behavior. */
@@ -106,17 +148,46 @@ export default function SalesCreate() {
   const [notes, setNotes] = useState('');
   const [terms, setTerms] = useState('');
   const [validUntil, setValidUntil] = useState('');
+  const [paymentTerms, setPaymentTerms] = useState('immediate');
+  const [invoiceAddress, setInvoiceAddress] = useState<SalesOrderAddress>({});
+  const [deliverDifferent, setDeliverDifferent] = useState(false);
+  const [deliveryAddress, setDeliveryAddress] = useState<SalesOrderAddress>({});
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<CreateTab>('lines');
+
+  // Prefill the invoice name/phone from the selected customer; the customer has
+  // no stored address, so street/city/state/country stay for the user to fill.
+  const handleSelectCustomer = useCallback((c: POSCustomer) => {
+    setCustomer(c);
+    setInvoiceAddress((prev) => ({
+      ...prev,
+      name: `${c.firstName} ${c.lastName}`.trim(),
+      phone: c.phone ?? '',
+    }));
+  }, []);
 
   const today = useMemo(
     () => new Date().toLocaleDateString(undefined, { dateStyle: 'medium' }),
     []
   );
 
-  const { selected: pricelist, resolvedId } = useSalesCustomerPricelist(
-    token,
-    customer?._id ?? ''
+  const {
+    pricelists,
+    resolvedId,
+    selected: autoPricelist,
+  } = useSalesCustomerPricelist(token, customer?._id ?? '');
+
+  // Pricelist defaults to the customer's auto-resolved list, but the user can
+  // override it; once they do, their pick sticks across customer changes.
+  const [pricelistId, setPricelistId] = useState('');
+  const [pricelistOverridden, setPricelistOverridden] = useState(false);
+  useEffect(() => {
+    if (!pricelistOverridden) setPricelistId(resolvedId ?? '');
+  }, [resolvedId, pricelistOverridden]);
+
+  const pricelist = useMemo(
+    () => pricelists.find((p: any) => p._id === pricelistId) ?? null,
+    [pricelists, pricelistId]
   );
 
   const updateLine = useCallback((key: string, patch: Partial<DraftLine>) => {
@@ -135,16 +206,21 @@ export default function SalesCreate() {
     () =>
       lines.map((l) => {
         const unitPrice = liveUnitPrice(l, pricelist);
+        const lineTotal = lineTotalOf(unitPrice, l.discount, l.quantity);
         return {
           ...l,
           unitPrice,
-          lineTotal: lineTotalOf(unitPrice, l.discount, l.quantity),
+          lineTotal,
+          taxAmount: Math.round(lineTotal * (Math.max(0, l.taxRate) / 100)),
         };
       }),
     [lines, pricelist]
   );
 
-  const grandTotal = priced.reduce((s, l) => s + l.lineTotal, 0);
+  // Odoo-style totals: Untaxed Amount + Tax = Total (tax-exclusive).
+  const untaxedAmount = priced.reduce((s, l) => s + l.lineTotal, 0);
+  const taxTotal = priced.reduce((s, l) => s + l.taxAmount, 0);
+  const grandTotal = untaxedAmount + taxTotal;
   const hasLines = lines.some((l) => l.subProductId);
 
   async function handleSave(asOrder: boolean) {
@@ -172,7 +248,7 @@ export default function SalesCreate() {
                 customerId: customer._id,
               }
             : undefined,
-          pricelist: resolvedId ?? undefined,
+          pricelist: pricelistId || undefined,
           appliedPricelist: pricelist
             ? { pricelistId: pricelist._id, pricelistName: pricelist.name }
             : undefined,
@@ -185,8 +261,13 @@ export default function SalesCreate() {
             quantity: l.quantity,
             unitPrice: l.unitPrice,
             discount: l.discount,
+            taxRate: l.taxRate,
           })),
           validUntil: validUntil || undefined,
+          paymentTerms,
+          invoiceAddress,
+          // Default: delivery mirrors invoice. Toggled: send the separate block.
+          deliveryAddress: deliverDifferent ? deliveryAddress : invoiceAddress,
           notes: notes || undefined,
           terms: terms || undefined,
         },
@@ -264,15 +345,34 @@ export default function SalesCreate() {
           <CustomerSearch
             token={token}
             selected={customer}
-            onSelect={setCustomer}
+            onSelect={handleSelectCustomer}
             onClear={() => setCustomer(null)}
           />
-          {pricelist && (
-            <p className="mt-2 text-xs text-emerald-600">
-              Pricelist &quot;{pricelist.name}&quot; auto-applied from this
-              customer.
-            </p>
-          )}
+          <div className="mt-4">
+            <label className="mb-1.5 block text-xs font-medium text-gray-600">
+              Pricelist
+            </label>
+            <select
+              value={pricelistId}
+              onChange={(e) => {
+                setPricelistId(e.target.value);
+                setPricelistOverridden(true);
+              }}
+              className={INPUT_CLS}
+            >
+              <option value="">— Base price —</option>
+              {pricelists.map((p: any) => (
+                <option key={p._id} value={p._id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            {pricelist && resolvedId === pricelist._id && (
+              <p className="mt-1.5 text-xs text-emerald-600">
+                Auto-applied from this customer.
+              </p>
+            )}
+          </div>
         </div>
         <div className="space-y-4">
           <div>
@@ -342,6 +442,9 @@ export default function SalesCreate() {
                       Discount
                     </th>
                     <th className="px-2 py-2 text-right text-xs font-medium text-gray-500">
+                      Tax %
+                    </th>
+                    <th className="px-2 py-2 text-right text-xs font-medium text-gray-500">
                       Line Total
                     </th>
                     <th className="px-2 py-2" />
@@ -364,6 +467,7 @@ export default function SalesCreate() {
                               sizeName: info.sizeName,
                               baseUnitPrice: info.sellingPrice,
                               costPrice: info.costPrice,
+                              taxRate: info.taxRate,
                             })
                           }
                         />
@@ -403,6 +507,24 @@ export default function SalesCreate() {
                           className={`${INLINE_CELL_CLS} w-24`}
                         />
                       </td>
+                      <td className="px-2 py-2">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step="0.5"
+                          value={line.taxRate}
+                          onChange={(e) =>
+                            updateLine(line.key, {
+                              taxRate: Math.min(
+                                100,
+                                Math.max(0, Number(e.target.value) || 0)
+                              ),
+                            })
+                          }
+                          className={`${INLINE_CELL_CLS} w-16`}
+                        />
+                      </td>
                       <td className="px-2 py-2 text-right text-sm font-semibold text-gray-900">
                         {fmtCur(line.lineTotal, 'NGN')}
                       </td>
@@ -429,14 +551,76 @@ export default function SalesCreate() {
               </button>
 
               <div className="mt-6 flex justify-end border-t border-gray-100 pt-4">
-                <div className="flex w-full max-w-xs items-center justify-between text-base font-semibold text-gray-900">
-                  <span>Total</span>
-                  <span>{fmtCur(grandTotal, 'NGN')}</span>
+                <div className="w-full max-w-xs space-y-1.5">
+                  <div className="flex items-center justify-between text-sm text-gray-600">
+                    <span>Untaxed Amount</span>
+                    <span>{fmtCur(untaxedAmount, 'NGN')}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm text-gray-600">
+                    <span>Tax</span>
+                    <span>{fmtCur(taxTotal, 'NGN')}</span>
+                  </div>
+                  <div className="flex items-center justify-between border-t border-gray-100 pt-1.5 text-base font-semibold text-gray-900">
+                    <span>Total</span>
+                    <span>{fmtCur(grandTotal, 'NGN')}</span>
+                  </div>
                 </div>
               </div>
             </>
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-gray-600">
+                  Payment Terms
+                </label>
+                <select
+                  value={paymentTerms}
+                  onChange={(e) => setPaymentTerms(e.target.value)}
+                  className={INPUT_CLS}
+                >
+                  {PAYMENT_TERMS.map((t) => (
+                    <option key={t.key} value={t.key}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="sm:col-span-2">
+                <h3 className="mb-3 text-sm font-semibold text-gray-900">
+                  Invoice Address
+                </h3>
+                <AddressFields
+                  value={invoiceAddress}
+                  onChange={(patch) =>
+                    setInvoiceAddress((prev) => ({ ...prev, ...patch }))
+                  }
+                />
+                <label className="mt-3 flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={deliverDifferent}
+                    onChange={(e) => setDeliverDifferent(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-[#b20202] focus:ring-[#b20202]/20"
+                  />
+                  Deliver to a different address
+                </label>
+              </div>
+
+              {deliverDifferent && (
+                <div className="sm:col-span-2">
+                  <h3 className="mb-3 text-sm font-semibold text-gray-900">
+                    Delivery Address
+                  </h3>
+                  <AddressFields
+                    value={deliveryAddress}
+                    onChange={(patch) =>
+                      setDeliveryAddress((prev) => ({ ...prev, ...patch }))
+                    }
+                  />
+                </div>
+              )}
+
               <div className="sm:col-span-2">
                 <label className="mb-1.5 block text-xs font-medium text-gray-600">
                   Notes

@@ -10,6 +10,10 @@ export interface SalesLineItem {
   quantity: number;
   unitPrice: number;
   discount: number;
+  taxRate?: number;
+  taxAmount?: number;
+  promoDiscount?: number;
+  promoName?: string;
   lineTotal: number;
   fulfilledQty: number;
   postedQty: number;
@@ -21,6 +25,15 @@ export interface SalesOrderCustomerSnapshot {
   phone?: string;
   email?: string;
   customerId?: string;
+}
+
+export interface SalesOrderAddress {
+  name?: string;
+  phone?: string;
+  street?: string;
+  city?: string;
+  state?: string;
+  country?: string;
 }
 
 export interface SalesOrderFulfillment {
@@ -60,14 +73,22 @@ export interface SalesOrder {
   items: SalesLineItem[];
   subtotal: number;
   discountTotal: number;
+  promotionTotal?: number;
+  taxTotal?: number;
   total: number;
   quoteStatus?: QuoteStatus;
   validUntil?: string;
   orderStatus?: OrderStatus;
+  paymentTerms?: string;
+  dueDate?: string;
+  invoiceAddress?: SalesOrderAddress;
+  deliveryAddress?: SalesOrderAddress;
   paymentMethod?: string;
   paymentStatus?: 'unpaid' | 'paid';
   amountPaid?: number;
   loyaltyEarned?: number;
+  loyaltyRedeemed?: number;
+  pointsRedeemed?: number;
   fulfillments: SalesOrderFulfillment[];
   convertedFrom?: string;
   convertedTo?: string;
@@ -87,6 +108,7 @@ export interface SalesOrderLineInput {
   quantity: number;
   unitPrice: number;
   discount?: number;
+  taxRate?: number;
 }
 
 export interface CreateSalesOrderInput {
@@ -97,6 +119,9 @@ export interface CreateSalesOrderInput {
   appliedPricelist?: { pricelistId?: string; pricelistName?: string };
   items: SalesOrderLineInput[];
   validUntil?: string;
+  paymentTerms?: string;
+  invoiceAddress?: SalesOrderAddress;
+  deliveryAddress?: SalesOrderAddress;
   notes?: string;
   terms?: string;
 }
@@ -106,6 +131,9 @@ export interface UpdateSalesOrderInput {
   notes?: string;
   terms?: string;
   validUntil?: string;
+  paymentTerms?: string;
+  invoiceAddress?: SalesOrderAddress;
+  deliveryAddress?: SalesOrderAddress;
 }
 
 export interface FulfillPosting {
@@ -262,7 +290,12 @@ export const salesOrderService = {
 
   async confirm(
     id: string,
-    body: { paymentMethod: string; amountTendered?: number; splitPayments?: unknown[] },
+    body: {
+      paymentMethod: string;
+      amountTendered?: number;
+      splitPayments?: unknown[];
+      redeemPoints?: number;
+    },
     token: string
   ): Promise<SalesOrderResponse> {
     const response = await fetch(`${API_URL}/api/sales-orders/${id}/confirm`, {

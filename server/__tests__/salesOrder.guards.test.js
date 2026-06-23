@@ -22,9 +22,9 @@ test('canCancel blocks fulfilled/converted/cancelled', () => {
   assert.strictEqual(canCancel({ docType: 'order', orderStatus: 'cancelled' }), false);
 });
 
-test('applyEdit replaces lines and recomputes totals', () => {
+test('applyEdit replaces lines and recomputes totals', async () => {
   const so = { items: [], subtotal: 0, total: 0 };
-  applyEdit(so, { items: [{ product: 'p', subproduct: 's', size: 'z', quantity: 2, unitPrice: 1500, discount: 100 }] });
+  await applyEdit(so, { items: [{ product: 'p', subproduct: 's', size: 'z', quantity: 2, unitPrice: 1500, discount: 100 }] });
   assert.strictEqual(so.items[0].lineTotal, 2800); // (1500-100)*2
   assert.strictEqual(so.total, 2800);
 });

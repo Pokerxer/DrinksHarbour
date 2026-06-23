@@ -12,11 +12,26 @@ const lineSchema = new Schema({
   quantity:    { type: Number, required: true, min: 1 },
   unitPrice:   { type: Number, required: true, min: 0 }, // snapshot at line creation
   discount:    { type: Number, default: 0, min: 0 },
-  lineTotal:   { type: Number, required: true, min: 0 },
+  taxRate:     { type: Number, default: 0, min: 0, max: 100 }, // % snapshot from SubProduct.taxRate, editable
+  promoDiscount: { type: Number, default: 0, min: 0 },         // ₦ off this line from an auto-applied promotion
+  promoName:     { type: String, trim: true },                 // snapshot of the applied promotion's name
+  taxAmount:   { type: Number, default: 0, min: 0 },           // tax on this line (post-promo untaxed base * taxRate/100)
+  lineTotal:   { type: Number, required: true, min: 0 },       // UNTAXED: (unitPrice - discount) * quantity
   fulfilledQty: { type: Number, default: 0, min: 0 },
   postedQty:    { type: Number, default: 0, min: 0 },
   returnedQty:  { type: Number, default: 0, min: 0 },
 });
+
+// Reusable structured address (billing/shipping). All optional — walk-ins and
+// existing orders carry none. No _id so it stays a plain embedded value.
+const addressSchema = new Schema({
+  name:    { type: String, trim: true },
+  phone:   { type: String, trim: true },
+  street:  { type: String, trim: true },
+  city:    { type: String, trim: true },
+  state:   { type: String, trim: true },
+  country: { type: String, trim: true },
+}, { _id: false });
 
 const fulfillmentSchema = new Schema({
   warehouseId: { type: ObjectId, ref: 'Warehouse' },
@@ -47,9 +62,11 @@ const SalesOrderSchema = new Schema(
     currency: { type: String, default: 'NGN', enum: ['NGN', 'USD', 'EUR', 'GBP'] },
 
     items: [lineSchema],
-    subtotal:      { type: Number, default: 0 },
-    discountTotal: { type: Number, default: 0 },
-    total:         { type: Number, default: 0 },
+    subtotal:      { type: Number, default: 0 }, // gross: sum(unitPrice * qty), pre-discount
+    discountTotal: { type: Number, default: 0 }, // sum(discount * qty)
+    promotionTotal:{ type: Number, default: 0 }, // sum(line promoDiscount) from auto-applied promotions
+    taxTotal:      { type: Number, default: 0 }, // sum(line taxAmount); untaxed = subtotal - discountTotal - promotionTotal
+    total:         { type: Number, default: 0 }, // grand total: (subtotal - discountTotal) + taxTotal
 
     // Quotation lifecycle (only when docType === 'quotation')
     quoteStatus: {
@@ -72,6 +89,8 @@ const SalesOrderSchema = new Schema(
     amountPaid:    { type: Number, default: 0 },
     walletTxRef:   { type: ObjectId, ref: 'WalletTransaction', sparse: true },
     loyaltyEarned: { type: Number, default: 0 },
+    loyaltyRedeemed: { type: Number, default: 0 }, // ₦ value redeemed via loyalty points at confirm
+    pointsRedeemed:  { type: Number, default: 0 }, // points consumed by that redemption
 
     fulfillments: [fulfillmentSchema],
 
@@ -79,6 +98,18 @@ const SalesOrderSchema = new Schema(
     convertedTo:    { type: ObjectId, ref: 'SalesOrder' },
     relatedInvoice: { type: ObjectId, sparse: true },
     relatedSales:   [{ type: ObjectId, ref: 'Sales' }],
+
+    // Payment terms (Odoo-style): named term + its resolved due date
+    paymentTerms: {
+      type: String,
+      enum: ['immediate', 'net_7', 'net_15', 'net_30', 'net_45', 'net_60', 'end_of_month'],
+      default: 'immediate',
+    },
+    dueDate: { type: Date },
+
+    // Billing + shipping addresses (snapshots; optional)
+    invoiceAddress:  addressSchema,
+    deliveryAddress: addressSchema,
 
     notes: { type: String, maxlength: 2000 },
     terms: { type: String, maxlength: 2000 },

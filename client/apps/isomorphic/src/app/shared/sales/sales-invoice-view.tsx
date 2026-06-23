@@ -5,9 +5,15 @@ import { Badge, Title, Text } from 'rizzui';
 import { PiPrinter } from 'react-icons/pi';
 import type { SalesOrder } from '@/services/salesOrder.service';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
+import { addressIsEmpty, addressesDiffer, addressLines } from './sales-helpers';
 
 export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
   const paid = so.paymentStatus === 'paid';
+  const ship = so.deliveryAddress;
+  const showShipTo =
+    !!ship &&
+    !addressIsEmpty(ship) &&
+    addressesDiffer(ship, so.invoiceAddress);
 
   return (
     <div className="w-full rounded-xl border border-gray-200 bg-white p-5 text-sm sm:p-6">
@@ -37,7 +43,11 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
         </div>
       </div>
 
-      <div className="mb-10 grid gap-4 sm:grid-cols-2">
+      <div
+        className={`mb-10 grid gap-4 ${
+          showShipTo ? 'sm:grid-cols-3' : 'sm:grid-cols-2'
+        }`}
+      >
         <div>
           <Title as="h6" className="mb-2 font-semibold">
             Bill To
@@ -49,9 +59,30 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
             <Text className="mb-1">{so.customerSnapshot.phone}</Text>
           )}
           {so.customerSnapshot?.email && (
-            <Text>{so.customerSnapshot.email}</Text>
+            <Text className="mb-1">{so.customerSnapshot.email}</Text>
           )}
+          {addressLines(so.invoiceAddress).map((l) => (
+            <Text key={l} className="mb-1 text-gray-500">
+              {l}
+            </Text>
+          ))}
         </div>
+        {showShipTo && (
+          <div>
+            <Title as="h6" className="mb-2 font-semibold">
+              Ship To
+            </Title>
+            {ship?.name && (
+              <Text className="mb-1 font-semibold uppercase">{ship.name}</Text>
+            )}
+            {ship?.phone && <Text className="mb-1">{ship.phone}</Text>}
+            {addressLines(ship).map((l) => (
+              <Text key={l} className="mb-1 text-gray-500">
+                {l}
+              </Text>
+            ))}
+          </div>
+        )}
         <div className="sm:text-right">
           <Title as="h6" className="mb-2 font-semibold">
             Order Date
@@ -86,6 +117,9 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
                 Unit Price
               </th>
               <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">
+                Tax %
+              </th>
+              <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">
                 Total
               </th>
             </tr>
@@ -99,6 +133,9 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
                 </td>
                 <td className="px-3 py-2 text-right text-gray-700">
                   {fmtCur(item.unitPrice, so.currency)}
+                </td>
+                <td className="px-3 py-2 text-right text-gray-700">
+                  {item.taxRate ? `${item.taxRate}%` : '—'}
                 </td>
                 <td className="px-3 py-2 text-right font-medium text-gray-900">
                   {fmtCur(item.lineTotal, so.currency)}
@@ -121,6 +158,20 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
             Discount:{' '}
             <Text as="span" className="font-semibold">
               {fmtCur(so.discountTotal, so.currency)}
+            </Text>
+          </Text>
+          {(so.promotionTotal ?? 0) > 0 && (
+            <Text className="flex items-center justify-between border-b border-gray-100 py-2 text-emerald-600">
+              Promotions:{' '}
+              <Text as="span" className="font-semibold text-emerald-600">
+                −{fmtCur(so.promotionTotal ?? 0, so.currency)}
+              </Text>
+            </Text>
+          )}
+          <Text className="flex items-center justify-between border-b border-gray-100 py-2">
+            Tax:{' '}
+            <Text as="span" className="font-semibold">
+              {fmtCur(so.taxTotal ?? 0, so.currency)}
             </Text>
           </Text>
           <Text className="flex items-center justify-between pt-3 text-base font-semibold text-gray-900">

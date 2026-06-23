@@ -53,7 +53,7 @@ exports.updateSalesOrder = asyncHandler(async (req, res) => {
   if (!svc.canEdit(so)) {
     return res.status(409).json({ success: false, message: 'This document can no longer be edited' });
   }
-  svc.applyEdit(so, req.body);
+  await svc.applyEdit(so, req.body);
   await so.save();
   res.json({ success: true, data: so });
 });
@@ -123,7 +123,7 @@ exports.confirmSalesOrder = asyncHandler(async (req, res) => {
   if (!so) return res.status(404).json({ success: false, message: 'Order not found' });
   if (so.orderStatus !== 'draft') return res.status(409).json({ success: false, message: 'Only a draft order can be confirmed' });
 
-  const { paymentMethod, amountTendered, splitPayments } = req.body;
+  const { paymentMethod, amountTendered, splitPayments, redeemPoints } = req.body;
   if (!paymentMethod) return res.status(400).json({ success: false, message: 'Payment method required' });
 
   // I1: attachTenant does NOT select posSettings onto req.tenant (only
@@ -135,7 +135,7 @@ exports.confirmSalesOrder = asyncHandler(async (req, res) => {
   const posSettings = tenantDoc?.posSettings || {};
 
   const result = await salesPayment.capturePayment({
-    salesOrder: so, tenantId, paymentMethod, amountTendered, splitPayments,
+    salesOrder: so, tenantId, paymentMethod, amountTendered, splitPayments, redeemPoints,
     userId: req.user?._id || req.posUser?._id,
     posSettings,
   });
@@ -147,6 +147,8 @@ exports.confirmSalesOrder = asyncHandler(async (req, res) => {
   so.amountPaid = so.total;
   so.walletTxRef = result.walletTx?._id || undefined;
   so.loyaltyEarned = result.loyaltyEarned || 0;
+  so.loyaltyRedeemed = result.loyaltyRedeemed || 0;
+  so.pointsRedeemed = result.pointsRedeemed || 0;
   await so.save();
   res.json({ success: true, data: so });
 });
