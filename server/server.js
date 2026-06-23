@@ -300,6 +300,8 @@ async function startServer() {
     if (process.env.ENABLE_CRON === 'true' || process.env.NODE_ENV === 'production') {
       const { startExpiryCron } = require('./jobs/expiryScan.job');
       startExpiryCron();
+      const { startQuarantineCron } = require('./jobs/quarantineExpired.job');
+      startQuarantineCron();
     }
 
     console.log('\n┌──────────────────────────────────────────────────────┐');

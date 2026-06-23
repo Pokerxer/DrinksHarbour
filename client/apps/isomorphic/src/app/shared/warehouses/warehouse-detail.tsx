@@ -77,10 +77,13 @@ const availOf = (r: WarehouseStockRow) =>
   Math.max(0, r.currentQuantity - r.reservedQuantity);
 
 type StockStatus = 'in_stock' | 'low_stock' | 'out_of_stock';
+// Prefer the server-computed status (honours the tenant's warehouseSettings
+// thresholds); fall back to a local low-stock check for older API responses.
 const statusOf = (
   r: WarehouseStockRow,
   lowStock: number = LOW_STOCK
 ): StockStatus => {
+  if (r.flags?.status) return r.flags.status;
   if (r.currentQuantity <= 0) return 'out_of_stock';
   if (availOf(r) <= lowStock) return 'low_stock';
   return 'in_stock';

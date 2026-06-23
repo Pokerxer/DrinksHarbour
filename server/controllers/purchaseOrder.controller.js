@@ -8,6 +8,7 @@ const Size = require("../models/Size");
 const Warehouse = require("../models/Warehouse");
 const warehouseService = require("../services/warehouse.service");
 const batchService = require("../services/batch.service");
+const { getTenantWarehouseSettings } = require("./warehouse.controller");
 const inventoryService = require("../services/inventory.service");
 const {
   resolveTargetWarehouse,
@@ -589,9 +590,13 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
       .populate("product", "tracksBatch")
       .lean();
     const spMap = new Map(subProducts.map((sp) => [String(sp._id), sp]));
+    // Tenant master switch: when batch tracking is off, no PO line creates a
+    // WarehouseBatch regardless of the product's own tracksBatch flag.
+    const whSettings = await getTenantWarehouseSettings(tenantId);
+    const batchTrackingEnabled = whSettings.batchTrackingEnabled !== false;
     for (const item of purchaseOrder.items) {
       const sp = spMap.get(String(item.subProductId));
-      item.tracksBatch = !!(sp && sp.product && sp.product.tracksBatch);
+      item.tracksBatch = batchTrackingEnabled && !!(sp && sp.product && sp.product.tracksBatch);
       item.productId = sp && sp.product ? sp.product._id : undefined;
 
       // Right-size resolution for lines that arrive without an explicit sizeId.

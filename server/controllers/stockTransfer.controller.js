@@ -4,6 +4,7 @@ const StockTransfer = require("../models/StockTransfer");
 const SubProduct = require("../models/SubProduct");
 const Size = require("../models/Size");
 const warehouseService = require("../services/warehouse.service");
+const { getTenantWarehouseSettings } = require("./warehouse.controller");
 const { NotFoundError, ValidationError, ForbiddenError } = require("../utils/errors");
 
 const resolveTenantId = (req) => {
@@ -79,24 +80,46 @@ const createStockTransfer = asyncHandler(async (req, res) => {
   if (!items?.length)
     throw new ValidationError("At least one item is required");
 
+  const settings = await getTenantWarehouseSettings(tenantId);
+  if (!settings.allowInterWarehouseTransfers)
+    throw new ValidationError("Inter-warehouse transfers are disabled for this tenant");
+
   const enriched = await enrichItems(items, tenantId);
   const transferNumber = await generateTransferNumber(tenantId);
+
+  const transferItems = enriched.map((it) => ({
+    ...it,
+    subProductName: it.subProductName ?? it.productName ?? "",
+    transferredQty: 0,
+  }));
+  const totalValue = transferValue({ items: transferItems });
+
+  // A create-and-confirm that meets the approval threshold lands in
+  // pending_approval rather than confirmed.
+  let resolvedStatus = status === "confirmed" ? "confirmed" : "draft";
+  if (
+    resolvedStatus === "confirmed" &&
+    settings.requireTransferApproval &&
+    totalValue >= (settings.transferApprovalThreshold || 0)
+  ) {
+    resolvedStatus = "pending_approval";
+  }
 
   const transfer = await StockTransfer.create({
     tenant: tenantId,
     transferNumber,
     sourceWarehouse,
     destinationWarehouse,
-    items: enriched.map((it) => ({
-      ...it,
-      subProductName: it.subProductName ?? it.productName ?? "",
-      transferredQty: 0,
-    })),
+    items: transferItems,
     notes,
     scheduledDate,
-    status: status === "confirmed" ? "confirmed" : "draft",
+    status: resolvedStatus,
+    totalValue,
     currency: currency || "NGN",
     createdBy: userId,
+    ...(resolvedStatus === "confirmed"
+      ? { confirmedBy: userId, confirmedAt: new Date() }
+      : {}),
   });
 
   res.status(201).json({ success: true, data: transfer });
@@ -120,6 +143,8 @@ const getStockTransfers = asyncHandler(async (req, res) => {
       .populate("confirmedBy", "name")
       .populate("completedBy", "name")
       .populate("cancelledBy", "name")
+    .populate("approvedBy", "name")
+    .populate("rejectedBy", "name")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit))
@@ -131,7 +156,7 @@ const getStockTransfers = asyncHandler(async (req, res) => {
     ]),
   ]);
 
-  const statsMap = { draft: 0, confirmed: 0, completed: 0, cancelled: 0 };
+  const statsMap = { draft: 0, pending_approval: 0, confirmed: 0, completed: 0, cancelled: 0, rejected: 0 };
   for (const s of stats) statsMap[s._id] = s.count;
 
   res.json({
@@ -160,6 +185,8 @@ const getStockTransfer = asyncHandler(async (req, res) => {
     .populate("confirmedBy", "name")
     .populate("completedBy", "name")
     .populate("cancelledBy", "name")
+    .populate("approvedBy", "name")
+    .populate("rejectedBy", "name")
     .lean();
   if (!transfer) throw new NotFoundError("Stock transfer not found");
   res.json({ success: true, data: transfer });
@@ -216,6 +243,80 @@ const deleteStockTransfer = asyncHandler(async (req, res) => {
   res.json({ success: true, message: "Transfer deleted" });
 });
 
+// Snapshot value of a transfer = Σ quantity × unit cost. Drives the approval gate.
+function transferValue(transfer) {
+  return (transfer.items || []).reduce(
+    (sum, it) => sum + (it.quantity || 0) * (it.costPrice || 0),
+    0
+  );
+}
+
+// Verify the source warehouse holds enough of every line before committing.
+async function assertSourceStock(transfer, tenantId, WarehouseStock) {
+  for (const item of transfer.items) {
+    const q = {
+      tenant: tenantId,
+      warehouse: transfer.sourceWarehouse,
+      subProduct: item.subProductId,
+    };
+    if (item.sizeId) q.size = item.sizeId;
+    const stock = await WarehouseStock.findOne(q).lean();
+    const available = stock?.currentQuantity ?? 0;
+    if (available < item.quantity) {
+      throw new ValidationError(
+        `Insufficient stock for "${item.subProductName}"${item.sizeName ? ` (${item.sizeName})` : ""}: ` +
+          `${available} available, ${item.quantity} requested`
+      );
+    }
+  }
+}
+
+// PATCH /api/stock-transfers/:id/approve
+// Approve a pending_approval transfer → moves it to confirmed (with a fresh
+// source-stock check). Records the approver.
+const approveStockTransfer = asyncHandler(async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const userId = req.user._id;
+  const transfer = await StockTransfer.findOne({ _id: req.params.id, tenant: tenantId });
+  if (!transfer) throw new NotFoundError("Stock transfer not found");
+  if (transfer.status !== "pending_approval") {
+    throw new ValidationError("Only transfers awaiting approval can be approved");
+  }
+
+  const WarehouseStock = require("../models/WarehouseStock");
+  await assertSourceStock(transfer, tenantId, WarehouseStock);
+
+  transfer.approvedBy = userId;
+  transfer.approvedAt = new Date();
+  transfer.confirmedBy = userId;
+  transfer.confirmedAt = new Date();
+  transfer.status = "confirmed";
+  await transfer.save();
+
+  res.json({ success: true, data: transfer, message: "Transfer approved" });
+});
+
+// PATCH /api/stock-transfers/:id/reject
+// Reject a pending_approval transfer with an optional reason.
+const rejectStockTransfer = asyncHandler(async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const userId = req.user._id;
+  const { reason = "" } = req.body;
+  const transfer = await StockTransfer.findOne({ _id: req.params.id, tenant: tenantId });
+  if (!transfer) throw new NotFoundError("Stock transfer not found");
+  if (transfer.status !== "pending_approval") {
+    throw new ValidationError("Only transfers awaiting approval can be rejected");
+  }
+
+  transfer.rejectedBy = userId;
+  transfer.rejectedAt = new Date();
+  transfer.rejectionReason = String(reason).slice(0, 500);
+  transfer.status = "rejected";
+  await transfer.save();
+
+  res.json({ success: true, data: transfer, message: "Transfer rejected" });
+});
+
 // PATCH /api/stock-transfers/:id/status
 const updateStockTransferStatus = asyncHandler(async (req, res) => {
   const tenantId = resolveTenantId(req);
@@ -230,9 +331,11 @@ const updateStockTransferStatus = asyncHandler(async (req, res) => {
 
   const TRANSITIONS = {
     draft: ["confirmed", "cancelled"],
+    pending_approval: ["cancelled"], // approve/reject use dedicated endpoints
     confirmed: ["completed", "cancelled"],
     completed: [],
     cancelled: [],
+    rejected: [],
   };
 
   if (!TRANSITIONS[transfer.status]?.includes(status)) {
@@ -246,22 +349,28 @@ const updateStockTransferStatus = asyncHandler(async (req, res) => {
   const { recalcSubProductStock } = require("../services/warehouseStock.helpers");
 
   if (status === "confirmed") {
-    for (const item of transfer.items) {
-      const q = {
-        tenant: tenantId,
-        warehouse: transfer.sourceWarehouse,
-        subProduct: item.subProductId,
-      };
-      if (item.sizeId) q.size = item.sizeId;
-      const stock = await WarehouseStock.findOne(q).lean();
-      const available = stock?.currentQuantity ?? 0;
-      if (available < item.quantity) {
-        throw new ValidationError(
-          `Insufficient stock for "${item.subProductName}"${item.sizeName ? ` (${item.sizeName})` : ""}: ` +
-            `${available} available, ${item.quantity} requested`
-        );
-      }
+    // Approval gate: when the tenant requires approval and this transfer's value
+    // meets the threshold, route it to pending_approval instead of confirming.
+    // An already-approved transfer (approvedAt set) skips the gate.
+    const settings = await getTenantWarehouseSettings(tenantId);
+    const value = transferValue(transfer);
+    if (
+      settings.requireTransferApproval &&
+      value >= (settings.transferApprovalThreshold || 0) &&
+      !transfer.approvedAt
+    ) {
+      transfer.status = "pending_approval";
+      transfer.totalValue = value;
+      await transfer.save();
+      return res.json({
+        success: true,
+        data: transfer,
+        message: "Transfer submitted for approval",
+      });
     }
+
+    await assertSourceStock(transfer, tenantId, WarehouseStock);
+    transfer.totalValue = value;
     transfer.confirmedBy = userId;
     transfer.confirmedAt = new Date();
   }
@@ -331,4 +440,6 @@ module.exports = {
   updateStockTransfer,
   deleteStockTransfer,
   updateStockTransferStatus,
+  approveStockTransfer,
+  rejectStockTransfer,
 };

@@ -98,6 +98,7 @@ async function postReceivedStock({
           product: item.productId,
           batchNumber,
           quantity: quantityToAdd,
+          unitCost: item.unitCost || 0,
           expiryDate: item.receivedExpiryDate || null,
           sourcePO: purchaseOrder._id,
           poNumber: purchaseOrder.poNumber,

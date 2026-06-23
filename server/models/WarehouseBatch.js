@@ -13,8 +13,16 @@ const warehouseBatchSchema = new Schema(
     batchNumber: { type: String, required: true, trim: true, maxlength: 100 },
     quantity:        { type: Number, min: 0, default: 0 },
     initialQuantity: { type: Number, min: 0, default: 0 },
+    // Per-unit landed cost of this lot, captured at receipt. Drives weighted-
+    // average and FIFO inventory valuation (warehouseSettings.valuationMethod).
+    unitCost:        { type: Number, min: 0, default: 0 },
     expiryDate:   { type: Date, default: null },
     receivedDate: { type: Date, default: Date.now },
+    // Quarantine state — set by the autoQuarantineExpired sweep once a lot
+    // expires. Quarantined lots are excluded from picking and carved out of
+    // available stock (via a WarehouseStock.reservedQuantity bump).
+    quarantined:   { type: Boolean, default: false, index: true },
+    quarantinedAt: { type: Date, default: null },
     sourcePO:     { type: ObjectId, ref: 'PurchaseOrder' },
     poNumber:     { type: String, maxlength: 50 },
   },

@@ -25,7 +25,7 @@ const StockTransferSchema = new Schema(
     destinationWarehouse: { type: ObjectId, ref: "Warehouse", required: true },
     status: {
       type: String,
-      enum: ["draft", "confirmed", "completed", "cancelled"],
+      enum: ["draft", "pending_approval", "confirmed", "completed", "cancelled", "rejected"],
       default: "draft",
     },
     items: [StockTransferItemSchema],
@@ -37,6 +37,15 @@ const StockTransferSchema = new Schema(
     confirmedAt: { type: Date },
     cancelledBy: { type: ObjectId, ref: "User" },
     cancelledAt: { type: Date },
+    // Approval workflow (gated by tenant warehouseSettings.requireTransferApproval
+    // + transferApprovalThreshold). totalValue is the snapshot used to decide
+    // whether this transfer needed approval at confirmation time.
+    totalValue: { type: Number, default: 0, min: 0 },
+    approvedBy: { type: ObjectId, ref: "User" },
+    approvedAt: { type: Date },
+    rejectedBy: { type: ObjectId, ref: "User" },
+    rejectedAt: { type: Date },
+    rejectionReason: { type: String, maxlength: 500, trim: true },
     createdBy: { type: ObjectId, ref: "User" },
     currency: {
       type: String,
