@@ -16,7 +16,10 @@ export interface SalesPricelistState {
  * dependency (unlike usePOSCustomerPricelistSync, which is wired to POS's
  * jotai cart atoms). Re-fetches whenever the customer changes.
  */
-export function useSalesCustomerPricelist(token: string, customerId: string): SalesPricelistState {
+export function useSalesCustomerPricelist(
+  token: string,
+  customerId: string
+): SalesPricelistState {
   const [state, setState] = useState<SalesPricelistState>({
     pricelists: [],
     resolvedId: null,
@@ -30,14 +33,26 @@ export function useSalesCustomerPricelist(token: string, customerId: string): Sa
     (async () => {
       setState((s) => ({ ...s, loading: true }));
       try {
-        const res = await posApi.getPricelists(token, undefined, customerId || undefined);
+        const res = await posApi.getPricelists(
+          token,
+          undefined,
+          customerId || undefined
+        );
         if (cancelled) return;
         const pricelists = res.pricelists || [];
         const resolvedId = res.resolvedId ?? null;
-        const selected = resolvedId ? pricelists.find((p: any) => p._id === resolvedId) ?? null : null;
+        const selected = resolvedId
+          ? (pricelists.find((p: any) => p._id === resolvedId) ?? null)
+          : null;
         setState({ pricelists, resolvedId, selected, loading: false });
       } catch {
-        if (!cancelled) setState({ pricelists: [], resolvedId: null, selected: null, loading: false });
+        if (!cancelled)
+          setState({
+            pricelists: [],
+            resolvedId: null,
+            selected: null,
+            loading: false,
+          });
       }
     })();
     return () => {

@@ -104,7 +104,10 @@ export default function ProductLineSearch({
     const t = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await subproductService.getSubProducts(token, { search: text.trim(), limit: 50 });
+        const res = await subproductService.getSubProducts(token, {
+          search: text.trim(),
+          limit: 50,
+        });
         setProducts(mapProducts(res?.data?.subProducts ?? []));
         setExpandedId(null);
       } catch {
@@ -118,7 +121,8 @@ export default function ProductLineSearch({
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
     }
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
@@ -171,7 +175,9 @@ export default function ProductLineSearch({
           className="w-full rounded-lg border border-gray-200 py-1.5 pl-8 pr-3 text-xs text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
         />
         {loading && (
-          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-pulse text-[10px] text-gray-400">…</span>
+          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-pulse text-[10px] text-gray-400">
+            …
+          </span>
         )}
       </div>
 
@@ -179,12 +185,15 @@ export default function ProductLineSearch({
         <div className="absolute left-0 z-30 mt-1 w-80 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
           {products.length === 0 && !loading ? (
             <div className="px-3 py-3 text-xs text-gray-400">
-              {text.trim().length >= 2 ? `No products match "${text}"` : 'No products in your catalogue yet'}
+              {text.trim().length >= 2
+                ? `No products match "${text}"`
+                : 'No products in your catalogue yet'}
             </div>
           ) : (
             <div className="max-h-64 overflow-y-auto">
               {products.map((p) => {
-                const hasSizes = !p.sellWithoutSizeVariants && p.sizes.length > 0;
+                const hasSizes =
+                  !p.sellWithoutSizeVariants && p.sizes.length > 0;
                 const isExpanded = expandedId === p._id;
                 return (
                   <div key={p._id}>
@@ -198,20 +207,33 @@ export default function ProductLineSearch({
                       className={`flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-gray-50 ${isExpanded ? 'bg-gray-50' : ''}`}
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-semibold text-gray-900">{p.name}</p>
+                        <p className="truncate text-xs font-semibold text-gray-900">
+                          {p.name}
+                        </p>
                         <div className="mt-0.5 flex items-center gap-2">
-                          {p.sku && <span className="font-mono text-[10px] text-gray-400">{p.sku}</span>}
+                          {p.sku && (
+                            <span className="font-mono text-[10px] text-gray-400">
+                              {p.sku}
+                            </span>
+                          )}
                           {hasSizes && (
                             <span className="text-[10px] text-gray-400">
-                              {p.sizes.length} size{p.sizes.length !== 1 ? 's' : ''}
+                              {p.sizes.length} size
+                              {p.sizes.length !== 1 ? 's' : ''}
                             </span>
                           )}
                         </div>
                       </div>
                       {hasSizes ? (
-                        <PiCaretRight className={`h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                        <PiCaretRight
+                          className={`h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                        />
                       ) : (
-                        p.sellingPrice > 0 && <span className="shrink-0 text-xs font-medium text-gray-600">{p.sellingPrice.toFixed(2)}</span>
+                        p.sellingPrice > 0 && (
+                          <span className="shrink-0 text-xs font-medium text-gray-600">
+                            {p.sellingPrice.toFixed(2)}
+                          </span>
+                        )
                       )}
                     </button>
 
@@ -228,18 +250,30 @@ export default function ProductLineSearch({
                             className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-white"
                           >
                             <div className="min-w-0 flex-1">
-                              <p className="text-xs font-medium text-gray-800">{s.displayName ?? s.size}</p>
+                              <p className="text-xs font-medium text-gray-800">
+                                {s.displayName ?? s.size}
+                              </p>
                               <div className="mt-0.5 flex items-center gap-2">
-                                {s.sku && <span className="font-mono text-[10px] text-gray-400">{s.sku}</span>}
+                                {s.sku && (
+                                  <span className="font-mono text-[10px] text-gray-400">
+                                    {s.sku}
+                                  </span>
+                                )}
                                 {(s.availableStock ?? 0) > 0 ? (
-                                  <span className="text-[10px] text-emerald-600">{s.availableStock} in stock</span>
+                                  <span className="text-[10px] text-emerald-600">
+                                    {s.availableStock} in stock
+                                  </span>
                                 ) : (
-                                  <span className="text-[10px] text-gray-400">Out of stock</span>
+                                  <span className="text-[10px] text-gray-400">
+                                    Out of stock
+                                  </span>
                                 )}
                               </div>
                             </div>
                             {s.sellingPrice > 0 && (
-                              <span className="shrink-0 text-xs font-semibold text-gray-700">{s.sellingPrice.toFixed(2)}</span>
+                              <span className="shrink-0 text-xs font-semibold text-gray-700">
+                                {s.sellingPrice.toFixed(2)}
+                              </span>
                             )}
                           </button>
                         ))}

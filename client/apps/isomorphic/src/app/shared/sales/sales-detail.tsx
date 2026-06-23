@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
-import { salesOrderService, type SalesOrder } from '@/services/salesOrder.service';
+import {
+  salesOrderService,
+  type SalesOrder,
+} from '@/services/salesOrder.service';
 import SalesQuotationDetail from './sales-quotation-detail';
 import SalesOrderDetail from './sales-order-detail';
 
@@ -40,7 +43,10 @@ export default function SalesDetail({ id }: { id: string }) {
   }, [load]);
 
   if (loading) return <DetailSkeleton />;
-  if (!so) return <div className="py-20 text-center text-sm text-gray-500">Not found</div>;
+  if (!so)
+    return (
+      <div className="py-20 text-center text-sm text-gray-500">Not found</div>
+    );
 
   if (so.docType === 'quotation') {
     return <SalesQuotationDetail so={so} onChanged={load} />;

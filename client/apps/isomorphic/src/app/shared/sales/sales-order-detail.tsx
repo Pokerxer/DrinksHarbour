@@ -4,11 +4,25 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
-import { PiArrowLeft, PiCreditCard, PiTrayArrowDown, PiArrowUUpLeft, PiReceipt, PiX } from 'react-icons/pi';
+import {
+  PiArrowLeft,
+  PiCreditCard,
+  PiTrayArrowDown,
+  PiArrowUUpLeft,
+  PiReceipt,
+  PiX,
+} from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
-import { salesOrderService, type SalesOrder } from '@/services/salesOrder.service';
-import { ORDER_STATUS_BADGE, orderStatusLabel, outstanding } from './sales-helpers';
+import {
+  salesOrderService,
+  type SalesOrder,
+} from '@/services/salesOrder.service';
+import {
+  ORDER_STATUS_BADGE,
+  orderStatusLabel,
+  outstanding,
+} from './sales-helpers';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
 import SalesInvoiceView from './sales-invoice-view';
 
@@ -39,27 +53,45 @@ function ConfirmPaymentModal({
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
-      <div className="mx-4 w-full max-w-sm rounded-xl bg-white p-6 shadow-lg" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={onClose}
+    >
+      <div
+        className="mx-4 w-full max-w-sm rounded-xl bg-white p-6 shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="mb-4 flex items-center justify-between">
-          <p className="font-semibold text-gray-900">Confirm &amp; Capture Payment</p>
-          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <p className="font-semibold text-gray-900">
+            Confirm &amp; Capture Payment
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+          >
             <PiX className="h-4 w-4" />
           </button>
         </div>
-        <label className="mb-1.5 block text-xs font-medium text-gray-600">Payment Method</label>
+        <label className="mb-1.5 block text-xs font-medium text-gray-600">
+          Payment Method
+        </label>
         <select
           value={method}
           onChange={(e) => setMethod(e.target.value)}
           className="mb-4 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#b20202] focus:outline-none"
         >
           {PAYMENT_METHODS.map((m) => (
-            <option key={m.value} value={m.value}>{m.label}</option>
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
           ))}
         </select>
         {method === 'cash' && (
           <>
-            <label className="mb-1.5 block text-xs font-medium text-gray-600">Amount Tendered (optional)</label>
+            <label className="mb-1.5 block text-xs font-medium text-gray-600">
+              Amount Tendered (optional)
+            </label>
             <input
               type="number"
               min={0}
@@ -70,13 +102,19 @@ function ConfirmPaymentModal({
           </>
         )}
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
             Cancel
           </button>
           <button
             type="button"
             disabled={busy}
-            onClick={() => onConfirm(method, tendered ? Number(tendered) : undefined)}
+            onClick={() =>
+              onConfirm(method, tendered ? Number(tendered) : undefined)
+            }
             className="rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
           >
             {busy ? 'Confirming…' : 'Confirm Order'}
@@ -109,12 +147,18 @@ export default function SalesOrderDetail({
   async function handleConfirm(paymentMethod: string, amountTendered?: number) {
     setBusy(true);
     try {
-      await salesOrderService.confirm(so._id, { paymentMethod, amountTendered }, token);
+      await salesOrderService.confirm(
+        so._id,
+        { paymentMethod, amountTendered },
+        token
+      );
       toast.success('Order confirmed and payment captured');
       setConfirmOpen(false);
       onChanged();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to confirm order');
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to confirm order'
+      );
     } finally {
       setBusy(false);
     }
@@ -137,10 +181,18 @@ export default function SalesOrderDetail({
 
   return (
     <div>
-      <ConfirmPaymentModal open={confirmOpen} busy={busy} onClose={() => setConfirmOpen(false)} onConfirm={handleConfirm} />
+      <ConfirmPaymentModal
+        open={confirmOpen}
+        busy={busy}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={handleConfirm}
+      />
 
       <div className="mb-4 flex items-center gap-2 text-sm text-gray-500">
-        <Link href={routes.eCommerce.salesOrders} className="flex items-center gap-1 hover:text-gray-700">
+        <Link
+          href={routes.eCommerce.salesOrders}
+          className="flex items-center gap-1 hover:text-gray-700"
+        >
           <PiArrowLeft className="h-4 w-4" /> Orders
         </Link>
         <span>/</span>
@@ -150,7 +202,9 @@ export default function SalesOrderDetail({
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-semibold text-gray-900">{so.soNumber}</h1>
-          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${ORDER_STATUS_BADGE[status]}`}>
+          <span
+            className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${ORDER_STATUS_BADGE[status]}`}
+          >
             {orderStatusLabel(status)}
           </span>
         </div>
@@ -198,11 +252,21 @@ export default function SalesOrderDetail({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Product</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Ordered</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Outstanding</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Unit Price</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Line Total</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                    Product
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                    Ordered
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                    Outstanding
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                    Unit Price
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                    Line Total
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -212,14 +276,32 @@ export default function SalesOrderDetail({
                     <tr key={item._id}>
                       <td className="px-4 py-3 text-gray-900">
                         {item.name}
-                        {item.sku && <span className="ml-2 font-mono text-xs text-gray-400">{item.sku}</span>}
+                        {item.sku && (
+                          <span className="ml-2 font-mono text-xs text-gray-400">
+                            {item.sku}
+                          </span>
+                        )}
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-700">{item.quantity}</td>
+                      <td className="px-4 py-3 text-right text-gray-700">
+                        {item.quantity}
+                      </td>
                       <td className="px-4 py-3 text-right">
-                        <span className={out > 0 ? 'font-medium text-amber-600' : 'text-emerald-600'}>{out}</span>
+                        <span
+                          className={
+                            out > 0
+                              ? 'font-medium text-amber-600'
+                              : 'text-emerald-600'
+                          }
+                        >
+                          {out}
+                        </span>
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-700">{fmtCur(item.unitPrice, so.currency)}</td>
-                      <td className="px-4 py-3 text-right font-medium text-gray-900">{fmtCur(item.lineTotal, so.currency)}</td>
+                      <td className="px-4 py-3 text-right text-gray-700">
+                        {fmtCur(item.unitPrice, so.currency)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium text-gray-900">
+                        {fmtCur(item.lineTotal, so.currency)}
+                      </td>
                     </tr>
                   );
                 })}
@@ -231,10 +313,14 @@ export default function SalesOrderDetail({
         <div className="space-y-5">
           <div className="rounded-xl border border-gray-200 bg-white p-5 text-sm">
             <p className="mb-1 text-xs font-semibold text-gray-500">Customer</p>
-            <p className="mb-3 text-gray-900">{so.customerSnapshot?.name ?? 'Walk-in / none'}</p>
+            <p className="mb-3 text-gray-900">
+              {so.customerSnapshot?.name ?? 'Walk-in / none'}
+            </p>
             <p className="mb-1 text-xs font-semibold text-gray-500">Payment</p>
             <p className="mb-3 text-gray-900">
-              {so.paymentStatus === 'paid' ? `Paid via ${so.paymentMethod ?? '—'}` : 'Unpaid'}
+              {so.paymentStatus === 'paid'
+                ? `Paid via ${so.paymentMethod ?? '—'}`
+                : 'Unpaid'}
             </p>
             <div className="flex items-center justify-between border-t border-gray-100 pt-3 text-base font-semibold text-gray-900">
               <span>Total</span>

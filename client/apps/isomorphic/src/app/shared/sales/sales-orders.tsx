@@ -5,10 +5,20 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { PiArrowClockwise, PiEye, PiPlus, PiMagnifyingGlass, PiShoppingCartDuotone } from 'react-icons/pi';
+import {
+  PiArrowClockwise,
+  PiEye,
+  PiPlus,
+  PiMagnifyingGlass,
+  PiShoppingCartDuotone,
+} from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
-import { salesOrderService, type SalesOrder, type OrderStatus } from '@/services/salesOrder.service';
+import {
+  salesOrderService,
+  type SalesOrder,
+  type OrderStatus,
+} from '@/services/salesOrder.service';
 import { ORDER_STATUS_BADGE, orderStatusLabel } from './sales-helpers';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
 
@@ -26,12 +36,24 @@ const STATUS_TABS: { key: StatusFilter; label: string }[] = [
 function RowSkeleton() {
   return (
     <tr className="animate-pulse border-b border-gray-100">
-      <td className="px-4 py-3"><div className="h-4 w-24 rounded bg-gray-100" /></td>
-      <td className="px-4 py-3"><div className="h-4 w-32 rounded bg-gray-100" /></td>
-      <td className="px-4 py-3"><div className="h-5 w-16 rounded-full bg-gray-100" /></td>
-      <td className="px-4 py-3"><div className="ml-auto h-4 w-16 rounded bg-gray-100" /></td>
-      <td className="px-4 py-3"><div className="h-4 w-16 rounded bg-gray-100" /></td>
-      <td className="px-4 py-3"><div className="ml-auto h-4 w-8 rounded bg-gray-100" /></td>
+      <td className="px-4 py-3">
+        <div className="h-4 w-24 rounded bg-gray-100" />
+      </td>
+      <td className="px-4 py-3">
+        <div className="h-4 w-32 rounded bg-gray-100" />
+      </td>
+      <td className="px-4 py-3">
+        <div className="h-5 w-16 rounded-full bg-gray-100" />
+      </td>
+      <td className="px-4 py-3">
+        <div className="ml-auto h-4 w-16 rounded bg-gray-100" />
+      </td>
+      <td className="px-4 py-3">
+        <div className="h-4 w-16 rounded bg-gray-100" />
+      </td>
+      <td className="px-4 py-3">
+        <div className="ml-auto h-4 w-8 rounded bg-gray-100" />
+      </td>
     </tr>
   );
 }
@@ -64,10 +86,12 @@ export default function SalesOrders() {
 
   const filtered = useMemo(() => {
     return orders.filter((o) => {
-      if (statusFilter !== 'all' && o.orderStatus !== statusFilter) return false;
+      if (statusFilter !== 'all' && o.orderStatus !== statusFilter)
+        return false;
       if (search.trim()) {
         const needle = search.trim().toLowerCase();
-        const haystack = `${o.soNumber} ${o.customerSnapshot?.name ?? ''}`.toLowerCase();
+        const haystack =
+          `${o.soNumber} ${o.customerSnapshot?.name ?? ''}`.toLowerCase();
         if (!haystack.includes(needle)) return false;
       }
       return true;
@@ -91,7 +115,9 @@ export default function SalesOrders() {
       <div className="mb-5 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Orders</h1>
-          <p className="text-sm text-gray-500">Confirmed orders through fulfillment</p>
+          <p className="text-sm text-gray-500">
+            Confirmed orders through fulfillment
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -127,7 +153,9 @@ export default function SalesOrders() {
               {!loading && (
                 <span
                   className={`inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-xs font-semibold ${
-                    statusFilter === tab.key ? 'bg-[#b20202]/10 text-[#b20202]' : 'bg-gray-100 text-gray-500'
+                    statusFilter === tab.key
+                      ? 'bg-[#b20202]/10 text-[#b20202]'
+                      : 'bg-gray-100 text-gray-500'
                   }`}
                 >
                   {tab.count}
@@ -159,12 +187,24 @@ export default function SalesOrders() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50">
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Order #</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Customer</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Status</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Total</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Created</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Actions</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                Order #
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                Customer
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                Status
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                Total
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                Created
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -172,7 +212,10 @@ export default function SalesOrders() {
               Array.from({ length: 5 }).map((_, i) => <RowSkeleton key={i} />)
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={6} className="py-20 text-center text-sm text-gray-400">
+                <td
+                  colSpan={6}
+                  className="py-20 text-center text-sm text-gray-400"
+                >
                   <PiShoppingCartDuotone className="mx-auto mb-2 h-8 w-8 text-gray-300" />
                   No orders found
                 </td>
@@ -182,17 +225,31 @@ export default function SalesOrders() {
                 <tr
                   key={o._id}
                   className="cursor-pointer hover:bg-gray-50"
-                  onClick={() => router.push(routes.eCommerce.salesDetails(o._id))}
+                  onClick={() =>
+                    router.push(routes.eCommerce.salesDetails(o._id))
+                  }
                 >
-                  <td className="px-4 py-3 font-mono font-medium text-gray-900">{o.soNumber}</td>
-                  <td className="px-4 py-3 text-gray-700">{o.customerSnapshot?.name ?? '—'}</td>
+                  <td className="px-4 py-3 font-mono font-medium text-gray-900">
+                    {o.soNumber}
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">
+                    {o.customerSnapshot?.name ?? '—'}
+                  </td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${ORDER_STATUS_BADGE[o.orderStatus as OrderStatus] ?? 'bg-gray-100 text-gray-600'}`}>
+                    <span
+                      className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${ORDER_STATUS_BADGE[o.orderStatus as OrderStatus] ?? 'bg-gray-100 text-gray-600'}`}
+                    >
                       {orderStatusLabel(o.orderStatus)}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right font-medium text-gray-900">{fmtCur(o.total, o.currency)}</td>
-                  <td className="px-4 py-3 text-gray-600">{o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '—'}</td>
+                  <td className="px-4 py-3 text-right font-medium text-gray-900">
+                    {fmtCur(o.total, o.currency)}
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">
+                    {o.createdAt
+                      ? new Date(o.createdAt).toLocaleDateString()
+                      : '—'}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <Link
                       href={routes.eCommerce.salesDetails(o._id)}

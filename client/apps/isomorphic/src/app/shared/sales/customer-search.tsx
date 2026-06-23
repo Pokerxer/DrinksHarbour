@@ -74,7 +74,8 @@ export default function CustomerSearch({
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
     }
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
@@ -87,10 +88,16 @@ export default function CustomerSearch({
           {initials(selected)}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-gray-900">{customerName(selected)}</p>
+          <p className="truncate text-sm font-semibold text-gray-900">
+            {customerName(selected)}
+          </p>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-            {selected.email && <span className="text-xs text-gray-500">{selected.email}</span>}
-            {selected.phone && <span className="text-xs text-gray-500">{selected.phone}</span>}
+            {selected.email && (
+              <span className="text-xs text-gray-500">{selected.email}</span>
+            )}
+            {selected.phone && (
+              <span className="text-xs text-gray-500">{selected.phone}</span>
+            )}
             {selected.pricelistName && (
               <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">
                 {selected.pricelistName}
@@ -128,7 +135,9 @@ export default function CustomerSearch({
           className={`pl-9 pr-9 ${INPUT_CLS}`}
         />
         {loading && (
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">…</span>
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+            …
+          </span>
         )}
       </div>
 
@@ -137,7 +146,9 @@ export default function CustomerSearch({
           {results.length === 0 && !loading ? (
             <div className="flex items-center gap-2 px-4 py-3 text-sm text-gray-400">
               <PiUser className="h-4 w-4" />
-              {query.trim().length >= 2 ? `No customers match "${query}"` : 'No customers yet'}
+              {query.trim().length >= 2
+                ? `No customers match "${query}"`
+                : 'No customers yet'}
             </div>
           ) : (
             <div className="max-h-60 overflow-y-auto">
@@ -156,9 +167,15 @@ export default function CustomerSearch({
                     {initials(c)}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-gray-900">{customerName(c)}</p>
+                    <p className="truncate text-sm font-medium text-gray-900">
+                      {customerName(c)}
+                    </p>
                     <div className="flex items-center gap-2">
-                      {c.email && <span className="truncate text-xs text-gray-400">{c.email}</span>}
+                      {c.email && (
+                        <span className="truncate text-xs text-gray-400">
+                          {c.email}
+                        </span>
+                      )}
                       {c.pricelistName && (
                         <span className="shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">
                           {c.pricelistName}
