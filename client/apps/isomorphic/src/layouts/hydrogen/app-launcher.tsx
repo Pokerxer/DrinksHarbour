@@ -245,8 +245,8 @@ export default function AppLauncher() {
               let n = -1; // running index for the staggered reveal
               return (
                 <div className="space-y-9">
-                  {groups.map((group) => (
-                    <section key={group.label ?? '_'}>
+                  {groups.map((group, i) => (
+                    <section key={`${group.label ?? '_'}-${i}`}>
                       {group.label && (
                         <h2 className="applauncher-bar mb-4 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-red-100/60">
                           <span>{group.label}</span>

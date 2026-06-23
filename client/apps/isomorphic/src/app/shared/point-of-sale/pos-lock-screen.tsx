@@ -192,9 +192,25 @@ export default function POSLockScreen() {
   const settings = usePOSSettings();
   const canBypassPIN = !settings.requirePINOnUnlock && !!token;
   const { tenant, tenantSlug: contextSlug } = useTenant();
-  const urlSlug = searchParams.get('_tenant') || '';
+  const [sessionSlug, setSessionSlug] = useState<string | null>(null);
 
-  const tenantSlug = contextSlug || urlSlug || '';
+  // On localhost contextSlug is null (no subdomain).
+  // Fetch /api/auth/session once to read tenantSlug from the NextAuth session.
+  // NextAuth v4 encrypts its session cookie (JWE), so we cannot decode it
+  // client-side — we must call the session endpoint instead.
+  useEffect(() => {
+    if (contextSlug) return;
+    fetch('/api/auth/session')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((s) => {
+        const slug = (s as { user?: { tenantSlug?: string } } | null)?.user
+          ?.tenantSlug;
+        if (slug) setSessionSlug(slug);
+      })
+      .catch(() => {});
+  }, [contextSlug]);
+
+  const tenantSlug = contextSlug || sessionSlug || '';
 
   const [allStaff, setAllStaff] = useState<POSStaff[]>([]);
   const [staffLoading, setStaffLoading] = useState(false);

@@ -37,6 +37,10 @@ function authHeaders(token: string): HeadersInit {
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, options);
   const body = (await res.json()) as ApiResponse<T>;
+  // Do NOT signOut() here. This handler runs for every POS request, including
+  // staff-login: a wrong PIN returns 401, and calling signOut() destroyed the
+  // NextAuth session and bounced the cashier to /signin with "session expired".
+  // Surface the server's message instead and let callers handle re-auth.
   if (res.status === 401) {
     throw new Error(body.message || 'Unauthorized. Please re-authenticate.');
   }

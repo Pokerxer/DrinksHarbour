@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { usePOSAuth } from '@/app/shared/point-of-sale/store';
+import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import {
   PiPlus, PiPencilSimple, PiTrash, PiX, PiPackage,
@@ -1229,8 +1229,8 @@ function ComboCard({ combo, onEdit, onDelete, onToggle }: {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function POSCombos() {
-  const { token: posToken } = usePOSAuth();
-  const token = posToken && !isTokenExpired(posToken) ? posToken : null;
+  const { data: session } = useSession();
+  const token = session?.user?.token as string | undefined;
 
   const [combos,   setCombos]   = useState<Combo[]>([]);
   const [products, setProducts] = useState<Product[]>([]);

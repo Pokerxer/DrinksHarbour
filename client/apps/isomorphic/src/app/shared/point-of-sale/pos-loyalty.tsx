@@ -14,7 +14,7 @@ import {
   PiCalendar, PiCurrencyNgn, PiMagnifyingGlass, PiPackage,
   PiTrophy, PiCrown, PiClock, PiCoins,
 } from 'react-icons/pi';
-import { usePOSAuth } from '@/app/shared/point-of-sale/store';
+import { useSession } from 'next-auth/react';
 import { routes } from '@/config/routes';
 import POSNavHeader from '@/app/shared/point-of-sale/pos-nav-header';
 import { posApi } from '@/app/shared/point-of-sale/api';
@@ -1547,8 +1547,8 @@ type TabId = typeof TABS[number]['id'];
 
 export default function POSLoyalty() {
   const router  = useRouter();
-  const { token: posToken } = usePOSAuth();
-  const token = posToken && !isTokenExpired(posToken) ? posToken : null;
+  const { data: session } = useSession();
+  const token = session?.user?.token as string | undefined;
   const [loading, setLoading] = useState(true);
   const [saving,  setSaving]  = useState(false);
   const [tab,     setTab]     = useState<TabId>('coupons');

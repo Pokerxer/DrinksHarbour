@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { useSession } from 'next-auth/react';
 import { posApi } from '@/app/shared/point-of-sale/api';
-import { usePOSAuth } from '@/app/shared/point-of-sale/store';
 import { useTenant } from '@/context/TenantContext';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import { POSSession } from '@/app/shared/point-of-sale/types';
@@ -1310,10 +1310,13 @@ function CashierLogSection({ session }: { session: POSSession }) {
 type Tab = 'report' | 'orders' | 'zreport';
 
 export default function POSSessionReport() {
-  const { token: posToken } = usePOSAuth();
+  const { data: auth } = useSession();
   const { tenant } = useTenant();
   const storeName = tenant?.name || 'DrinksHarbour';
-  const token = posToken && !isTokenExpired(posToken) ? posToken : null;
+  const token = useMemo(() => {
+    const t = (auth?.user as { token?: string })?.token ?? null;
+    return isTokenExpired(t) ? null : t;
+  }, [auth]);
 
   const [sessions, setSessions] = useState<POSSession[]>([]);
   const [loading, setLoading] = useState(true);
