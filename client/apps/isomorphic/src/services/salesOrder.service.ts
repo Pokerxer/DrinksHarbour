@@ -25,6 +25,15 @@ export interface SalesOrderCustomerSnapshot {
   customerId?: string;
 }
 
+export interface SalesOrderAddress {
+  name?: string;
+  phone?: string;
+  street?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+}
+
 export interface SalesOrderFulfillment {
   _id: string;
   warehouseId: string;
@@ -69,6 +78,8 @@ export interface SalesOrder {
   orderStatus?: OrderStatus;
   paymentTerms?: string;
   dueDate?: string;
+  invoiceAddress?: SalesOrderAddress;
+  deliveryAddress?: SalesOrderAddress;
   paymentMethod?: string;
   paymentStatus?: 'unpaid' | 'paid';
   amountPaid?: number;
@@ -104,6 +115,8 @@ export interface CreateSalesOrderInput {
   items: SalesOrderLineInput[];
   validUntil?: string;
   paymentTerms?: string;
+  invoiceAddress?: SalesOrderAddress;
+  deliveryAddress?: SalesOrderAddress;
   notes?: string;
   terms?: string;
 }
@@ -114,6 +127,8 @@ export interface UpdateSalesOrderInput {
   terms?: string;
   validUntil?: string;
   paymentTerms?: string;
+  invoiceAddress?: SalesOrderAddress;
+  deliveryAddress?: SalesOrderAddress;
 }
 
 export interface FulfillPosting {

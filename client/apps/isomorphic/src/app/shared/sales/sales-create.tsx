@@ -14,7 +14,10 @@ import {
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
-import { salesOrderService } from '@/services/salesOrder.service';
+import {
+  salesOrderService,
+  type SalesOrderAddress,
+} from '@/services/salesOrder.service';
 import type { POSCustomer } from '@/app/shared/point-of-sale/types';
 import type { POSCartItem } from '@/app/shared/point-of-sale/types';
 import { computeItemPriceWithPricelist } from '@/app/shared/point-of-sale/store';
@@ -84,6 +87,42 @@ function lineTotalOf(unitPrice: number, discount: number, quantity: number) {
   return Math.max(0, unitPrice - discount) * quantity;
 }
 
+const ADDRESS_FIELDS: { key: keyof SalesOrderAddress; label: string; span?: boolean }[] = [
+  { key: 'name', label: 'Name' },
+  { key: 'phone', label: 'Phone' },
+  { key: 'street', label: 'Street', span: true },
+  { key: 'city', label: 'City' },
+  { key: 'state', label: 'State' },
+  { key: 'country', label: 'Country' },
+];
+
+/** Two-column block of the 6 structured address inputs. */
+function AddressFields({
+  value,
+  onChange,
+}: {
+  value: SalesOrderAddress;
+  onChange: (patch: SalesOrderAddress) => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {ADDRESS_FIELDS.map((f) => (
+        <div key={f.key} className={f.span ? 'sm:col-span-2' : undefined}>
+          <label className="mb-1.5 block text-xs font-medium text-gray-600">
+            {f.label}
+          </label>
+          <input
+            type="text"
+            value={value[f.key] ?? ''}
+            onChange={(e) => onChange({ [f.key]: e.target.value })}
+            className={INPUT_CLS}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type CreateTab = 'lines' | 'other';
 
 /** Non-interactive lifecycle-stage indicator — visual parity only, no click behavior. */
@@ -110,8 +149,22 @@ export default function SalesCreate() {
   const [terms, setTerms] = useState('');
   const [validUntil, setValidUntil] = useState('');
   const [paymentTerms, setPaymentTerms] = useState('immediate');
+  const [invoiceAddress, setInvoiceAddress] = useState<SalesOrderAddress>({});
+  const [deliverDifferent, setDeliverDifferent] = useState(false);
+  const [deliveryAddress, setDeliveryAddress] = useState<SalesOrderAddress>({});
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<CreateTab>('lines');
+
+  // Prefill the invoice name/phone from the selected customer; the customer has
+  // no stored address, so street/city/state/country stay for the user to fill.
+  const handleSelectCustomer = useCallback((c: POSCustomer) => {
+    setCustomer(c);
+    setInvoiceAddress((prev) => ({
+      ...prev,
+      name: `${c.firstName} ${c.lastName}`.trim(),
+      phone: c.phone ?? '',
+    }));
+  }, []);
 
   const today = useMemo(
     () => new Date().toLocaleDateString(undefined, { dateStyle: 'medium' }),
@@ -198,6 +251,9 @@ export default function SalesCreate() {
           })),
           validUntil: validUntil || undefined,
           paymentTerms,
+          invoiceAddress,
+          // Default: delivery mirrors invoice. Toggled: send the separate block.
+          deliveryAddress: deliverDifferent ? deliveryAddress : invoiceAddress,
           notes: notes || undefined,
           terms: terms || undefined,
         },
@@ -275,7 +331,7 @@ export default function SalesCreate() {
           <CustomerSearch
             token={token}
             selected={customer}
-            onSelect={setCustomer}
+            onSelect={handleSelectCustomer}
             onClear={() => setCustomer(null)}
           />
           {pricelist && (
@@ -496,6 +552,42 @@ export default function SalesCreate() {
                   ))}
                 </select>
               </div>
+
+              <div className="sm:col-span-2">
+                <h3 className="mb-3 text-sm font-semibold text-gray-900">
+                  Invoice Address
+                </h3>
+                <AddressFields
+                  value={invoiceAddress}
+                  onChange={(patch) =>
+                    setInvoiceAddress((prev) => ({ ...prev, ...patch }))
+                  }
+                />
+                <label className="mt-3 flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={deliverDifferent}
+                    onChange={(e) => setDeliverDifferent(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-[#b20202] focus:ring-[#b20202]/20"
+                  />
+                  Deliver to a different address
+                </label>
+              </div>
+
+              {deliverDifferent && (
+                <div className="sm:col-span-2">
+                  <h3 className="mb-3 text-sm font-semibold text-gray-900">
+                    Delivery Address
+                  </h3>
+                  <AddressFields
+                    value={deliveryAddress}
+                    onChange={(patch) =>
+                      setDeliveryAddress((prev) => ({ ...prev, ...patch }))
+                    }
+                  />
+                </div>
+              )}
+
               <div className="sm:col-span-2">
                 <label className="mb-1.5 block text-xs font-medium text-gray-600">
                   Notes

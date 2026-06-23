@@ -19,6 +19,7 @@ import {
 } from '@/services/salesOrder.service';
 import {
   QUOTE_STATUS_BADGE,
+  addressLines,
   quoteStatusLabel,
   paymentTermsLabel,
 } from './sales-helpers';
@@ -221,9 +222,15 @@ export default function SalesQuotationDetail({
         <div className="space-y-5">
           <div className="rounded-xl border border-gray-200 bg-white p-5 text-sm">
             <p className="mb-1 text-xs font-semibold text-gray-500">Customer</p>
-            <p className="mb-3 text-gray-900">
+            <p className="mb-1 text-gray-900">
               {so.customerSnapshot?.name ?? 'Walk-in / none'}
             </p>
+            {addressLines(so.invoiceAddress).map((l) => (
+              <p key={l} className="text-xs text-gray-500">
+                {l}
+              </p>
+            ))}
+            <div className="mb-3" />
             {so.validUntil && (
               <>
                 <p className="mb-1 text-xs font-semibold text-gray-500">

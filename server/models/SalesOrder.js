@@ -20,6 +20,17 @@ const lineSchema = new Schema({
   returnedQty:  { type: Number, default: 0, min: 0 },
 });
 
+// Reusable structured address (billing/shipping). All optional — walk-ins and
+// existing orders carry none. No _id so it stays a plain embedded value.
+const addressSchema = new Schema({
+  name:    { type: String, trim: true },
+  phone:   { type: String, trim: true },
+  street:  { type: String, trim: true },
+  city:    { type: String, trim: true },
+  state:   { type: String, trim: true },
+  country: { type: String, trim: true },
+}, { _id: false });
+
 const fulfillmentSchema = new Schema({
   warehouseId: { type: ObjectId, ref: 'Warehouse' },
   items: [{
@@ -90,6 +101,10 @@ const SalesOrderSchema = new Schema(
       default: 'immediate',
     },
     dueDate: { type: Date },
+
+    // Billing + shipping addresses (snapshots; optional)
+    invoiceAddress:  addressSchema,
+    deliveryAddress: addressSchema,
 
     notes: { type: String, maxlength: 2000 },
     terms: { type: String, maxlength: 2000 },

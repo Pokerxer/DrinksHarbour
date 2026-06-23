@@ -37,6 +37,25 @@ function normalizePaymentTerms(termKey) {
   return PAYMENT_TERM_KEYS.includes(termKey) ? termKey : 'immediate';
 }
 
+/** The structured address fields we capture/snapshot (order matters for output). */
+const ADDRESS_FIELDS = ['name', 'phone', 'street', 'city', 'state', 'country'];
+
+/**
+ * Clean an inbound address into the 6 known string fields (trimmed, missing →
+ * ''), or undefined if the whole thing is blank. Pure: no DB, no validation.
+ */
+function normalizeAddress(addr) {
+  if (!addr || typeof addr !== 'object') return undefined;
+  const clean = {};
+  let hasAny = false;
+  for (const f of ADDRESS_FIELDS) {
+    const v = (addr[f] == null ? '' : String(addr[f])).trim();
+    clean[f] = v;
+    if (v) hasAny = true;
+  }
+  return hasAny ? clean : undefined;
+}
+
 /** Compute a single line's UNTAXED total: (unitPrice - discount) * quantity, floored at 0. */
 function lineTotalOf(item) {
   const unit = Math.max(0, (Number(item.unitPrice) || 0) - (Number(item.discount) || 0));
@@ -111,6 +130,8 @@ async function createSalesOrderDoc({ tenantId, body }) {
     validUntil: body.validUntil || undefined,
     paymentTerms,
     dueDate: computeDueDate(paymentTerms),
+    invoiceAddress: normalizeAddress(body.invoiceAddress),
+    deliveryAddress: normalizeAddress(body.deliveryAddress),
     notes: body.notes, terms: body.terms,
     ...(docType === 'quotation' ? { quoteStatus: 'draft' } : { orderStatus: 'draft' }),
   });
@@ -144,6 +165,8 @@ function applyEdit(so, body) {
     // Recompute due date off the original document date, not "now".
     so.dueDate = computeDueDate(so.paymentTerms, so.createdAt || new Date());
   }
+  if (body.invoiceAddress !== undefined) so.invoiceAddress = normalizeAddress(body.invoiceAddress);
+  if (body.deliveryAddress !== undefined) so.deliveryAddress = normalizeAddress(body.deliveryAddress);
 }
 
 /**
@@ -174,6 +197,8 @@ async function convertQuotationToOrder(quotation) {
     taxTotal: quotation.taxTotal, total: quotation.total,
     paymentTerms: quotation.paymentTerms || 'immediate',
     dueDate: computeDueDate(quotation.paymentTerms || 'immediate'),
+    invoiceAddress: normalizeAddress(quotation.invoiceAddress),
+    deliveryAddress: normalizeAddress(quotation.deliveryAddress),
     notes: quotation.notes, terms: quotation.terms,
     orderStatus: 'draft',
     convertedFrom: quotation._id,
@@ -187,5 +212,5 @@ async function convertQuotationToOrder(quotation) {
 module.exports = {
   lineTotalOf, lineTaxOf, mapLine, computeTotals, createSalesOrderDoc,
   canEdit, canCancel, applyEdit, convertQuotationToOrder,
-  PAYMENT_TERMS, computeDueDate, normalizePaymentTerms,
+  PAYMENT_TERMS, computeDueDate, normalizePaymentTerms, normalizeAddress,
 };

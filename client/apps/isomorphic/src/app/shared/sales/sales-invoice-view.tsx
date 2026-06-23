@@ -5,9 +5,15 @@ import { Badge, Title, Text } from 'rizzui';
 import { PiPrinter } from 'react-icons/pi';
 import type { SalesOrder } from '@/services/salesOrder.service';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
+import { addressIsEmpty, addressesDiffer, addressLines } from './sales-helpers';
 
 export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
   const paid = so.paymentStatus === 'paid';
+  const ship = so.deliveryAddress;
+  const showShipTo =
+    !!ship &&
+    !addressIsEmpty(ship) &&
+    addressesDiffer(ship, so.invoiceAddress);
 
   return (
     <div className="w-full rounded-xl border border-gray-200 bg-white p-5 text-sm sm:p-6">
@@ -37,7 +43,11 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
         </div>
       </div>
 
-      <div className="mb-10 grid gap-4 sm:grid-cols-2">
+      <div
+        className={`mb-10 grid gap-4 ${
+          showShipTo ? 'sm:grid-cols-3' : 'sm:grid-cols-2'
+        }`}
+      >
         <div>
           <Title as="h6" className="mb-2 font-semibold">
             Bill To
@@ -49,9 +59,30 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
             <Text className="mb-1">{so.customerSnapshot.phone}</Text>
           )}
           {so.customerSnapshot?.email && (
-            <Text>{so.customerSnapshot.email}</Text>
+            <Text className="mb-1">{so.customerSnapshot.email}</Text>
           )}
+          {addressLines(so.invoiceAddress).map((l) => (
+            <Text key={l} className="mb-1 text-gray-500">
+              {l}
+            </Text>
+          ))}
         </div>
+        {showShipTo && (
+          <div>
+            <Title as="h6" className="mb-2 font-semibold">
+              Ship To
+            </Title>
+            {ship?.name && (
+              <Text className="mb-1 font-semibold uppercase">{ship.name}</Text>
+            )}
+            {ship?.phone && <Text className="mb-1">{ship.phone}</Text>}
+            {addressLines(ship).map((l) => (
+              <Text key={l} className="mb-1 text-gray-500">
+                {l}
+              </Text>
+            ))}
+          </div>
+        )}
         <div className="sm:text-right">
           <Title as="h6" className="mb-2 font-semibold">
             Order Date

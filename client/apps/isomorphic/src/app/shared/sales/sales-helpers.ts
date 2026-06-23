@@ -3,7 +3,42 @@ import type {
   SalesLineItem,
   QuoteStatus,
   OrderStatus,
+  SalesOrderAddress,
 } from '@/services/salesOrder.service';
+
+const ADDRESS_KEYS: (keyof SalesOrderAddress)[] = [
+  'name',
+  'phone',
+  'street',
+  'city',
+  'state',
+  'country',
+];
+
+const addrVal = (a: SalesOrderAddress | undefined, k: keyof SalesOrderAddress) =>
+  (a?.[k] ?? '').toString().trim();
+
+/** True when the address carries no displayable content. */
+export function addressIsEmpty(a?: SalesOrderAddress): boolean {
+  return ADDRESS_KEYS.every((k) => !addrVal(a, k));
+}
+
+/** True when two addresses differ on any of the six fields. */
+export function addressesDiffer(
+  a?: SalesOrderAddress,
+  b?: SalesOrderAddress
+): boolean {
+  return ADDRESS_KEYS.some((k) => addrVal(a, k) !== addrVal(b, k));
+}
+
+/** Non-empty location lines (street + "City, State, Country"), for compact display. */
+export function addressLines(a?: SalesOrderAddress): string[] {
+  const street = addrVal(a, 'street');
+  const locality = [addrVal(a, 'city'), addrVal(a, 'state'), addrVal(a, 'country')]
+    .filter(Boolean)
+    .join(', ');
+  return [street, locality].filter(Boolean);
+}
 
 /** Units still owed on a line: ordered minus shipped minus returned, floored at 0. Mirrors server/services/salesFulfill.helpers.js:outstanding. */
 export function outstanding(line: SalesLineItem): number {
