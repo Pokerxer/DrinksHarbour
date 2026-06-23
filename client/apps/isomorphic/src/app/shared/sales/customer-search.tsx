@@ -125,7 +125,6 @@ export default function CustomerSearch({
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
-            setOpen(false);
           }}
           onFocus={() => {
             ensureInitial();

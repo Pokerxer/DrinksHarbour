@@ -82,7 +82,13 @@ function buildPostingLines(soItems) {
   for (const it of soItems || []) {
     const delta = (it.fulfilledQty || 0) - (it.postedQty || 0);
     if (delta <= 0) continue;
-    out.push({ ...it, qty: delta });
+    // Mongoose subdocuments store schema fields behind getters, not as
+    // own-enumerable properties, so `{ ...it }` silently drops everything
+    // (subproduct, size, _id, name...) and keeps only internal bookkeeping
+    // (_doc, $__, ...). Go through toObject() first when it's a real
+    // subdocument; plain test fixtures (no toObject) spread as before.
+    const plain = typeof it.toObject === 'function' ? it.toObject() : it;
+    out.push({ ...plain, qty: delta });
   }
   return out;
 }

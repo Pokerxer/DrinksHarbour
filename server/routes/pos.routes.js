@@ -110,25 +110,19 @@ router.post('/orders/:id/refund',             protectPOS, requirePOSPermission('
 router.post('/orders/:id/void',               protectPOS, requirePOSPermission('pos:void'),   voidPOSOrder);
 
 // Session management — called from POS terminal, uses POS token
-// ── Selectable pricelists (for cashier pricelist selector on sell page) ───────
-router.get('/pricelists', protectPOS, async (req, res, next) => {
+// ── Selectable pricelists (cashier pricelist selector + back-office callers,
+//    e.g. the Sales module's customer-pricelist auto-apply on /sales/create) ─
+router.get('/pricelists', protectPOSOrAdmin, async (req, res, next) => {
   try {
-    const Pricelist = require('../models/Pricelist');
     const tenantId = req.tenant?._id;
     const { shopId, customerId } = req.query;
 
-    // Without a shop, fall back to the legacy all-selectable list.
-    if (!shopId) {
-      const filter = { isSelectable: true };
-      if (tenantId) filter.tenant = tenantId;
-      const pricelists = await Pricelist.find(filter)
-        .select('name currency rules countryGroups website shops warehouses isDefault')
-        .lean();
-      return res.json({ success: true, data: { pricelists, resolvedId: null } });
-    }
-
     // A selected customer may have an assigned pricelist; it takes top precedence
     // so the auto-resolved id reflects the customer's pricelist on the selector.
+    // This applies whether or not a shop is in play — resolveShopPricelist's
+    // precedence chain (customer → shop → warehouse → default) degrades
+    // gracefully to "customer → tenant default warehouse → default" when
+    // shopId is absent (e.g. the Sales module, which has no shop concept).
     let customerPricelistId = null;
     if (customerId) {
       const POSCustomer = require('../models/POSCustomer');
@@ -137,7 +131,6 @@ router.get('/pricelists', protectPOS, async (req, res, next) => {
       customerPricelistId = cust?.pricelist ? String(cust.pricelist) : null;
     }
 
-    // Shop-scoped: return the allowed set (with rules) + the auto-resolved id.
     const { resolveShopPricelist } = require('../services/pricelist.service');
     const { resolved, allowed } = await resolveShopPricelist(req.tenant, tenantId, shopId, customerPricelistId);
     res.json({
@@ -217,7 +210,9 @@ router.get('/combos', protectPOS, async (req, res, next) => {
 });
 
 // ── POS Customers (loyalty) ───────────────────────────────────────────────────
-router.get('/customers',                      protectPOS, searchPOSCustomers);
+// GET (search) is also called by the Sales module's customer picker outside a
+// POS session, so it accepts an admin JWT too — mutating routes stay POS-only.
+router.get('/customers',                      protectPOSOrAdmin, searchPOSCustomers);
 router.post('/customers',                     protectPOS, createPOSCustomer);
 router.get('/customers/:id',                  protectPOS, getPOSCustomer);
 router.patch('/customers/:id/loyalty',        protectPOS, updatePOSCustomerLoyalty);
