@@ -42,6 +42,7 @@ interface DraftLine {
   quantity: number;
   baseUnitPrice: number;
   discount: number;
+  taxRate: number;
   costPrice: number;
 }
 
@@ -54,6 +55,7 @@ function blankLine(): DraftLine {
     quantity: 1,
     baseUnitPrice: 0,
     discount: 0,
+    taxRate: 0,
     costPrice: 0,
   };
 }
@@ -135,16 +137,21 @@ export default function SalesCreate() {
     () =>
       lines.map((l) => {
         const unitPrice = liveUnitPrice(l, pricelist);
+        const lineTotal = lineTotalOf(unitPrice, l.discount, l.quantity);
         return {
           ...l,
           unitPrice,
-          lineTotal: lineTotalOf(unitPrice, l.discount, l.quantity),
+          lineTotal,
+          taxAmount: Math.round(lineTotal * (Math.max(0, l.taxRate) / 100)),
         };
       }),
     [lines, pricelist]
   );
 
-  const grandTotal = priced.reduce((s, l) => s + l.lineTotal, 0);
+  // Odoo-style totals: Untaxed Amount + Tax = Total (tax-exclusive).
+  const untaxedAmount = priced.reduce((s, l) => s + l.lineTotal, 0);
+  const taxTotal = priced.reduce((s, l) => s + l.taxAmount, 0);
+  const grandTotal = untaxedAmount + taxTotal;
   const hasLines = lines.some((l) => l.subProductId);
 
   async function handleSave(asOrder: boolean) {
@@ -185,6 +192,7 @@ export default function SalesCreate() {
             quantity: l.quantity,
             unitPrice: l.unitPrice,
             discount: l.discount,
+            taxRate: l.taxRate,
           })),
           validUntil: validUntil || undefined,
           notes: notes || undefined,
@@ -342,6 +350,9 @@ export default function SalesCreate() {
                       Discount
                     </th>
                     <th className="px-2 py-2 text-right text-xs font-medium text-gray-500">
+                      Tax %
+                    </th>
+                    <th className="px-2 py-2 text-right text-xs font-medium text-gray-500">
                       Line Total
                     </th>
                     <th className="px-2 py-2" />
@@ -364,6 +375,7 @@ export default function SalesCreate() {
                               sizeName: info.sizeName,
                               baseUnitPrice: info.sellingPrice,
                               costPrice: info.costPrice,
+                              taxRate: info.taxRate,
                             })
                           }
                         />
@@ -403,6 +415,24 @@ export default function SalesCreate() {
                           className={`${INLINE_CELL_CLS} w-24`}
                         />
                       </td>
+                      <td className="px-2 py-2">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step="0.5"
+                          value={line.taxRate}
+                          onChange={(e) =>
+                            updateLine(line.key, {
+                              taxRate: Math.min(
+                                100,
+                                Math.max(0, Number(e.target.value) || 0)
+                              ),
+                            })
+                          }
+                          className={`${INLINE_CELL_CLS} w-16`}
+                        />
+                      </td>
                       <td className="px-2 py-2 text-right text-sm font-semibold text-gray-900">
                         {fmtCur(line.lineTotal, 'NGN')}
                       </td>
@@ -429,9 +459,19 @@ export default function SalesCreate() {
               </button>
 
               <div className="mt-6 flex justify-end border-t border-gray-100 pt-4">
-                <div className="flex w-full max-w-xs items-center justify-between text-base font-semibold text-gray-900">
-                  <span>Total</span>
-                  <span>{fmtCur(grandTotal, 'NGN')}</span>
+                <div className="w-full max-w-xs space-y-1.5">
+                  <div className="flex items-center justify-between text-sm text-gray-600">
+                    <span>Untaxed Amount</span>
+                    <span>{fmtCur(untaxedAmount, 'NGN')}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm text-gray-600">
+                    <span>Tax</span>
+                    <span>{fmtCur(taxTotal, 'NGN')}</span>
+                  </div>
+                  <div className="flex items-center justify-between border-t border-gray-100 pt-1.5 text-base font-semibold text-gray-900">
+                    <span>Total</span>
+                    <span>{fmtCur(grandTotal, 'NGN')}</span>
+                  </div>
                 </div>
               </div>
             </>

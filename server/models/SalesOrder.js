@@ -12,7 +12,9 @@ const lineSchema = new Schema({
   quantity:    { type: Number, required: true, min: 1 },
   unitPrice:   { type: Number, required: true, min: 0 }, // snapshot at line creation
   discount:    { type: Number, default: 0, min: 0 },
-  lineTotal:   { type: Number, required: true, min: 0 },
+  taxRate:     { type: Number, default: 0, min: 0, max: 100 }, // % snapshot from SubProduct.taxRate, editable
+  taxAmount:   { type: Number, default: 0, min: 0 },           // tax on this line (untaxed lineTotal * taxRate/100)
+  lineTotal:   { type: Number, required: true, min: 0 },       // UNTAXED: (unitPrice - discount) * quantity
   fulfilledQty: { type: Number, default: 0, min: 0 },
   postedQty:    { type: Number, default: 0, min: 0 },
   returnedQty:  { type: Number, default: 0, min: 0 },
@@ -47,9 +49,10 @@ const SalesOrderSchema = new Schema(
     currency: { type: String, default: 'NGN', enum: ['NGN', 'USD', 'EUR', 'GBP'] },
 
     items: [lineSchema],
-    subtotal:      { type: Number, default: 0 },
-    discountTotal: { type: Number, default: 0 },
-    total:         { type: Number, default: 0 },
+    subtotal:      { type: Number, default: 0 }, // gross: sum(unitPrice * qty), pre-discount
+    discountTotal: { type: Number, default: 0 }, // sum(discount * qty)
+    taxTotal:      { type: Number, default: 0 }, // sum(line taxAmount); untaxed = subtotal - discountTotal
+    total:         { type: Number, default: 0 }, // grand total: (subtotal - discountTotal) + taxTotal
 
     // Quotation lifecycle (only when docType === 'quotation')
     quoteStatus: {

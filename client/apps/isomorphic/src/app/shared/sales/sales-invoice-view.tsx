@@ -86,6 +86,9 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
                 Unit Price
               </th>
               <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">
+                Tax %
+              </th>
+              <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">
                 Total
               </th>
             </tr>
@@ -99,6 +102,9 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
                 </td>
                 <td className="px-3 py-2 text-right text-gray-700">
                   {fmtCur(item.unitPrice, so.currency)}
+                </td>
+                <td className="px-3 py-2 text-right text-gray-700">
+                  {item.taxRate ? `${item.taxRate}%` : '—'}
                 </td>
                 <td className="px-3 py-2 text-right font-medium text-gray-900">
                   {fmtCur(item.lineTotal, so.currency)}
@@ -121,6 +127,12 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
             Discount:{' '}
             <Text as="span" className="font-semibold">
               {fmtCur(so.discountTotal, so.currency)}
+            </Text>
+          </Text>
+          <Text className="flex items-center justify-between border-b border-gray-100 py-2">
+            Tax:{' '}
+            <Text as="span" className="font-semibold">
+              {fmtCur(so.taxTotal ?? 0, so.currency)}
             </Text>
           </Text>
           <Text className="flex items-center justify-between pt-3 text-base font-semibold text-gray-900">

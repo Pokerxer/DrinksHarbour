@@ -13,6 +13,7 @@ export interface ProductLineSelection {
   productId?: string;
   sellingPrice: number;
   costPrice: number;
+  taxRate: number;
   sizeId?: string;
   sizeName?: string;
 }
@@ -33,6 +34,7 @@ interface ProductOption {
   sku: string;
   sellingPrice: number;
   costPrice: number;
+  taxRate: number;
   sellWithoutSizeVariants: boolean;
   sizes: SizeOption[];
 }
@@ -45,6 +47,7 @@ function mapProducts(raw: any[]): ProductOption[] {
     sku: sp.sku ?? '',
     sellingPrice: sp.baseSellingPrice ?? 0,
     costPrice: sp.costPrice ?? 0,
+    taxRate: sp.taxRate ?? 0,
     sellWithoutSizeVariants: sp.sellWithoutSizeVariants ?? false,
     sizes: (sp.sizes ?? []).map((s: any) => ({
       size: String(s._id ?? s.size ?? ''),
@@ -136,6 +139,7 @@ export default function ProductLineSearch({
       productId: p.productId,
       sellingPrice: p.sellingPrice,
       costPrice: p.costPrice,
+      taxRate: p.taxRate,
     });
     setText(p.name);
     setOpen(false);
@@ -150,6 +154,7 @@ export default function ProductLineSearch({
       productId: p.productId,
       sellingPrice: s.sellingPrice,
       costPrice: s.costPrice,
+      taxRate: p.taxRate,
       sizeId: s.size,
       sizeName: displaySize,
     });

@@ -10,6 +10,8 @@ export interface SalesLineItem {
   quantity: number;
   unitPrice: number;
   discount: number;
+  taxRate?: number;
+  taxAmount?: number;
   lineTotal: number;
   fulfilledQty: number;
   postedQty: number;
@@ -60,6 +62,7 @@ export interface SalesOrder {
   items: SalesLineItem[];
   subtotal: number;
   discountTotal: number;
+  taxTotal?: number;
   total: number;
   quoteStatus?: QuoteStatus;
   validUntil?: string;
@@ -87,6 +90,7 @@ export interface SalesOrderLineInput {
   quantity: number;
   unitPrice: number;
   discount?: number;
+  taxRate?: number;
 }
 
 export interface CreateSalesOrderInput {

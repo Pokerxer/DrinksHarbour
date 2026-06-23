@@ -230,9 +230,19 @@ export default function SalesQuotationDetail({
                 </p>
               </>
             )}
-            <div className="flex items-center justify-between border-t border-gray-100 pt-3 text-base font-semibold text-gray-900">
-              <span>Total</span>
-              <span>{fmtCur(so.total, so.currency)}</span>
+            <div className="space-y-1 border-t border-gray-100 pt-3">
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span>Untaxed Amount</span>
+                <span>{fmtCur(so.subtotal - so.discountTotal, so.currency)}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span>Tax</span>
+                <span>{fmtCur(so.taxTotal ?? 0, so.currency)}</span>
+              </div>
+              <div className="flex items-center justify-between pt-1 text-base font-semibold text-gray-900">
+                <span>Total</span>
+                <span>{fmtCur(so.total, so.currency)}</span>
+              </div>
             </div>
           </div>
         </div>
