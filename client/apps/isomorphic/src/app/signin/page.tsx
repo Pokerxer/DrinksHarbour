@@ -18,7 +18,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 // DrinksHarbour brand red — the same family used by the POS lock screen.
 const BRAND_RED = '#b20202';
 
-async function fetchTenantBySlug(slug: string): Promise<AdminTenantData | null> {
+async function fetchTenantBySlug(
+  slug: string
+): Promise<AdminTenantData | null> {
   try {
     const res = await fetch(`${API_URL}/api/tenants/slug/${slug}`, {
       cache: 'no-store',
@@ -81,7 +83,7 @@ export default async function SignIn({
     <main className="flex min-h-screen w-full bg-white">
       {/* ── Left brand panel (lg+) ─────────────────────────────────────────── */}
       <aside
-        className="relative hidden w-1/2 flex-col justify-between overflow-hidden p-12 text-white xl:p-16 lg:flex"
+        className="relative hidden w-1/2 flex-col justify-between overflow-hidden p-12 text-white lg:flex xl:p-16"
         style={{ backgroundColor: accent }}
       >
         {/* depth + atmosphere */}
@@ -110,12 +112,13 @@ export default async function SignIn({
           ) : (
             // The brand wordmark is dark, so it sits on a white badge to stay
             // legible against the red panel.
-            <span className="inline-flex items-center rounded-xl bg-white px-4 py-2.5 shadow-sm">
+            <span className="inline-flex items-center rounded-2xl bg-white px-6 py-3.5 shadow-lg shadow-black/10">
               <Image
                 src="/brand-logo.svg"
                 alt="DrinksHarbour"
-                width={150}
-                height={53}
+                width={176}
+                height={62}
+                className="h-[42px] w-auto"
                 priority
               />
             </span>
@@ -124,7 +127,7 @@ export default async function SignIn({
 
         {/* headline + value props */}
         <div className="relative z-10 max-w-md">
-          <h1 className="text-4xl font-bold leading-tight tracking-tight xl:text-[2.75rem]">
+          <h1 className="text-4xl font-bold leading-tight tracking-tight text-white xl:text-[2.75rem]">
             {tenant
               ? `Run ${tenant.name} from one dashboard.`
               : 'Run your whole business from one dashboard.'}
