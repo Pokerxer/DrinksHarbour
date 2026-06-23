@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { routes } from '@/config/routes';
 import {
   PiCaretDown,
@@ -461,8 +462,10 @@ function ShopSelector({ token }: { token: string }) {
 // ── Main nav ──────────────────────────────────────────────────────────────────
 export default function POSNavHeader() {
   const pathname = usePathname();
+  const { data: session } = useSession();
   const { token: posToken } = usePOSAuth();
-  const token = posToken ?? '';
+  const adminToken = (session?.user as { token?: string })?.token ?? null;
+  const token = adminToken ?? posToken ?? '';
 
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const navRef = useRef<HTMLElement>(null);

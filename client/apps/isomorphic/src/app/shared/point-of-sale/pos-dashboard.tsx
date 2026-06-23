@@ -36,6 +36,7 @@ import {
   Legend,
 } from 'recharts';
 import { CustomTooltip } from '@core/components/charts/custom-tooltip';
+import { useSession } from 'next-auth/react';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { usePOSAuth, usePOSShops } from '@/app/shared/point-of-sale/store';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
@@ -541,21 +542,11 @@ const DEFAULT_TERM: TerminalInfo = {
 };
 
 export default function POSDashboard() {
-  const router = useRouter();
   const { token: posToken } = usePOSAuth();
   const { shops: customShops, setShops } = usePOSShops();
-  const token = !posToken || isTokenExpired(posToken) ? null : posToken;
-
-  // Give Jotai one tick to hydrate atomWithStorage from localStorage
-  const [hydrated, setHydrated] = useState(false);
-  useEffect(() => { setHydrated(true); }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    if (!token) {
-      router.replace(routes.pos.lock);
-    }
-  }, [hydrated, token, router]);
+  const { data: session } = useSession();
+  const sessionToken = (session?.user as { token?: string })?.token ?? null;
+  const token = !posToken || isTokenExpired(posToken) ? sessionToken : posToken;
 
   const allShops = [...BUILT_IN_SHOPS, ...customShops];
 

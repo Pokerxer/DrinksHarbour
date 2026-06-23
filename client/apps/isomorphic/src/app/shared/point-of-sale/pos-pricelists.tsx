@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { usePOSAuth } from '@/app/shared/point-of-sale/store';
+import { useSession } from 'next-auth/react';
 import POSNavHeader from '@/app/shared/point-of-sale/pos-nav-header';
 import { pricelistService } from '@/services/pricelist.service';
 import { subproductService } from '@/services/subproduct.service';
@@ -2198,8 +2198,8 @@ function PricelistPanel({ pl, token, onClose, onRefresh }) {
 // MAIN PAGE — full-screen, exact POS orders layout
 // ─────────────────────────────────────────────────────────────────────────────
 export default function POSPricelists() {
-  const { token: posToken } = usePOSAuth();
-  const token = posToken && !isTokenExpired(posToken) ? posToken : null;
+  const { data: session } = useSession();
+  const token = session?.user?.token;
 
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

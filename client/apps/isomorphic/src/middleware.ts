@@ -16,18 +16,6 @@ interface NextAuthRequest extends NextRequest {
   };
 }
 
-/**
- * Pages that should be accessible without a NextAuth session (POS uses its own
- * PIN/password auth, not NextAuth). The ENTIRE /point-of-sale subtree is public
- * here: every POS page self-guards client-side via the POS token and redirects
- * to the lock screen when it is missing or expired. Whitelisting only
- * /login and /lock left the post-login destinations (/point-of-sale and
- * /point-of-sale/sell) behind withAuth, which bounced PIN-authenticated
- * cashiers — who have no NextAuth cookie — to the admin sign-in ("session
- * expired").
- */
-const PUBLIC_PAGES = ['/point-of-sale'];
-
 /** Extract tenant slug from hostname or ?_tenant= query param (for local dev). */
 function extractTenantSlug(req: NextRequest): string | null {
   // Local dev fallback: ?_tenant=acme
@@ -80,18 +68,6 @@ async function clearStaleCookieIfNeeded(req: NextRequest): Promise<NextResponse 
   const res = NextResponse.redirect(signInUrl);
   SESSION_COOKIES.forEach(name => res.cookies.delete(name));
   return res;
-}
-
-/** Attach x-tenant-slug header without requiring auth (for public POS pages). */
-async function publicPageMiddleware(req: NextRequest): Promise<NextResponse> {
-  const tenantSlug = extractTenantSlug(req);
-  const requestHeaders = new Headers(req.headers);
-  if (tenantSlug) {
-    requestHeaders.set('x-tenant-slug', tenantSlug);
-  } else {
-    requestHeaders.delete('x-tenant-slug');
-  }
-  return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
 const authMiddleware = withAuth(
@@ -174,15 +150,6 @@ const authMiddleware = withAuth(
 );
 
 export default async function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
-
-  // The /point-of-sale subtree uses its own auth (PIN/password) — don't require a NextAuth session
-  if (PUBLIC_PAGES.some((p) => pathname.startsWith(p))) {
-    const staleResponse = await clearStaleCookieIfNeeded(req);
-    if (staleResponse) return staleResponse;
-    return publicPageMiddleware(req);
-  }
-
   const staleResponse = await clearStaleCookieIfNeeded(req);
   if (staleResponse) return staleResponse;
   return (authMiddleware as any)(req);
@@ -204,9 +171,8 @@ export const config = {
     '/roles-permissions/:path*',
     '/users/:path*',
     '/point-of-sale/:path*',
-    // NOTE: the standalone cashier routes (/pos/sell, /pos/orders, /pos/sessions)
-    // are intentionally NOT matched here — they authenticate with the POS token,
-    // not a NextAuth session, and self-guard client-side. Guarding them with
-    // withAuth bounced PIN-authenticated cashiers to the admin sign-in.
+    '/pos/sell',
+    '/pos/orders',
+    '/pos/sessions',
   ],
 };
