@@ -1,5 +1,5 @@
 import { generateUploadButton, generateUploadDropzone, generateUploader, generateReactHelpers } from "@uploadthing/react";
-import type { OurFileRouter } from "../../../../apps/isomorphic/src/app/api/uploadthing/core";
+import type { OurFileRouter } from "../../../../apps/admin/src/app/api/uploadthing/core";
 
 export const Uploader: ReturnType<typeof generateUploader> = generateUploader<OurFileRouter>();
 export const UploadButton: ReturnType<typeof generateUploadButton> = generateUploadButton<OurFileRouter>();

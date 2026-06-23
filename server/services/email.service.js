@@ -5,7 +5,7 @@ const path = require('path');
 const fs   = require('fs');
 
 // ─── Logo (base64-embedded so it renders in all email clients regardless of env) ─
-const LOGO_PATH = path.join(__dirname, '../../client/apps/isomorphic-starter/public/images/logo.png');
+const LOGO_PATH = path.join(__dirname, '../../client/apps/platform/public/images/logo.png');
 const LOGO_SRC  = fs.existsSync(LOGO_PATH)
   ? 'data:image/png;base64,' + fs.readFileSync(LOGO_PATH).toString('base64')
   : `${process.env.FRONTEND_URL || 'https://drinksharbour.com'}/images/logo.png`;

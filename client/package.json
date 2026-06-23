@@ -7,7 +7,7 @@
   ],
   "scripts": {
     "build": "npm run build:iso",
-    "build:iso": "cd apps/isomorphic && npm run build",
-    "dev": "turbo dev --filter=iso"
+    "build:iso": "cd apps/admin && npm run build",
+    "dev": "turbo dev --filter=admin"
   }
 }
