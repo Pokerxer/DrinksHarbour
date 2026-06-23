@@ -64,10 +64,16 @@ const nextConfig = {
     ],
   },
   reactStrictMode: true,
-  // Reduce peak webpack memory during the production build to avoid OOM on
-  // Vercel's 8GB build container (trades a slightly slower build for lower RAM).
+  // Reduce peak memory during the production build to avoid OOM on Vercel's
+  // 8GB build container (trades a slightly slower build for lower RAM).
   experimental: {
+    // Lowers peak webpack RAM during compilation.
     webpackMemoryOptimizations: true,
+    // Static-generation spawns parallel render workers; on a 2-core/8GB box
+    // their combined RSS (each up to the 6GB heap below) overran the container
+    // and the build was SIGKILL'd. This caps worker count to what free memory
+    // allows instead of one-per-core.
+    memoryBasedWorkersCount: true,
   },
   // Serve POS terminal pages (no admin header) under /point-of-sale/* URLs.
   // beforeFiles rewrites take priority over filesystem routes so the
