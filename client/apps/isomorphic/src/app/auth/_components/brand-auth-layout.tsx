@@ -1,0 +1,152 @@
+import Image from 'next/image';
+import type { ReactNode } from 'react';
+import type { AdminTenantData } from '@/context/TenantContext';
+import { BRAND_RED } from '../_lib/resolve-tenant';
+import {
+  PiCashRegisterDuotone,
+  PiPackageDuotone,
+  PiChartLineUpDuotone,
+} from 'react-icons/pi';
+
+const VALUE_PROPS = [
+  {
+    icon: PiPackageDuotone,
+    title: 'Products & inventory',
+    body: 'Track stock across warehouses in real time.',
+  },
+  {
+    icon: PiCashRegisterDuotone,
+    title: 'Orders & Point of Sale',
+    body: 'Sell in-store and online from one place.',
+  },
+  {
+    icon: PiChartLineUpDuotone,
+    title: 'Live analytics',
+    body: 'Make decisions with up-to-the-minute data.',
+  },
+];
+
+interface BrandAuthLayoutProps {
+  tenant?: AdminTenantData | null;
+  /** Headline shown on the red brand panel. */
+  headline: string;
+  /** Supporting copy under the headline. */
+  subcopy: string;
+  children: ReactNode;
+}
+
+/**
+ * Two-panel brand shell for public auth pages. Mirrors `app/signin/page.tsx`:
+ * a red brand panel on the left (lg+) and a white content panel on the right.
+ */
+export default function BrandAuthLayout({
+  tenant,
+  headline,
+  subcopy,
+  children,
+}: BrandAuthLayoutProps) {
+  const accent = tenant?.primaryColor || BRAND_RED;
+  const year = new Date().getFullYear();
+
+  return (
+    <main className="flex min-h-screen w-full bg-white">
+      {/* ── Left brand panel (lg+) ─────────────────────────────────────────── */}
+      <aside
+        className="relative hidden w-1/2 flex-col justify-between overflow-hidden p-12 text-white lg:flex xl:p-16"
+        style={{ backgroundColor: accent }}
+      >
+        {/* depth + atmosphere */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-black/40" />
+        <div className="pointer-events-none absolute -left-28 -top-28 h-96 w-96 rounded-full bg-white/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-40 -right-10 h-[520px] w-[520px] rounded-full bg-black/25 blur-3xl" />
+
+        {/* logo / tenant identity */}
+        <div className="relative z-10 flex items-center gap-3">
+          {tenant ? (
+            <>
+              {tenant.logo?.url && (
+                <span className="relative inline-flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-white/15 ring-1 ring-white/25">
+                  <Image
+                    src={tenant.logo.url}
+                    alt={tenant.logo.alt || tenant.name}
+                    fill
+                    className="object-contain p-1.5"
+                  />
+                </span>
+              )}
+              <span className="text-lg font-semibold tracking-tight">
+                {tenant.name}
+              </span>
+            </>
+          ) : (
+            // The brand wordmark is dark, so it sits on a white badge to stay
+            // legible against the red panel.
+            <span className="inline-flex items-center rounded-2xl bg-white px-6 py-3.5 shadow-lg shadow-black/10">
+              <Image
+                src="/brand-logo.svg"
+                alt="DrinksHarbour"
+                width={176}
+                height={62}
+                className="h-[42px] w-auto"
+                priority
+              />
+            </span>
+          )}
+        </div>
+
+        {/* headline + value props */}
+        <div className="relative z-10 max-w-md">
+          <h1 className="text-4xl font-bold leading-tight tracking-tight text-white xl:text-[2.75rem]">
+            {headline}
+          </h1>
+          <p className="mt-4 text-base leading-relaxed text-white/75">
+            {subcopy}
+          </p>
+
+          <ul className="mt-10 space-y-5">
+            {VALUE_PROPS.map(({ icon: Icon, title, body }) => (
+              <li key={title} className="flex items-start gap-4">
+                <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20">
+                  <Icon className="h-6 w-6" />
+                </span>
+                <div>
+                  <p className="font-semibold">{title}</p>
+                  <p className="text-sm text-white/70">{body}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* footer */}
+        <p className="relative z-10 text-sm text-white/55">
+          © {year} DrinksHarbour. All rights reserved.
+        </p>
+      </aside>
+
+      {/* ── Right content panel ────────────────────────────────────────────── */}
+      <section className="flex w-full flex-col justify-center px-6 py-12 sm:px-12 lg:w-1/2 xl:px-24">
+        <div className="mx-auto w-full max-w-md">
+          {/* mobile logo (brand panel hidden below lg) */}
+          <div className="mb-10 lg:hidden">
+            {tenant ? (
+              <span className="text-lg font-semibold tracking-tight text-gray-900">
+                {tenant.name}
+              </span>
+            ) : (
+              <Image
+                src="/brand-logo.svg"
+                alt="DrinksHarbour"
+                width={150}
+                height={53}
+                priority
+              />
+            )}
+          </div>
+
+          {children}
+        </div>
+      </section>
+    </main>
+  );
+}

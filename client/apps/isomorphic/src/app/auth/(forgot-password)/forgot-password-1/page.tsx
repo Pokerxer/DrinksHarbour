@@ -1,40 +1,27 @@
-// @ts-nocheck
+import { metaObject } from '@/config/site.config';
+import { resolveTenant } from '@/app/auth/_lib/resolve-tenant';
+import BrandAuthLayout from '@/app/auth/_components/brand-auth-layout';
 import ForgetPasswordForm from './forget-password-form';
-import UnderlineShape from '@core/components/shape/underline';
-import Image from 'next/image';
-import AuthWrapperOne from '@/app/shared/auth-layout/auth-wrapper-one';
 
-export default function SignIn() {
+export const metadata = {
+  ...metaObject('Forgot Password'),
+};
+
+export default async function ForgotPassword({
+  searchParams,
+}: {
+  searchParams: Promise<{ _tenant?: string }>;
+}) {
+  const params = await searchParams;
+  const tenant = await resolveTenant(params._tenant);
+
   return (
-    <AuthWrapperOne
-      title={
-        <>
-          Reset your{' '}
-          <span className="relative inline-block">
-            password!
-            <UnderlineShape className="absolute -bottom-2 end-0 h-2.5 w-28 text-blue xl:-bottom-1.5 xl:w-36" />
-          </span>
-        </>
-      }
-      bannerTitle="The simplest way to manage your workspace."
-      bannerDescription="Amet minim mollit non deserunt ullamco est sit aliqua dolor do
-      amet sint velit officia consequat duis."
-      pageImage={
-        <div className="relative mx-auto aspect-[4/3.37] w-[500px] xl:w-[620px] 2xl:w-[820px]">
-          <Image
-            src={
-              'https://isomorphic-furyroad.s3.amazonaws.com/public/auth/sign-up.webp'
-            }
-            alt="Sign Up Thumbnail"
-            fill
-            priority
-            sizes="(max-width: 768px) 100vw"
-            className="object-cover"
-          />
-        </div>
-      }
+    <BrandAuthLayout
+      tenant={tenant}
+      headline="Forgot your password? It happens."
+      subcopy="Enter your email and we'll send you a secure link to set a new one."
     >
-      <ForgetPasswordForm />
-    </AuthWrapperOne>
+      <ForgetPasswordForm tenant={tenant} />
+    </BrandAuthLayout>
   );
 }

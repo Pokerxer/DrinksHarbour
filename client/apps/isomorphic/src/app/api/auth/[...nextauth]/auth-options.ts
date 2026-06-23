@@ -1,11 +1,22 @@
 import { type NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
+import {
+  encode as defaultJwtEncode,
+  decode as defaultJwtDecode,
+} from 'next-auth/jwt';
 import { env } from '@/env.mjs';
 import { pagesOptions } from './pages-options';
 import type { UserRole } from '@/types/authorization';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+
+// Per-login "remember me" session lengths. The session cookie is kept for the
+// longer (remember) window, but the JWT inside is stamped with a shorter `exp`
+// when the user did NOT tick "remember me" — so a non-remembered session is
+// effectively signed out after DEFAULT_SESSION_MAX_AGE regardless of cookie.
+const DEFAULT_SESSION_MAX_AGE = 24 * 60 * 60; // 1 day
+const REMEMBER_SESSION_MAX_AGE = 30 * 24 * 60 * 60; // 30 days
 
 interface LoginResponse {
   success: boolean;
@@ -97,8 +108,26 @@ export const authOptions: NextAuthOptions = {
   },
   session: {
     strategy: 'jwt',
-    maxAge: 7 * 24 * 60 * 60, // 7 days
-    updateAge: 24 * 60 * 60, // extend by 7 days on each daily activity
+    // Upper bound on the cookie lifetime; the effective session length is
+    // governed per-login by the JWT `exp` set in `jwt.encode` below.
+    maxAge: REMEMBER_SESSION_MAX_AGE,
+    updateAge: 24 * 60 * 60, // re-issue the JWT at most once per day of activity
+  },
+  // Custom encode honours the per-login `remember` flag carried on the token,
+  // giving a longer JWT `exp` when the user opted into "remember me".
+  jwt: {
+    encode: async ({ token, secret, maxAge }) => {
+      const remember = token?.remember === true;
+      const effectiveMaxAge = remember
+        ? REMEMBER_SESSION_MAX_AGE
+        : DEFAULT_SESSION_MAX_AGE;
+      return defaultJwtEncode({
+        token,
+        secret,
+        maxAge: token ? effectiveMaxAge : maxAge,
+      });
+    },
+    decode: defaultJwtDecode,
   },
   callbacks: {
     async session({ session, token }) {
@@ -143,6 +172,9 @@ export const authOptions: NextAuthOptions = {
           (user as { tenantSlug?: string | null }).tenantSlug ?? null;
         token.accessToken = user.token;
         token.refreshToken = (user as { refreshToken?: string }).refreshToken;
+        // Carry the per-login "remember me" choice so `jwt.encode` can pick the
+        // right session lifetime. Defaults to a short session when absent.
+        token.remember = (user as { remember?: boolean }).remember === true;
       }
 
       if (trigger === 'update' && token.accessToken) {
@@ -179,6 +211,7 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' },
+        rememberMe: { label: 'Remember Me', type: 'text' },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
@@ -281,6 +314,7 @@ export const authOptions: NextAuthOptions = {
             image: data.data.user.avatar?.url || null,
             token: data.data.token,
             refreshToken: data.data.refreshToken,
+            remember: credentials.rememberMe === 'true',
           };
         } catch (error: unknown) {
           console.error('Auth error:', error);

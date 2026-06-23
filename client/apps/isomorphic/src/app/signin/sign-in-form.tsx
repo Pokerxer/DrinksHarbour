@@ -70,6 +70,8 @@ export default function SignInForm({ tenant }: { tenant?: TenantInfo | null }) {
       const result = await signIn('credentials', {
         email: data.email,
         password: data.password,
+        // Passed through to `authorize`; controls the JWT session lifetime.
+        rememberMe: data.rememberMe ? 'true' : 'false',
         redirect: false,
         // Must be an absolute URL — new URL('/relative') throws in some browsers
         callbackUrl:

@@ -22,6 +22,8 @@ declare module 'next-auth' {
     token: string;
     firstName?: string;
     lastName?: string;
+    refreshToken?: string;
+    remember?: boolean;
   }
 }
 
@@ -35,5 +37,6 @@ declare module 'next-auth/jwt' {
     idToken?: string;
     refreshToken?: string;
     error?: string;
+    remember?: boolean;
   }
 }
