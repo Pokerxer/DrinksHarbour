@@ -70,6 +70,8 @@ export default function SignInForm({ tenant }: { tenant?: TenantInfo | null }) {
       const result = await signIn('credentials', {
         email: data.email,
         password: data.password,
+        // Passed through to `authorize`; controls the JWT session lifetime.
+        rememberMe: data.rememberMe ? 'true' : 'false',
         redirect: false,
         // Must be an absolute URL — new URL('/relative') throws in some browsers
         callbackUrl:
@@ -100,7 +102,9 @@ export default function SignInForm({ tenant }: { tenant?: TenantInfo | null }) {
             'Your account is inactive. Please contact support to reactivate.'
           );
         } else {
-          setAuthError(result.error || 'Authentication failed. Please try again.');
+          setAuthError(
+            result.error || 'Authentication failed. Please try again.'
+          );
         }
       } else if (result?.ok) {
         toast.success('Welcome back!');
@@ -335,7 +339,10 @@ export default function SignInForm({ tenant }: { tenant?: TenantInfo | null }) {
       </motion.div>
 
       {/* Footer */}
-      <motion.div variants={item} className="mt-6 border-t border-gray-100 pt-6">
+      <motion.div
+        variants={item}
+        className="mt-6 border-t border-gray-100 pt-6"
+      >
         <Text className="text-center text-sm text-gray-500">
           Need help?{' '}
           <Link
