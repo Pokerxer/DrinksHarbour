@@ -1,9 +1,13 @@
 import { headers } from 'next/headers';
-import SignInForm from '@/app/signin/sign-in-form';
-import AuthWrapperOne from '@/app/shared/auth-layout/auth-wrapper-one';
 import Image from 'next/image';
+import SignInForm from '@/app/signin/sign-in-form';
 import { metaObject } from '@/config/site.config';
 import type { AdminTenantData } from '@/context/TenantContext';
+import {
+  PiCashRegisterDuotone,
+  PiPackageDuotone,
+  PiChartLineUpDuotone,
+} from 'react-icons/pi';
 
 export const metadata = {
   ...metaObject('Admin Sign In'),
@@ -11,16 +15,39 @@ export const metadata = {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
+// DrinksHarbour brand red — the same family used by the POS lock screen.
+const BRAND_RED = '#b20202';
+
 async function fetchTenantBySlug(slug: string): Promise<AdminTenantData | null> {
   try {
-    const res = await fetch(`${API_URL}/api/tenants/slug/${slug}`, { cache: 'no-store' });
+    const res = await fetch(`${API_URL}/api/tenants/slug/${slug}`, {
+      cache: 'no-store',
+    });
     if (!res.ok) return null;
-    const json = await res.json() as { data?: { tenant?: AdminTenantData } };
+    const json = (await res.json()) as { data?: { tenant?: AdminTenantData } };
     return json?.data?.tenant ?? null;
   } catch {
     return null;
   }
 }
+
+const VALUE_PROPS = [
+  {
+    icon: PiPackageDuotone,
+    title: 'Products & inventory',
+    body: 'Track stock across warehouses in real time.',
+  },
+  {
+    icon: PiCashRegisterDuotone,
+    title: 'Orders & Point of Sale',
+    body: 'Sell in-store and online from one place.',
+  },
+  {
+    icon: PiChartLineUpDuotone,
+    title: 'Live analytics',
+    body: 'Make decisions with up-to-the-minute data.',
+  },
+];
 
 export default async function SignIn({
   searchParams,
@@ -47,117 +74,100 @@ export default async function SignIn({
   }
 
   const tenant = tenantSlug ? await fetchTenantBySlug(tenantSlug) : null;
+  const accent = tenant?.primaryColor || BRAND_RED;
+  const year = new Date().getFullYear();
 
   return (
-    <AuthWrapperOne
-      tenant={tenant}
-      title={
-        tenant ? (
-          <>
-            Welcome to{' '}
-            <span className="relative inline-block">
-              {tenant.name}
-              <svg
-                className="absolute -bottom-2 start-0 w-full h-3"
-                style={{ color: tenant.primaryColor || '#dc2626' }}
-                viewBox="0 0 100 12"
-                preserveAspectRatio="none"
-              >
-                <path
-                  d="M0,8 Q50,0 100,8"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                />
-              </svg>
+    <main className="flex min-h-screen w-full bg-white">
+      {/* ── Left brand panel (lg+) ─────────────────────────────────────────── */}
+      <aside
+        className="relative hidden w-1/2 flex-col justify-between overflow-hidden p-12 text-white xl:p-16 lg:flex"
+        style={{ backgroundColor: accent }}
+      >
+        {/* depth + atmosphere */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-black/40" />
+        <div className="pointer-events-none absolute -left-28 -top-28 h-96 w-96 rounded-full bg-white/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-40 -right-10 h-[520px] w-[520px] rounded-full bg-black/25 blur-3xl" />
+
+        {/* logo / tenant identity */}
+        <div className="relative z-10 flex items-center gap-3">
+          {tenant?.logo?.url ? (
+            <span className="relative inline-flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-white/15 ring-1 ring-white/25">
+              <Image
+                src={tenant.logo.url}
+                alt={tenant.logo.alt || tenant.name}
+                fill
+                className="object-contain p-1.5"
+              />
             </span>
-          </>
-        ) : (
-          <>
-            Welcome back,{' '}
-            <span className="relative inline-block">
-              Admin
-              <svg
-                className="absolute -bottom-2 start-0 w-full h-3 text-blue-500"
-                viewBox="0 0 100 12"
-                preserveAspectRatio="none"
-              >
-                <path
-                  d="M0,8 Q50,0 100,8"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </span>
-          </>
-        )
-      }
-      description={
-        tenant
-          ? `Sign in to manage ${tenant.name}'s products, orders, and business analytics.`
-          : 'Sign in to access your admin dashboard, manage products, orders, and monitor your business analytics in real-time.'
-      }
-      bannerTitle={
-        tenant
-          ? `${tenant.name} Admin Dashboard`
-          : 'Powerful Admin Dashboard for Your Business'
-      }
-      bannerDescription={
-        tenant
-          ? `Manage ${tenant.name}'s entire operation from one centralized dashboard. Track sales, manage inventory, and grow with data-driven insights.`
-          : 'Manage your entire e-commerce operation from one centralized dashboard. Track sales, manage inventory, and grow your business with data-driven insights.'
-      }
-      isSocialLoginActive={false}
-      pageImage={
-        <div className="relative mx-auto aspect-[4/3] w-[480px] xl:w-[600px] 2xl:w-[750px]">
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-2xl" />
-          <div className="w-full h-full">
+          ) : (
             <Image
-              src="https://isomorphic-furyroad.s3.amazonaws.com/public/auth/sign-up.webp"
-              alt="Admin Dashboard Preview"
-              fill
+              src="/logo-short-light.svg"
+              alt="DrinksHarbour"
+              width={44}
+              height={44}
               priority
-              sizes="(max-width: 768px) 100vw"
-              className="object-cover rounded-2xl shadow-2xl"
             />
-          </div>
-
-          {/* Floating Stats Card */}
-          <div className="absolute -bottom-6 -left-6 bg-white rounded-xl shadow-xl p-4 border border-gray-100">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Total Sales</p>
-                <p className="text-lg font-bold text-gray-900">₦2.4M</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Floating Users Card */}
-          <div className="absolute -top-4 -right-4 bg-white rounded-xl shadow-xl p-4 border border-gray-100">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Active Users</p>
-                <p className="text-lg font-bold text-gray-900">1,234</p>
-              </div>
-            </div>
-          </div>
+          )}
+          <span className="text-lg font-semibold tracking-tight">
+            {tenant?.name || 'DrinksHarbour'}
+          </span>
         </div>
-      }
-    >
-      <SignInForm tenant={tenant} />
-    </AuthWrapperOne>
+
+        {/* headline + value props */}
+        <div className="relative z-10 max-w-md">
+          <h1 className="text-4xl font-bold leading-tight tracking-tight xl:text-[2.75rem]">
+            {tenant
+              ? `Run ${tenant.name} from one dashboard.`
+              : 'Run your whole business from one dashboard.'}
+          </h1>
+          <p className="mt-4 text-base leading-relaxed text-white/75">
+            {tenant
+              ? `Manage ${tenant.name}'s products, orders, and analytics — all in one place.`
+              : 'Manage products, orders, point of sale, and analytics — all in one place.'}
+          </p>
+
+          <ul className="mt-10 space-y-5">
+            {VALUE_PROPS.map(({ icon: Icon, title, body }) => (
+              <li key={title} className="flex items-start gap-4">
+                <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20">
+                  <Icon className="h-6 w-6" />
+                </span>
+                <div>
+                  <p className="font-semibold">{title}</p>
+                  <p className="text-sm text-white/70">{body}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* footer */}
+        <p className="relative z-10 text-sm text-white/55">
+          © {year} DrinksHarbour. All rights reserved.
+        </p>
+      </aside>
+
+      {/* ── Right form panel ───────────────────────────────────────────────── */}
+      <section className="flex w-full flex-col justify-center px-6 py-12 sm:px-12 lg:w-1/2 xl:px-24">
+        <div className="mx-auto w-full max-w-md">
+          {/* mobile logo (brand panel hidden below lg) */}
+          <div className="mb-10 flex items-center gap-3 lg:hidden">
+            <Image
+              src="/logo-primary.svg"
+              alt="DrinksHarbour"
+              width={40}
+              height={40}
+              priority
+            />
+            <span className="text-lg font-semibold tracking-tight text-gray-900">
+              {tenant?.name || 'DrinksHarbour'}
+            </span>
+          </div>
+
+          <SignInForm tenant={tenant} />
+        </div>
+      </section>
+    </main>
   );
 }
