@@ -87,6 +87,8 @@ export interface SalesOrder {
   paymentStatus?: 'unpaid' | 'paid';
   amountPaid?: number;
   loyaltyEarned?: number;
+  loyaltyRedeemed?: number;
+  pointsRedeemed?: number;
   fulfillments: SalesOrderFulfillment[];
   convertedFrom?: string;
   convertedTo?: string;
@@ -288,7 +290,12 @@ export const salesOrderService = {
 
   async confirm(
     id: string,
-    body: { paymentMethod: string; amountTendered?: number; splitPayments?: unknown[] },
+    body: {
+      paymentMethod: string;
+      amountTendered?: number;
+      splitPayments?: unknown[];
+      redeemPoints?: number;
+    },
     token: string
   ): Promise<SalesOrderResponse> {
     const response = await fetch(`${API_URL}/api/sales-orders/${id}/confirm`, {

@@ -89,6 +89,8 @@ const SalesOrderSchema = new Schema(
     amountPaid:    { type: Number, default: 0 },
     walletTxRef:   { type: ObjectId, ref: 'WalletTransaction', sparse: true },
     loyaltyEarned: { type: Number, default: 0 },
+    loyaltyRedeemed: { type: Number, default: 0 }, // ₦ value redeemed via loyalty points at confirm
+    pointsRedeemed:  { type: Number, default: 0 }, // points consumed by that redemption
 
     fulfillments: [fulfillmentSchema],
 

@@ -42,16 +42,23 @@ const PAYMENT_METHODS: { value: string; label: string }[] = [
 function ConfirmPaymentModal({
   open,
   busy,
+  hasCustomer,
   onClose,
   onConfirm,
 }: {
   open: boolean;
   busy: boolean;
+  hasCustomer: boolean;
   onClose: () => void;
-  onConfirm: (paymentMethod: string, amountTendered?: number) => void;
+  onConfirm: (
+    paymentMethod: string,
+    amountTendered?: number,
+    redeemPoints?: number
+  ) => void;
 }) {
   const [method, setMethod] = useState('cash');
   const [tendered, setTendered] = useState('');
+  const [redeem, setRedeem] = useState('');
 
   if (!open) return null;
   return (
@@ -103,6 +110,21 @@ function ConfirmPaymentModal({
             />
           </>
         )}
+        {hasCustomer && (
+          <>
+            <label className="mb-1.5 block text-xs font-medium text-gray-600">
+              Redeem Loyalty Points (optional)
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={redeem}
+              onChange={(e) => setRedeem(e.target.value)}
+              placeholder="0"
+              className="mb-4 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#b20202] focus:outline-none"
+            />
+          </>
+        )}
         <div className="flex justify-end gap-2">
           <button
             type="button"
@@ -115,7 +137,11 @@ function ConfirmPaymentModal({
             type="button"
             disabled={busy}
             onClick={() =>
-              onConfirm(method, tendered ? Number(tendered) : undefined)
+              onConfirm(
+                method,
+                tendered ? Number(tendered) : undefined,
+                redeem ? Number(redeem) : undefined
+              )
             }
             className="rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
           >
@@ -146,12 +172,16 @@ export default function SalesOrderDetail({
   const canReturn = status === 'partially_fulfilled' || status === 'fulfilled';
   const canInvoice = status !== 'draft' && status !== 'cancelled';
 
-  async function handleConfirm(paymentMethod: string, amountTendered?: number) {
+  async function handleConfirm(
+    paymentMethod: string,
+    amountTendered?: number,
+    redeemPoints?: number
+  ) {
     setBusy(true);
     try {
       await salesOrderService.confirm(
         so._id,
-        { paymentMethod, amountTendered },
+        { paymentMethod, amountTendered, redeemPoints },
         token
       );
       toast.success('Order confirmed and payment captured');
@@ -184,6 +214,7 @@ export default function SalesOrderDetail({
   return (
     <div>
       <ConfirmPaymentModal
+        hasCustomer={!!so.customer}
         open={confirmOpen}
         busy={busy}
         onClose={() => setConfirmOpen(false)}
@@ -335,11 +366,18 @@ export default function SalesOrderDetail({
               </>
             )}
             <p className="mb-1 text-xs font-semibold text-gray-500">Payment</p>
-            <p className="mb-3 text-gray-900">
+            <p className="mb-1 text-gray-900">
               {so.paymentStatus === 'paid'
                 ? `Paid via ${so.paymentMethod ?? '—'}`
                 : 'Unpaid'}
             </p>
+            {(so.loyaltyRedeemed ?? 0) > 0 && (
+              <p className="text-xs text-emerald-600">
+                {so.pointsRedeemed} pts redeemed (−
+                {fmtCur(so.loyaltyRedeemed ?? 0, so.currency)})
+              </p>
+            )}
+            <div className="mb-3" />
             <p className="mb-1 text-xs font-semibold text-gray-500">
               Payment Terms
             </p>
