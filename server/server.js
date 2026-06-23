@@ -143,6 +143,18 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
+// Serverless cold-start guard: ensure the (cached) DB connection is live before
+// any /api handler runs, since connectDB uses bufferCommands:false. Cheap after
+// the first request — connectDB returns the cached connection.
+app.use('/api', async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ────────────────────────────────────────────────
 // Mount Routes (MUST be after body parser)
 // ────────────────────────────────────────────────
@@ -381,5 +393,12 @@ async function startServer() {
   }
 }
 
-// Start the server
-startServer();
+// Export the fully-configured Express app so serverless runtimes (Vercel)
+// invoke it directly as the request handler.
+module.exports = app;
+
+// Bind a listening port only outside serverless (local dev / long-running host).
+// On Vercel the platform calls the exported app; the /api guard warms the DB.
+if (!process.env.VERCEL) {
+  startServer();
+}
