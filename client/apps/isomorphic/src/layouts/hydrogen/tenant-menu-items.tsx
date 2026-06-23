@@ -141,8 +141,8 @@ export const tenantMenuItems: TenantMenuEntry[] = [
     // available on all plans
   },
 
-  // ─── Sales ──────────────────────────────────────────────────
-  { label: 'Sales' },
+  // ─── Point of Sale ──────────────────────────────────────────
+  { label: 'Point of Sale' },
   {
     name: 'Point of Sale',
     href: routes.pos.index,
