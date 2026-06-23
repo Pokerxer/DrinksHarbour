@@ -1,7 +1,7 @@
 // client/apps/isomorphic/src/app/shared/sales/sales-create.tsx
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -171,9 +171,23 @@ export default function SalesCreate() {
     []
   );
 
-  const { selected: pricelist, resolvedId } = useSalesCustomerPricelist(
-    token,
-    customer?._id ?? ''
+  const {
+    pricelists,
+    resolvedId,
+    selected: autoPricelist,
+  } = useSalesCustomerPricelist(token, customer?._id ?? '');
+
+  // Pricelist defaults to the customer's auto-resolved list, but the user can
+  // override it; once they do, their pick sticks across customer changes.
+  const [pricelistId, setPricelistId] = useState('');
+  const [pricelistOverridden, setPricelistOverridden] = useState(false);
+  useEffect(() => {
+    if (!pricelistOverridden) setPricelistId(resolvedId ?? '');
+  }, [resolvedId, pricelistOverridden]);
+
+  const pricelist = useMemo(
+    () => pricelists.find((p: any) => p._id === pricelistId) ?? null,
+    [pricelists, pricelistId]
   );
 
   const updateLine = useCallback((key: string, patch: Partial<DraftLine>) => {
@@ -234,7 +248,7 @@ export default function SalesCreate() {
                 customerId: customer._id,
               }
             : undefined,
-          pricelist: resolvedId ?? undefined,
+          pricelist: pricelistId || undefined,
           appliedPricelist: pricelist
             ? { pricelistId: pricelist._id, pricelistName: pricelist.name }
             : undefined,
@@ -334,12 +348,31 @@ export default function SalesCreate() {
             onSelect={handleSelectCustomer}
             onClear={() => setCustomer(null)}
           />
-          {pricelist && (
-            <p className="mt-2 text-xs text-emerald-600">
-              Pricelist &quot;{pricelist.name}&quot; auto-applied from this
-              customer.
-            </p>
-          )}
+          <div className="mt-4">
+            <label className="mb-1.5 block text-xs font-medium text-gray-600">
+              Pricelist
+            </label>
+            <select
+              value={pricelistId}
+              onChange={(e) => {
+                setPricelistId(e.target.value);
+                setPricelistOverridden(true);
+              }}
+              className={INPUT_CLS}
+            >
+              <option value="">— Base price —</option>
+              {pricelists.map((p: any) => (
+                <option key={p._id} value={p._id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            {pricelist && resolvedId === pricelist._id && (
+              <p className="mt-1.5 text-xs text-emerald-600">
+                Auto-applied from this customer.
+              </p>
+            )}
+          </div>
         </div>
         <div className="space-y-4">
           <div>

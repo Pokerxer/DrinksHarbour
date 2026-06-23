@@ -324,6 +324,16 @@ export default function SalesOrderDetail({
               </p>
             ))}
             <div className="mb-3" />
+            {so.appliedPricelist?.pricelistName && (
+              <>
+                <p className="mb-1 text-xs font-semibold text-gray-500">
+                  Pricelist
+                </p>
+                <p className="mb-3 text-gray-900">
+                  {so.appliedPricelist.pricelistName}
+                </p>
+              </>
+            )}
             <p className="mb-1 text-xs font-semibold text-gray-500">Payment</p>
             <p className="mb-3 text-gray-900">
               {so.paymentStatus === 'paid'

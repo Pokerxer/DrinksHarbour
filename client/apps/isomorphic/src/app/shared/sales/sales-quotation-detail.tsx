@@ -231,6 +231,16 @@ export default function SalesQuotationDetail({
               </p>
             ))}
             <div className="mb-3" />
+            {so.appliedPricelist?.pricelistName && (
+              <>
+                <p className="mb-1 text-xs font-semibold text-gray-500">
+                  Pricelist
+                </p>
+                <p className="mb-3 text-gray-900">
+                  {so.appliedPricelist.pricelistName}
+                </p>
+              </>
+            )}
             {so.validUntil && (
               <>
                 <p className="mb-1 text-xs font-semibold text-gray-500">
