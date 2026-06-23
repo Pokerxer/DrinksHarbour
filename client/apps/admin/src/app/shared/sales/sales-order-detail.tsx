@@ -1,4 +1,4 @@
-// client/apps/isomorphic/src/app/shared/sales/sales-order-detail.tsx
+// client/apps/admin/src/app/shared/sales/sales-order-detail.tsx
 'use client';
 
 import { useState } from 'react';

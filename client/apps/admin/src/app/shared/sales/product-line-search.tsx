@@ -1,4 +1,4 @@
-// client/apps/isomorphic/src/app/shared/sales/product-line-search.tsx
+// client/apps/admin/src/app/shared/sales/product-line-search.tsx
 'use client';
 
 import { useState, useEffect, useRef } from 'react';

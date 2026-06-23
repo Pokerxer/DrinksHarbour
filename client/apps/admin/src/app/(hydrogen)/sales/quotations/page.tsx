@@ -1,4 +1,4 @@
-// client/apps/isomorphic/src/app/(hydrogen)/sales/quotations/page.tsx
+// client/apps/admin/src/app/(hydrogen)/sales/quotations/page.tsx
 'use client';
 
 import { Suspense } from 'react';

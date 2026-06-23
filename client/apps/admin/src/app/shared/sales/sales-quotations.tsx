@@ -1,4 +1,4 @@
-// client/apps/isomorphic/src/app/shared/sales/sales-quotations.tsx
+// client/apps/admin/src/app/shared/sales/sales-quotations.tsx
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';

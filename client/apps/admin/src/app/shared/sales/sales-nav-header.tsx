@@ -1,4 +1,4 @@
-// client/apps/isomorphic/src/app/shared/sales/sales-nav-header.tsx
+// client/apps/admin/src/app/shared/sales/sales-nav-header.tsx
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';

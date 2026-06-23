@@ -1,4 +1,4 @@
-// client/apps/isomorphic/src/app/shared/sales/sales-helpers.ts
+// client/apps/admin/src/app/shared/sales/sales-helpers.ts
 import type {
   SalesLineItem,
   QuoteStatus,

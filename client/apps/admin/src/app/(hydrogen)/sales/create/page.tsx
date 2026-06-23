@@ -1,4 +1,4 @@
-// client/apps/isomorphic/src/app/(hydrogen)/sales/create/page.tsx
+// client/apps/admin/src/app/(hydrogen)/sales/create/page.tsx
 'use client';
 
 import SalesNavHeader from '@/app/shared/sales/sales-nav-header';

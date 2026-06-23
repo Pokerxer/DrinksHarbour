@@ -1,4 +1,4 @@
-// client/apps/isomorphic/src/app/(hydrogen)/sales/page.tsx
+// client/apps/admin/src/app/(hydrogen)/sales/page.tsx
 'use client';
 
 import { useEffect } from 'react';

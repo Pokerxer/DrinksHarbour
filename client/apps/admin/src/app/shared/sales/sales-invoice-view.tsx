@@ -1,4 +1,4 @@
-// client/apps/isomorphic/src/app/shared/sales/sales-invoice-view.tsx
+// client/apps/admin/src/app/shared/sales/sales-invoice-view.tsx
 'use client';
 
 import { Badge, Title, Text } from 'rizzui';

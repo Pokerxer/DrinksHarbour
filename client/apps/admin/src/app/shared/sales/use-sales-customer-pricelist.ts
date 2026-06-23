@@ -1,4 +1,4 @@
-// client/apps/isomorphic/src/app/shared/sales/use-sales-customer-pricelist.ts
+// client/apps/admin/src/app/shared/sales/use-sales-customer-pricelist.ts
 'use client';
 
 import { useEffect, useState } from 'react';
