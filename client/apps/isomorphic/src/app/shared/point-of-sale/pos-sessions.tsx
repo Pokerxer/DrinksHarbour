@@ -4,7 +4,6 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { usePOSAuth } from '@/app/shared/point-of-sale/store';
-import { useSession } from 'next-auth/react';
 import { POSSession, POSTenant } from '@/app/shared/point-of-sale/types';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import { routes } from '@/config/routes';
@@ -1084,11 +1083,17 @@ function SessionRow({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function POSSessions() {
-  const { token: posToken, tenant, staff } = usePOSAuth();
-  const { data: session, status: sessionStatus } = useSession();
-  const sessionToken = (session?.user as { token?: string })?.token ?? null;
-  const token = (!posToken || isTokenExpired(posToken)) ? sessionToken : posToken;
   const router = useRouter();
+  const { token: posToken, tenant, staff } = usePOSAuth();
+  const token = (!posToken || isTokenExpired(posToken)) ? null : posToken;
+
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => { setHydrated(true); }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (!token) router.replace(routes.pos.lock);
+  }, [hydrated, token, router]);
 
   const [sessions, setSessions]         = useState<POSSession[]>([]);
   const [loading,  setLoading]          = useState(true);

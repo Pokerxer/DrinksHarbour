@@ -16,6 +16,9 @@ interface NextAuthRequest extends NextRequest {
   };
 }
 
+/** Pages that should be accessible without a NextAuth session (POS uses its own auth). */
+const PUBLIC_PAGES = ['/point-of-sale/login', '/point-of-sale/lock'];
+
 /** Extract tenant slug from hostname or ?_tenant= query param (for local dev). */
 function extractTenantSlug(req: NextRequest): string | null {
   // Local dev fallback: ?_tenant=acme
@@ -68,6 +71,18 @@ async function clearStaleCookieIfNeeded(req: NextRequest): Promise<NextResponse 
   const res = NextResponse.redirect(signInUrl);
   SESSION_COOKIES.forEach(name => res.cookies.delete(name));
   return res;
+}
+
+/** Attach x-tenant-slug header without requiring auth (for public POS pages). */
+async function publicPageMiddleware(req: NextRequest): Promise<NextResponse> {
+  const tenantSlug = extractTenantSlug(req);
+  const requestHeaders = new Headers(req.headers);
+  if (tenantSlug) {
+    requestHeaders.set('x-tenant-slug', tenantSlug);
+  } else {
+    requestHeaders.delete('x-tenant-slug');
+  }
+  return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
 const authMiddleware = withAuth(
@@ -150,6 +165,15 @@ const authMiddleware = withAuth(
 );
 
 export default async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+
+  // POS login/lock pages use their own auth (PIN/password) — don't require NextAuth session
+  if (PUBLIC_PAGES.some((p) => pathname.startsWith(p))) {
+    const staleResponse = await clearStaleCookieIfNeeded(req);
+    if (staleResponse) return staleResponse;
+    return publicPageMiddleware(req);
+  }
+
   const staleResponse = await clearStaleCookieIfNeeded(req);
   if (staleResponse) return staleResponse;
   return (authMiddleware as any)(req);

@@ -17,7 +17,7 @@ import {
 } from 'react-icons/pi';
 import { printInvoices, DEFAULT_STORE } from '@/utils/invoice';
 import InvoicePreview from '@/components/InvoicePreview';
-import { useSession } from 'next-auth/react';
+import { usePOSAuth } from '@/app/shared/point-of-sale/store';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import POSNavHeader from '@/app/shared/point-of-sale/pos-nav-header';
@@ -2869,8 +2869,8 @@ function StackedChart({ rows, series, measure, chartType, className, onBarClick,
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function POSOrderAnalysis() {
-  const { data: session, status: sessionStatus } = useSession();
-  const token = (session?.user as { token?: string })?.token ?? null;
+  const { token: posToken } = usePOSAuth();
+  const token = posToken && !isTokenExpired(posToken) ? posToken : null;
   const [orders, setOrders]                 = useState<PosOrder[]>([]);
   const [loading, setLoading]               = useState(true);
   const [categories, setCategories]         = useState<CatItem[]>([]);
@@ -2928,7 +2928,7 @@ export default function POSOrderAnalysis() {
   }, []);
 
   useEffect(() => {
-    if (!token) return; // keep spinner while session loads; middleware redirects if truly unauthed
+    if (!token) return;
     setLoading(true);
     posApi.getAllOrders(token, { limit: 500 })
       .then(d => setOrders(Array.isArray(d) ? d : []))

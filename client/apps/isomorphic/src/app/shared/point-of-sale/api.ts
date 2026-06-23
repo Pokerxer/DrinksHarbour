@@ -36,15 +36,10 @@ function authHeaders(token: string): HeadersInit {
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, options);
-  if (res.status === 401) {
-    if (typeof window !== 'undefined') {
-      void import('next-auth/react').then((m) =>
-        m.signOut({ callbackUrl: '/signin' })
-      );
-    }
-    throw new Error('Session expired. Please sign in again.');
-  }
   const body = (await res.json()) as ApiResponse<T>;
+  if (res.status === 401) {
+    throw new Error(body.message || 'Unauthorized. Please re-authenticate.');
+  }
   if (!res.ok || !body.success)
     throw new Error(body.message || 'Request failed');
   return body.data;

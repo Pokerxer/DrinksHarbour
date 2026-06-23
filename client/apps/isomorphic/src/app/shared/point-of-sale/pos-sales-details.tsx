@@ -34,7 +34,7 @@ import {
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { useSession } from 'next-auth/react';
+import { usePOSAuth } from '@/app/shared/point-of-sale/store';
 import { useTenant } from '@/context/TenantContext';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
@@ -1844,12 +1844,9 @@ function ExportColumnModal({
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function POSSalesDetails() {
-  const { data: session, status: sessionStatus } = useSession();
+  const { token: posToken } = usePOSAuth();
   const { tenant } = useTenant();
-  const token = useMemo(() => {
-    const t = (session?.user as { token?: string })?.token ?? null;
-    return isTokenExpired(t) ? null : t;
-  }, [session]);
+  const token = posToken && !isTokenExpired(posToken) ? posToken : null;
 
   const [orders, setOrders] = useState<PosOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1926,7 +1923,6 @@ export default function POSSalesDetails() {
 
   const fetchOrders = useCallback(
     (all = false) => {
-      if (sessionStatus === 'loading') return;
       if (!token) {
         setLoading(false);
         return;
@@ -1943,7 +1939,7 @@ export default function POSSalesDetails() {
         .catch(() => setError('Failed to load orders. Please try again.'))
         .finally(() => setLoading(false));
     },
-    [token, sessionStatus]
+    [token]
   );
 
   useEffect(() => {

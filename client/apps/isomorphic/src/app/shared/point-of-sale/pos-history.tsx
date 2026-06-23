@@ -10,7 +10,6 @@ import React, {
 import { useRouter } from 'next/navigation';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { usePOSAuth, usePOSCart } from '@/app/shared/point-of-sale/store';
-import { useSession } from 'next-auth/react';
 import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import POSOrderDetail from '@/app/shared/point-of-sale/components/pos-order-detail';
 import { routes } from '@/config/routes';
@@ -400,10 +399,16 @@ function ReturnDetailPanel({
 export default function POSHistory() {
   const router = useRouter();
   const { token: posToken } = usePOSAuth();
-  const { data: session, status: sessionStatus } = useSession();
-  const sessionToken = (session?.user as { token?: string })?.token ?? null;
-  const token = !posToken || isTokenExpired(posToken) ? sessionToken : posToken;
+  const token = !posToken || isTokenExpired(posToken) ? null : posToken;
   const { addItem } = usePOSCart();
+
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => { setHydrated(true); }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (!token) router.replace(routes.pos.lock);
+  }, [hydrated, token, router]);
 
   const [orders, setOrders] = useState<HistoryOrder[]>([]);
   const [loading, setLoading] = useState(true);
