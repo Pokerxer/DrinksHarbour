@@ -91,27 +91,35 @@ export default async function SignIn({
 
         {/* logo / tenant identity */}
         <div className="relative z-10 flex items-center gap-3">
-          {tenant?.logo?.url ? (
-            <span className="relative inline-flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-white/15 ring-1 ring-white/25">
+          {tenant ? (
+            <>
+              {tenant.logo?.url && (
+                <span className="relative inline-flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-white/15 ring-1 ring-white/25">
+                  <Image
+                    src={tenant.logo.url}
+                    alt={tenant.logo.alt || tenant.name}
+                    fill
+                    className="object-contain p-1.5"
+                  />
+                </span>
+              )}
+              <span className="text-lg font-semibold tracking-tight">
+                {tenant.name}
+              </span>
+            </>
+          ) : (
+            // The brand wordmark is dark, so it sits on a white badge to stay
+            // legible against the red panel.
+            <span className="inline-flex items-center rounded-xl bg-white px-4 py-2.5 shadow-sm">
               <Image
-                src={tenant.logo.url}
-                alt={tenant.logo.alt || tenant.name}
-                fill
-                className="object-contain p-1.5"
+                src="/brand-logo.svg"
+                alt="DrinksHarbour"
+                width={150}
+                height={53}
+                priority
               />
             </span>
-          ) : (
-            <Image
-              src="/logo-short-light.svg"
-              alt="DrinksHarbour"
-              width={44}
-              height={44}
-              priority
-            />
           )}
-          <span className="text-lg font-semibold tracking-tight">
-            {tenant?.name || 'DrinksHarbour'}
-          </span>
         </div>
 
         {/* headline + value props */}
@@ -152,17 +160,20 @@ export default async function SignIn({
       <section className="flex w-full flex-col justify-center px-6 py-12 sm:px-12 lg:w-1/2 xl:px-24">
         <div className="mx-auto w-full max-w-md">
           {/* mobile logo (brand panel hidden below lg) */}
-          <div className="mb-10 flex items-center gap-3 lg:hidden">
-            <Image
-              src="/logo-primary.svg"
-              alt="DrinksHarbour"
-              width={40}
-              height={40}
-              priority
-            />
-            <span className="text-lg font-semibold tracking-tight text-gray-900">
-              {tenant?.name || 'DrinksHarbour'}
-            </span>
+          <div className="mb-10 lg:hidden">
+            {tenant ? (
+              <span className="text-lg font-semibold tracking-tight text-gray-900">
+                {tenant.name}
+              </span>
+            ) : (
+              <Image
+                src="/brand-logo.svg"
+                alt="DrinksHarbour"
+                width={150}
+                height={53}
+                priority
+              />
+            )}
           </div>
 
           <SignInForm tenant={tenant} />
