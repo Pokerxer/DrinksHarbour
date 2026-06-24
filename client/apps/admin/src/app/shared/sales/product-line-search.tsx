@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { PiMagnifyingGlass, PiCaretRight, PiPlus } from 'react-icons/pi';
 import { subproductService } from '@/services/subproduct.service';
 import { routes } from '@/config/routes';
+import type { POSBundleDeal } from '@/app/shared/point-of-sale/types';
 
 export interface ProductLineSelection {
   name: string;
@@ -16,6 +17,8 @@ export interface ProductLineSelection {
   taxRate: number;
   sizeId?: string;
   sizeName?: string;
+  bundleDeals?: POSBundleDeal[];
+  originalPrice?: number;
 }
 
 interface SizeOption {
@@ -37,6 +40,7 @@ interface ProductOption {
   taxRate: number;
   sellWithoutSizeVariants: boolean;
   sizes: SizeOption[];
+  bundleDeals: POSBundleDeal[];
 }
 
 function mapProducts(raw: any[]): ProductOption[] {
@@ -49,6 +53,7 @@ function mapProducts(raw: any[]): ProductOption[] {
     costPrice: sp.costPrice ?? 0,
     taxRate: sp.taxRate ?? 0,
     sellWithoutSizeVariants: sp.sellWithoutSizeVariants ?? false,
+    bundleDeals: sp.bundleDeals ?? [],
     sizes: (sp.sizes ?? []).map((s: any) => ({
       size: String(s._id ?? s.size ?? ''),
       displayName: s.displayName ?? s.size ?? '',
@@ -140,6 +145,8 @@ export default function ProductLineSearch({
       sellingPrice: p.sellingPrice,
       costPrice: p.costPrice,
       taxRate: p.taxRate,
+      bundleDeals: p.bundleDeals,
+      originalPrice: p.sellingPrice,
     });
     setText(p.name);
     setOpen(false);
@@ -157,6 +164,8 @@ export default function ProductLineSearch({
       taxRate: p.taxRate,
       sizeId: s.size,
       sizeName: displaySize,
+      bundleDeals: p.bundleDeals,
+      originalPrice: s.sellingPrice,
     });
     setText(`${p.name} – ${displaySize}`);
     setOpen(false);
