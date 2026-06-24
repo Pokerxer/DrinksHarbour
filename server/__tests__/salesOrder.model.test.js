@@ -32,3 +32,16 @@ test('SalesOrder rejects an out-of-enum docType', () => {
   const err = so.validateSync();
   assert.ok(err.errors.docType);
 });
+
+test('a line item defaults priceOverridden to false and can be set true', () => {
+  const doc = new SalesOrder({
+    tenant: oid(),
+    soNumber: 'SO000001',
+    docType: 'order',
+    items: [{ quantity: 1, unitPrice: 100, lineTotal: 100 }],
+    orderStatus: 'draft',
+  });
+  assert.strictEqual(doc.items[0].priceOverridden, false);
+  doc.items[0].priceOverridden = true;
+  assert.strictEqual(doc.items[0].priceOverridden, true);
+});

@@ -20,6 +20,7 @@ const lineSchema = new Schema({
   fulfilledQty: { type: Number, default: 0, min: 0 },
   postedQty:    { type: Number, default: 0, min: 0 },
   returnedQty:  { type: Number, default: 0, min: 0 },
+  priceOverridden: { type: Boolean, default: false }, // true = operator typed a manual unitPrice; server pricing skips this line
 });
 
 // Reusable structured address (billing/shipping). All optional — walk-ins and
