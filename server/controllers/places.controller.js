@@ -14,6 +14,9 @@ exports.mapsScript = async (req, res) => {
     const script = await placesService.fetchMapsScript(callback, libraries);
     res.set('Content-Type', 'application/javascript; charset=utf-8');
     res.set('Cache-Control', 'public, max-age=3600');
+    // Global helmet default is same-origin CORP, which blocks <script src> loads
+    // from the frontend's domain. This endpoint is meant to be loaded cross-origin.
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
     return res.send(script);
   } catch (err) {
     res.set('Content-Type', 'application/javascript; charset=utf-8');
