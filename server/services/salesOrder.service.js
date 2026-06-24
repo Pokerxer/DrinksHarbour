@@ -75,6 +75,41 @@ function lineTaxOf(item) {
 }
 
 /**
+ * The authoritative pricing engine, but ONLY when a DB connection is live —
+ * same guard as defaultPromotionEngine below: without one (unit tests,
+ * offline) resolveLinePricing skips the lookup instead of hanging on
+ * Mongoose command buffering, leaving items' submitted unitPrice untouched.
+ */
+function defaultPricingEngine() {
+  try {
+    const mongoose = require('mongoose');
+    if (mongoose.connection && mongoose.connection.readyState === 1) {
+      return require('./salesPricing.service').computeAuthoritativeLinePrices;
+    }
+  } catch {
+    // mongoose/salesPricing.service unavailable — treat as no recompute
+  }
+  return null;
+}
+
+/**
+ * Recompute unitPrice for every line against the tenant's pricelist (price
+ * rules + bundle deals) unless a line is priceOverridden — those are trusted
+ * verbatim (the operator typed a manual price). Best-effort: a missing DB
+ * connection or a lookup failure leaves items unchanged. The engine fn is
+ * injected for test isolation; defaults to salesPricing.service.
+ */
+async function resolveLinePricing(items, deps = {}) {
+  const compute = deps.computeAuthoritativeLinePrices || defaultPricingEngine();
+  if (!compute) return items;
+  try {
+    return await compute(items, { tenantId: deps.tenantId, pricelistId: deps.pricelistId });
+  } catch {
+    return items;
+  }
+}
+
+/**
  * The real promotion engine, but ONLY when a DB connection is live. Without one
  * (unit tests, offline) it returns null so resolveLinePromotions skips the
  * lookup instead of hanging on Mongoose command buffering.
@@ -154,6 +189,7 @@ function mapLine(it) {
     promoName: it.promoName || '',
     taxAmount: lineTaxOf(it),
     lineTotal: lineTotalOf(it),
+    priceOverridden: !!it.priceOverridden,
   };
 }
 
@@ -163,7 +199,8 @@ function mapLine(it) {
  */
 async function createSalesOrderDoc({ tenantId, body }) {
   const docType = body.docType === 'quotation' ? 'quotation' : 'order';
-  const withPromos = await resolveLinePromotions(body.items || [], { tenantId });
+  const priced = await resolveLinePricing(body.items || [], { tenantId, pricelistId: body.pricelist });
+  const withPromos = await resolveLinePromotions(priced, { tenantId });
   const items = withPromos.map(mapLine);
   const totals = computeTotals(items);
   const soNumber = await generateSalesOrderNumber();
@@ -202,8 +239,14 @@ function canCancel(so) {
 
 /** Re-snapshot line prices + totals from an edit body. Mutates `so` in place. */
 async function applyEdit(so, body) {
+  if (body.pricelist !== undefined) {
+    so.pricelist = body.pricelist || null;
+    so.appliedPricelist = body.appliedPricelist || undefined;
+  }
   if (Array.isArray(body.items)) {
-    const withPromos = await resolveLinePromotions(body.items, { tenantId: so.tenant });
+    const pricelistId = body.pricelist !== undefined ? body.pricelist : so.pricelist;
+    const priced = await resolveLinePricing(body.items, { tenantId: so.tenant, pricelistId });
+    const withPromos = await resolveLinePromotions(priced, { tenantId: so.tenant });
     so.items = withPromos.map(mapLine);
     const totals = computeTotals(so.items);
     so.subtotal = totals.subtotal;
@@ -247,6 +290,7 @@ async function convertQuotationToOrder(quotation) {
       taxRate: it.taxRate, taxAmount: it.taxAmount,
       promoDiscount: it.promoDiscount, promoName: it.promoName,
       lineTotal: it.lineTotal,
+      priceOverridden: it.priceOverridden,
       fulfilledQty: 0, postedQty: 0, returnedQty: 0,
     })),
     subtotal: quotation.subtotal, discountTotal: quotation.discountTotal,
@@ -270,5 +314,5 @@ module.exports = {
   lineTotalOf, lineTaxOf, mapLine, computeTotals, createSalesOrderDoc,
   canEdit, canCancel, applyEdit, convertQuotationToOrder,
   PAYMENT_TERMS, computeDueDate, normalizePaymentTerms, normalizeAddress,
-  resolveLinePromotions,
+  resolveLinePromotions, resolveLinePricing,
 };
