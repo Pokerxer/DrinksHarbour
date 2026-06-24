@@ -530,9 +530,9 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
   const syncCartToServer = async (): Promise<boolean> => {
     console.log('🔵 syncCartToServer called');
 
-    let token = localStorage.getItem('token');
+    let token = localStorage.getItem('dh_token');
     if (!token) {
-      token = sessionStorage.getItem('token');
+      token = sessionStorage.getItem('dh_token');
     }
 
     if (cartState.cartArray.length === 0) {
@@ -596,7 +596,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const loadServerCart = async (): Promise<void> => {
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    const token = localStorage.getItem('dh_token') || sessionStorage.getItem('dh_token');
 
     const headers: Record<string, string> = {};
 

@@ -42,7 +42,7 @@ function VerifyContent() {
   async function runVerification(ref: string) {
     try {
       const token =
-        localStorage.getItem('token') || sessionStorage.getItem('token');
+        localStorage.getItem('dh_token') || sessionStorage.getItem('dh_token');
 
       // ── Idempotency: if this reference was already processed, go straight to
       //    the confirmation page without creating a duplicate order.

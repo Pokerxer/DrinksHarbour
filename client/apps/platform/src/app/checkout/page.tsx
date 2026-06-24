@@ -132,7 +132,7 @@ export default function CheckoutPage() {
 
   // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    const token = localStorage.getItem('dh_token') || sessionStorage.getItem('dh_token');
     if (!token) { router.push('/login?redirect=/checkout'); return; }
     setMounted(true);
     loadServerCart();
@@ -140,7 +140,7 @@ export default function CheckoutPage() {
 
   // Pre-fill from localStorage
   useEffect(() => {
-    const stored = localStorage.getItem('user') || sessionStorage.getItem('user');
+    const stored = localStorage.getItem('dh_user') || sessionStorage.getItem('dh_user');
     if (!stored) return;
     try {
       const u = JSON.parse(stored);
@@ -323,7 +323,7 @@ export default function CheckoutPage() {
     email: form.email, phone: form.phone,
   });
 
-  const token = () => localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+  const token = () => localStorage.getItem('dh_token') || sessionStorage.getItem('dh_token') || '';
 
   // ── After successful payment: create order ────────────────────────────────
   const createOrderAfterPayment = async (paymentDetails: any) => {

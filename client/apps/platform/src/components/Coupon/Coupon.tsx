@@ -91,7 +91,7 @@ const Coupon: React.FC<CouponProps> = ({
     if (subtotal <= 0) return;
 
     try {
-      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const token = localStorage.getItem('dh_token') || sessionStorage.getItem('dh_token');
 
       const cartData = {
         items: cartItems.map(item => ({
@@ -147,7 +147,7 @@ const Coupon: React.FC<CouponProps> = ({
   }, [subtotal, appliedCoupon, fetchAvailableCoupons]);
 
   const validateCoupon = async (code: string): Promise<AppliedCoupon | null> => {
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    const token = localStorage.getItem('dh_token') || sessionStorage.getItem('dh_token');
 
     const cartData = {
       items: cartItems.map(item => ({

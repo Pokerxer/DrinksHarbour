@@ -12,6 +12,7 @@ const { resolveTenant } = require('./middleware/tenant.middleware');
 
 // Route imports
 const orderRoutes            = require('./routes/order.routes');
+const cartRoutes             = require('./routes/cart.routes');
 const productRoutes          = require('./routes/product.routes');
 const userRoutes             = require('./routes/user.routes');
 const couponRoutes           = require('./routes/coupon.routes');
@@ -160,6 +161,7 @@ app.use('/api', async (req, res, next) => {
 // Mount Routes (MUST be after body parser)
 // ────────────────────────────────────────────────
 app.use('/api/orders',             orderRoutes);
+app.use('/api/cart',               cartRoutes);
 app.use('/api/products',           productRoutes);
 app.use('/api/users',              userRoutes);
 app.use('/api/coupons',            couponRoutes);

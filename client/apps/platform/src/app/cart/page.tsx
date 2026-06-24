@@ -99,7 +99,7 @@ const CartPage = () => {
   };
 
   const handleCheckout = () => {
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    const token = localStorage.getItem('dh_token') || sessionStorage.getItem('dh_token');
     
     if (!token) {
       router.push('/login?redirect=/checkout');

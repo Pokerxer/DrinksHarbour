@@ -178,7 +178,7 @@ function OrderConfirmationContent() {
   const fetchOrder = useCallback(async () => {
     if (!orderId) { setLoading(false); return; }
     try {
-      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const token = localStorage.getItem('dh_token') || sessionStorage.getItem('dh_token');
       const customerEmail = localStorage.getItem('customerEmail') || sessionStorage.getItem('customerEmail');
 
       let url = `${API_URL}/api/orders/${orderId}`;

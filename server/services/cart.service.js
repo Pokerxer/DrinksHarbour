@@ -525,6 +525,57 @@ const clearCart = async (userId) => {
   return cart;
 };
 
+/**
+ * Validate cart items against current stock & pricing (pre-checkout safety check).
+ * Public — works for guest and logged-in carts alike, no userId needed.
+ */
+const validateCartItems = async (items) => {
+  return Promise.all((items || []).map(async (item) => {
+    const { subProductId, sizeId, quantity = 1, price: oldPrice = 0 } = item;
+    const base = { subProductId, sizeId: sizeId || null, oldPrice };
+    const unavailable = (extra = {}) => ({
+      ...base, status: 'unavailable', available: false, currentPrice: 0,
+      priceDiff: -oldPrice, stockStatus: 'unavailable', maxQuantity: 0, isLowStock: false, ...extra,
+    });
+
+    const subProduct = await SubProduct.findOne({ _id: subProductId, status: 'active' })
+      .populate({ path: 'tenant', select: 'status subscriptionStatus' });
+
+    if (!subProduct || !subProduct.tenant ||
+        subProduct.tenant.status !== 'approved' ||
+        !['active', 'trialing'].includes(subProduct.tenant.subscriptionStatus)) {
+      return unavailable();
+    }
+
+    const size = sizeId ? await Size.findOne({ _id: sizeId, subproduct: subProductId }) : null;
+    if (!size) return unavailable();
+
+    const currentPrice = size.effectivePrice;
+    const stock         = size.availableStock || size.stock || 0;
+
+    if (size.availability === 'out_of_stock' || stock <= 0) {
+      return { ...base, status: 'out_of_stock', available: false, currentPrice,
+        priceDiff: currentPrice - oldPrice, stockStatus: 'out_of_stock', maxQuantity: 0, isLowStock: false };
+    }
+
+    const maxQuantity = size.maxOrderQuantity ? Math.min(stock, size.maxOrderQuantity) : stock;
+    const isLowStock  = size.isLowStock;
+
+    if (quantity > maxQuantity) {
+      return { ...base, status: 'quantity_reduced', available: true, currentPrice,
+        priceDiff: currentPrice - oldPrice, stockStatus: size.availability, maxQuantity, isLowStock };
+    }
+
+    if (Math.round(currentPrice) !== Math.round(oldPrice)) {
+      return { ...base, status: 'price_changed', available: true, currentPrice,
+        priceDiff: currentPrice - oldPrice, stockStatus: size.availability, maxQuantity, isLowStock };
+    }
+
+    return { ...base, status: 'ok', available: true, currentPrice, priceDiff: 0,
+      stockStatus: size.availability, maxQuantity, isLowStock };
+  }));
+};
+
 module.exports = {
   addToCart,
   getCart,
@@ -534,4 +585,5 @@ module.exports = {
   syncCart,
   replaceCart,
   recalculateCartTotals,
+  validateCartItems,
 };

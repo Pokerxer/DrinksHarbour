@@ -52,11 +52,11 @@ export default function AccountShell({ children }: { children: React.ReactNode }
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
-    const t = localStorage.getItem('token') || sessionStorage.getItem('token');
+    const t = localStorage.getItem('dh_token') || sessionStorage.getItem('dh_token');
     if (!t) { router.push('/login?redirect=/my-account'); return; }
     setToken(t);
 
-    const stored = localStorage.getItem('user') || sessionStorage.getItem('user');
+    const stored = localStorage.getItem('dh_user') || sessionStorage.getItem('dh_user');
     if (stored) { try { setUser(JSON.parse(stored)); } catch {} }
 
     fetch(`${API_URL}/api/users/me`, { headers: { Authorization: `Bearer ${t}` } })
@@ -65,7 +65,7 @@ export default function AccountShell({ children }: { children: React.ReactNode }
         if (data) {
           const u = data.data?.user || data.user || data.data;
           setUser(u);
-          localStorage.setItem('user', JSON.stringify(u));
+          localStorage.setItem('dh_user', JSON.stringify(u));
         }
       })
       .catch(() => {})
@@ -73,7 +73,7 @@ export default function AccountShell({ children }: { children: React.ReactNode }
   }, [router]);
 
   const handleLogout = () => {
-    ['token', 'user'].forEach(k => { localStorage.removeItem(k); sessionStorage.removeItem(k); });
+    ['dh_token', 'dh_user'].forEach(k => { localStorage.removeItem(k); sessionStorage.removeItem(k); });
     router.push('/');
   };
 

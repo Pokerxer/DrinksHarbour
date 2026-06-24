@@ -100,13 +100,13 @@ function StarPicker({ value, onChange }: { value: number; onChange: (n: number) 
 
 function getToken() {
   if (typeof window === 'undefined') return '';
-  return localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+  return localStorage.getItem('dh_token') || sessionStorage.getItem('dh_token') || '';
 }
 
 function getUserId() {
   if (typeof window === 'undefined') return '';
   try {
-    const u = localStorage.getItem('user') || sessionStorage.getItem('user') || '';
+    const u = localStorage.getItem('dh_user') || sessionStorage.getItem('dh_user') || '';
     return u ? JSON.parse(u)?._id || '' : '';
   } catch { return ''; }
 }

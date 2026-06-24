@@ -132,7 +132,7 @@ const ModalCart = () => {
   const handleCheckout = () => {
     // Block checkout if there are unresolved issues
     if (issueCount > 0) return;
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    const token = localStorage.getItem('dh_token') || sessionStorage.getItem('dh_token');
     closeModalCart();
     router.push(token ? '/checkout' : '/login?redirect=/checkout');
   };

@@ -56,7 +56,7 @@ export default function AccountOverviewPage() {
       if (res.ok) {
         const updated = data.data?.user || data.user || data;
         setUser(updated);
-        localStorage.setItem('user', JSON.stringify(updated));
+        localStorage.setItem('dh_user', JSON.stringify(updated));
         setEditing(false);
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);

@@ -31,7 +31,7 @@ export const HeaderActions: React.FC<HeaderActionsProps> = ({
   const isDark = variant === "dark";
 
   useEffect(() => {
-    const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+    const token = localStorage.getItem("dh_token") || sessionStorage.getItem("dh_token");
     setIsLoggedIn(!!token);
   }, []);
 
@@ -46,10 +46,10 @@ export const HeaderActions: React.FC<HeaderActionsProps> = ({
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    sessionStorage.removeItem("token");
-    sessionStorage.removeItem("user");
+    localStorage.removeItem("dh_token");
+    localStorage.removeItem("dh_user");
+    sessionStorage.removeItem("dh_token");
+    sessionStorage.removeItem("dh_user");
     setIsLoggedIn(false);
     setUserDropdownOpen(false);
   };
