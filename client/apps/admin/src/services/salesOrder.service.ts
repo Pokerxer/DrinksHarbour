@@ -18,6 +18,7 @@ export interface SalesLineItem {
   fulfilledQty: number;
   postedQty: number;
   returnedQty: number;
+  priceOverridden?: boolean;
 }
 
 export interface SalesOrderCustomerSnapshot {
@@ -109,6 +110,7 @@ export interface SalesOrderLineInput {
   unitPrice: number;
   discount?: number;
   taxRate?: number;
+  priceOverridden?: boolean;
 }
 
 export interface CreateSalesOrderInput {
@@ -128,6 +130,8 @@ export interface CreateSalesOrderInput {
 
 export interface UpdateSalesOrderInput {
   items?: SalesOrderLineInput[];
+  pricelist?: string;
+  appliedPricelist?: { pricelistId?: string; pricelistName?: string };
   notes?: string;
   terms?: string;
   validUntil?: string;
