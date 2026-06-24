@@ -499,7 +499,7 @@ const buildFullCatalogContext = async (tenantId = null) => {
       if (catName) line += ` [${catName}${subCatName ? ' > ' + subCatName : ''}]`;
       line += ` — from ₦${Math.round(minPrice).toLocaleString()}`;
       if (minPrice !== maxPrice) line += ` to ₦${Math.round(maxPrice).toLocaleString()}`;
-      if (hasDiscount) line += ' [ON SALE]';
+      if (anyOnSale) line += ' [ON SALE]';
       line += ` ${stockLabel}`;
       line += '\n' + sizeLines.join('\n');
 
