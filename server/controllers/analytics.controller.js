@@ -1,9 +1,11 @@
 'use strict';
 
-const asyncHandler = require('express-async-handler');
-const Order        = require('../models/Order');
-const SubProduct   = require('../models/SubProduct');
-const Tenant       = require('../models/Tenant');
+const asyncHandler   = require('express-async-handler');
+const Order          = require('../models/Order');
+const SubProduct     = require('../models/SubProduct');
+const Tenant         = require('../models/Tenant');
+const webAnalyticsService = require('../services/webAnalytics.service');
+const { successResponse, errorResponse } = require('../utils/response');
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -444,3 +446,37 @@ exports.getDashboard = asyncHandler(async (req, res) => {
     },
   });
 });
+
+/**
+ * POST /api/analytics/track
+ * Public — anonymous storefront page-view tracking (fire-and-forget from the client).
+ */
+exports.trackPageView = async (req, res) => {
+  try {
+    const { sessionId, page } = req.body;
+    if (!sessionId || !page) {
+      return errorResponse(res, 'sessionId and page are required', 400);
+    }
+    const doc = await webAnalyticsService.recordPageView(req.body);
+    return successResponse(res, { id: doc._id }, 'Tracked', 201);
+  } catch (err) {
+    return errorResponse(res, 'Failed to track page view', 500, err);
+  }
+};
+
+/**
+ * POST/PATCH /api/analytics/track/duration
+ * Public — sendBeacon always POSTs, fetch fallback uses PATCH.
+ */
+exports.trackDuration = async (req, res) => {
+  try {
+    const { sessionId, page, duration } = req.body;
+    if (!sessionId || !page || duration === undefined) {
+      return errorResponse(res, 'sessionId, page and duration are required', 400);
+    }
+    await webAnalyticsService.updatePageDuration({ sessionId, page, duration });
+    return successResponse(res, null, 'Duration recorded');
+  } catch (err) {
+    return errorResponse(res, 'Failed to record duration', 500, err);
+  }
+};

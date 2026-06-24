@@ -42,6 +42,7 @@ const shippingRoutes         = require('./routes/shipping.routes');
 const analyticsRoutes        = require('./routes/analytics.routes');
 const geminiRoutes           = require('./routes/gemini.routes');
 const bannerGeminiRoutes     = require('./routes/banner-gemini.routes');
+const bannerRoutes           = require('./routes/banner.routes');
 const salesOrderRoutes       = require('./routes/salesOrder.routes');
 
 const app = express();
@@ -192,6 +193,7 @@ app.use('/api/shipping',           shippingRoutes);
 app.use('/api/analytics',          analyticsRoutes);
 app.use('/api/gemini',             geminiRoutes);
 app.use('/api/banner-ai',          bannerGeminiRoutes);
+app.use('/api/banners',            bannerRoutes);
 app.use('/api/tenants',            require('./routes/tenant.routes'));
 app.use('/api/employees',          require('./routes/employee.routes'));
 app.use('/api/contacts',           require('./routes/contact.routes'));
