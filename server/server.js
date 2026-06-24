@@ -45,6 +45,7 @@ const geminiRoutes           = require('./routes/gemini.routes');
 const bannerGeminiRoutes     = require('./routes/banner-gemini.routes');
 const bannerRoutes           = require('./routes/banner.routes');
 const chatbotRoutes          = require('./routes/chatbot.routes');
+const placesRoutes           = require('./routes/places.routes');
 const salesOrderRoutes       = require('./routes/salesOrder.routes');
 
 const app = express();
@@ -198,6 +199,7 @@ app.use('/api/gemini',             geminiRoutes);
 app.use('/api/banner-ai',          bannerGeminiRoutes);
 app.use('/api/banners',            bannerRoutes);
 app.use('/api/chatbot',            chatbotRoutes);
+app.use('/api/places',             placesRoutes);
 app.use('/api/tenants',            require('./routes/tenant.routes'));
 app.use('/api/employees',          require('./routes/employee.routes'));
 app.use('/api/contacts',           require('./routes/contact.routes'));
