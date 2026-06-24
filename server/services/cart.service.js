@@ -6,6 +6,7 @@ const Size = require('../models/Size');
 const SubProduct = require('../models/SubProduct');
 const Tenant = require('../models/Tenant');
 const { NotFoundError, ValidationError, ConflictError } = require('../utils/errors');
+const { calculateSizePricing } = require('../utils/pricing');
 
 /**
  * Add item to cart
@@ -539,7 +540,8 @@ const validateCartItems = async (items) => {
     });
 
     const subProduct = await SubProduct.findOne({ _id: subProductId, status: 'active' })
-      .populate({ path: 'tenant', select: 'status subscriptionStatus' });
+      .populate({ path: 'tenant', select: 'status subscriptionStatus revenueModel markupPercentage commissionPercentage' })
+      .populate({ path: 'product', select: 'platformMarkup platformDiscount' });
 
     if (!subProduct || !subProduct.tenant ||
         subProduct.tenant.status !== 'approved' ||
@@ -550,7 +552,12 @@ const validateCartItems = async (items) => {
     const size = sizeId ? await Size.findOne({ _id: sizeId, subproduct: subProductId }) : null;
     if (!size) return unavailable();
 
-    const currentPrice = size.effectivePrice;
+    // Platform selling price (markup/commission + product discount) — same pipeline
+    // the storefront product page uses, NOT the raw tenant-facing Size.sellingPrice.
+    const currentPrice = calculateSizePricing(
+      size, subProduct.product, subProduct.tenant,
+      subProduct.costPrice, subProduct.baseSellingPrice
+    ).finalPrice;
     const stock         = size.availableStock || size.stock || 0;
 
     if (size.availability === 'out_of_stock' || stock <= 0) {
