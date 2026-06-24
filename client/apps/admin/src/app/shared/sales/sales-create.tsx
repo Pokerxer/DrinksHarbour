@@ -18,9 +18,9 @@ import {
   salesOrderService,
   type SalesOrderAddress,
 } from '@/services/salesOrder.service';
-import type { POSCustomer } from '@/app/shared/point-of-sale/types';
+import type { POSCustomer, POSBundleDeal } from '@/app/shared/point-of-sale/types';
 import type { POSCartItem } from '@/app/shared/point-of-sale/types';
-import { computeItemPriceWithPricelist } from '@/app/shared/point-of-sale/store';
+import { getEffectiveBundlePriceForItem } from '@/app/shared/point-of-sale/store';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
 import CustomerSearch from './customer-search';
 import ProductLineSearch, {
@@ -48,6 +48,12 @@ interface DraftLine {
   discount: number;
   taxRate: number;
   costPrice: number;
+  /** True once the operator has typed a manual unit price for this line — it
+   * then ignores the live pricelist/bundle computation and the server trusts
+   * it verbatim. Reset to false whenever a new product/size is picked. */
+  priceOverridden: boolean;
+  activeBundles?: POSBundleDeal[];
+  originalPrice?: number;
 }
 
 function blankLine(): DraftLine {
@@ -61,11 +67,13 @@ function blankLine(): DraftLine {
     discount: 0,
     taxRate: 0,
     costPrice: 0,
+    priceOverridden: false,
   };
 }
 
-/** Live unit price after pricelist rules, via the shared pure pricing function. */
+/** Live unit price after pricelist + bundle rules, unless the operator overrode it. */
 function liveUnitPrice(line: DraftLine, pricelist: any): number {
+  if (line.priceOverridden) return line.baseUnitPrice;
   if (!line.subProductId || !pricelist) return line.baseUnitPrice;
   const pricingItem: POSCartItem = {
     subProductId: line.subProductId,
@@ -79,8 +87,10 @@ function liveUnitPrice(line: DraftLine, pricelist: any): number {
     discount: 0,
     stock: 0,
     costPrice: line.costPrice,
+    activeBundles: line.activeBundles,
+    originalPrice: line.originalPrice,
   };
-  return computeItemPriceWithPricelist(pricingItem, pricelist);
+  return getEffectiveBundlePriceForItem(pricingItem, pricelist).price;
 }
 
 function lineTotalOf(unitPrice: number, discount: number, quantity: number) {
@@ -262,6 +272,7 @@ export default function SalesCreate() {
             unitPrice: l.unitPrice,
             discount: l.discount,
             taxRate: l.taxRate,
+            priceOverridden: l.priceOverridden,
           })),
           validUntil: validUntil || undefined,
           paymentTerms,
@@ -468,6 +479,9 @@ export default function SalesCreate() {
                               baseUnitPrice: info.sellingPrice,
                               costPrice: info.costPrice,
                               taxRate: info.taxRate,
+                              priceOverridden: false,
+                              activeBundles: info.bundleDeals,
+                              originalPrice: info.originalPrice,
                             })
                           }
                         />
@@ -488,8 +502,27 @@ export default function SalesCreate() {
                           className={`${INLINE_CELL_CLS} w-16`}
                         />
                       </td>
-                      <td className="px-2 py-2 text-right text-sm font-medium text-gray-900">
-                        {fmtCur(line.unitPrice, 'NGN')}
+                      <td className="px-2 py-2">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {line.priceOverridden && (
+                            <span
+                              title="Manually set"
+                              className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
+                            />
+                          )}
+                          <input
+                            type="number"
+                            min={0}
+                            value={line.unitPrice}
+                            onChange={(e) =>
+                              updateLine(line.key, {
+                                baseUnitPrice: Math.max(0, Number(e.target.value) || 0),
+                                priceOverridden: true,
+                              })
+                            }
+                            className={`${INLINE_CELL_CLS} w-24`}
+                          />
+                        </div>
                       </td>
                       <td className="px-2 py-2">
                         <input
