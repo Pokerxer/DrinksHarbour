@@ -1,11 +1,11 @@
 // server/services/chatbot.service.js
-// Chatbot Service using Groq AI for DrinksHarbour Multi-tenant Platform
+// Chatbot Service using Claude Haiku for DrinksHarbour Multi-tenant Platform
 // Supports: Text queries, Image analysis, Database products, General beverage knowledge
 
 const mongoose = require('mongoose');
 const https = require('https');
 const productService = require('./product.service');
-const Groq = require('groq-sdk');
+const Anthropic = require('@anthropic-ai/sdk');
 
 const Product = mongoose.models.Product || mongoose.model('Product');
 const SubProduct = mongoose.models.SubProduct || mongoose.model('SubProduct');
@@ -13,9 +13,9 @@ const Size = mongoose.models.Size || mongoose.model('Size');
 const Category = mongoose.models.Category || mongoose.model('Category');
 const Tenant = mongoose.models.Tenant || mongoose.model('Tenant');
 
-// Groq AI Configuration
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' });
-const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+// Claude AI Configuration
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
+const CLAUDE_MODEL = 'claude-haiku-4-5';
 
 // ── Web Search via Serper.dev ────────────────────────────────────────────────
 const searchWeb = async (query) => {
@@ -70,13 +70,13 @@ const searchWeb = async (query) => {
   });
 };
 
-// Call Groq AI — supports multi-turn conversation history
-const callGoogleAI = async (prompt, systemPrompt = null, conversationHistory = []) => {
+// Call Claude Haiku — supports multi-turn conversation history
+const callClaude = async (prompt, systemPrompt = null, conversationHistory = []) => {
   const finalSystemPrompt = systemPrompt || BASE_SYSTEM_PROMPT;
   try {
-    // Build messages: system + history (last 10 turns) + current user message
+    // Build messages: history (last 10 turns) + current user message.
+    // System prompt goes in the top-level `system` param, not the messages array.
     const messages = [
-      { role: 'system', content: finalSystemPrompt },
       ...conversationHistory.slice(-10).map(m => ({
         role: m.role === 'assistant' ? 'assistant' : 'user',
         content: m.content,
@@ -84,16 +84,18 @@ const callGoogleAI = async (prompt, systemPrompt = null, conversationHistory = [
       { role: 'user', content: prompt },
     ];
 
-    const completion = await groq.chat.completions.create({
-      model: GROQ_MODEL,
-      messages,
-      temperature: 0.65,
+    const response = await anthropic.messages.create({
+      model: CLAUDE_MODEL,
       max_tokens: 1024,
+      temperature: 0.65,
+      system: finalSystemPrompt,
+      messages,
     });
 
-    return completion.choices[0]?.message?.content || null;
+    const textBlock = response.content.find(b => b.type === 'text');
+    return textBlock?.text || null;
   } catch (error) {
-    console.error('Groq AI Error:', error.message);
+    console.error('Claude AI Error:', error.message);
     return null;
   }
 };
@@ -124,13 +126,7 @@ KNOWLEDGE RULES:
 7. ✅ You may reference general beverage knowledge (e.g. "Chardonnay grapes originated in Burgundy, France") even if not explicitly in the catalog.
 8. For event planning: ask for guest count + budget first, then recommend from catalog only.`;
 
-// Analyze image using Groq Vision
-const GROQ_VISION_MODELS = [
-  'llama-3.2-11b-vision-preview',
-  'llama-3.2-90b-vision-preview',
-  'meta-llama/llama-4-scout-17b-16e-instruct',
-];
-
+// Analyze image using Claude Haiku vision
 const analyzeImage = async (imageUrl, userContext = '') => {
   if (!imageUrl) return null;
 
@@ -157,8 +153,8 @@ const analyzeImage = async (imageUrl, userContext = '') => {
 
   if (!base64Data || base64Data.length < 100) return null;
 
-  // Warn if image is very large (Groq has ~4MB limit for base64)
-  if (base64Data.length > 4_000_000) {
+  // Warn if image is very large (Claude's vision limit is ~5MB per image)
+  if (base64Data.length > 5_000_000) {
     console.warn(`analyzeImage: large image (${Math.round(base64Data.length / 1024)}KB base64), may fail`);
   }
 
@@ -173,33 +169,25 @@ const analyzeImage = async (imageUrl, userContext = '') => {
 
 Be as precise as possible with the brand name so it can be searched in our catalog.${userContext ? `\n\nCustomer's question: "${userContext}"` : ''}`;
 
-  // Try vision models in order, return first successful result
-  for (const model of GROQ_VISION_MODELS) {
-    try {
-      const completion = await groq.chat.completions.create({
-        model,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'text', text: analysisPrompt },
-            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Data}` } }
-          ]
-        }],
-        temperature: 0.3,
-        max_tokens: 700,
-      });
-      const result = completion.choices[0]?.message?.content;
-      if (result) {
-        console.log(`analyzeImage: success with model ${model}`);
-        return result;
-      }
-    } catch (err) {
-      console.error(`analyzeImage: model ${model} failed — ${err.message}`);
-      // Continue to next model
-    }
+  try {
+    const response = await anthropic.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 700,
+      temperature: 0.3,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64Data } },
+          { type: 'text', text: analysisPrompt },
+        ],
+      }],
+    });
+    const textBlock = response.content.find(b => b.type === 'text');
+    if (textBlock?.text) return textBlock.text;
+  } catch (err) {
+    console.error(`analyzeImage: Claude vision failed — ${err.message}`);
   }
 
-  console.error('analyzeImage: all vision models failed');
   return null;
 };
 
@@ -1132,7 +1120,7 @@ ${intent.type === 'product_info' ? `- Give a RICH, EXPERT-LEVEL breakdown. Use y
   **Fun Fact**: One surprising or memorable detail about this product
   End with the catalog price and availability.` : ''}`.trim();
 
-    let response = await callGoogleAI(query, systemPrompt, conversationHistory);
+    let response = await callClaude(query, systemPrompt, conversationHistory);
 
     // Filter out products with invalid/zero prices for display
     const validProducts = products.filter(p => p.minPrice > 0);
@@ -1140,7 +1128,7 @@ ${intent.type === 'product_info' ? `- Give a RICH, EXPERT-LEVEL breakdown. Use y
     // If Gemini returned nothing, retry with a minimal conversational prompt (no product context)
     if (!response && conversationHistory.length > 0) {
       const minimalPrompt = `${BASE_SYSTEM_PROMPT}\n\nRespond naturally to the customer's message. Be warm and helpful. If they're reacting to a price or product, acknowledge it and offer next steps.`;
-      response = await callGoogleAI(query, minimalPrompt, conversationHistory);
+      response = await callClaude(query, minimalPrompt, conversationHistory);
     }
 
     // Rule-based fallback only if Gemini is completely unavailable
@@ -1250,7 +1238,7 @@ const handleImageQuery = async (imageUrls, userQuery = '', tenantId = null) => {
       if (fallbackProducts.length > 0) {
         const fullCatalog = await buildFullCatalogContext(tenantId);
         const systemPrompt = `${BASE_SYSTEM_PROMPT}\n\n${fullCatalog ? `FULL SHOP CATALOG:\n${fullCatalog}` : ''}`;
-        const response = await callGoogleAI(
+        const response = await callClaude(
           userQuery || 'What drinks do you have?',
           systemPrompt
         ) || `I had trouble reading the image, but here's what I found matching your query:`;
@@ -1316,7 +1304,7 @@ INSTRUCTIONS:
 - Keep response warm, concise, and expert-sounding.`;
 
     const userPrompt = userQuery || 'What drink is this? Tell me about it and check if you have it available.';
-    const response = await callGoogleAI(userPrompt, systemPrompt) || imageContext;
+    const response = await callClaude(userPrompt, systemPrompt) || imageContext;
 
     return {
       response,
@@ -1451,7 +1439,7 @@ const handleFileQuery = async (fileContent, fileName, userQuery, tenantId = null
       if (fullCatalog) {
         const altSystemPrompt = `${BASE_SYSTEM_PROMPT}\n\nFULL SHOP CATALOG:\n${fullCatalog}`;
         const notFoundList = notFound.map(n => n.name).join(', ');
-        const altResponse = await callGoogleAI(
+        const altResponse = await callClaude(
           `These items were not found in our catalog: ${notFoundList}. Suggest the closest available alternatives from the catalog above. Be brief — one line per item.`,
           altSystemPrompt
         );
@@ -1659,7 +1647,7 @@ const generateProductDetails = async (productId) => {
       });
     }
 
-    const response = await callGoogleAI(
+    const response = await callClaude(
       `Summarize these drink details into a compelling, 2-3 sentence overview for a customer. Highlight the brand, type, key flavors, and the best available price:\n\n${details}`,
       'You are DrinksHarbour AI, an engaging beverage expert.'
     );
