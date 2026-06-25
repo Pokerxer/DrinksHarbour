@@ -316,7 +316,14 @@ function ReceiptScreen({
                   {storeName}
                 </p>
                 {settings.receiptHeader ? (
-                  <p style={{ ...R.muted, fontSize: 10, whiteSpace: 'pre-line', marginTop: 2 }}>
+                  <p
+                    style={{
+                      ...R.muted,
+                      fontSize: 10,
+                      whiteSpace: 'pre-line',
+                      marginTop: 2,
+                    }}
+                  >
                     {settings.receiptHeader}
                   </p>
                 ) : null}
@@ -337,7 +344,9 @@ function ReceiptScreen({
             {custName && <Row label="Customer" value={custName} />}
             <Row
               label="Items"
-              value={String((order.items || []).reduce((s, it) => s + it.quantity, 0))}
+              value={String(
+                (order.items || []).reduce((s, it) => s + it.quantity, 0)
+              )}
             />
 
             <div style={R.rule} />
@@ -592,7 +601,9 @@ function ReceiptScreen({
                         <>
                           <Row
                             label="Original Subtotal"
-                            value={formatCurrency(order.originalSubtotal ?? grossSubtotal)}
+                            value={formatCurrency(
+                              order.originalSubtotal ?? grossSubtotal
+                            )}
                           />
                           <Row
                             label={
@@ -696,13 +707,14 @@ function ReceiptScreen({
                   }
                   value={formatCurrency(order.total)}
                 />
-                {order.amountTendered != null && order.amountTendered !== order.total && (
-                  <Row
-                    label="TENDERED"
-                    value={formatCurrency(order.amountTendered)}
-                    vStyle={R.muted}
-                  />
-                )}
+                {order.amountTendered != null &&
+                  order.amountTendered !== order.total && (
+                    <Row
+                      label="TENDERED"
+                      value={formatCurrency(order.amountTendered)}
+                      vStyle={R.muted}
+                    />
+                  )}
               </>
             )}
             {order.change > 0 && (
@@ -1155,7 +1167,9 @@ export default function POSPaymentModal() {
   // and don't make it the active numpad line — its amount must stay at the total.
   function selectWallet() {
     const id = `ln-wallet-${Date.now()}`;
-    setLines([{ id, method: 'wallet', label: 'Wallet', amount: effectiveTotal }]);
+    setLines([
+      { id, method: 'wallet', label: 'Wallet', amount: effectiveTotal },
+    ]);
     setActiveId(null);
     setInputStr('0');
     setFreshInput(false);
@@ -1303,7 +1317,10 @@ export default function POSPaymentModal() {
     try {
       const orderItems = items.map((item) => {
         const isGet = item.bxgyRef?.role === 'get';
-        const effectivePrice = getEffectiveBundlePriceForItem(item, selectedPricelist).price;
+        const effectivePrice = getEffectiveBundlePriceForItem(
+          item,
+          selectedPricelist
+        ).price;
         return {
           subProductId: item.subProductId,
           productId: item.productId,
@@ -1312,7 +1329,9 @@ export default function POSPaymentModal() {
           // BXGY get items: send the original pre-BXGY price for audit clarity.
           // The server ignores client price and recomputes its own, but offline
           // queues and receipt snapshots use this value.
-          price: isGet ? (item.bxgyRef?.originalPrice ?? item.price) : item.price,
+          price: isGet
+            ? (item.bxgyRef?.originalPrice ?? item.price)
+            : item.price,
           // Authoritative client-computed price after pricelist + bundle rules.
           // Server uses this as priceAtPurchase when present, ensuring the receipt
           // charge matches what the cart displayed.
@@ -1362,9 +1381,10 @@ export default function POSPaymentModal() {
       // BXGY get items use bxgyRef.originalPrice (pre-BXGY baseline) since the
       // BXGY discount is already embedded in item.discount (→ server's discountAmount).
       const cartOriginalSubtotal = items.reduce((s, i) => {
-        const unitPrice = i.bxgyRef?.role === 'get'
-          ? (i.bxgyRef.originalPrice ?? i.price)
-          : i.price;
+        const unitPrice =
+          i.bxgyRef?.role === 'get'
+            ? (i.bxgyRef.originalPrice ?? i.price)
+            : i.price;
         return s + unitPrice * i.quantity;
       }, 0);
 
