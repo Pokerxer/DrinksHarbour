@@ -834,92 +834,6 @@ const queryProducts = async (filters, searchQuery, limit = 10, brand = null, ten
   }
 };
 
-// General beverage knowledge base
-const beverageKnowledgeBase = {
-  wine: {
-    types: ['Red Wine', 'White Wine', 'Rosé Wine', 'Sparkling Wine', 'Champagne', 'Prosecco'],
-    descriptions: {
-      'Red Wine': 'Made from dark grape varieties, ranging from light-bodied Pinot Noir to full-bodied Cabernet Sauvignon. Popular regions include France (Bordeaux, Burgundy), Italy (Chianti), Spain (Rioja), and Australia.',
-      'White Wine': 'Produced from green or yellowish grapes, offering crisp and refreshing flavors. Examples include Chardonnay, Sauvignon Blanc, and Riesling. Best served chilled.',
-      'Rosé Wine': 'Pink-colored wine made from red grapes with minimal skin contact. Light, fruity, and perfect for warm weather.',
-      'Sparkling Wine': 'Carbonated wine with bubbles. Champagne (from France) is the most prestigious, but Prosecco (Italy) and Cava (Spain) offer excellent alternatives.',
-      'Champagne': 'A sparkling wine from the Champagne region of France. Known for its bubbles, complexity, and celebration association.',
-    },
-    serving: 'Most wines are served at 12-16°C. Red wines slightly warmer, whites and rosés colder.',
-    pairing: 'Red wine: red meat, cheese. White wine: seafood, chicken, light pasta. Sparkling: appetizers, celebrations.'
-  },
-  beer: {
-    types: ['Lager', 'Ale', 'Stout', 'IPA', 'Pilsner', 'Wheat Beer'],
-    descriptions: {
-      'Lager': 'Crisp, clean, and refreshing. Popular brands include Heineken, Stella, and Budweiser. Fermented at cooler temperatures.',
-      'Ale': 'Fruitier and more complex than lagers. Includes pale ales, brown ales, and porters.',
-      'Stout': 'Dark, rich, and creamy. Guinness is the most famous example. Notes of coffee, chocolate, and roasted barley.',
-      'IPA': 'India Pale Ale - hoppy, bitter, and aromatic. Increasingly popular among craft beer enthusiasts.',
-      'Pilsner': 'Light, crisp, and golden. A type of lager originating from Czech Republic.',
-    },
-    serving: 'Serve at 4-10°C depending on style. Light beers colder, stouts and porters slightly warmer.',
-    pairing: 'Light lagers: pizza, burgers. IPAs: spicy food, strong cheeses. Stouts: chocolate, desserts.'
-  },
-  spirit: {
-    types: ['Whiskey', 'Vodka', 'Gin', 'Rum', 'Tequila', 'Brandy', 'Cognac'],
-    descriptions: {
-      'Whiskey': 'Distilled grain mash, aged in oak barrels. Types include Scotch (Scotland), Bourbon (USA), Irish, and Japanese. Ranges from smoky to sweet.',
-      'Vodka': 'Clean, neutral spirit usually made from grains or potatoes. Popular brands include Grey Goose, Absolut, and Ciroc. Essential for cocktails.',
-      'Gin': 'Juniper-flavored spirit with botanical notes. London Dry Gin is the most common style. Key for cocktails like Martini and Gin & Tonic.',
-      'Rum': 'Made from sugarcane. White rum is light and crisp; dark rum is aged with rich flavors. Popular in tropical cocktails.',
-      'Tequila': 'Made from blue agave plant in Mexico. Blanco (unaged), Reposado (aged 2-12 months), Añejo (aged 1-3 years).',
-      'Brandy/Cognac': 'Distilled wine, aged in oak. Cognac from France is the most prestigious. Rich, complex, and often served after dinner.',
-    },
-    serving: 'Spirits are typically served neat, on rocks, or in cocktails. Premium spirits are often enjoyed neat.',
-    pairing: 'Whiskey: cigars, dark chocolate. Gin: tonic, citrus. Rum: tropical fruits. Tequila: lime, salt.'
-  },
-  cocktail_basics: {
-    'Old Fashioned': 'Whiskey, sugar, bitters, orange peel. Classic cocktail.',
-    'Martini': 'Gin, dry vermouth. The iconic sophisticated cocktail.',
-    'Mojito': 'White rum, fresh mint, lime, sugar, soda water. Refreshing summer drink.',
-    'Margarita': 'Tequila, lime juice, triple sec. Popular tequila cocktail.',
-    'Cosmopolitan': 'Vodka, triple sec, cranberry juice, lime. Glamorous pink cocktail.',
-    'Pina Colada': 'White rum, coconut cream, pineapple juice. Tropical creamy drink.',
-    'Negroni': 'Gin, Campari, sweet vermouth. Bitter-sweet Italian aperitif.'
-  }
-};
-
-// Synchronous knowledge snippet (no DB, no async needed)
-const getKnowledgeSnippet = (query, intent) => {
-  const q = query.toLowerCase();
-  const snippets = [];
-
-  if (q.includes('wine') || intent.filters.type === 'wine') {
-    snippets.push('Wine: Red wines (Cabernet, Merlot, Shiraz) suit red meat & cheese. White wines (Chardonnay, Sauvignon Blanc) go with seafood & light dishes. Serve reds at 16-18°C, whites chilled at 8-12°C.');
-  }
-  if (q.includes('beer') || q.includes('lager') || intent.filters.type === 'beer') {
-    snippets.push('Beer: Lagers (Heineken, Star, Trophy) are crisp and best served ice cold. Stouts (Guinness) are rich with coffee/chocolate notes. Serve lagers at 4-6°C, stouts at 8-10°C.');
-  }
-  if (q.includes('whiskey') || q.includes('whisky') || q.includes('bourbon') || q.includes('scotch')) {
-    snippets.push('Whiskey: Scotch is smoky & peaty; Irish is smooth; Bourbon (USA) is sweet & vanilla-forward. Drink neat, with a splash of water, or on the rocks. 1 bottle = ~25 shots.');
-  }
-  if (q.includes('vodka')) {
-    snippets.push('Vodka: Best served chilled or in cocktails. Grey Goose & Belvedere are premium; Smirnoff is popular everyday choice. 1 bottle = ~25 shots.');
-  }
-  if (q.includes('cognac') || q.includes('hennessy') || q.includes('brandy')) {
-    snippets.push('Cognac/Brandy: Distilled wine aged in oak. Hennessy VS is entry-level; VSOP is smoother; XO is the premium top tier. Serve neat or with ice.');
-  }
-  if (q.includes('gin')) {
-    snippets.push('Gin: Juniper-forward spirit. Best in G&T (1 part gin : 2 parts tonic, lime wedge). Tanqueray, Hendricks, Bombay Sapphire are popular choices.');
-  }
-  if (q.includes('rum')) {
-    snippets.push('Rum: White rum is light (cocktails); dark rum is aged and rich (sipping, mojitos). Bacardi & Captain Morgan are the most popular.');
-  }
-  if (q.includes('cocktail') || q.includes('recipe') || q.includes('mix')) {
-    snippets.push('Popular cocktails: Mojito (rum + mint + lime + soda), Old Fashioned (whiskey + sugar + bitters), Gin & Tonic (gin + tonic + lime), Cosmopolitan (vodka + cranberry + lime + triple sec).');
-  }
-  if (intent.isEvent || q.includes('party') || q.includes('guests')) {
-    snippets.push('Event planning guide: For 10 guests expect ~2 bottles of wine, 2 cases of beer, and 1 bottle of spirits. For 50 guests: 8 bottles wine, 6 cases beer, 3 bottles spirits. Always round up by 20%.');
-  }
-
-  return snippets.join('\n');
-};
-
 // Generate product context for AI
 const generateProductContext = (products) => {
   if (!products || products.length === 0) return '';
@@ -1124,53 +1038,16 @@ ${intent.type === 'product_info' ? `- Give a RICH, EXPERT-LEVEL breakdown. Use y
 
     // Filter out products with invalid/zero prices for display
     const validProducts = products.filter(p => p.minPrice > 0);
-    
-    // If Gemini returned nothing, retry with a minimal conversational prompt (no product context)
-    if (!response && conversationHistory.length > 0) {
+
+    // If Claude returned nothing, retry once with a minimal conversational prompt
+    if (!response) {
       const minimalPrompt = `${BASE_SYSTEM_PROMPT}\n\nRespond naturally to the customer's message. Be warm and helpful. If they're reacting to a price or product, acknowledge it and offer next steps.`;
       response = await callClaude(query, minimalPrompt, conversationHistory);
     }
 
-    // Rule-based fallback only if Gemini is completely unavailable
+    // Honest fallback only if Claude is completely unavailable after the retry
     if (!response) {
-      const isGreeting = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening', 'howdy', 'what\'s up', 'sup']
-        .some(g => query.toLowerCase().trim() === g || query.toLowerCase().trim().startsWith(g + ' '));
-
-      if (isGreeting) {
-        return getGreetingResponse();
-      } else if (validProducts.length > 0) {
-        // Check if user asked for a specific product and we found it
-        const exactMatch = validProducts.find(p => 
-          p.name.toLowerCase().includes(query.toLowerCase().trim()) || 
-          query.toLowerCase().trim().includes(p.name.toLowerCase())
-        );
-        
-        if (exactMatch) {
-          // Build size info if available
-          let sizeInfo = '';
-          const sizes = exactMatch.sizes || exactMatch.subProducts?.[0]?.sizes || [];
-          if (sizes && sizes.length > 0) {
-            const sizeList = sizes.slice(0, 3).map(s => {
-              const price = s.price || exactMatch.minPrice;
-              const original = s.originalPrice && s.originalPrice > price ? ` (was ₦${s.originalPrice.toLocaleString()})` : '';
-              const discount = s.discount ? ` - ${s.discount}% OFF` : '';
-              const sizeName = s.name || s.size || (s.volumeMl ? s.volumeMl + 'ml' : '');
-              return `• ${sizeName}: ₦${price.toLocaleString()}${original}${discount}`;
-            }).join('\n');
-            sizeInfo = `\n\n**Available Sizes:**\n${sizeList}`;
-          }
-          
-          response = `**${exactMatch.name}** is available! 🎉\n\n**Price: ₦${exactMatch.minPrice.toLocaleString()}**${sizeInfo}`;
-          if (exactMatch.hasDiscount) response += `\n\nIt's currently on sale!`;
-        } else {
-          response = `I found ${validProducts.length} products for you! Here are some highlights:\n\n`;
-          response += validProducts.slice(0, 3).map(p => 
-            `• ${p.name} - ₦${p.minPrice?.toLocaleString()}${p.hasDiscount ? ' (On Sale!)' : ''}`
-          ).join('\n');
-        }
-      } else {
-        response = generateFallbackResponse(query, intent, validProducts);
-      }
+      response = "I'm having trouble answering right now — please try again in a moment, or browse /shop.";
     }
 
     return {
@@ -1504,39 +1381,6 @@ const extractProductNameFromAnalysis = (analysis) => {
   return null;
 };
 
-// Rule-based fallback (when AI call fails)
-const generateFallbackResponse = (query, intent, products) => {
-  const validProducts = (products || []).filter(p => p.minPrice > 0);
-
-  if (validProducts.length > 0) {
-    const top = validProducts.slice(0, 3);
-    const lines = top.map(p => {
-      const saleTag = p.hasDiscount ? ' 🔖 On Sale!' : '';
-      const stockTag = p.totalStock > 0 && p.totalStock <= 5 ? ` (Only ${p.totalStock} left!)` : '';
-      return `• **${p.name}** — ₦${(p.minPrice || 0).toLocaleString()}${saleTag}${stockTag}`;
-    }).join('\n');
-
-    if (intent.type === 'price') {
-      return `Here are the prices for what I found:\n\n${lines}\n\nWant more details on any of these? 😊`;
-    }
-    if (intent.type === 'availability') {
-      return `Good news — these are available right now:\n\n${lines}\n\nWould you like to see more options?`;
-    }
-    if (intent.type === 'discount') {
-      return `Here are some great deals right now:\n\n${lines}\n\nPrices won't stay this low for long! 🔥`;
-    }
-    return `Here's what I found for you:\n\n${lines}\n\nAny of these interest you?`;
-  }
-
-  // No products
-  const knowledge = getKnowledgeSnippet(query, intent);
-  if (knowledge) {
-    return `I couldn't find an exact match in our catalog right now, but here's what I know:\n\n${knowledge}\n\nTry browsing the shop or refine your search!`;
-  }
-
-  return `I'm not sure about that one! Try asking me about a specific drink (e.g. "Do you have Hennessy?") or browse our shop categories 🛒`;
-};
-
 // Get greeting response — generated by Claude so it's varied and on-brand
 const FALLBACK_GREETING = "👋 Hi! I'm your DrinksHarbour assistant. Ask me about drinks, prices, or planning an event!";
 
@@ -1667,7 +1511,6 @@ module.exports = {
   extractIntent,
   queryProducts,
   buildFullCatalogContext,
-  beverageKnowledgeBase,
   getGreetingResponse,
   anthropic
 };
