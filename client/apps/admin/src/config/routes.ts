@@ -74,6 +74,7 @@ export const routes = {
     salesQuotations: '/sales/quotations',
     salesOrders: '/sales/orders',
     salesDetails: (id: string) => `/sales/${id}`,
+    salesEdit: (id: string) => `/sales/${id}/edit`,
     salesFulfillList: '/sales/fulfill',
     salesFulfillDetails: (id: string) => `/sales/fulfill/${id}`,
     salesReturns: '/sales/returns',

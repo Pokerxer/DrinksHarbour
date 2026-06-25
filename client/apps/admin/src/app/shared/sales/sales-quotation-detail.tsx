@@ -10,6 +10,7 @@ import {
   PiCheck,
   PiX,
   PiArrowsClockwise,
+  PiPencilSimple,
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
@@ -81,6 +82,14 @@ export default function SalesQuotationDetail({
           </span>
         </div>
         <div className="flex items-center gap-2">
+          {(status === 'draft' || status === 'sent') && (
+            <Link
+              href={routes.eCommerce.salesEdit(so._id)}
+              className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <PiPencilSimple className="h-4 w-4" /> Edit
+            </Link>
+          )}
           {status === 'draft' && (
             <button
               type="button"
