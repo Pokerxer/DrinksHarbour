@@ -26,35 +26,54 @@ const MAP_ID         = 'DEMO_MAP_ID';
 
 type LoadState = 'idle' | 'loading' | 'ready';
 let loadState: LoadState = 'idle';
-const queue: Array<() => void> = [];
+let attempt = 0;
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAYS  = [1000, 3000]; // ms before retry 1 and retry 2
 
-function loadMaps(cb: () => void) {
-  // Already in window (e.g. HMR reload) — sync the module state and call back
-  if (window.google?.maps?.marker?.AdvancedMarkerElement) {
-    loadState = 'ready';
-    cb();
-    return;
-  }
-  if (loadState === 'ready') { cb(); return; }
-  queue.push(cb);
-  if (loadState === 'loading') return;
-  loadState = 'loading';
+interface Subscriber { onReady: () => void; onError: () => void; }
+let subscribers: Subscriber[] = [];
 
-  (window as any)[CALLBACK_NAME] = () => {
-    loadState = 'ready';
-    queue.forEach(fn => fn());
-    queue.length = 0;
-  };
-
+function injectScript() {
   const s   = document.createElement('script');
   s.async   = true;
   s.defer   = true;
   s.src     = `${API_URL}/api/places/maps-script?callback=${CALLBACK_NAME}&libraries=marker`;
   s.onerror = () => {
+    s.remove();
+    attempt += 1;
+    if (attempt < MAX_ATTEMPTS) {
+      setTimeout(injectScript, RETRY_DELAYS[attempt - 1]);
+      return;
+    }
     loadState = 'idle';
-    console.error('[Maps] Failed to load Google Maps JS API');
+    console.error('[Maps] Failed to load Google Maps JS API after retries');
+    subscribers.forEach(s => s.onError());
+    subscribers = [];
   };
   document.head.appendChild(s);
+}
+
+function loadMaps(onReady: () => void, onError: () => void) {
+  // Already in window (e.g. HMR reload) — sync the module state and call back
+  if (window.google?.maps?.marker?.AdvancedMarkerElement) {
+    loadState = 'ready';
+    onReady();
+    return;
+  }
+  if (loadState === 'ready') { onReady(); return; }
+
+  subscribers.push({ onReady, onError });
+  if (loadState === 'loading') return;
+  loadState = 'loading';
+  attempt   = 0;
+
+  (window as any)[CALLBACK_NAME] = () => {
+    loadState = 'ready';
+    subscribers.forEach(s => s.onReady());
+    subscribers = [];
+  };
+
+  injectScript();
 }
 
 // ── Reverse geocode ───────────────────────────────────────────────────────────
@@ -91,13 +110,19 @@ const LocationPickerMap: React.FC<LocationPickerMapProps> = ({ lat, lon, onLocat
   const mapInstance = useRef<any>(null);
   const markerRef   = useRef<any>(null);
 
-  const [ready,     setReady]     = useState(false);
-  const [locating,  setLocating]  = useState(false);
-  const [geocoding, setGeocoding] = useState(false);
-  const [gpsError,  setGpsError]  = useState('');
+  const [ready,      setReady]      = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [locating,   setLocating]   = useState(false);
+  const [geocoding,  setGeocoding]  = useState(false);
+  const [gpsError,   setGpsError]   = useState('');
 
   // ── Load Maps SDK ────────────────────────────────────────────────────────────
-  useEffect(() => { loadMaps(() => setReady(true)); }, []);
+  const beginLoad = useCallback(() => {
+    setLoadFailed(false);
+    loadMaps(() => setReady(true), () => setLoadFailed(true));
+  }, []);
+
+  useEffect(() => { beginLoad(); }, [beginLoad]);
 
   // ── Helper: create AdvancedMarkerElement at a position ──────────────────────
   const makeMarker = useCallback((position: { lat: number; lng: number }, map: any) => {
@@ -238,11 +263,27 @@ const LocationPickerMap: React.FC<LocationPickerMapProps> = ({ lat, lon, onLocat
       <div className="relative rounded-xl overflow-hidden border border-gray-200 shadow-sm">
         <div ref={mapRef} className="w-full h-[220px] bg-gray-100" />
 
-        {!ready && (
+        {!ready && !loadFailed && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
             <div className="flex flex-col items-center gap-2">
               <div className="w-7 h-7 border-2 border-gray-200 border-t-red-600 rounded-full animate-spin" />
               <span className="text-xs text-gray-400">Loading map…</span>
+            </div>
+          </div>
+        )}
+
+        {loadFailed && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+            <div className="flex flex-col items-center gap-2 text-center px-4">
+              <Icon.PiWarningCircle size={18} className="text-amber-500" />
+              <span className="text-xs text-gray-500">Couldn't load the map</span>
+              <button
+                type="button"
+                onClick={beginLoad}
+                className="text-xs font-semibold text-red-700 hover:text-red-900"
+              >
+                Retry
+              </button>
             </div>
           </div>
         )}
