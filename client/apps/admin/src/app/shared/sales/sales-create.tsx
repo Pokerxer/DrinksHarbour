@@ -16,6 +16,7 @@ import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import {
   salesOrderService,
+  type SalesOrder,
   type SalesOrderAddress,
 } from '@/services/salesOrder.service';
 import type { POSCustomer, POSBundleDeal } from '@/app/shared/point-of-sale/types';
@@ -27,7 +28,12 @@ import ProductLineSearch, {
   type ProductLineSelection,
 } from './product-line-search';
 import { useSalesCustomerPricelist } from './use-sales-customer-pricelist';
-import { PAYMENT_TERMS } from './sales-helpers';
+import {
+  PAYMENT_TERMS,
+  addressesDiffer,
+  quoteStatusLabel,
+  orderStatusLabel,
+} from './sales-helpers';
 
 const INPUT_CLS =
   'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20';
@@ -148,7 +154,13 @@ function StagePill({ label, active }: { label: string; active: boolean }) {
   );
 }
 
-export default function SalesCreate() {
+export default function SalesCreate({
+  mode = 'create',
+  initial,
+}: {
+  mode?: 'create' | 'edit';
+  initial?: SalesOrder;
+}) {
   const router = useRouter();
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
@@ -164,6 +176,59 @@ export default function SalesCreate() {
   const [deliveryAddress, setDeliveryAddress] = useState<SalesOrderAddress>({});
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<CreateTab>('lines');
+  // Moved up from below the useSalesCustomerPricelist call (Step 3 removes
+  // the duplicate declaration there) so the seeding effect below can set them.
+  const [pricelistId, setPricelistId] = useState('');
+  const [pricelistOverridden, setPricelistOverridden] = useState(false);
+
+  // Seed every field from the loaded document once, in edit mode.
+  useEffect(() => {
+    if (!initial) return;
+    if (initial.customerSnapshot?.customerId) {
+      const [firstName, ...rest] = (initial.customerSnapshot.name ?? '').split(' ');
+      setCustomer({
+        _id: initial.customerSnapshot.customerId,
+        firstName: firstName ?? '',
+        lastName: rest.join(' '),
+        email: initial.customerSnapshot.email,
+        phone: initial.customerSnapshot.phone,
+        loyaltyPoints: 0,
+        walletBalance: 0,
+      });
+    }
+    setLines(
+      initial.items.map((it) => ({
+        key: it._id,
+        subProductId: it.subproduct ?? '',
+        product: it.product,
+        name: it.name ?? '',
+        sku: it.sku ?? '',
+        sizeId: it.size,
+        quantity: it.quantity,
+        baseUnitPrice: it.unitPrice,
+        discount: it.discount,
+        taxRate: it.taxRate ?? 0,
+        costPrice: 0,
+        priceOverridden: !!it.priceOverridden,
+      }))
+    );
+    setNotes(initial.notes ?? '');
+    setTerms(initial.terms ?? '');
+    setValidUntil(initial.validUntil ? initial.validUntil.slice(0, 10) : '');
+    setPaymentTerms(initial.paymentTerms ?? 'immediate');
+    setInvoiceAddress(initial.invoiceAddress ?? {});
+    setDeliverDifferent(
+      !!initial.deliveryAddress &&
+        addressesDiffer(initial.deliveryAddress, initial.invoiceAddress)
+    );
+    setDeliveryAddress(initial.deliveryAddress ?? {});
+    if (initial.pricelist) {
+      setPricelistId(initial.pricelist);
+      setPricelistOverridden(true);
+    }
+    // Seeds once when the document loads; `initial` is a stable fetch result.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial]);
 
   // Prefill the invoice name/phone from the selected customer; the customer has
   // no stored address, so street/city/state/country stay for the user to fill.
@@ -189,8 +254,8 @@ export default function SalesCreate() {
 
   // Pricelist defaults to the customer's auto-resolved list, but the user can
   // override it; once they do, their pick sticks across customer changes.
-  const [pricelistId, setPricelistId] = useState('');
-  const [pricelistOverridden, setPricelistOverridden] = useState(false);
+  // In edit mode, the seeding effect above sets pricelistOverridden=true as
+  // soon as the loaded document has one, so this auto-resolve effect backs off.
   useEffect(() => {
     if (!pricelistOverridden) setPricelistId(resolvedId ?? '');
   }, [resolvedId, pricelistOverridden]);
@@ -232,6 +297,57 @@ export default function SalesCreate() {
   const taxTotal = priced.reduce((s, l) => s + l.taxAmount, 0);
   const grandTotal = untaxedAmount + taxTotal;
   const hasLines = lines.some((l) => l.subProductId);
+
+  async function handleSaveEdit() {
+    if (!initial) return;
+    const filled = priced.filter((l) => l.subProductId);
+    if (filled.length === 0) {
+      toast.error('Add at least one product line');
+      return;
+    }
+    const badQty = filled.find((l) => !(l.quantity > 0));
+    if (badQty) {
+      toast.error(`Quantity for "${badQty.name}" must be at least 1`);
+      return;
+    }
+    setSaving(true);
+    try {
+      await salesOrderService.update(
+        initial._id,
+        {
+          items: filled.map((l) => ({
+            product: l.product,
+            subproduct: l.subProductId,
+            size: l.sizeId,
+            sku: l.sku,
+            name: l.name,
+            quantity: l.quantity,
+            unitPrice: l.unitPrice,
+            discount: l.discount,
+            taxRate: l.taxRate,
+            priceOverridden: l.priceOverridden,
+          })),
+          pricelist: pricelistId || undefined,
+          appliedPricelist: pricelist
+            ? { pricelistId: pricelist._id, pricelistName: pricelist.name }
+            : undefined,
+          validUntil: validUntil || undefined,
+          paymentTerms,
+          invoiceAddress,
+          deliveryAddress: deliverDifferent ? deliveryAddress : invoiceAddress,
+          notes: notes || undefined,
+          terms: terms || undefined,
+        },
+        token
+      );
+      toast.success('Changes saved');
+      router.push(routes.eCommerce.salesDetails(initial._id));
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save changes');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function handleSave(asOrder: boolean) {
     const filled = priced.filter((l) => l.subProductId);
@@ -303,47 +419,84 @@ export default function SalesCreate() {
           <PiArrowLeft className="h-4 w-4" /> Sales
         </Link>
         <span>/</span>
-        <span className="font-medium text-gray-900">New Sale</span>
+        <span className="font-medium text-gray-900">
+          {mode === 'edit' && initial ? initial.soNumber : 'New Sale'}
+        </span>
       </div>
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">New</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">
+            {mode === 'edit' ? 'Edit' : 'New'}
+          </h1>
           <p className="mt-0.5 text-sm text-gray-500">
-            Save as a quotation or create the order directly.
+            {mode === 'edit'
+              ? 'Update the draft and save your changes.'
+              : 'Save as a quotation or create the order directly.'}
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => handleSave(true)}
-              disabled={saving || !hasLines}
-              className="flex items-center gap-2 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
-            >
-              <PiCheck className="h-4 w-4" />
-              {saving ? 'Saving…' : 'Create Order'}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSave(false)}
-              disabled={saving || !hasLines}
-              className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-            >
-              <PiFloppyDisk className="h-4 w-4" />
-              Save as Quotation
-            </button>
+            {mode === 'edit' ? (
+              <button
+                type="button"
+                onClick={handleSaveEdit}
+                disabled={saving || !hasLines}
+                className="flex items-center gap-2 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
+              >
+                <PiFloppyDisk className="h-4 w-4" />
+                {saving ? 'Saving…' : 'Save Changes'}
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleSave(true)}
+                  disabled={saving || !hasLines}
+                  className="flex items-center gap-2 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
+                >
+                  <PiCheck className="h-4 w-4" />
+                  {saving ? 'Saving…' : 'Create Order'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSave(false)}
+                  disabled={saving || !hasLines}
+                  className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <PiFloppyDisk className="h-4 w-4" />
+                  Save as Quotation
+                </button>
+              </>
+            )}
             <Link
-              href={routes.eCommerce.salesOrders}
+              href={
+                mode === 'edit' && initial
+                  ? routes.eCommerce.salesDetails(initial._id)
+                  : routes.eCommerce.salesOrders
+              }
               className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
             >
               Cancel
             </Link>
           </div>
           <div className="flex items-center gap-1.5">
-            <StagePill label="Quotation" active />
-            <StagePill label="Quotation Sent" active={false} />
-            <StagePill label="Sales Order" active={false} />
+            {mode === 'edit' && initial ? (
+              <StagePill
+                label={
+                  initial.docType === 'quotation'
+                    ? quoteStatusLabel(initial.quoteStatus)
+                    : orderStatusLabel(initial.orderStatus)
+                }
+                active
+              />
+            ) : (
+              <>
+                <StagePill label="Quotation" active />
+                <StagePill label="Quotation Sent" active={false} />
+                <StagePill label="Sales Order" active={false} />
+              </>
+            )}
           </div>
         </div>
       </div>
