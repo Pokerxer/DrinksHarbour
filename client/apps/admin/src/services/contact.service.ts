@@ -154,7 +154,12 @@ export interface WalletAdjustInput {
 
 // ── Loyalty points (in-store only) ─────────────────────────────────────────────
 
-export type LoyaltyTxType = 'earn' | 'redeem' | 'adjustment' | 'bonus' | 'expiry';
+export type LoyaltyTxType =
+  | 'earn'
+  | 'redeem'
+  | 'adjustment'
+  | 'bonus'
+  | 'expiry';
 
 export interface LoyaltyTransaction {
   _id: string;
@@ -399,11 +404,14 @@ export const contactService = {
     data: { balance: number; transaction: WalletTransaction };
   }> {
     return handle(
-      await fetch(`${API_URL}/api/contacts/${key.replace(':', '/')}/wallet/topup`, {
-        method: 'POST',
-        headers: jsonAuth(token),
-        body: JSON.stringify(data),
-      }),
+      await fetch(
+        `${API_URL}/api/contacts/${key.replace(':', '/')}/wallet/topup`,
+        {
+          method: 'POST',
+          headers: jsonAuth(token),
+          body: JSON.stringify(data),
+        }
+      ),
       'Failed to top up wallet'
     );
   },
@@ -418,11 +426,14 @@ export const contactService = {
     data: { balance: number; transaction: WalletTransaction };
   }> {
     return handle(
-      await fetch(`${API_URL}/api/contacts/${key.replace(':', '/')}/wallet/adjust`, {
-        method: 'POST',
-        headers: jsonAuth(token),
-        body: JSON.stringify(data),
-      }),
+      await fetch(
+        `${API_URL}/api/contacts/${key.replace(':', '/')}/wallet/adjust`,
+        {
+          method: 'POST',
+          headers: jsonAuth(token),
+          body: JSON.stringify(data),
+        }
+      ),
       'Failed to adjust wallet'
     );
   },
@@ -459,11 +470,14 @@ export const contactService = {
     data: { balance: number; transaction: LoyaltyTransaction };
   }> {
     return handle(
-      await fetch(`${API_URL}/api/contacts/${key.replace(':', '/')}/loyalty/award`, {
-        method: 'POST',
-        headers: jsonAuth(token),
-        body: JSON.stringify(data),
-      }),
+      await fetch(
+        `${API_URL}/api/contacts/${key.replace(':', '/')}/loyalty/award`,
+        {
+          method: 'POST',
+          headers: jsonAuth(token),
+          body: JSON.stringify(data),
+        }
+      ),
       'Failed to award points'
     );
   },
@@ -478,11 +492,14 @@ export const contactService = {
     data: { balance: number; transaction: LoyaltyTransaction };
   }> {
     return handle(
-      await fetch(`${API_URL}/api/contacts/${key.replace(':', '/')}/loyalty/adjust`, {
-        method: 'POST',
-        headers: jsonAuth(token),
-        body: JSON.stringify(data),
-      }),
+      await fetch(
+        `${API_URL}/api/contacts/${key.replace(':', '/')}/loyalty/adjust`,
+        {
+          method: 'POST',
+          headers: jsonAuth(token),
+          body: JSON.stringify(data),
+        }
+      ),
       'Failed to adjust points'
     );
   },

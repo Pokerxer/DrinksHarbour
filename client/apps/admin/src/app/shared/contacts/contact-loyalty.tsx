@@ -38,7 +38,13 @@ const pts = (n: number) => `${Math.round(n).toLocaleString('en-NG')} pts`;
 const PAGE_SIZE = 20;
 
 // Ledger types an admin can filter the table by.
-const TYPE_OPTIONS: LoyaltyTxType[] = ['earn', 'redeem', 'adjustment', 'bonus', 'expiry'];
+const TYPE_OPTIONS: LoyaltyTxType[] = [
+  'earn',
+  'redeem',
+  'adjustment',
+  'bonus',
+  'expiry',
+];
 
 const TYPE_CLS: Record<string, string> = {
   earn: 'bg-green-100 text-green-700',
@@ -213,7 +219,7 @@ function LoyaltyActionDrawer({
                     onClick={() => setDirection(d)}
                     className={`rounded-lg border px-3 py-2 text-sm font-semibold capitalize transition-colors ${
                       direction === d
-                        ? 'border-[#b20202] bg-[#b20202]/8 text-[#b20202]'
+                        ? 'bg-[#b20202]/8 border-[#b20202] text-[#b20202]'
                         : 'border-gray-200 text-gray-500 hover:bg-gray-50'
                     }`}
                   >
@@ -490,8 +496,9 @@ export default function ContactLoyalty({ contactKey }: { contactKey: string }) {
               Loyalty is for in-store customers
             </h3>
             <p className="mt-1 max-w-sm text-sm text-gray-400">
-              This is an online (ecommerce) customer. Loyalty points are earned and
-              redeemed at the point of sale, so there&apos;s no ledger to show here.
+              This is an online (ecommerce) customer. Loyalty points are earned
+              and redeemed at the point of sale, so there&apos;s no ledger to
+              show here.
             </p>
             <Link
               href={routes.contacts.detail(contact.key)}
@@ -641,13 +648,19 @@ export default function ContactLoyalty({ contactKey }: { contactKey: string }) {
                         const signed = signedPoints(t);
                         const debit = signed < 0;
                         return (
-                          <tr key={t._id} className="transition-colors hover:bg-gray-50/70">
+                          <tr
+                            key={t._id}
+                            className="transition-colors hover:bg-gray-50/70"
+                          >
                             <td className="px-5 py-3.5 text-sm text-gray-600">
-                              {new Date(t.createdAt).toLocaleDateString('en-NG', {
-                                day: 'numeric',
-                                month: 'short',
-                                year: 'numeric',
-                              })}
+                              {new Date(t.createdAt).toLocaleDateString(
+                                'en-NG',
+                                {
+                                  day: 'numeric',
+                                  month: 'short',
+                                  year: 'numeric',
+                                }
+                              )}
                             </td>
                             <td className="px-5 py-3.5">
                               <span
@@ -694,7 +707,10 @@ export default function ContactLoyalty({ contactKey }: { contactKey: string }) {
                   Showing{' '}
                   <span className="font-semibold text-gray-700">
                     {(pagination.page - 1) * pagination.limit + 1}–
-                    {Math.min(pagination.page * pagination.limit, pagination.total)}
+                    {Math.min(
+                      pagination.page * pagination.limit,
+                      pagination.total
+                    )}
                   </span>{' '}
                   of{' '}
                   <span className="font-semibold text-gray-700">
@@ -716,7 +732,9 @@ export default function ContactLoyalty({ contactKey }: { contactKey: string }) {
                   </span>
                   <button
                     type="button"
-                    onClick={() => setPage((p) => Math.min(pagination.pages, p + 1))}
+                    onClick={() =>
+                      setPage((p) => Math.min(pagination.pages, p + 1))
+                    }
                     disabled={pagination.page >= pagination.pages || loading}
                     className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
                   >
