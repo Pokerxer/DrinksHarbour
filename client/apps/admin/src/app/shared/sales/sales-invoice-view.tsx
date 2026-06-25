@@ -5,7 +5,12 @@ import { Badge, Title, Text } from 'rizzui';
 import { PiPrinter } from 'react-icons/pi';
 import type { SalesOrder } from '@/services/salesOrder.service';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
-import { addressIsEmpty, addressesDiffer, addressLines } from './sales-helpers';
+import {
+  addressIsEmpty,
+  addressesDiffer,
+  addressLines,
+  paymentTermsLabel,
+} from './sales-helpers';
 
 export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
   const paid = so.paymentStatus === 'paid';
@@ -100,6 +105,13 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
               </Text>
             </>
           )}
+          <Title as="h6" className="mb-1 mt-3 font-semibold">
+            Payment Terms
+          </Title>
+          <Text>
+            {paymentTermsLabel(so.paymentTerms)}
+            {so.dueDate && ` · due ${new Date(so.dueDate).toLocaleDateString()}`}
+          </Text>
         </div>
       </div>
 
