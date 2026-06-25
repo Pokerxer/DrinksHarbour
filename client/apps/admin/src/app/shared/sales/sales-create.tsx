@@ -332,7 +332,10 @@ export default function SalesCreate({
           // Mirrors handleSave's create-path snapshot convention — the server
           // trusts the client-provided snapshot verbatim (no server-side rebuild
           // from the customer id), matching createSalesOrderDoc.
-          customer: customer?._id,
+          // `null` (not undefined) on clear so the server's `!== undefined` guard
+          // fires and actually drops the stored customer/snapshot — undefined
+          // would be JSON-omitted and silently leave the old customer in place.
+          customer: customer ? customer._id : null,
           customerSnapshot: customer
             ? {
                 name: `${customer.firstName} ${customer.lastName}`.trim(),
@@ -340,7 +343,7 @@ export default function SalesCreate({
                 email: customer.email,
                 customerId: customer._id,
               }
-            : undefined,
+            : null,
           // Edit mode: an empty pricelist selection explicitly clears the stored
           // pricelist (null → server's null-clearing branch). undefined would be
           // JSON-omitted and leave the stored pricelist untouched, so the user's

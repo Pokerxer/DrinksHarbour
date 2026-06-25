@@ -242,10 +242,11 @@ async function applyEdit(so, body) {
   // Customer change: mirror createSalesOrderDoc's convention — trust the
   // client-provided snapshot verbatim (no server-side rebuild from the id).
   // `body.customer !== undefined` means the edit payload touched the customer
-  // field (including an explicit clear to walk-in via `customer: undefined`).
-  // When the client sends a customer, snapshot comes with it; when it clears
-  // the customer (walk-in), we drop the snapshot too. Omission leaves both
-  // stored fields untouched.
+  // field. The client sends a real id to change customer, `null` to clear to
+  // walk-in (NOT undefined — that would be JSON-omitted and skip this guard,
+  // leaving the old customer in place). When a customer is sent the snapshot
+  // comes with it; on a `null` clear we drop the snapshot too. Omission (the
+  // field absent from the patch entirely) leaves both stored fields untouched.
   if (body.customer !== undefined) {
     so.customer = body.customer || undefined;
     so.customerSnapshot = body.customerSnapshot || undefined;
