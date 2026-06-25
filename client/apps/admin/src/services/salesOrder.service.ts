@@ -130,6 +130,8 @@ export interface CreateSalesOrderInput {
 
 export interface UpdateSalesOrderInput {
   items?: SalesOrderLineInput[];
+  customer?: string;
+  customerSnapshot?: SalesOrderCustomerSnapshot;
   pricelist?: string;
   appliedPricelist?: { pricelistId?: string; pricelistName?: string };
   notes?: string;

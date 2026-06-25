@@ -327,10 +327,28 @@ export default function SalesCreate({
             taxRate: l.taxRate,
             priceOverridden: l.priceOverridden,
           })),
-          pricelist: pricelistId || undefined,
+          // Edit mode: the user's current customer selection is authoritative,
+          // so send it through even when it changed (or was cleared to walk-in).
+          // Mirrors handleSave's create-path snapshot convention — the server
+          // trusts the client-provided snapshot verbatim (no server-side rebuild
+          // from the customer id), matching createSalesOrderDoc.
+          customer: customer?._id,
+          customerSnapshot: customer
+            ? {
+                name: `${customer.firstName} ${customer.lastName}`.trim(),
+                phone: customer.phone,
+                email: customer.email,
+                customerId: customer._id,
+              }
+            : undefined,
+          // Edit mode: an empty pricelist selection explicitly clears the stored
+          // pricelist (null → server's null-clearing branch). undefined would be
+          // JSON-omitted and leave the stored pricelist untouched, so the user's
+          // clear would never persist.
+          pricelist: pricelistId || null,
           appliedPricelist: pricelist
             ? { pricelistId: pricelist._id, pricelistName: pricelist.name }
-            : undefined,
+            : null,
           validUntil: validUntil || undefined,
           paymentTerms,
           invoiceAddress,

@@ -239,6 +239,17 @@ function canCancel(so) {
 
 /** Re-snapshot line prices + totals from an edit body. Mutates `so` in place. */
 async function applyEdit(so, body) {
+  // Customer change: mirror createSalesOrderDoc's convention — trust the
+  // client-provided snapshot verbatim (no server-side rebuild from the id).
+  // `body.customer !== undefined` means the edit payload touched the customer
+  // field (including an explicit clear to walk-in via `customer: undefined`).
+  // When the client sends a customer, snapshot comes with it; when it clears
+  // the customer (walk-in), we drop the snapshot too. Omission leaves both
+  // stored fields untouched.
+  if (body.customer !== undefined) {
+    so.customer = body.customer || undefined;
+    so.customerSnapshot = body.customerSnapshot || undefined;
+  }
   if (body.pricelist !== undefined) {
     so.pricelist = body.pricelist || null;
     so.appliedPricelist = body.appliedPricelist || undefined;
