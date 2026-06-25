@@ -73,65 +73,10 @@ export const menuItems = [
     platformOnly: true,
   },
   {
-    name: 'Appointment',
-    href: routes.appointment.dashboard,
-    icon: <PiCalendarDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'Executive',
-    href: routes.executive.dashboard,
-    icon: <PiBriefcaseDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'Project',
-    href: routes.project.dashboard,
-    icon: <PiClipboardTextDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'CRM',
-    href: routes.crm.dashboard,
-    icon: <PiFolderUserDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'Affiliate',
-    href: routes.affiliate.dashboard,
-    icon: <PiChartPieSliceDuotone />,
-    platformOnly: true,
-  },
-  {
     name: 'Store Analytics',
     href: routes.storeAnalytics.dashboard,
     icon: <PiPresentationChartDuotone />,
     badge: 'NEW',
-  },
-  {
-    name: 'Bidding',
-    href: routes.bidding.dashboard,
-    icon: <PiScalesDuotone />,
-    badge: 'NEW',
-    platformOnly: true,
-  },
-  {
-    name: 'Social Media',
-    href: routes.socialMedia.dashboard,
-    icon: <PiSparkleDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'Job Board',
-    href: routes.jobBoard.dashboard,
-    icon: <PiShapesDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'Financial',
-    href: routes.financial.dashboard,
-    icon: <PiCurrencyCircleDollarDuotone />,
-    platformOnly: true,
   },
   {
     name: 'Logistics',
@@ -152,13 +97,6 @@ export const menuItems = [
     name: 'Support',
     href: routes.support.dashboard,
     icon: <PiHeadsetDuotone />,
-  },
-  {
-    name: 'Podcast',
-    href: routes.podcast.dashboard,
-    icon: <PiApplePodcastsLogoDuotone />,
-    badge: 'NEW',
-    platformOnly: true,
   },
 
   // label start
@@ -319,47 +257,6 @@ export const menuItems = [
   // label end
   // label start
   {
-    name: 'Widgets',
-    platformOnly: true,
-  },
-  // label end
-  {
-    name: 'Cards',
-    href: routes.widgets.cards,
-    icon: <PiSquaresFourDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'Icons',
-    href: routes.widgets.icons,
-    icon: <PiFeatherDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'Charts',
-    href: routes.widgets.charts,
-    icon: <PiChartLineUpDuotone />,
-    platformOnly: true,
-  },
-  // {
-  //   name: 'Banners',
-  //   href: routes.widgets.banners,
-  //   icon: <PiImageDuotone />,
-  // },
-  {
-    name: 'Maps',
-    href: routes.widgets.maps,
-    icon: <PiMapPinLineDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'Email Templates',
-    href: routes.emailTemplates,
-    icon: <PiEnvelopeDuotone />,
-    platformOnly: true,
-  },
-  // label start
-  {
     name: 'Forms',
   },
   // label end
@@ -404,66 +301,6 @@ export const menuItems = [
   },
   // label start
   {
-    name: 'Tables',
-    platformOnly: true,
-  },
-  // label end
-  {
-    name: 'Basic',
-    href: routes.tables.basic,
-    icon: <PiGridFourDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'Collapsible',
-    href: routes.tables.collapsible,
-    icon: <PiCaretCircleUpDownDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'Enhanced',
-    href: routes.tables.enhanced,
-    icon: <PiTableDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'Sticky Header',
-    href: routes.tables.stickyHeader,
-    icon: <PiBrowserDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'Pagination',
-    href: routes.tables.pagination,
-    icon: <PiListNumbersDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'Search',
-    href: routes.tables.search,
-    icon: <PiHourglassSimpleDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'Resizable',
-    href: routes.tables.resizable,
-    icon: <PiArrowsOutLineHorizontalDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'Pinning',
-    href: routes.tables.pinning,
-    icon: <PiPushPinDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'Drag & Drop',
-    href: routes.tables.dnd,
-    icon: <PiArrowsOutDuotone />,
-    platformOnly: true,
-  },
-  // label start
-  {
     name: 'Pages',
     platformOnly: true,
   },
@@ -503,13 +340,6 @@ export const menuItems = [
     icon: <PiHammerDuotone />,
     platformOnly: true,
   },
-  {
-    name: 'Blank',
-    href: routes.blank,
-    icon: <PiNoteBlankDuotone />,
-    platformOnly: true,
-  },
-
   // label start
   {
     name: 'Authentication',
