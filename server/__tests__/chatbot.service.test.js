@@ -92,3 +92,37 @@ test('handleChatbotQuery falls back to one honest message when Claude fails twic
   assert.strictEqual(calls, 2, 'expected exactly 2 attempts: initial + one retry');
   assert.strictEqual(result.response, "I'm having trouble answering right now — please try again in a moment, or browse /shop.");
 });
+
+test('file upload: Claude composes the order summary using computed totals as context', async (t) => {
+  stubEmptyCatalog(t);
+  let lastSystemPrompt = null;
+  t.mock.method(anthropic.messages, 'create', async (params) => {
+    lastSystemPrompt = params.system;
+    return textResponse('Here is your order summary!');
+  });
+
+  const result = await handleChatbotQuery({
+    query: 'Please check my list',
+    fileContent: '2 Heineken\n1 Red Wine',
+    fileName: 'order.txt',
+  });
+
+  assert.strictEqual(result.response, 'Here is your order summary!');
+  assert.strictEqual(result.intent, 'file_query');
+  assert.ok(lastSystemPrompt.includes('ITEMS NOT FOUND IN CATALOG: Heineken, Red Wine'));
+  assert.strictEqual(result.orderSummary.totalPrice, 0);
+  assert.strictEqual(result.orderSummary.itemsNotFound, 2);
+});
+
+test('file upload: falls back to the literal computed summary when Claude fails', async (t) => {
+  stubEmptyCatalog(t);
+  t.mock.method(anthropic.messages, 'create', async () => ({ content: [] }));
+
+  const result = await handleChatbotQuery({
+    query: 'Please check my list',
+    fileContent: '2 Heineken',
+    fileName: 'order.txt',
+  });
+
+  assert.match(result.response, /Not in catalog: Heineken/);
+});

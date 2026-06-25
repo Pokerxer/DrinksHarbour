@@ -1291,45 +1291,47 @@ const handleFileQuery = async (fileContent, fileName, userQuery, tenantId = null
       }
     }
 
-    // Build short response
-    let response = `📄 Processed ${drinkItems.length} item${drinkItems.length > 1 ? 's' : ''}:\n\n`;
-    
+    // Compute exact order data in JS (prices/quantities must stay exact) —
+    // Claude only composes the wording around these numbers, never invents them.
     let totalOrder = 0;
-    const foundItems = [];
-    
-    for (const item of allProducts) {
+    const orderLines = allProducts.map((item) => {
       const product = item.found[0];
       const price = product.minPrice || 0;
       const total = price * item.quantity;
       totalOrder += total;
-      foundItems.push(`• ${item.requested} x${item.quantity} = ₦${total.toLocaleString()}`);
-    }
-    
-    if (foundItems.length > 0) {
-      response += foundItems.join('\n');
-      response += `\n\n**Total: ₦${totalOrder.toLocaleString()}**`;
-      
-      if (totalOrder < 2000000) {
-        response += `\nAdd ₦${(2000000 - totalOrder).toLocaleString()} more for FREE delivery!`;
-      }
-    }
-    
-    if (notFound.length > 0) {
-      response += `\n\n❌ **Not in catalog:** ${notFound.map(n => n.name).join(', ')}`;
-      // Suggest catalog alternatives for not-found items
-      const fullCatalog = await buildFullCatalogContext(tenantId);
-      if (fullCatalog) {
-        const altSystemPrompt = `${BASE_SYSTEM_PROMPT}\n\nFULL SHOP CATALOG:\n${fullCatalog}`;
-        const notFoundList = notFound.map(n => n.name).join(', ');
-        const altResponse = await callClaude(
-          `These items were not found in our catalog: ${notFoundList}. Suggest the closest available alternatives from the catalog above. Be brief — one line per item.`,
-          altSystemPrompt
-        );
-        if (altResponse) response += `\n\n**Alternatives from our catalog:**\n${altResponse}`;
-      } else {
-        response += `\nBrowse /shop for alternatives.`;
-      }
-    }
+      return `${item.requested} x${item.quantity} = ₦${total.toLocaleString()}`;
+    });
+
+    const FREE_DELIVERY_THRESHOLD = 2000000;
+    const deterministicSummary = [
+      `📄 Processed ${drinkItems.length} item${drinkItems.length > 1 ? 's' : ''}:`,
+      '',
+      ...orderLines.map((l) => `• ${l}`),
+      orderLines.length > 0 ? `\n**Total: ₦${totalOrder.toLocaleString()}**` : '',
+      orderLines.length > 0 && totalOrder < FREE_DELIVERY_THRESHOLD
+        ? `Add ₦${(FREE_DELIVERY_THRESHOLD - totalOrder).toLocaleString()} more for FREE delivery!`
+        : '',
+      notFound.length > 0 ? `\n❌ Not in catalog: ${notFound.map(n => n.name).join(', ')}` : '',
+    ].filter(Boolean).join('\n');
+
+    const fullCatalog = await buildFullCatalogContext(tenantId);
+    const orderSystemPrompt = `${BASE_SYSTEM_PROMPT}
+
+${fullCatalog ? `FULL SHOP CATALOG — use this only to suggest alternatives for items not found below:\n${fullCatalog}` : ''}
+
+CUSTOMER'S UPLOADED ORDER (computed from our database — these prices and totals are final, do not change them):
+${orderLines.length > 0 ? orderLines.map(l => `• ${l}`).join('\n') : '(no items matched our catalog)'}
+GRAND TOTAL: ₦${totalOrder.toLocaleString()}
+FREE DELIVERY THRESHOLD: ₦${FREE_DELIVERY_THRESHOLD.toLocaleString()}
+ITEMS NOT FOUND IN CATALOG: ${notFound.length > 0 ? notFound.map(n => n.name).join(', ') : 'none'}
+
+INSTRUCTIONS:
+- Present the order clearly: bullet list of items with quantity and line total, then the grand total.
+- Mention the free delivery threshold only if the total is below it.
+- For items not found, suggest the closest available alternative from the FULL SHOP CATALOG above, briefly, one line per item. If none, say so honestly.
+- Do not invent or change any price or quantity — use only the numbers given above.`;
+
+    const response = await callClaude(userQuery || 'Please summarize my drink order.', orderSystemPrompt) || deterministicSummary;
 
     return {
       response,
