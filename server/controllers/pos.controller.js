@@ -24,6 +24,13 @@ const { loyaltyDelta } = require('../services/contact.helpers');
 const inventoryService = require('../services/inventory.service');
 const { generateOrderNumber, generateReceiptNumber, generateReturnNumber } = require('../utils/orderUtils');
 const { calcPlatformCostPrice, calcPlatformSellingPrice, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
+const {
+  findMatchingPriceRules,
+  applyPriceRules,
+  pickBestBundle,
+  applyBundleOverride,
+  computeBundleLineDiscount,
+} = require('../services/pricelistPricing.service');
 
 // ─── Stock helpers ────────────────────────────────────────────────────────────
 
@@ -404,6 +411,7 @@ function computePOSPricing(sp, sizeDoc, tenant) {
     commissionPct,
   };
 }
+exports.computePOSPricing = computePOSPricing;
 
 /** Convenience wrapper — returns just the selling price (used by getPOSProducts). */
 function computePOSPrice(sp, sizeDoc, tenant) {
@@ -2150,138 +2158,28 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         }).catch(() => {});
       }
 
-      // ── Apply pricelist price rules sequentially (mirrors client findMatchingPricelistRules) ──
-      // Multiple rules can apply in sequence order: base → rule1 → rule2 → ...
-      // e.g. fixed price rule, then percentage discount, then volume tier discount.
+      // ── Apply pricelist price rules sequentially (shared with /sales — pricelistPricing.service) ──
       let appliedPlRuleSnapshot = null;
-      if (selectedPricelist?.rules?.length) {
-        const plNow = new Date();
-        const pid   = String(subProductId);
-
-        const eligible = selectedPricelist.rules.filter(r =>
-          r.priceType !== 'bundle' &&
-          !(r.endDate   && new Date(r.endDate)   < plNow) &&
-          !(r.startDate && new Date(r.startDate) > plNow) &&
-          (Number(r.minQuantity) || 0) <= quantity
-        );
-
-        const specific = eligible.filter(r => {
-          const rid = r.subProduct?._id ? String(r.subProduct._id) : r.subProduct ? String(r.subProduct) : null;
-          return rid && rid === pid;
-        });
-        const global = eligible.filter(r => !r.subProduct);
-        const pool   = specific.length > 0 ? specific : global;
-
-        // Sort: ascending sequence, then descending minQuantity (volume tier)
-        const sortedRules = pool.sort((a, b) => {
-          const seqDiff = (Number(a.sequence) || 0) - (Number(b.sequence) || 0);
-          return seqDiff !== 0 ? seqDiff : (Number(b.minQuantity) || 0) - (Number(a.minQuantity) || 0);
-        });
-
-        // Apply each rule sequentially — each transforms the result of the previous
-        for (const plRule of sortedRules) {
-          if (plRule.priceType === 'fixed') {
-            const fp = Number(plRule.fixedPrice);
-            if (fp > 0) finalPrice = fp;
-          } else if (plRule.priceType === 'formula') {
-            const cost   = sizePricing.costPrice || 0;
-            const markup = Number(plRule.markupPercentage || 0);
-            if (cost > 0)
-              finalPrice = Math.round(cost * (1 + markup / 100) * 100) / 100;
-          } else if (plRule.priceType === 'discount') {
-            if (plRule.discountType === 'fixed') {
-              const amt = Number(plRule.discountAmount || 0);
-              if (amt > 0) finalPrice = Math.max(0, finalPrice - amt);
-            } else {
-              const pct = Number(plRule.discountPercentage || 0);
-              if (pct > 0) finalPrice = Math.max(0, finalPrice * (1 - pct / 100));
-            }
-          } else if (plRule.priceType === 'flash_sale') {
-            const pct = Number(plRule.flashSalePercentage || 0);
-            if (pct > 0) finalPrice = Math.max(0, finalPrice * (1 - pct / 100));
-          }
-        }
-
-        // Record the first applied rule for the audit trail
-        if (sortedRules.length > 0) {
-          appliedPlRuleSnapshot = {
-            ruleId:    sortedRules[0]._id,
-            priceType: sortedRules[0].priceType,
-            sequence:  sortedRules[0].sequence,
-          };
-        }
-      }
-
-      // ── Bundle deals: find best qualifying deal for this line quantity ────────
-      const nowBd = new Date();
-
-      // Combine DB bundle deals with pricelist bundle rules (dynamic, not in DB)
-      const allBundleCandidates = [...(sp.bundleDeals || [])];
-      if (selectedPricelist?.rules?.length) {
-        for (const r of selectedPricelist.rules) {
-          if (r.priceType !== 'bundle' || !r.bundleQuantity) continue;
-          if (r.endDate   && new Date(r.endDate)   < nowBd) continue;
-          if (r.startDate && new Date(r.startDate) > nowBd) continue;
-          if (r.bundleDiscountType !== 'no_discount' && !r.bundleDiscount) continue;
-          // minQuantity: overall rule activation threshold (separate from bundleQuantity)
-          if ((Number(r.minQuantity) || 0) > quantity) continue;
-          const rid = r.subProduct?._id ? String(r.subProduct._id) : r.subProduct ? String(r.subProduct) : null;
-          if (rid && rid !== String(subProductId)) continue;
-          allBundleCandidates.push({
-            name:         r.bundleName || `Buy ${r.bundleQuantity}+`,
-            quantity:     r.bundleQuantity,
-            discount:     r.bundleDiscount || 0,
-            discountType: r.bundleDiscountType || 'percentage',
-            active:       true,
-            validUntil:   r.endDate || null,
-          });
-        }
-      }
-
-      // Pick the bundle that delivers the most absolute savings for the cashier
-      const qualifyingBundles = allBundleCandidates.filter(bd =>
-        bd.active !== false &&
-        (!bd.validUntil || new Date(bd.validUntil) >= nowBd) &&
-        quantity >= (bd.quantity || 1)
-      );
-
-      const bestBundle = qualifyingBundles.sort((a, b) => {
-        // For price-override types, rank by estimated savings vs finalPrice
-        const savings = (bd) => {
-          const d = bd.discountType || 'percentage';
-          if (d === 'fixed')          return (bd.discount || 0) * quantity;
-          if (d === 'markup_on_cost') return Math.max(0, finalPrice - sizePricing.costPrice * (1 + (bd.discount || 0) / 100)) * quantity;
-          if (d === 'no_discount')    return 0; // restores full price — 0 net "savings"
-          return finalPrice * quantity * Math.min(100, bd.discount || 0) / 100;
+      const sortedPriceRules = findMatchingPriceRules(selectedPricelist?.rules, subProductId, quantity);
+      finalPrice = applyPriceRules(finalPrice, sizePricing.costPrice || 0, sortedPriceRules);
+      if (sortedPriceRules.length > 0) {
+        appliedPlRuleSnapshot = {
+          ruleId:    sortedPriceRules[0]._id,
+          priceType: sortedPriceRules[0].priceType,
+          sequence:  sortedPriceRules[0].sequence,
         };
-        return savings(b) - savings(a);
-      })[0];
+      }
+
+      // ── Bundle deals: find best qualifying deal for this line quantity (shared) ──
+      const bestBundle = pickBestBundle(sp.bundleDeals, selectedPricelist?.rules, quantity, subProductId, {
+        price: finalPrice,
+        costPrice: sizePricing.costPrice || 0,
+      });
 
       // ── Effective unit price (some bundle types override finalPrice) ──────────
-      let effectivePrice      = finalPrice;
-      let bundleOverridePrice = false;
-
-      if (bestBundle) {
-        const dt = bestBundle.discountType || 'percentage';
-
-        if (dt === 'markup_on_cost') {
-          // price = costPrice × (1 + markup%)
-          const cost   = sizePricing.costPrice || 0;
-          const markup = bestBundle.discount  || 0;
-          if (cost > 0) {
-            effectivePrice      = Math.round(cost * (1 + markup / 100) * 100) / 100;
-            bundleOverridePrice = true;
-          }
-
-        } else if (dt === 'no_discount') {
-          // Charge the pre-sale base price — removes flash sale / regular sale discount
-          const priceBeforeSale = sizePricing.originalPrice;
-          if (priceBeforeSale && priceBeforeSale > finalPrice) {
-            effectivePrice      = priceBeforeSale;
-            bundleOverridePrice = true;
-          }
-        }
-      }
+      const bundleOverride   = applyBundleOverride(finalPrice, bestBundle, sizePricing.costPrice || 0, sizePricing.originalPrice);
+      let effectivePrice      = bundleOverride.price;
+      let bundleOverridePrice = bundleOverride.overridden;
 
       // If the client sent its authoritative effectivePrice (computed after pricelist
       // + bundle rules), trust it over the server's re-computation. This ensures the
@@ -2297,14 +2195,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       const itemDiscAmt    = parseFloat((lineGross * itemDiscPct / 100).toFixed(2));
 
       // Bundle discount amount (only for percentage / fixed types; override types already set effectivePrice)
-      let bundleDiscAmt = 0;
-      if (bestBundle && !bundleOverridePrice) {
-        const dt = bestBundle.discountType || 'percentage';
-        bundleDiscAmt = dt === 'fixed'
-          ? Math.min((bestBundle.discount || 0) * quantity, lineGross - itemDiscAmt)
-          : parseFloat((lineGross * Math.min(100, bestBundle.discount || 0) / 100).toFixed(2));
-        bundleDiscAmt = Math.max(0, bundleDiscAmt);
-      }
+      const bundleDiscAmt = computeBundleLineDiscount(bestBundle, lineGross, quantity, itemDiscAmt, bundleOverridePrice);
 
       // Compute per-line revenue fields required by Order schema
       const itemDiscountAmount = parseFloat(Math.min(lineGross, itemDiscAmt + bundleDiscAmt).toFixed(2));
