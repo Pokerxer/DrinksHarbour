@@ -2,16 +2,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import {
-  PiArrowLeft,
-  PiCheck,
-  PiFloppyDisk,
-  PiPlus,
-  PiTrash,
-} from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import {
@@ -19,66 +11,50 @@ import {
   type SalesOrder,
   type SalesOrderAddress,
 } from '@/services/salesOrder.service';
-import type { POSCustomer, POSBundleDeal } from '@/app/shared/point-of-sale/types';
-import type { POSCartItem } from '@/app/shared/point-of-sale/types';
+import type {
+  POSCustomer,
+  POSCartItem,
+  POSBundleDeal,
+} from '@/app/shared/point-of-sale/types';
+import { posApi } from '@/app/shared/point-of-sale/api';
 import { getEffectiveBundlePriceForItem } from '@/app/shared/point-of-sale/store';
-import { fmtCur } from '../purchases/purchases-analytics-helpers';
-import CustomerSearch from './customer-search';
-import ProductLineSearch, {
-  type ProductLineSelection,
-} from './product-line-search';
 import { useSalesCustomerPricelist } from './use-sales-customer-pricelist';
-import {
-  PAYMENT_TERMS,
-  addressesDiffer,
-  quoteStatusLabel,
-  orderStatusLabel,
-} from './sales-helpers';
+import { addressesDiffer } from './sales-helpers';
+import SalesCreateHeader from './sales-create-header';
+import SalesCustomerBar from './sales-customer-bar';
+import SalesLineTable, {
+  type DraftLine,
+  type PricedLine,
+} from './sales-line-table';
+import SalesTotals from './sales-totals';
+import SalesOtherInfoTab from './sales-other-info-tab';
+import SalesCatalogModal from './sales-catalog-modal';
+import SalesScanDrawer from './sales-scan-drawer';
+import type { ProductLineSelection } from './product-line-search';
+import type { CreateTab } from './sales-stage-pill';
 
-const INPUT_CLS =
-  'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20';
-
-const INLINE_CELL_CLS =
-  'w-full border-0 border-b border-transparent bg-transparent px-1 py-1 text-right text-sm text-gray-900 focus:border-[#b20202] focus:outline-none focus:ring-0';
-
-interface DraftLine {
-  key: string;
-  subProductId: string;
-  product?: string;
-  name: string;
-  sku: string;
-  sizeId?: string;
-  sizeName?: string;
-  quantity: number;
-  baseUnitPrice: number;
-  discount: number;
-  taxRate: number;
-  costPrice: number;
-  /** True once the operator has typed a manual unit price for this line — it
-   * then ignores the live pricelist/bundle computation and the server trusts
-   * it verbatim. Reset to false whenever a new product/size is picked. */
-  priceOverridden: boolean;
-  activeBundles?: POSBundleDeal[];
-  originalPrice?: number;
-}
-
-function blankLine(): DraftLine {
+function blankLine(lineType: DraftLine['lineType'] = 'product'): DraftLine {
   return {
     key: Math.random().toString(36).slice(2),
+    lineType,
     subProductId: '',
     name: '',
     sku: '',
     quantity: 1,
     baseUnitPrice: 0,
     discount: 0,
+    discountType: 'fixed',
     taxRate: 0,
     costPrice: 0,
     priceOverridden: false,
+    description: '',
   };
 }
 
-/** Live unit price after pricelist + bundle rules, unless the operator overrode it. */
-function liveUnitPrice(line: DraftLine, pricelist: any): number {
+/** Live unit price after pricelist + bundle rules, unless the operator overrode it.
+ *  Section/note lines carry no price. */
+function liveUnitPrice(line: DraftLine, pricelist: unknown): number {
+  if (line.lineType !== 'product') return 0;
   if (line.priceOverridden) return line.baseUnitPrice;
   if (!line.subProductId || !pricelist) return line.baseUnitPrice;
   const pricingItem: POSCartItem = {
@@ -93,65 +69,59 @@ function liveUnitPrice(line: DraftLine, pricelist: any): number {
     discount: 0,
     stock: 0,
     costPrice: line.costPrice,
-    activeBundles: line.activeBundles,
+    activeBundles: line.activeBundles as POSBundleDeal[] | undefined,
     originalPrice: line.originalPrice,
   };
   return getEffectiveBundlePriceForItem(pricingItem, pricelist).price;
 }
 
-function lineTotalOf(unitPrice: number, discount: number, quantity: number) {
-  return Math.max(0, unitPrice - discount) * quantity;
+/** Resolve a line's discount to an absolute ₦ amount off the unit price, clamped
+ *  so it can never exceed the unit price. Percentage discounts are converted
+ *  here so the line total mirrors the backend's mapLine resolution. */
+function resolveDiscount(unitPrice: number, line: DraftLine): number {
+  const raw = Math.max(0, line.discount || 0);
+  if (line.discountType === 'percentage') {
+    return Math.round(unitPrice * Math.min(100, raw) / 100 * 100) / 100;
+  }
+  return Math.min(unitPrice, raw);
 }
 
-const ADDRESS_FIELDS: { key: keyof SalesOrderAddress; label: string; span?: boolean }[] = [
-  { key: 'name', label: 'Name' },
-  { key: 'phone', label: 'Phone' },
-  { key: 'street', label: 'Street', span: true },
-  { key: 'city', label: 'City' },
-  { key: 'state', label: 'State' },
-  { key: 'country', label: 'Country' },
-];
-
-/** Two-column block of the 6 structured address inputs. */
-function AddressFields({
-  value,
-  onChange,
-}: {
-  value: SalesOrderAddress;
-  onChange: (patch: SalesOrderAddress) => void;
-}) {
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {ADDRESS_FIELDS.map((f) => (
-        <div key={f.key} className={f.span ? 'sm:col-span-2' : undefined}>
-          <label className="mb-1.5 block text-xs font-medium text-gray-600">
-            {f.label}
-          </label>
-          <input
-            type="text"
-            value={value[f.key] ?? ''}
-            onChange={(e) => onChange({ [f.key]: e.target.value })}
-            className={INPUT_CLS}
-          />
-        </div>
-      ))}
-    </div>
-  );
+function lineTotalOf(unitPrice: number, line: DraftLine): number {
+  const discount = resolveDiscount(unitPrice, line);
+  return Math.max(0, unitPrice - discount) * line.quantity;
 }
 
-type CreateTab = 'lines' | 'other';
-
-/** Non-interactive lifecycle-stage indicator — visual parity only, no click behavior. */
-function StagePill({ label, active }: { label: string; active: boolean }) {
-  return (
-    <span
-      className={`rounded-full px-3 py-1 text-xs font-medium ${
-        active ? 'bg-[#b20202]/10 text-[#b20202]' : 'bg-gray-100 text-gray-400'
-      }`}
-    >
-      {label}
-    </span>
-  );
+/** Map a priced draft line into the SalesOrderLineInput shape the API expects,
+ *  preserving the lineType discriminator. Section/note lines carry no product
+ *  reference and zero pricing so the server's totals skip them. */
+function toLinePayload(l: PricedLine) {
+  if (l.lineType !== 'product') {
+    return {
+      lineType: l.lineType,
+      name: l.name || undefined,
+      description: l.description || undefined,
+      quantity: 0,
+      unitPrice: 0,
+      discount: 0,
+      discountType: 'fixed' as const,
+      taxRate: 0,
+    };
+  }
+  return {
+    lineType: l.lineType,
+    product: l.product,
+    subproduct: l.subProductId,
+    size: l.sizeId,
+    sku: l.sku,
+    name: l.name,
+    description: l.description || undefined,
+    quantity: l.quantity,
+    unitPrice: l.unitPrice,
+    discount: l.discount,
+    discountType: l.discountType,
+    taxRate: l.taxRate,
+    priceOverridden: l.priceOverridden,
+  };
 }
 
 export default function SalesCreate({
@@ -176,16 +146,18 @@ export default function SalesCreate({
   const [deliveryAddress, setDeliveryAddress] = useState<SalesOrderAddress>({});
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<CreateTab>('lines');
-  // Moved up from below the useSalesCustomerPricelist call (Step 3 removes
-  // the duplicate declaration there) so the seeding effect below can set them.
   const [pricelistId, setPricelistId] = useState('');
   const [pricelistOverridden, setPricelistOverridden] = useState(false);
+  // D3: customer default-address fetch state.
+  const [loadingCustomerAddress, setLoadingCustomerAddress] = useState(false);
 
   // Seed every field from the loaded document once, in edit mode.
   useEffect(() => {
     if (!initial) return;
     if (initial.customerSnapshot?.customerId) {
-      const [firstName, ...rest] = (initial.customerSnapshot.name ?? '').split(' ');
+      const [firstName, ...rest] = (initial.customerSnapshot.name ?? '').split(
+        ' '
+      );
       setCustomer({
         _id: initial.customerSnapshot.customerId,
         firstName: firstName ?? '',
@@ -199,17 +171,21 @@ export default function SalesCreate({
     setLines(
       initial.items.map((it) => ({
         key: it._id,
+        lineType: (it.lineType ?? 'product') as DraftLine['lineType'],
         subProductId: it.subproduct ?? '',
         product: it.product,
         name: it.name ?? '',
         sku: it.sku ?? '',
         sizeId: it.size,
+        sizeName: undefined,
         quantity: it.quantity,
         baseUnitPrice: it.unitPrice,
         discount: it.discount,
+        discountType: (it.discountType ?? 'fixed') as DraftLine['discountType'],
         taxRate: it.taxRate ?? 0,
         costPrice: 0,
         priceOverridden: !!it.priceOverridden,
+        description: it.description ?? '',
       }))
     );
     setNotes(initial.notes ?? '');
@@ -230,27 +206,10 @@ export default function SalesCreate({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial]);
 
-  // Prefill the invoice name/phone from the selected customer; the customer has
-  // no stored address, so street/city/state/country stay for the user to fill.
-  const handleSelectCustomer = useCallback((c: POSCustomer) => {
-    setCustomer(c);
-    setInvoiceAddress((prev) => ({
-      ...prev,
-      name: `${c.firstName} ${c.lastName}`.trim(),
-      phone: c.phone ?? '',
-    }));
-  }, []);
-
-  const today = useMemo(
-    () => new Date().toLocaleDateString(undefined, { dateStyle: 'medium' }),
-    []
+  const { pricelists, resolvedId } = useSalesCustomerPricelist(
+    token,
+    customer?._id ?? ''
   );
-
-  const {
-    pricelists,
-    resolvedId,
-    selected: autoPricelist,
-  } = useSalesCustomerPricelist(token, customer?._id ?? '');
 
   // Pricelist defaults to the customer's auto-resolved list, but the user can
   // override it; once they do, their pick sticks across customer changes.
@@ -261,7 +220,7 @@ export default function SalesCreate({
   }, [resolvedId, pricelistOverridden]);
 
   const pricelist = useMemo(
-    () => pricelists.find((p: any) => p._id === pricelistId) ?? null,
+    () => pricelists.find((p) => p._id === pricelistId) ?? null,
     [pricelists, pricelistId]
   );
 
@@ -272,16 +231,134 @@ export default function SalesCreate({
   }, []);
 
   const addLine = useCallback(() => setLines((p) => [...p, blankLine()]), []);
+  const addSection = useCallback(
+    () => setLines((p) => [...p, blankLine('section')]),
+    []
+  );
+  const addNote = useCallback(
+    () => setLines((p) => [...p, blankLine('note')]),
+    []
+  );
   const removeLine = useCallback(
     (key: string) => setLines((p) => p.filter((l) => l.key !== key)),
     []
   );
 
-  const priced = useMemo(
+  // Drag-and-drop reordering of lines (items, sections, notes all draggable).
+  // `arrayMove` reorders by current index; we resolve the new order from the
+  // dragged key + the target key so the caller passes the two keys.
+  const reorderLines = useCallback(
+    (activeKey: string, overKey: string) => {
+      setLines((p) => {
+        const oldIndex = p.findIndex((l) => l.key === activeKey);
+        const newIndex = p.findIndex((l) => l.key === overKey);
+        if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return p;
+        // Inline arrayMove (avoids importing @dnd-kit/sortable here just for it).
+        const next = [...p];
+        const [moved] = next.splice(oldIndex, 1);
+        next.splice(newIndex, 0, moved);
+        return next;
+      });
+    },
+    []
+  );
+
+  // Catalogue modal: picking a product in the catalogue appends a new product
+  // line with the same field mapping ProductLineSearch uses.
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
+
+  // Catalogue → order wiring. A line is uniquely keyed by `subProductId|sizeId`
+  // (sizeId empty for sizeless). Adding is idempotent (no duplicate lines for
+  // the same product+size); qty changes edit the existing line in place; remove
+  // drops it. The live qty map is fed back to the modal so each card can render
+  // its stepper + remove control once added.
+  const catalogLineKey = (sub: string, size?: string) => `${sub}|${size ?? ''}`;
+
+  const catalogQtyMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const l of lines) {
+      if (l.lineType !== 'product' || !l.subProductId) continue;
+      m[catalogLineKey(l.subProductId, l.sizeId)] = l.quantity;
+    }
+    return m;
+  }, [lines]);
+
+  const addProductFromCatalog = useCallback((info: ProductLineSelection) => {
+    const key = catalogLineKey(info.subProductId, info.sizeId);
+    setLines((p) => {
+      // If a line for this product+size already exists, bump its qty instead
+      // of creating a duplicate (the catalogue Add button adds 1, but the
+      // operator may click it again before the card switches to a stepper).
+      const idx = p.findIndex(
+        (l) =>
+          l.lineType === 'product' &&
+          l.subProductId === info.subProductId &&
+          (l.sizeId ?? '') === (info.sizeId ?? '')
+      );
+      if (idx >= 0) {
+        const next = [...p];
+        next[idx] = { ...next[idx], quantity: next[idx].quantity + 1 };
+        return next;
+      }
+      return [
+        ...p,
+        {
+          ...blankLine('product'),
+          subProductId: info.subProductId,
+          product: info.productId,
+          name: info.name,
+          sku: info.sku,
+          sizeId: info.sizeId,
+          sizeName: info.sizeName,
+          baseUnitPrice: info.sellingPrice,
+          costPrice: info.costPrice,
+          taxRate: info.taxRate,
+          quantity: 1,
+          priceOverridden: false,
+          activeBundles: info.bundleDeals,
+          originalPrice: info.originalPrice,
+          description: '',
+        },
+      ];
+    });
+    // Mark just-added for the transient check (key used by the modal).
+    void key;
+  }, []);
+
+  const setCatalogLineQty = useCallback(
+    (info: ProductLineSelection, quantity: number) => {
+      setLines((p) =>
+        p.map((l) =>
+          l.lineType === 'product' &&
+          l.subProductId === info.subProductId &&
+          (l.sizeId ?? '') === (info.sizeId ?? '')
+            ? { ...l, quantity: Math.max(1, Math.round(quantity)) }
+            : l
+        )
+      );
+    },
+    []
+  );
+
+  const removeCatalogLine = useCallback((info: ProductLineSelection) => {
+    setLines((p) =>
+      p.filter(
+        (l) =>
+          !(
+            l.lineType === 'product' &&
+            l.subProductId === info.subProductId &&
+            (l.sizeId ?? '') === (info.sizeId ?? '')
+          )
+      )
+    );
+  }, []);
+
+  const priced = useMemo<PricedLine[]>(
     () =>
       lines.map((l) => {
         const unitPrice = liveUnitPrice(l, pricelist);
-        const lineTotal = lineTotalOf(unitPrice, l.discount, l.quantity);
+        const lineTotal = lineTotalOf(unitPrice, l);
         return {
           ...l,
           unitPrice,
@@ -292,20 +369,101 @@ export default function SalesCreate({
     [lines, pricelist]
   );
 
-  // Odoo-style totals: Untaxed Amount + Tax = Total (tax-exclusive).
-  const untaxedAmount = priced.reduce((s, l) => s + l.lineTotal, 0);
-  const taxTotal = priced.reduce((s, l) => s + l.taxAmount, 0);
+  const untaxedAmount = priced
+    .filter((l) => l.lineType === 'product')
+    .reduce((s, l) => s + l.lineTotal, 0);
+  const taxTotal = priced
+    .filter((l) => l.lineType === 'product')
+    .reduce((s, l) => s + l.taxAmount, 0);
+  // Total discount (resolved ₦) across product lines — for the totals summary.
+  const discountTotal = priced
+    .filter((l) => l.lineType === 'product')
+    .reduce((s, l) => s + resolveDiscount(l.unitPrice, l) * l.quantity, 0);
   const grandTotal = untaxedAmount + taxTotal;
   const hasLines = lines.some((l) => l.subProductId);
 
+  // D3: pull the customer's resolved default address (ecommerce Address, or
+  // their most recent non-cancelled Order's shipping address) and merge it into
+  // the invoice block (and the delivery block when they're not separate). The
+  // name/phone always come from the customer; the server only fills the rest.
+  const loadCustomerAddress = useCallback(
+    async (c: POSCustomer) => {
+      setLoadingCustomerAddress(true);
+      try {
+        const { address } = await posApi.getCustomerDefaultAddress(
+          token,
+          c._id
+        );
+        if (address) {
+          setInvoiceAddress((prev) => ({
+            ...prev,
+            name: `${c.firstName} ${c.lastName}`.trim() || address.name || prev.name,
+            phone: c.phone ?? address.phone ?? prev.phone,
+            street: address.street ?? prev.street,
+            city: address.city ?? prev.city,
+            state: address.state ?? prev.state,
+            country: address.country ?? prev.country,
+          }));
+          if (!deliverDifferent) {
+            setDeliveryAddress((prev) => ({
+              ...prev,
+              name: `${c.firstName} ${c.lastName}`.trim() || address.name || prev.name,
+              phone: c.phone ?? address.phone ?? prev.phone,
+              street: address.street ?? prev.street,
+              city: address.city ?? prev.city,
+              state: address.state ?? prev.state,
+              country: address.country ?? prev.country,
+            }));
+          }
+        }
+      } catch {
+        // No toast — absence of a saved address is the common case for walk-ins.
+      } finally {
+        setLoadingCustomerAddress(false);
+      }
+    },
+    [token, deliverDifferent]
+  );
+
+  // Prefill name/phone, then asynchronously pull the resolved default address.
+  const handleSelectCustomer = useCallback(
+    (c: POSCustomer) => {
+      setCustomer(c);
+      setInvoiceAddress((prev) => ({
+        ...prev,
+        name: `${c.firstName} ${c.lastName}`.trim(),
+        phone: c.phone ?? '',
+      }));
+      void loadCustomerAddress(c);
+    },
+    [loadCustomerAddress]
+  );
+
+  const handleToggleDeliverDifferent = useCallback((v: boolean) => {
+    setDeliverDifferent(v);
+    // When turning the separate delivery block on, seed it from the invoice
+    // block if it's still empty so the operator isn't faced with a blank slate.
+    setDeliveryAddress((prev) =>
+      v && !prev.name && !prev.street && !prev.city
+        ? invoiceAddress
+        : prev
+    );
+  }, [invoiceAddress]);
+
   async function handleSaveEdit() {
     if (!initial) return;
-    const filled = priced.filter((l) => l.subProductId);
+    // Keep product lines that have a subproduct selected, plus any section/note
+    // lines (which carry no subproduct but must persist).
+    const filled = priced.filter((l) => l.lineType !== 'product' || l.subProductId);
     if (filled.length === 0) {
       toast.error('Add at least one product line');
       return;
     }
-    const badQty = filled.find((l) => !(l.quantity > 0));
+    // Quantity validation only applies to product lines — section/note lines
+    // intentionally carry no quantity.
+    const badQty = filled.find(
+      (l) => l.lineType === 'product' && !(l.quantity > 0)
+    );
     if (badQty) {
       toast.error(`Quantity for "${badQty.name}" must be at least 1`);
       return;
@@ -315,23 +473,7 @@ export default function SalesCreate({
       await salesOrderService.update(
         initial._id,
         {
-          items: filled.map((l) => ({
-            product: l.product,
-            subproduct: l.subProductId,
-            size: l.sizeId,
-            sku: l.sku,
-            name: l.name,
-            quantity: l.quantity,
-            unitPrice: l.unitPrice,
-            discount: l.discount,
-            taxRate: l.taxRate,
-            priceOverridden: l.priceOverridden,
-          })),
-          // Edit mode: the user's current customer selection is authoritative,
-          // so send it through even when it changed (or was cleared to walk-in).
-          // Mirrors handleSave's create-path snapshot convention — the server
-          // trusts the client-provided snapshot verbatim (no server-side rebuild
-          // from the customer id), matching createSalesOrderDoc.
+          items: filled.map(toLinePayload),
           // `null` (not undefined) on clear so the server's `!== undefined` guard
           // fires and actually drops the stored customer/snapshot — undefined
           // would be JSON-omitted and silently leave the old customer in place.
@@ -344,10 +486,7 @@ export default function SalesCreate({
                 customerId: customer._id,
               }
             : null,
-          // Edit mode: an empty pricelist selection explicitly clears the stored
-          // pricelist (null → server's null-clearing branch). undefined would be
-          // JSON-omitted and leave the stored pricelist untouched, so the user's
-          // clear would never persist.
+          // An empty pricelist selection explicitly clears the stored pricelist.
           pricelist: pricelistId || null,
           appliedPricelist: pricelist
             ? { pricelistId: pricelist._id, pricelistName: pricelist.name }
@@ -371,12 +510,18 @@ export default function SalesCreate({
   }
 
   async function handleSave(asOrder: boolean) {
-    const filled = priced.filter((l) => l.subProductId);
+    // Keep product lines that have a subproduct selected, plus any section/note
+    // lines (which carry no subproduct but must persist).
+    const filled = priced.filter((l) => l.lineType !== 'product' || l.subProductId);
     if (filled.length === 0) {
       toast.error('Add at least one product line');
       return;
     }
-    const badQty = filled.find((l) => !(l.quantity > 0));
+    // Quantity validation only applies to product lines — section/note lines
+    // intentionally carry no quantity.
+    const badQty = filled.find(
+      (l) => l.lineType === 'product' && !(l.quantity > 0)
+    );
     if (badQty) {
       toast.error(`Quantity for "${badQty.name}" must be at least 1`);
       return;
@@ -399,18 +544,7 @@ export default function SalesCreate({
           appliedPricelist: pricelist
             ? { pricelistId: pricelist._id, pricelistName: pricelist.name }
             : undefined,
-          items: filled.map((l) => ({
-            product: l.product,
-            subproduct: l.subProductId,
-            size: l.sizeId,
-            sku: l.sku,
-            name: l.name,
-            quantity: l.quantity,
-            unitPrice: l.unitPrice,
-            discount: l.discount,
-            taxRate: l.taxRate,
-            priceOverridden: l.priceOverridden,
-          })),
+          items: filled.map(toLinePayload),
           validUntil: validUntil || undefined,
           paymentTerms,
           invoiceAddress,
@@ -432,155 +566,31 @@ export default function SalesCreate({
 
   return (
     <div className="pb-24">
-      <div className="mb-3 flex items-center gap-2 text-sm text-gray-500">
-        <Link
-          href={routes.eCommerce.salesOrders}
-          className="flex items-center gap-1 hover:text-gray-700"
-        >
-          <PiArrowLeft className="h-4 w-4" /> Sales
-        </Link>
-        <span>/</span>
-        <span className="font-medium text-gray-900">
-          {mode === 'edit' && initial ? initial.soNumber : 'New Sale'}
-        </span>
-      </div>
+      <SalesCreateHeader
+        mode={mode}
+        initial={initial}
+        saving={saving}
+        hasLines={hasLines}
+        onCreateOrder={() => handleSave(true)}
+        onSaveQuotation={() => handleSave(false)}
+        onSaveEdit={handleSaveEdit}
+      />
 
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">
-            {mode === 'edit' ? 'Edit' : 'New'}
-          </h1>
-          <p className="mt-0.5 text-sm text-gray-500">
-            {mode === 'edit'
-              ? 'Update the draft and save your changes.'
-              : 'Save as a quotation or create the order directly.'}
-          </p>
-        </div>
-        <div className="flex flex-col items-end gap-2">
-          <div className="flex items-center gap-2">
-            {mode === 'edit' ? (
-              <button
-                type="button"
-                onClick={handleSaveEdit}
-                disabled={saving || !hasLines}
-                className="flex items-center gap-2 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
-              >
-                <PiFloppyDisk className="h-4 w-4" />
-                {saving ? 'Saving…' : 'Save Changes'}
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => handleSave(true)}
-                  disabled={saving || !hasLines}
-                  className="flex items-center gap-2 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
-                >
-                  <PiCheck className="h-4 w-4" />
-                  {saving ? 'Saving…' : 'Create Order'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSave(false)}
-                  disabled={saving || !hasLines}
-                  className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  <PiFloppyDisk className="h-4 w-4" />
-                  Save as Quotation
-                </button>
-              </>
-            )}
-            <Link
-              href={
-                mode === 'edit' && initial
-                  ? routes.eCommerce.salesDetails(initial._id)
-                  : routes.eCommerce.salesOrders
-              }
-              className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
-            >
-              Cancel
-            </Link>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {mode === 'edit' && initial ? (
-              <StagePill
-                label={
-                  initial.docType === 'quotation'
-                    ? quoteStatusLabel(initial.quoteStatus)
-                    : orderStatusLabel(initial.orderStatus)
-                }
-                active
-              />
-            ) : (
-              <>
-                <StagePill label="Quotation" active />
-                <StagePill label="Quotation Sent" active={false} />
-                <StagePill label="Sales Order" active={false} />
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="mb-6 grid grid-cols-1 gap-x-10 gap-y-5 rounded-xl border border-gray-200 bg-white p-6 sm:grid-cols-2">
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-gray-600">
-            Customer
-          </label>
-          <CustomerSearch
-            token={token}
-            selected={customer}
-            onSelect={handleSelectCustomer}
-            onClear={() => setCustomer(null)}
-          />
-          <div className="mt-4">
-            <label className="mb-1.5 block text-xs font-medium text-gray-600">
-              Pricelist
-            </label>
-            <select
-              value={pricelistId}
-              onChange={(e) => {
-                setPricelistId(e.target.value);
-                setPricelistOverridden(true);
-              }}
-              className={INPUT_CLS}
-            >
-              <option value="">— Base price —</option>
-              {pricelists.map((p: any) => (
-                <option key={p._id} value={p._id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            {pricelist && resolvedId === pricelist._id && (
-              <p className="mt-1.5 text-xs text-emerald-600">
-                Auto-applied from this customer.
-              </p>
-            )}
-          </div>
-        </div>
-        <div className="space-y-4">
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-gray-600">
-              Quotation Date
-            </label>
-            <p className="rounded-lg border border-transparent px-3 py-2 text-sm text-gray-700">
-              {today}
-            </p>
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-gray-600">
-              Expiration
-            </label>
-            <input
-              type="date"
-              value={validUntil}
-              onChange={(e) => setValidUntil(e.target.value)}
-              className={INPUT_CLS}
-            />
-          </div>
-        </div>
-      </div>
+      <SalesCustomerBar
+        token={token}
+        customer={customer}
+        onSelectCustomer={handleSelectCustomer}
+        onClearCustomer={() => setCustomer(null)}
+        pricelists={pricelists as { _id: string; name: string }[]}
+        pricelistId={pricelistId}
+        onPricelistChange={(id) => {
+          setPricelistId(id);
+          setPricelistOverridden(true);
+        }}
+        resolvedPricelistId={resolvedId}
+        validUntil={validUntil}
+        onValidUntilChange={setValidUntil}
+      />
 
       <div className="rounded-xl border border-gray-200 bg-white">
         <div className="flex border-b border-gray-200 px-4">
@@ -611,249 +621,69 @@ export default function SalesCreate({
         <div className="p-5">
           {tab === 'lines' ? (
             <>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="px-2 py-2 text-left text-xs font-medium text-gray-500">
-                      Product
-                    </th>
-                    <th className="px-2 py-2 text-right text-xs font-medium text-gray-500">
-                      Qty
-                    </th>
-                    <th className="px-2 py-2 text-right text-xs font-medium text-gray-500">
-                      Unit Price
-                    </th>
-                    <th className="px-2 py-2 text-right text-xs font-medium text-gray-500">
-                      Discount
-                    </th>
-                    <th className="px-2 py-2 text-right text-xs font-medium text-gray-500">
-                      Tax %
-                    </th>
-                    <th className="px-2 py-2 text-right text-xs font-medium text-gray-500">
-                      Line Total
-                    </th>
-                    <th className="px-2 py-2" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {priced.map((line) => (
-                    <tr key={line.key}>
-                      <td className="px-2 py-2">
-                        <ProductLineSearch
-                          token={token}
-                          query={line.name}
-                          onSelect={(info: ProductLineSelection) =>
-                            updateLine(line.key, {
-                              subProductId: info.subProductId,
-                              product: info.productId,
-                              name: info.name,
-                              sku: info.sku,
-                              sizeId: info.sizeId,
-                              sizeName: info.sizeName,
-                              baseUnitPrice: info.sellingPrice,
-                              costPrice: info.costPrice,
-                              taxRate: info.taxRate,
-                              priceOverridden: false,
-                              activeBundles: info.bundleDeals,
-                              originalPrice: info.originalPrice,
-                            })
-                          }
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <input
-                          type="number"
-                          min={1}
-                          value={line.quantity}
-                          onChange={(e) =>
-                            updateLine(line.key, {
-                              quantity: Math.max(
-                                1,
-                                Number(e.target.value) || 1
-                              ),
-                            })
-                          }
-                          className={`${INLINE_CELL_CLS} w-16`}
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {line.priceOverridden && (
-                            <span
-                              title="Manually set"
-                              className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
-                            />
-                          )}
-                          <input
-                            type="number"
-                            min={0}
-                            value={line.unitPrice}
-                            onChange={(e) =>
-                              updateLine(line.key, {
-                                baseUnitPrice: Math.max(0, Number(e.target.value) || 0),
-                                priceOverridden: true,
-                              })
-                            }
-                            className={`${INLINE_CELL_CLS} w-24`}
-                          />
-                        </div>
-                      </td>
-                      <td className="px-2 py-2">
-                        <input
-                          type="number"
-                          min={0}
-                          value={line.discount}
-                          onChange={(e) =>
-                            updateLine(line.key, {
-                              discount: Math.max(
-                                0,
-                                Number(e.target.value) || 0
-                              ),
-                            })
-                          }
-                          className={`${INLINE_CELL_CLS} w-24`}
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          step="0.5"
-                          value={line.taxRate}
-                          onChange={(e) =>
-                            updateLine(line.key, {
-                              taxRate: Math.min(
-                                100,
-                                Math.max(0, Number(e.target.value) || 0)
-                              ),
-                            })
-                          }
-                          className={`${INLINE_CELL_CLS} w-16`}
-                        />
-                      </td>
-                      <td className="px-2 py-2 text-right text-sm font-semibold text-gray-900">
-                        {fmtCur(line.lineTotal, 'NGN')}
-                      </td>
-                      <td className="px-2 py-2 text-right">
-                        <button
-                          type="button"
-                          onClick={() => removeLine(line.key)}
-                          className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                        >
-                          <PiTrash className="h-4 w-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <button
-                type="button"
-                onClick={addLine}
-                className="mt-3 flex items-center gap-1.5 text-sm font-medium text-[#b20202] hover:underline"
-              >
-                <PiPlus className="h-3.5 w-3.5" /> Add a product
-              </button>
-
-              <div className="mt-6 flex justify-end border-t border-gray-100 pt-4">
-                <div className="w-full max-w-xs space-y-1.5">
-                  <div className="flex items-center justify-between text-sm text-gray-600">
-                    <span>Untaxed Amount</span>
-                    <span>{fmtCur(untaxedAmount, 'NGN')}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm text-gray-600">
-                    <span>Tax</span>
-                    <span>{fmtCur(taxTotal, 'NGN')}</span>
-                  </div>
-                  <div className="flex items-center justify-between border-t border-gray-100 pt-1.5 text-base font-semibold text-gray-900">
-                    <span>Total</span>
-                    <span>{fmtCur(grandTotal, 'NGN')}</span>
-                  </div>
-                </div>
-              </div>
+              <SalesLineTable
+                token={token}
+                lines={priced}
+                onUpdate={updateLine}
+                onAdd={addLine}
+                onAddSection={addSection}
+                onAddNote={addNote}
+                onOpenCatalog={() => setCatalogOpen(true)}
+                onOpenScan={() => setScanOpen(true)}
+                onRemove={removeLine}
+                onReorder={reorderLines}
+              />
+              <SalesTotals
+                untaxedAmount={untaxedAmount}
+                discountTotal={discountTotal}
+                taxTotal={taxTotal}
+                grandTotal={grandTotal}
+              />
             </>
           ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-gray-600">
-                  Payment Terms
-                </label>
-                <select
-                  value={paymentTerms}
-                  onChange={(e) => setPaymentTerms(e.target.value)}
-                  className={INPUT_CLS}
-                >
-                  {PAYMENT_TERMS.map((t) => (
-                    <option key={t.key} value={t.key}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="sm:col-span-2">
-                <h3 className="mb-3 text-sm font-semibold text-gray-900">
-                  Invoice Address
-                </h3>
-                <AddressFields
-                  value={invoiceAddress}
-                  onChange={(patch) =>
-                    setInvoiceAddress((prev) => ({ ...prev, ...patch }))
-                  }
-                />
-                <label className="mt-3 flex items-center gap-2 text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={deliverDifferent}
-                    onChange={(e) => setDeliverDifferent(e.target.checked)}
-                    className="h-4 w-4 rounded border-gray-300 text-[#b20202] focus:ring-[#b20202]/20"
-                  />
-                  Deliver to a different address
-                </label>
-              </div>
-
-              {deliverDifferent && (
-                <div className="sm:col-span-2">
-                  <h3 className="mb-3 text-sm font-semibold text-gray-900">
-                    Delivery Address
-                  </h3>
-                  <AddressFields
-                    value={deliveryAddress}
-                    onChange={(patch) =>
-                      setDeliveryAddress((prev) => ({ ...prev, ...patch }))
-                    }
-                  />
-                </div>
-              )}
-
-              <div className="sm:col-span-2">
-                <label className="mb-1.5 block text-xs font-medium text-gray-600">
-                  Notes
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={2}
-                  className={INPUT_CLS}
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="mb-1.5 block text-xs font-medium text-gray-600">
-                  Terms
-                </label>
-                <textarea
-                  value={terms}
-                  onChange={(e) => setTerms(e.target.value)}
-                  rows={2}
-                  className={INPUT_CLS}
-                />
-              </div>
-            </div>
+            <SalesOtherInfoTab
+              paymentTerms={paymentTerms}
+              onPaymentTermsChange={setPaymentTerms}
+              invoiceAddress={invoiceAddress}
+              deliveryAddress={deliveryAddress}
+              deliverDifferent={deliverDifferent}
+              onInvoiceChange={(patch) =>
+                setInvoiceAddress((prev) => ({ ...prev, ...patch }))
+              }
+              onDeliveryChange={(patch) =>
+                setDeliveryAddress((prev) => ({ ...prev, ...patch }))
+              }
+              onToggleDeliverDifferent={handleToggleDeliverDifferent}
+              onLoadCustomerAddress={
+                customer ? () => void loadCustomerAddress(customer) : undefined
+              }
+              loadingCustomerAddress={loadingCustomerAddress}
+              notes={notes}
+              onNotesChange={setNotes}
+              terms={terms}
+              onTermsChange={setTerms}
+            />
           )}
         </div>
       </div>
+
+      <SalesCatalogModal
+        open={catalogOpen}
+        token={token}
+        pricelist={pricelist}
+        qtyMap={catalogQtyMap}
+        onClose={() => setCatalogOpen(false)}
+        onAdd={addProductFromCatalog}
+        onSetQty={setCatalogLineQty}
+        onRemove={removeCatalogLine}
+      />
+
+      <SalesScanDrawer
+        open={scanOpen}
+        token={token}
+        onClose={() => setScanOpen(false)}
+        onAdd={addProductFromCatalog}
+      />
     </div>
   );
 }

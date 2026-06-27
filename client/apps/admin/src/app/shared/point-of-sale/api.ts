@@ -15,6 +15,7 @@ import type {
   POSSettings,
   POSCombo,
   POSCustomer,
+  POSCustomerAddress,
   POSShop,
   POSNotification,
 } from './types';
@@ -452,6 +453,20 @@ export const posApi = {
   async getCustomer(token: string, id: string) {
     return request<{ customer: POSCustomer }>(
       `${API_URL}/api/pos/customers/${id}`,
+      { headers: authHeaders(token) }
+    );
+  },
+
+  // Best-effort default billing/delivery address for a POSCustomer, used by the
+  // Sales create page to prefill its invoice/delivery blocks. Resolved by the
+  // server from the customer's linked ecommerce Address, falling back to their
+  // most recent non-cancelled Order's shipping address. null = no default found.
+  async getCustomerDefaultAddress(
+    token: string,
+    id: string
+  ) {
+    return request<{ address: POSCustomerAddress | null }>(
+      `${API_URL}/api/pos/customers/${id}/default-address`,
       { headers: authHeaders(token) }
     );
   },

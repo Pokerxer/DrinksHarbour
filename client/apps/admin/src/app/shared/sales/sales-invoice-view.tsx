@@ -11,9 +11,15 @@ import {
   addressLines,
   paymentTermsLabel,
 } from './sales-helpers';
+import {
+  isNonProductLine,
+  NonProductLineRow,
+  sectionSubtotals,
+} from './sales-line-read-rows';
 
 export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
   const paid = so.paymentStatus === 'paid';
+  const subtotals = sectionSubtotals(so.items);
   const ship = so.deliveryAddress;
   const showShipTo =
     !!ship &&
@@ -137,23 +143,33 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {so.items.map((item) => (
-              <tr key={item._id}>
-                <td className="px-3 py-2 text-gray-900">{item.name}</td>
-                <td className="px-3 py-2 text-right text-gray-700">
-                  {item.quantity}
-                </td>
-                <td className="px-3 py-2 text-right text-gray-700">
-                  {fmtCur(item.unitPrice, so.currency)}
-                </td>
-                <td className="px-3 py-2 text-right text-gray-700">
-                  {item.taxRate ? `${item.taxRate}%` : '—'}
-                </td>
-                <td className="px-3 py-2 text-right font-medium text-gray-900">
-                  {fmtCur(item.lineTotal, so.currency)}
-                </td>
-              </tr>
-            ))}
+            {so.items.map((item) =>
+              isNonProductLine(item) ? (
+                <NonProductLineRow
+                  key={item._id}
+                  item={item}
+                  cols={5}
+                  subtotal={item.lineType === 'section' ? subtotals.get(item._id) : undefined}
+                  currency={so.currency}
+                />
+              ) : (
+                <tr key={item._id}>
+                  <td className="px-3 py-2 text-gray-900">{item.name}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">
+                    {item.quantity}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-700">
+                    {fmtCur(item.unitPrice, so.currency)}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-700">
+                    {item.taxRate ? `${item.taxRate}%` : '—'}
+                  </td>
+                  <td className="px-3 py-2 text-right font-medium text-gray-900">
+                    {fmtCur(item.lineTotal, so.currency)}
+                  </td>
+                </tr>
+              )
+            )}
           </tbody>
         </table>
       </div>

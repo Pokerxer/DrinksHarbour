@@ -25,6 +25,11 @@ import {
   paymentTermsLabel,
 } from './sales-helpers';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
+import {
+  isNonProductLine,
+  NonProductLineRow,
+  sectionSubtotals,
+} from './sales-line-read-rows';
 
 export default function SalesQuotationDetail({
   so,
@@ -37,6 +42,7 @@ export default function SalesQuotationDetail({
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
   const [busy, setBusy] = useState(false);
+  const subtotals = sectionSubtotals(so.items);
 
   async function run(
     action: () => Promise<{ data: SalesOrder }>,
@@ -178,30 +184,40 @@ export default function SalesQuotationDetail({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {so.items.map((item) => (
-                  <tr key={item._id}>
-                    <td className="px-4 py-3 text-gray-900">
-                      {item.name}
-                      {item.sku && (
-                        <span className="ml-2 font-mono text-xs text-gray-400">
-                          {item.sku}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right text-gray-700">
-                      {item.quantity}
-                    </td>
-                    <td className="px-4 py-3 text-right text-gray-700">
-                      {fmtCur(item.unitPrice, so.currency)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-gray-700">
-                      {fmtCur(item.discount, so.currency)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-medium text-gray-900">
-                      {fmtCur(item.lineTotal, so.currency)}
-                    </td>
-                  </tr>
-                ))}
+                {so.items.map((item) =>
+                  isNonProductLine(item) ? (
+                    <NonProductLineRow
+                      key={item._id}
+                      item={item}
+                      cols={5}
+                      subtotal={item.lineType === 'section' ? subtotals.get(item._id) : undefined}
+                      currency={so.currency}
+                    />
+                  ) : (
+                    <tr key={item._id}>
+                      <td className="px-4 py-3 text-gray-900">
+                        {item.name}
+                        {item.sku && (
+                          <span className="ml-2 font-mono text-xs text-gray-400">
+                            {item.sku}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right text-gray-700">
+                        {item.quantity}
+                      </td>
+                      <td className="px-4 py-3 text-right text-gray-700">
+                        {fmtCur(item.unitPrice, so.currency)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-gray-700">
+                        {fmtCur(item.discount, so.currency)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium text-gray-900">
+                        {fmtCur(item.lineTotal, so.currency)}
+                      </td>
+                    </tr>
+                  )
+                )}
               </tbody>
             </table>
           </div>

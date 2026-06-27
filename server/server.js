@@ -47,6 +47,7 @@ const bannerRoutes           = require('./routes/banner.routes');
 const chatbotRoutes          = require('./routes/chatbot.routes');
 const placesRoutes           = require('./routes/places.routes');
 const salesOrderRoutes       = require('./routes/salesOrder.routes');
+const scanRoutes             = require('./routes/scan.routes');
 
 const app = express();
 app.set('trust proxy', 1); // Trust first proxy (Vercel edge)
@@ -204,6 +205,7 @@ app.use('/api/tenants',            require('./routes/tenant.routes'));
 app.use('/api/employees',          require('./routes/employee.routes'));
 app.use('/api/contacts',           require('./routes/contact.routes'));
 app.use('/api/sales-orders',       salesOrderRoutes);
+app.use('/api/scan',               scanRoutes);
 app.use('/api/pos',                require('./routes/pos.routes'));
 app.use('/api/pos-combos',         require('./routes/posCombo.routes'));
 
@@ -354,6 +356,26 @@ async function startServer() {
       console.log(`✅ Server running on http://localhost:${PORT}`);
       console.log('   Press Ctrl+C to stop\n');
     });
+
+    // ── Socket.io (for cross-device scan pairing) ────────────────────────────
+    // Attached only to the long-running HTTP server — the serverless export
+    // (`module.exports = app` below) is unaffected. CORS reuses the same origin
+    // policy as the Express app so the admin client can connect. Controllers
+    // reach `io` via `req.app.get('io')` and emit to a `scan:<pairingCode>` room.
+    try {
+      const { Server: IoServer } = require('socket.io');
+      const io = new IoServer(server, {
+        cors: {
+          origin: corsOptions.origin,
+          methods: ['GET', 'POST'],
+          credentials: true,
+        },
+      });
+      app.set('io', io);
+      console.log('   Socket.io attached (scan pairing ready)');
+    } catch (err) {
+      console.warn('   Socket.io not attached:', err.message);
+    }
 
     // Graceful shutdown
     const gracefulShutdown = async (signal) => {

@@ -1812,8 +1812,9 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
             roundUp: sizeData.roundUp || existingSize.roundUp || 'none',
             saleDiscountPercentage: sizeData.saleDiscountPercentage ?? existingSize.saleDiscountPercentage,
             salePrice: sizeData.salePrice ?? existingSize.salePrice,
-            // Map salePrice to sellingPrice for compatibility
-            sellingPrice: sizeData.sellingPrice ?? sizeData.salePrice ?? existingSize.sellingPrice ?? existingSize.salePrice ?? 0,
+            // Map salePrice/basePrice to sellingPrice for compatibility — basePrice is
+            // the key the size form posts, so honour it before falling back to stored/sub.
+            sellingPrice: sizeData.sellingPrice ?? sizeData.basePrice ?? sizeData.salePrice ?? existingSize.sellingPrice ?? existingSize.salePrice ?? subProduct.baseSellingPrice ?? 0,
             isDefault: sizeData.isDefault ?? existingSize.isDefault,
             isOnSale: sizeData.isOnSale ?? existingSize.isOnSale,
             rank: sizeData.rank ?? existingSize.rank,
@@ -2132,6 +2133,7 @@ async function validateBarcodeUniqueness(barcode, tenantId, excludeSizeId = null
  * Helper: Create size variants for SubProduct
  */
 const createSizeVariants = async (sizes, subProductId, defaultCurrency, tenantId) => {
+  let parentSubProduct = null; // cached parent fetch for price fallback
   const VALID_SIZE_ENUMS = [
     // Wine & Champagne
     '10cl', '18.7cl', '20cl', '25cl', '37.5cl', '50cl', '75cl', '100cl',
@@ -2233,7 +2235,7 @@ const createSizeVariants = async (sizes, subProductId, defaultCurrency, tenantId
       }
 
       // Calculate selling price if not provided but cost price and markup are
-      let finalSellingPrice = sellingPrice;
+      let finalSellingPrice = sellingPrice ?? sizeData.sellingPrice;
       if ((!finalSellingPrice || finalSellingPrice === 0) && sizeCostPrice && sizeCostPrice > 0 && markupPercentage) {
         finalSellingPrice = sizeCostPrice * (1 + markupPercentage / 100);
         if (roundUp === '100') {
@@ -2241,6 +2243,12 @@ const createSizeVariants = async (sizes, subProductId, defaultCurrency, tenantId
         } else if (roundUp === '1000') {
           finalSellingPrice = Math.ceil(finalSellingPrice / 1000) * 1000;
         }
+      }
+      // Final fallback: the parent SubProduct's baseSellingPrice. Prevents Size
+      // docs being saved with sellingPrice: 0 when no per-size price was sent.
+      if (!finalSellingPrice || finalSellingPrice === 0) {
+        if (!parentSubProduct) parentSubProduct = await SubProduct.findById(subProductId).select('baseSellingPrice costPrice markupPercentage').lean();
+        finalSellingPrice = parentSubProduct?.baseSellingPrice || 0;
       }
 
       // Calculate sale price if discount percentage provided
@@ -2364,6 +2372,7 @@ const generateSizeSKU = async (subProductId, size, options = {}) => {
  * Create size variants within a transaction session
  */
 const createSizeVariantsWithTransaction = async (sizes, subProductId, defaultCurrency, tenantId, session) => {
+  let parentSubProduct = null; // cached parent fetch for price fallback
   const createdSizes = [];
   const errors = [];
   
@@ -2418,10 +2427,16 @@ const createSizeVariantsWithTransaction = async (sizes, subProductId, defaultCur
       }
 
       // Calculate selling price based on tenant revenue model
-      let finalSellingPrice = sellingPrice;
+      let finalSellingPrice = sellingPrice ?? sizeData.sellingPrice;
       if ((!finalSellingPrice || finalSellingPrice === 0) && sizeCostPrice && sizeCostPrice > 0) {
         const pricing = await calculatePriceFromRevenueModel(sizeCostPrice, tenantId);
         finalSellingPrice = pricing.baseSellingPrice;
+      }
+      // Final fallback: the parent SubProduct's baseSellingPrice. Prevents Size
+      // docs being saved with sellingPrice: 0 when no per-size price was sent.
+      if (!finalSellingPrice || finalSellingPrice === 0) {
+        if (!parentSubProduct) parentSubProduct = await SubProduct.findById(subProductId).select('baseSellingPrice costPrice markupPercentage').lean();
+        finalSellingPrice = parentSubProduct?.baseSellingPrice || 0;
       }
 
       // Calculate sale price if discount percentage provided
@@ -2519,6 +2534,7 @@ const createSizeVariantsWithTransaction = async (sizes, subProductId, defaultCur
  * Create size variants without transaction (for standalone MongoDB)
  */
 const createSizeVariantsWithoutTransaction = async (sizes, subProductId, defaultCurrency, tenantId) => {
+  let parentSubProduct = null; // cached parent fetch for price fallback
   const createdSizes = [];
   const errors = [];
 
@@ -2573,10 +2589,16 @@ const createSizeVariantsWithoutTransaction = async (sizes, subProductId, default
       }
 
       // Calculate selling price based on tenant revenue model
-      let finalSellingPrice = sellingPrice;
+      let finalSellingPrice = sellingPrice ?? sizeData.sellingPrice;
       if ((!finalSellingPrice || finalSellingPrice === 0) && sizeCostPrice && sizeCostPrice > 0) {
         const pricing = await calculatePriceFromRevenueModel(sizeCostPrice, tenantId);
         finalSellingPrice = pricing.baseSellingPrice;
+      }
+      // Final fallback: the parent SubProduct's baseSellingPrice. Prevents Size
+      // docs being saved with sellingPrice: 0 when no per-size price was sent.
+      if (!finalSellingPrice || finalSellingPrice === 0) {
+        if (!parentSubProduct) parentSubProduct = await SubProduct.findById(subProductId).select('baseSellingPrice costPrice markupPercentage').lean();
+        finalSellingPrice = parentSubProduct?.baseSellingPrice || 0;
       }
 
       // Calculate sale price if discount percentage provided

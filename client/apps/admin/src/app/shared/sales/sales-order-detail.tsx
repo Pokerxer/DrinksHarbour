@@ -28,6 +28,11 @@ import {
 } from './sales-helpers';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
 import SalesInvoiceView from './sales-invoice-view';
+import {
+  isNonProductLine,
+  NonProductLineRow,
+  sectionSubtotals,
+} from './sales-line-read-rows';
 
 const PAYMENT_METHODS: { value: string; label: string }[] = [
   { value: 'cash', label: 'Cash' },
@@ -161,6 +166,7 @@ export default function SalesOrderDetail({
   so: SalesOrder;
   onChanged: () => void;
 }) {
+  const subtotals = sectionSubtotals(so.items);
   const { data: session } = useSession();
   const token = (session?.user as { token?: string })?.token ?? '';
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -313,6 +319,17 @@ export default function SalesOrderDetail({
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {so.items.map((item) => {
+                  if (isNonProductLine(item)) {
+                    return (
+                      <NonProductLineRow
+                        key={item._id}
+                        item={item}
+                        cols={5}
+                        subtotal={item.lineType === 'section' ? subtotals.get(item._id) : undefined}
+                        currency={so.currency}
+                      />
+                    );
+                  }
                   const out = outstanding(item);
                   return (
                     <tr key={item._id}>

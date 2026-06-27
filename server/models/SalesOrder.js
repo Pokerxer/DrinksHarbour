@@ -4,19 +4,28 @@ const { Schema } = mongoose;
 const { ObjectId } = Schema;
 
 const lineSchema = new Schema({
+  // Line discriminator: 'product' (priced line, the default), 'section' (a
+  // titled header that groups subsequent lines), or 'note' (a standalone
+  // free-text note). Section/note lines carry no product/qty/price and are
+  // excluded from order totals. Defaults to 'product' so pre-existing docs are
+  // unaffected.
+  lineType: { type: String, enum: ['product', 'section', 'note'], default: 'product' },
   product:    { type: ObjectId, ref: 'Product' },
   subproduct: { type: ObjectId, ref: 'SubProduct' },
   size:       { type: ObjectId, ref: 'Size' },
   sku:        { type: String, trim: true },
-  name:       { type: String, trim: true },
-  quantity:    { type: Number, required: true, min: 1 },
-  unitPrice:   { type: Number, required: true, min: 0 }, // snapshot at line creation
+  name:       { type: String, trim: true },                       // product name, or section title
+  description: { type: String, trim: true, maxlength: 1000 }, // operator-entered per-line note shown on the order/invoice
+  // required only for product lines — section/note lines have no qty/price.
+  quantity:    { type: Number, required: function() { return this.lineType === 'product'; }, min: 0, default: 0 },
+  unitPrice:   { type: Number, required: function() { return this.lineType === 'product'; }, min: 0, default: 0 }, // snapshot at line creation
   discount:    { type: Number, default: 0, min: 0 },
+  discountType: { type: String, enum: ['fixed', 'percentage'], default: 'fixed' }, // fixed = ₦ off unit price; percentage = % of unit price (resolved to ₦ at save)
   taxRate:     { type: Number, default: 0, min: 0, max: 100 }, // % snapshot from SubProduct.taxRate, editable
   promoDiscount: { type: Number, default: 0, min: 0 },         // ₦ off this line from an auto-applied promotion
   promoName:     { type: String, trim: true },                 // snapshot of the applied promotion's name
   taxAmount:   { type: Number, default: 0, min: 0 },           // tax on this line (post-promo untaxed base * taxRate/100)
-  lineTotal:   { type: Number, required: true, min: 0 },       // UNTAXED: (unitPrice - discount) * quantity
+  lineTotal:   { type: Number, required: function() { return this.lineType === 'product'; }, min: 0, default: 0 }, // UNTAXED: (unitPrice - discount) * quantity
   fulfilledQty: { type: Number, default: 0, min: 0 },
   postedQty:    { type: Number, default: 0, min: 0 },
   returnedQty:  { type: Number, default: 0, min: 0 },

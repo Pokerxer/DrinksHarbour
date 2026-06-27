@@ -2,14 +2,17 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
 export interface SalesLineItem {
   _id: string;
+  lineType?: 'product' | 'section' | 'note';
   product?: string;
   subproduct?: string;
   size?: string;
   sku?: string;
   name?: string;
+  description?: string;
   quantity: number;
   unitPrice: number;
   discount: number;
+  discountType?: 'fixed' | 'percentage';
   taxRate?: number;
   taxAmount?: number;
   promoDiscount?: number;
@@ -101,14 +104,17 @@ export interface SalesOrder {
 }
 
 export interface SalesOrderLineInput {
+  lineType?: 'product' | 'section' | 'note';
   product?: string;
   subproduct?: string;
   size?: string;
   sku?: string;
   name?: string;
+  description?: string;
   quantity: number;
   unitPrice: number;
   discount?: number;
+  discountType?: 'fixed' | 'percentage';
   taxRate?: number;
   priceOverridden?: boolean;
 }

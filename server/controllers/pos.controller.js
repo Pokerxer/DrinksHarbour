@@ -3237,6 +3237,96 @@ exports.getPOSCustomer = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { customer: flattenCustomerPricelist(customer) } });
 });
 
+// Resolve a best-effort default billing/delivery address for a POSCustomer, used
+// by the Sales create page to prefill its invoice/delivery blocks. POSCustomer
+// itself stores no address, so we resolve in priority order:
+//   1. The customer's linked ecommerce User (matched by normalized email/phone
+//      within the same tenant) → its default billing Address, then default
+//      shipping, then most-recent active Address.
+//   2. The customer's most recent non-cancelled Order (matched by the order's
+//      `paymentDetails.customer.customerId`, falling back to a normalized
+//      phone/email match on the order's shippingAddress) → that order's
+//      shippingAddress snapshot.
+// Returns { address: { name, phone, street, city, state, country } | null }.
+// All fields are optional; the client treats null as "no default available".
+exports.getPOSCustomerDefaultAddress = asyncHandler(async (req, res) => {
+  const Address = require('../models/Address');
+  const {
+    normalizeEmail,
+    normalizePhone,
+  } = require('../services/contact.helpers');
+  const tenantId = req.tenant?._id;
+  const cust = await POSCustomer.findOne({ _id: req.params.id, tenant: tenantId })
+    .select('firstName lastName email phone')
+    .lean();
+  if (!cust)
+    return res.status(404).json({ success: false, message: 'Customer not found' });
+
+  const normEmail = normalizeEmail(cust.email || '');
+  const normPhone = normalizePhone(cust.phone || '');
+
+  // 1) Linked ecommerce User → saved Address.
+  if (normEmail || normPhone) {
+    const or = [];
+    if (normEmail) or.push({ email: normEmail });
+    if (normPhone) or.push({ phone: { $regex: new RegExp('^' + normPhone.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$') } });
+    const user = await User.findOne({ tenant: tenantId, role: 'customer', $or: or })
+      .select('_id')
+      .lean();
+    if (user) {
+      const addrQuery = { user: user._id, status: 'active' };
+      let addr = await Address.findOne({ ...addrQuery, isDefaultBilling: true }).lean();
+      if (!addr) addr = await Address.findOne({ ...addrQuery, isDefaultShipping: true }).lean();
+      if (!addr) addr = await Address.findOne(addrQuery).sort({ updatedAt: -1 }).lean();
+      if (addr) {
+        const street = [addr.addressLine1, addr.addressLine2].filter(Boolean).join(', ') || undefined;
+        return res.json({
+          success: true,
+          data: {
+            address: {
+              name: addr.fullName || undefined,
+              phone: addr.phone || undefined,
+              street,
+              city: addr.city || undefined,
+              state: addr.state || undefined,
+              country: addr.country || undefined,
+            },
+          },
+        });
+      }
+    }
+  }
+
+  // 2) Most recent non-cancelled Order with this customer attached.
+  const COMPLETED = ['confirmed', 'processing', 'partially_shipped', 'shipped', 'delivered'];
+  const or = [{ 'paymentDetails.customer.customerId': cust._id }];
+  if (normPhone) or.push({ 'shippingAddress.phone': { $regex: new RegExp(normPhone.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$') } });
+  if (normEmail) or.push({ 'shippingAddress.email': normEmail });
+  const order = await Order.findOne({ 'items.tenant': tenantId, status: { $in: COMPLETED }, $or: or })
+    .select('shippingAddress')
+    .sort({ placedAt: -1, createdAt: -1 })
+    .lean();
+  if (order && order.shippingAddress) {
+    const sa = order.shippingAddress;
+    const street = [sa.addressLine1, sa.addressLine2].filter(Boolean).join(', ') || undefined;
+    return res.json({
+      success: true,
+      data: {
+        address: {
+          name: sa.fullName || undefined,
+          phone: sa.phone || undefined,
+          street,
+          city: sa.city || undefined,
+          state: sa.state || undefined,
+          country: sa.country || undefined,
+        },
+      },
+    });
+  }
+
+  res.json({ success: true, data: { address: null } });
+});
+
 exports.updatePOSCustomerLoyalty = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
   const { earned = 0, redeemed = 0, orderTotal = 0, orderId } = req.body;

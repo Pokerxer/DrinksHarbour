@@ -56,8 +56,10 @@ function normalizeAddress(addr) {
   return hasAny ? clean : undefined;
 }
 
-/** Compute a single line's UNTAXED total: (unitPrice - discount) * quantity, floored at 0. */
+/** Compute a single line's UNTAXED total: (unitPrice - discount) * quantity, floored at 0.
+ *  Section/note lines carry no price and contribute nothing. */
 function lineTotalOf(item) {
+  if (item.lineType && item.lineType !== 'product') return 0;
   const unit = Math.max(0, (Number(item.unitPrice) || 0) - (Number(item.discount) || 0));
   return unit * (Number(item.quantity) || 0);
 }
@@ -67,6 +69,7 @@ function lineTotalOf(item) {
  * the nearest integer minor unit so order taxTotal is the sum of clean line taxes.
  */
 function lineTaxOf(item) {
+  if (item.lineType && item.lineType !== 'product') return 0;
   const rate = Math.max(0, Number(item.taxRate) || 0);
   if (rate <= 0) return 0;
   // Tax is charged on the post-promotion untaxed base (discount-before-tax).
@@ -167,6 +170,8 @@ async function resolveLinePromotions(items, deps = {}) {
 function computeTotals(items) {
   let subtotal = 0, discountTotal = 0, promotionTotal = 0, taxTotal = 0;
   for (const it of items) {
+    // Section/note lines are presentational only — excluded from all totals.
+    if (it.lineType && it.lineType !== 'product') continue;
     subtotal += (Number(it.unitPrice) || 0) * (Number(it.quantity) || 0);
     discountTotal += (Number(it.discount) || 0) * (Number(it.quantity) || 0);
     promotionTotal += Number(it.promoDiscount) || 0;
@@ -176,19 +181,49 @@ function computeTotals(items) {
   return { subtotal, discountTotal, promotionTotal, taxTotal, total: untaxed + taxTotal };
 }
 
-/** Normalize one inbound line into a stored line, snapshotting tax + totals. */
+/** Normalize one inbound line into a stored line, snapshotting tax + totals.
+ *  Preserves the lineType discriminator; section/note lines carry no product
+ *  reference and zero pricing so they never affect totals. */
 function mapLine(it) {
+  const lineType = it.lineType === 'section' || it.lineType === 'note' ? it.lineType : 'product';
+  if (lineType !== 'product') {
+    return {
+      lineType,
+      product: undefined, subproduct: undefined, size: undefined,
+      sku: '', name: it.name || '',
+      description: it.description || '',
+      quantity: 0, unitPrice: 0, discount: 0,
+      taxRate: 0, promoDiscount: 0, promoName: '',
+      taxAmount: 0, lineTotal: 0, priceOverridden: false,
+    };
+  }
+  // Resolve discount to an absolute ₦ amount off the unit price, clamped so it
+  // can never exceed the unit price (an over-discount would otherwise floor the
+  // line to 0 and silently lose the excess). Percentage discounts are resolved
+  // here so stored lines always carry an absolute discount — totals math and
+  // historical snapshots stay simple and stable.
+  const unitPrice = Number(it.unitPrice) || 0;
+  const discountType = it.discountType === 'percentage' ? 'percentage' : 'fixed';
+  const rawDiscount = Math.max(0, Number(it.discount) || 0);
+  const resolvedDiscount =
+    discountType === 'percentage'
+      ? Math.round(unitPrice * Math.min(100, rawDiscount) / 100 * 100) / 100
+      : Math.min(unitPrice, rawDiscount);
+
   return {
+    lineType,
     product: it.product, subproduct: it.subproduct, size: it.size,
     sku: it.sku, name: it.name,
+    description: it.description || '',
     quantity: Number(it.quantity) || 0,
-    unitPrice: Number(it.unitPrice) || 0,
-    discount: Number(it.discount) || 0,
+    unitPrice,
+    discount: resolvedDiscount,
+    discountType,
     taxRate: Math.max(0, Number(it.taxRate) || 0),
     promoDiscount: Math.max(0, Number(it.promoDiscount) || 0),
     promoName: it.promoName || '',
-    taxAmount: lineTaxOf(it),
-    lineTotal: lineTotalOf(it),
+    taxAmount: lineTaxOf({ ...it, discount: resolvedDiscount }),
+    lineTotal: lineTotalOf({ ...it, discount: resolvedDiscount }),
     priceOverridden: !!it.priceOverridden,
   };
 }

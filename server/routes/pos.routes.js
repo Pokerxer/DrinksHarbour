@@ -65,6 +65,7 @@ const {
   createPOSCustomer,
   getPOSCustomer,
   updatePOSCustomerLoyalty,
+  getPOSCustomerDefaultAddress,
 } = require('../controllers/pos.controller');
 
 // ── Reject POS tokens on admin routes ────────────────────────────────────────
@@ -214,6 +215,7 @@ router.get('/combos', protectPOS, async (req, res, next) => {
 // POS session, so it accepts an admin JWT too — mutating routes stay POS-only.
 router.get('/customers',                      protectPOSOrAdmin, searchPOSCustomers);
 router.post('/customers',                     protectPOS, createPOSCustomer);
+router.get('/customers/:id/default-address', protectPOSOrAdmin, getPOSCustomerDefaultAddress);
 router.get('/customers/:id',                  protectPOS, getPOSCustomer);
 router.patch('/customers/:id/loyalty',        protectPOS, updatePOSCustomerLoyalty);
 

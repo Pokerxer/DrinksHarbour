@@ -30,6 +30,18 @@ export interface POSCustomer {
   pricelistName?: string;
 }
 
+// Best-effort default address for a POSCustomer (mirrors SalesOrderAddress so
+// the Sales create page can prefill its invoice/delivery blocks directly).
+// All fields optional — the server returns null when nothing is resolvable.
+export interface POSCustomerAddress {
+  name?: string;
+  phone?: string;
+  street?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+}
+
 export interface POSTenantBankAccount {
   bankName: string;
   accountNumber: string;

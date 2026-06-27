@@ -36,6 +36,9 @@ interface ProductOption {
   name: string;
   sku: string;
   sellingPrice: number;
+  // Parent SubProduct's baseSellingPrice — used as a fallback when a size's
+  // sellingPrice was persisted as 0 (legacy size-writer bug, see A2/A3).
+  baseSellingPrice: number;
   costPrice: number;
   taxRate: number;
   sellWithoutSizeVariants: boolean;
@@ -50,6 +53,7 @@ function mapProducts(raw: any[]): ProductOption[] {
     name: sp.product?.name ?? sp.name ?? '',
     sku: sp.sku ?? '',
     sellingPrice: sp.baseSellingPrice ?? 0,
+    baseSellingPrice: sp.baseSellingPrice ?? 0,
     costPrice: sp.costPrice ?? 0,
     taxRate: sp.taxRate ?? 0,
     sellWithoutSizeVariants: sp.sellWithoutSizeVariants ?? false,
@@ -154,18 +158,22 @@ export default function ProductLineSearch({
 
   function pickSize(p: ProductOption, s: SizeOption) {
     const displaySize = s.displayName ?? s.size;
+    // Fall back to the parent SubProduct's baseSellingPrice when this size's
+    // sellingPrice was persisted as 0 (legacy size-writer bug, repaired in
+    // A2/A3). Prevents the line's unit price showing as 0 in the sales table.
+    const sizePrice = s.sellingPrice || p.sellingPrice || p.baseSellingPrice || 0;
     onSelect({
       name: `${p.name} – ${displaySize}`,
       sku: s.sku ?? p.sku,
       subProductId: p._id,
       productId: p.productId,
-      sellingPrice: s.sellingPrice,
+      sellingPrice: sizePrice,
       costPrice: s.costPrice,
       taxRate: p.taxRate,
       sizeId: s.size,
       sizeName: displaySize,
       bundleDeals: p.bundleDeals,
-      originalPrice: s.sellingPrice,
+      originalPrice: sizePrice,
     });
     setText(`${p.name} – ${displaySize}`);
     setOpen(false);
