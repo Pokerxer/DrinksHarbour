@@ -29,6 +29,7 @@ import {
   PiTextT,
   PiBookmarkSimple,
   PiDotsSixVertical,
+  PiChartBar,
 } from 'react-icons/pi';
 import { routes } from '@/config/routes';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
@@ -48,7 +49,7 @@ const DESC_CLS =
 function resolveDiscount(unitPrice: number, line: PricedLine): number {
   const raw = Math.max(0, line.discount || 0);
   if (line.discountType === 'percentage') {
-    return Math.round(unitPrice * Math.min(100, raw) / 100 * 100) / 100;
+    return Math.round(((unitPrice * Math.min(100, raw)) / 100) * 100) / 100;
   }
   return Math.min(unitPrice, raw);
 }
@@ -75,6 +76,7 @@ export interface DraftLine {
    * then ignores the live pricelist/bundle computation and the server trusts
    * it verbatim. Reset to false whenever a new product/size is picked. */
   priceOverridden: boolean;
+  availableStock?: number;
   /** Operator-entered per-line note (newline of the line; shown under the product). */
   description?: string;
   activeBundles?: unknown;
@@ -246,7 +248,11 @@ function computeSectionSubtotals(lines: PricedLine[]): Map<string, number> {
 }
 
 /** A drag handle bound to the sortable item's listeners. */
-function DragHandle({ listeners }: { listeners?: DraggableSyntheticListeners }) {
+function DragHandle({
+  listeners,
+}: {
+  listeners?: DraggableSyntheticListeners;
+}) {
   return (
     <button
       type="button"
@@ -276,8 +282,14 @@ function SortableLineRow({
   onUpdate,
   onRemove,
 }: SortableLineRowProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: line.key });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: line.key });
 
   const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -288,7 +300,12 @@ function SortableLineRow({
 
   if (line.lineType === 'section') {
     return (
-      <tr ref={setNodeRef} style={style} {...attributes} className="bg-gray-50/70">
+      <tr
+        ref={setNodeRef}
+        style={style}
+        {...attributes}
+        className="bg-gray-50/70"
+      >
         <SalesLineSectionRow
           line={line}
           subtotal={subtotal}
@@ -404,24 +421,73 @@ function SalesLineProductRow({
           <input
             type="text"
             value={line.description ?? ''}
-            onChange={(e) => onUpdate(line.key, { description: e.target.value })}
+            onChange={(e) =>
+              onUpdate(line.key, { description: e.target.value })
+            }
             placeholder="Add a description / note for this line…"
             className={DESC_CLS}
           />
         )}
       </td>
       <td className="px-2 py-2 align-top">
-        <input
-          type="number"
-          min={1}
-          value={line.quantity}
-          onChange={(e) =>
-            onUpdate(line.key, {
-              quantity: Math.max(1, Number(e.target.value) || 1),
-            })
-          }
-          className={`${INLINE_CELL_CLS} w-16`}
-        />
+        <div className="flex items-center gap-1.5">
+          <input
+            type="number"
+            min={1}
+            value={line.quantity}
+            onChange={(e) =>
+              onUpdate(line.key, {
+                quantity: Math.max(1, Number(e.target.value) || 1),
+              })
+            }
+            className={`${INLINE_CELL_CLS} w-16`}
+          />
+          {line.availableStock != null &&
+            (() => {
+              const ok = line.availableStock >= line.quantity;
+              return (
+                <span className="group relative flex items-center">
+                  <PiChartBar
+                    className={`h-3.5 w-3.5 shrink-0 ${ok ? 'text-emerald-500' : 'text-red-500'}`}
+                  />
+                  <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-44 -translate-x-1/2 rounded-lg border border-gray-100 bg-white p-2.5 opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+                    <span className="mb-1 block text-[11px] font-semibold text-gray-700">
+                      Stock
+                    </span>
+                    {line.sizeName && (
+                      <span className="mb-1.5 block text-[10px] text-gray-400">
+                        {line.sizeName}
+                      </span>
+                    )}
+                    <span className="flex items-center justify-between text-[11px]">
+                      <span className="text-gray-500">Available</span>
+                      <span className="font-semibold text-gray-800">
+                        {line.availableStock}
+                      </span>
+                    </span>
+                    <span className="mt-0.5 flex items-center justify-between text-[11px]">
+                      <span className="text-gray-500">Ordering</span>
+                      <span
+                        className={`font-semibold ${ok ? 'text-emerald-600' : 'text-red-600'}`}
+                      >
+                        {line.quantity}
+                      </span>
+                    </span>
+                    {!ok && (
+                      <span className="mt-1.5 block rounded bg-red-50 px-1.5 py-1 text-[10px] font-medium text-red-600">
+                        {line.quantity - line.availableStock} unit
+                        {line.quantity - line.availableStock !== 1
+                          ? 's'
+                          : ''}{' '}
+                        short
+                      </span>
+                    )}
+                    <span className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-white" />
+                  </span>
+                </span>
+              );
+            })()}
+        </div>
       </td>
       <td className="px-2 py-2 align-top">
         <div className="flex items-center justify-end gap-1.5">
@@ -464,7 +530,8 @@ function SalesLineProductRow({
             type="button"
             onClick={() =>
               onUpdate(line.key, {
-                discountType: line.discountType === 'percentage' ? 'fixed' : 'percentage',
+                discountType:
+                  line.discountType === 'percentage' ? 'fixed' : 'percentage',
               })
             }
             title="Toggle discount type"
@@ -494,7 +561,7 @@ function SalesLineProductRow({
           className={`${INLINE_CELL_CLS} w-16`}
         />
       </td>
-      <td className="px-2 py-2 text-right text-sm font-semibold text-gray-900 align-top">
+      <td className="px-2 py-2 text-right align-top text-sm font-semibold text-gray-900">
         {fmtCur(line.lineTotal, 'NGN')}
       </td>
       <td className="px-2 py-2 text-right align-top">
@@ -533,10 +600,14 @@ function SelectedProductCell({
           <PiArrowSquareOut className="h-3.5 w-3.5 shrink-0 text-gray-400" />
         </Link>
         {line.sku && (
-          <p className="mt-0.5 font-mono text-[10px] text-gray-400">{line.sku}</p>
+          <p className="mt-0.5 font-mono text-[10px] text-gray-400">
+            {line.sku}
+          </p>
         )}
         {line.sizeName && (
-          <p className="mt-0.5 text-[10px] text-gray-400">Size: {line.sizeName}</p>
+          <p className="mt-0.5 text-[10px] text-gray-400">
+            Size: {line.sizeName}
+          </p>
         )}
       </div>
       <button

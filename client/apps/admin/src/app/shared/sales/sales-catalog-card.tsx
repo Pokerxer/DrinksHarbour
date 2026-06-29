@@ -19,7 +19,10 @@ import {
 import { routes } from '@/config/routes';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
 import { getEffectiveBundlePriceForItem } from '@/app/shared/point-of-sale/store';
-import type { POSCartItem, POSBundleDeal } from '@/app/shared/point-of-sale/types';
+import type {
+  POSCartItem,
+  POSBundleDeal,
+} from '@/app/shared/point-of-sale/types';
 import type { ProductLineSelection } from './product-line-search';
 
 /** Shape produced by the catalogue modal's mapProducts. */
@@ -77,13 +80,21 @@ export interface SalesCatalogCardProps {
 }
 
 function stockBadge(stock: number) {
-  if (stock <= 0) return { label: 'Out of stock', cls: 'bg-red-50 text-red-600' };
-  if (stock <= 10) return { label: `Low · ${stock}`, cls: 'bg-amber-50 text-amber-600' };
+  if (stock <= 0)
+    return { label: 'Out of stock', cls: 'bg-red-50 text-red-600' };
+  if (stock <= 10)
+    return { label: `Low · ${stock}`, cls: 'bg-amber-50 text-amber-600' };
   return { label: 'In stock', cls: 'bg-emerald-50 text-emerald-600' };
 }
 
 /** Beverage-type-aware placeholder icon (mirrors the subproduct list card). */
-function BeverageIcon({ type, className }: { type?: string; className?: string }) {
+function BeverageIcon({
+  type,
+  className,
+}: {
+  type?: string;
+  className?: string;
+}) {
   const t = (type || '').toLowerCase();
   if (t.includes('wine') || t.includes('champagne') || t.includes('prosecco'))
     return <PiWine className={className} />;
@@ -95,9 +106,19 @@ function BeverageIcon({ type, className }: { type?: string; className?: string }
     t.includes('cider')
   )
     return <PiBeerBottle className={className} />;
-  if (t.includes('water') || t.includes('juice') || t.includes('soft') || t.includes('soda'))
+  if (
+    t.includes('water') ||
+    t.includes('juice') ||
+    t.includes('soft') ||
+    t.includes('soda')
+  )
     return <PiDrop className={className} />;
-  if (t.includes('spirit') || t.includes('whisk') || t.includes('vodka') || t.includes('gin'))
+  if (
+    t.includes('spirit') ||
+    t.includes('whisk') ||
+    t.includes('vodka') ||
+    t.includes('gin')
+  )
     return <PiSparkle className={className} />;
   return <PiPackage className={className} />;
 }
@@ -155,6 +176,7 @@ function sizelessSelection(p: CatalogProduct): ProductLineSelection {
     sellingPrice: effectiveSizelessPrice(p, undefined),
     costPrice: p.costPrice,
     taxRate: p.taxRate,
+    availableStock: p.availableStock ?? p.totalStock ?? undefined,
     bundleDeals: p.bundleDeals,
     originalPrice: p.baseSellingPrice,
   };
@@ -176,6 +198,7 @@ function sizeSelection(
     taxRate: p.taxRate,
     sizeId: s.size,
     sizeName: s.displayName ?? s.size,
+    availableStock: s.availableStock ?? undefined,
     bundleDeals: p.bundleDeals,
     originalPrice: s.sellingPrice || p.baseSellingPrice,
   };
@@ -209,7 +232,9 @@ function QtyControl({
         >
           <PiMinus className={iconH} />
         </button>
-        <span className={`text-center text-xs font-semibold text-gray-900 ${size === 'sm' ? 'w-5' : 'w-6'}`}>
+        <span
+          className={`text-center text-xs font-semibold text-gray-900 ${size === 'sm' ? 'w-5' : 'w-6'}`}
+        >
           {qty}
         </span>
         <button
@@ -253,8 +278,7 @@ export default function SalesCatalogCard({
 }: SalesCatalogCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
-  const hasSizes =
-    !product.sellWithoutSizeVariants && product.sizes.length > 0;
+  const hasSizes = !product.sellWithoutSizeVariants && product.sizes.length > 0;
 
   // Stock: sizeless → SubProduct.totalStock; sized → sum of size stock.
   const totalStock = hasSizes
@@ -306,7 +330,10 @@ export default function SalesCatalogCard({
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
-            <BeverageIcon type={product.type} className="h-10 w-10 text-gray-200" />
+            <BeverageIcon
+              type={product.type}
+              className="h-10 w-10 text-gray-200"
+            />
           </div>
         )}
 
@@ -351,10 +378,14 @@ export default function SalesCatalogCard({
         </div>
         <div className="mt-1 flex items-center gap-2">
           {product.sku && (
-            <span className="font-mono text-[10px] text-gray-400">{product.sku}</span>
+            <span className="font-mono text-[10px] text-gray-400">
+              {product.sku}
+            </span>
           )}
           {product.brand && (
-            <span className="truncate text-[10px] text-gray-500">{product.brand}</span>
+            <span className="truncate text-[10px] text-gray-500">
+              {product.brand}
+            </span>
           )}
         </div>
 
@@ -366,7 +397,8 @@ export default function SalesCatalogCard({
               </p>
               {hasSizes && (
                 <p className="text-[10px] text-gray-400">
-                  from {product.sizes.length} size{product.sizes.length !== 1 ? 's' : ''}
+                  from {product.sizes.length} size
+                  {product.sizes.length !== 1 ? 's' : ''}
                 </p>
               )}
             </div>
@@ -378,8 +410,12 @@ export default function SalesCatalogCard({
               {inOrder ? (
                 <QtyControl
                   qty={quantity}
-                  onDec={() => onSetQty(sizelessSelection(product), quantity - 1)}
-                  onInc={() => onSetQty(sizelessSelection(product), quantity + 1)}
+                  onDec={() =>
+                    onSetQty(sizelessSelection(product), quantity - 1)
+                  }
+                  onInc={() =>
+                    onSetQty(sizelessSelection(product), quantity + 1)
+                  }
                   onRemove={() => onRemove(sizelessSelection(product))}
                 />
               ) : (

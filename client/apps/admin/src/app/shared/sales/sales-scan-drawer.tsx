@@ -1,7 +1,15 @@
 // client/apps/admin/src/app/shared/sales/sales-scan-drawer.tsx
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from 'react';
 import {
   PiX,
   PiCamera,
@@ -13,13 +21,20 @@ import {
   PiPlus,
   PiArrowSquareOut,
   PiMinus,
+  PiChartBar,
 } from 'react-icons/pi';
 import Link from 'next/link';
 import { QRCodeCanvas } from 'qrcode.react';
 import { routes } from '@/config/routes';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
-import { scanService, type ScanResultItem, type ScanMatchedSubProduct } from '@/services/scan.service';
-import type { ProductLineSelection } from './product-line-search';
+import {
+  scanService,
+  type ScanResultItem,
+  type ScanMatchedSubProduct,
+} from '@/services/scan.service';
+import ProductLineSearch, {
+  type ProductLineSelection,
+} from './product-line-search';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
@@ -31,6 +46,9 @@ interface ReviewedRow {
   selected: boolean;
   sizeId: string | null;
   qty: number;
+  /** When user manually picks a product via the override picker. */
+  override?: ProductLineSelection;
+  overriding?: boolean;
 }
 
 const CONF_BADGE: Record<string, { label: string; cls: string }> = {
@@ -56,7 +74,12 @@ export interface SalesScanDrawerProps {
  * All paths land in a review list where the operator picks sizes/quantities and
  * adds matched products to the order. Unmatched rows link to "Create new product".
  */
-export default function SalesScanDrawer({ open, token, onClose, onAdd }: SalesScanDrawerProps) {
+export default function SalesScanDrawer({
+  open,
+  token,
+  onClose,
+  onAdd,
+}: SalesScanDrawerProps) {
   const [mode, setMode] = useState<Mode>('qr');
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState('');
@@ -110,7 +133,8 @@ export default function SalesScanDrawer({ open, token, onClose, onAdd }: SalesSc
     setError('');
     setRows([]);
     try {
-      const { pairingCode: code, expiresAt: exp } = await scanService.createPairing(token);
+      const { pairingCode: code, expiresAt: exp } =
+        await scanService.createPairing(token);
       setPairingCode(code);
       setExpiresAt(exp);
       // Begin polling the status endpoint (Socket.io is optional — the polling
@@ -135,7 +159,8 @@ export default function SalesScanDrawer({ open, token, onClose, onAdd }: SalesSc
             }
             setPhase('error');
             setError(
-              (st.result && (st.result as { error?: string }).error) || 'Scan failed'
+              (st.result && (st.result as { error?: string }).error) ||
+                'Scan failed'
             );
           }
         } catch {
@@ -144,7 +169,9 @@ export default function SalesScanDrawer({ open, token, onClose, onAdd }: SalesSc
       }, 2000);
     } catch (err) {
       setPhase('error');
-      setError(err instanceof Error ? err.message : 'Failed to create pairing code');
+      setError(
+        err instanceof Error ? err.message : 'Failed to create pairing code'
+      );
     }
   }, [token]);
 
@@ -165,23 +192,48 @@ export default function SalesScanDrawer({ open, token, onClose, onAdd }: SalesSc
       setError('');
       setRows([]);
       try {
-        // Upload via the existing image endpoint, then match.
-        const form = new FormData();
-        form.append('image', file);
-        const upRes = await fetch(`${API_URL}/api/upload/image`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: form,
-        });
-        const upBody = (await upRes.json().catch(() => ({}))) as {
-          success?: boolean;
-          message?: string;
-          data?: { url?: string };
-        };
-        if (!upRes.ok || !upBody.success) throw new Error(upBody.message || 'Upload failed');
-        const imageUrl: string = upBody.data?.url ?? '';
-        const items = await scanService.match(token, { imageUrl });
-        setRows(items.map(toReviewedRow));
+        const isImage = file.type.startsWith('image/');
+        let items;
+        if (isImage) {
+          // Images: upload to Cloudinary, then AI-match via image URL.
+          const form = new FormData();
+          form.append('image', file);
+          const upRes = await fetch(`${API_URL}/api/upload/image`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: form,
+          });
+          const upBody = (await upRes.json().catch(() => ({}))) as {
+            success?: boolean;
+            message?: string;
+            data?: { url?: string };
+          };
+          if (!upRes.ok || !upBody.success)
+            throw new Error(upBody.message || 'Upload failed');
+          items = await scanService.match(token, {
+            imageUrl: upBody.data?.url ?? '',
+          });
+        } else {
+          // Documents (PDF / Word / Excel / CSV): extract text server-side, then AI-match.
+          const form = new FormData();
+          form.append('file', file);
+          const docRes = await fetch(`${API_URL}/api/scan/upload-document`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: form,
+          });
+          const docBody = (await docRes.json().catch(() => ({}))) as {
+            success?: boolean;
+            message?: string;
+            data?: { items?: unknown[] };
+          };
+          if (!docRes.ok || !docBody.success)
+            throw new Error(docBody.message || 'Document processing failed');
+          items = docBody.data?.items ?? [];
+        }
+        setRows(
+          (items as Parameters<typeof toReviewedRow>[0][]).map(toReviewedRow)
+        );
         setPhase('done');
       } catch (err) {
         setPhase('error');
@@ -208,27 +260,34 @@ export default function SalesScanDrawer({ open, token, onClose, onAdd }: SalesSc
   }, [token, pasteText]);
 
   // ── Review → add to order ──────────────────────────────────────────────────
-  const selectedRows = rows.filter((r) => r.selected && r.item.confidence !== 'none');
+  const selectedRows = rows.filter(
+    (r) => r.selected && (r.item.confidence !== 'none' || r.override)
+  );
 
   function buildSelection(r: ReviewedRow): ProductLineSelection {
+    // Use manual override if the user picked one
+    if (r.override)
+      return { ...r.override, originalPrice: r.override.sellingPrice };
     const sp = r.item.matchedSubProducts[0];
     const size = sp?.sizes.find((s) => s.size === r.sizeId);
     const base = {
       subProductId: sp._id,
       productId: r.item.matchedProductId ?? undefined,
-      costPrice: sp.costPrice,
+      costPrice: size?.costPrice || sp.costPrice,
       taxRate: sp.taxRate,
       bundleDeals: sp.bundleDeals as never,
     };
     if (size) {
+      // Mirror product-line-search pickSize fallback: size price → subproduct base price
+      const price = size.sellingPrice || sp.baseSellingPrice;
       return {
         ...base,
         name: `${r.item.matchedProductName ?? r.item.extractedName} – ${size.displayName ?? size.size}`,
         sku: size.sku ?? sp.sku,
-        sellingPrice: size.sellingPrice,
+        sellingPrice: price,
         sizeId: size.size,
         sizeName: size.displayName ?? size.size,
-        originalPrice: size.sellingPrice,
+        originalPrice: price,
       };
     }
     return {
@@ -259,17 +318,25 @@ export default function SalesScanDrawer({ open, token, onClose, onAdd }: SalesSc
       <div className="flex w-full max-w-3xl flex-col bg-white shadow-xl sm:rounded-2xl">
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-3 sm:px-5">
-          <h2 className="text-base font-semibold text-gray-900">Scan &amp; Match</h2>
+          <h2 className="text-base font-semibold text-gray-900">
+            Scan &amp; Match
+          </h2>
           <div className="ml-auto flex items-center gap-1">
             {!showReview && (
               <>
                 <ModeTab active={mode === 'qr'} onClick={() => setMode('qr')}>
                   <PiCamera className="h-4 w-4" /> QR
                 </ModeTab>
-                <ModeTab active={mode === 'upload'} onClick={() => setMode('upload')}>
+                <ModeTab
+                  active={mode === 'upload'}
+                  onClick={() => setMode('upload')}
+                >
                   <PiUploadSimple className="h-4 w-4" /> Upload
                 </ModeTab>
-                <ModeTab active={mode === 'paste'} onClick={() => setMode('paste')}>
+                <ModeTab
+                  active={mode === 'paste'}
+                  onClick={() => setMode('paste')}
+                >
                   <PiTextT className="h-4 w-4" /> Paste
                 </ModeTab>
               </>
@@ -288,10 +355,7 @@ export default function SalesScanDrawer({ open, token, onClose, onAdd }: SalesSc
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           {showReview ? (
-            <ReviewList
-              rows={rows}
-              setRows={setRows}
-            />
+            <ReviewList rows={rows} setRows={setRows} token={token} />
           ) : (
             <>
               {/* QR mode */}
@@ -300,7 +364,8 @@ export default function SalesScanDrawer({ open, token, onClose, onAdd }: SalesSc
                   {pairingCode ? (
                     <>
                       <p className="text-center text-sm text-gray-600">
-                        Scan this code with your phone to take a photo. Matched products appear here automatically.
+                        Scan this code with your phone to take a photo. Matched
+                        products appear here automatically.
                       </p>
                       <div className="rounded-xl border border-gray-200 bg-white p-3">
                         <QRCodeCanvas
@@ -311,11 +376,13 @@ export default function SalesScanDrawer({ open, token, onClose, onAdd }: SalesSc
                         />
                       </div>
                       <p className="text-xs text-gray-400">
-                        Code <span className="font-mono">{pairingCode}</span> · expires in ~10 min
+                        Code <span className="font-mono">{pairingCode}</span> ·
+                        expires in ~10 min
                       </p>
                       {phase === 'idle' && (
                         <p className="flex items-center gap-2 text-xs text-gray-500">
-                          <PiSpinner className="h-3.5 w-3.5 animate-spin" /> Waiting for your phone…
+                          <PiSpinner className="h-3.5 w-3.5 animate-spin" />{' '}
+                          Waiting for your phone…
                         </p>
                       )}
                       <button
@@ -341,20 +408,26 @@ export default function SalesScanDrawer({ open, token, onClose, onAdd }: SalesSc
 
               {/* Upload mode */}
               {mode === 'upload' && (
-                <UploadDropzone onFile={handleUpload} busy={phase === 'working'} />
+                <UploadDropzone
+                  onFile={handleUpload}
+                  busy={phase === 'working'}
+                />
               )}
 
               {/* Paste mode */}
               {mode === 'paste' && (
                 <div className="flex flex-col gap-3">
                   <p className="text-sm text-gray-600">
-                    Paste a list of products, notes, or an invoice. The AI parses it into items and matches each to your catalogue.
+                    Paste a list of products, notes, or an invoice. The AI
+                    parses it into items and matches each to your catalogue.
                   </p>
                   <textarea
                     value={pasteText}
                     onChange={(e) => setPasteText(e.target.value)}
                     rows={8}
-                    placeholder={'e.g.\n2x Hennessy VS 70cl\nJameson 1L\nRemy Martin\nA bottle of Moet champagne'}
+                    placeholder={
+                      'e.g.\n2x Hennessy VS 70cl\nJameson 1L\nRemy Martin\nA bottle of Moet champagne'
+                    }
                     className="w-full rounded-xl border border-gray-200 p-3 text-sm text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
                   />
                   <button
@@ -364,7 +437,10 @@ export default function SalesScanDrawer({ open, token, onClose, onAdd }: SalesSc
                     className="flex items-center justify-center gap-2 rounded-lg bg-[#b20202] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-40"
                   >
                     {phase === 'working' ? (
-                      <><PiSpinner className="h-4 w-4 animate-spin" /> Analyzing…</>
+                      <>
+                        <PiSpinner className="h-4 w-4 animate-spin" />{' '}
+                        Analyzing…
+                      </>
                     ) : (
                       <>Analyze list</>
                     )}
@@ -441,7 +517,13 @@ function ModeTab({
   );
 }
 
-function UploadDropzone({ onFile, busy }: { onFile: (f: File) => void; busy: boolean }) {
+function UploadDropzone({
+  onFile,
+  busy,
+}: {
+  onFile: (f: File) => void;
+  busy: boolean;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState(false);
   return (
@@ -464,16 +546,21 @@ function UploadDropzone({ onFile, busy }: { onFile: (f: File) => void; busy: boo
       {busy ? (
         <>
           <PiSpinner className="h-8 w-8 animate-spin text-[#b20202]" />
-          <p className="text-sm text-gray-600">Analyzing image…</p>
+          <p className="text-sm text-gray-600">Analyzing file…</p>
         </>
       ) : (
         <>
           <PiUploadSimple className="h-8 w-8 text-gray-300" />
-          <p className="text-sm text-gray-600">Drag a photo here or click to choose one</p>
+          <p className="text-sm font-medium text-gray-700">
+            Drag a file here or click to choose
+          </p>
+          <p className="text-xs text-gray-400">
+            Photo · PDF · Word · Excel · CSV
+          </p>
           <input
             ref={inputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -485,7 +572,7 @@ function UploadDropzone({ onFile, busy }: { onFile: (f: File) => void; busy: boo
             onClick={() => inputRef.current?.click()}
             className="rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101]"
           >
-            Choose photo
+            Choose file
           </button>
         </>
       )}
@@ -496,25 +583,38 @@ function UploadDropzone({ onFile, busy }: { onFile: (f: File) => void; busy: boo
 function ReviewList({
   rows,
   setRows,
+  token,
 }: {
   rows: ReviewedRow[];
   setRows: Dispatch<SetStateAction<ReviewedRow[]>>;
+  token: string;
 }) {
   function update(key: string, patch: Partial<ReviewedRow>) {
-    setRows((rs) => rs.map((r) => (r.item.extractedName + (r.item.brand ?? '') === key ? { ...r, ...patch } : r)));
+    setRows((rs) =>
+      rs.map((r) =>
+        r.item.extractedName + (r.item.brand ?? '') === key
+          ? { ...r, ...patch }
+          : r
+      )
+    );
   }
+
   return (
     <div className="space-y-2">
       {rows.map((r) => {
         const key = r.item.extractedName + (r.item.brand ?? '');
         const conf = CONF_BADGE[r.item.confidence] ?? CONF_BADGE.none;
         const sp = r.item.matchedSubProducts[0];
-        const unmatched = r.item.confidence === 'none';
+        const unmatched = r.item.confidence === 'none' && !r.override;
+        const hasMatch = !!sp || !!r.override;
+
         return (
           <div
             key={key}
             className={`rounded-xl border p-3 ${
-              unmatched ? 'border-gray-200 bg-gray-50/60' : 'border-gray-200 bg-white'
+              unmatched
+                ? 'border-gray-200 bg-gray-50/60'
+                : 'border-gray-200 bg-white'
             }`}
           >
             <div className="flex items-start gap-3">
@@ -526,61 +626,172 @@ function ReviewList({
                 className="mt-1 h-4 w-4 rounded border-gray-300 text-[#b20202] focus:ring-[#b20202]/20 disabled:opacity-40"
               />
               <div className="min-w-0 flex-1">
+                {/* Row header */}
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-semibold text-gray-900">{r.item.extractedName}</p>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${conf.cls}`}>
-                    {conf.label}
-                  </span>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {r.item.extractedName}
+                  </p>
+                  {r.override ? (
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">
+                      Manually set
+                    </span>
+                  ) : (
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${conf.cls}`}
+                    >
+                      {conf.label}
+                    </span>
+                  )}
                   {r.item.sizeText && (
-                    <span className="text-[10px] text-gray-400">extracted: {r.item.sizeText}</span>
+                    <span className="text-[10px] text-gray-400">
+                      extracted: {r.item.sizeText}
+                    </span>
                   )}
                 </div>
-                {r.item.note && (
-                  <p className="mt-0.5 text-[11px] text-gray-500">{r.item.note}</p>
+                {r.item.note && !r.override && (
+                  <p className="mt-0.5 text-[11px] text-gray-500">
+                    {r.item.note}
+                  </p>
                 )}
-                {sp ? (
+
+                {/* Match info */}
+                {hasMatch && !r.overriding && (
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <span className="text-xs text-gray-700">
-                      {r.item.matchedProductName}
+                      {r.override?.name ?? r.item.matchedProductName}
                     </span>
-                    {sp.sizes.length > 1 && (
+                    {/* Size picker — only for AI-matched rows (override already picked a size) */}
+                    {!r.override && sp && sp.sizes.length > 1 && (
                       <select
                         value={r.sizeId ?? ''}
-                        onChange={(e) => update(key, { sizeId: e.target.value })}
+                        onChange={(e) =>
+                          update(key, { sizeId: e.target.value })
+                        }
                         className="rounded border border-gray-200 px-1.5 py-0.5 text-xs"
                       >
                         {sp.sizes.map((s) => (
                           <option key={s.size} value={s.size}>
                             {s.displayName ?? s.size}
-                            {s.sellingPrice ? ` · ${fmtCur(s.sellingPrice, 'NGN')}` : ''}
+                            {s.sellingPrice || sp.baseSellingPrice
+                              ? ` · ${fmtCur(s.sellingPrice || sp.baseSellingPrice, 'NGN')}`
+                              : ''}
                           </option>
                         ))}
                       </select>
                     )}
-                    {sp.sizes.length > 0 && (
+                    {/* Price */}
+                    {!r.override && sp && sp.sizes.length > 0 && (
                       <span className="text-[11px] font-medium text-gray-900">
                         {fmtCur(
-                          sp.sizes.find((s) => s.size === r.sizeId)?.sellingPrice ??
-                            sp.baseSellingPrice,
+                          sp.sizes.find((s) => s.size === r.sizeId)
+                            ?.sellingPrice || sp.baseSellingPrice,
                           'NGN'
                         )}
                       </span>
                     )}
-                    {/* qty stepper */}
+                    {r.override && (
+                      <span className="text-[11px] font-medium text-gray-900">
+                        {fmtCur(r.override.sellingPrice, 'NGN')}
+                      </span>
+                    )}
+                    {/* Change / clear override */}
+                    <button
+                      type="button"
+                      onClick={() => update(key, { overriding: true })}
+                      className="ml-1 text-[10px] font-medium text-[#b20202] hover:underline"
+                    >
+                      Change
+                    </button>
+                    {r.override && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          update(key, {
+                            override: undefined,
+                            selected: false,
+                            overriding: false,
+                          })
+                        }
+                        className="text-[10px] text-gray-400 hover:text-gray-600 hover:underline"
+                      >
+                        Clear
+                      </button>
+                    )}
+                    {/* Qty stepper */}
                     <div className="ml-auto flex items-center gap-1.5">
+                      {(() => {
+                        const matchedSize = sp?.sizes.find(
+                          (s) => s.size === r.sizeId
+                        );
+                        const stock =
+                          matchedSize?.availableStock ??
+                          (sp?.sizes.length === 0
+                            ? undefined
+                            : sp?.sizes[0]?.availableStock);
+                        if (stock == null) return null;
+                        const ok = stock >= r.qty;
+                        const sizeName =
+                          matchedSize?.displayName ?? matchedSize?.size;
+                        return (
+                          <span className="group relative flex items-center">
+                            <PiChartBar
+                              className={`h-3.5 w-3.5 ${ok ? 'text-emerald-500' : 'text-red-500'}`}
+                            />
+                            {/* Hover card */}
+                            <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-44 -translate-x-1/2 rounded-lg border border-gray-100 bg-white p-2.5 opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+                              <span className="mb-1 block text-[11px] font-semibold text-gray-700">
+                                Stock
+                              </span>
+                              {sizeName && (
+                                <span className="mb-1.5 block text-[10px] text-gray-400">
+                                  {sizeName}
+                                </span>
+                              )}
+                              <span className="flex items-center justify-between text-[11px]">
+                                <span className="text-gray-500">Available</span>
+                                <span className="font-semibold text-gray-800">
+                                  {stock}
+                                </span>
+                              </span>
+                              <span className="mt-0.5 flex items-center justify-between text-[11px]">
+                                <span className="text-gray-500">Ordering</span>
+                                <span
+                                  className={`font-semibold ${ok ? 'text-emerald-600' : 'text-red-600'}`}
+                                >
+                                  {r.qty}
+                                </span>
+                              </span>
+                              {!ok && (
+                                <span className="mt-1.5 block rounded bg-red-50 px-1.5 py-1 text-[10px] font-medium text-red-600">
+                                  {r.qty - stock} unit
+                                  {r.qty - stock !== 1 ? 's' : ''} short
+                                </span>
+                              )}
+                              {/* Tail */}
+                              <span className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-white" />
+                            </span>
+                          </span>
+                        );
+                      })()}
                       <div className="flex items-center rounded-lg border border-gray-200">
                         <button
                           type="button"
-                          onClick={() => update(key, { qty: Math.max(1, r.qty - 1) })}
+                          onClick={() =>
+                            update(key, { qty: Math.max(1, r.qty - 1) })
+                          }
                           disabled={r.qty <= 1}
                           className="flex h-6 w-6 items-center justify-center text-gray-500 hover:bg-gray-50 disabled:opacity-30"
                         >
                           <PiMinus className="h-3 w-3" />
                         </button>
-                        <span className="w-5 text-center text-xs font-semibold">{r.qty}</span>
+                        <span className="w-5 text-center text-xs font-semibold">
+                          {r.qty}
+                        </span>
                         <button
                           type="button"
-                          onClick={() => update(key, { qty: Math.min(999, r.qty + 1) })}
+                          onClick={() =>
+                            update(key, { qty: Math.min(999, r.qty + 1) })
+                          }
                           className="flex h-6 w-6 items-center justify-center text-gray-500 hover:bg-gray-50"
                         >
                           <PiPlus className="h-3 w-3" />
@@ -588,17 +799,48 @@ function ReviewList({
                       </div>
                     </div>
                   </div>
-                ) : (
-                  <div className="mt-2 flex items-center gap-2">
-                    <p className="text-xs text-gray-400">No catalogue match.</p>
-                    <Link
-                      href={routes.eCommerce.createSubProduct}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-xs font-medium text-[#b20202] hover:underline"
-                    >
-                      Create new product <PiArrowSquareOut className="h-3 w-3" />
-                    </Link>
+                )}
+
+                {/* Inline override picker: shown when unmatched OR when user clicks "Change" */}
+                {(unmatched || r.overriding) && (
+                  <div className="mt-2">
+                    {unmatched && (
+                      <p className="mb-1.5 text-[11px] text-gray-400">
+                        Not found — search your catalogue to assign manually:
+                      </p>
+                    )}
+                    <ProductLineSearch
+                      token={token}
+                      query={r.item.extractedName}
+                      onSelect={(sel) => {
+                        update(key, {
+                          override: sel,
+                          overriding: false,
+                          selected: true,
+                          sizeId: sel.sizeId ?? null,
+                        });
+                      }}
+                    />
+                    {r.overriding && (
+                      <button
+                        type="button"
+                        onClick={() => update(key, { overriding: false })}
+                        className="mt-1 text-[10px] text-gray-400 hover:underline"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                    <div className="mt-2 flex items-center gap-2">
+                      <Link
+                        href={routes.eCommerce.createSubProduct}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-[#b20202] hover:underline"
+                      >
+                        Create new product{' '}
+                        <PiArrowSquareOut className="h-3 w-3" />
+                      </Link>
+                    </div>
                   </div>
                 )}
               </div>
@@ -617,7 +859,7 @@ function toReviewedRow(item: ScanResultItem): ReviewedRow {
   const sp = item.matchedSubProducts[0];
   const sizeId =
     item.suggestedSizeId ??
-    (sp?.sizes.find((s) => s.isDefault)?.size) ??
+    sp?.sizes.find((s) => s.isDefault)?.size ??
     sp?.sizes[0]?.size ??
     null;
   return {

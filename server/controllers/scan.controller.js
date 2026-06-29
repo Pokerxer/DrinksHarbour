@@ -14,6 +14,7 @@ const scanPairing = require('../services/scanPairing.service');
 const scanMatch = require('../services/scanMatch.service');
 const subProductService = require('../services/subproduct.service');
 const cloudinary = require('../services/cloudinary.service');
+const { extractText } = require('../services/documentText.service');
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -68,6 +69,30 @@ exports.getStatus = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * POST /api/scan/smart-search — fuzzy live search with no AI.
+ * Alias expansion + Brand.tradingAs + Category lookup + token scoring.
+ * Used by the product search box as a fallback when exact text search yields nothing.
+ */
+exports.smartSearch = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  if (!tenantId)
+    return res.status(400).json({ success: false, message: 'Tenant context required' });
+  const { query } = req.body || {};
+  if (!query?.trim())
+    return res.status(400).json({ success: false, message: 'query is required' });
+
+  const results = await scanMatch.smartSearch(
+    query.trim(),
+    {
+      tenantId,
+      getSubProducts: (t, p) => subProductService.getMySubProducts(t, p),
+    },
+    12
+  );
+  res.json({ success: true, data: { items: results } });
+});
+
 /** POST /api/scan/match — desktop direct match (image URL or text), synchronous. */
 exports.desktopMatch = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
@@ -79,6 +104,38 @@ exports.desktopMatch = asyncHandler(async (req, res) => {
 
   const result = await scanMatch.extractAndMatch(
     imageUrl ? { imageUrl } : { text },
+    {
+      tenantId,
+      getSubProducts: (t, p) => subProductService.getMySubProducts(t, p),
+    }
+  );
+  res.json({ success: true, data: { items: result } });
+});
+
+/**
+ * POST /api/scan/upload-document — upload a PDF/Word/Excel/CSV file and run AI match.
+ * The file is read into memory, text is extracted, then passed to extractAndMatch as text.
+ */
+exports.uploadDocument = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  if (!tenantId)
+    return res.status(400).json({ success: false, message: 'Tenant context required' });
+  if (!req.file)
+    return res.status(400).json({ success: false, message: 'No file uploaded (field name must be "file")' });
+
+  let text;
+  try {
+    text = await extractText(req.file.buffer, req.file.mimetype, req.file.originalname);
+  } catch (err) {
+    return res.status(422).json({ success: false, message: `Could not read file: ${err.message}` });
+  }
+
+  if (!text) {
+    return res.status(422).json({ success: false, message: 'File appears to be empty or unreadable' });
+  }
+
+  const result = await scanMatch.extractAndMatch(
+    { text },
     {
       tenantId,
       getSubProducts: (t, p) => subProductService.getMySubProducts(t, p),

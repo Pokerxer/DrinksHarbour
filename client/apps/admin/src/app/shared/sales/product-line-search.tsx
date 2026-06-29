@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { PiMagnifyingGlass, PiCaretRight, PiPlus } from 'react-icons/pi';
 import { subproductService } from '@/services/subproduct.service';
+import { scanService } from '@/services/scan.service';
 import { routes } from '@/config/routes';
 import type { POSBundleDeal } from '@/app/shared/point-of-sale/types';
 
@@ -17,6 +18,7 @@ export interface ProductLineSelection {
   taxRate: number;
   sizeId?: string;
   sizeName?: string;
+  availableStock?: number;
   bundleDeals?: POSBundleDeal[];
   originalPrice?: number;
 }
@@ -41,6 +43,7 @@ interface ProductOption {
   baseSellingPrice: number;
   costPrice: number;
   taxRate: number;
+  availableStock?: number;
   sellWithoutSizeVariants: boolean;
   sizes: SizeOption[];
   bundleDeals: POSBundleDeal[];
@@ -56,6 +59,7 @@ function mapProducts(raw: any[]): ProductOption[] {
     baseSellingPrice: sp.baseSellingPrice ?? 0,
     costPrice: sp.costPrice ?? 0,
     taxRate: sp.taxRate ?? 0,
+    availableStock: sp.availableStock ?? sp.totalStock ?? undefined,
     sellWithoutSizeVariants: sp.sellWithoutSizeVariants ?? false,
     bundleDeals: sp.bundleDeals ?? [],
     sizes: (sp.sizes ?? []).map((s: any) => ({
@@ -81,6 +85,7 @@ export default function ProductLineSearch({
   const [text, setText] = useState(query);
   const [initial, setInitial] = useState<ProductOption[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
+  const [fuzzy, setFuzzy] = useState(false);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [initialLoaded, setInitialLoaded] = useState(false);
@@ -111,6 +116,7 @@ export default function ProductLineSearch({
     if (!token) return;
     if (text.trim().length < 2) {
       setProducts(initial);
+      setFuzzy(false);
       return;
     }
     const t = setTimeout(async () => {
@@ -120,10 +126,41 @@ export default function ProductLineSearch({
           search: text.trim(),
           limit: 50,
         });
-        setProducts(mapProducts(res?.data?.subProducts ?? []));
+        const exact = mapProducts(res?.data?.subProducts ?? []);
+        if (exact.length > 0) {
+          setProducts(exact);
+          setFuzzy(false);
+        } else {
+          // Fallback: alias-expansion + Brand/Category fuzzy search (no AI)
+          const smart = await scanService.smartSearch(token, text.trim());
+          setProducts(
+            smart.map((item: any) => ({
+              _id: item._id,
+              productId: item.product?._id ?? item.productId,
+              name: item.product?.name ?? item.name ?? '',
+              sku: item.sku ?? '',
+              sellingPrice: item.baseSellingPrice ?? 0,
+              baseSellingPrice: item.baseSellingPrice ?? 0,
+              costPrice: item.costPrice ?? 0,
+              taxRate: item.taxRate ?? 0,
+              sellWithoutSizeVariants: item.sellWithoutSizeVariants ?? false,
+              bundleDeals: item.bundleDeals ?? [],
+              sizes: (item.sizes ?? []).map((s: any) => ({
+                size: String(s._id ?? s.size ?? ''),
+                displayName: s.displayName ?? s.size ?? '',
+                sku: s.sku ?? item.sku ?? '',
+                sellingPrice: s.sellingPrice ?? 0,
+                costPrice: s.costPrice ?? item.costPrice ?? 0,
+                availableStock: s.availableStock ?? s.stock ?? 0,
+              })),
+            }))
+          );
+          setFuzzy(true);
+        }
         setExpandedId(null);
       } catch {
         setProducts([]);
+        setFuzzy(false);
       } finally {
         setLoading(false);
       }
@@ -149,6 +186,8 @@ export default function ProductLineSearch({
       sellingPrice: p.sellingPrice,
       costPrice: p.costPrice,
       taxRate: p.taxRate,
+      availableStock:
+        p.availableStock ?? p.sizes[0]?.availableStock ?? undefined,
       bundleDeals: p.bundleDeals,
       originalPrice: p.sellingPrice,
     });
@@ -161,7 +200,8 @@ export default function ProductLineSearch({
     // Fall back to the parent SubProduct's baseSellingPrice when this size's
     // sellingPrice was persisted as 0 (legacy size-writer bug, repaired in
     // A2/A3). Prevents the line's unit price showing as 0 in the sales table.
-    const sizePrice = s.sellingPrice || p.sellingPrice || p.baseSellingPrice || 0;
+    const sizePrice =
+      s.sellingPrice || p.sellingPrice || p.baseSellingPrice || 0;
     onSelect({
       name: `${p.name} – ${displaySize}`,
       sku: s.sku ?? p.sku,
@@ -172,6 +212,7 @@ export default function ProductLineSearch({
       taxRate: p.taxRate,
       sizeId: s.size,
       sizeName: displaySize,
+      availableStock: s.availableStock ?? undefined,
       bundleDeals: p.bundleDeals,
       originalPrice: sizePrice,
     });
@@ -205,6 +246,16 @@ export default function ProductLineSearch({
 
       {open && (
         <div className="absolute left-0 z-30 mt-1 w-80 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
+          {fuzzy && products.length > 0 && (
+            <div className="flex items-center gap-1.5 border-b border-gray-100 bg-amber-50 px-3 py-1.5">
+              <span className="text-[10px] font-semibold text-amber-600">
+                ~ Fuzzy matches
+              </span>
+              <span className="text-[10px] text-amber-500">
+                — no exact results found
+              </span>
+            </div>
+          )}
           {products.length === 0 && !loading ? (
             <div className="px-3 py-3 text-xs text-gray-400">
               {text.trim().length >= 2

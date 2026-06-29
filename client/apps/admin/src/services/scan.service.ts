@@ -31,6 +31,7 @@ export interface ScanResultItem {
   brand?: string | null;
   type?: string | null;
   sizeText?: string | null;
+  packUnit?: 'pack' | 'carton' | 'case' | 'unit' | null;
   qty: number;
   /** 'exact' | 'partial' | 'none' */
   confidence: 'exact' | 'partial' | 'none';
@@ -85,7 +86,10 @@ export const scanService = {
   },
 
   /** Desktop: direct match (image URL or text), synchronous. */
-  async match(token: string, input: { imageUrl?: string; text?: string }): Promise<ScanResultItem[]> {
+  async match(
+    token: string,
+    input: { imageUrl?: string; text?: string }
+  ): Promise<ScanResultItem[]> {
     const res = await fetch(`${API_URL}/api/scan/match`, {
       method: 'POST',
       headers: authHeaders(token),
@@ -95,8 +99,25 @@ export const scanService = {
     return data.items ?? [];
   },
 
+  /**
+   * Fuzzy live search (no AI). Alias expansion + Brand.tradingAs + Category
+   * lookup + token scoring. Call this when plain-text search yields 0 results.
+   */
+  async smartSearch(token: string, query: string): Promise<ScanResultItem[]> {
+    const res = await fetch(`${API_URL}/api/scan/smart-search`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify({ query }),
+    });
+    const data = await parseRes(res, 'Smart search failed');
+    return data.items ?? [];
+  },
+
   /** Mobile: upload a photo via the pairing code (no auth token). */
-  async uploadMobile(code: string, file: File): Promise<{ status: string; imageUrl?: string }> {
+  async uploadMobile(
+    code: string,
+    file: File
+  ): Promise<{ status: string; imageUrl?: string }> {
     const form = new FormData();
     form.append('image', file);
     const res = await fetch(`${API_URL}/api/scan/upload-mobile/${code}`, {
@@ -104,7 +125,8 @@ export const scanService = {
       body: form,
     });
     const body = (await res.json().catch(() => ({}))) as Record<string, any>;
-    if (!res.ok || !body.success) throw new Error(body.message || 'Upload failed');
+    if (!res.ok || !body.success)
+      throw new Error(body.message || 'Upload failed');
     return body.data ?? { status: 'processing' };
   },
 };

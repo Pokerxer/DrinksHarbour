@@ -1,7 +1,7 @@
 // client/apps/admin/src/app/shared/sales/sales-create.tsx
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
@@ -30,7 +30,9 @@ import SalesTotals from './sales-totals';
 import SalesOtherInfoTab from './sales-other-info-tab';
 import SalesCatalogModal from './sales-catalog-modal';
 import SalesScanDrawer from './sales-scan-drawer';
+import SalesPrintSheet, { type PrintSheetType } from './sales-print-sheet';
 import type { ProductLineSelection } from './product-line-search';
+import { subproductService } from '@/services/subproduct.service';
 import type { CreateTab } from './sales-stage-pill';
 
 function blankLine(lineType: DraftLine['lineType'] = 'product'): DraftLine {
@@ -81,7 +83,7 @@ function liveUnitPrice(line: DraftLine, pricelist: unknown): number {
 function resolveDiscount(unitPrice: number, line: DraftLine): number {
   const raw = Math.max(0, line.discount || 0);
   if (line.discountType === 'percentage') {
-    return Math.round(unitPrice * Math.min(100, raw) / 100 * 100) / 100;
+    return Math.round(((unitPrice * Math.min(100, raw)) / 100) * 100) / 100;
   }
   return Math.min(unitPrice, raw);
 }
@@ -151,6 +153,21 @@ export default function SalesCreate({
   // D3: customer default-address fetch state.
   const [loadingCustomerAddress, setLoadingCustomerAddress] = useState(false);
 
+  // Auto-save: tracks the ID of the draft created in create mode.
+  // Uses a ref (atomic, no stale-closure issues) plus state for header display.
+  const draftIdRef = useRef<string | null>(initial?._id ?? null);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<
+    'idle' | 'saving' | 'saved' | 'error'
+  >('idle');
+  // Don't start auto-saving until after the seeding effects have run (1 s grace).
+  const autoSaveEnabledRef = useRef(false);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      autoSaveEnabledRef.current = true;
+    }, 1000);
+    return () => clearTimeout(t);
+  }, []);
+
   // Seed every field from the loaded document once, in edit mode.
   useEffect(() => {
     if (!initial) return;
@@ -206,6 +223,54 @@ export default function SalesCreate({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial]);
 
+  // Backfill availableStock for lines loaded from a saved order (edit mode).
+  // Fetches each unique sub-product in parallel and patches the matching lines.
+  useEffect(() => {
+    if (!initial || !token) return;
+    const ids = [
+      ...new Set(
+        initial.items
+          .map((it) => it.subproduct)
+          .filter((id): id is string => !!id)
+      ),
+    ];
+    if (!ids.length) return;
+    Promise.all(
+      ids.map((id) =>
+        subproductService.getSubProduct(id, token).catch(() => null)
+      )
+    )
+      .then((results) => {
+        const spMap = new Map<string, any>();
+        results.forEach((res) => {
+          const sp =
+            res?.data?.subProduct ?? res?.subProduct ?? res?.data ?? res;
+          if (sp?._id) spMap.set(sp._id, sp);
+        });
+        if (!spMap.size) return;
+        setLines((prev) =>
+          prev.map((line) => {
+            if (line.lineType !== 'product' || !line.subProductId) return line;
+            const sp = spMap.get(line.subProductId);
+            if (!sp) return line;
+            const matchedSize = sp.sizes?.find(
+              (s: any) => (s._id ?? s.size) === line.sizeId
+            );
+            const stock =
+              matchedSize?.availableStock ??
+              matchedSize?.stock ??
+              (sp.sizes?.length === 0
+                ? (sp.availableStock ?? sp.totalStock)
+                : undefined);
+            if (stock == null) return line;
+            return { ...line, availableStock: stock };
+          })
+        );
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial, token]);
+
   const { pricelists, resolvedId } = useSalesCustomerPricelist(
     token,
     customer?._id ?? ''
@@ -247,26 +312,27 @@ export default function SalesCreate({
   // Drag-and-drop reordering of lines (items, sections, notes all draggable).
   // `arrayMove` reorders by current index; we resolve the new order from the
   // dragged key + the target key so the caller passes the two keys.
-  const reorderLines = useCallback(
-    (activeKey: string, overKey: string) => {
-      setLines((p) => {
-        const oldIndex = p.findIndex((l) => l.key === activeKey);
-        const newIndex = p.findIndex((l) => l.key === overKey);
-        if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return p;
-        // Inline arrayMove (avoids importing @dnd-kit/sortable here just for it).
-        const next = [...p];
-        const [moved] = next.splice(oldIndex, 1);
-        next.splice(newIndex, 0, moved);
-        return next;
-      });
-    },
-    []
-  );
+  const reorderLines = useCallback((activeKey: string, overKey: string) => {
+    setLines((p) => {
+      const oldIndex = p.findIndex((l) => l.key === activeKey);
+      const newIndex = p.findIndex((l) => l.key === overKey);
+      if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return p;
+      // Inline arrayMove (avoids importing @dnd-kit/sortable here just for it).
+      const next = [...p];
+      const [moved] = next.splice(oldIndex, 1);
+      next.splice(newIndex, 0, moved);
+      return next;
+    });
+  }, []);
 
   // Catalogue modal: picking a product in the catalogue appends a new product
   // line with the same field mapping ProductLineSearch uses.
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
+  const [printState, setPrintState] = useState<{
+    so: SalesOrder;
+    type: PrintSheetType;
+  } | null>(null);
 
   // Catalogue → order wiring. A line is uniquely keyed by `subProductId|sizeId`
   // (sizeId empty for sizeless). Adding is idempotent (no duplicate lines for
@@ -316,6 +382,7 @@ export default function SalesCreate({
           taxRate: info.taxRate,
           quantity: 1,
           priceOverridden: false,
+          availableStock: info.availableStock,
           activeBundles: info.bundleDeals,
           originalPrice: info.originalPrice,
           description: '',
@@ -397,7 +464,10 @@ export default function SalesCreate({
         if (address) {
           setInvoiceAddress((prev) => ({
             ...prev,
-            name: `${c.firstName} ${c.lastName}`.trim() || address.name || prev.name,
+            name:
+              `${c.firstName} ${c.lastName}`.trim() ||
+              address.name ||
+              prev.name,
             phone: c.phone ?? address.phone ?? prev.phone,
             street: address.street ?? prev.street,
             city: address.city ?? prev.city,
@@ -407,7 +477,10 @@ export default function SalesCreate({
           if (!deliverDifferent) {
             setDeliveryAddress((prev) => ({
               ...prev,
-              name: `${c.firstName} ${c.lastName}`.trim() || address.name || prev.name,
+              name:
+                `${c.firstName} ${c.lastName}`.trim() ||
+                address.name ||
+                prev.name,
               phone: c.phone ?? address.phone ?? prev.phone,
               street: address.street ?? prev.street,
               city: address.city ?? prev.city,
@@ -439,22 +512,158 @@ export default function SalesCreate({
     [loadCustomerAddress]
   );
 
-  const handleToggleDeliverDifferent = useCallback((v: boolean) => {
-    setDeliverDifferent(v);
-    // When turning the separate delivery block on, seed it from the invoice
-    // block if it's still empty so the operator isn't faced with a blank slate.
-    setDeliveryAddress((prev) =>
-      v && !prev.name && !prev.street && !prev.city
-        ? invoiceAddress
-        : prev
+  const handleToggleDeliverDifferent = useCallback(
+    (v: boolean) => {
+      setDeliverDifferent(v);
+      // When turning the separate delivery block on, seed it from the invoice
+      // block if it's still empty so the operator isn't faced with a blank slate.
+      setDeliveryAddress((prev) =>
+        v && !prev.name && !prev.street && !prev.city ? invoiceAddress : prev
+      );
+    },
+    [invoiceAddress]
+  );
+
+  // Shared payload builder used by both manual saves and auto-save.
+  const buildPayload = useCallback(() => {
+    const filled = priced.filter(
+      (l) => l.lineType !== 'product' || l.subProductId
     );
-  }, [invoiceAddress]);
+    return {
+      items: filled.map(toLinePayload),
+      customer: customer ? customer._id : null,
+      customerSnapshot: customer
+        ? {
+            name: `${customer.firstName} ${customer.lastName}`.trim(),
+            phone: customer.phone,
+            email: customer.email,
+            customerId: customer._id,
+          }
+        : null,
+      pricelist: pricelistId || null,
+      appliedPricelist: pricelist
+        ? { pricelistId: pricelist._id, pricelistName: pricelist.name }
+        : null,
+      validUntil: validUntil || undefined,
+      paymentTerms,
+      invoiceAddress,
+      deliveryAddress: deliverDifferent ? deliveryAddress : invoiceAddress,
+      notes: notes || undefined,
+      terms: terms || undefined,
+    };
+  }, [
+    priced,
+    customer,
+    pricelistId,
+    pricelist,
+    validUntil,
+    paymentTerms,
+    invoiceAddress,
+    deliveryAddress,
+    deliverDifferent,
+    notes,
+    terms,
+  ]);
+
+  // Auto-save: debounce 3 s after any field change. In create mode, the first
+  // save creates the quotation draft and patches the URL; subsequent saves use
+  // update(). In edit mode, always updates initial._id.
+  useEffect(() => {
+    if (!token) return;
+    const productLines = priced.filter(
+      (l) => l.lineType === 'product' && l.subProductId
+    );
+    if (productLines.length === 0) return; // Nothing meaningful to save yet
+
+    const timer = setTimeout(async () => {
+      if (!autoSaveEnabledRef.current) return;
+      setAutoSaveStatus('saving');
+      try {
+        const payload = buildPayload();
+        const existingId = initial?._id ?? draftIdRef.current;
+        if (existingId) {
+          await salesOrderService.update(existingId, payload, token);
+        } else {
+          const res = await salesOrderService.create(
+            { ...payload, docType: 'quotation' },
+            token
+          );
+          const newId = res.data._id;
+          draftIdRef.current = newId;
+          // Update URL without triggering Next.js navigation so the form stays mounted
+          window.history.replaceState(
+            null,
+            '',
+            routes.eCommerce.salesEdit(newId)
+          );
+        }
+        setAutoSaveStatus('saved');
+      } catch {
+        setAutoSaveStatus('error');
+      }
+    }, 3000);
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    priced,
+    customer,
+    notes,
+    terms,
+    validUntil,
+    paymentTerms,
+    pricelistId,
+    token,
+  ]);
+
+  // Helper: ensure the draft is saved (waits for a pending auto-save or triggers
+  // one immediately) and returns the document ID. Used before opening print.
+  async function ensureSaved(): Promise<string | null> {
+    const existingId = initial?._id ?? draftIdRef.current;
+    if (existingId) return existingId;
+    const productLines = priced.filter(
+      (l) => l.lineType === 'product' && l.subProductId
+    );
+    if (productLines.length === 0) return null;
+    try {
+      setAutoSaveStatus('saving');
+      const res = await salesOrderService.create(
+        { ...buildPayload(), docType: 'quotation' },
+        token
+      );
+      const newId = res.data._id;
+      draftIdRef.current = newId;
+      window.history.replaceState(null, '', routes.eCommerce.salesEdit(newId));
+      setAutoSaveStatus('saved');
+      return newId;
+    } catch {
+      setAutoSaveStatus('error');
+      return null;
+    }
+  }
+
+  async function handlePrint(type: 'quotation' | 'proforma') {
+    const id = await ensureSaved();
+    if (!id) {
+      toast.error('Add at least one product before printing');
+      return;
+    }
+    try {
+      const res = await salesOrderService.get(id, token);
+      setPrintState({ so: res.data, type });
+      setTimeout(() => window.print(), 150);
+    } catch {
+      toast.error('Could not load document for printing');
+    }
+  }
 
   async function handleSaveEdit() {
     if (!initial) return;
     // Keep product lines that have a subproduct selected, plus any section/note
     // lines (which carry no subproduct but must persist).
-    const filled = priced.filter((l) => l.lineType !== 'product' || l.subProductId);
+    const filled = priced.filter(
+      (l) => l.lineType !== 'product' || l.subProductId
+    );
     if (filled.length === 0) {
       toast.error('Add at least one product line');
       return;
@@ -503,7 +712,9 @@ export default function SalesCreate({
       toast.success('Changes saved');
       router.push(routes.eCommerce.salesDetails(initial._id));
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save changes');
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to save changes'
+      );
     } finally {
       setSaving(false);
     }
@@ -512,7 +723,9 @@ export default function SalesCreate({
   async function handleSave(asOrder: boolean) {
     // Keep product lines that have a subproduct selected, plus any section/note
     // lines (which carry no subproduct but must persist).
-    const filled = priced.filter((l) => l.lineType !== 'product' || l.subProductId);
+    const filled = priced.filter(
+      (l) => l.lineType !== 'product' || l.subProductId
+    );
     if (filled.length === 0) {
       toast.error('Add at least one product line');
       return;
@@ -571,9 +784,18 @@ export default function SalesCreate({
         initial={initial}
         saving={saving}
         hasLines={hasLines}
+        autoSaveStatus={autoSaveStatus}
         onCreateOrder={() => handleSave(true)}
         onSaveQuotation={() => handleSave(false)}
         onSaveEdit={handleSaveEdit}
+        onPrint={() => handlePrint('quotation')}
+        onSendProForma={() => handlePrint('proforma')}
+        onDuplicate={() => toast('Duplicate: coming soon')}
+        onMarkAsSent={() => toast('Mark as sent: coming soon')}
+        onGeneratePaymentLink={() => toast('Payment link: coming soon')}
+        onAccruedRevenueEntry={() =>
+          toast('Accrued revenue entry: coming soon')
+        }
       />
 
       <SalesCustomerBar
@@ -684,6 +906,10 @@ export default function SalesCreate({
         onClose={() => setScanOpen(false)}
         onAdd={addProductFromCatalog}
       />
+
+      {printState && (
+        <SalesPrintSheet so={printState.so} type={printState.type} />
+      )}
     </div>
   );
 }

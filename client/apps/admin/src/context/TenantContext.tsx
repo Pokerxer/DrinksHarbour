@@ -13,11 +13,21 @@ export interface AdminTenantData {
   status?: string;
   defaultCurrency?: string;
   country?: string;
+  address?: {
+    street?: string;
+    city?: string;
+    lga?: string;
+    state?: string;
+    country?: string;
+    formatted?: string;
+  };
+  phone?: string;
+  email?: string;
 }
 
 interface TenantContextValue {
   tenant: AdminTenantData | null;
-  isMainSite: boolean;   // true when no subdomain (platform admin view)
+  isMainSite: boolean; // true when no subdomain (platform admin view)
   tenantSlug: string | null;
 }
 
@@ -33,11 +43,13 @@ export const TenantProvider: React.FC<{
 }> = ({ children, initialTenant }) => {
   const tenant = initialTenant ?? null;
   return (
-    <TenantContext.Provider value={{
-      tenant,
-      isMainSite: !tenant,
-      tenantSlug: tenant?.slug ?? null,
-    }}>
+    <TenantContext.Provider
+      value={{
+        tenant,
+        isMainSite: !tenant,
+        tenantSlug: tenant?.slug ?? null,
+      }}
+    >
       {children}
     </TenantContext.Provider>
   );

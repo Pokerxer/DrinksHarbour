@@ -512,6 +512,32 @@ const addFileMetadata = (req, res, next) => {
   next();
 };
 
+// ── Scan document upload (PDF, DOCX, DOC, XLS, XLSX, CSV) ─────────────────
+
+const ALLOWED_SCAN_DOC_MIMES = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/csv',
+  'text/plain',
+];
+const ALLOWED_SCAN_DOC_EXTS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.txt'];
+
+const uploadScanDocument = multer({
+  storage: memoryStorage,
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ALLOWED_SCAN_DOC_MIMES.includes(file.mimetype) || ALLOWED_SCAN_DOC_EXTS.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new ValidationError('Unsupported file type. Upload a PDF, Word, Excel, or CSV file.'), false);
+    }
+  },
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+}).single('file');
+
 // ============================================================
 // EXPORTS
 // ============================================================
@@ -520,7 +546,7 @@ module.exports = {
   // Basic uploads
   uploadSingleImage: wrapMulterMiddleware(uploadSingleImage),
   uploadMultipleImages: wrapMulterMiddleware(uploadMultipleImages),
-  
+
   // Specialized uploads
   uploadProductImages: wrapMulterMiddleware(uploadProductImages),
   uploadProductGallery: wrapMulterMiddleware(uploadProductGallery),
@@ -531,14 +557,15 @@ module.exports = {
   uploadReviewImages: wrapMulterMiddleware(uploadReviewImages),
   uploadAvatar: wrapMulterMiddleware(uploadAvatar),
   uploadMixedFields: wrapMulterMiddleware(uploadMixedFields),
-  
+  uploadScanDocument: wrapMulterMiddleware(uploadScanDocument),
+
   // Validation middleware
   requireFile,
   validateFileCount,
   validateImageDimensions,
   validateAspectRatio,
   addFileMetadata,
-  
+
   // Constants
   ALLOWED_IMAGE_TYPES,
   MAX_FILE_SIZE,

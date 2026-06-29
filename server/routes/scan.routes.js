@@ -7,7 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const { protect, attachTenant } = require('../middleware/auth.middleware');
-const { uploadSingleImage } = require('../middleware/imageUpload.middleware');
+const { uploadSingleImage, uploadScanDocument } = require('../middleware/imageUpload.middleware');
 const scanController = require('../controllers/scan.controller');
 
 // ── Mobile upload (pairing code, NO JWT) ──────────────────────────────────
@@ -26,5 +26,7 @@ router.use(protect, attachTenant);
 router.post('/pair', scanController.createPairing);
 router.get('/status/:code', scanController.getStatus);
 router.post('/match', scanController.desktopMatch);
+router.post('/smart-search', scanController.smartSearch);
+router.post('/upload-document', uploadScanDocument, scanController.uploadDocument);
 
 module.exports = router;
