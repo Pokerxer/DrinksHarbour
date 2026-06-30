@@ -163,6 +163,9 @@ export default function SalesCreate({
   const [autoSaveStatus, setAutoSaveStatus] = useState<
     'idle' | 'saving' | 'saved' | 'error'
   >('idle');
+  // Dirty tracking — true after any field change, false after any successful save.
+  const isDirtyRef = useRef(false);
+
   // Don't start auto-saving until after the seeding effects have run (1 s grace).
   const autoSaveEnabledRef = useRef(false);
   useEffect(() => {
@@ -595,6 +598,11 @@ export default function SalesCreate({
     warehouseId,
   ]);
 
+  // Mark the form dirty whenever any saveable field changes.
+  useEffect(() => {
+    if (autoSaveEnabledRef.current) isDirtyRef.current = true;
+  }, [priced, customer, notes, terms, validUntil, paymentTerms, pricelistId, warehouseId]);
+
   // Auto-save: debounce 3 s after any field change. In create mode, the first
   // save creates the quotation draft and patches the URL; subsequent saves use
   // update(). In edit mode, always updates initial._id.
@@ -627,6 +635,7 @@ export default function SalesCreate({
             routes.eCommerce.salesEdit(newId)
           );
         }
+        isDirtyRef.current = false;
         setAutoSaveStatus('saved');
       } catch {
         setAutoSaveStatus('error');
@@ -645,6 +654,38 @@ export default function SalesCreate({
     pricelistId,
     token,
   ]);
+
+  // Save on page leave: warn + best-effort keepalive PATCH so the browser can
+  // fire the request even as the page unloads.
+  useEffect(() => {
+    const API_URL =
+      process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+    const handler = (e: BeforeUnloadEvent) => {
+      if (!isDirtyRef.current || !token) return;
+      e.preventDefault();
+      // keepalive lets the browser complete the fetch after page unload
+      const existingId = initial?._id ?? draftIdRef.current;
+      if (existingId) {
+        try {
+          const payload = buildPayload();
+          fetch(`${API_URL}/api/sales-orders/${existingId}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(payload),
+            keepalive: true,
+          }).catch(() => {});
+        } catch {
+          // ignore — best-effort
+        }
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, initial?._id]);
 
   // Helper: ensure the draft is saved (waits for a pending auto-save or triggers
   // one immediately) and returns the document ID. Used before opening print.
@@ -670,6 +711,46 @@ export default function SalesCreate({
       setAutoSaveStatus('error');
       return null;
     }
+  }
+
+  // Manual cloud-save: immediate save without redirect. Works in both create
+  // (creates draft on first call) and edit mode (updates in place).
+  async function handleManualSave() {
+    const productLines = priced.filter(
+      (l) => l.lineType === 'product' && l.subProductId
+    );
+    if (productLines.length === 0) return;
+    setAutoSaveStatus('saving');
+    try {
+      const payload = buildPayload();
+      const existingId = initial?._id ?? draftIdRef.current;
+      if (existingId) {
+        await salesOrderService.update(existingId, payload, token);
+      } else {
+        const res = await salesOrderService.create(
+          { ...payload, docType: 'quotation' },
+          token
+        );
+        draftIdRef.current = res.data._id;
+        window.history.replaceState(
+          null,
+          '',
+          routes.eCommerce.salesEdit(res.data._id)
+        );
+      }
+      isDirtyRef.current = false;
+      setAutoSaveStatus('saved');
+    } catch {
+      setAutoSaveStatus('error');
+    }
+  }
+
+  // Save when switching to another tab so work is not lost mid-form.
+  async function handleTabChange(next: CreateTab) {
+    if (next !== tab && isDirtyRef.current) {
+      await handleManualSave();
+    }
+    setTab(next);
   }
 
   async function handlePrint(type: 'quotation' | 'proforma') {
@@ -817,6 +898,7 @@ export default function SalesCreate({
         saving={saving}
         hasLines={hasLines}
         autoSaveStatus={autoSaveStatus}
+        onManualSave={handleManualSave}
         onCreateOrder={() => handleSave(true)}
         onSaveQuotation={() => handleSave(false)}
         onSaveEdit={handleSaveEdit}
@@ -853,7 +935,7 @@ export default function SalesCreate({
         <div className="flex border-b border-gray-100 px-4">
           <button
             type="button"
-            onClick={() => setTab('lines')}
+            onClick={() => handleTabChange('lines')}
             className={`relative px-3 py-3 text-sm font-medium transition-colors ${
               tab === 'lines'
                 ? 'text-[#b20202] after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-[#b20202]'
@@ -864,7 +946,7 @@ export default function SalesCreate({
           </button>
           <button
             type="button"
-            onClick={() => setTab('other')}
+            onClick={() => handleTabChange('other')}
             className={`relative px-3 py-3 text-sm font-medium transition-colors ${
               tab === 'other'
                 ? 'text-[#b20202] after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-[#b20202]'

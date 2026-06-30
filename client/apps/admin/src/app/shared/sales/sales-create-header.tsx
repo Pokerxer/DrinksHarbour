@@ -7,6 +7,10 @@ import {
   PiArrowLeft,
   PiCaretRight,
   PiChartLineUp,
+  PiCircleNotch,
+  PiCloudArrowUp,
+  PiCloudCheck,
+  PiCloudWarning,
   PiCopy,
   PiEnvelope,
   PiGear,
@@ -29,6 +33,7 @@ export interface SalesCreateHeaderProps {
   saving: boolean;
   hasLines: boolean;
   autoSaveStatus?: 'idle' | 'saving' | 'saved' | 'error';
+  onManualSave?: () => void;
   onSaveQuotation?: () => void;
   onCreateOrder?: () => void;
   onSaveEdit?: () => void;
@@ -59,6 +64,7 @@ export default function SalesCreateHeader({
   saving,
   hasLines,
   autoSaveStatus = 'idle',
+  onManualSave,
   onSaveQuotation,
   onCreateOrder,
   onSaveEdit,
@@ -139,20 +145,29 @@ export default function SalesCreateHeader({
             : 'New'}
         </h1>
 
-        {/* Auto-save status */}
-        {autoSaveStatus !== 'idle' && (
-          <span
-            className={`text-xs ${
-              autoSaveStatus === 'saving'
-                ? 'text-gray-400'
-                : autoSaveStatus === 'saved'
-                  ? 'text-emerald-500'
-                  : 'text-red-500'
-            }`}
-          >
-            {AUTO_SAVE_LABEL[autoSaveStatus]}
-          </span>
-        )}
+        {/* Cloud save button */}
+        <button
+          type="button"
+          onClick={onManualSave}
+          disabled={autoSaveStatus === 'saving' || !hasLines}
+          title={
+            autoSaveStatus === 'saving' ? 'Saving…'
+            : autoSaveStatus === 'saved'  ? 'Saved'
+            : autoSaveStatus === 'error'  ? 'Save failed — click to retry'
+            : 'Save draft'
+          }
+          className="flex items-center gap-1 rounded-md p-1.5 transition-colors disabled:cursor-not-allowed disabled:opacity-40 hover:bg-gray-100"
+        >
+          {autoSaveStatus === 'saving' ? (
+            <PiCircleNotch className="h-5 w-5 animate-spin text-gray-400" />
+          ) : autoSaveStatus === 'saved' ? (
+            <PiCloudCheck className="h-5 w-5 text-emerald-500" />
+          ) : autoSaveStatus === 'error' ? (
+            <PiCloudWarning className="h-5 w-5 text-red-500" />
+          ) : (
+            <PiCloudArrowUp className="h-5 w-5 text-gray-400" />
+          )}
+        </button>
 
         {/* Gear dropdown */}
         <div ref={gearRef} className="relative">
