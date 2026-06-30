@@ -12,6 +12,7 @@ import {
   PiGear,
   PiLink,
   PiFolderSimplePlus,
+  PiPaperPlaneTilt,
   PiPencilSimple,
   PiPrinter,
   PiShareNetwork,
@@ -40,10 +41,10 @@ export interface SalesCreateHeaderProps {
 }
 
 const BTN_BASE =
-  'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40';
+  'inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40';
 
-const BTN_DARK = `${BTN_BASE} bg-gray-800 text-white hover:bg-gray-700`;
-const BTN_PURPLE = `${BTN_BASE} bg-[#5c3d7a] text-white hover:bg-[#4e3366]`;
+const BTN_PRIMARY = `${BTN_BASE} bg-[#b20202] text-white hover:bg-[#9a0101] active:scale-[0.98]`;
+const BTN_GHOST = `${BTN_BASE} bg-white text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50`;
 
 const AUTO_SAVE_LABEL: Record<string, string> = {
   idle: '',
@@ -165,8 +166,13 @@ export default function SalesCreateHeader({
           </button>
 
           {gearOpen && (
-            <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+            <div className="absolute left-0 top-full z-50 mt-1 w-60 overflow-hidden rounded-xl border border-gray-100 bg-white py-1 shadow-xl">
               {gearItem(onPrint, 'Print', PiPrinter, true)}
+              {gearItem(
+                onSendProForma,
+                'Send PRO-FORMA Invoice',
+                PiPaperPlaneTilt
+              )}
               {gearItem(undefined, 'Request Signature', PiPencilSimple)}
               {gearItem(onDuplicate, 'Duplicate', PiCopy)}
               <div className="my-1 border-t border-gray-100" />
@@ -210,54 +216,45 @@ export default function SalesCreateHeader({
       </div>
 
       {/* Action button bar */}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <button
-          type="button"
-          onClick={handleSend}
-          disabled={saving || !hasLines}
-          className={BTN_PURPLE}
-        >
-          {saving && !isEdit ? 'Saving…' : 'Send'}
-        </button>
-
-        <button
-          type="button"
-          onClick={onSendProForma}
-          disabled={saving || !hasLines}
-          className={BTN_PURPLE}
-        >
-          Send PRO-FORMA Invoice
-        </button>
-
-        <button type="button" onClick={onPrint} className={BTN_DARK}>
-          <PiPrinter className="h-3.5 w-3.5" />
-          Print
-        </button>
-
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={handleConfirm}
           disabled={saving || !hasLines}
-          className={BTN_DARK}
+          className={BTN_PRIMARY}
         >
-          {saving ? 'Saving…' : 'Confirm'}
+          {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Confirm Order'}
+        </button>
+
+        {!isEdit && (
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={saving || !hasLines}
+            className={BTN_GHOST}
+          >
+            Save Quotation
+          </button>
+        )}
+
+        <button type="button" onClick={onPrint} className={BTN_GHOST}>
+          <PiPrinter className="h-4 w-4" />
+          Print
         </button>
 
         {isEdit && initial && (
           <Link
             href={routes.eCommerce.salesDetails(initial._id)}
-            className={BTN_DARK}
+            className={BTN_GHOST}
           >
             Preview
           </Link>
         )}
-        {!isEdit && (
-          <button type="button" disabled className={BTN_DARK}>
-            Preview
-          </button>
-        )}
 
-        <Link href={cancelHref} className={BTN_DARK}>
+        <Link
+          href={cancelHref}
+          className={`${BTN_BASE} text-gray-500 hover:bg-gray-50 hover:text-gray-700`}
+        >
           Cancel
         </Link>
       </div>

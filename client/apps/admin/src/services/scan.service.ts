@@ -113,14 +113,17 @@ export const scanService = {
     return data.items ?? [];
   },
 
-  /** Mobile: upload a photo via the pairing code (no auth token). */
+  /** Mobile: upload a photo via the pairing code (no auth token).
+   *  Uses the Next.js proxy route (/api/scan/upload-mobile/[code]) so the
+   *  request stays same-origin — avoids CORS and mixed-content blocks on
+   *  mobile browsers when the phone scans a QR pointing to the admin domain. */
   async uploadMobile(
     code: string,
     file: File
   ): Promise<{ status: string; imageUrl?: string }> {
     const form = new FormData();
     form.append('image', file);
-    const res = await fetch(`${API_URL}/api/scan/upload-mobile/${code}`, {
+    const res = await fetch(`/api/scan/upload-mobile/${code}`, {
       method: 'POST',
       body: form,
     });

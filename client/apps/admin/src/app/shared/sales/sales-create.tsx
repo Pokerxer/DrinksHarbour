@@ -814,8 +814,8 @@ export default function SalesCreate({
         onValidUntilChange={setValidUntil}
       />
 
-      <div className="rounded-xl border border-gray-200 bg-white">
-        <div className="flex border-b border-gray-200 px-4">
+      <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/[0.04]">
+        <div className="flex border-b border-gray-100 px-4">
           <button
             type="button"
             onClick={() => setTab('lines')}

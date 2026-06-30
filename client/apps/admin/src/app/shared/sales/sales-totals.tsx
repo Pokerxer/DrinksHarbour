@@ -35,9 +35,9 @@ export default function SalesTotals({
           <span>Tax</span>
           <span>{fmtCur(taxTotal, currency)}</span>
         </div>
-        <div className="flex items-center justify-between border-t border-gray-100 pt-1.5 text-base font-semibold text-gray-900">
+        <div className="flex items-center justify-between border-t border-gray-200 pt-2 text-[15px] font-bold text-gray-900">
           <span>Total</span>
-          <span>{fmtCur(grandTotal, currency)}</span>
+          <span className="tabular-nums">{fmtCur(grandTotal, currency)}</span>
         </div>
       </div>
     </div>

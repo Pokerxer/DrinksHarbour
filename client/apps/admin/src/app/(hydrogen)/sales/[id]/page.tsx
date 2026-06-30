@@ -11,11 +11,9 @@ export default function SalesDetailPage({
 }) {
   const { id } = use(params);
   return (
-    <div className="min-h-screen bg-gray-50">
+    <>
       <SalesNavHeader />
-      <main className="mx-auto max-w-7xl px-4 py-6">
-        <SalesDetail id={id} />
-      </main>
-    </div>
+      <SalesDetail id={id} />
+    </>
   );
 }

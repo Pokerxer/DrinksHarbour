@@ -23,6 +23,9 @@ export const metadata = {
   title: siteConfig.title,
   description: siteConfig.description,
   manifest: '/manifest.json',
+};
+
+export const viewport = {
   themeColor: '#b20202',
 };
 
