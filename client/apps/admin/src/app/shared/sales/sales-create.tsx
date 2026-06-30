@@ -601,7 +601,16 @@ export default function SalesCreate({
   // Mark the form dirty whenever any saveable field changes.
   useEffect(() => {
     if (autoSaveEnabledRef.current) isDirtyRef.current = true;
-  }, [priced, customer, notes, terms, validUntil, paymentTerms, pricelistId, warehouseId]);
+  }, [
+    priced,
+    customer,
+    notes,
+    terms,
+    validUntil,
+    paymentTerms,
+    pricelistId,
+    warehouseId,
+  ]);
 
   // Auto-save: debounce 3 s after any field change. In create mode, the first
   // save creates the quotation draft and patches the URL; subsequent saves use
@@ -655,37 +664,71 @@ export default function SalesCreate({
     token,
   ]);
 
-  // Save on page leave: warn + best-effort keepalive PATCH so the browser can
-  // fire the request even as the page unloads.
+  // Refs always holding the latest token and payload — used by background saves
+  // that run outside a React render (beforeunload, unmount cleanup).
+  const tokenRef = useRef(token);
+  useEffect(() => { tokenRef.current = token; }, [token]);
+
+  const latestPayloadRef = useRef<ReturnType<typeof buildPayload> | null>(null);
   useEffect(() => {
-    const API_URL =
-      process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
-    const handler = (e: BeforeUnloadEvent) => {
-      if (!isDirtyRef.current || !token) return;
-      e.preventDefault();
-      // keepalive lets the browser complete the fetch after page unload
+    if (autoSaveEnabledRef.current) {
+      latestPayloadRef.current = buildPayload();
+    }
+  }, [buildPayload]);
+
+  // Shared keepalive save — fires a fetch that the browser completes even after
+  // the page unloads. Creates a new quotation (assigns SO number) when there is
+  // no existing draft; updates an existing one otherwise.
+  const bgSaveRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    bgSaveRef.current = () => {
+      if (!isDirtyRef.current) return;
+      const tok = tokenRef.current;
+      if (!tok) return;
+      const payload = latestPayloadRef.current;
+      if (!payload) return;
+      const hasProduct = ((payload as any).items ?? []).some(
+        (l: any) => l.lineType === 'product' && l.subproduct
+      );
+      if (!hasProduct) return;
+
+      const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
       const existingId = initial?._id ?? draftIdRef.current;
       if (existingId) {
-        try {
-          const payload = buildPayload();
-          fetch(`${API_URL}/api/sales-orders/${existingId}`, {
-            method: 'PATCH',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify(payload),
-            keepalive: true,
-          }).catch(() => {});
-        } catch {
-          // ignore — best-effort
-        }
+        fetch(`${BASE}/api/sales-orders/${existingId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
+          body: JSON.stringify(payload),
+          keepalive: true,
+        });
+      } else {
+        // Creates the quotation and lets the server assign the SO number.
+        fetch(`${BASE}/api/sales-orders`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
+          body: JSON.stringify({ ...payload, docType: 'quotation' }),
+          keepalive: true,
+        });
       }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, initial?._id]);
+
+  // Browser close/refresh → warn + fire keepalive save.
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (!isDirtyRef.current) return;
+      e.preventDefault();
+      bgSaveRef.current();
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, initial?._id]);
+  }, []);
+
+  // Internal Next.js navigation (component unmount) → fire keepalive save.
+  useEffect(() => {
+    return () => { bgSaveRef.current(); };
+  }, []);
 
   // Helper: ensure the draft is saved (waits for a pending auto-save or triggers
   // one immediately) and returns the document ID. Used before opening print.
