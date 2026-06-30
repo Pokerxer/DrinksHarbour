@@ -8,7 +8,8 @@ const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const { connectDB, disconnectDB } = require('./config/db');
-const { resolveTenant } = require('./middleware/tenant.middleware');
+// resolveTenantContext is now mounted per-router after protect(), not globally.
+// See route files for: router.use(protect); router.use(resolveTenantContext);
 
 // Route imports
 const orderRoutes            = require('./routes/order.routes');
@@ -91,7 +92,6 @@ const corsOptions = {
     'X-Requested-With',
     'Accept',
     'Origin',
-    'x-tenant-id',
     'x-tenant-slug',
     'x-is-tenant-site',
   ],
@@ -102,7 +102,6 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(resolveTenant); // Resolve tenant from x-tenant-slug header (non-blocking)
 
 // ────────────────────────────────────────────────
 // Request Logger
@@ -202,6 +201,7 @@ app.use('/api/banners',            bannerRoutes);
 app.use('/api/chatbot',            chatbotRoutes);
 app.use('/api/places',             placesRoutes);
 app.use('/api/tenants',            require('./routes/tenant.routes'));
+app.use('/api/erm',                require('./routes/erm.routes'));
 app.use('/api/employees',          require('./routes/employee.routes'));
 app.use('/api/contacts',           require('./routes/contact.routes'));
 app.use('/api/sales-orders',       salesOrderRoutes);

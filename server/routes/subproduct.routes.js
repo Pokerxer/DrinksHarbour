@@ -20,6 +20,7 @@ const {
 } = require('../middleware/validation.middleware');
 const { body, param } = require('express-validator');
 const SubProduct = require('../models/SubProduct');
+const { checkSkuLimit } = require('../middleware/plan.middleware');
 // All SubProduct routes require authentication
 router.use(authenticate);
 router.use(attachTenant);
@@ -43,6 +44,7 @@ router.get('/', tenantAdminOrSuperAdmin, subProductController.getMySubProducts);
 router.post(
   '/',
   tenantAdminOrSuperAdmin,
+  checkSkuLimit,
   validateSubProductCreation,
   subProductController.createSubProduct
 );
@@ -1397,13 +1399,23 @@ router.patch(
   async (req, res, next) => {
     try {
       const { ids, saleType, saleDiscountValue, saleStartDate, saleEndDate, applyToAll } = req.body;
-      const tenantId = req.tenant?._id;
+      const isAdmin = ['super_admin', 'admin'].includes(req.user.role);
 
       if (!saleType || !saleDiscountValue || saleDiscountValue <= 0) {
         return res.status(400).json({ success: false, message: 'saleType and saleDiscountValue are required' });
       }
 
-      const filter = tenantId ? { tenant: tenantId } : {};
+      // Build tenant filter — super_admin with explicit applyToAll can go platform-wide
+      let filter;
+      if (isAdmin && applyToAll) {
+        filter = {};
+      } else {
+        const tenantId = req.tenant?._id || req.user?.tenant;
+        if (!tenantId) {
+          return res.status(403).json({ success: false, message: 'Tenant context required — specify a target tenant via x-tenant-slug or ?tenant= query' });
+        }
+        filter = { tenant: tenantId };
+      }
       if (!applyToAll) {
         if (!Array.isArray(ids) || ids.length === 0) {
           return res.status(400).json({ success: false, message: 'ids required when applyToAll is false' });
@@ -1434,9 +1446,18 @@ router.patch(
   async (req, res, next) => {
     try {
       const { ids, applyToAll } = req.body;
-      const tenantId = req.tenant?._id;
+      const isAdmin = ['super_admin', 'admin'].includes(req.user.role);
 
-      const filter = tenantId ? { tenant: tenantId } : {};
+      let filter;
+      if (isAdmin && applyToAll) {
+        filter = {};
+      } else {
+        const tenantId = req.tenant?._id || req.user?.tenant;
+        if (!tenantId) {
+          return res.status(403).json({ success: false, message: 'Tenant context required — specify a target tenant via x-tenant-slug or ?tenant= query' });
+        }
+        filter = { tenant: tenantId };
+      }
       if (!applyToAll) {
         if (!Array.isArray(ids) || ids.length === 0) {
           return res.status(400).json({ success: false, message: 'ids required when applyToAll is false' });

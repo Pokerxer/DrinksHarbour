@@ -45,7 +45,7 @@ const tenantSchema = new Schema(
     // ────────────────────────────────────────────────
     plan: {
       type: String,
-      enum: ["free_trial", "starter", "pro", "enterprise", "custom"],
+      enum: ["free_trial", "starter", "growth", "pro", "enterprise", "venue", "custom"],
       default: "free_trial",
     },
 
@@ -63,14 +63,17 @@ const tenantSchema = new Schema(
       index: true,
     },
 
-    stripeCustomerId: {
-      type: String,
-      sparse: true,
-    },
+    paystackCustomerId: { type: String, sparse: true },
+    paystackSubscriptionCode: { type: String, sparse: true },
+    paystackPlanCode: { type: String, sparse: true },
 
-    stripeSubscriptionId: {
-      type: String,
-      sparse: true,
+    addOns: {
+      type: [{
+        type: { type: String, enum: ['extra_shop', 'extra_warehouse'] },
+        quantity: { type: Number, default: 1 },
+        paystackSubscriptionCode: String,
+      }],
+      default: [],
     },
 
     trialEndsAt: Date,
@@ -186,6 +189,15 @@ const tenantSchema = new Schema(
 
     approvedAt: Date,
     approvedBy: { type: ObjectId, ref: "User" }, // super-admin
+
+    // Primary tenant owner/admin — the User with full control of this tenant.
+    // Referenced by auth ownership checks (e.g., subproduct transfer, bulk ops).
+    admin: {
+      type: ObjectId,
+      ref: "User",
+      sparse: true,
+      index: true,
+    },
 
     rejectionReason: String,
 
