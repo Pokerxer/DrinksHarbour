@@ -258,6 +258,7 @@ async function createSalesOrderDoc({ tenantId, body }) {
     invoiceAddress: normalizeAddress(body.invoiceAddress),
     deliveryAddress: normalizeAddress(body.deliveryAddress),
     notes: body.notes, terms: body.terms,
+    warehouseId: body.warehouseId || null,
     ...(docType === 'quotation' ? { quoteStatus: 'draft' } : { orderStatus: 'draft' }),
   });
 }
@@ -312,6 +313,7 @@ async function applyEdit(so, body) {
   }
   if (body.invoiceAddress !== undefined) so.invoiceAddress = normalizeAddress(body.invoiceAddress);
   if (body.deliveryAddress !== undefined) so.deliveryAddress = normalizeAddress(body.deliveryAddress);
+  if (body.warehouseId !== undefined) so.warehouseId = body.warehouseId || null;
 }
 
 /**

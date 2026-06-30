@@ -18,6 +18,9 @@ export interface SalesCustomerBarProps {
   resolvedPricelistId?: string | null;
   validUntil: string;
   onValidUntilChange: (v: string) => void;
+  warehouses: { _id: string; name: string; isDefault?: boolean }[];
+  warehouseId: string;
+  onWarehouseChange: (id: string) => void;
 }
 
 /**
@@ -35,6 +38,9 @@ export default function SalesCustomerBar({
   resolvedPricelistId,
   validUntil,
   onValidUntilChange,
+  warehouses,
+  warehouseId,
+  onWarehouseChange,
 }: SalesCustomerBarProps) {
   const today = useMemo(
     () => new Date().toLocaleDateString(undefined, { dateStyle: 'medium' }),
@@ -77,6 +83,24 @@ export default function SalesCustomerBar({
               Auto-applied from this customer
             </p>
           )}
+        </div>
+
+        <div className="mt-4">
+          <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">
+            Warehouse
+          </label>
+          <select
+            value={warehouseId}
+            onChange={(e) => onWarehouseChange(e.target.value)}
+            className={INPUT_CLS}
+          >
+            <option value="">— Select warehouse —</option>
+            {warehouses.map((w) => (
+              <option key={w._id} value={w._id}>
+                {w.name}{w.isDefault ? ' (default)' : ''}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 

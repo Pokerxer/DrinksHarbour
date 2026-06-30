@@ -161,8 +161,15 @@ exports.fulfillSalesOrder = asyncHandler(async (req, res) => {
   if (!['confirmed', 'partially_fulfilled'].includes(so.orderStatus)) {
     return res.status(409).json({ success: false, message: 'Only a confirmed order can be fulfilled' });
   }
-  const { warehouseId, items: fulfillLines } = req.body;
-  if (!warehouseId) return res.status(400).json({ success: false, message: 'Destination warehouse required' });
+  let { warehouseId, items: fulfillLines } = req.body;
+  // Fallback: order-level warehouseId → tenant default warehouse
+  if (!warehouseId && so.warehouseId) warehouseId = so.warehouseId;
+  if (!warehouseId) {
+    const Warehouse = require('../models/Warehouse');
+    const def = await Warehouse.findOne({ tenant: tenantId, isDefault: true }).select('_id').lean();
+    if (def) warehouseId = def._id;
+  }
+  if (!warehouseId) return res.status(400).json({ success: false, message: 'No warehouse set — configure a default warehouse first' });
 
   // C1: revenue + paymentMethod feed buildSalesRow so every Sales-required
   // field (finalItemPrice, revenueModelUsed, platformAmount, tenantAmount,

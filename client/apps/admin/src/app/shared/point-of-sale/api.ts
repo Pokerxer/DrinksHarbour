@@ -647,4 +647,37 @@ export const posApi = {
       headers: authHeaders(token),
     });
   },
+
+  async getWarehouses(token: string) {
+    return request<{ warehouses: { _id: string; name: string; isDefault?: boolean }[] }>(
+      `${API_URL}/api/warehouses?active=true`,
+      { headers: authHeaders(token) }
+    );
+  },
+
+  async getSalesOrdersForPOS(
+    token: string,
+    params: { search?: string; status?: string; limit?: number }
+  ) {
+    const qs = new URLSearchParams(
+      Object.fromEntries(
+        Object.entries({ limit: '50', ...params }).filter(([, v]) => v != null && v !== '')
+      ) as Record<string, string>
+    ).toString();
+    return request<{ salesOrders: unknown[] }>(`${API_URL}/api/sales-orders?${qs}`, {
+      headers: authHeaders(token),
+    });
+  },
+
+  async fulfillSalesOrder(
+    token: string,
+    id: string,
+    body: { warehouseId: string; items?: { subProductId: string; sizeId?: string; quantity: number }[] }
+  ) {
+    return request<unknown>(`${API_URL}/api/sales-orders/${id}/fulfill`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify(body),
+    });
+  },
 };

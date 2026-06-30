@@ -103,6 +103,8 @@ const SalesOrderSchema = new Schema(
     pointsRedeemed:  { type: Number, default: 0 }, // points consumed by that redemption
 
     fulfillments: [fulfillmentSchema],
+    // Default source warehouse for this order — used as fulfill fallback
+    warehouseId: { type: ObjectId, ref: 'Warehouse', default: null },
 
     convertedFrom:  { type: ObjectId, ref: 'SalesOrder' },
     convertedTo:    { type: ObjectId, ref: 'SalesOrder' },

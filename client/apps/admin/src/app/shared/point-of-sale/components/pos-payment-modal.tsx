@@ -34,6 +34,8 @@ import {
   getEffectiveBundlePriceForItem,
   usePOSSettings,
   usePOSActiveShop,
+  usePOSWarehouse,
+  usePOSLinkedSalesOrder,
 } from '@/app/shared/point-of-sale/store';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { createOrder as createOrderOffline } from '@/app/shared/point-of-sale/offline/api';
@@ -1056,6 +1058,11 @@ export default function POSPaymentModal() {
   const posSettings = tenant?.posSettings;
   const settings = usePOSSettings();
   const isOnline = useOnlineStatus();
+  const { warehouseId } = usePOSWarehouse();
+  const { linkedSalesOrderId, setLinkedSalesOrderId } = usePOSLinkedSalesOrder();
+
+  const [fulfillStatus, setFulfillStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [fulfillError, setFulfillError] = useState<string | null>(null);
 
   const [lines, setLines] = useState<PaymentLine[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -1411,6 +1418,24 @@ export default function POSPaymentModal() {
       setOrderResult(result.order);
       notifySale();
 
+      // Auto-fulfill the linked sales order (non-blocking — cashier can print/new-sale regardless)
+      if (linkedSalesOrderId && token) {
+        setFulfillStatus('running');
+        posApi.fulfillSalesOrder(token, linkedSalesOrderId, {
+          warehouseId: warehouseId || '',
+          items: orderItems.map((i: any) => ({
+            subProductId: i.subProductId,
+            sizeId: i.sizeId,
+            quantity: i.quantity,
+          })),
+        })
+          .then(() => { setFulfillStatus('done'); setLinkedSalesOrderId(null); })
+          .catch((err: unknown) => {
+            setFulfillStatus('error');
+            setFulfillError(err instanceof Error ? err.message : 'Fulfillment failed');
+          });
+      }
+
       // Increment usage counts for all applied rewards (best-effort, non-blocking)
       if (token && posSettings && appliedRewards.length > 0) {
         const patch: Partial<typeof posSettings> = {};
@@ -1514,16 +1539,38 @@ export default function POSPaymentModal() {
 
   if (orderResult)
     return (
-      <ReceiptScreen
-        order={orderResult}
-        paymentLines={lines}
-        onNewSale={handleNewSale}
-        cartSnapshot={cartSnapshot}
-        appliedCode={appliedCode ?? undefined}
-        autoDiscounts={autoDiscounts}
-        nextOrderCode={nextOrderCode}
-        nocSettings={posSettings?.nextOrderCoupon}
-      />
+      <div className="relative">
+        <ReceiptScreen
+          order={orderResult}
+          paymentLines={lines}
+          onNewSale={handleNewSale}
+          cartSnapshot={cartSnapshot}
+          appliedCode={appliedCode ?? undefined}
+          autoDiscounts={autoDiscounts}
+          nextOrderCode={nextOrderCode}
+          nocSettings={posSettings?.nextOrderCoupon}
+        />
+        {fulfillStatus !== 'idle' && (
+          <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2">
+            {fulfillStatus === 'running' && (
+              <div className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-medium text-white shadow-lg">
+                <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" strokeOpacity=".3"/><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/></svg>
+                Fulfilling linked sales order…
+              </div>
+            )}
+            {fulfillStatus === 'done' && (
+              <div className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-medium text-white shadow-lg">
+                ✓ Sales order fulfilled
+              </div>
+            )}
+            {fulfillStatus === 'error' && (
+              <div className="rounded-xl bg-red-600 px-4 py-2.5 text-xs font-medium text-white shadow-lg">
+                Fulfillment failed: {fulfillError} — fulfill manually from Sales module.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     );
 
   // ── Numpad display value ──────────────────────────────────────────────────────

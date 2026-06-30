@@ -50,6 +50,9 @@ import {
   computeRewardDiscount,
   itemMatchesApplicableItems,
   usePOSSettings,
+  usePOSWarehouse,
+  usePOSAvailableWarehouses,
+  usePOSLinkedSalesOrder,
 } from '@/app/shared/point-of-sale/store';
 import type { CartAppliedReward } from '@/app/shared/point-of-sale/store';
 import {
@@ -61,6 +64,7 @@ import { formatCurrency } from '@/app/shared/point-of-sale/utils';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import toast from 'react-hot-toast';
 import POSComboPicker from '@/app/shared/point-of-sale/components/pos-combo-picker';
+import POSOrderPickerModal from '@/app/shared/point-of-sale/components/pos-order-picker-modal';
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 function itemKey(item: POSCartItem) {
@@ -923,6 +927,7 @@ function ActionsModal({
   onPricelist,
   onCancelOrder,
   onReward,
+  onQuotationOrder,
   onClose,
 }: {
   onDiscount: () => void;
@@ -930,6 +935,7 @@ function ActionsModal({
   onPricelist: () => void;
   onCancelOrder: () => void;
   onReward: () => void;
+  onQuotationOrder: () => void;
   onClose: () => void;
 }) {
   const { selectedPricelist } = usePOSPricelist();
@@ -954,7 +960,7 @@ function ActionsModal({
     {
       label: 'Quotation/Order',
       icon: <PiLinkSimple className="h-5 w-5" />,
-      fn: null,
+      fn: () => { onQuotationOrder(); onClose(); },
     },
     {
       label: 'Reward',
@@ -1355,6 +1361,56 @@ export default function POSCart() {
   const [showPricelist, setShowPricelist] = useState(false);
   const [showRewards, setShowRewards] = useState(false);
   const [showHeldOrders, setShowHeldOrders] = useState(false);
+  const [showOrderPicker, setShowOrderPicker] = useState(false);
+
+  // Warehouse
+  const { warehouseId, setWarehouseId, warehouses } = usePOSWarehouse();
+  const { load: loadWarehouses } = usePOSAvailableWarehouses();
+  const { setLinkedSalesOrderId } = usePOSLinkedSalesOrder();
+
+  // Load warehouses once when token is available
+  useEffect(() => {
+    if (token) loadWarehouses(token);
+  }, [token, loadWarehouses]);
+
+  // Load a sales order into the cart
+  function handleLoadOrder(so: any) {
+    if (
+      items.length > 0 &&
+      !window.confirm('Loading this order will clear the current cart. Continue?')
+    ) return;
+    clearCart();
+    if (so.customerSnapshot?.name) {
+      setCustomer({
+        firstName: so.customerSnapshot.name.split(' ')[0] ?? '',
+        lastName: so.customerSnapshot.name.split(' ').slice(1).join(' '),
+        email: so.customerSnapshot.email ?? '',
+        phone: so.customerSnapshot.phone ?? '',
+        customerId: so.customer ?? undefined,
+      });
+    }
+    for (const line of (so.items ?? []).filter((l: any) => l.lineType !== 'section' && l.lineType !== 'note')) {
+      if (!line.subproduct) continue;
+      addItem({
+        subProductId: line.subproduct,
+        productId: line.product ?? '',
+        name: line.name,
+        sku: line.sku ?? '',
+        sizeId: line.sizeId ?? undefined,
+        sizeName: line.sizeName ?? undefined,
+        price: line.unitPrice ?? 0,
+        costPrice: line.costPrice ?? 0,
+        taxRate: line.taxRate ?? 0,
+        quantity: line.quantity ?? 1,
+        bundleDeals: [],
+        imageUrl: undefined,
+      });
+    }
+    if (so.warehouseId) setWarehouseId(so.warehouseId);
+    setLinkedSalesOrderId(so._id);
+    setShowOrderPicker(false);
+    toast.success(`Loaded ${so.soNumber} into cart`);
+  }
 
   // Dialpad state
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -2325,6 +2381,25 @@ export default function POSCart() {
           </div>
         </div>
 
+        {/* ── Warehouse selector ── */}
+        {warehouses.length > 0 && (
+          <div className="flex items-center gap-2 border-t border-gray-100 bg-gray-50/60 px-3 py-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Warehouse</span>
+            <select
+              value={warehouseId}
+              onChange={(e) => setWarehouseId(e.target.value)}
+              className="flex-1 rounded border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-700 focus:border-[#b20202] focus:outline-none"
+            >
+              <option value="">— select —</option>
+              {warehouses.map((w) => (
+                <option key={w._id} value={w._id}>
+                  {w.name}{w.isDefault ? ' ✓' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* ── Action bar ── */}
         {(() => {
           const barBtns = [
@@ -2519,12 +2594,22 @@ export default function POSCart() {
           onNote={() => setShowNote(true)}
           onPricelist={() => setShowPricelist(true)}
           onReward={() => setShowRewards(true)}
+          onQuotationOrder={() => setShowOrderPicker(true)}
           onCancelOrder={() => {
             clearCart();
+            setLinkedSalesOrderId(null);
             setSelectedKey(null);
             setDialInput('');
           }}
           onClose={() => setShowActions(false)}
+        />
+      )}
+
+      {showOrderPicker && token && (
+        <POSOrderPickerModal
+          token={token}
+          onLoad={handleLoadOrder}
+          onClose={() => setShowOrderPicker(false)}
         />
       )}
 

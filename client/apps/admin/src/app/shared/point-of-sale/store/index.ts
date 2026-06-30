@@ -199,6 +199,7 @@ export type CartData = {
   discountValue: number;
   note: string;
   appliedRewards: CartAppliedReward[];
+  linkedSalesOrderId?: string | null;
 };
 
 const DEFAULT_CUSTOMER: CartCustomer = {
@@ -1399,6 +1400,70 @@ export const usePOSSaleSignal = () => {
     [setSaleCounter]
   );
   return { saleCounter, notifySale };
+};
+
+// ─── Warehouse ───────────────────────────────────────────────────────────────
+
+export type POSWarehouse = { _id: string; name: string; isDefault?: boolean };
+
+const posWarehouseIdAtom = atomWithStorage<string>('dh-pos-warehouse-id', '');
+const posWarehousesAtom = atom<POSWarehouse[]>([]);
+const posWarehousesLoadedAtom = atom<boolean>(false);
+
+export const usePOSWarehouse = () => {
+  const [warehouseId, setWarehouseId] = useAtom(posWarehouseIdAtom);
+  const [warehouses] = useAtom(posWarehousesAtom);
+  return { warehouseId, setWarehouseId, warehouses };
+};
+
+export const usePOSAvailableWarehouses = () => {
+  const [warehouses, setWarehouses] = useAtom(posWarehousesAtom);
+  const [loaded, setLoaded] = useAtom(posWarehousesLoadedAtom);
+  const [, setWarehouseId] = useAtom(posWarehouseIdAtom);
+
+  const load = useCallback(
+    async (token: string) => {
+      if (loaded) return;
+      try {
+        const { posApi } = await import('@/app/shared/point-of-sale/api');
+        const data = await posApi.getWarehouses(token);
+        const list: POSWarehouse[] = data?.warehouses ?? data ?? [];
+        setWarehouses(list);
+        const def = list.find((w) => w.isDefault);
+        if (def) setWarehouseId(def._id);
+        setLoaded(true);
+      } catch {
+        /* silent — warehouse selector shows empty gracefully */
+      }
+    },
+    [loaded, setWarehouses, setWarehouseId, setLoaded]
+  );
+
+  return { warehouses, loaded, load };
+};
+
+/** Per-cart linked sales order — read/write on the active cart. */
+export const usePOSLinkedSalesOrder = () => {
+  const { terminal } = usePOSAuth();
+  const cartAtom = terminal === 'wholesale' ? cartsAtoms.wholesale : cartsAtoms.retail;
+  const activeCartIdAtom = terminal === 'wholesale' ? activeCartIdAtoms.wholesale : activeCartIdAtoms.retail;
+  const [carts, setCarts] = useAtom(cartAtom);
+  const activeCartId = useAtomValue(activeCartIdAtom);
+  const activeCart = carts.find((c) => c.id === activeCartId) ?? carts[0];
+  const linkedSalesOrderId = activeCart?.linkedSalesOrderId ?? null;
+
+  const setLinkedSalesOrderId = useCallback(
+    (id: string | null) => {
+      setCarts((prev) =>
+        prev.map((c) =>
+          c.id === (activeCartId ?? prev[0]?.id) ? { ...c, linkedSalesOrderId: id } : c
+        )
+      );
+    },
+    [setCarts, activeCartId]
+  );
+
+  return { linkedSalesOrderId, setLinkedSalesOrderId };
 };
 
 // ─── Currency formatter ───────────────────────────────────────────────────────

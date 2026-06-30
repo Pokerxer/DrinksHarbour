@@ -150,6 +150,8 @@ export default function SalesCreate({
   const [tab, setTab] = useState<CreateTab>('lines');
   const [pricelistId, setPricelistId] = useState('');
   const [pricelistOverridden, setPricelistOverridden] = useState(false);
+  const [warehouseId, setWarehouseId] = useState(initial?.warehouseId ?? '');
+  const [warehouses, setWarehouses] = useState<{ _id: string; name: string; isDefault?: boolean }[]>([]);
   // D3: customer default-address fetch state.
   const [loadingCustomerAddress, setLoadingCustomerAddress] = useState(false);
 
@@ -219,9 +221,29 @@ export default function SalesCreate({
       setPricelistId(initial.pricelist);
       setPricelistOverridden(true);
     }
+    if (initial.warehouseId) setWarehouseId(initial.warehouseId);
     // Seeds once when the document loads; `initial` is a stable fetch result.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial]);
+
+  // Fetch active warehouses once; auto-select the default if nothing is set.
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/api/warehouses?active=true`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((body) => {
+        const list = body?.data?.warehouses ?? body?.data ?? [];
+        setWarehouses(list);
+        if (!warehouseId) {
+          const def = list.find((w: { isDefault?: boolean }) => w.isDefault);
+          if (def) setWarehouseId(def._id);
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   // Backfill availableStock for lines loaded from a saved order (edit mode).
   // Fetches each unique sub-product in parallel and patches the matching lines.
@@ -550,6 +572,7 @@ export default function SalesCreate({
       deliveryAddress: deliverDifferent ? deliveryAddress : invoiceAddress,
       notes: notes || undefined,
       terms: terms || undefined,
+      warehouseId: warehouseId || undefined,
     };
   }, [
     priced,
@@ -563,6 +586,7 @@ export default function SalesCreate({
     deliverDifferent,
     notes,
     terms,
+    warehouseId,
   ]);
 
   // Auto-save: debounce 3 s after any field change. In create mode, the first
@@ -706,6 +730,7 @@ export default function SalesCreate({
           deliveryAddress: deliverDifferent ? deliveryAddress : invoiceAddress,
           notes: notes || undefined,
           terms: terms || undefined,
+          warehouseId: warehouseId || undefined,
         },
         token
       );
@@ -765,6 +790,7 @@ export default function SalesCreate({
           deliveryAddress: deliverDifferent ? deliveryAddress : invoiceAddress,
           notes: notes || undefined,
           terms: terms || undefined,
+          warehouseId: warehouseId || undefined,
         },
         token
       );
@@ -812,6 +838,9 @@ export default function SalesCreate({
         resolvedPricelistId={resolvedId}
         validUntil={validUntil}
         onValidUntilChange={setValidUntil}
+        warehouses={warehouses}
+        warehouseId={warehouseId}
+        onWarehouseChange={setWarehouseId}
       />
 
       <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/[0.04]">
