@@ -7,6 +7,7 @@ const Size = require('../models/Size');
 const Tenant = require('../models/Tenant');
 const Shipping = require('../models/Shipping');
 const Warehouse = require('../models/Warehouse');
+const WarehouseStock = require('../models/WarehouseStock');
 const { 
   NotFoundError, 
   ValidationError, 
@@ -152,6 +153,7 @@ const getMySubProducts = async (tenantId, options) => {
     sort = 'createdAt',
     order = 'desc',
     isSuperAdmin = false,
+    warehouseId = null,
   } = options;
 
   // Validate pagination
@@ -183,6 +185,28 @@ const getMySubProducts = async (tenantId, options) => {
       { sku: term },
       ...(matchingProductIds.length ? [{ product: { $in: matchingProductIds } }] : []),
     ];
+  }
+
+  // When a warehouse is specified, restrict to sub-products that have stock
+  // there (using WarehouseStock as the source of truth).
+  if (warehouseId && tenantId) {
+    const stockRows = await WarehouseStock.find({
+      tenant: tenantId,
+      warehouse: warehouseId,
+      currentQuantity: { $gt: 0 },
+    }).select('subProduct').lean();
+    const allowedIds = [...new Set(stockRows.map((r) => String(r.subProduct)))];
+    if (allowedIds.length === 0) {
+      return { subProducts: [], pagination: { page: 1, limit, total: 0, pages: 0, hasNext: false, hasPrev: false }, stats: { total: 0, active: 0, lowStock: 0, outOfStock: 0 } };
+    }
+    // AND with any existing $or / search filters
+    const warehouseFilter = { _id: { $in: allowedIds } };
+    if (query.$or) {
+      query.$and = [{ $or: query.$or }, warehouseFilter];
+      delete query.$or;
+    } else {
+      Object.assign(query, warehouseFilter);
+    }
   }
 
   // Build sort
@@ -230,6 +254,30 @@ const getMySubProducts = async (tenantId, options) => {
       .limit(limitNum)
       .lean(),
   ]);
+
+  // Enrich sizes with warehouse-specific stock when a warehouse is selected
+  if (warehouseId && tenantId && subProducts.length > 0) {
+    const whStockRows = await WarehouseStock.find({
+      tenant: tenantId,
+      warehouse: warehouseId,
+      subProduct: { $in: subProducts.map((sp) => sp._id) },
+    }).select('subProduct size currentQuantity').lean();
+    const whMap = new Map();
+    for (const r of whStockRows) {
+      const spKey = String(r.subProduct);
+      if (!whMap.has(spKey)) whMap.set(spKey, new Map());
+      whMap.get(spKey).set(String(r.size), r.currentQuantity);
+    }
+    for (const sp of subProducts) {
+      const spStock = whMap.get(String(sp._id)) || new Map();
+      if (sp.sizes && sp.sizes.length) {
+        for (const s of sp.sizes) {
+          s.availableStock = spStock.get(String(s._id)) ?? 0;
+        }
+      }
+      sp.availableStock = [...spStock.values()].reduce((sum, q) => sum + q, 0);
+    }
+  }
 
   // Build stats query base
   const statsQueryBase = tenantId ? { tenant: tenantId } : {};

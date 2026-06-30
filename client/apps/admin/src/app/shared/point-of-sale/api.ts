@@ -85,6 +85,7 @@ export const posApi = {
       category?: string;
       limit?: number;
       shopId?: string;
+      warehouseId?: string;
     }
   ) {
     const qs = new URLSearchParams();
@@ -92,6 +93,7 @@ export const posApi = {
     if (params?.category) qs.set('category', params.category);
     if (params?.limit) qs.set('limit', String(params.limit));
     if (params?.shopId) qs.set('shopId', params.shopId);
+    if (params?.warehouseId) qs.set('warehouseId', params.warehouseId);
     return request<{ products: POSProduct[]; total: number }>(
       `${API_URL}/api/pos/products?${qs}`,
       { headers: authHeaders(token) }
@@ -461,10 +463,7 @@ export const posApi = {
   // Sales create page to prefill its invoice/delivery blocks. Resolved by the
   // server from the customer's linked ecommerce Address, falling back to their
   // most recent non-cancelled Order's shipping address. null = no default found.
-  async getCustomerDefaultAddress(
-    token: string,
-    id: string
-  ) {
+  async getCustomerDefaultAddress(token: string, id: string) {
     return request<{ address: POSCustomerAddress | null }>(
       `${API_URL}/api/pos/customers/${id}/default-address`,
       { headers: authHeaders(token) }
@@ -649,10 +648,11 @@ export const posApi = {
   },
 
   async getWarehouses(token: string) {
-    return request<{ warehouses: { _id: string; name: string; isDefault?: boolean }[] }>(
-      `${API_URL}/api/warehouses?active=true`,
-      { headers: authHeaders(token) }
-    );
+    return request<{
+      warehouses: { _id: string; name: string; isDefault?: boolean }[];
+    }>(`${API_URL}/api/warehouses?active=true`, {
+      headers: authHeaders(token),
+    });
   },
 
   async getSalesOrdersForPOS(
@@ -661,18 +661,26 @@ export const posApi = {
   ) {
     const qs = new URLSearchParams(
       Object.fromEntries(
-        Object.entries({ limit: '50', ...params }).filter(([, v]) => v != null && v !== '')
+        Object.entries({ limit: '50', ...params }).filter(
+          ([, v]) => v != null && v !== ''
+        )
       ) as Record<string, string>
     ).toString();
-    return request<{ salesOrders: unknown[] }>(`${API_URL}/api/sales-orders?${qs}`, {
-      headers: authHeaders(token),
-    });
+    return request<{ salesOrders: unknown[] }>(
+      `${API_URL}/api/sales-orders?${qs}`,
+      {
+        headers: authHeaders(token),
+      }
+    );
   },
 
   async fulfillSalesOrder(
     token: string,
     id: string,
-    body: { warehouseId: string; items?: { subProductId: string; sizeId?: string; quantity: number }[] }
+    body: {
+      warehouseId: string;
+      items?: { subProductId: string; sizeId?: string; quantity: number }[];
+    }
   ) {
     return request<unknown>(`${API_URL}/api/sales-orders/${id}/fulfill`, {
       method: 'POST',

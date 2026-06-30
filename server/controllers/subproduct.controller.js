@@ -40,6 +40,7 @@ const getMySubProducts = asyncHandler(async (req, res) => {
     sort,
     order,
     isSuperAdmin: req.user?.role === 'super_admin',
+    warehouseId: req.query.warehouseId || null,
   });
 
   res.status(200).json({

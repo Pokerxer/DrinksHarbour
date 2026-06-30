@@ -101,6 +101,7 @@ export interface SalesLineTableProps {
   onRemove: (key: string) => void;
   /** Reorder lines by drag-and-drop. Receives the dragged key + the target key. */
   onReorder: (activeKey: string, overKey: string) => void;
+  warehouseId?: string;
 }
 
 /**
@@ -123,6 +124,7 @@ export default function SalesLineTable({
   onOpenScan,
   onRemove,
   onReorder,
+  warehouseId,
 }: SalesLineTableProps) {
   const sectionSubtotals = computeSectionSubtotals(lines);
   const hasEmptyProductRow = lines.some(
@@ -183,6 +185,7 @@ export default function SalesLineTable({
                   subtotal={sectionSubtotals.get(line.key) ?? 0}
                   onUpdate={onUpdate}
                   onRemove={onRemove}
+                  warehouseId={warehouseId}
                 />
               ))}
             </tbody>
@@ -280,6 +283,7 @@ interface SortableLineRowProps {
   subtotal: number;
   onUpdate: (key: string, patch: Partial<DraftLine>) => void;
   onRemove: (key: string) => void;
+  warehouseId?: string;
 }
 
 /** Sortable wrapper that applies the dnd-kit transform to the <tr> and renders
@@ -290,6 +294,7 @@ function SortableLineRow({
   subtotal,
   onUpdate,
   onRemove,
+  warehouseId,
 }: SortableLineRowProps) {
   const {
     attributes,
@@ -350,6 +355,7 @@ function SortableLineRow({
       style={style}
       attributes={attributes}
       dragHandle={dragHandle}
+      warehouseId={warehouseId}
     />
   );
 }
@@ -364,6 +370,7 @@ interface SalesLineProductRowProps {
   style: CSSProperties;
   attributes: DraggableAttributes;
   dragHandle: ReactNode;
+  warehouseId?: string;
 }
 
 /** A product line rendered as a single sortable <tr>: the product cell holds
@@ -379,6 +386,7 @@ function SalesLineProductRow({
   style,
   attributes,
   dragHandle,
+  warehouseId,
 }: SalesLineProductRowProps) {
   return (
     <tr ref={setNodeRef} style={style} {...attributes}>
@@ -407,6 +415,7 @@ function SalesLineProductRow({
           <ProductLineSearch
             token={token}
             query={line.name}
+            warehouseId={warehouseId}
             onSelect={(info: ProductLineSelection) =>
               onUpdate(line.key, {
                 subProductId: info.subProductId,

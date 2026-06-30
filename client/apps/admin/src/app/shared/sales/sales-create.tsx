@@ -151,7 +151,9 @@ export default function SalesCreate({
   const [pricelistId, setPricelistId] = useState('');
   const [pricelistOverridden, setPricelistOverridden] = useState(false);
   const [warehouseId, setWarehouseId] = useState(initial?.warehouseId ?? '');
-  const [warehouses, setWarehouses] = useState<{ _id: string; name: string; isDefault?: boolean }[]>([]);
+  const [warehouses, setWarehouses] = useState<
+    { _id: string; name: string; isDefault?: boolean }[]
+  >([]);
   // D3: customer default-address fetch state.
   const [loadingCustomerAddress, setLoadingCustomerAddress] = useState(false);
 
@@ -229,9 +231,12 @@ export default function SalesCreate({
   // Fetch active warehouses once; auto-select the default if nothing is set.
   useEffect(() => {
     if (!token) return;
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/api/warehouses?active=true`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    fetch(
+      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/api/warehouses?active=true`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    )
       .then((r) => r.json())
       .then((body) => {
         const list = body?.data?.warehouses ?? body?.data ?? [];
@@ -883,6 +888,7 @@ export default function SalesCreate({
                 onOpenScan={() => setScanOpen(true)}
                 onRemove={removeLine}
                 onReorder={reorderLines}
+                warehouseId={warehouseId || undefined}
               />
               <SalesTotals
                 untaxedAmount={untaxedAmount}

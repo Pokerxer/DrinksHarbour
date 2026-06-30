@@ -77,10 +77,12 @@ export default function ProductLineSearch({
   token,
   query,
   onSelect,
+  warehouseId,
 }: {
   token: string;
   query: string;
   onSelect: (info: ProductLineSelection) => void;
+  warehouseId?: string;
 }) {
   const [text, setText] = useState(query);
   const [initial, setInitial] = useState<ProductOption[]>([]);
@@ -92,6 +94,13 @@ export default function ProductLineSearch({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
+  // Reset initial cache when warehouse changes so a fresh fetch is forced
+  useEffect(() => {
+    setInitialLoaded(false);
+    setInitial([]);
+    setProducts([]);
+  }, [warehouseId]);
+
   useEffect(() => {
     setText(query);
   }, [query]);
@@ -100,7 +109,10 @@ export default function ProductLineSearch({
     if (initialLoaded || !token) return;
     setLoading(true);
     try {
-      const res = await subproductService.getSubProducts(token, { limit: 50 });
+      const res = await subproductService.getSubProducts(token, {
+        limit: 50,
+        ...(warehouseId ? { warehouseId } : {}),
+      });
       const list = mapProducts(res?.data?.subProducts ?? []);
       setInitial(list);
       setProducts(list);
@@ -125,6 +137,7 @@ export default function ProductLineSearch({
         const res = await subproductService.getSubProducts(token, {
           search: text.trim(),
           limit: 50,
+          ...(warehouseId ? { warehouseId } : {}),
         });
         const exact = mapProducts(res?.data?.subProducts ?? []);
         if (exact.length > 0) {

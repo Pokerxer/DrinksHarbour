@@ -1767,12 +1767,10 @@ exports.listPOSStaff = asyncHandler(async (req, res) => {
 exports.getPOSProducts = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
   const tenant   = req.tenant;
-  const { search, category, limit = 200, shopId } = req.query;
+  const { search, category, limit = 200, shopId, warehouseId: warehouseOverride } = req.query;
 
-  // Resolve the active shop's bound warehouse. Built-in shops (retail/
-  // wholesale) and unbound custom shops fall back to the tenant's default
-  // warehouse.
-  const warehouseId = await resolveShopWarehouse(tenant, tenantId, shopId);
+  // warehouseOverride (explicit param) wins; otherwise resolve from shopId.
+  const warehouseId = warehouseOverride || await resolveShopWarehouse(tenant, tenantId, shopId);
 
   // Resolve the auto pricelist id for the active shop so the grid knows the
   // default selection without a separate round-trip / race.

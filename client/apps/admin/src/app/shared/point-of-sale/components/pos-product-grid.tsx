@@ -34,6 +34,7 @@ import {
   usePOSCombos,
   usePOSProducts,
   usePOSActiveShop,
+  usePOSWarehouse,
 } from '@/app/shared/point-of-sale/store';
 import { applyPricelistToProduct } from '@/app/shared/point-of-sale/utils';
 import { useBarcodeScanner } from '@/app/shared/point-of-sale/hooks/useBarcodeScanner';
@@ -249,6 +250,7 @@ export default function POSProductGrid({ onAddToCart }: ProductGridProps) {
   }, [cartItems]);
 
   const { activeShop } = usePOSActiveShop();
+  const { warehouseId } = usePOSWarehouse();
 
   const fetchProducts = useCallback(
     async (silent = false) => {
@@ -260,7 +262,7 @@ export default function POSProductGrid({ onAddToCart }: ProductGridProps) {
       setError('');
       try {
         const products = isOnline
-          ? await getProductsOffline(token, activeShop?._id)
+          ? await getProductsOffline(token, activeShop?._id, warehouseId || undefined)
           : await getProductsWithLocalStock();
         setAllProducts((products || []) as unknown as POSProduct[]);
         setGlobalProducts((products || []) as unknown as POSProduct[]);
@@ -272,7 +274,7 @@ export default function POSProductGrid({ onAddToCart }: ProductGridProps) {
         if (!silent) setLoading(false);
       }
     },
-    [token, isOnline, activeShop?._id]
+    [token, isOnline, activeShop?._id, warehouseId]
   );
 
   // Initial load, and refetch whenever the active shop (and thus its bound
