@@ -18,7 +18,8 @@ export interface SalesPricelistState {
  */
 export function useSalesCustomerPricelist(
   token: string,
-  customerId: string
+  customerId: string,
+  warehouseId?: string
 ): SalesPricelistState {
   const [state, setState] = useState<SalesPricelistState>({
     pricelists: [],
@@ -36,7 +37,8 @@ export function useSalesCustomerPricelist(
         const res = await posApi.getPricelists(
           token,
           undefined,
-          customerId || undefined
+          customerId || undefined,
+          warehouseId || undefined
         );
         if (cancelled) return;
         const pricelists = res.pricelists || [];
@@ -58,7 +60,7 @@ export function useSalesCustomerPricelist(
     return () => {
       cancelled = true;
     };
-  }, [token, customerId]);
+  }, [token, customerId, warehouseId]);
 
   return state;
 }

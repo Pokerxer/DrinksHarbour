@@ -300,7 +300,8 @@ export default function SalesCreate({
 
   const { pricelists, resolvedId } = useSalesCustomerPricelist(
     token,
-    customer?._id ?? ''
+    customer?._id ?? '',
+    warehouseId || undefined
   );
 
   // Pricelist defaults to the customer's auto-resolved list, but the user can

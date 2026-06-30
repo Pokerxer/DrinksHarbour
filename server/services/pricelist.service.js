@@ -57,8 +57,8 @@ function pickPricelistForShop({ pricelists, shopId, warehouseId, customerPriceli
  * precedence — still bounded by `allowed`, so an off-tenant id is ignored.
  * Returns { resolved, allowed, warehouseId }.
  */
-async function resolveShopPricelist(tenant, tenantId, shopId, customerPricelistId = null) {
-  const warehouseId = await resolveShopWarehouse(tenant, tenantId, shopId);
+async function resolveShopPricelist(tenant, tenantId, shopId, customerPricelistId = null, warehouseOverride = null) {
+  const warehouseId = warehouseOverride || await resolveShopWarehouse(tenant, tenantId, shopId);
   const pricelists = await Pricelist.find({ tenant: tenantId }).lean();
   const { resolved, allowed } = pickPricelistForShop({
     pricelists, shopId, warehouseId, customerPricelistId,

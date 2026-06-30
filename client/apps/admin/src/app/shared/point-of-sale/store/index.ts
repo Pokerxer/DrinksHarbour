@@ -1301,17 +1301,19 @@ export const usePOSAvailablePricelists = () => {
   const [pricelists, setPricelists] = useAtom(posAllowedPricelistsAtom);
   const [resolvedId, setResolvedId] = useAtom(posResolvedPricelistIdAtom);
   const [loadedShop, setLoadedShop] = useAtom(posPricelistLoadedShopAtom);
+  const { warehouseId } = usePOSWarehouse();
 
   const load = useCallback(
     async (token: string) => {
-      const key = `${shopKey}::${customerId}`;
+      const key = `${shopKey}::${customerId}::${warehouseId || ''}`;
       if (loadedShop === key) return;
       try {
         const { posApi } = await import('@/app/shared/point-of-sale/api');
         const data = await posApi.getPricelists(
           token,
           shopKey,
-          customerId || undefined
+          customerId || undefined,
+          warehouseId || undefined
         );
         setPricelists(data.pricelists || []);
         setResolvedId(data.resolvedId ?? null);
@@ -1324,6 +1326,7 @@ export const usePOSAvailablePricelists = () => {
       loadedShop,
       shopKey,
       customerId,
+      warehouseId,
       setPricelists,
       setResolvedId,
       setLoadedShop,
@@ -1445,8 +1448,12 @@ export const usePOSAvailableWarehouses = () => {
 /** Per-cart linked sales order — read/write on the active cart. */
 export const usePOSLinkedSalesOrder = () => {
   const { terminal } = usePOSAuth();
-  const cartAtom = terminal === 'wholesale' ? cartsAtoms.wholesale : cartsAtoms.retail;
-  const activeCartIdAtom = terminal === 'wholesale' ? activeCartIdAtoms.wholesale : activeCartIdAtoms.retail;
+  const cartAtom =
+    terminal === 'wholesale' ? cartsAtoms.wholesale : cartsAtoms.retail;
+  const activeCartIdAtom =
+    terminal === 'wholesale'
+      ? activeCartIdAtoms.wholesale
+      : activeCartIdAtoms.retail;
   const [carts, setCarts] = useAtom(cartAtom);
   const activeCartId = useAtomValue(activeCartIdAtom);
   const activeCart = carts.find((c) => c.id === activeCartId) ?? carts[0];
@@ -1456,7 +1463,9 @@ export const usePOSLinkedSalesOrder = () => {
     (id: string | null) => {
       setCarts((prev) =>
         prev.map((c) =>
-          c.id === (activeCartId ?? prev[0]?.id) ? { ...c, linkedSalesOrderId: id } : c
+          c.id === (activeCartId ?? prev[0]?.id)
+            ? { ...c, linkedSalesOrderId: id }
+            : c
         )
       );
     },

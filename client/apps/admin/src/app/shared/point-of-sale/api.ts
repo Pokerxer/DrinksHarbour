@@ -118,12 +118,13 @@ export const posApi = {
     }>(`${API_URL}/api/pos/product-meta`, { headers: authHeaders(token) });
   },
 
-  async getPricelists(token: string, shopId?: string, customerId?: string) {
+  async getPricelists(token: string, shopId?: string, customerId?: string, warehouseId?: string) {
     const qs = new URLSearchParams();
     if (shopId) qs.set('shopId', shopId);
     // When a saved customer is selected, the server folds their assigned pricelist
     // into the allowed set and resolves it as the auto-pick.
     if (customerId) qs.set('customerId', customerId);
+    if (warehouseId) qs.set('warehouseId', warehouseId);
     return request<{ pricelists: any[]; resolvedId: string | null }>(
       `${API_URL}/api/pos/pricelists?${qs}`,
       { headers: authHeaders(token) }

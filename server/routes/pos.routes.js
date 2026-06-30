@@ -116,7 +116,7 @@ router.post('/orders/:id/void',               protectPOS, requirePOSPermission('
 router.get('/pricelists', protectPOSOrAdmin, async (req, res, next) => {
   try {
     const tenantId = req.tenant?._id;
-    const { shopId, customerId } = req.query;
+    const { shopId, customerId, warehouseId: warehouseOverride } = req.query;
 
     // A selected customer may have an assigned pricelist; it takes top precedence
     // so the auto-resolved id reflects the customer's pricelist on the selector.
@@ -133,7 +133,10 @@ router.get('/pricelists', protectPOSOrAdmin, async (req, res, next) => {
     }
 
     const { resolveShopPricelist } = require('../services/pricelist.service');
-    const { resolved, allowed } = await resolveShopPricelist(req.tenant, tenantId, shopId, customerPricelistId);
+    const { resolved, allowed } = await resolveShopPricelist(
+      req.tenant, tenantId, shopId, customerPricelistId,
+      warehouseOverride || null
+    );
     res.json({
       success: true,
       data: {
