@@ -125,6 +125,9 @@ export default function SalesLineTable({
   onReorder,
 }: SalesLineTableProps) {
   const sectionSubtotals = computeSectionSubtotals(lines);
+  const hasEmptyProductRow = lines.some(
+    (l) => l.lineType === 'product' && !l.subProductId
+  );
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
@@ -191,7 +194,13 @@ export default function SalesLineTable({
         <button
           type="button"
           onClick={onAdd}
-          className="flex items-center gap-1.5 text-sm font-medium text-[#b20202] hover:underline"
+          disabled={hasEmptyProductRow}
+          title={
+            hasEmptyProductRow
+              ? 'Select a product on the empty row first'
+              : undefined
+          }
+          className="flex items-center gap-1.5 text-sm font-medium text-[#b20202] hover:underline disabled:cursor-not-allowed disabled:opacity-40"
         >
           <PiPlus className="h-3.5 w-3.5" /> Add a product
         </button>

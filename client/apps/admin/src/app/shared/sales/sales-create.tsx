@@ -436,17 +436,17 @@ export default function SalesCreate({
     [lines, pricelist]
   );
 
+  // untaxedAmount = pre-discount subtotal (unitPrice × qty); discount shown separately.
   const untaxedAmount = priced
     .filter((l) => l.lineType === 'product')
-    .reduce((s, l) => s + l.lineTotal, 0);
-  const taxTotal = priced
-    .filter((l) => l.lineType === 'product')
-    .reduce((s, l) => s + l.taxAmount, 0);
-  // Total discount (resolved ₦) across product lines — for the totals summary.
+    .reduce((s, l) => s + l.unitPrice * l.quantity, 0);
   const discountTotal = priced
     .filter((l) => l.lineType === 'product')
     .reduce((s, l) => s + resolveDiscount(l.unitPrice, l) * l.quantity, 0);
-  const grandTotal = untaxedAmount + taxTotal;
+  const taxTotal = priced
+    .filter((l) => l.lineType === 'product')
+    .reduce((s, l) => s + l.taxAmount, 0);
+  const grandTotal = untaxedAmount - discountTotal + taxTotal;
   const hasLines = lines.some((l) => l.subProductId);
 
   // D3: pull the customer's resolved default address (ecommerce Address, or
