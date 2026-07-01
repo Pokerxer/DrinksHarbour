@@ -448,13 +448,26 @@ export const salesOrderService = {
     return response.json();
   },
 
-  async createActivity(id: string, body: { type: string; subject: string; description?: string }, token: string): Promise<{ success: boolean; data: any }> {
+  async createActivity(
+    id: string,
+    body: { type: 'note' | 'message' | 'log'; subject: string; description?: string },
+    token: string
+  ): Promise<{ success: boolean; data: any }> {
     const response = await fetch(`${API_URL}/api/sales-orders/${id}/activities`, {
       method: 'POST',
       headers: authHeaders(token),
       body: JSON.stringify(body),
     });
     await parseErrorOrThrow(response, 'Failed to create activity');
+    return response.json();
+  },
+
+  async updatePrices(id: string, token: string): Promise<SalesOrderResponse> {
+    const response = await fetch(`${API_URL}/api/sales-orders/${id}/update-prices`, {
+      method: 'POST',
+      headers: authHeaders(token),
+    });
+    await parseErrorOrThrow(response, 'Failed to update prices');
     return response.json();
   },
 
