@@ -1,6 +1,7 @@
 // server/services/salesOrder.service.js
 const SalesOrder = require('../models/SalesOrder');
 const { generateSalesOrderNumber } = require('../utils/orderUtils');
+const { logActivity, statusSubject } = require('./salesActivity.service');
 
 /**
  * F3: reject client-supplied foreign keys that don't belong to the acting
@@ -306,6 +307,20 @@ async function createSalesOrderDoc({ tenantId, salesperson, body }) {
     warehouseId: body.warehouseId,
     pricelist: body.pricelist,
   });
+
+  // Derive appliedPricelist snapshot server-side from the validated pricelist doc
+  // rather than trusting the client-supplied snapshot verbatim.
+  let appliedPricelist;
+  if (body.pricelist) {
+    try {
+      const Pricelist = require('../models/Pricelist');
+      const pl = await Pricelist.findById(body.pricelist).select('name').lean();
+      appliedPricelist = pl ? { pricelistId: pl._id, pricelistName: pl.name } : undefined;
+    } catch {
+      appliedPricelist = undefined;
+    }
+  }
+
   const priced = await resolveLinePricing(body.items || [], { tenantId, pricelistId: body.pricelist });
   const withPromos = await resolveLinePromotions(priced, { tenantId });
   const items = withPromos.map(mapLine);
@@ -321,7 +336,7 @@ async function createSalesOrderDoc({ tenantId, salesperson, body }) {
     customer: body.customer || undefined,
     customerSnapshot: body.customerSnapshot || undefined,
     pricelist: body.pricelist || null,
-    appliedPricelist: body.appliedPricelist || undefined,
+    appliedPricelist,
     currency: body.currency || 'NGN',
     items,
     ...totals, // subtotal, discountTotal, taxTotal, total
@@ -403,16 +418,51 @@ async function applyEdit(so, body) {
     so.customer = body.customer || undefined;
     so.customerSnapshot = body.customerSnapshot || undefined;
   }
+  // Capture the SO's pricelist BEFORE any body.pricelist update so we can
+  // detect whether the pricelist actually changed.
+  const origPricelist = String(so.pricelist || '');
+
   if (body.pricelist !== undefined) {
+    const pricelistChanged = String(body.pricelist || '') !== origPricelist;
     so.pricelist = body.pricelist || null;
-    so.appliedPricelist = body.appliedPricelist || undefined;
+    // Derive appliedPricelist snapshot server-side from the actual pricelist doc.
+    if (body.pricelist) {
+      try {
+        const Pricelist = require('../models/Pricelist');
+        const pl = await Pricelist.findById(body.pricelist).select('name').lean();
+        so.appliedPricelist = pl ? { pricelistId: pl._id, pricelistName: pl.name } : undefined;
+      } catch {
+        so.appliedPricelist = undefined;
+      }
+    } else {
+      so.appliedPricelist = undefined;
+    }
+    // When pricelist changes but items weren't included in the patch, re-price
+    // the existing stored lines against the new pricelist rather than leaving
+    // stale prices on the order.
+    if (pricelistChanged && !Array.isArray(body.items)) {
+      await recomputeOrderPricing(so, { tenantId: so.tenant });
+    }
   }
   if (Array.isArray(body.items)) {
-    // The pricelist block above has already applied any pricelist change to
-    // `so.pricelist`, so recomputeOrderPricing prices these new lines against
-    // the effective pricelist — identical to the prior inline recompute.
     so.items = body.items;
-    await recomputeOrderPricing(so, { tenantId: so.tenant });
+    // Skip the DB-backed pricing engine when the pricelist hasn't actually
+    // changed — the client already computed prices against the same pricelist.
+    // Still map and total them for normalization. This avoids redundant DB
+    // lookups on every autosave (the common case = user edited qty, not pricelist).
+    const pricelistSame = body.pricelist !== undefined &&
+      String(body.pricelist || '') === origPricelist;
+    if (pricelistSame) {
+      so.items = so.items.map(mapLine);
+      const totals = computeTotals(so.items);
+      so.subtotal = totals.subtotal;
+      so.discountTotal = totals.discountTotal;
+      so.promotionTotal = totals.promotionTotal;
+      so.taxTotal = totals.taxTotal;
+      so.total = totals.total;
+    } else {
+      await recomputeOrderPricing(so, { tenantId: so.tenant });
+    }
   }
   if (body.notes !== undefined) so.notes = body.notes;
   if (body.terms !== undefined) so.terms = body.terms;
@@ -563,6 +613,7 @@ async function bulkMarkSent(doc) {
   if (doc.quoteStatus !== 'draft') throw new Error(`Only draft quotations can be marked as sent, ${doc.soNumber} is ${doc.quoteStatus}`);
   doc.quoteStatus = 'sent';
   await doc.save();
+  logActivity(doc.tenant, doc._id, { subject: statusSubject(doc.docType, 'sent') });
   return {};
 }
 
@@ -577,18 +628,22 @@ async function bulkDeleteDoc(doc) {
 }
 
 async function bulkCancelDoc(doc) {
+  let action;
   if (doc.docType === 'order') {
     if (['fulfilled', 'cancelled'].includes(doc.orderStatus)) {
       throw new Error(`${doc.soNumber} cannot be cancelled — current status: ${doc.orderStatus}`);
     }
     doc.orderStatus = 'cancelled';
+    action = 'cancelled';
   } else {
     if (['converted', 'rejected'].includes(doc.quoteStatus)) {
       throw new Error(`${doc.soNumber} cannot be rejected — current status: ${doc.quoteStatus}`);
     }
     doc.quoteStatus = 'rejected';
+    action = 'rejected';
   }
   await doc.save();
+  logActivity(doc.tenant, doc._id, { subject: statusSubject(doc.docType, action) });
   return {};
 }
 

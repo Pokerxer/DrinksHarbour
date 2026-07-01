@@ -11,8 +11,8 @@ export type SalesActivityType =
 
 export interface SalesActivityMeta {
   field?: string;
-  from?: string | number;
-  to?: string | number;
+  from?: unknown;
+  to?: unknown;
   total?: { from: number; to: number };
   untaxed?: { from: number; to: number };
 }

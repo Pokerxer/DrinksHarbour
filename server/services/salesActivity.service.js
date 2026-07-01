@@ -28,12 +28,14 @@ function diffTotals(prev, next) {
 }
 
 const STATUS_SUBJECTS = {
+  draft: 'Quotation created',
   sent: 'Quotation sent',
   accepted: 'Quotation accepted',
   rejected: 'Quotation rejected',
   converted: 'Converted to Sales Order',
   confirmed: 'Sales Order confirmed',
   cancelled: 'Cancelled',
+  expired: 'Quotation expired',
 };
 function statusSubject(_docType, action) {
   return STATUS_SUBJECTS[action] || `Status: ${action}`;

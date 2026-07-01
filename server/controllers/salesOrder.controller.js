@@ -120,6 +120,11 @@ exports.updateSalesOrder = asyncHandler(async (req, res) => {
     pricelistName: so.appliedPricelist?.pricelistName,
     total: so.total, subtotal: so.subtotal,
     discountTotal: so.discountTotal, promotionTotal: so.promotionTotal,
+    customerName: so.customerSnapshot?.name,
+    paymentTerms: so.paymentTerms,
+    warehouseId: so.warehouseId?.toString(),
+    validUntil: so.validUntil,
+    notes: so.notes,
   };
   await svc.applyEdit(so, req.body);
   await so.save();
@@ -137,6 +142,31 @@ exports.updateSalesOrder = asyncHandler(async (req, res) => {
       subject: `Total ${salesLog.formatMoney(tDiff.total.from)} → ${salesLog.formatMoney(tDiff.total.to)}`,
       description: tDiff.untaxed ? `Untaxed ${salesLog.formatMoney(tDiff.untaxed.from)} → ${salesLog.formatMoney(tDiff.untaxed.to)}` : undefined,
       meta: { field: 'total', ...tDiff }, userId: req.user?._id,
+    });
+  }
+  const newCustomerName = so.customerSnapshot?.name;
+  if (before.customerName !== newCustomerName) {
+    await salesLog.logActivity(tenantId, so._id, {
+      subject: `Customer: ${before.customerName || '—'} → ${newCustomerName || '—'}`,
+      userId: req.user?._id,
+    });
+  }
+  if (before.paymentTerms !== so.paymentTerms) {
+    await salesLog.logActivity(tenantId, so._id, {
+      subject: `Payment terms: ${before.paymentTerms || '—'} → ${so.paymentTerms || '—'}`,
+      userId: req.user?._id,
+    });
+  }
+  if (before.warehouseId !== (so.warehouseId?.toString())) {
+    await salesLog.logActivity(tenantId, so._id, {
+      subject: 'Warehouse changed',
+      userId: req.user?._id,
+    });
+  }
+  if (String(before.validUntil) !== String(so.validUntil)) {
+    await salesLog.logActivity(tenantId, so._id, {
+      subject: 'Valid until updated',
+      userId: req.user?._id,
     });
   }
   res.json({ success: true, data: so });
@@ -252,6 +282,10 @@ exports.convertQuotation = asyncHandler(async (req, res) => {
     meta: { orderId: order._id },
   });
   res.status(201).json({ success: true, data: order });
+  await salesLog.logActivity(req.tenant?._id, order._id, {
+    subject: `Created via conversion from quotation ${so.soNumber}`,
+    userId: req.user?._id,
+  });
 });
 
 exports.confirmSalesOrder = asyncHandler(async (req, res) => {
@@ -329,6 +363,10 @@ exports.fulfillSalesOrder = asyncHandler(async (req, res) => {
   });
   auditPrivilegedSalesAction(req, 'SALES_ORDER_FULFILL', 'transfer', order);
   res.json({ success: true, data: order, posting });
+  await salesLog.logActivity(tenantId, so._id, {
+    subject: 'Sales Order fulfilled',
+    userId: req.user?._id || req.posUser?._id,
+  });
 });
 
 exports.returnSalesOrder = asyncHandler(async (req, res) => {
@@ -369,6 +407,10 @@ exports.returnSalesOrder = asyncHandler(async (req, res) => {
   });
   auditPrivilegedSalesAction(req, 'SALES_ORDER_RETURN', 'transfer', order);
   res.json({ success: true, data: order, restock });
+  await salesLog.logActivity(tenantId, so._id, {
+    subject: 'Return processed',
+    userId: req.user?._id || req.posUser?._id,
+  });
 });
 
 // ─── Task 2: Duplicate ───────────────────────────────────────────────────────
@@ -380,6 +422,11 @@ exports.duplicateSalesOrder = asyncHandler(async (req, res) => {
   const dup = await svc.duplicateSalesOrderDoc(so);
   auditPrivilegedSalesAction(req, 'SALES_ORDER_DUPLICATE', 'create', dup);
   res.status(201).json({ success: true, data: dup });
+  await salesLog.logActivity(tenantId, so._id, {
+    subject: `Duplicated — new document ${dup.soNumber}`,
+    description: `Sales order was duplicated. New document: ${dup.soNumber}`,
+    userId: req.user?._id,
+  });
 });
 
 // ─── Task 3: Import CSV ──────────────────────────────────────────────────────
@@ -405,6 +452,10 @@ exports.generatePaymentLink = asyncHandler(async (req, res) => {
   so.paymentLink = paymentLink;
   await so.save();
   res.json({ success: true, data: { paymentLink } });
+  await salesLog.logActivity(tenantId, so._id, {
+    subject: 'Payment link generated',
+    userId: req.user?._id,
+  });
 });
 
 // ─── Task 4b: Accrued Revenue ─────────────────────────────────────────────────

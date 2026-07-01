@@ -28,3 +28,19 @@ test('statusSubject maps lifecycle actions', () => {
   assert.strictEqual(svc.statusSubject('quotation', 'converted'), 'Converted to Sales Order');
   assert.strictEqual(svc.statusSubject('order', 'confirmed'), 'Sales Order confirmed');
 });
+
+test('statusSubject maps draft', () => {
+  assert.strictEqual(svc.statusSubject('quotation', 'draft'), 'Quotation created');
+});
+
+test('statusSubject maps expired', () => {
+  assert.strictEqual(svc.statusSubject('quotation', 'expired'), 'Quotation expired');
+});
+
+test('diffTotals returns untaxed-only delta when total unchanged', () => {
+  const prev = { total: 210, subtotal: 200, discountTotal: 20, promotionTotal: 0 };
+  const next = { total: 210, subtotal: 200, discountTotal: 0, promotionTotal: 0 };
+  assert.deepStrictEqual(svc.diffTotals(prev, next), {
+    untaxed: { from: 180, to: 200 },
+  });
+});
