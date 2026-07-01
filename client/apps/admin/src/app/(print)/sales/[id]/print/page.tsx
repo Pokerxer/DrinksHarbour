@@ -66,6 +66,21 @@ function isNote(item: SalesLineItem) {
   return item.lineType === 'note';
 }
 
+function sectionSubtotals(items: SalesLineItem[]): Map<string, number> {
+  const out = new Map<string, number>();
+  let cur: string | null = null;
+  for (const it of items) {
+    if (it.lineType === 'section') {
+      cur = it._id;
+      out.set(cur, 0);
+      continue;
+    }
+    if (it.lineType !== 'product') continue;
+    if (cur) out.set(cur, (out.get(cur) ?? 0) + (it.lineTotal || 0));
+  }
+  return out;
+}
+
 export default function SalesQuotationPrintPage({
   params,
 }: {
@@ -132,6 +147,7 @@ export default function SalesQuotationPrintPage({
       ? 'QUOTATION'
       : 'SALES ORDER';
 
+  const allSubtotals = sectionSubtotals(so.items);
   const productLines = so.items.filter((i) => !isSection(i) && !isNote(i));
   const untaxed = productLines.reduce((s, l) => s + (l.lineTotal ?? 0), 0);
   const taxAmt =
@@ -148,11 +164,16 @@ export default function SalesQuotationPrintPage({
     <>
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #e8eaed; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+        body {
+          background: #e8eaed;
+          font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+          -webkit-font-smoothing: antialiased;
+        }
         .no-print { display: flex; }
         @media print {
           .no-print { display: none !important; }
-          * { visibility: hidden !important; }
+          body { background: #fff; }
+          *, *::before, *::after { visibility: hidden !important; }
           .page, .page * { visibility: visible !important; }
           .page {
             position: fixed !important; top: 0 !important; left: 0 !important;
@@ -161,7 +182,7 @@ export default function SalesQuotationPrintPage({
             max-width: none !important; width: 100% !important;
           }
         }
-        @page { margin: 8mm; size: A4 portrait; }
+        @page { margin: 6mm 8mm; size: A4 portrait; }
       `}</style>
 
       {/* Toolbar */}
@@ -247,40 +268,40 @@ export default function SalesQuotationPrintPage({
           margin: '44px auto 32px',
           background: '#fff',
           borderRadius: 12,
-          boxShadow:
-            '0 4px 6px -1px rgba(0,0,0,0.07), 0 20px 60px rgba(0,0,0,0.14)',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 20px 48px rgba(0,0,0,0.10)',
           overflow: 'hidden',
           position: 'relative',
         }}
       >
-        {/* Red header band */}
+        {/* Header band — deeper red gradient with subtle pattern */}
         <div
           style={{
-            background: 'linear-gradient(135deg, #b20202 0%, #8b0000 100%)',
-            padding: '20px 36px 16px',
+            background: 'linear-gradient(135deg, #b91c1c 0%, #7f1d1d 50%, #5c1010 100%)',
+            padding: '24px 40px 18px',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'flex-end',
+            position: 'relative',
           }}
         >
-          <div>
+          <div style={{ position: 'relative', zIndex: 1 }}>
             <div
               style={{
-                fontSize: 24,
+                fontSize: 26,
                 fontWeight: 900,
                 color: '#fff',
-                letterSpacing: '-0.5px',
+                letterSpacing: '-0.75px',
                 lineHeight: 1,
               }}
             >
-              DrinksHarbour
+              {COMPANY.name}
             </div>
             <div
               style={{
                 fontSize: 10,
-                color: 'rgba(255,255,255,0.65)',
-                marginTop: 5,
-                lineHeight: 1.6,
+                color: 'rgba(255,255,255,0.6)',
+                marginTop: 6,
+                lineHeight: 1.7,
               }}
             >
               {COMPANY.address} · {COMPANY.city}
@@ -288,22 +309,22 @@ export default function SalesQuotationPrintPage({
               {COMPANY.email}
             </div>
           </div>
-          <div style={{ textAlign: 'right' }}>
+          <div style={{ textAlign: 'right', position: 'relative', zIndex: 1 }}>
             <div
               style={{
                 fontSize: 9,
                 fontWeight: 700,
-                letterSpacing: '0.18em',
-                color: 'rgba(255,255,255,0.55)',
+                letterSpacing: '0.2em',
+                color: 'rgba(255,255,255,0.5)',
                 textTransform: 'uppercase',
-                marginBottom: 3,
+                marginBottom: 4,
               }}
             >
               {docTitle}
             </div>
             <div
               style={{
-                fontSize: 24,
+                fontSize: 26,
                 fontWeight: 900,
                 color: '#fff',
                 letterSpacing: '-0.5px',
@@ -315,52 +336,69 @@ export default function SalesQuotationPrintPage({
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                marginTop: 6,
-                background: 'rgba(255,255,255,0.15)',
+                marginTop: 8,
+                background: 'rgba(255,255,255,0.12)',
                 color: '#fff',
-                padding: '3px 12px',
+                padding: '3px 14px',
                 borderRadius: 99,
                 fontSize: 9,
                 fontWeight: 800,
-                letterSpacing: '0.12em',
+                letterSpacing: '0.14em',
                 textTransform: 'uppercase',
-                border: '1px solid rgba(255,255,255,0.25)',
+                border: '1px solid rgba(255,255,255,0.2)',
               }}
             >
               {statusLabel}
             </div>
           </div>
+          {/* Subtle watermark accent */}
+          <div
+            style={{
+              position: 'absolute',
+              right: 40,
+              bottom: -10,
+              fontSize: 80,
+              fontWeight: 900,
+              color: 'rgba(255,255,255,0.03)',
+              letterSpacing: '0.3em',
+              userSelect: 'none',
+              pointerEvents: 'none',
+              lineHeight: 1,
+            }}
+          >
+            {docTitle === 'PRO-FORMA INVOICE' ? 'INVOICE' : docTitle}
+          </div>
         </div>
 
         {/* Body */}
-        <div style={{ padding: '20px 32px 24px' }}>
+        <div style={{ padding: '24px 40px 32px' }}>
           {/* Address cards */}
           <div
             style={{
               display: 'grid',
               gridTemplateColumns: hasShipTo ? '1fr 1fr 1fr' : '1fr 1fr',
-              gap: 12,
-              marginBottom: 16,
+              gap: 14,
+              marginBottom: 20,
             }}
           >
             {/* Bill To */}
             <div
               style={{
                 border: '1px solid #fecaca',
-                borderTop: '3px solid #b20202',
+                borderTop: '3px solid #b91c1c',
                 borderRadius: 8,
-                padding: '10px 14px',
-                background: '#fff8f8',
+                padding: '12px 16px',
+                background: '#fffbfb',
               }}
             >
               <div
                 style={{
-                  fontSize: 8,
+                  fontSize: 7,
                   fontWeight: 800,
-                  letterSpacing: '0.16em',
-                  color: '#b20202',
+                  letterSpacing: '0.18em',
+                  color: '#b91c1c',
                   textTransform: 'uppercase',
-                  marginBottom: 6,
+                  marginBottom: 8,
                 }}
               >
                 Bill To
@@ -370,23 +408,23 @@ export default function SalesQuotationPrintPage({
                   fontSize: 14,
                   fontWeight: 800,
                   color: '#111827',
-                  lineHeight: 1.2,
+                  lineHeight: 1.3,
                 }}
               >
                 {so.customerSnapshot?.name ?? 'Walk-in Customer'}
               </div>
               {so.customerSnapshot?.phone && (
-                <div style={{ fontSize: 10, color: '#6b7280', marginTop: 3 }}>
+                <div style={{ fontSize: 10, color: '#6b7280', marginTop: 4 }}>
                   {so.customerSnapshot.phone}
                 </div>
               )}
               {so.customerSnapshot?.email && (
-                <div style={{ fontSize: 10, color: '#6b7280' }}>
+                <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>
                   {so.customerSnapshot.email}
                 </div>
               )}
               {so.invoiceAddress?.street && (
-                <div style={{ fontSize: 10, color: '#6b7280', marginTop: 3 }}>
+                <div style={{ fontSize: 10, color: '#6b7280', marginTop: 4 }}>
                   {so.invoiceAddress.street}
                 </div>
               )}
@@ -409,18 +447,18 @@ export default function SalesQuotationPrintPage({
                 style={{
                   border: '1px solid #e5e7eb',
                   borderRadius: 8,
-                  padding: '10px 14px',
+                  padding: '12px 16px',
                   background: '#fafafa',
                 }}
               >
                 <div
                   style={{
-                    fontSize: 8,
+                    fontSize: 7,
                     fontWeight: 800,
-                    letterSpacing: '0.16em',
+                    letterSpacing: '0.18em',
                     color: '#9ca3af',
                     textTransform: 'uppercase',
-                    marginBottom: 6,
+                    marginBottom: 8,
                   }}
                 >
                   Deliver To
@@ -430,18 +468,18 @@ export default function SalesQuotationPrintPage({
                     fontSize: 14,
                     fontWeight: 800,
                     color: '#111827',
-                    lineHeight: 1.2,
+                    lineHeight: 1.3,
                   }}
                 >
                   {ship?.name ?? so.customerSnapshot?.name ?? '—'}
                 </div>
                 {ship?.phone && (
-                  <div style={{ fontSize: 10, color: '#6b7280', marginTop: 3 }}>
+                  <div style={{ fontSize: 10, color: '#6b7280', marginTop: 4 }}>
                     {ship.phone}
                   </div>
                 )}
                 {ship?.street && (
-                  <div style={{ fontSize: 10, color: '#6b7280', marginTop: 3 }}>
+                  <div style={{ fontSize: 10, color: '#6b7280', marginTop: 4 }}>
                     {ship.street}
                   </div>
                 )}
@@ -460,18 +498,18 @@ export default function SalesQuotationPrintPage({
               style={{
                 border: '1px solid #e5e7eb',
                 borderRadius: 8,
-                padding: '10px 14px',
+                padding: '12px 16px',
                 background: '#fafafa',
               }}
             >
               <div
                 style={{
-                  fontSize: 8,
+                  fontSize: 7,
                   fontWeight: 800,
-                  letterSpacing: '0.16em',
+                  letterSpacing: '0.18em',
                   color: '#9ca3af',
                   textTransform: 'uppercase',
-                  marginBottom: 6,
+                  marginBottom: 8,
                 }}
               >
                 Issued By
@@ -481,15 +519,15 @@ export default function SalesQuotationPrintPage({
                   fontSize: 14,
                   fontWeight: 800,
                   color: '#111827',
-                  lineHeight: 1.2,
+                  lineHeight: 1.3,
                 }}
               >
                 {COMPANY.name}
               </div>
-              <div style={{ fontSize: 10, color: '#6b7280', marginTop: 3 }}>
+              <div style={{ fontSize: 10, color: '#6b7280', marginTop: 4 }}>
                 {COMPANY.address}, {COMPANY.city}
               </div>
-              <div style={{ fontSize: 10, color: '#6b7280' }}>
+              <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>
                 {COMPANY.email}
               </div>
             </div>
@@ -500,10 +538,10 @@ export default function SalesQuotationPrintPage({
             style={{
               display: 'flex',
               gap: 0,
-              marginBottom: 16,
+              marginBottom: 20,
               background: '#f9fafb',
               borderRadius: 8,
-              border: '1px solid #f3f4f6',
+              border: '1px solid #e5e7eb',
               overflow: 'hidden',
             }}
           >
@@ -531,19 +569,19 @@ export default function SalesQuotationPrintPage({
                 key={label}
                 style={{
                   flex: 1,
-                  padding: '10px 14px',
+                  padding: '10px 16px',
                   borderRight:
                     i < arr.length - 1 ? '1px solid #e5e7eb' : 'none',
                 }}
               >
                 <div
                   style={{
-                    fontSize: 8,
+                    fontSize: 7,
                     fontWeight: 700,
                     color: '#9ca3af',
                     textTransform: 'uppercase',
-                    letterSpacing: '0.12em',
-                    marginBottom: 3,
+                    letterSpacing: '0.14em',
+                    marginBottom: 4,
                   }}
                 >
                   {label}
@@ -563,29 +601,29 @@ export default function SalesQuotationPrintPage({
               border: '1px solid #e5e7eb',
               borderRadius: 8,
               overflow: 'hidden',
-              marginBottom: 16,
+              marginBottom: 20,
             }}
           >
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ background: '#b20202' }}>
+                <tr style={{ background: '#b91c1c' }}>
                   {[
-                    { label: 'Item', align: 'left', w: '35%' },
+                    { label: 'Item', align: 'left', w: '36%' },
                     { label: 'Qty', align: 'right', w: '8%' },
-                    { label: 'Unit Price', align: 'right', w: '17%' },
-                    { label: 'Discount', align: 'right', w: '13%' },
-                    { label: 'Tax', align: 'right', w: '9%' },
-                    { label: 'Total', align: 'right', w: '18%' },
+                    { label: 'Unit Price', align: 'right', w: '16%' },
+                    { label: 'Discount', align: 'right', w: '12%' },
+                    { label: 'Tax', align: 'right', w: '8%' },
+                    { label: 'Total', align: 'right', w: '20%' },
                   ].map(({ label, align, w }) => (
                     <th
                       key={label}
                       style={{
-                        padding: '8px 12px',
+                        padding: '10px 14px',
                         fontSize: 8,
                         fontWeight: 700,
-                        color: 'rgba(255,255,255,0.9)',
+                        color: 'rgba(255,255,255,0.85)',
                         textTransform: 'uppercase',
-                        letterSpacing: '0.12em',
+                        letterSpacing: '0.14em',
                         textAlign: align as 'left' | 'right',
                         width: w,
                       }}
@@ -598,21 +636,36 @@ export default function SalesQuotationPrintPage({
               <tbody>
                 {so.items.map((item, i) => {
                   if (isSection(item)) {
+                    const sub = allSubtotals.get(item._id);
                     return (
-                      <tr key={item._id} style={{ background: '#f3f4f6' }}>
+                      <tr key={item._id} style={{ background: '#f1f5f9' }}>
                         <td
-                          colSpan={6}
+                          colSpan={5}
                           style={{
-                            padding: '6px 12px',
+                            padding: '7px 14px',
                             fontSize: 10,
                             fontWeight: 800,
-                            color: '#374151',
+                            color: '#334155',
                             textTransform: 'uppercase',
-                            letterSpacing: '0.08em',
-                            borderBottom: '1px solid #e5e7eb',
+                            letterSpacing: '0.1em',
+                            borderBottom: '1px solid #e2e8f0',
                           }}
                         >
                           {item.name}
+                        </td>
+                        <td
+                          style={{
+                            padding: '7px 14px',
+                            textAlign: 'right',
+                            fontSize: 10,
+                            fontWeight: 600,
+                            color: '#64748b',
+                            borderBottom: '1px solid #e2e8f0',
+                          }}
+                        >
+                          {typeof sub === 'number'
+                            ? `Subtotal ${fmtAmt(sub, so.currency)}`
+                            : ''}
                         </td>
                       </tr>
                     );
@@ -623,17 +676,17 @@ export default function SalesQuotationPrintPage({
                         <td
                           colSpan={6}
                           style={{
-                            padding: '5px 12px 5px 20px',
+                            padding: '6px 14px 6px 28px',
                             fontSize: 10,
-                            color: '#6b7280',
+                            color: '#94a3b8',
                             fontStyle: 'italic',
                             borderBottom:
                               i < so.items.length - 1
-                                ? '1px solid #f3f4f6'
+                                ? '1px solid #f1f5f9'
                                 : 'none',
                           }}
                         >
-                          {item.name}
+                          {item.name || item.description || ''}
                         </td>
                       </tr>
                     );
@@ -644,12 +697,12 @@ export default function SalesQuotationPrintPage({
                       style={{
                         borderBottom:
                           i < so.items.length - 1
-                            ? '1px solid #f3f4f6'
+                            ? '1px solid #f1f5f9'
                             : 'none',
                         background: i % 2 === 1 ? '#fafafa' : '#fff',
                       }}
                     >
-                      <td style={{ padding: '9px 12px' }}>
+                      <td style={{ padding: '10px 14px' }}>
                         <div
                           style={{
                             fontSize: 12,
@@ -663,8 +716,8 @@ export default function SalesQuotationPrintPage({
                           <div
                             style={{
                               fontSize: 9,
-                              color: '#9ca3af',
-                              marginTop: 2,
+                              color: '#94a3b8',
+                              marginTop: 3,
                             }}
                           >
                             {item.description}
@@ -673,42 +726,45 @@ export default function SalesQuotationPrintPage({
                         {item.sku && (
                           <div
                             style={{
-                              fontSize: 9,
-                              color: '#d1d5db',
-                              fontFamily: 'monospace',
-                              marginTop: 1,
+                              fontSize: 8,
+                              color: '#cbd5e1',
+                              fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+                              marginTop: 2,
                             }}
                           >
-                            {item.sku}
+                            SKU: {item.sku}
                           </div>
                         )}
                       </td>
                       <td
                         style={{
-                          padding: '9px 12px',
+                          padding: '10px 14px',
                           textAlign: 'right',
                           fontSize: 12,
+                          fontWeight: 600,
                           color: '#374151',
+                          fontVariantNumeric: 'tabular-nums',
                         }}
                       >
                         {item.quantity}
                       </td>
                       <td
                         style={{
-                          padding: '9px 12px',
+                          padding: '10px 14px',
                           textAlign: 'right',
                           fontSize: 12,
-                          color: '#374151',
+                          color: '#475569',
+                          fontVariantNumeric: 'tabular-nums',
                         }}
                       >
                         {fmtAmt(item.unitPrice, so.currency)}
                       </td>
                       <td
                         style={{
-                          padding: '9px 12px',
+                          padding: '10px 14px',
                           textAlign: 'right',
                           fontSize: 12,
-                          color: '#374151',
+                          color: '#475569',
                         }}
                       >
                         {item.discount > 0
@@ -719,21 +775,22 @@ export default function SalesQuotationPrintPage({
                       </td>
                       <td
                         style={{
-                          padding: '9px 12px',
+                          padding: '10px 14px',
                           textAlign: 'right',
                           fontSize: 12,
-                          color: '#374151',
+                          color: '#475569',
                         }}
                       >
                         {item.taxRate ? `${item.taxRate}%` : '—'}
                       </td>
                       <td
                         style={{
-                          padding: '9px 12px',
+                          padding: '10px 14px',
                           textAlign: 'right',
                           fontSize: 12,
                           fontWeight: 700,
                           color: '#111827',
+                          fontVariantNumeric: 'tabular-nums',
                         }}
                       >
                         {fmtAmt(item.lineTotal, so.currency)}
@@ -744,32 +801,30 @@ export default function SalesQuotationPrintPage({
               </tbody>
               <tfoot>
                 {discAmt > 0 && (
-                  <tr
-                    style={{
-                      borderTop: '1px solid #f3f4f6',
-                      background: '#fff',
-                    }}
-                  >
+                  <tr style={{ background: '#fff' }}>
                     <td
                       colSpan={5}
                       style={{
-                        padding: '6px 12px',
+                        padding: '7px 14px',
                         textAlign: 'right',
                         fontSize: 9,
                         fontWeight: 700,
-                        color: '#9ca3af',
+                        color: '#94a3b8',
                         textTransform: 'uppercase',
                         letterSpacing: '0.1em',
+                        borderTop: '1px solid #e2e8f0',
                       }}
                     >
                       Subtotal
                     </td>
                     <td
                       style={{
-                        padding: '6px 12px',
+                        padding: '7px 14px',
                         textAlign: 'right',
                         fontSize: 12,
+                        fontWeight: 600,
                         color: '#374151',
+                        borderTop: '1px solid #e2e8f0',
                       }}
                     >
                       {fmtAmt(untaxed, so.currency)}
@@ -781,11 +836,11 @@ export default function SalesQuotationPrintPage({
                     <td
                       colSpan={5}
                       style={{
-                        padding: '4px 12px',
+                        padding: '5px 14px',
                         textAlign: 'right',
                         fontSize: 9,
                         fontWeight: 700,
-                        color: '#9ca3af',
+                        color: '#94a3b8',
                         textTransform: 'uppercase',
                         letterSpacing: '0.1em',
                       }}
@@ -794,9 +849,10 @@ export default function SalesQuotationPrintPage({
                     </td>
                     <td
                       style={{
-                        padding: '4px 12px',
+                        padding: '5px 14px',
                         textAlign: 'right',
                         fontSize: 12,
+                        fontWeight: 600,
                         color: '#dc2626',
                       }}
                     >
@@ -809,11 +865,11 @@ export default function SalesQuotationPrintPage({
                     <td
                       colSpan={5}
                       style={{
-                        padding: '4px 12px',
+                        padding: '5px 14px',
                         textAlign: 'right',
                         fontSize: 9,
                         fontWeight: 700,
-                        color: '#9ca3af',
+                        color: '#94a3b8',
                         textTransform: 'uppercase',
                         letterSpacing: '0.1em',
                       }}
@@ -822,9 +878,10 @@ export default function SalesQuotationPrintPage({
                     </td>
                     <td
                       style={{
-                        padding: '4px 12px',
+                        padding: '5px 14px',
                         textAlign: 'right',
                         fontSize: 12,
+                        fontWeight: 600,
                         color: '#374151',
                       }}
                     >
@@ -834,18 +891,18 @@ export default function SalesQuotationPrintPage({
                 )}
                 <tr
                   style={{
-                    borderTop: '2px solid #e5e7eb',
-                    background: '#f9fafb',
+                    borderTop: '2px solid #b91c1c',
+                    background: '#f8fafc',
                   }}
                 >
                   <td
                     colSpan={5}
                     style={{
-                      padding: '10px 12px',
+                      padding: '11px 14px',
                       textAlign: 'right',
                       fontSize: 10,
-                      fontWeight: 700,
-                      color: '#6b7280',
+                      fontWeight: 800,
+                      color: '#475569',
                       textTransform: 'uppercase',
                       letterSpacing: '0.1em',
                     }}
@@ -854,11 +911,11 @@ export default function SalesQuotationPrintPage({
                   </td>
                   <td
                     style={{
-                      padding: '10px 12px',
+                      padding: '11px 14px',
                       textAlign: 'right',
-                      fontSize: 15,
+                      fontSize: 16,
                       fontWeight: 900,
-                      color: '#111827',
+                      color: '#b91c1c',
                     }}
                   >
                     {fmtAmt(so.total, so.currency)}
@@ -874,8 +931,8 @@ export default function SalesQuotationPrintPage({
               style={{
                 display: 'grid',
                 gridTemplateColumns: so.notes && so.terms ? '1fr 1fr' : '1fr',
-                gap: 12,
-                marginBottom: 20,
+                gap: 14,
+                marginBottom: 24,
               }}
             >
               {so.terms && (
@@ -883,18 +940,18 @@ export default function SalesQuotationPrintPage({
                   style={{
                     border: '1px solid #e5e7eb',
                     borderRadius: 8,
-                    padding: '10px 14px',
-                    background: '#f9fafb',
+                    padding: '12px 16px',
+                    background: '#fafafa',
                   }}
                 >
                   <div
                     style={{
-                      fontSize: 8,
+                      fontSize: 7,
                       fontWeight: 800,
-                      color: '#9ca3af',
-                      letterSpacing: '0.14em',
+                      color: '#94a3b8',
+                      letterSpacing: '0.16em',
                       textTransform: 'uppercase',
-                      marginBottom: 5,
+                      marginBottom: 6,
                     }}
                   >
                     Terms &amp; Conditions
@@ -902,8 +959,8 @@ export default function SalesQuotationPrintPage({
                   <div
                     style={{
                       fontSize: 11,
-                      color: '#374151',
-                      lineHeight: 1.6,
+                      color: '#475569',
+                      lineHeight: 1.7,
                       whiteSpace: 'pre-wrap',
                     }}
                   >
@@ -914,7 +971,7 @@ export default function SalesQuotationPrintPage({
               {so.notes && (
                 <div
                   style={{
-                    padding: '10px 14px',
+                    padding: '12px 16px',
                     background: '#fffbeb',
                     borderRadius: 8,
                     borderLeft: '3px solid #f59e0b',
@@ -922,18 +979,18 @@ export default function SalesQuotationPrintPage({
                 >
                   <div
                     style={{
-                      fontSize: 8,
+                      fontSize: 7,
                       fontWeight: 800,
                       color: '#92400e',
-                      letterSpacing: '0.14em',
+                      letterSpacing: '0.16em',
                       textTransform: 'uppercase',
-                      marginBottom: 5,
+                      marginBottom: 6,
                     }}
                   >
                     Notes
                   </div>
                   <div
-                    style={{ fontSize: 11, color: '#78350f', lineHeight: 1.6 }}
+                    style={{ fontSize: 11, color: '#78350f', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}
                   >
                     {so.notes}
                   </div>
@@ -946,14 +1003,14 @@ export default function SalesQuotationPrintPage({
           {isProforma && (
             <div
               style={{
-                marginBottom: 16,
-                padding: '8px 14px',
+                marginBottom: 20,
+                padding: '10px 16px',
                 background: '#eff6ff',
                 borderRadius: 8,
                 border: '1px solid #bfdbfe',
               }}
             >
-              <div style={{ fontSize: 10, color: '#1e40af', lineHeight: 1.5 }}>
+              <div style={{ fontSize: 10, color: '#1e40af', lineHeight: 1.6 }}>
                 <strong>Pro-Forma Invoice:</strong> This document is issued for
                 advance payment or customs purposes only and does not constitute
                 a tax invoice. A formal VAT invoice will be issued upon
@@ -967,29 +1024,29 @@ export default function SalesQuotationPrintPage({
             style={{
               display: 'grid',
               gridTemplateColumns: '1fr 1fr',
-              gap: 40,
-              marginTop: 8,
+              gap: 48,
+              marginTop: 12,
             }}
           >
             {['Authorised by (DrinksHarbour)', 'Accepted by (Customer)'].map(
               (label) => (
                 <div key={label}>
                   <div
-                    style={{ borderTop: '1.5px solid #e5e7eb', paddingTop: 10 }}
+                    style={{ borderTop: '1.5px solid #d1d5db', paddingTop: 10 }}
                   >
                     <div
                       style={{
-                        fontSize: 8,
+                        fontSize: 7,
                         fontWeight: 700,
-                        color: '#9ca3af',
+                        color: '#94a3b8',
                         textTransform: 'uppercase',
-                        letterSpacing: '0.1em',
+                        letterSpacing: '0.12em',
                       }}
                     >
                       {label}
                     </div>
                     <div
-                      style={{ marginTop: 24, fontSize: 9, color: '#e5e7eb' }}
+                      style={{ marginTop: 28, fontSize: 9, color: '#d1d5db' }}
                     >
                       Name / Date / Stamp
                     </div>
@@ -1003,28 +1060,28 @@ export default function SalesQuotationPrintPage({
         {/* Footer band */}
         <div
           style={{
-            background: '#f9fafb',
-            borderTop: '1px solid #e5e7eb',
-            padding: '10px 36px',
+            background: '#f8fafc',
+            borderTop: '1px solid #e2e8f0',
+            padding: '10px 40px',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
           }}
         >
-          <div style={{ fontSize: 9, color: '#9ca3af' }}>
+          <div style={{ fontSize: 9, color: '#94a3b8' }}>
             Generated {fmtDate(new Date().toISOString())}
           </div>
           <div
             style={{
               fontSize: 9,
-              color: '#d1d5db',
-              letterSpacing: '0.06em',
+              color: '#cbd5e1',
+              letterSpacing: '0.08em',
               fontWeight: 600,
             }}
           >
             DRINKSHARBOUR · {so.soNumber}
           </div>
-          <div style={{ fontSize: 9, color: '#9ca3af' }}>{COMPANY.email}</div>
+          <div style={{ fontSize: 9, color: '#94a3b8' }}>{COMPANY.email}</div>
         </div>
       </div>
     </>

@@ -2,6 +2,7 @@
 'use client';
 
 import { useMemo } from 'react';
+import { PiArrowsClockwise } from 'react-icons/pi';
 import CustomerSearch from './customer-search';
 import { INPUT_CLS } from './sales-address-block';
 import type { POSCustomer } from '@/app/shared/point-of-sale/types';
@@ -14,6 +15,8 @@ export interface SalesCustomerBarProps {
   pricelists: { _id: string; name: string }[];
   pricelistId: string;
   onPricelistChange: (id: string) => void;
+  /** Recompute product unit prices from the selected pricelist. */
+  onUpdatePrices?: () => void;
   /** Auto-resolved pricelist id for the selected customer (for the "auto-applied" hint). */
   resolvedPricelistId?: string | null;
   validUntil: string;
@@ -35,6 +38,7 @@ export default function SalesCustomerBar({
   pricelists,
   pricelistId,
   onPricelistChange,
+  onUpdatePrices,
   resolvedPricelistId,
   validUntil,
   onValidUntilChange,
@@ -83,6 +87,16 @@ export default function SalesCustomerBar({
               Auto-applied from this customer
             </p>
           )}
+          {pricelistId && onUpdatePrices && (
+            <button
+              type="button"
+              onClick={onUpdatePrices}
+              className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-brand transition-colors hover:text-brand-dark"
+            >
+              <PiArrowsClockwise className="h-3.5 w-3.5" />
+              Update Prices
+            </button>
+          )}
         </div>
 
         <div className="mt-4">
@@ -97,7 +111,8 @@ export default function SalesCustomerBar({
             <option value="">— Select warehouse —</option>
             {warehouses.map((w) => (
               <option key={w._id} value={w._id}>
-                {w.name}{w.isDefault ? ' (default)' : ''}
+                {w.name}
+                {w.isDefault ? ' (default)' : ''}
               </option>
             ))}
           </select>

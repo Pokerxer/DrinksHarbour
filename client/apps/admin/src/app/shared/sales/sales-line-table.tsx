@@ -40,18 +40,22 @@ import SalesLineSectionRow from './sales-line-section-row';
 import SalesLineNoteRow from './sales-line-note-row';
 
 const INLINE_CELL_CLS =
-  'w-full border-0 border-b border-transparent bg-transparent px-1 py-1 text-right text-sm text-gray-900 focus:border-[#b20202] focus:outline-none focus:ring-0';
+  'w-full border-0 border-b border-transparent bg-transparent px-1 py-1 text-right text-sm text-gray-900 focus:border-brand focus:outline-none focus:ring-0';
 
 const DESC_CLS =
-  'w-full resize-y border-0 border-b border-transparent bg-gray-50/60 px-2 py-1.5 text-xs text-gray-700 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-0';
+  'w-full resize-y border-0 border-b border-transparent bg-gray-50/60 px-2 py-1.5 text-xs text-gray-700 placeholder-gray-400 focus:border-brand focus:outline-none focus:ring-0';
 
-/** Resolve a line's discount to an absolute ₦ amount off the unit price (clamped). */
+/** Resolve a line's discount to an absolute ₦ amount off the WHOLE line total
+ *  (clamped to the line's gross). Percentage = percent of each unit; fixed = a
+ *  flat ₦ amount off the whole line. Mirrors sales-create's resolveDiscount. */
 function resolveDiscount(unitPrice: number, line: PricedLine): number {
+  const qty = Math.max(0, line.quantity || 0);
+  const gross = unitPrice * qty;
   const raw = Math.max(0, line.discount || 0);
   if (line.discountType === 'percentage') {
-    return Math.round(((unitPrice * Math.min(100, raw)) / 100) * 100) / 100;
+    return Math.min(gross, Math.round((gross * Math.min(100, raw)) / 100));
   }
-  return Math.min(unitPrice, raw);
+  return Math.min(gross, raw);
 }
 
 export type LineType = 'product' | 'section' | 'note';
@@ -68,7 +72,7 @@ export interface DraftLine {
   quantity: number;
   baseUnitPrice: number;
   discount: number;
-  /** 'fixed' = ₦ off unit price; 'percentage' = % of unit price. */
+  /** 'fixed' = flat ₦ off the whole line; 'percentage' = % of each unit. */
   discountType: 'fixed' | 'percentage';
   taxRate: number;
   costPrice: number;
@@ -203,35 +207,35 @@ export default function SalesLineTable({
               ? 'Select a product on the empty row first'
               : undefined
           }
-          className="flex items-center gap-1.5 text-sm font-medium text-[#b20202] hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex items-center gap-1.5 text-sm font-medium text-brand hover:underline disabled:cursor-not-allowed disabled:opacity-40"
         >
           <PiPlus className="h-3.5 w-3.5" /> Add a product
         </button>
         <button
           type="button"
           onClick={onAddSection}
-          className="flex items-center gap-1.5 text-sm font-medium text-[#b20202] hover:underline"
+          className="flex items-center gap-1.5 text-sm font-medium text-brand hover:underline"
         >
           <PiBookmarkSimple className="h-3.5 w-3.5" /> Add a section
         </button>
         <button
           type="button"
           onClick={onAddNote}
-          className="flex items-center gap-1.5 text-sm font-medium text-[#b20202] hover:underline"
+          className="flex items-center gap-1.5 text-sm font-medium text-brand hover:underline"
         >
           <PiTextT className="h-3.5 w-3.5" /> Add a note
         </button>
         <button
           type="button"
           onClick={onOpenCatalog}
-          className="flex items-center gap-1.5 text-sm font-medium text-[#b20202] hover:underline"
+          className="flex items-center gap-1.5 text-sm font-medium text-brand hover:underline"
         >
           <PiSquaresFour className="h-3.5 w-3.5" /> Catalogue
         </button>
         <button
           type="button"
           onClick={onOpenScan}
-          className="flex items-center gap-1.5 text-sm font-medium text-[#b20202] hover:underline"
+          className="flex items-center gap-1.5 text-sm font-medium text-brand hover:underline"
         >
           <PiCamera className="h-3.5 w-3.5" /> Scan &amp; Match
         </button>
@@ -612,7 +616,7 @@ function SelectedProductCell({
           target="_blank"
           rel="noreferrer"
           title="Open subproduct inventory"
-          className="inline-flex items-center gap-1 text-sm font-medium text-gray-900 hover:text-[#b20202] hover:underline"
+          className="inline-flex items-center gap-1 text-sm font-medium text-gray-900 hover:text-brand hover:underline"
         >
           <span className="truncate">{line.name}</span>
           <PiArrowSquareOut className="h-3.5 w-3.5 shrink-0 text-gray-400" />

@@ -65,7 +65,7 @@ export default function SalesReturnDetail({ id }: { id: string }) {
         </h1>
         <Link
           href={routes.eCommerce.salesDetails(so._id)}
-          className="text-sm text-[#b20202] hover:underline"
+          className="text-sm text-brand hover:underline"
         >
           View order
         </Link>

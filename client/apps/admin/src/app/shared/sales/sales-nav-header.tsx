@@ -125,7 +125,7 @@ export default function SalesNavHeader() {
           );
           const isOpen = openMenu === item.label;
           const activeCls =
-            'font-semibold after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-[#b20202]';
+            'font-semibold after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-brand';
 
           return (
             <div key={item.label} className="relative">
@@ -134,7 +134,7 @@ export default function SalesNavHeader() {
                 onClick={() => setOpenMenu(isOpen ? null : item.label)}
                 className={`relative flex items-center gap-1.5 px-4 py-3 text-sm transition-colors ${
                   isDropdownActive || isOpen
-                    ? `${activeCls} text-[#b20202]`
+                    ? `${activeCls} text-brand`
                     : 'font-normal text-gray-600 hover:text-gray-900'
                 }`}
               >

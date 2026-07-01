@@ -172,7 +172,7 @@ export default function SalesCatalogModal({
       setAddedIds({});
       setAddedLog([]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps — only `open` should trigger; load() omitted to avoid reload on token change
   }, [open]);
 
   // Debounced search reload.
@@ -329,7 +329,7 @@ export default function SalesCatalogModal({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search by name or SKU…"
-              className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-9 text-sm text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
+              className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-9 text-sm text-gray-900 placeholder-gray-400 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
               autoFocus
             />
             {loading && (
@@ -459,14 +459,14 @@ export default function SalesCatalogModal({
               href={routes.eCommerce.createSubProduct}
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline"
+              className="flex items-center gap-1.5 text-xs font-medium text-brand hover:underline"
             >
               <PiPlus className="h-3.5 w-3.5" /> Create new product
             </a>
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101]"
+              className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark"
             >
               Done
             </button>

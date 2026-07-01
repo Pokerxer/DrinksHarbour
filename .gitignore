@@ -13,3 +13,4 @@ server/.env
 
 # subagent-driven-development scratch (progress ledger, review packages)
 .superpowers/
+.npm-cache/

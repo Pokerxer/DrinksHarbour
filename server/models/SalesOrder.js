@@ -19,13 +19,13 @@ const lineSchema = new Schema({
   // required only for product lines — section/note lines have no qty/price.
   quantity:    { type: Number, required: function() { return this.lineType === 'product'; }, min: 0, default: 0 },
   unitPrice:   { type: Number, required: function() { return this.lineType === 'product'; }, min: 0, default: 0 }, // snapshot at line creation
-  discount:    { type: Number, default: 0, min: 0 },
-  discountType: { type: String, enum: ['fixed', 'percentage'], default: 'fixed' }, // fixed = ₦ off unit price; percentage = % of unit price (resolved to ₦ at save)
+  discount:    { type: Number, default: 0, min: 0 }, // raw operator input; meaning set by discountType
+  discountType: { type: String, enum: ['fixed', 'percentage'], default: 'fixed' }, // fixed = flat ₦ off the whole line; percentage = % of each unit
   taxRate:     { type: Number, default: 0, min: 0, max: 100 }, // % snapshot from SubProduct.taxRate, editable
   promoDiscount: { type: Number, default: 0, min: 0 },         // ₦ off this line from an auto-applied promotion
   promoName:     { type: String, trim: true },                 // snapshot of the applied promotion's name
   taxAmount:   { type: Number, default: 0, min: 0 },           // tax on this line (post-promo untaxed base * taxRate/100)
-  lineTotal:   { type: Number, required: function() { return this.lineType === 'product'; }, min: 0, default: 0 }, // UNTAXED: (unitPrice - discount) * quantity
+  lineTotal:   { type: Number, required: function() { return this.lineType === 'product'; }, min: 0, default: 0 }, // UNTAXED: (unitPrice * quantity) - line discount
   fulfilledQty: { type: Number, default: 0, min: 0 },
   postedQty:    { type: Number, default: 0, min: 0 },
   returnedQty:  { type: Number, default: 0, min: 0 },
@@ -67,13 +67,14 @@ const SalesOrderSchema = new Schema(
       name: String, phone: String, email: String,
       customerId: { type: ObjectId, ref: 'POSCustomer' },
     },
+    salesperson: { type: String, trim: true },
     pricelist: { type: ObjectId, ref: 'Pricelist', default: null },
     appliedPricelist: { pricelistId: { type: ObjectId, ref: 'Pricelist' }, pricelistName: String },
     currency: { type: String, default: 'NGN', enum: ['NGN', 'USD', 'EUR', 'GBP'] },
 
     items: [lineSchema],
     subtotal:      { type: Number, default: 0 }, // gross: sum(unitPrice * qty), pre-discount
-    discountTotal: { type: Number, default: 0 }, // sum(discount * qty)
+    discountTotal: { type: Number, default: 0 }, // sum(per-line discount off the whole line)
     promotionTotal:{ type: Number, default: 0 }, // sum(line promoDiscount) from auto-applied promotions
     taxTotal:      { type: Number, default: 0 }, // sum(line taxAmount); untaxed = subtotal - discountTotal - promotionTotal
     total:         { type: Number, default: 0 }, // grand total: (subtotal - discountTotal) + taxTotal

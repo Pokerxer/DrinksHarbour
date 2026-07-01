@@ -84,7 +84,7 @@ export default function TenantBanner() {
 
       {/* Right: settings link — platform admins go to tenant management, tenant users go to profile settings */}
       <Link
-        href={isMainSite ? "/ecommerce/tenants" : "/forms/profile-settings"}
+        href={isMainSite ? "/tenants" : "/forms/profile-settings"}
         className="flex flex-shrink-0 items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 ring-1 ring-gray-200 transition-all hover:bg-gray-50 hover:ring-gray-300"
       >
         Settings

@@ -118,7 +118,12 @@ export const posApi = {
     }>(`${API_URL}/api/pos/product-meta`, { headers: authHeaders(token) });
   },
 
-  async getPricelists(token: string, shopId?: string, customerId?: string, warehouseId?: string) {
+  async getPricelists(
+    token: string,
+    shopId?: string,
+    customerId?: string,
+    warehouseId?: string
+  ) {
     const qs = new URLSearchParams();
     if (shopId) qs.set('shopId', shopId);
     // When a saved customer is selected, the server folds their assigned pricelist

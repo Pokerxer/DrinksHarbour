@@ -2,10 +2,53 @@
 
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const userController = require('../controllers/user.controller');
-const { protect, authorize } = require('../middleware/auth.middleware');
+const { protect, authorize, superAdminOnly } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validation.middleware');
 const { body, param, query } = require('express-validator');
+
+// ============================================================
+// AUTH ENDPOINT RATE LIMITERS
+// Per-IP throttling to prevent brute-force on auth endpoints.
+// The global /api limiter (100 req/15min) still applies; these are stricter.
+// ============================================================
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // 20 login attempts per IP per 15 min (account lockout handles the rest at 5)
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many login attempts from this IP. Please try again later.' },
+  validate: { xForwardedForHeader: false, forwardedHeader: false },
+});
+
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5, // 5 registrations per IP per hour
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many registration attempts from this IP. Please try again later.' },
+  validate: { xForwardedForHeader: false, forwardedHeader: false },
+});
+
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5, // 5 password reset requests per IP per hour
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many password reset requests from this IP. Please try again later.' },
+  validate: { xForwardedForHeader: false, forwardedHeader: false },
+});
+
+const refreshTokenLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // 30 refresh requests per IP per 15 min
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many token refresh requests. Please try again later.' },
+  validate: { xForwardedForHeader: false, forwardedHeader: false },
+});
 
 // ============================================================
 // VALIDATION RULES
@@ -120,6 +163,7 @@ const mongoIdValidation = [
  */
 router.post(
   '/register',
+  registerLimiter,
   registerValidation,
   validate,
   userController.registerUser
@@ -131,6 +175,7 @@ router.post(
  */
 router.post(
   '/login',
+  loginLimiter,
   loginValidation,
   validate,
   userController.loginUser
@@ -142,6 +187,7 @@ router.post(
  */
 router.post(
   '/forgot-password',
+  forgotPasswordLimiter,
   [body('email').isEmail().normalizeEmail().withMessage('Please provide a valid email')],
   validate,
   userController.requestPasswordReset
@@ -189,6 +235,7 @@ router.post(
  */
 router.post(
   '/refresh-token',
+  refreshTokenLimiter,
   [body('refreshToken').notEmpty().withMessage('Refresh token is required')],
   validate,
   userController.refreshAuthToken
@@ -409,6 +456,7 @@ router.delete(
   mongoIdValidation,
   validate,
   authorize('super_admin'),
+  superAdminOnly,
   userController.permanentlyDeleteUser
 );
 

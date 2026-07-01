@@ -205,8 +205,8 @@ const cancelMovement = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { reason } = req.body;
 
-  // For cancel, we need to get the SubProduct from the movement
-  const tenantId = req.tenant?._id || (req.user?.role === 'super_admin' ? null : null);
+  // Resolve tenant from JWT authority — super_admin with no target tenant gets null (platform-wide)
+  const tenantId = req.tenant?._id || req.user?.tenant || null;
   
   const movement = await inventoryService.cancelMovement(
     id,

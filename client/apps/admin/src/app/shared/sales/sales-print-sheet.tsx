@@ -63,6 +63,16 @@ function isSection(i: SalesLineItem) {
 function isNote(i: SalesLineItem) {
   return i.lineType === 'note';
 }
+function sectionSubtotals(items: SalesLineItem[]): Map<string, number> {
+  const out = new Map<string, number>();
+  let cur: string | null = null;
+  for (const it of items) {
+    if (it.lineType === 'section') { cur = it._id; out.set(cur, 0); continue; }
+    if (it.lineType !== 'product') continue;
+    if (cur) out.set(cur, (out.get(cur) ?? 0) + (it.lineTotal || 0));
+  }
+  return out;
+}
 
 export type PrintSheetType = 'quotation' | 'proforma';
 
@@ -104,6 +114,7 @@ export default function SalesPrintSheet({
       ? 'QUOTATION'
       : 'SALES ORDER';
 
+  const allSubtotals = sectionSubtotals(so.items);
   const productLines = so.items.filter((i) => !isSection(i) && !isNote(i));
   const untaxed = productLines.reduce((s, l) => s + (l.lineTotal ?? 0), 0);
   const taxAmt =
@@ -145,7 +156,7 @@ export default function SalesPrintSheet({
         {/* Red header band */}
         <div
           style={{
-            background: 'linear-gradient(135deg,#b20202 0%,#8b0000 100%)',
+            background: 'linear-gradient(135deg,rgb(var(--brand-default)) 0%,rgb(var(--brand-dark)) 100%)',
             padding: '20px 36px 16px',
             display: 'flex',
             justifyContent: 'space-between',
@@ -236,7 +247,7 @@ export default function SalesPrintSheet({
             <div
               style={{
                 border: '1px solid #fecaca',
-                borderTop: '3px solid #b20202',
+                borderTop: '3px solid rgb(var(--brand-default))',
                 borderRadius: 8,
                 padding: '10px 14px',
                 background: '#fff8f8',
@@ -247,7 +258,7 @@ export default function SalesPrintSheet({
                   fontSize: 8,
                   fontWeight: 800,
                   letterSpacing: '0.16em',
-                  color: '#b20202',
+                  color: 'rgb(var(--brand-default))',
                   textTransform: 'uppercase',
                   marginBottom: 6,
                 }}
@@ -454,7 +465,7 @@ export default function SalesPrintSheet({
           >
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ background: '#b20202' }}>
+                <tr style={{ background: 'rgb(var(--brand-default))' }}>
                   {[
                     { label: 'Item', align: 'left', w: '35%' },
                     { label: 'Qty', align: 'right', w: '8%' },
@@ -483,11 +494,12 @@ export default function SalesPrintSheet({
               </thead>
               <tbody>
                 {so.items.map((item, i) => {
-                  if (isSection(item))
+                  if (isSection(item)) {
+                    const sub = allSubtotals.get(item._id);
                     return (
                       <tr key={item._id} style={{ background: '#f3f4f6' }}>
                         <td
-                          colSpan={6}
+                          colSpan={5}
                           style={{
                             padding: '6px 12px',
                             fontSize: 10,
@@ -500,8 +512,23 @@ export default function SalesPrintSheet({
                         >
                           {item.name}
                         </td>
+                        <td
+                          style={{
+                            padding: '6px 12px',
+                            textAlign: 'right',
+                            fontSize: 10,
+                            fontWeight: 600,
+                            color: '#6b7280',
+                            borderBottom: '1px solid #e5e7eb',
+                          }}
+                        >
+                          {typeof sub === 'number'
+                            ? `Subtotal ${fmtAmt(sub, so.currency)}`
+                            : ''}
+                        </td>
                       </tr>
                     );
+                  }
                   if (isNote(item))
                     return (
                       <tr key={item._id}>

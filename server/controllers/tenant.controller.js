@@ -3,6 +3,7 @@
 const asyncHandler = require('../utils/asyncHandler');
 const Tenant = require('../models/Tenant');
 const cloudinaryService = require('../services/cloudinary.service');
+const { logPrivilegedAction } = require('../utils/auditLog');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -163,6 +164,13 @@ exports.createAdminTenant = asyncHandler(async (req, res) => {
   const tenant = new Tenant(tenantData);
   await tenant.save();
 
+  // Audit: platform admin created a tenant
+  logPrivilegedAction(req, 'TENANT_CREATE', 'create', {
+    targetType: 'Tenant',
+    targetId: tenant._id,
+    targetTenantId: tenant._id,
+  });
+
   res.status(201).json({ success: true, data: { tenant } });
 });
 
@@ -177,6 +185,8 @@ exports.updateAdminTenant = asyncHandler(async (req, res) => {
     updateData.logo = await uploadTenantFile(req.files.logo[0], req.body.name || 'Tenant logo');
   }
 
+  const before = await Tenant.findById(req.params.id).lean();
+
   const tenant = await Tenant.findByIdAndUpdate(
     req.params.id,
     updateData,
@@ -186,6 +196,14 @@ exports.updateAdminTenant = asyncHandler(async (req, res) => {
   if (!tenant) {
     return res.status(404).json({ success: false, message: 'Tenant not found' });
   }
+
+  // Audit: platform admin updated a tenant
+  logPrivilegedAction(req, 'TENANT_UPDATE', 'update', {
+    targetType: 'Tenant',
+    targetId: tenant._id,
+    targetTenantId: tenant._id,
+    changes: { before, after: tenant.toObject() },
+  });
 
   res.status(200).json({ success: true, data: { tenant } });
 });
@@ -208,6 +226,14 @@ exports.deleteAdminTenant = asyncHandler(async (req, res) => {
       message: 'Cannot delete a system tenant.',
     });
   }
+
+  // Audit BEFORE deletion (target won't exist after)
+  logPrivilegedAction(req, 'TENANT_DELETE', 'delete', {
+    targetType: 'Tenant',
+    targetId: id,
+    targetTenantId: id,
+    changes: { before: tenant.toObject(), after: null },
+  });
 
   await Tenant.findByIdAndDelete(id);
 

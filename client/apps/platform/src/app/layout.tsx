@@ -16,6 +16,8 @@ import WhatsAppButton from "@/components/WhatsApp/WhatsAppButton";
 import AgeGate from "@/components/AgeGate/AgeGate";
 import PopupBanner from "@/components/Banner/PopupBanner";
 import AnalyticsTracker from "@/components/Analytics/AnalyticsTracker";
+import { TenantProvider } from "@/context/TenantContext";
+import { resolveTenant } from "@/lib/tenant";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -117,40 +119,45 @@ const websiteJsonLd = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Resolve tenant from subdomain (server-side)
+  const { tenant } = await resolveTenant();
+
   return (
     <GlobalProvider>
-      <html lang="en">
-        <body className={inter.className}>
-          <script
-            type="application/ld+json"
-            dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd) }}
-          />
-          <script
-            type="application/ld+json"
-            dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
-          />
-          <AnalyticsTracker />
-          <AgeGate />
-          <Header variant="default" showAnnouncement={false} />
-          {children}
-          <ModalCart />
-          <ModalWishlist />
-          <ModalSearch />
-          <ModalQuickview />
-          <ModalCompare />
-          <Footer />
-          <ModalNewsletter />
-          <MobileBottomNav />
-          <WhatsAppButton />
-          <ChatbotWidget />
-          <PopupBanner />
-        </body>
-      </html>
+      <TenantProvider initialTenant={tenant}>
+        <html lang="en">
+          <body className={inter.className}>
+            <script
+              type="application/ld+json"
+              dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd) }}
+            />
+            <script
+              type="application/ld+json"
+              dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
+            />
+            <AnalyticsTracker />
+            <AgeGate />
+            <Header variant="default" showAnnouncement={false} />
+            {children}
+            <ModalCart />
+            <ModalWishlist />
+            <ModalSearch />
+            <ModalQuickview />
+            <ModalCompare />
+            <Footer />
+            <ModalNewsletter />
+            <MobileBottomNav />
+            <WhatsAppButton />
+            <ChatbotWidget />
+            <PopupBanner />
+          </body>
+        </html>
+      </TenantProvider>
     </GlobalProvider>
   );
 }

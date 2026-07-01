@@ -35,10 +35,10 @@ export interface SalesCatalogFiltersProps {
 }
 
 const SELECT_CLS =
-  'w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none';
+  'w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:border-brand focus:outline-none';
 
 const SELECT_CLS_MOB =
-  'rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none';
+  'rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 focus:border-brand focus:outline-none';
 
 function CheckboxList({
   options,
@@ -67,7 +67,7 @@ function CheckboxList({
             <span
               className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
                 checked
-                  ? 'border-[#b20202] bg-[#b20202] text-white'
+                  ? 'border-brand bg-brand text-white'
                   : 'border-gray-300 bg-white'
               }`}
             >
@@ -143,7 +143,7 @@ export function SalesCatalogFilters({
           <button
             type="button"
             onClick={onClear}
-            className="flex items-center gap-1 text-[11px] font-medium text-[#b20202] hover:underline"
+            className="flex items-center gap-1 text-[11px] font-medium text-brand hover:underline"
           >
             <PiArrowCounterClockwise className="h-3 w-3" /> Clear
           </button>
@@ -182,7 +182,7 @@ export function SalesCatalogFilters({
           type="checkbox"
           checked={inStockOnly}
           onChange={(e) => onInStockOnlyChange(e.target.checked)}
-          className="h-3.5 w-3.5 rounded border-gray-300 text-[#b20202] focus:ring-[#b20202]/20"
+          className="h-3.5 w-3.5 rounded border-gray-300 text-brand focus:ring-brand/20"
         />
         In stock only
       </label>
@@ -261,7 +261,7 @@ export function SalesCatalogFiltersCompact({
           type="checkbox"
           checked={inStockOnly}
           onChange={(e) => onInStockOnlyChange(e.target.checked)}
-          className="h-3.5 w-3.5 rounded border-gray-300 text-[#b20202]"
+          className="h-3.5 w-3.5 rounded border-gray-300 text-brand"
         />
         In stock
       </label>

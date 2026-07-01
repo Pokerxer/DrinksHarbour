@@ -1,7 +1,12 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { PiX, PiMagnifyingGlass, PiSpinner, PiArrowDownLeft } from 'react-icons/pi';
+import {
+  PiX,
+  PiMagnifyingGlass,
+  PiSpinner,
+  PiArrowDownLeft,
+} from 'react-icons/pi';
 import { posApi } from '@/app/shared/point-of-sale/api';
 
 interface SOLine {
@@ -49,13 +54,18 @@ function statusColor(so: SalesOrderRow): string {
   const s = statusLabel(so);
   if (['draft', 'sent'].includes(s)) return 'bg-yellow-100 text-yellow-700';
   if (['confirmed', 'accepted'].includes(s)) return 'bg-blue-100 text-blue-700';
-  if (['fulfilled', 'converted'].includes(s)) return 'bg-emerald-100 text-emerald-700';
-  if (['rejected', 'cancelled', 'expired'].includes(s)) return 'bg-red-100 text-red-600';
+  if (['fulfilled', 'converted'].includes(s))
+    return 'bg-emerald-100 text-emerald-700';
+  if (['rejected', 'cancelled', 'expired'].includes(s))
+    return 'bg-red-100 text-red-600';
   return 'bg-gray-100 text-gray-600';
 }
 
 function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 export default function POSOrderPickerModal({ token, onLoad, onClose }: Props) {
@@ -63,20 +73,23 @@ export default function POSOrderPickerModal({ token, onLoad, onClose }: Props) {
   const [orders, setOrders] = useState<SalesOrderRow[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const fetch = useCallback(async (q: string) => {
-    setLoading(true);
-    try {
-      const data = await posApi.getSalesOrdersForPOS(token, {
-        search: q || undefined,
-        limit: 50,
-      });
-      setOrders((data as any)?.salesOrders ?? (data as any)?.data ?? []);
-    } catch {
-      setOrders([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
+  const fetch = useCallback(
+    async (q: string) => {
+      setLoading(true);
+      try {
+        const data = await posApi.getSalesOrdersForPOS(token, {
+          search: q || undefined,
+          limit: 50,
+        });
+        setOrders((data as any)?.salesOrders ?? (data as any)?.data ?? []);
+      } catch {
+        setOrders([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [token]
+  );
 
   useEffect(() => {
     fetch('');
@@ -92,8 +105,14 @@ export default function POSOrderPickerModal({ token, onLoad, onClose }: Props) {
       <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="text-base font-semibold text-gray-900">Quotations &amp; Orders</h2>
-          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <h2 className="text-base font-semibold text-gray-900">
+            Quotations &amp; Orders
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+          >
             <PiX className="h-5 w-5" />
           </button>
         </div>
@@ -120,7 +139,9 @@ export default function POSOrderPickerModal({ token, onLoad, onClose }: Props) {
               <PiSpinner className="h-6 w-6 animate-spin" />
             </div>
           ) : orders.length === 0 ? (
-            <p className="py-16 text-center text-sm text-gray-400">No orders found</p>
+            <p className="py-16 text-center text-sm text-gray-400">
+              No orders found
+            </p>
           ) : (
             <table className="w-full text-sm">
               <thead>
@@ -139,15 +160,22 @@ export default function POSOrderPickerModal({ token, onLoad, onClose }: Props) {
                     <td className="px-4 py-3 font-mono text-xs font-medium text-gray-800">
                       {so.soNumber}
                     </td>
-                    <td className="px-4 py-3 text-gray-500">{fmtDate(so.createdAt)}</td>
+                    <td className="px-4 py-3 text-gray-500">
+                      {fmtDate(so.createdAt)}
+                    </td>
                     <td className="max-w-[140px] truncate px-4 py-3 text-gray-700">
                       {so.customerSnapshot?.name ?? 'Walk-in'}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums text-gray-900">
-                      ₦{so.total?.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      ₦
+                      {so.total?.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                      })}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${statusColor(so)}`}>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${statusColor(so)}`}
+                      >
                         {statusLabel(so)}
                       </span>
                     </td>

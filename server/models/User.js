@@ -153,6 +153,65 @@ const userSchema = new Schema(
     },
     suspendedReason: String,
     suspendedUntil: Date,
+    suspendedAt: Date,
+    suspendedBy: { type: ObjectId, ref: 'User' },
+
+    // ── Security: password change tracking (invalidates pre-reset JWTs) ──────
+    passwordChangedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
+    // ── Security: account lockout (brute-force protection) ───────────────────
+    failedLoginAttempts: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    accountLockedUntil: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    lastFailedLogin: {
+      type: Date,
+      default: null,
+    },
+    lastFailedLoginIp: { type: String, trim: true },
+
+    // ── Security: last login metadata ────────────────────────────────────────
+    lastLoginIp: { type: String, trim: true },
+    lastLoginUserAgent: { type: String, trim: true },
+
+    // ── MFA / 2FA ─────────────────────────────────────────────────────────────
+    mfaEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    mfaMethod: {
+      type: String,
+      enum: ['none', 'totp', 'sms', 'email'],
+      default: 'none',
+    },
+    mfaSecret: {
+      type: String,
+      select: false, // never expose in queries unless explicitly selected
+    },
+    mfaBackupCodes: [{
+      type: String,
+      select: false,
+    }],
+    mfaEnabledAt: Date,
+
+    // ── Soft-delete tracking ──────────────────────────────────────────────────
+    deletedAt: Date,
+    deletedBy: { type: ObjectId, ref: 'User' },
+
+    // ── Account lifecycle timestamps ─────────────────────────────────────────
+    activatedAt: Date,
+    activatedBy: { type: ObjectId, ref: 'User' },
+    updatedBy: { type: ObjectId, ref: 'User' },
 
     lastLogin: Date,
     loginCount: {

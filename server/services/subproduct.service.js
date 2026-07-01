@@ -17,6 +17,10 @@ const {
 const { generateSKU } = require('../utils/skuGenerator');
 const { calculateSubProductPricing, calculateSizePricing } = require('../utils/pricing');
 
+// Tenant-sensitive fields that must NEVER be exposed via public endpoints
+const PRIVATE_SUBPRODUCT_FIELDS = '-costPrice -supplierPrice -vendorNotes -vendorContactName -vendorPhone -vendorEmail -vendorWebsite -vendorAddress -tenantNotes -marginPercentage -markupPercentage -reservedStock -reorderPoint -reorderQuantity -lowStockThreshold -embeddingOverride';
+const PRIVATE_SIZE_FIELDS = '-costPrice';
+
 /**
  * Sanitize SubProduct reference fields (shipping, warehouse) to handle corrupt data
  * This handles cases where numeric or invalid string values were accidentally stored
@@ -2862,8 +2866,9 @@ const bulkCreateSubProducts = async (productIds, tenantId, user) => {
  * Creates a copy of an existing SubProduct for the same or different tenant
  */
 const duplicateSubProduct = async (subProductId, tenantId) => {
-  // Get original SubProduct
-  const original = await SubProduct.findById(subProductId)
+  // Get original SubProduct — scope to the caller's tenant to prevent cross-tenant reads
+  // For super_admin, tenantId is the target tenant (resolved via x-tenant-slug)
+  const original = await SubProduct.findOne({ _id: subProductId, tenant: tenantId })
     .populate('product')
     .lean();
 
@@ -2871,7 +2876,7 @@ const duplicateSubProduct = async (subProductId, tenantId) => {
     throw new NotFoundError('SubProduct not found');
   }
 
-  // Check if tenant is provided, otherwise use same tenant
+  // Target tenant is the same as the source (caller's tenant)
   const targetTenantId = tenantId || original.tenant;
 
   // Verify tenant exists
@@ -2966,8 +2971,13 @@ const duplicateSubProduct = async (subProductId, tenantId) => {
  * Moves a SubProduct and all its sizes to a new tenant
  */
 const transferSubProduct = async (subProductId, newTenantId, user) => {
-  // Get SubProduct
-  const subProduct = await SubProduct.findById(subProductId)
+  // Get SubProduct — scope by caller's tenant for non-super_admins
+  const isSuperAdmin = user.role === 'super_admin';
+  const filter = { _id: subProductId };
+  if (!isSuperAdmin && user.tenant) {
+    filter.tenant = user.tenant;
+  }
+  const subProduct = await SubProduct.findOne(filter)
     .populate('product tenant');
 
   if (!subProduct) {
@@ -2975,7 +2985,6 @@ const transferSubProduct = async (subProductId, newTenantId, user) => {
   }
 
   // Check user permissions
-  const isSuperAdmin = user.role === 'super_admin';
   const isCurrentTenantAdmin = subProduct.tenant.admin?.toString() === user._id.toString();
 
   if (!isSuperAdmin && !isCurrentTenantAdmin) {
@@ -3304,12 +3313,7 @@ const calculateEffectivePrice = async (subProductId, sizeId) => {
     // Tenant sets their own price (markup on cost)
     // Price is already set by tenant, no calculation needed
     breakdown.markupPercentage = tenant.markupPercentage;
-    breakdown.costPrice = size.costPrice;
-    
-    if (size.costPrice) {
-      const markup = ((basePrice - size.costPrice) / size.costPrice) * 100;
-      breakdown.actualMarkup = markup.toFixed(2);
-    }
+    // Do NOT expose costPrice — it is tenant-sensitive operational data
   } else if (tenant.revenueModel === 'commission') {
     // Platform sets price, tenant gets commission
     // Add platform commission to base price
@@ -3468,8 +3472,8 @@ const removeBulkDiscount = async (subProductIds, tenantId) => {
  * Get SubProduct price history
  * Returns historical pricing data for a SubProduct
  */
-const getSubProductPriceHistory = async (subProductId) => {
-  const subProduct = await SubProduct.findById(subProductId)
+const getSubProductPriceHistory = async (subProductId, tenantId) => {
+  const subProduct = await SubProduct.findOne({ _id: subProductId, tenant: tenantId })
     .populate('product tenant');
 
   if (!subProduct) {
@@ -3585,8 +3589,8 @@ const getSubProductInventory = async (subProductId, tenantId) => {
     throw new NotFoundError('SubProduct not found for this tenant');
   }
 
-  // Get all sizes with stock information
-  const sizes = await Size.find({ subProduct: subProductId })
+  // Get all sizes with stock information — tenant-scoped for defense-in-depth
+  const sizes = await Size.find({ subProduct: subProductId, tenant: tenantId })
     .sort({ volumeMl: 1 });
 
   // Calculate inventory metrics
@@ -3651,7 +3655,7 @@ const getSubProductInventory = async (subProductId, tenantId) => {
  * Adjust stock for a specific size
  * Supports increase, decrease, and set operations with reason tracking
  */
-const adjustStock = async (subProductId, sizeId, adjustment, reason, user) => {
+const adjustStock = async (subProductId, tenantId, sizeId, adjustment, reason, user) => {
   const { type, quantity } = adjustment;
 
   if (!['increase', 'decrease', 'set'].includes(type)) {
@@ -3662,10 +3666,11 @@ const adjustStock = async (subProductId, sizeId, adjustment, reason, user) => {
     throw new ValidationError('Quantity must be a positive number');
   }
 
-  // Get size
+  // Get size — tenant-scoped to prevent cross-tenant stock mutation
   const size = await Size.findOne({
     _id: sizeId,
     subProduct: subProductId,
+    tenant: tenantId,
   });
 
   if (!size) {
@@ -3723,9 +3728,9 @@ const adjustStock = async (subProductId, sizeId, adjustment, reason, user) => {
 
   await size.save();
 
-  // Update SubProduct availability
-  const subProduct = await SubProduct.findById(subProductId);
-  const allSizes = await Size.find({ subProduct: subProductId });
+  // Update SubProduct availability — tenant-scoped
+  const subProduct = await SubProduct.findOne({ _id: subProductId, tenant: tenantId });
+  const allSizes = await Size.find({ subProduct: subProductId, tenant: tenantId });
 
   const hasStock = allSizes.some(s => s.stock > 0);
   const hasLowStock = allSizes.some(s => s.availability === 'low_stock');
@@ -3763,8 +3768,8 @@ const adjustStock = async (subProductId, sizeId, adjustment, reason, user) => {
  * Get stock movement history for a SubProduct
  * Returns all stock adjustments within date range
  */
-const getStockMovements = async (subProductId, dateRange = {}) => {
-  const subProduct = await SubProduct.findById(subProductId)
+const getStockMovements = async (subProductId, tenantId, dateRange = {}) => {
+  const subProduct = await SubProduct.findOne({ _id: subProductId, tenant: tenantId })
     .populate('product tenant');
 
   if (!subProduct) {
@@ -3998,8 +4003,8 @@ const setReorderPoints = async (subProductId, reorderData, tenantId) => {
  * Get sales data for a SubProduct
  * Returns sales performance within date range
  */
-const getSubProductSales = async (subProductId, dateRange = {}) => {
-  const subProduct = await SubProduct.findById(subProductId)
+const getSubProductSales = async (subProductId, tenantId, dateRange = {}) => {
+  const subProduct = await SubProduct.findOne({ _id: subProductId, tenant: tenantId })
     .populate('product tenant');
 
   if (!subProduct) {
@@ -4094,8 +4099,8 @@ const getSubProductSales = async (subProductId, dateRange = {}) => {
  * Get revenue data for a SubProduct
  * Returns detailed revenue breakdown
  */
-const getSubProductRevenue = async (subProductId, dateRange = {}) => {
-  const subProduct = await SubProduct.findById(subProductId)
+const getSubProductRevenue = async (subProductId, tenantId, dateRange = {}) => {
+  const subProduct = await SubProduct.findOne({ _id: subProductId, tenant: tenantId })
     .populate('product tenant');
 
   if (!subProduct) {
@@ -4249,8 +4254,8 @@ const getTopSellingSubProducts = async (tenantId, limit = 10, dateRange = {}) =>
  * Get conversion rate for a SubProduct
  * Calculates views to purchase conversion
  */
-const getSubProductConversionRate = async (subProductId) => {
-  const subProduct = await SubProduct.findById(subProductId)
+const getSubProductConversionRate = async (subProductId, tenantId) => {
+  const subProduct = await SubProduct.findOne({ _id: subProductId, tenant: tenantId })
     .populate('product tenant');
 
   if (!subProduct) {
@@ -4314,8 +4319,8 @@ const getSubProductConversionRate = async (subProductId) => {
  * Get average order value for a SubProduct
  * Calculates AOV and related metrics
  */
-const getSubProductAverageOrderValue = async (subProductId) => {
-  const subProduct = await SubProduct.findById(subProductId)
+const getSubProductAverageOrderValue = async (subProductId, tenantId) => {
+  const subProduct = await SubProduct.findOne({ _id: subProductId, tenant: tenantId })
     .populate('product tenant');
 
   if (!subProduct) {
@@ -4387,7 +4392,8 @@ const getAllSubProducts = async (filters = {}) => {
     order = 'desc',
   } = filters;
 
-  const query = {};
+  // Public endpoint: only return published, active SubProducts
+  const query = { isPublished: true, status: 'active' };
   if (status) query.status = status;
   if (search) {
     query.$or = [
@@ -4402,7 +4408,8 @@ const getAllSubProducts = async (filters = {}) => {
     SubProduct.find(query)
       .populate('product', 'name slug images')
       .populate('tenant', 'name businessName')
-      .populate('sizes')
+      .populate('sizes', PRIVATE_SIZE_FIELDS)
+      .select(PRIVATE_SUBPRODUCT_FIELDS)
       .sort({ [sort]: sortOrder })
       .skip(skip)
       .limit(parseInt(limit))
@@ -4427,7 +4434,8 @@ const getAllSubProducts = async (filters = {}) => {
 const getSubProductsByTenant = async (tenantId, filters = {}) => {
   const { page = 1, limit = 20, status } = filters;
 
-  const query = { tenant: tenantId };
+  // Public endpoint: only return published, active SubProducts by default
+  const query = { tenant: tenantId, isPublished: true, status: 'active' };
   if (status) query.status = status;
 
   const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -4435,7 +4443,8 @@ const getSubProductsByTenant = async (tenantId, filters = {}) => {
   const [subProducts, total] = await Promise.all([
     SubProduct.find(query)
       .populate('product', 'name slug images')
-      .populate('sizes')
+      .populate('sizes', PRIVATE_SIZE_FIELDS)
+      .select(PRIVATE_SUBPRODUCT_FIELDS)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
@@ -4458,10 +4467,12 @@ const getSubProductsByTenant = async (tenantId, filters = {}) => {
  * Get SubProducts by product
  */
 const getSubProductsByProduct = async (productId) => {
-  const subProducts = await SubProduct.find({ product: productId })
+  // Public endpoint: only return published, active SubProducts
+  const subProducts = await SubProduct.find({ product: productId, isPublished: true, status: 'active' })
     .populate('product', 'name slug images type isAlcoholic abv volumeMl originCountry brand category subCategory tags flavors description tastingNotes platformMarkup platformDiscount')
     .populate('tenant', 'name businessName revenueModel markupPercentage commissionPercentage')
-    .populate('sizes')
+    .populate('sizes', PRIVATE_SIZE_FIELDS)
+    .select(PRIVATE_SUBPRODUCT_FIELDS)
     .lean();
 
   // Calculate pricing for each subproduct
@@ -4490,10 +4501,12 @@ const getSubProductsByProduct = async (productId) => {
  * Get SubProduct by ID
  */
 const getSubProductById = async (id) => {
-  const subProduct = await SubProduct.findById(id)
+  // Public endpoint: only return published, active SubProducts
+  const subProduct = await SubProduct.findOne({ _id: id, isPublished: true, status: 'active' })
     .populate('product', 'name slug images type isAlcoholic abv volumeMl originCountry brand category subCategory description platformMarkup platformDiscount')
     .populate('tenant', 'name businessName revenueModel markupPercentage commissionPercentage')
-    .populate('sizes')
+    .populate('sizes', PRIVATE_SIZE_FIELDS)
+    .select(PRIVATE_SUBPRODUCT_FIELDS)
     .lean();
 
   if (!subProduct) {
@@ -4517,10 +4530,12 @@ const getSubProductById = async (id) => {
  * Get SubProduct by SKU
  */
 const getSubProductBySKU = async (sku) => {
-  const subProduct = await SubProduct.findOne({ sku })
+  // Public endpoint: only return published, active SubProducts
+  const subProduct = await SubProduct.findOne({ sku, isPublished: true, status: 'active' })
     .populate('product', 'name slug images description')
     .populate('tenant', 'name businessName')
-    .populate('sizes')
+    .populate('sizes', PRIVATE_SIZE_FIELDS)
+    .select(PRIVATE_SUBPRODUCT_FIELDS)
     .lean();
 
   if (!subProduct) {
@@ -4712,8 +4727,9 @@ const updateStock = async (subProductId, stockData, tenantId, user = null) => {
  * Get stock status for SubProduct
  */
 const getStockStatus = async (subProductId) => {
-  const subProduct = await SubProduct.findById(subProductId)
-    .populate('sizes')
+  const subProduct = await SubProduct.findOne({ _id: subProductId, isPublished: true, status: 'active' })
+    .populate('sizes', PRIVATE_SIZE_FIELDS)
+    .select(PRIVATE_SUBPRODUCT_FIELDS)
     .lean();
 
   if (!subProduct) {

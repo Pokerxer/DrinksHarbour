@@ -26,7 +26,7 @@ export default function SalesTotals({
           <span>{fmtCur(untaxedAmount, currency)}</span>
         </div>
         {discountTotal > 0 && (
-          <div className="flex items-center justify-between text-sm text-[#b20202]">
+          <div className="flex items-center justify-between text-sm text-brand">
             <span>Discount</span>
             <span>−{fmtCur(discountTotal, currency)}</span>
           </div>

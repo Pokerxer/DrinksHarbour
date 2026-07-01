@@ -1,6 +1,61 @@
 // server/services/salesOrder.service.js
 const SalesOrder = require('../models/SalesOrder');
 const { generateSalesOrderNumber } = require('../utils/orderUtils');
+const { logActivity, statusSubject } = require('./salesActivity.service');
+
+/**
+ * F3: reject client-supplied foreign keys that don't belong to the acting
+ * tenant. Without this, a tenant user could reference another tenant's customer,
+ * warehouse, or pricelist id (it would persist as a dangling cross-tenant ref).
+ * Each id is optional — only present ones are checked. Throws an Error tagged
+ * `.status = 400` (caught by the controller's async handler) on a mismatch.
+ *
+ * Best-effort like the pricing/promotion engines: if there's no live DB
+ * connection (unit tests, offline) the lookups are skipped rather than hanging
+ * on Mongoose command buffering.
+ */
+async function assertTenantOwnedRefs({ tenantId, customer, warehouseId, pricelist }) {
+  let mongoose;
+  try {
+    mongoose = require('mongoose');
+  } catch {
+    return; // mongoose unavailable — nothing to validate against
+  }
+  if (!mongoose.connection || mongoose.connection.readyState !== 1) return;
+
+  const checks = [];
+  if (customer) {
+    const POSCustomer = require('../models/POSCustomer');
+    checks.push(
+      POSCustomer.exists({ _id: customer, tenant: tenantId }).then((ok) => {
+        if (!ok) throw fkError('customer', customer);
+      })
+    );
+  }
+  if (warehouseId) {
+    const Warehouse = require('../models/Warehouse');
+    checks.push(
+      Warehouse.exists({ _id: warehouseId, tenant: tenantId }).then((ok) => {
+        if (!ok) throw fkError('warehouse', warehouseId);
+      })
+    );
+  }
+  if (pricelist) {
+    const Pricelist = require('../models/Pricelist');
+    checks.push(
+      Pricelist.exists({ _id: pricelist, tenant: tenantId }).then((ok) => {
+        if (!ok) throw fkError('pricelist', pricelist);
+      })
+    );
+  }
+  await Promise.all(checks);
+}
+
+function fkError(kind, id) {
+  const err = new Error(`Invalid ${kind} reference: ${id} does not belong to this tenant`);
+  err.status = 400;
+  return err;
+}
 
 /**
  * Odoo-style payment-term presets. `days` is the offset from the document's
@@ -56,12 +111,26 @@ function normalizeAddress(addr) {
   return hasAny ? clean : undefined;
 }
 
-/** Compute a single line's UNTAXED total: (unitPrice - discount) * quantity, floored at 0.
+/** Absolute ₦ discount off the WHOLE line, clamped to the line's gross.
+ *  discountType 'percentage' = percent of each unit (scales with quantity);
+ *  'fixed' = a flat ₦ amount off the whole line (independent of quantity).
+ *  Section/note lines carry no discount. */
+function lineDiscountOf(item) {
+  if (item.lineType && item.lineType !== 'product') return 0;
+  const gross = (Number(item.unitPrice) || 0) * (Number(item.quantity) || 0);
+  const raw = Math.max(0, Number(item.discount) || 0);
+  if (item.discountType === 'percentage') {
+    return Math.min(gross, Math.round((gross * Math.min(100, raw)) / 100));
+  }
+  return Math.min(gross, raw);
+}
+
+/** Compute a single line's UNTAXED total: gross − line discount, floored at 0.
  *  Section/note lines carry no price and contribute nothing. */
 function lineTotalOf(item) {
   if (item.lineType && item.lineType !== 'product') return 0;
-  const unit = Math.max(0, (Number(item.unitPrice) || 0) - (Number(item.discount) || 0));
-  return unit * (Number(item.quantity) || 0);
+  const gross = (Number(item.unitPrice) || 0) * (Number(item.quantity) || 0);
+  return Math.max(0, gross - lineDiscountOf(item));
 }
 
 /**
@@ -162,7 +231,7 @@ async function resolveLinePromotions(items, deps = {}) {
 /**
  * Roll item lines into Odoo-style totals (NGN integer):
  *   subtotal      gross, sum(unitPrice * qty) — pre-discount
- *   discountTotal sum(discount * qty)
+ *   discountTotal sum(per-line discount off the whole line)
  *   taxTotal      sum(per-line tax on the post-discount line total)
  *   total         grand total = (subtotal - discountTotal) + taxTotal
  * The "Untaxed Amount" Odoo row is (subtotal - discountTotal).
@@ -173,7 +242,7 @@ function computeTotals(items) {
     // Section/note lines are presentational only — excluded from all totals.
     if (it.lineType && it.lineType !== 'product') continue;
     subtotal += (Number(it.unitPrice) || 0) * (Number(it.quantity) || 0);
-    discountTotal += (Number(it.discount) || 0) * (Number(it.quantity) || 0);
+    discountTotal += lineDiscountOf(it);
     promotionTotal += Number(it.promoDiscount) || 0;
     taxTotal += lineTaxOf(it);
   }
@@ -197,18 +266,16 @@ function mapLine(it) {
       taxAmount: 0, lineTotal: 0, priceOverridden: false,
     };
   }
-  // Resolve discount to an absolute ₦ amount off the unit price, clamped so it
-  // can never exceed the unit price (an over-discount would otherwise floor the
-  // line to 0 and silently lose the excess). Percentage discounts are resolved
-  // here so stored lines always carry an absolute discount — totals math and
-  // historical snapshots stay simple and stable.
+  // Store the operator's raw discount input verbatim (percentage clamped to
+  // 0–100; fixed as an absolute ₦ figure). It's interpreted against the line —
+  // 'percentage' as a percent of each unit, 'fixed' as a flat ₦ off the whole
+  // line — by lineDiscountOf, which drives the totals and the stored snapshot.
   const unitPrice = Number(it.unitPrice) || 0;
   const discountType = it.discountType === 'percentage' ? 'percentage' : 'fixed';
   const rawDiscount = Math.max(0, Number(it.discount) || 0);
-  const resolvedDiscount =
-    discountType === 'percentage'
-      ? Math.round(unitPrice * Math.min(100, rawDiscount) / 100 * 100) / 100
-      : Math.min(unitPrice, rawDiscount);
+  const discount =
+    discountType === 'percentage' ? Math.min(100, rawDiscount) : rawDiscount;
+  const lineForTotals = { ...it, lineType, unitPrice, discount, discountType };
 
   return {
     lineType,
@@ -217,13 +284,13 @@ function mapLine(it) {
     description: it.description || '',
     quantity: Number(it.quantity) || 0,
     unitPrice,
-    discount: resolvedDiscount,
+    discount,
     discountType,
     taxRate: Math.max(0, Number(it.taxRate) || 0),
     promoDiscount: Math.max(0, Number(it.promoDiscount) || 0),
     promoName: it.promoName || '',
-    taxAmount: lineTaxOf({ ...it, discount: resolvedDiscount }),
-    lineTotal: lineTotalOf({ ...it, discount: resolvedDiscount }),
+    taxAmount: lineTaxOf(lineForTotals),
+    lineTotal: lineTotalOf(lineForTotals),
     priceOverridden: !!it.priceOverridden,
   };
 }
@@ -232,8 +299,28 @@ function mapLine(it) {
  * Build + persist a SalesOrder. Snapshots line totals and order totals.
  * docType 'quotation' starts quoteStatus='draft'; 'order' starts orderStatus='draft'.
  */
-async function createSalesOrderDoc({ tenantId, body }) {
+async function createSalesOrderDoc({ tenantId, salesperson, body }) {
   const docType = body.docType === 'quotation' ? 'quotation' : 'order';
+  await assertTenantOwnedRefs({
+    tenantId,
+    customer: body.customer,
+    warehouseId: body.warehouseId,
+    pricelist: body.pricelist,
+  });
+
+  // Derive appliedPricelist snapshot server-side from the validated pricelist doc
+  // rather than trusting the client-supplied snapshot verbatim.
+  let appliedPricelist;
+  if (body.pricelist) {
+    try {
+      const Pricelist = require('../models/Pricelist');
+      const pl = await Pricelist.findById(body.pricelist).select('name').lean();
+      appliedPricelist = pl ? { pricelistId: pl._id, pricelistName: pl.name } : undefined;
+    } catch {
+      appliedPricelist = undefined;
+    }
+  }
+
   const priced = await resolveLinePricing(body.items || [], { tenantId, pricelistId: body.pricelist });
   const withPromos = await resolveLinePromotions(priced, { tenantId });
   const items = withPromos.map(mapLine);
@@ -245,10 +332,11 @@ async function createSalesOrderDoc({ tenantId, body }) {
     tenant: tenantId,
     soNumber,
     docType,
+    salesperson: salesperson || body.salesperson || '',
     customer: body.customer || undefined,
     customerSnapshot: body.customerSnapshot || undefined,
     pricelist: body.pricelist || null,
-    appliedPricelist: body.appliedPricelist || undefined,
+    appliedPricelist,
     currency: body.currency || 'NGN',
     items,
     ...totals, // subtotal, discountTotal, taxTotal, total
@@ -273,8 +361,51 @@ function canCancel(so) {
   return !['fulfilled', 'cancelled'].includes(so.orderStatus);
 }
 
+/**
+ * Recompute unit prices + all order totals from `so`'s CURRENT line set against
+ * the order's current pricelist (`so.pricelist`), then re-snapshot each line and
+ * the order totals. Mutates `so.items` and totals in place and returns `so`.
+ * When `clearOverrides` is true, every product line's `priceOverridden` flag is
+ * dropped first so the pricelist engine re-prices lines the operator had
+ * manually overridden. Shared by `applyEdit` and `updatePricesForOrder`.
+ */
+async function recomputeOrderPricing(so, { tenantId, clearOverrides = false } = {}) {
+  const source = (so.items || []).map((it) => {
+    const raw = typeof it.toObject === 'function' ? it.toObject() : { ...it };
+    return clearOverrides ? { ...raw, priceOverridden: false } : raw;
+  });
+  const priced = await resolveLinePricing(source, { tenantId, pricelistId: so.pricelist });
+  const withPromos = await resolveLinePromotions(priced, { tenantId });
+  so.items = withPromos.map(mapLine);
+  const totals = computeTotals(so.items);
+  so.subtotal = totals.subtotal;
+  so.discountTotal = totals.discountTotal;
+  so.promotionTotal = totals.promotionTotal;
+  so.taxTotal = totals.taxTotal;
+  so.total = totals.total;
+  return so;
+}
+
+/**
+ * Re-price every product line from the order's current pricelist, clearing any
+ * manual price overrides first, and re-snapshot totals. Mutates `so` in place.
+ */
+async function updatePricesForOrder(so, { tenantId } = {}) {
+  await recomputeOrderPricing(so, { tenantId, clearOverrides: true });
+  return so;
+}
+
 /** Re-snapshot line prices + totals from an edit body. Mutates `so` in place. */
 async function applyEdit(so, body) {
+  // Validate only the FKs this patch actually touches, scoped to the order's
+  // own tenant. `undefined` = field omitted (skip); a present value (incl. a
+  // real id) is checked. Clearing to null/'' is allowed and not validated.
+  await assertTenantOwnedRefs({
+    tenantId: so.tenant,
+    customer: body.customer !== undefined ? body.customer : undefined,
+    warehouseId: body.warehouseId !== undefined ? body.warehouseId : undefined,
+    pricelist: body.pricelist !== undefined ? body.pricelist : undefined,
+  });
   // Customer change: mirror createSalesOrderDoc's convention — trust the
   // client-provided snapshot verbatim (no server-side rebuild from the id).
   // `body.customer !== undefined` means the edit payload touched the customer
@@ -287,21 +418,51 @@ async function applyEdit(so, body) {
     so.customer = body.customer || undefined;
     so.customerSnapshot = body.customerSnapshot || undefined;
   }
+  // Capture the SO's pricelist BEFORE any body.pricelist update so we can
+  // detect whether the pricelist actually changed.
+  const origPricelist = String(so.pricelist || '');
+
   if (body.pricelist !== undefined) {
+    const pricelistChanged = String(body.pricelist || '') !== origPricelist;
     so.pricelist = body.pricelist || null;
-    so.appliedPricelist = body.appliedPricelist || undefined;
+    // Derive appliedPricelist snapshot server-side from the actual pricelist doc.
+    if (body.pricelist) {
+      try {
+        const Pricelist = require('../models/Pricelist');
+        const pl = await Pricelist.findById(body.pricelist).select('name').lean();
+        so.appliedPricelist = pl ? { pricelistId: pl._id, pricelistName: pl.name } : undefined;
+      } catch {
+        so.appliedPricelist = undefined;
+      }
+    } else {
+      so.appliedPricelist = undefined;
+    }
+    // When pricelist changes but items weren't included in the patch, re-price
+    // the existing stored lines against the new pricelist rather than leaving
+    // stale prices on the order.
+    if (pricelistChanged && !Array.isArray(body.items)) {
+      await recomputeOrderPricing(so, { tenantId: so.tenant });
+    }
   }
   if (Array.isArray(body.items)) {
-    const pricelistId = body.pricelist !== undefined ? body.pricelist : so.pricelist;
-    const priced = await resolveLinePricing(body.items, { tenantId: so.tenant, pricelistId });
-    const withPromos = await resolveLinePromotions(priced, { tenantId: so.tenant });
-    so.items = withPromos.map(mapLine);
-    const totals = computeTotals(so.items);
-    so.subtotal = totals.subtotal;
-    so.discountTotal = totals.discountTotal;
-    so.promotionTotal = totals.promotionTotal;
-    so.taxTotal = totals.taxTotal;
-    so.total = totals.total;
+    so.items = body.items;
+    // Skip the DB-backed pricing engine when the pricelist hasn't actually
+    // changed — the client already computed prices against the same pricelist.
+    // Still map and total them for normalization. This avoids redundant DB
+    // lookups on every autosave (the common case = user edited qty, not pricelist).
+    const pricelistSame = body.pricelist !== undefined &&
+      String(body.pricelist || '') === origPricelist;
+    if (pricelistSame) {
+      so.items = so.items.map(mapLine);
+      const totals = computeTotals(so.items);
+      so.subtotal = totals.subtotal;
+      so.discountTotal = totals.discountTotal;
+      so.promotionTotal = totals.promotionTotal;
+      so.taxTotal = totals.taxTotal;
+      so.total = totals.total;
+    } else {
+      await recomputeOrderPricing(so, { tenantId: so.tenant });
+    }
   }
   if (body.notes !== undefined) so.notes = body.notes;
   if (body.terms !== undefined) so.terms = body.terms;
@@ -347,6 +508,7 @@ async function convertQuotationToOrder(quotation) {
     taxTotal: quotation.taxTotal, total: quotation.total,
     paymentTerms: quotation.paymentTerms || 'immediate',
     dueDate: computeDueDate(quotation.paymentTerms || 'immediate'),
+    salesperson: quotation.salesperson || '',
     invoiceAddress: normalizeAddress(quotation.invoiceAddress),
     deliveryAddress: normalizeAddress(quotation.deliveryAddress),
     notes: quotation.notes, terms: quotation.terms,
@@ -359,9 +521,280 @@ async function convertQuotationToOrder(quotation) {
   return order;
 }
 
+/**
+ * Deep-clone a sales order into a new draft document. Resets status, fulfillment
+ * counters, payment fields, and linked document references.
+ */
+async function duplicateSalesOrderDoc(so) {
+  const soNumber = await generateSalesOrderNumber();
+  const items = (so.items || []).map((it) => {
+    const raw = typeof it.toObject === 'function' ? it.toObject() : { ...it };
+    return {
+      lineType: raw.lineType || 'product',
+      product: raw.product, subproduct: raw.subproduct, size: raw.size,
+      sku: raw.sku, name: raw.name, description: raw.description,
+      quantity: raw.quantity, unitPrice: raw.unitPrice,
+      discount: raw.discount, discountType: raw.discountType,
+      taxRate: raw.taxRate, promoDiscount: raw.promoDiscount, promoName: raw.promoName,
+      taxAmount: raw.taxAmount, lineTotal: raw.lineTotal,
+      priceOverridden: raw.priceOverridden,
+      fulfilledQty: 0, postedQty: 0, returnedQty: 0,
+    };
+  });
+  const newDoc = new SalesOrder({
+    tenant: so.tenant,
+    soNumber,
+    docType: so.docType,
+    customer: so.customer,
+    customerSnapshot: so.customerSnapshot,
+    pricelist: so.pricelist,
+    appliedPricelist: so.appliedPricelist,
+    currency: so.currency,
+    items,
+    subtotal: so.subtotal, discountTotal: so.discountTotal,
+    promotionTotal: so.promotionTotal, taxTotal: so.taxTotal, total: so.total,
+    paymentTerms: so.paymentTerms || 'immediate',
+    dueDate: so.dueDate,
+    invoiceAddress: so.invoiceAddress, deliveryAddress: so.deliveryAddress,
+    notes: so.notes, terms: so.terms,
+    validUntil: so.validUntil, warehouseId: so.warehouseId,
+    fulfillments: [],
+    convertedFrom: undefined, convertedTo: undefined, relatedInvoice: undefined,
+    paymentStatus: 'unpaid', amountPaid: 0, walletTxRef: undefined,
+    loyaltyEarned: 0, loyaltyRedeemed: 0, pointsRedeemed: 0,
+    quoteStatus: so.docType === 'quotation' ? 'draft' : undefined,
+    orderStatus: so.docType === 'order' ? 'draft' : undefined,
+  });
+  return newDoc.save();
+}
+
+/**
+ * Build a MongoDB query object from an array of structured filter objects.
+ * Accepts a JSON string or a parsed array. Returns an empty object on invalid
+ * input so callers can safely Object.assign it into their query.
+ */
+function buildFilterQuery(filtersRaw) {
+  if (!filtersRaw) return {};
+  let filters;
+  try {
+    filters = typeof filtersRaw === 'string' ? JSON.parse(filtersRaw) : filtersRaw;
+  } catch {
+    return {};
+  }
+  if (!Array.isArray(filters)) return {};
+
+  const q = {};
+  for (const f of filters) {
+    if (!f.field || !f.operator) continue;
+    const val = f.value;
+    switch (f.operator) {
+      case 'equals': q[f.field] = val; break;
+      case 'not_equals': q[f.field] = { $ne: val }; break;
+      case 'contains': q[f.field] = { $regex: String(val), $options: 'i' }; break;
+      case 'gt': q[f.field] = { $gt: Number(val) }; break;
+      case 'gte': q[f.field] = { $gte: Number(val) }; break;
+      case 'lt': q[f.field] = { $lt: Number(val) }; break;
+      case 'lte': q[f.field] = { $lte: Number(val) }; break;
+      case 'between':
+        if (Array.isArray(val) && val.length === 2) {
+          q[f.field] = { $gte: new Date(val[0]), $lte: new Date(val[1]) };
+        }
+        break;
+      case 'in': q[f.field] = { $in: Array.isArray(val) ? val : [val] }; break;
+    }
+  }
+  return q;
+}
+
+// ─── Bulk action helpers ──────────────────────────────────────────────────────
+
+async function bulkMarkSent(doc) {
+  if (doc.docType !== 'quotation') throw new Error(`${doc.soNumber} is not a quotation`);
+  if (doc.quoteStatus !== 'draft') throw new Error(`Only draft quotations can be marked as sent, ${doc.soNumber} is ${doc.quoteStatus}`);
+  doc.quoteStatus = 'sent';
+  await doc.save();
+  logActivity(doc.tenant, doc._id, { subject: statusSubject(doc.docType, 'sent') });
+  return {};
+}
+
+async function bulkDuplicate(doc) {
+  const dup = await duplicateSalesOrderDoc(doc);
+  return { duplicateId: dup._id };
+}
+
+async function bulkDeleteDoc(doc) {
+  await SalesOrder.deleteOne({ _id: doc._id });
+  return { deleted: true };
+}
+
+async function bulkCancelDoc(doc) {
+  let action;
+  if (doc.docType === 'order') {
+    if (['fulfilled', 'cancelled'].includes(doc.orderStatus)) {
+      throw new Error(`${doc.soNumber} cannot be cancelled — current status: ${doc.orderStatus}`);
+    }
+    doc.orderStatus = 'cancelled';
+    action = 'cancelled';
+  } else {
+    if (['converted', 'rejected'].includes(doc.quoteStatus)) {
+      throw new Error(`${doc.soNumber} cannot be rejected — current status: ${doc.quoteStatus}`);
+    }
+    doc.quoteStatus = 'rejected';
+    action = 'rejected';
+  }
+  await doc.save();
+  logActivity(doc.tenant, doc._id, { subject: statusSubject(doc.docType, action) });
+  return {};
+}
+
+async function bulkCreateInvoice(doc) {
+  if (doc.docType !== 'order') throw new Error(`${doc.soNumber} is not an order`);
+  await SalesOrder.updateOne(
+    { _id: doc._id },
+    { $set: { orderStatus: 'invoiced' } },
+    { runValidators: false }
+  );
+  return { invoiced: true };
+}
+
+async function bulkAccruedRevenue(doc) {
+  if (doc.docType !== 'order') throw new Error(`${doc.soNumber} is not an order`);
+  if (doc.orderStatus !== 'confirmed') throw new Error(`Only confirmed orders can record accrued revenue, ${doc.soNumber} is ${doc.orderStatus}`);
+  console.log(`[ACCRUED REVENUE STUB] Order ${doc.soNumber} (${doc._id}) — total ${doc.total}`);
+  return { total: doc.total };
+}
+
+async function bulkFollowers(doc, action, userId) {
+  if (action === 'add') {
+    await SalesOrder.updateOne(
+      { _id: doc._id },
+      { $addToSet: { followers: { userId, addedAt: new Date() } } },
+      { strict: false }
+    );
+  } else if (action === 'remove') {
+    await SalesOrder.updateOne(
+      { _id: doc._id },
+      { $pull: { followers: { userId } } },
+      { strict: false }
+    );
+  }
+  console.log(`[FOLLOWERS] ${action} userId=${userId} on ${doc.soNumber} (${doc._id})`);
+  return { action, userId };
+}
+
+async function bulkSendEmail(doc, to, subject, body) {
+  const emailSvc = require('./email.service');
+  try {
+    await emailSvc.sendEmail({
+      to,
+      subject: subject || `Sales Order ${doc.soNumber}`,
+      html: body || `<p>Sales Order: ${doc.soNumber}</p>`,
+    });
+    return { emailSent: true };
+  } catch (err) {
+    console.log('[BULK_SEND_EMAIL] Email service unavailable:', err.message);
+    return { emailSent: false, note: 'Email service not available — logged to console' };
+  }
+}
+
+/**
+ * Map a groupBy ID + subOption to the value extractor function used in
+ * getGroupedOrders. Returns (doc) => string | number | Date.
+ */
+function groupByExtractor(groupBy, groupBySubOption) {
+  switch (groupBy) {
+    case 'salesperson':
+      return (d) => {
+        if (d.salesperson && typeof d.salesperson === 'object') return d.salesperson.name;
+        if (typeof d.salesperson === 'string') return d.salesperson;
+        return 'None';
+      };
+    case 'customer':
+      return (d) => d.customerSnapshot?.name || 'None';
+    case 'orderDate': {
+      if (!groupBySubOption) return (d) => d.createdAt ? new Date(d.createdAt).toISOString().slice(0, 7) : 'None';
+      switch (groupBySubOption) {
+        case 'year': return (d) => d.createdAt ? new Date(d.createdAt).getFullYear().toString() : 'None';
+        case 'quarter': {
+          return (d) => {
+            if (!d.createdAt) return 'None';
+            const m = new Date(d.createdAt).getMonth();
+            return `Q${Math.floor(m / 3) + 1} ${new Date(d.createdAt).getFullYear()}`;
+          };
+        }
+        case 'month': return (d) => d.createdAt ? new Date(d.createdAt).toISOString().slice(0, 7) : 'None';
+        case 'week': return (d) => {
+          if (!d.createdAt) return 'None';
+          const dt = new Date(d.createdAt);
+          const dNum = (dt.getDay() + 6) % 7 + 1;
+          const start = new Date(dt);
+          start.setDate(dt.getDate() - dNum + 1);
+          return `${start.toISOString().slice(0, 10)}`;
+        };
+        case 'day': return (d) => d.createdAt ? new Date(d.createdAt).toISOString().slice(0, 10) : 'None';
+        default: return (d) => 'None';
+      }
+    }
+    case 'paymentMethod':
+      return (d) => d.paymentMethod || 'None';
+    case 'defaultSalesPriceInclude':
+      return () => 'N/A';
+    case 'general': case 'dates': case 'customer':
+    case 'pricing': case 'delivery': case 'status':
+    case 'sales': case 'other':
+      return (d) => {
+        const cat = groupBy;
+        const lookup = {
+          general: ['createdBy', 'company', 'currency', 'campaign', 'createdBy', 'medium', 'orderReference', 'paymentMethod', 'paymentRef', 'paymentTerms', 'project', 'projectAccount', 'source', 'sourceDocument', 'tags', 'taxCalculationRounding', 'termsConditions', 'transactions', 'warning', 'website'],
+          dates: ['createdAt', 'effectiveDate', 'createdAt', 'validUntil', 'updatedAt', 'signedOn'],
+          customer: ['customer', 'customerReference', 'invoiceAddress'],
+          pricing: ['defaultSalesPriceInclude', 'manuallyAppliedCoupons', 'pricelist', 'taxRoundingMethod'],
+          delivery: ['deliveryAddress', 'deliveryDate', 'deliveryMessage', 'deliveryMethod', 'deliveryStatus', 'deliveryCostRecompute', 'incoterm', 'incotermLocation', 'shippingPolicy', 'warehouse'],
+          status: ['status', 'invoiceStatus'],
+          sales: ['salesTeam', 'salesperson'],
+          other: [],
+        };
+        const fields = lookup[cat] || [];
+        return fields.some((f) => {
+          const v = d[f];
+          return v !== undefined && v !== null && v !== '';
+        }) ? 'Has fields' : 'None';
+      };
+    default:
+      return () => 'None';
+  }
+}
+
+/**
+ * Fetch sales orders grouped by a field/value extractor.
+ * When groupBy is falsy, returns null (caller uses paginated fallback).
+ */
+async function getGroupedOrders({ matchQuery, groupBy, groupBySubOption, sort }) {
+  if (!groupBy || groupBy === 'none') return null;
+  const docs = await SalesOrder.find(matchQuery)
+    .sort(sort || { createdAt: -1 })
+    .populate('warehouseId', 'name')
+    .lean();
+  const extract = groupByExtractor(groupBy, groupBySubOption);
+  const map = new Map();
+  for (const d of docs) {
+    const key = extract(d);
+    const g = map.get(key) ?? { _id: key, count: 0, total: 0, currency: d.currency || 'NGN', docs: [] };
+    g.count += 1;
+    g.total += d.total || 0;
+    g.docs.push(d);
+    map.set(key, g);
+  }
+  return Array.from(map.values()).sort((a, b) => b.count - a.count);
+}
+
 module.exports = {
   lineTotalOf, lineTaxOf, mapLine, computeTotals, createSalesOrderDoc,
-  canEdit, canCancel, applyEdit, convertQuotationToOrder,
+  canEdit, canCancel, applyEdit, recomputeOrderPricing, updatePricesForOrder,
+  convertQuotationToOrder, duplicateSalesOrderDoc,
   PAYMENT_TERMS, computeDueDate, normalizePaymentTerms, normalizeAddress,
   resolveLinePromotions, resolveLinePricing,
+  buildFilterQuery, groupByExtractor, getGroupedOrders,
+  bulkMarkSent, bulkDuplicate, bulkDeleteDoc, bulkCancelDoc,
+  bulkCreateInvoice, bulkAccruedRevenue, bulkFollowers, bulkSendEmail,
 };

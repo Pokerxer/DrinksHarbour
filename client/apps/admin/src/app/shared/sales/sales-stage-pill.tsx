@@ -7,7 +7,7 @@ export function StagePill({ label, active }: { label: string; active: boolean })
   return (
     <span
       className={`rounded-full px-3 py-1 text-xs font-medium ${
-        active ? 'bg-[#b20202]/10 text-[#b20202]' : 'bg-gray-100 text-gray-400'
+        active ? 'bg-brand/10 text-brand' : 'bg-gray-100 text-gray-400'
       }`}
     >
       {label}

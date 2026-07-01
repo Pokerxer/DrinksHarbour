@@ -392,7 +392,7 @@ export default function SalesScanDrawer({
                           setPairingCode('');
                           void startPairing();
                         }}
-                        className="text-xs font-medium text-[#b20202] hover:underline"
+                        className="text-xs font-medium text-brand hover:underline"
                       >
                         Regenerate code
                       </button>
@@ -428,13 +428,13 @@ export default function SalesScanDrawer({
                     placeholder={
                       'e.g.\n2x Hennessy VS 70cl\nJameson 1L\nRemy Martin\nA bottle of Moet champagne'
                     }
-                    className="w-full rounded-xl border border-gray-200 p-3 text-sm text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20"
+                    className="w-full rounded-xl border border-gray-200 p-3 text-sm text-gray-900 placeholder-gray-400 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
                   />
                   <button
                     type="button"
                     onClick={handlePaste}
                     disabled={!pasteText.trim() || phase === 'working'}
-                    className="flex items-center justify-center gap-2 rounded-lg bg-[#b20202] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-40"
+                    className="flex items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-40"
                   >
                     {phase === 'working' ? (
                       <>
@@ -481,7 +481,7 @@ export default function SalesScanDrawer({
                 type="button"
                 onClick={addSelected}
                 disabled={selectedRows.length === 0}
-                className="rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-40"
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-40"
               >
                 Add {selectedRows.length || ''} to order
               </button>
@@ -509,7 +509,7 @@ function ModeTab({
       type="button"
       onClick={onClick}
       className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium ${
-        active ? 'bg-[#b20202] text-white' : 'text-gray-600 hover:bg-gray-100'
+        active ? 'bg-brand text-white' : 'text-gray-600 hover:bg-gray-100'
       }`}
     >
       {children}
@@ -540,12 +540,12 @@ function UploadDropzone({
         if (f) onFile(f);
       }}
       className={`flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed py-12 ${
-        drag ? 'border-[#b20202] bg-red-50/30' : 'border-gray-200'
+        drag ? 'border-brand bg-red-50/30' : 'border-gray-200'
       }`}
     >
       {busy ? (
         <>
-          <PiSpinner className="h-8 w-8 animate-spin text-[#b20202]" />
+          <PiSpinner className="h-8 w-8 animate-spin text-brand" />
           <p className="text-sm text-gray-600">Analyzing file…</p>
         </>
       ) : (
@@ -570,7 +570,7 @@ function UploadDropzone({
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            className="rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101]"
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark"
           >
             Choose file
           </button>
@@ -623,7 +623,7 @@ function ReviewList({
                 checked={r.selected}
                 disabled={unmatched}
                 onChange={(e) => update(key, { selected: e.target.checked })}
-                className="mt-1 h-4 w-4 rounded border-gray-300 text-[#b20202] focus:ring-[#b20202]/20 disabled:opacity-40"
+                className="mt-1 h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand/20 disabled:opacity-40"
               />
               <div className="min-w-0 flex-1">
                 {/* Row header */}
@@ -698,7 +698,7 @@ function ReviewList({
                     <button
                       type="button"
                       onClick={() => update(key, { overriding: true })}
-                      className="ml-1 text-[10px] font-medium text-[#b20202] hover:underline"
+                      className="ml-1 text-[10px] font-medium text-brand hover:underline"
                     >
                       Change
                     </button>
@@ -835,7 +835,7 @@ function ReviewList({
                         href={routes.eCommerce.createSubProduct}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-[11px] font-medium text-[#b20202] hover:underline"
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-brand hover:underline"
                       >
                         Create new product{' '}
                         <PiArrowSquareOut className="h-3 w-3" />

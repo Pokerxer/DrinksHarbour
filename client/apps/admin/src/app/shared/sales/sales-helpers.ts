@@ -105,6 +105,15 @@ export const PAYMENT_TERMS: { key: string; label: string }[] = [
   { key: 'end_of_month', label: 'End of this Month' },
 ];
 
+export function fmtDate(s?: string) {
+  if (!s) return '\u2014';
+  return new Date(s).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 export function paymentTermsLabel(key?: string): string {
   return PAYMENT_TERMS.find((t) => t.key === key)?.label ?? 'Immediate Payment';
 }
