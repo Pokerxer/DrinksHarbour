@@ -28,7 +28,8 @@ export default function SalesActivityComposer({
     const trimmed = text.trim();
     const newlineIdx = trimmed.indexOf('\n');
     const subject = newlineIdx === -1 ? trimmed : trimmed.slice(0, newlineIdx);
-    const description = newlineIdx === -1 ? undefined : trimmed.slice(newlineIdx + 1).trim();
+    const description =
+      newlineIdx === -1 ? undefined : trimmed.slice(newlineIdx + 1).trim();
 
     setBusy(true);
     try {
@@ -55,7 +56,9 @@ export default function SalesActivityComposer({
             type="button"
             onClick={() => setMode(m)}
             className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-              mode === m ? 'bg-brand text-white' : 'text-gray-500 hover:text-gray-700'
+              mode === m
+                ? 'bg-brand text-white'
+                : 'text-gray-500 hover:text-gray-700'
             }`}
           >
             {m === 'note' ? 'Log note' : 'Send message'}

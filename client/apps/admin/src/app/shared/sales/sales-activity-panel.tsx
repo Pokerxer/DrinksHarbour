@@ -4,10 +4,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { PiClockCounterClockwise, PiSpinner } from 'react-icons/pi';
 import { salesOrderService } from '@/services/salesOrder.service';
-import {
-  type SalesActivity,
-  groupByDay,
-} from './sales-activity-helpers';
+import { type SalesActivity, groupByDay } from './sales-activity-helpers';
 import SalesActivityItem from './sales-activity-item';
 import SalesActivityComposer from './sales-activity-composer';
 
@@ -58,7 +55,11 @@ export default function SalesActivityPanel({
         </p>
       ) : (
         <>
-          <SalesActivityComposer token={token} orderId={orderId} onPosted={load} />
+          <SalesActivityComposer
+            token={token}
+            orderId={orderId}
+            onPosted={load}
+          />
 
           <div className="mt-3">
             {loading && items.length === 0 ? (
@@ -68,7 +69,9 @@ export default function SalesActivityPanel({
               </div>
             ) : error ? (
               <div className="flex flex-col items-center gap-2 py-8 text-center">
-                <p className="text-xs text-gray-500">Couldn&apos;t load history</p>
+                <p className="text-xs text-gray-500">
+                  Couldn&apos;t load history
+                </p>
                 <button
                   type="button"
                   onClick={() => void load()}
@@ -90,7 +93,10 @@ export default function SalesActivityPanel({
                     </p>
                     <div className="divide-y divide-gray-50">
                       {group.items.map((activity) => (
-                        <SalesActivityItem key={activity._id} activity={activity} />
+                        <SalesActivityItem
+                          key={activity._id}
+                          activity={activity}
+                        />
                       ))}
                     </div>
                   </div>

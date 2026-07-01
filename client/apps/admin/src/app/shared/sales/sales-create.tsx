@@ -6,7 +6,10 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
-import { salesOrderService, type SalesOrder } from '@/services/salesOrder.service';
+import {
+  salesOrderService,
+  type SalesOrder,
+} from '@/services/salesOrder.service';
 import { useSalesCreateForm } from './hooks/useSalesCreateForm';
 import { useSalesAutosave } from './hooks/useSalesAutosave';
 import SalesCreateHeader from './sales-create-header';
@@ -85,7 +88,8 @@ export default function SalesCreate({
           quantity: it.quantity,
           baseUnitPrice: it.unitPrice,
           discount: it.discount,
-          discountType: (it.discountType ?? 'fixed') as DraftLine['discountType'],
+          discountType: (it.discountType ??
+            'fixed') as DraftLine['discountType'],
           taxRate: it.taxRate ?? 0,
           costPrice: 0,
           priceOverridden: false,
@@ -126,7 +130,11 @@ export default function SalesCreate({
     if (!initial || !validateFilled()) return;
     form.setSaving(true);
     try {
-      await salesOrderService.update(initial._id, form.buildPayload() as any, token);
+      await salesOrderService.update(
+        initial._id,
+        form.buildPayload() as any,
+        token
+      );
       toast.success('Changes saved');
       router.push(routes.eCommerce.salesDetails(initial._id));
     } catch (err: unknown) {
@@ -152,7 +160,10 @@ export default function SalesCreate({
           customer: form.customer?._id,
           pricelist: form.pricelistId || undefined,
           appliedPricelist: form.pricelist
-            ? { pricelistId: form.pricelist._id, pricelistName: form.pricelist.name }
+            ? {
+                pricelistId: form.pricelist._id,
+                pricelistName: form.pricelist.name,
+              }
             : undefined,
         } as any,
         token
@@ -209,100 +220,100 @@ export default function SalesCreate({
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">
           <SalesCustomerBar
-        token={token}
-        customer={form.customer}
-        onSelectCustomer={form.handleSelectCustomer}
-        onClearCustomer={() => form.setCustomer(null)}
-        pricelists={form.pricelists as { _id: string; name: string }[]}
-        pricelistId={form.pricelistId}
-        onPricelistChange={(id) => {
-          form.setPricelistId(id);
-          form.setPricelistOverridden(true);
-        }}
-        onUpdatePrices={() => setConfirmPrices(true)}
-        resolvedPricelistId={form.resolvedPricelistId}
-        validUntil={form.validUntil}
-        onValidUntilChange={form.setValidUntil}
-        warehouses={form.warehouses}
-        warehouseId={form.warehouseId as string}
-        onWarehouseChange={form.setWarehouseId}
-      />
+            token={token}
+            customer={form.customer}
+            onSelectCustomer={form.handleSelectCustomer}
+            onClearCustomer={() => form.setCustomer(null)}
+            pricelists={form.pricelists as { _id: string; name: string }[]}
+            pricelistId={form.pricelistId}
+            onPricelistChange={(id) => {
+              form.setPricelistId(id);
+              form.setPricelistOverridden(true);
+            }}
+            onUpdatePrices={() => setConfirmPrices(true)}
+            resolvedPricelistId={form.resolvedPricelistId}
+            validUntil={form.validUntil}
+            onValidUntilChange={form.setValidUntil}
+            warehouses={form.warehouses}
+            warehouseId={form.warehouseId as string}
+            onWarehouseChange={form.setWarehouseId}
+          />
 
-      <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/[0.04]">
-        <div className="flex border-b border-gray-100 px-4">
-          <button
-            type="button"
-            onClick={() => handleTabChange('lines')}
-            className={`relative px-3 py-3 text-sm font-medium transition-colors ${
-              form.tab === 'lines'
-                ? 'text-brand after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-brand'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Order Lines
-          </button>
-          <button
-            type="button"
-            onClick={() => handleTabChange('other')}
-            className={`relative px-3 py-3 text-sm font-medium transition-colors ${
-              form.tab === 'other'
-                ? 'text-brand after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-brand'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Other Info
-          </button>
-        </div>
+          <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-black/[0.04]">
+            <div className="flex border-b border-gray-100 px-4">
+              <button
+                type="button"
+                onClick={() => handleTabChange('lines')}
+                className={`relative px-3 py-3 text-sm font-medium transition-colors ${
+                  form.tab === 'lines'
+                    ? 'text-brand after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-brand'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Order Lines
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTabChange('other')}
+                className={`relative px-3 py-3 text-sm font-medium transition-colors ${
+                  form.tab === 'other'
+                    ? 'text-brand after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-brand'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Other Info
+              </button>
+            </div>
 
-        <div className="p-5">
-          {form.tab === 'lines' ? (
-            <>
-              <SalesLineTable
-                token={token}
-                lines={form.priced}
-                onUpdate={form.updateLine}
-                onAdd={form.addLine}
-                onAddSection={form.addSection}
-                onAddNote={form.addNote}
-                onOpenCatalog={() => form.setCatalogOpen(true)}
-                onOpenScan={() => form.setScanOpen(true)}
-                onRemove={form.removeLine}
-                onReorder={form.reorderLines}
-                warehouseId={(form.warehouseId as string) || undefined}
-              />
-              <SalesTotals
-                untaxedAmount={form.untaxedAmount}
-                discountTotal={form.discountTotal}
-                taxTotal={form.taxTotal}
-                grandTotal={form.grandTotal}
-              />
-            </>
-          ) : (
-            <SalesOtherInfoTab
-              paymentTerms={form.paymentTerms}
-              onPaymentTermsChange={form.setPaymentTerms}
-              invoiceAddress={form.invoiceAddress}
-              deliveryAddress={form.deliveryAddress}
-              deliverDifferent={form.deliverDifferent}
-              onInvoiceChange={(patch) =>
-                form.setInvoiceAddress((prev) => ({ ...prev, ...patch }))
-              }
-              onDeliveryChange={(patch) =>
-                form.setDeliveryAddress((prev) => ({ ...prev, ...patch }))
-              }
-              onToggleDeliverDifferent={form.handleToggleDeliverDifferent}
-              onLoadCustomerAddress={
-                form.customer
-                  ? () => void form.loadCustomerAddress(form.customer!)
-                  : undefined
-              }
-              loadingCustomerAddress={form.loadingCustomerAddress}
-              notes={form.notes}
-              onNotesChange={form.setNotes}
-              terms={form.terms}
-              onTermsChange={form.setTerms}
-            />
-          )}
+            <div className="p-5">
+              {form.tab === 'lines' ? (
+                <>
+                  <SalesLineTable
+                    token={token}
+                    lines={form.priced}
+                    onUpdate={form.updateLine}
+                    onAdd={form.addLine}
+                    onAddSection={form.addSection}
+                    onAddNote={form.addNote}
+                    onOpenCatalog={() => form.setCatalogOpen(true)}
+                    onOpenScan={() => form.setScanOpen(true)}
+                    onRemove={form.removeLine}
+                    onReorder={form.reorderLines}
+                    warehouseId={(form.warehouseId as string) || undefined}
+                  />
+                  <SalesTotals
+                    untaxedAmount={form.untaxedAmount}
+                    discountTotal={form.discountTotal}
+                    taxTotal={form.taxTotal}
+                    grandTotal={form.grandTotal}
+                  />
+                </>
+              ) : (
+                <SalesOtherInfoTab
+                  paymentTerms={form.paymentTerms}
+                  onPaymentTermsChange={form.setPaymentTerms}
+                  invoiceAddress={form.invoiceAddress}
+                  deliveryAddress={form.deliveryAddress}
+                  deliverDifferent={form.deliverDifferent}
+                  onInvoiceChange={(patch) =>
+                    form.setInvoiceAddress((prev) => ({ ...prev, ...patch }))
+                  }
+                  onDeliveryChange={(patch) =>
+                    form.setDeliveryAddress((prev) => ({ ...prev, ...patch }))
+                  }
+                  onToggleDeliverDifferent={form.handleToggleDeliverDifferent}
+                  onLoadCustomerAddress={
+                    form.customer
+                      ? () => void form.loadCustomerAddress(form.customer!)
+                      : undefined
+                  }
+                  loadingCustomerAddress={form.loadingCustomerAddress}
+                  notes={form.notes}
+                  onNotesChange={form.setNotes}
+                  terms={form.terms}
+                  onTermsChange={form.setTerms}
+                />
+              )}
             </div>
           </div>
         </div>

@@ -63,6 +63,16 @@ function isSection(i: SalesLineItem) {
 function isNote(i: SalesLineItem) {
   return i.lineType === 'note';
 }
+function sectionSubtotals(items: SalesLineItem[]): Map<string, number> {
+  const out = new Map<string, number>();
+  let cur: string | null = null;
+  for (const it of items) {
+    if (it.lineType === 'section') { cur = it._id; out.set(cur, 0); continue; }
+    if (it.lineType !== 'product') continue;
+    if (cur) out.set(cur, (out.get(cur) ?? 0) + (it.lineTotal || 0));
+  }
+  return out;
+}
 
 export type PrintSheetType = 'quotation' | 'proforma';
 
@@ -104,6 +114,7 @@ export default function SalesPrintSheet({
       ? 'QUOTATION'
       : 'SALES ORDER';
 
+  const allSubtotals = sectionSubtotals(so.items);
   const productLines = so.items.filter((i) => !isSection(i) && !isNote(i));
   const untaxed = productLines.reduce((s, l) => s + (l.lineTotal ?? 0), 0);
   const taxAmt =
@@ -483,11 +494,12 @@ export default function SalesPrintSheet({
               </thead>
               <tbody>
                 {so.items.map((item, i) => {
-                  if (isSection(item))
+                  if (isSection(item)) {
+                    const sub = allSubtotals.get(item._id);
                     return (
                       <tr key={item._id} style={{ background: '#f3f4f6' }}>
                         <td
-                          colSpan={6}
+                          colSpan={5}
                           style={{
                             padding: '6px 12px',
                             fontSize: 10,
@@ -500,8 +512,23 @@ export default function SalesPrintSheet({
                         >
                           {item.name}
                         </td>
+                        <td
+                          style={{
+                            padding: '6px 12px',
+                            textAlign: 'right',
+                            fontSize: 10,
+                            fontWeight: 600,
+                            color: '#6b7280',
+                            borderBottom: '1px solid #e5e7eb',
+                          }}
+                        >
+                          {typeof sub === 'number'
+                            ? `Subtotal ${fmtAmt(sub, so.currency)}`
+                            : ''}
+                        </td>
                       </tr>
                     );
+                  }
                   if (isNote(item))
                     return (
                       <tr key={item._id}>

@@ -355,13 +355,10 @@ function canCancel(so) {
  * manually overridden. Shared by `applyEdit` and `updatePricesForOrder`.
  */
 async function recomputeOrderPricing(so, { tenantId, clearOverrides = false } = {}) {
-  let source = so.items || [];
-  if (clearOverrides) {
-    source = source.map((it) => {
-      const raw = typeof it.toObject === 'function' ? it.toObject() : { ...it };
-      return { ...raw, priceOverridden: false };
-    });
-  }
+  const source = (so.items || []).map((it) => {
+    const raw = typeof it.toObject === 'function' ? it.toObject() : { ...it };
+    return clearOverrides ? { ...raw, priceOverridden: false } : raw;
+  });
   const priced = await resolveLinePricing(source, { tenantId, pricelistId: so.pricelist });
   const withPromos = await resolveLinePromotions(priced, { tenantId });
   so.items = withPromos.map(mapLine);

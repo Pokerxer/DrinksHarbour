@@ -202,7 +202,13 @@ export interface ReturnResponse {
 
 export interface BulkActionResult {
   success: boolean;
-  results: { id: string; ok: boolean; error?: string; duplicateId?: string; invoiceId?: string }[];
+  results: {
+    id: string;
+    ok: boolean;
+    error?: string;
+    duplicateId?: string;
+    invoiceId?: string;
+  }[];
 }
 
 async function parseErrorOrThrow(response: Response, fallback: string) {
@@ -259,7 +265,8 @@ export const salesOrderService = {
     if (params.paymentMethod) qs.set('paymentMethod', params.paymentMethod);
     if (params.paymentStatus) qs.set('paymentStatus', params.paymentStatus);
     if (params.groupBy) qs.set('groupBy', params.groupBy);
-    if (params.groupBySubOption) qs.set('groupBySubOption', params.groupBySubOption);
+    if (params.groupBySubOption)
+      qs.set('groupBySubOption', params.groupBySubOption);
     if (params.filters) qs.set('filters', params.filters);
     const url = `${API_URL}/api/sales-orders${qs.toString() ? `?${qs}` : ''}`;
     const response = await fetch(url, { headers: authHeaders(token) });
@@ -395,15 +402,25 @@ export const salesOrderService = {
   },
 
   async duplicate(id: string, token: string): Promise<SalesOrderResponse> {
-    const response = await fetch(`${API_URL}/api/sales-orders/${id}/duplicate`, {
-      method: 'POST',
-      headers: authHeaders(token),
-    });
+    const response = await fetch(
+      `${API_URL}/api/sales-orders/${id}/duplicate`,
+      {
+        method: 'POST',
+        headers: authHeaders(token),
+      }
+    );
     await parseErrorOrThrow(response, 'Failed to duplicate order');
     return response.json();
   },
 
-  async importCsv(csv: string, docType: 'quotation' | 'order', token: string): Promise<{ success: boolean; data: { created: number; errors: { row: number; message: string }[] } }> {
+  async importCsv(
+    csv: string,
+    docType: 'quotation' | 'order',
+    token: string
+  ): Promise<{
+    success: boolean;
+    data: { created: number; errors: { row: number; message: string }[] };
+  }> {
     const response = await fetch(`${API_URL}/api/sales-orders/import`, {
       method: 'POST',
       headers: authHeaders(token),
@@ -413,65 +430,101 @@ export const salesOrderService = {
     return response.json();
   },
 
-  async generatePaymentLink(id: string, token: string): Promise<{ success: boolean; data: { paymentLink: string } }> {
-    const response = await fetch(`${API_URL}/api/sales-orders/${id}/payment-link`, {
-      method: 'POST',
-      headers: authHeaders(token),
-    });
+  async generatePaymentLink(
+    id: string,
+    token: string
+  ): Promise<{ success: boolean; data: { paymentLink: string } }> {
+    const response = await fetch(
+      `${API_URL}/api/sales-orders/${id}/payment-link`,
+      {
+        method: 'POST',
+        headers: authHeaders(token),
+      }
+    );
     await parseErrorOrThrow(response, 'Failed to generate payment link');
     return response.json();
   },
 
   async accruedRevenue(id: string, token: string): Promise<SalesOrderResponse> {
-    const response = await fetch(`${API_URL}/api/sales-orders/${id}/accrued-revenue`, {
-      method: 'POST',
-      headers: authHeaders(token),
-    });
+    const response = await fetch(
+      `${API_URL}/api/sales-orders/${id}/accrued-revenue`,
+      {
+        method: 'POST',
+        headers: authHeaders(token),
+      }
+    );
     await parseErrorOrThrow(response, 'Failed to record accrued revenue');
     return response.json();
   },
 
-  async createProject(id: string, token: string): Promise<{ success: boolean; data: { projectId: string; name: string; status: string } }> {
-    const response = await fetch(`${API_URL}/api/sales-orders/${id}/create-project`, {
-      method: 'POST',
-      headers: authHeaders(token),
-    });
+  async createProject(
+    id: string,
+    token: string
+  ): Promise<{
+    success: boolean;
+    data: { projectId: string; name: string; status: string };
+  }> {
+    const response = await fetch(
+      `${API_URL}/api/sales-orders/${id}/create-project`,
+      {
+        method: 'POST',
+        headers: authHeaders(token),
+      }
+    );
     await parseErrorOrThrow(response, 'Failed to create project');
     return response.json();
   },
 
-  async getActivities(id: string, token: string): Promise<{ success: boolean; data: any[] }> {
-    const response = await fetch(`${API_URL}/api/sales-orders/${id}/activities`, {
-      headers: authHeaders(token),
-    });
+  async getActivities(
+    id: string,
+    token: string
+  ): Promise<{ success: boolean; data: any[] }> {
+    const response = await fetch(
+      `${API_URL}/api/sales-orders/${id}/activities`,
+      {
+        headers: authHeaders(token),
+      }
+    );
     await parseErrorOrThrow(response, 'Failed to load activities');
     return response.json();
   },
 
   async createActivity(
     id: string,
-    body: { type: 'note' | 'message' | 'log'; subject: string; description?: string },
+    body: {
+      type: 'note' | 'message' | 'log';
+      subject: string;
+      description?: string;
+    },
     token: string
   ): Promise<{ success: boolean; data: any }> {
-    const response = await fetch(`${API_URL}/api/sales-orders/${id}/activities`, {
-      method: 'POST',
-      headers: authHeaders(token),
-      body: JSON.stringify(body),
-    });
+    const response = await fetch(
+      `${API_URL}/api/sales-orders/${id}/activities`,
+      {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify(body),
+      }
+    );
     await parseErrorOrThrow(response, 'Failed to create activity');
     return response.json();
   },
 
   async updatePrices(id: string, token: string): Promise<SalesOrderResponse> {
-    const response = await fetch(`${API_URL}/api/sales-orders/${id}/update-prices`, {
-      method: 'POST',
-      headers: authHeaders(token),
-    });
+    const response = await fetch(
+      `${API_URL}/api/sales-orders/${id}/update-prices`,
+      {
+        method: 'POST',
+        headers: authHeaders(token),
+      }
+    );
     await parseErrorOrThrow(response, 'Failed to update prices');
     return response.json();
   },
 
-  async getCustomFields(token: string): Promise<{ success: boolean; data: any[] }> {
+  async getCustomFields(
+    token: string
+  ): Promise<{ success: boolean; data: any[] }> {
     const response = await fetch(`${API_URL}/api/sales-orders/custom-fields`, {
       headers: authHeaders(token),
     });
@@ -479,7 +532,15 @@ export const salesOrderService = {
     return response.json();
   },
 
-  async createCustomField(body: { fieldName: string; fieldType: string; options?: string[]; isRequired?: boolean }, token: string): Promise<{ success: boolean; data: any }> {
+  async createCustomField(
+    body: {
+      fieldName: string;
+      fieldType: string;
+      options?: string[];
+      isRequired?: boolean;
+    },
+    token: string
+  ): Promise<{ success: boolean; data: any }> {
     const response = await fetch(`${API_URL}/api/sales-orders/custom-fields`, {
       method: 'POST',
       headers: authHeaders(token),
@@ -489,25 +550,42 @@ export const salesOrderService = {
     return response.json();
   },
 
-  async sendEmail(id: string, token: string): Promise<{ success: boolean; data: { emailSent: boolean } }> {
-    const response = await fetch(`${API_URL}/api/sales-orders/${id}/send-email`, {
-      method: 'POST',
-      headers: authHeaders(token),
-    });
+  async sendEmail(
+    id: string,
+    token: string
+  ): Promise<{ success: boolean; data: { emailSent: boolean } }> {
+    const response = await fetch(
+      `${API_URL}/api/sales-orders/${id}/send-email`,
+      {
+        method: 'POST',
+        headers: authHeaders(token),
+      }
+    );
     await parseErrorOrThrow(response, 'Failed to send email');
     return response.json();
   },
 
-  async requestSignature(id: string, token: string): Promise<{ success: boolean; data: { signatureUrl: string } }> {
-    const response = await fetch(`${API_URL}/api/sales-orders/${id}/request-signature`, {
-      method: 'POST',
-      headers: authHeaders(token),
-    });
+  async requestSignature(
+    id: string,
+    token: string
+  ): Promise<{ success: boolean; data: { signatureUrl: string } }> {
+    const response = await fetch(
+      `${API_URL}/api/sales-orders/${id}/request-signature`,
+      {
+        method: 'POST',
+        headers: authHeaders(token),
+      }
+    );
     await parseErrorOrThrow(response, 'Failed to request signature');
     return response.json();
   },
 
-  async bulkAction(endpoint: string, ids: string[], extra?: Record<string, unknown>, token: string): Promise<BulkActionResult> {
+  async bulkAction(
+    endpoint: string,
+    ids: string[],
+    extra?: Record<string, unknown>,
+    token: string
+  ): Promise<BulkActionResult> {
     const response = await fetch(`${API_URL}/api/sales/bulk/${endpoint}`, {
       method: 'POST',
       headers: authHeaders(token),
@@ -533,19 +611,46 @@ export const salesOrderService = {
     return salesOrderService.bulkAction('cancel', ids, {}, token);
   },
 
-  async bulkCreateInvoice(ids: string[], token: string): Promise<BulkActionResult> {
+  async bulkCreateInvoice(
+    ids: string[],
+    token: string
+  ): Promise<BulkActionResult> {
     return salesOrderService.bulkAction('create-invoice', ids, {}, token);
   },
 
-  async bulkAccruedRevenue(ids: string[], token: string): Promise<BulkActionResult> {
+  async bulkAccruedRevenue(
+    ids: string[],
+    token: string
+  ): Promise<BulkActionResult> {
     return salesOrderService.bulkAction('accrued-revenue', ids, {}, token);
   },
 
-  async bulkFollowers(ids: string[], action: 'add' | 'remove', userId: string, token: string): Promise<BulkActionResult> {
-    return salesOrderService.bulkAction('followers', ids, { action, userId }, token);
+  async bulkFollowers(
+    ids: string[],
+    action: 'add' | 'remove',
+    userId: string,
+    token: string
+  ): Promise<BulkActionResult> {
+    return salesOrderService.bulkAction(
+      'followers',
+      ids,
+      { action, userId },
+      token
+    );
   },
 
-  async bulkSendEmail(ids: string[], to: string, subject: string, body: string, token: string): Promise<BulkActionResult> {
-    return salesOrderService.bulkAction('send-email', ids, { to, subject, body }, token);
+  async bulkSendEmail(
+    ids: string[],
+    to: string,
+    subject: string,
+    body: string,
+    token: string
+  ): Promise<BulkActionResult> {
+    return salesOrderService.bulkAction(
+      'send-email',
+      ids,
+      { to, subject, body },
+      token
+    );
   },
 };

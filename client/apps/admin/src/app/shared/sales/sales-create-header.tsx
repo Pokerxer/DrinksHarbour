@@ -90,69 +90,106 @@ export default function SalesCreateHeader({
 
   // Gear action handlers
   const handleDuplicate = async () => {
-    if (!orderId) { toast('No order to duplicate'); return; }
+    if (!orderId) {
+      toast('No order to duplicate');
+      return;
+    }
     try {
       const res = await salesOrderService.duplicate(orderId, token);
       toast('Order duplicated');
       router.push(routes.eCommerce.salesDetails(res.data._id));
-    } catch { toast('Failed to duplicate order'); }
+    } catch {
+      toast('Failed to duplicate order');
+    }
   };
 
   const handleMarkAsSent = async () => {
-    if (!orderId) { toast('No order to mark'); return; }
+    if (!orderId) {
+      toast('No order to mark');
+      return;
+    }
     try {
       await salesOrderService.send(orderId, token);
       toast('Marked as sent');
       onStatusChange?.();
-    } catch { toast('Failed to mark as sent'); }
+    } catch {
+      toast('Failed to mark as sent');
+    }
   };
 
   const handleGeneratePaymentLink = async () => {
-    if (!orderId) { toast('No order selected'); return; }
+    if (!orderId) {
+      toast('No order selected');
+      return;
+    }
     try {
       const res = await salesOrderService.generatePaymentLink(orderId, token);
       window.open(res.data.paymentLink, '_blank');
       toast('Payment link generated');
-    } catch { toast('Failed to generate payment link'); }
+    } catch {
+      toast('Failed to generate payment link');
+    }
   };
 
   const handleAccruedRevenueEntry = async () => {
-    if (!orderId) { toast('No order selected'); return; }
+    if (!orderId) {
+      toast('No order selected');
+      return;
+    }
     try {
       await salesOrderService.accruedRevenue(orderId, token);
       toast('Accrued revenue entry created');
-    } catch { toast('Failed to create accrued revenue entry'); }
+    } catch {
+      toast('Failed to create accrued revenue entry');
+    }
   };
 
   const handleRequestSignature = async () => {
-    if (!orderId) { toast('No order selected'); return; }
+    if (!orderId) {
+      toast('No order selected');
+      return;
+    }
     try {
       await salesOrderService.requestSignature(orderId, token);
       toast('Signature request sent');
-    } catch { toast('Failed to request signature'); }
+    } catch {
+      toast('Failed to request signature');
+    }
   };
 
   const handleSendEmail = async () => {
-    if (!orderId) { toast('No order selected'); return; }
+    if (!orderId) {
+      toast('No order selected');
+      return;
+    }
     try {
       await salesOrderService.sendEmail(orderId, token);
       toast('Email sent');
-    } catch { toast('Failed to send email'); }
+    } catch {
+      toast('Failed to send email');
+    }
   };
 
   const handleShare = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
       toast('Link copied to clipboard');
-    } catch { toast('Failed to copy link'); }
+    } catch {
+      toast('Failed to copy link');
+    }
   };
 
   const handleCreateProject = async () => {
-    if (!orderId) { toast('No order selected'); return; }
+    if (!orderId) {
+      toast('No order selected');
+      return;
+    }
     try {
       await salesOrderService.createProject(orderId, token);
       toast('Project created');
-    } catch { toast('Failed to create project'); }
+    } catch {
+      toast('Failed to create project');
+    }
   };
 
   // Gear dropdown state
@@ -261,7 +298,11 @@ export default function SalesCreateHeader({
                 'Send PRO-FORMA Invoice',
                 PiPaperPlaneTilt
               )}
-              {gearItem(handleRequestSignature, 'Request Signature', PiPencilSimple)}
+              {gearItem(
+                handleRequestSignature,
+                'Request Signature',
+                PiPencilSimple
+              )}
               {gearItem(handleDuplicate, 'Duplicate', PiCopy)}
               <div className="my-1 border-t border-gray-100" />
               {gearItem(
@@ -277,7 +318,11 @@ export default function SalesCreateHeader({
               {gearItem(handleSendEmail, 'Send an email', PiEnvelope)}
               {gearItem(handleMarkAsSent, 'Mark Quotation as Sent', PiTag)}
               {gearItem(handleShare, 'Share', PiShareNetwork)}
-              {gearItem(handleCreateProject, 'Create Project', PiFolderSimplePlus)}
+              {gearItem(
+                handleCreateProject,
+                'Create Project',
+                PiFolderSimplePlus
+              )}
             </div>
           )}
         </div>

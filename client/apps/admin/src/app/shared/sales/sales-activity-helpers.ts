@@ -91,7 +91,9 @@ export function timeOf(iso: string): string {
   });
 }
 
-export function userNameOf(createdBy?: SalesActivityUser | string): string | undefined {
+export function userNameOf(
+  createdBy?: SalesActivityUser | string
+): string | undefined {
   if (!createdBy) return undefined;
   if (typeof createdBy === 'string') return undefined;
   return createdBy.name || createdBy.email;

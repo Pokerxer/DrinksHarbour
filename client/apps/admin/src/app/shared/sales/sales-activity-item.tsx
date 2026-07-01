@@ -17,7 +17,9 @@ function ChangeMeta({ activity }: { activity: SalesActivity }) {
   if (meta.from !== undefined || meta.to !== undefined) {
     return (
       <span className="mt-0.5 inline-flex flex-wrap items-center gap-1 text-xs">
-        <span className="text-gray-400 line-through">{String(meta.from ?? '—')}</span>
+        <span className="text-gray-400 line-through">
+          {String(meta.from ?? '—')}
+        </span>
         <span className="text-gray-300">→</span>
         <span className="font-medium text-brand">{String(meta.to ?? '—')}</span>
       </span>
@@ -26,12 +28,20 @@ function ChangeMeta({ activity }: { activity: SalesActivity }) {
   return null;
 }
 
-export default function SalesActivityItem({ activity }: { activity: SalesActivity }) {
+export default function SalesActivityItem({
+  activity,
+}: {
+  activity: SalesActivity;
+}) {
   const isSystem = activity.system || activity.type === 'log';
   const isMessage = activity.type === 'message';
   const userName = userNameOf(activity.createdBy);
 
-  const Icon = isSystem ? PiGearSix : isMessage ? PiChatCircleText : PiNoteBlank;
+  const Icon = isSystem
+    ? PiGearSix
+    : isMessage
+      ? PiChatCircleText
+      : PiNoteBlank;
   const iconTint = isSystem
     ? 'bg-gray-100 text-gray-500'
     : isMessage
@@ -49,7 +59,9 @@ export default function SalesActivityItem({ activity }: { activity: SalesActivit
 
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
-          <p className="text-sm font-medium text-gray-800">{activity.subject}</p>
+          <p className="text-sm font-medium text-gray-800">
+            {activity.subject}
+          </p>
           <time className="shrink-0 whitespace-nowrap text-[11px] text-gray-400">
             {timeOf(activity.createdAt)}
           </time>

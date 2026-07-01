@@ -94,8 +94,7 @@ export function useSalesAutosave({
       );
       if (!hasProduct) return;
 
-      const BASE =
-        process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+      const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
       const existingId = initial?._id ?? draftIdRef.current;
       if (existingId) {
         fetch(`${BASE}/api/sales-orders/${existingId}`, {
@@ -231,11 +230,7 @@ export function useSalesAutosave({
       );
       const newId = res.data._id;
       assignDraftId(newId);
-      window.history.replaceState(
-        null,
-        '',
-        routes.eCommerce.salesEdit(newId)
-      );
+      window.history.replaceState(null, '', routes.eCommerce.salesEdit(newId));
       setAutoSaveStatus('saved');
       return newId;
     } catch {
