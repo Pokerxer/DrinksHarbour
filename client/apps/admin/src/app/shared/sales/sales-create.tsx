@@ -1,7 +1,7 @@
 // client/apps/admin/src/app/shared/sales/sales-create.tsx
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
@@ -17,6 +17,7 @@ import SalesOtherInfoTab from './sales-other-info-tab';
 import SalesCatalogModal from './sales-catalog-modal';
 import SalesScanDrawer from './sales-scan-drawer';
 import SalesPrintSheet, { type PrintSheetType } from './sales-print-sheet';
+import SalesActivityPanel from './sales-activity-panel';
 import type { CreateTab } from './sales-stage-pill';
 
 export default function SalesCreate({
@@ -37,7 +38,7 @@ export default function SalesCreate({
 
   const form = useSalesCreateForm({ token, mode, initial });
 
-  const { autoSaveStatus, isDirtyRef, handleManualSave, ensureSaved } =
+  const { autoSaveStatus, isDirtyRef, draftId, handleManualSave, ensureSaved } =
     useSalesAutosave({
       token,
       initial,
@@ -51,6 +52,12 @@ export default function SalesCreate({
       warehouseId: form.warehouseId as string,
       buildPayload: form.buildPayload,
     });
+
+  const orderId = initial?._id ?? draftId ?? undefined;
+  const [historyKey, setHistoryKey] = useState(0);
+  useEffect(() => {
+    if (autoSaveStatus === 'saved') setHistoryKey((k) => k + 1);
+  }, [autoSaveStatus]);
 
   function validateFilled() {
     const filled = form.priced.filter(
@@ -154,7 +161,9 @@ export default function SalesCreate({
         onSendProForma={() => handlePrint('proforma')}
       />
 
-      <SalesCustomerBar
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0">
+          <SalesCustomerBar
         token={token}
         customer={form.customer}
         onSelectCustomer={form.handleSelectCustomer}
@@ -248,6 +257,16 @@ export default function SalesCreate({
               onTermsChange={form.setTerms}
             />
           )}
+            </div>
+          </div>
+        </div>
+
+        <div className="lg:sticky lg:top-4 lg:self-start">
+          <SalesActivityPanel
+            token={token}
+            orderId={orderId}
+            refreshKey={historyKey}
+          />
         </div>
       </div>
 

@@ -38,8 +38,16 @@ export function useSalesAutosave({
     'idle' | 'saving' | 'saved' | 'error'
   >('idle');
   const draftIdRef = useRef<string | null>(initial?._id ?? null);
+  const [draftId, setDraftId] = useState<string | null>(initial?._id ?? null);
   const isDirtyRef = useRef(false);
   const autoSaveEnabledRef = useRef(false);
+
+  // Assign a freshly-created draft id to both the ref (sync reads) and state
+  // (so consumers re-render, e.g. the history panel gets an orderId).
+  const assignDraftId = (id: string) => {
+    draftIdRef.current = id;
+    setDraftId(id);
+  };
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -135,7 +143,7 @@ export function useSalesAutosave({
             token
           );
           const newId = res.data._id;
-          draftIdRef.current = newId;
+          assignDraftId(newId);
           window.history.replaceState(
             null,
             '',
@@ -194,7 +202,7 @@ export function useSalesAutosave({
           { ...payload, docType: 'quotation' } as any,
           token
         );
-        draftIdRef.current = res.data._id;
+        assignDraftId(res.data._id);
         window.history.replaceState(
           null,
           '',
@@ -222,7 +230,7 @@ export function useSalesAutosave({
         token
       );
       const newId = res.data._id;
-      draftIdRef.current = newId;
+      assignDraftId(newId);
       window.history.replaceState(
         null,
         '',
@@ -241,6 +249,7 @@ export function useSalesAutosave({
     setAutoSaveStatus,
     isDirtyRef,
     draftIdRef,
+    draftId,
     handleManualSave,
     ensureSaved,
   };
