@@ -53,6 +53,11 @@ export default function SalesQuotationDetailLines({ so }: Props) {
                     {item.description && (
                       <p className="mt-0.5 text-xs text-gray-400">{item.description}</p>
                     )}
+                    {(item.promoDiscount ?? 0) > 0 && (
+                      <p className="mt-0.5 text-xs font-medium text-emerald-600">
+                        {item.promoName || 'Promotion'} · −{fmtCur(item.promoDiscount ?? 0, so.currency)}
+                      </p>
+                    )}
                   </td>
                   <td className="px-4 py-3.5 text-right">
                     <span className="text-sm font-medium text-gray-700">{item.quantity}</span>
@@ -78,7 +83,7 @@ export default function SalesQuotationDetailLines({ so }: Props) {
             )}
           </tbody>
           <tfoot>
-            {so.discountTotal > 0 && (
+            {(so.discountTotal > 0 || (so.promotionTotal ?? 0) > 0) && (
               <tr className="border-t border-gray-100 bg-gray-50/50">
                 <td colSpan={4} className="px-5 py-2.5 text-right text-xs font-medium text-gray-500">Subtotal</td>
                 <td className="px-5 py-2.5 text-right font-mono text-sm text-gray-700">{fmtCur(so.subtotal, so.currency)}</td>
@@ -89,6 +94,14 @@ export default function SalesQuotationDetailLines({ so }: Props) {
                 <td colSpan={4} className="px-5 py-2.5 text-right text-xs font-medium text-gray-500">Discount</td>
                 <td className="px-5 py-2.5 text-right font-mono text-sm font-semibold text-brand">
                   −{fmtCur(so.discountTotal, so.currency)}
+                </td>
+              </tr>
+            )}
+            {(so.promotionTotal ?? 0) > 0 && (
+              <tr className="bg-gray-50/50">
+                <td colSpan={4} className="px-5 py-2.5 text-right text-xs font-medium text-gray-500">Promotion</td>
+                <td className="px-5 py-2.5 text-right font-mono text-sm font-semibold text-emerald-600">
+                  −{fmtCur(so.promotionTotal ?? 0, so.currency)}
                 </td>
               </tr>
             )}

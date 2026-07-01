@@ -22,7 +22,6 @@ import SalesScanDrawer from './sales-scan-drawer';
 import SalesPrintSheet, { type PrintSheetType } from './sales-print-sheet';
 import SalesActivityPanel from './sales-activity-panel';
 import SalesConfirmModal from './sales-confirm-modal';
-import type { DraftLine } from './sales-line-table';
 import type { CreateTab } from './sales-stage-pill';
 
 export default function SalesCreate({
@@ -75,27 +74,7 @@ export default function SalesCreate({
         return;
       }
       const res = await salesOrderService.updatePrices(id, token);
-      form.setLines(
-        res.data.items.map((it) => ({
-          key: it._id,
-          lineType: (it.lineType ?? 'product') as DraftLine['lineType'],
-          subProductId: it.subproduct ?? '',
-          product: it.product,
-          name: it.name ?? '',
-          sku: it.sku ?? '',
-          sizeId: it.size,
-          sizeName: undefined,
-          quantity: it.quantity,
-          baseUnitPrice: it.unitPrice,
-          discount: it.discount,
-          discountType: (it.discountType ??
-            'fixed') as DraftLine['discountType'],
-          taxRate: it.taxRate ?? 0,
-          costPrice: 0,
-          priceOverridden: false,
-          description: it.description ?? '',
-        }))
-      );
+      form.applyServerItems(res.data.items);
       toast.success('Prices updated');
       setHistoryKey((k) => k + 1);
       setConfirmPrices(false);
@@ -223,7 +202,7 @@ export default function SalesCreate({
             token={token}
             customer={form.customer}
             onSelectCustomer={form.handleSelectCustomer}
-            onClearCustomer={() => form.setCustomer(null)}
+            onClearCustomer={form.handleClearCustomer}
             pricelists={form.pricelists as { _id: string; name: string }[]}
             pricelistId={form.pricelistId}
             onPricelistChange={(id) => {
@@ -341,6 +320,7 @@ export default function SalesCreate({
       <SalesScanDrawer
         open={form.scanOpen}
         token={token}
+        warehouseId={(form.warehouseId as string) || undefined}
         onClose={() => form.setScanOpen(false)}
         onAdd={form.addProductFromCatalog}
       />

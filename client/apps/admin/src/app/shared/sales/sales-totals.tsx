@@ -10,7 +10,7 @@ export interface SalesTotalsProps {
   currency?: string;
 }
 
-/** Odoo-style totals: Untaxed Amount − Discount + Tax = Total (tax-exclusive). */
+/** Odoo-style totals: Subtotal (gross) − Discount + Tax = Total (tax-exclusive). */
 export default function SalesTotals({
   untaxedAmount,
   discountTotal = 0,
@@ -22,7 +22,7 @@ export default function SalesTotals({
     <div className="mt-6 flex justify-end border-t border-gray-100 pt-4">
       <div className="w-full max-w-xs space-y-1.5">
         <div className="flex items-center justify-between text-sm text-gray-600">
-          <span>Untaxed Amount</span>
+          <span>Subtotal</span>
           <span>{fmtCur(untaxedAmount, currency)}</span>
         </div>
         {discountTotal > 0 && (

@@ -42,6 +42,8 @@ type Mode = 'qr' | 'upload' | 'paste';
 type Phase = 'idle' | 'working' | 'done' | 'error';
 
 interface ReviewedRow {
+  /** Stable per-result identity (positional) — extracted names can repeat. */
+  rowKey: string;
   item: ScanResultItem;
   selected: boolean;
   sizeId: string | null;
@@ -60,9 +62,11 @@ const CONF_BADGE: Record<string, { label: string; cls: string }> = {
 export interface SalesScanDrawerProps {
   open: boolean;
   token: string;
+  /** Scope the manual-override product search to the order's warehouse. */
+  warehouseId?: string;
   onClose: () => void;
   /** Add a line. Receives the picked selection + the chosen quantity. */
-  onAdd: (selection: ProductLineSelection) => void;
+  onAdd: (selection: ProductLineSelection, qty?: number) => void;
 }
 
 /**
@@ -77,6 +81,7 @@ export interface SalesScanDrawerProps {
 export default function SalesScanDrawer({
   open,
   token,
+  warehouseId,
   onClose,
   onAdd,
 }: SalesScanDrawerProps) {
@@ -141,6 +146,17 @@ export default function SalesScanDrawer({
       // fallback guarantees the drawer updates even if the socket can't connect).
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = setInterval(async () => {
+        // Pairing codes die server-side after ~10 min — stop polling and tell
+        // the operator instead of hammering the status endpoint forever.
+        if (exp && Date.now() > exp) {
+          if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+          }
+          setPhase('error');
+          setError('Pairing code expired — tap “Regenerate code” for a fresh one.');
+          return;
+        }
         try {
           const st = await scanService.getStatus(token, code);
           if (st.status === 'complete') {
@@ -260,16 +276,22 @@ export default function SalesScanDrawer({
   }, [token, pasteText]);
 
   // ── Review → add to order ──────────────────────────────────────────────────
+  // A row is addable only when it has something to add: a manual override or
+  // an actual matched subproduct (the AI can report confidence without one).
   const selectedRows = rows.filter(
-    (r) => r.selected && (r.item.confidence !== 'none' || r.override)
+    (r) =>
+      r.selected &&
+      (r.override ||
+        (r.item.confidence !== 'none' && r.item.matchedSubProducts[0]))
   );
 
-  function buildSelection(r: ReviewedRow): ProductLineSelection {
+  function buildSelection(r: ReviewedRow): ProductLineSelection | null {
     // Use manual override if the user picked one
     if (r.override)
       return { ...r.override, originalPrice: r.override.sellingPrice };
     const sp = r.item.matchedSubProducts[0];
-    const size = sp?.sizes.find((s) => s.size === r.sizeId);
+    if (!sp) return null;
+    const size = sp.sizes.find((s) => s.size === r.sizeId);
     const base = {
       subProductId: sp._id,
       productId: r.item.matchedProductId ?? undefined,
@@ -287,6 +309,7 @@ export default function SalesScanDrawer({
         sellingPrice: price,
         sizeId: size.size,
         sizeName: size.displayName ?? size.size,
+        availableStock: size.availableStock,
         originalPrice: price,
       };
     }
@@ -301,9 +324,8 @@ export default function SalesScanDrawer({
 
   function addSelected() {
     for (const r of selectedRows) {
-      // Bump qty for repeated picks (the onAdd callback is idempotent by
-      // subProductId+sizeId, so calling it `qty` times lands at the right count).
-      for (let i = 0; i < r.qty; i++) onAdd(buildSelection(r));
+      const selection = buildSelection(r);
+      if (selection) onAdd(selection, r.qty);
     }
     onClose();
   }
@@ -355,7 +377,12 @@ export default function SalesScanDrawer({
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           {showReview ? (
-            <ReviewList rows={rows} setRows={setRows} token={token} />
+            <ReviewList
+              rows={rows}
+              setRows={setRows}
+              token={token}
+              warehouseId={warehouseId}
+            />
           ) : (
             <>
               {/* QR mode */}
@@ -377,7 +404,12 @@ export default function SalesScanDrawer({
                       </div>
                       <p className="text-xs text-gray-400">
                         Code <span className="font-mono">{pairingCode}</span> ·
-                        expires in ~10 min
+                        expires in ~
+                        {Math.max(
+                          1,
+                          Math.round((expiresAt - Date.now()) / 60000)
+                        )}{' '}
+                        min
                       </p>
                       {phase === 'idle' && (
                         <p className="flex items-center gap-2 text-xs text-gray-500">
@@ -584,28 +616,24 @@ function ReviewList({
   rows,
   setRows,
   token,
+  warehouseId,
 }: {
   rows: ReviewedRow[];
   setRows: Dispatch<SetStateAction<ReviewedRow[]>>;
   token: string;
+  warehouseId?: string;
 }) {
   function update(key: string, patch: Partial<ReviewedRow>) {
-    setRows((rs) =>
-      rs.map((r) =>
-        r.item.extractedName + (r.item.brand ?? '') === key
-          ? { ...r, ...patch }
-          : r
-      )
-    );
+    setRows((rs) => rs.map((r) => (r.rowKey === key ? { ...r, ...patch } : r)));
   }
 
   return (
     <div className="space-y-2">
       {rows.map((r) => {
-        const key = r.item.extractedName + (r.item.brand ?? '');
+        const key = r.rowKey;
         const conf = CONF_BADGE[r.item.confidence] ?? CONF_BADGE.none;
         const sp = r.item.matchedSubProducts[0];
-        const unmatched = r.item.confidence === 'none' && !r.override;
+        const unmatched = (r.item.confidence === 'none' || !sp) && !r.override;
         const hasMatch = !!sp || !!r.override;
 
         return (
@@ -720,14 +748,12 @@ function ReviewList({
                     {/* Qty stepper */}
                     <div className="ml-auto flex items-center gap-1.5">
                       {(() => {
+                        // Only the SELECTED size's stock is meaningful here —
+                        // falling back to another size's number misleads.
                         const matchedSize = sp?.sizes.find(
                           (s) => s.size === r.sizeId
                         );
-                        const stock =
-                          matchedSize?.availableStock ??
-                          (sp?.sizes.length === 0
-                            ? undefined
-                            : sp?.sizes[0]?.availableStock);
+                        const stock = matchedSize?.availableStock;
                         if (stock == null) return null;
                         const ok = stock >= r.qty;
                         const sizeName =
@@ -812,6 +838,7 @@ function ReviewList({
                     <ProductLineSearch
                       token={token}
                       query={r.item.extractedName}
+                      warehouseId={warehouseId}
                       onSelect={(sel) => {
                         update(key, {
                           override: sel,
@@ -854,8 +881,9 @@ function ReviewList({
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-/** Build the initial reviewed row from a scan result item. */
-function toReviewedRow(item: ScanResultItem): ReviewedRow {
+/** Build the initial reviewed row from a scan result item. The positional
+ *  index keys the row — extracted names/brands can repeat within one scan. */
+function toReviewedRow(item: ScanResultItem, index: number): ReviewedRow {
   const sp = item.matchedSubProducts[0];
   const sizeId =
     item.suggestedSizeId ??
@@ -863,8 +891,9 @@ function toReviewedRow(item: ScanResultItem): ReviewedRow {
     sp?.sizes[0]?.size ??
     null;
   return {
+    rowKey: String(index),
     item,
-    selected: item.confidence !== 'none',
+    selected: item.confidence !== 'none' && !!sp,
     sizeId,
     qty: Math.max(1, item.qty),
   };

@@ -166,6 +166,7 @@ export function useSalesAutosave({
     validUntil,
     paymentTerms,
     pricelistId,
+    warehouseId,
     token,
   ]);
 

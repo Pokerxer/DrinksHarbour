@@ -2,7 +2,35 @@
 
 import type { POSCartItem, POSBundleDeal } from '@/app/shared/point-of-sale/types';
 import { getEffectiveBundlePriceForItem } from '@/app/shared/point-of-sale/store';
+import type { SalesLineItem } from '@/services/salesOrder.service';
 import type { DraftLine } from './sales-line-table';
+
+/**
+ * Map a stored SalesOrder line into an editable draft line. Catalog metadata
+ * the server doesn't echo back (sizeName, costPrice, availableStock, bundles,
+ * originalPrice) starts empty — hydrateLineMeta in useSalesCreateForm fills it
+ * afterwards so pricelist/bundle math and stock badges keep working.
+ */
+export function soItemToDraftLine(it: SalesLineItem): DraftLine {
+  return {
+    key: it._id,
+    lineType: (it.lineType ?? 'product') as DraftLine['lineType'],
+    subProductId: it.subproduct ?? '',
+    product: it.product,
+    name: it.name ?? '',
+    sku: it.sku ?? '',
+    sizeId: it.size,
+    sizeName: undefined,
+    quantity: it.quantity,
+    baseUnitPrice: it.unitPrice,
+    discount: it.discount,
+    discountType: (it.discountType ?? 'fixed') as DraftLine['discountType'],
+    taxRate: it.taxRate ?? 0,
+    costPrice: 0,
+    priceOverridden: !!it.priceOverridden,
+    description: it.description ?? '',
+  };
+}
 
 /** Create a blank draft line with defaults. */
 export function blankLine(lineType: DraftLine['lineType'] = 'product'): DraftLine {

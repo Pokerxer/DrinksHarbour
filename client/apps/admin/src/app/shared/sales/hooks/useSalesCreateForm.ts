@@ -1,8 +1,12 @@
 // client/apps/admin/src/app/shared/sales/hooks/useSalesCreateForm.ts
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { SalesOrder, SalesOrderAddress } from '@/services/salesOrder.service';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  SalesLineItem,
+  SalesOrder,
+  SalesOrderAddress,
+} from '@/services/salesOrder.service';
 import type { POSCustomer } from '@/app/shared/point-of-sale/types';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { useSalesCustomerPricelist } from '../use-sales-customer-pricelist';
@@ -12,6 +16,7 @@ import {
   liveUnitPrice,
   resolveDiscount,
   lineTotalOf,
+  soItemToDraftLine,
 } from '../sales-create-pricing-helpers';
 import type { DraftLine, PricedLine } from '../sales-line-table';
 import type { ProductLineSelection } from '../product-line-search';
@@ -73,6 +78,10 @@ export function useSalesCreateForm({
   const [pricelistId, setPricelistId] = useState('');
   const [pricelistOverridden, setPricelistOverridden] = useState(false);
   const [warehouseId, setWarehouseId] = useState(initial?.warehouseId ?? '');
+  // warehouseId can arrive populated ({ _id, name }) on a loaded order —
+  // normalize to the plain id for fetch params and comparisons.
+  const warehouseIdStr =
+    typeof warehouseId === 'string' ? warehouseId : (warehouseId?._id ?? '');
   const [warehouses, setWarehouses] = useState<
     { _id: string; name: string; isDefault?: boolean }[]
   >([]);
@@ -96,26 +105,7 @@ export function useSalesCreateForm({
         walletBalance: 0,
       });
     }
-    setLines(
-      initial.items.map((it) => ({
-        key: it._id,
-        lineType: (it.lineType ?? 'product') as DraftLine['lineType'],
-        subProductId: it.subproduct ?? '',
-        product: it.product,
-        name: it.name ?? '',
-        sku: it.sku ?? '',
-        sizeId: it.size,
-        sizeName: undefined,
-        quantity: it.quantity,
-        baseUnitPrice: it.unitPrice,
-        discount: it.discount,
-        discountType: (it.discountType ?? 'fixed') as DraftLine['discountType'],
-        taxRate: it.taxRate ?? 0,
-        costPrice: 0,
-        priceOverridden: !!it.priceOverridden,
-        description: it.description ?? '',
-      }))
-    );
+    setLines(initial.items.map(soItemToDraftLine));
     setNotes(initial.notes ?? '');
     setTerms(initial.terms ?? '');
     setValidUntil(initial.validUntil ? initial.validUntil.slice(0, 10) : '');
@@ -157,51 +147,115 @@ export function useSalesCreateForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps — fetching warehouses; omit warehouseId to avoid re-fetching on selection
   }, [token]);
 
+  /**
+   * Enrich product lines with catalog metadata the order document doesn't
+   * carry: sizeName, costPrice, availableStock, activeBundles, originalPrice.
+   * Metadata only — never touches baseUnitPrice / priceOverridden. When a
+   * warehouse is selected, stock is warehouse-scoped via the list endpoint
+   * (which omits out-of-stock rows there, so a miss means 0 in that
+   * warehouse); otherwise the global per-size stock applies. Best-effort: any
+   * fetch failure leaves the lines unchanged.
+   */
+  const hydrateLineMeta = useCallback(
+    async (targetLines: DraftLine[], whId?: string) => {
+      if (!token) return;
+      const skuBySub = new Map<string, string>();
+      for (const l of targetLines) {
+        if (l.lineType === 'product' && l.subProductId && !skuBySub.has(l.subProductId)) {
+          skuBySub.set(l.subProductId, l.sku);
+        }
+      }
+      if (!skuBySub.size) return;
+      const fetchGlobal = async (id: string) => {
+        const res: any = await subproductService.getSubProduct(id, token);
+        return res?.data?.subProduct ?? res?.subProduct ?? res?.data ?? res;
+      };
+      const results = await Promise.all(
+        Array.from(skuBySub.entries()).map(async ([id, sku]) => {
+          try {
+            if (whId && sku) {
+              const res: any = await subproductService.getSubProducts(token, {
+                search: sku,
+                warehouseId: whId,
+                limit: 10,
+              });
+              const sp = (res?.data?.subProducts ?? []).find(
+                (s: any) => s._id === id
+              );
+              if (sp) return sp;
+              const doc = await fetchGlobal(id);
+              if (doc?._id) {
+                doc.availableStock = 0;
+                (doc.sizes ?? []).forEach((s: any) => {
+                  s.availableStock = 0;
+                });
+              }
+              return doc;
+            }
+            return await fetchGlobal(id);
+          } catch {
+            return null;
+          }
+        })
+      );
+      const spMap = new Map<string, any>();
+      for (const sp of results) if (sp?._id) spMap.set(sp._id, sp);
+      if (!spMap.size) return;
+      setLines((prev) =>
+        prev.map((line) => {
+          if (line.lineType !== 'product' || !line.subProductId) return line;
+          const sp = spMap.get(line.subProductId);
+          if (!sp) return line;
+          const matchedSize = sp.sizes?.find(
+            (s: any) => String(s._id ?? s.size) === String(line.sizeId ?? '')
+          );
+          const stock = matchedSize
+            ? (matchedSize.availableStock ?? matchedSize.stock)
+            : sp.sizes?.length
+              ? undefined
+              : (sp.availableStock ?? sp.totalStock);
+          const catalogPrice = matchedSize
+            ? matchedSize.sellingPrice || sp.baseSellingPrice || 0
+            : (sp.baseSellingPrice ?? 0);
+          return {
+            ...line,
+            sizeName: matchedSize
+              ? (matchedSize.displayName ?? matchedSize.size)
+              : line.sizeName,
+            costPrice:
+              matchedSize?.costPrice ?? sp.costPrice ?? line.costPrice,
+            availableStock: stock ?? line.availableStock,
+            activeBundles: sp.bundleDeals ?? line.activeBundles,
+            originalPrice: catalogPrice || line.originalPrice,
+          };
+        })
+      );
+    },
+    [token]
+  );
+
   useEffect(() => {
     if (!initial || !token) return;
-    const ids = Array.from(
-      new Set(
-        initial.items
-          .map((it) => it.subproduct)
-          .filter((id): id is string => !!id)
-      )
+    void hydrateLineMeta(
+      initial.items.map(soItemToDraftLine),
+      typeof initial.warehouseId === 'string'
+        ? initial.warehouseId || undefined
+        : initial.warehouseId?._id
     );
-    if (!ids.length) return;
-    Promise.all(
-      ids.map((id) =>
-        subproductService.getSubProduct(id, token).catch(() => null)
-      )
-    )
-      .then((results) => {
-        const spMap = new Map<string, any>();
-        results.forEach((res: any) => {
-          const sp =
-            res?.data?.subProduct ?? res?.subProduct ?? res?.data ?? res;
-          if (sp?._id) spMap.set(sp._id, sp);
-        });
-        if (!spMap.size) return;
-        setLines((prev) =>
-          prev.map((line) => {
-            if (line.lineType !== 'product' || !line.subProductId) return line;
-            const sp = spMap.get(line.subProductId);
-            if (!sp) return line;
-            const matchedSize = sp.sizes?.find(
-              (s: any) => (s._id ?? s.size) === line.sizeId
-            );
-            const stock =
-              matchedSize?.availableStock ??
-              matchedSize?.stock ??
-              (sp.sizes?.length === 0
-                ? (sp.availableStock ?? sp.totalStock)
-                : undefined);
-            if (stock == null) return line;
-            return { ...line, availableStock: stock };
-          })
-        );
-      })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps — subproduct fetch on doc load; setters/subproductService are stable
-  }, [initial, token]);
+  }, [initial, token, hydrateLineMeta]);
+
+  // Refresh line stock (and other catalog metadata) when the operator picks a
+  // different warehouse — badges otherwise keep the old warehouse's numbers.
+  const linesRef = useRef(lines);
+  useEffect(() => {
+    linesRef.current = lines;
+  }, [lines]);
+  const prevWarehouseRef = useRef(warehouseIdStr);
+  useEffect(() => {
+    if (prevWarehouseRef.current === warehouseIdStr) return;
+    prevWarehouseRef.current = warehouseIdStr;
+    void hydrateLineMeta(linesRef.current, warehouseIdStr || undefined);
+  }, [warehouseIdStr, hydrateLineMeta]);
 
   const {
     pricelists,
@@ -270,8 +324,8 @@ export function useSalesCreateForm({
   }, [lines]);
 
   const addProductFromCatalog = useCallback(
-    (info: ProductLineSelection) => {
-      const key = catalogLineKey(info.subProductId, info.sizeId);
+    (info: ProductLineSelection, qty = 1) => {
+      const inc = Math.max(1, Math.round(qty));
       setLines((p) => {
         const idx = p.findIndex(
           (l) =>
@@ -281,7 +335,7 @@ export function useSalesCreateForm({
         );
         if (idx >= 0) {
           const next = [...p];
-          next[idx] = { ...next[idx], quantity: next[idx].quantity + 1 };
+          next[idx] = { ...next[idx], quantity: next[idx].quantity + inc };
           return next;
         }
         return [
@@ -297,7 +351,7 @@ export function useSalesCreateForm({
             baseUnitPrice: info.sellingPrice,
             costPrice: info.costPrice,
             taxRate: info.taxRate,
-            quantity: 1,
+            quantity: inc,
             priceOverridden: false,
             availableStock: info.availableStock,
             activeBundles: info.bundleDeals,
@@ -306,9 +360,19 @@ export function useSalesCreateForm({
           },
         ];
       });
-      void key;
     },
     []
+  );
+
+  /** Replace all lines with the server's recomputed items (Update Prices),
+   *  then re-hydrate catalog metadata the response doesn't carry. */
+  const applyServerItems = useCallback(
+    (items: SalesLineItem[]) => {
+      const mapped = items.map(soItemToDraftLine);
+      setLines(mapped);
+      void hydrateLineMeta(mapped, warehouseIdStr || undefined);
+    },
+    [hydrateLineMeta, warehouseIdStr]
   );
 
   const setCatalogLineQty = useCallback(
@@ -426,6 +490,24 @@ export function useSalesCreateForm({
     [loadCustomerAddress]
   );
 
+  /** Clear the customer and strip the auto-filled name/phone from the
+   *  addresses — but only where they still match the outgoing customer, so
+   *  hand-typed values survive. */
+  const handleClearCustomer = useCallback(() => {
+    if (customer) {
+      const name = `${customer.firstName} ${customer.lastName}`.trim();
+      const phone = customer.phone ?? '';
+      const strip = (a: SalesOrderAddress): SalesOrderAddress => ({
+        ...a,
+        ...(a.name === name ? { name: '' } : {}),
+        ...(phone && a.phone === phone ? { phone: '' } : {}),
+      });
+      setInvoiceAddress(strip);
+      setDeliveryAddress(strip);
+    }
+    setCustomer(null);
+  }, [customer]);
+
   const handleToggleDeliverDifferent = useCallback(
     (v: boolean) => {
       setDeliverDifferent(v);
@@ -514,9 +596,11 @@ export function useSalesCreateForm({
     removeLine,
     reorderLines,
     addProductFromCatalog,
+    applyServerItems,
     setCatalogLineQty,
     removeCatalogLine,
     handleSelectCustomer,
+    handleClearCustomer,
     handleToggleDeliverDifferent,
     loadCustomerAddress,
     buildPayload,

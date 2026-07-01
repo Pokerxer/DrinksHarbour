@@ -179,7 +179,7 @@ export default function ProductLineSearch({
       }
     }, 300);
     return () => clearTimeout(t);
-  }, [text, token, initial]);
+  }, [text, token, initial, warehouseId]);
 
   useEffect(() => {
     function onClick(e: MouseEvent) {

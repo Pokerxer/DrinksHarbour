@@ -15,7 +15,7 @@ import {
 import toast from 'react-hot-toast';
 import { routes } from '@/config/routes';
 import { salesOrderService, type SalesOrder } from '@/services/salesOrder.service';
-import { orderStatusLabel, outstanding, fmtDate } from './sales-helpers';
+import { fmtDate } from './sales-helpers';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
 import SalesInvoiceView from './sales-invoice-view';
 import SalesPrintSheet, { type PrintSheetType } from './sales-print-sheet';

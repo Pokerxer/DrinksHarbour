@@ -33,6 +33,7 @@ import {
 } from 'react-icons/pi';
 import { routes } from '@/config/routes';
 import { fmtCur } from '../purchases/purchases-analytics-helpers';
+import { resolveDiscount } from './sales-create-pricing-helpers';
 import ProductLineSearch, {
   type ProductLineSelection,
 } from './product-line-search';
@@ -44,19 +45,6 @@ const INLINE_CELL_CLS =
 
 const DESC_CLS =
   'w-full resize-y border-0 border-b border-transparent bg-gray-50/60 px-2 py-1.5 text-xs text-gray-700 placeholder-gray-400 focus:border-brand focus:outline-none focus:ring-0';
-
-/** Resolve a line's discount to an absolute ₦ amount off the WHOLE line total
- *  (clamped to the line's gross). Percentage = percent of each unit; fixed = a
- *  flat ₦ amount off the whole line. Mirrors sales-create's resolveDiscount. */
-function resolveDiscount(unitPrice: number, line: PricedLine): number {
-  const qty = Math.max(0, line.quantity || 0);
-  const gross = unitPrice * qty;
-  const raw = Math.max(0, line.discount || 0);
-  if (line.discountType === 'percentage') {
-    return Math.min(gross, Math.round((gross * Math.min(100, raw)) / 100));
-  }
-  return Math.min(gross, raw);
-}
 
 export type LineType = 'product' | 'section' | 'note';
 
@@ -551,9 +539,14 @@ function SalesLineProductRow({
           <button
             type="button"
             onClick={() =>
+              // Switching ₦→% keeps the typed number, so clamp it into the
+              // 0–100 range a percentage allows (mirrors the server clamp).
               onUpdate(line.key, {
                 discountType:
                   line.discountType === 'percentage' ? 'fixed' : 'percentage',
+                ...(line.discountType === 'fixed'
+                  ? { discount: Math.min(100, line.discount) }
+                  : {}),
               })
             }
             title="Toggle discount type"
