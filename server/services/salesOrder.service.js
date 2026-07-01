@@ -253,7 +253,12 @@ function computeTotals(items) {
 /** Normalize one inbound line into a stored line, snapshotting tax + totals.
  *  Preserves the lineType discriminator; section/note lines carry no product
  *  reference and zero pricing so they never affect totals. */
-function mapLine(it) {
+function mapLine(input) {
+  // Unconditional toObject(): a hydrated Mongoose subdocument spread with
+  // `{ ...subdoc }` copies internals, NOT schema fields — quantity/taxRate/
+  // promoDiscount vanish and the lineTotal/taxAmount snapshots persist as 0
+  // (same pitfall recomputeOrderPricing already guards against).
+  const it = typeof input.toObject === 'function' ? input.toObject() : input;
   const lineType = it.lineType === 'section' || it.lineType === 'note' ? it.lineType : 'product';
   if (lineType !== 'product') {
     return {
@@ -445,7 +450,6 @@ async function applyEdit(so, body) {
     }
   }
   if (Array.isArray(body.items)) {
-    so.items = body.items;
     // Skip the DB-backed pricing engine when the pricelist hasn't actually
     // changed — the client already computed prices against the same pricelist.
     // Still map and total them for normalization. This avoids redundant DB
@@ -453,7 +457,9 @@ async function applyEdit(so, body) {
     const pricelistSame = body.pricelist !== undefined &&
       String(body.pricelist || '') === origPricelist;
     if (pricelistSame) {
-      so.items = so.items.map(mapLine);
+      // Map the plain body items BEFORE assigning to so.items — assigning
+      // first casts them to subdocuments, which mapLine then has to unwrap.
+      so.items = body.items.map(mapLine);
       const totals = computeTotals(so.items);
       so.subtotal = totals.subtotal;
       so.discountTotal = totals.discountTotal;
@@ -461,6 +467,7 @@ async function applyEdit(so, body) {
       so.taxTotal = totals.taxTotal;
       so.total = totals.total;
     } else {
+      so.items = body.items;
       await recomputeOrderPricing(so, { tenantId: so.tenant });
     }
   }
