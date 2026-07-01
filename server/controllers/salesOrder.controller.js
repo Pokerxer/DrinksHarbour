@@ -142,6 +142,38 @@ exports.updateSalesOrder = asyncHandler(async (req, res) => {
   res.json({ success: true, data: so });
 });
 
+// Recompute every product line's unit price from the order's current pricelist,
+// clearing manual price overrides, then re-snapshot totals. Tenant-scoped.
+exports.updatePrices = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  if (!requireResolvedTenant(tenantId, res)) return;
+  const so = await SalesOrder.findOne({ _id: req.params.id, tenant: tenantId });
+  if (!so) return res.status(404).json({ success: false, message: 'Sales order not found' });
+  if (!svc.canEdit(so)) {
+    return res.status(409).json({ success: false, message: 'This document can no longer be edited' });
+  }
+  const before = {
+    total: so.total, subtotal: so.subtotal,
+    discountTotal: so.discountTotal, promotionTotal: so.promotionTotal,
+  };
+  await svc.updatePricesForOrder(so, { tenantId });
+  await so.save();
+  auditPrivilegedSalesAction(req, 'SALES_ORDER_UPDATE', 'update', so);
+  await salesLog.logActivity(tenantId, so._id, {
+    subject: `Product prices recomputed according to pricelist ${so.appliedPricelist?.pricelistName || 'base'}`,
+    userId: req.user?._id,
+  });
+  const tDiff = salesLog.diffTotals(before, so);
+  if (tDiff && tDiff.total) {
+    await salesLog.logActivity(tenantId, so._id, {
+      subject: `Total ${salesLog.formatMoney(tDiff.total.from)} → ${salesLog.formatMoney(tDiff.total.to)}`,
+      description: tDiff.untaxed ? `Untaxed ${salesLog.formatMoney(tDiff.untaxed.from)} → ${salesLog.formatMoney(tDiff.untaxed.to)}` : undefined,
+      meta: { field: 'total', ...tDiff }, userId: req.user?._id,
+    });
+  }
+  res.json({ success: true, data: so });
+});
+
 exports.deleteSalesOrder = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
   if (!requireResolvedTenant(tenantId, res)) return;

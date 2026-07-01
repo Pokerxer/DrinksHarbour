@@ -2,6 +2,7 @@
 
 const User = require('../models/User');
 const Tenant = require('../models/Tenant'); // Changed from '../models/tenant' to '../models/Tenant' for consistency
+const RefreshToken = require('../models/RefreshToken');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -196,8 +197,17 @@ const loginUser = async (email, password, options = {}) => {
   // Generate auth token
   const token = generateAuthToken(user);
 
-  // Create refresh token
-  const refreshToken = generateRefreshToken(user);
+  // Create + persist refresh token (with jti for revocation/rotation)
+  const refreshTokenObj = generateRefreshToken(user);
+  await RefreshToken.store({
+    jti: refreshTokenObj.jti,
+    tokenHash: hashToken(refreshTokenObj.token),
+    userId: user._id,
+    tenantId: user.tenant || undefined,
+    expiresAt: refreshTokenObj.expiresAt,
+    userAgent: userAgent || undefined,
+    ipAddress: ipAddress || undefined,
+  });
 
   // Remove sensitive data
   const userResponse = sanitizeUser(user.toObject());
@@ -205,17 +215,42 @@ const loginUser = async (email, password, options = {}) => {
   return {
     user: userResponse,
     token,
-    refreshToken,
+    refreshToken: refreshTokenObj.token,
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   };
 };
 
 /**
  * Refresh authentication token
+ * - Verifies the refresh token signature + type claim
+ * - Checks the RefreshToken collection for revocation
+ * - Rotates: revokes the old refresh token, issues a new one
+ * - Rejects if user is not active or token is revoked
  */
-const refreshAuthToken = async (refreshToken) => {
+const refreshAuthToken = async (refreshToken, req) => {
   try {
     const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
+
+    // Verify type claim — access tokens must NOT be usable as refresh tokens
+    if (decoded.type !== 'refresh') {
+      throw new AuthorizationError('Invalid token type — expected refresh token');
+    }
+
+    // Check the RefreshToken collection for revocation / expiry
+    if (!decoded.jti) {
+      throw new AuthorizationError('Invalid refresh token — missing jti');
+    }
+
+    const storedToken = await RefreshToken.findActive(decoded.jti);
+    if (!storedToken) {
+      throw new AuthorizationError('Refresh token has been revoked or expired');
+    }
+
+    // Verify the token hash matches (defense-in-depth against jti reuse with different payloads)
+    const expectedHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    if (storedToken.tokenHash !== expectedHash) {
+      throw new AuthorizationError('Invalid refresh token');
+    }
 
     const user = await User.findById(decoded.userId)
       .populate('tenant', 'name slug status subscriptionStatus');
@@ -225,16 +260,32 @@ const refreshAuthToken = async (refreshToken) => {
     }
 
     if (user.status !== 'active') {
+      // Revoke the refresh token if the account is suspended
+      await RefreshToken.revoke(decoded.jti, null, 'account_suspended');
       throw new AuthorizationError('Account is not active');
     }
 
-    // Generate new tokens
+    // ── Rotation: revoke the old refresh token, issue a new one ─────────────
     const newToken = generateAuthToken(user);
-    const newRefreshToken = generateRefreshToken(user);
+    const newRefreshObj = generateRefreshToken(user);
+
+    // Store the new refresh token
+    await RefreshToken.store({
+      jti: newRefreshObj.jti,
+      tokenHash: hashToken(newRefreshObj.token),
+      userId: user._id,
+      tenantId: user.tenant?._id || user.tenant || undefined,
+      expiresAt: newRefreshObj.expiresAt,
+      userAgent: req?.headers?.['user-agent'] || undefined,
+      ipAddress: req?.ip || undefined,
+    });
+
+    // Mark the old refresh token as rotated (revokes it)
+    await RefreshToken.markRotated(decoded.jti, newRefreshObj.jti);
 
     return {
       token: newToken,
-      refreshToken: newRefreshToken,
+      refreshToken: newRefreshObj.token,
       expiresIn: process.env.JWT_EXPIRES_IN || '7d',
     };
   } catch (error) {
@@ -628,6 +679,9 @@ const changePassword = async (userId, currentPassword, newPassword) => {
   
   await user.save();
 
+  // Revoke ALL refresh tokens for this user (force re-login on all devices)
+  await RefreshToken.revokeAllForUser(userId, userId, 'password_change');
+
   return {
     message: 'Password changed successfully',
   };
@@ -717,6 +771,9 @@ const resetPassword = async (resetToken, newPassword) => {
   user.accountLockedUntil = null;
   
   await user.save();
+
+  // Revoke ALL refresh tokens for this user (force re-login on all devices)
+  await RefreshToken.revokeAllForUser(user._id, user._id, 'password_change');
 
   return {
     message: 'Password has been reset successfully. You can now login with your new password.',
@@ -965,9 +1022,12 @@ const suspendUser = async (userId, reason, suspendedBy) => {
 
   user.status = 'suspended';
   user.suspendedAt = new Date();
-  user.suspensionReason = reason || 'No reason provided';
+  user.suspendedReason = reason || 'No reason provided';
   user.suspendedBy = suspendedBy;
   await user.save();
+
+  // Revoke ALL refresh tokens for this user (immediately kills active sessions)
+  await RefreshToken.revokeAllForUser(user._id, suspendedBy, 'account_suspended');
 
   return {
     message: 'User suspended successfully',
@@ -1129,21 +1189,54 @@ const bulkUpdateUsers = async (userIds, updateData, requestingUserId, requesting
     throw new AuthorizationError('Only administrators can perform bulk updates');
   }
 
-  // Don't allow bulk updating super admins
-  const users = await User.find({ 
+  const isSuperAdmin = requestingUserRole === 'super_admin';
+
+  // Defense-in-depth: strip sensitive fields at the service layer too
+  // (controller already sanitizes, but never trust the caller)
+  const adminOnlyFields = ['role', 'status', 'isEmailVerified', 'isAgeVerified', 'tenant'];
+  if (!isSuperAdmin) {
+    adminOnlyFields.forEach(f => delete updateData[f]);
+  }
+  const protectedFields = [
+    'passwordHash', 'posPinHash', 'emailVerificationToken', 'passwordResetToken',
+    'failedLoginAttempts', 'accountLockedUntil', 'emailVerificationExpires',
+    'passwordResetExpires',
+  ];
+  protectedFields.forEach(f => delete updateData[f]);
+
+  // Build tenant-scoped filter for non-super_admin callers
+  const baseFilter = {
     _id: { $in: userIds },
     role: { $ne: 'super_admin' },
-  });
+  };
+
+  let tenantScope = null;
+  if (!isSuperAdmin) {
+    const requestingUser = await User.findById(requestingUserId).select('tenant').lean();
+    if (!requestingUser?.tenant) {
+      throw new AuthorizationError('Tenant context required for bulk updates');
+    }
+    tenantScope = requestingUser.tenant;
+    baseFilter.tenant = tenantScope;
+  }
+
+  // Don't allow bulk updating super admins; scope by tenant for non-super_admin
+  const users = await User.find(baseFilter);
 
   if (users.length === 0) {
     throw new ValidationError('No valid users found for update');
   }
 
-  // Perform bulk update
+  // Perform bulk update — tenant-scoped for non-super_admin
+  const updateFilter = {
+    _id: { $in: users.map(u => u._id) },
+  };
+  if (tenantScope) {
+    updateFilter.tenant = tenantScope;
+  }
+
   const result = await User.updateMany(
-    { 
-      _id: { $in: users.map(u => u._id) },
-    },
+    updateFilter,
     {
       ...updateData,
       updatedBy: requestingUserId,
@@ -1154,6 +1247,7 @@ const bulkUpdateUsers = async (userIds, updateData, requestingUserId, requesting
     message: 'Users updated successfully',
     updated: result.modifiedCount,
     total: userIds.length,
+    skipped: userIds.length - users.length,
   };
 };
 
@@ -1161,7 +1255,7 @@ const bulkUpdateUsers = async (userIds, updateData, requestingUserId, requesting
  * Search users
  */
 const searchUsers = async (searchTerm, options = {}) => {
-  const { limit = 10, role, status } = options;
+  const { limit = 10, role, status, tenant } = options;
 
   const searchRegex = new RegExp(searchTerm, 'i');
   
@@ -1181,6 +1275,10 @@ const searchUsers = async (searchTerm, options = {}) => {
 
   if (status) {
     query.status = status;
+  }
+
+  if (tenant) {
+    query.tenant = tenant;
   }
 
   const users = await User.find(query)
@@ -1204,6 +1302,7 @@ function generateAuthToken(user) {
     email: user.email,
     role: user.role,
     tenant: user.tenant,
+    jti: crypto.randomUUID(), // unique token id for revocation tracking
   };
 
   return jwt.sign(payload, process.env.JWT_SECRET, {
@@ -1212,21 +1311,37 @@ function generateAuthToken(user) {
 }
 
 /**
- * Generate refresh token
+ * Generate refresh token — returns { token, jti, expiresAt }
+ * The caller is responsible for storing the refresh token via RefreshToken.store()
  */
 function generateRefreshToken(user) {
+  const jti = crypto.randomUUID();
   const payload = {
     userId: user._id,
     type: 'refresh',
+    jti,
   };
 
-  return jwt.sign(
+  const token = jwt.sign(
     payload,
     process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
     {
       expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
     }
   );
+
+  // Decode to get the exact expiry (jwt.sign doesn't return it)
+  const decoded = jwt.decode(token);
+  const expiresAt = new Date(decoded.exp * 1000);
+
+  return { token, jti, expiresAt };
+}
+
+/**
+ * Hash a refresh token for storage (SHA-256 — never store the raw JWT)
+ */
+function hashToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
 }
 
 /**

@@ -4,7 +4,8 @@ const asyncHandler = require('../utils/asyncHandler');
 const subProductService = require('../services/subproduct.service');
 const warehouseService = require('../services/warehouse.service');
 const { ValidationError } = require('../utils/errors');
-const Tenant = require('../models/Tenant');
+const { getTenantId, getOptionalTenantId } = require('../utils/tenantContext');
+const { logPrivilegedAction } = require('../utils/auditLog');
 
 /**
  * @desc    Get tenant's SubProducts
@@ -21,16 +22,9 @@ const getMySubProducts = asyncHandler(async (req, res) => {
     order = 'desc',
   } = req.query;
 
-  // For super_admin without tenant context, get all subproducts or allow tenant filter
-  let tenantId = req.tenant?._id;
-  
-  // Super admins can optionally filter by tenant via query param
-  if (!tenantId && req.user?.role === 'super_admin') {
-    if (req.query.tenantId) {
-      tenantId = req.query.tenantId;
-    }
-    // If no tenant specified, super_admin gets all subproducts
-  }
+  // Tenant resolved from JWT via resolveTenantContext (authority).
+  // Super_admin with no target tenant = all subproducts (platform-wide).
+  const tenantId = getOptionalTenantId(req);
 
   const result = await subProductService.getMySubProducts(tenantId, {
     page: parseInt(page),
@@ -39,7 +33,7 @@ const getMySubProducts = asyncHandler(async (req, res) => {
     search,
     sort,
     order,
-    isSuperAdmin: req.user?.role === 'super_admin',
+    isSuperAdmin: ['super_admin', 'admin'].includes(req.user?.role),
     warehouseId: req.query.warehouseId || null,
   });
 
@@ -55,29 +49,11 @@ const getMySubProducts = asyncHandler(async (req, res) => {
  * @access  Private (Tenant admin)
  */
 const createSubProduct = asyncHandler(async (req, res) => {
-  // Get tenantId - always normalize to string
-  let tenantId = req.tenant?._id?.toString() ?? null;
-
-  // If no tenant in req, try to get from body (filter out empty strings)
-  if (!tenantId) {
-    const bodyTenant = req.body.tenant || req.body.subProductData?.tenant;
-    if (bodyTenant && typeof bodyTenant === 'string' && bodyTenant.trim() !== '') {
-      tenantId = bodyTenant.trim();
-    }
-  }
-
-  // For super_admin/admin users, allow the service to auto-assign system tenant
-  // For other users, tenant is required
+  // Tenant from JWT authority — never from request body
+  const tenantId = getTenantId(req, {
+    required: !['super_admin', 'admin'].includes(req.user?.role),
+  });
   const user = req.user;
-  if (!tenantId && !['super_admin', 'admin'].includes(user?.role)) {
-    throw new ValidationError('Tenant ID is required. Please provide a tenant ID.');
-  }
-
-  console.log('=== BACKEND RECEIVED ===');
-  console.log('tenantId:', tenantId);
-  console.log('user role:', user?.role);
-  console.log('Body keys:', Object.keys(req.body));
-  console.log('subProductData:', req.body.subProductData);
 
   const subProduct = await subProductService.createSubProduct(
     req.body,
@@ -99,7 +75,7 @@ const createSubProduct = asyncHandler(async (req, res) => {
  */
 const getSubProduct = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const tenantId = req.tenant._id;
+  const tenantId = getTenantId(req);
 
   const subProduct = await subProductService.getSubProduct(id, tenantId);
 
@@ -116,7 +92,7 @@ const getSubProduct = asyncHandler(async (req, res) => {
  */
 const updateSubProduct = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const tenantId = req.tenant._id;
+  const tenantId = getTenantId(req);
   const user = req.user;
 
   const subProduct = await subProductService.updateSubProduct(
@@ -140,7 +116,7 @@ const updateSubProduct = asyncHandler(async (req, res) => {
  */
 const deleteSubProduct = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const tenantId = req.tenant._id;
+  const tenantId = getTenantId(req);
 
   await subProductService.deleteSubProduct(id, tenantId);
 
@@ -157,7 +133,7 @@ const deleteSubProduct = asyncHandler(async (req, res) => {
  */
 const updateStockBulk = asyncHandler(async (req, res) => {
   const { updates } = req.body;
-  const tenantId = req.tenant._id;
+  const tenantId = getTenantId(req);
 
   if (!Array.isArray(updates) || updates.length === 0) {
     throw new ValidationError('Updates array is required');
@@ -178,7 +154,8 @@ const updateStockBulk = asyncHandler(async (req, res) => {
  * @access  Private (Tenant Admin, Super Admin)
  */
 const bulkCreate = asyncHandler(async (req, res) => {
-  const { productIds, tenantId } = req.body;
+  const { productIds } = req.body;
+  const tenantId = getTenantId(req);
 
   const results = await subProductService.bulkCreateSubProducts(
     productIds,
@@ -199,7 +176,7 @@ const bulkCreate = asyncHandler(async (req, res) => {
  */
 const duplicate = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { tenantId } = req.body;
+  const tenantId = getTenantId(req);
 
   const result = await subProductService.duplicateSubProduct(id, tenantId);
 
@@ -218,11 +195,23 @@ const transfer = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { newTenantId } = req.body;
 
+  if (!newTenantId) {
+    throw new ValidationError('newTenantId is required');
+  }
+
   const result = await subProductService.transferSubProduct(
     id,
     newTenantId,
     req.user
   );
+
+  // Audit: SubProduct transfer between tenants
+  logPrivilegedAction(req, 'SUBPRODUCT_TRANSFER', 'transfer', {
+    targetType: 'SubProduct',
+    targetId: id,
+    targetTenantId: newTenantId,
+    changes: { after: { newTenantId } },
+  });
 
   res.status(200).json({
     success: true,
@@ -237,7 +226,7 @@ const transfer = asyncHandler(async (req, res) => {
  */
 const archive = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { tenantId } = req.body;
+  const tenantId = getTenantId(req);
 
   const result = await subProductService.archiveSubProduct(id, tenantId);
 
@@ -254,7 +243,7 @@ const archive = asyncHandler(async (req, res) => {
  */
 const restore = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { tenantId } = req.body;
+  const tenantId = getTenantId(req);
 
   const result = await subProductService.restoreSubProduct(id, tenantId);
 
@@ -271,7 +260,8 @@ const restore = asyncHandler(async (req, res) => {
  */
 const updatePricing = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { tenantId, ...pricingData } = req.body;
+  const tenantId = getTenantId(req);
+  const { ...pricingData } = req.body;
 
   const result = await subProductService.updateSubProductPricing(
     id,
@@ -307,7 +297,8 @@ const getEffectivePrice = asyncHandler(async (req, res) => {
  * @access  Private (Tenant Admin, Super Admin)
  */
 const applyDiscount = asyncHandler(async (req, res) => {
-  const { subProductIds, discount, tenantId } = req.body;
+  const { subProductIds, discount } = req.body;
+  const tenantId = getTenantId(req);
 
   const result = await subProductService.applyBulkDiscount(
     subProductIds,
@@ -327,7 +318,8 @@ const applyDiscount = asyncHandler(async (req, res) => {
  * @access  Private (Tenant Admin, Super Admin)
  */
 const removeDiscount = asyncHandler(async (req, res) => {
-  const { subProductIds, tenantId } = req.body;
+  const { subProductIds } = req.body;
+  const tenantId = getTenantId(req);
 
   const result = await subProductService.removeBulkDiscount(
     subProductIds,
@@ -347,8 +339,9 @@ const removeDiscount = asyncHandler(async (req, res) => {
  */
 const getPriceHistory = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const tenantId = getTenantId(req);
 
-  const history = await subProductService.getSubProductPriceHistory(id);
+  const history = await subProductService.getSubProductPriceHistory(id, tenantId);
 
   res.status(200).json({
     success: true,
@@ -362,7 +355,6 @@ const getPriceHistory = asyncHandler(async (req, res) => {
 // ============================================================
 
 
-
 /**
  * @desc    Get SubProduct inventory
  * @route   GET /api/subproducts/:id/inventory
@@ -370,7 +362,7 @@ const getPriceHistory = asyncHandler(async (req, res) => {
  */
 const getInventory = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { tenantId } = req.query;
+  const tenantId = getTenantId(req);
 
   const inventory = await subProductService.getSubProductInventory(id, tenantId);
 
@@ -388,9 +380,11 @@ const getInventory = asyncHandler(async (req, res) => {
 const adjustStock = asyncHandler(async (req, res) => {
   const { id, sizeId } = req.params;
   const { adjustment, reason } = req.body;
+  const tenantId = getTenantId(req);
 
   const result = await subProductService.adjustStock(
     id,
+    tenantId,
     sizeId,
     adjustment,
     reason,
@@ -411,8 +405,9 @@ const adjustStock = asyncHandler(async (req, res) => {
 const getStockMovements = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { startDate, endDate } = req.query;
+  const tenantId = getTenantId(req);
 
-  const movements = await subProductService.getStockMovements(id, {
+  const movements = await subProductService.getStockMovements(id, tenantId, {
     startDate,
     endDate,
   });
@@ -429,8 +424,8 @@ const getStockMovements = asyncHandler(async (req, res) => {
  * @access  Private (Tenant Admin, Super Admin)
  */
 const getLowStock = asyncHandler(async (req, res) => {
-  const { tenantId } = req.params;
   const { threshold } = req.query;
+  const tenantId = getTenantId(req);
 
   const lowStock = await subProductService.getLowStockSubProducts(
     tenantId,
@@ -449,7 +444,7 @@ const getLowStock = asyncHandler(async (req, res) => {
  * @access  Private (Tenant Admin, Super Admin)
  */
 const getOutOfStock = asyncHandler(async (req, res) => {
-  const { tenantId } = req.params;
+  const tenantId = getTenantId(req);
 
   const outOfStock = await subProductService.getOutOfStockSubProducts(tenantId);
 
@@ -466,7 +461,8 @@ const getOutOfStock = asyncHandler(async (req, res) => {
  */
 const setReorderPoints = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { tenantId, ...reorderData } = req.body;
+  const { ...reorderData } = req.body;
+  const tenantId = getTenantId(req);
 
   const result = await subProductService.setReorderPoints(
     id,
@@ -488,8 +484,9 @@ const setReorderPoints = asyncHandler(async (req, res) => {
 const getSales = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { startDate, endDate } = req.query;
+  const tenantId = getTenantId(req);
 
-  const sales = await subProductService.getSubProductSales(id, {
+  const sales = await subProductService.getSubProductSales(id, tenantId, {
     startDate,
     endDate,
   });
@@ -508,8 +505,9 @@ const getSales = asyncHandler(async (req, res) => {
 const getRevenue = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { startDate, endDate } = req.query;
+  const tenantId = getTenantId(req);
 
-  const revenue = await subProductService.getSubProductRevenue(id, {
+  const revenue = await subProductService.getSubProductRevenue(id, tenantId, {
     startDate,
     endDate,
   });
@@ -526,8 +524,8 @@ const getRevenue = asyncHandler(async (req, res) => {
  * @access  Private (Tenant Admin, Super Admin)
  */
 const getTopSelling = asyncHandler(async (req, res) => {
-  const { tenantId } = req.params;
   const { limit, startDate, endDate } = req.query;
+  const tenantId = getTenantId(req);
 
   const topSelling = await subProductService.getTopSellingSubProducts(
     tenantId,
@@ -548,8 +546,9 @@ const getTopSelling = asyncHandler(async (req, res) => {
  */
 const getConversionRate = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const tenantId = getTenantId(req);
 
-  const conversion = await subProductService.getSubProductConversionRate(id);
+  const conversion = await subProductService.getSubProductConversionRate(id, tenantId);
 
   res.status(200).json({
     success: true,
@@ -564,8 +563,9 @@ const getConversionRate = asyncHandler(async (req, res) => {
  */
 const getAverageOrderValue = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const tenantId = getTenantId(req);
 
-  const aov = await subProductService.getSubProductAverageOrderValue(id);
+  const aov = await subProductService.getSubProductAverageOrderValue(id, tenantId);
 
   res.status(200).json({
     success: true,
@@ -679,7 +679,7 @@ const getSubProductBySKU = asyncHandler(async (req, res) => {
  */
 const addSize = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const tenantId = req.tenant?._id || req.body.tenantId;
+  const tenantId = getTenantId(req);
   const user = req.user;
 
   const result = await subProductService.addSize(id, req.body, tenantId, user);
@@ -697,7 +697,7 @@ const addSize = asyncHandler(async (req, res) => {
  */
 const updateSize = asyncHandler(async (req, res) => {
   const { id, sizeId } = req.params;
-  const tenantId = req.tenant?._id || req.body.tenantId;
+  const tenantId = getTenantId(req);
   const user = req.user;
 
   const result = await subProductService.updateSize(id, sizeId, req.body, tenantId, user);
@@ -715,7 +715,7 @@ const updateSize = asyncHandler(async (req, res) => {
  */
 const deleteSize = asyncHandler(async (req, res) => {
   const { id, sizeId } = req.params;
-  const tenantId = req.tenant?._id || req.body.tenantId;
+  const tenantId = getTenantId(req);
   const user = req.user;
 
   await subProductService.deleteSize(id, sizeId, tenantId, user);
@@ -733,8 +733,8 @@ const deleteSize = asyncHandler(async (req, res) => {
  */
 const updateStock = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { stock, sizeId, tenantId: bodyTenantId } = req.body;
-  const tenantId = req.tenant?._id || bodyTenantId;
+  const { stock, sizeId } = req.body;
+  const tenantId = getTenantId(req);
   const user = req.user;
 
   const result = await subProductService.updateStock(id, { stock, sizeId }, tenantId, user);
@@ -771,8 +771,7 @@ const adminSetStatus = asyncHandler(async (req, res) => {
   const { status, priceOverrides, declineReason } = req.body;
 
   if (!status) {
-    res.status(400);
-    throw new Error('status is required');
+    throw new ValidationError('status is required');
   }
 
   const subProduct = await subProductService.adminSetSubProductStatus(id, status, priceOverrides || {}, declineReason || null);
@@ -790,7 +789,7 @@ const adminSetStatus = asyncHandler(async (req, res) => {
  * @access  Private (Tenant admin or Super admin)
  */
 const getStockByWarehouse = asyncHandler(async (req, res) => {
-  const tenantId = req.tenant?._id || req.query.tenantId;
+  const tenantId = getTenantId(req);
   const data = await warehouseService.getStockByWarehouse(req.params.id, tenantId);
   res.json({ success: true, data });
 });

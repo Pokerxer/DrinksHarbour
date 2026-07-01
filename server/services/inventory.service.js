@@ -287,7 +287,7 @@ async function recordReceived(subProductId, tenantId, data, performedBy) {
 
   if (!quantity || quantity <= 0) throw new Error('Quantity must be positive');
 
-  const sp = await SubProduct.findById(subProductId).select(
+  const sp = await SubProduct.findOne({ _id: subProductId, tenant: tenantId }).select(
     'totalStock availableStock reservedStock lowStockThreshold stockStatus tenant'
   );
   if (!sp) throw new Error('SubProduct not found');
@@ -445,7 +445,7 @@ async function recordReceiptMovement({
 async function adjustInventory(subProductId, tenantId, adjustment, reason, performedBy, notes, reference) {
   if (adjustment === 0) throw new Error('Adjustment cannot be zero');
 
-  const sp = await SubProduct.findById(subProductId).select(
+  const sp = await SubProduct.findOne({ _id: subProductId, tenant: tenantId }).select(
     'totalStock availableStock reservedStock lowStockThreshold stockStatus tenant sizes sellWithoutSizeVariants'
   );
   if (!sp) throw new Error('SubProduct not found');
@@ -526,7 +526,7 @@ async function recordReturn(subProductId, tenantId, data, performedBy) {
   const { quantity, reason, notes, reference, relatedOrder, warehouseId } = data;
   if (!quantity || quantity <= 0) throw new Error('Quantity must be positive');
 
-  const sp = await SubProduct.findById(subProductId).select(
+  const sp = await SubProduct.findOne({ _id: subProductId, tenant: tenantId }).select(
     'totalStock availableStock lowStockThreshold stockStatus tenant sizes sellWithoutSizeVariants'
   );
   if (!sp) throw new Error('SubProduct not found');
@@ -600,7 +600,7 @@ async function transferStock(data, performedBy, tenantId) {
   const { subProductId, sourceWarehouseId, destinationWarehouseId, quantity, notes, reference } = data;
   if (!quantity || quantity <= 0) throw new Error('Quantity must be positive');
 
-  const sp = await SubProduct.findById(subProductId).select('totalStock availableStock tenant');
+  const sp = await SubProduct.findOne({ _id: subProductId, tenant: tenantId }).select('totalStock availableStock tenant');
   if (!sp) throw new Error('SubProduct not found');
 
   const qBefore = sp.availableStock ?? 0;
@@ -654,7 +654,7 @@ async function transferStock(data, performedBy, tenantId) {
  * Create a raw InventoryMovement (generic endpoint).
  */
 async function createMovement(data, performedBy, tenantId) {
-  const sp = await SubProduct.findById(data.subProductId).select(
+  const sp = await SubProduct.findOne({ _id: data.subProductId, tenant: tenantId }).select(
     'availableStock totalStock lowStockThreshold stockStatus tenant'
   );
   if (!sp) throw new Error('SubProduct not found');
@@ -708,7 +708,11 @@ async function getMovements(tenantId, options = {}) {
     page = 1, limit = 50, sortBy = 'createdAt', sortOrder = 'desc',
   } = options;
 
-  const query = { tenant: new mongoose.Types.ObjectId(tenantId.toString()) };
+  // Build query — tenant-scoped when tenantId provided, platform-wide when null (super_admin)
+  const query = {};
+  if (tenantId) {
+    query.tenant = new mongoose.Types.ObjectId(tenantId.toString());
+  }
   if (subProductId) query.subProduct = new mongoose.Types.ObjectId(subProductId.toString());
   if (type)         query.type       = type;
   if (category)     query.category   = category;
@@ -817,12 +821,18 @@ async function getInventorySummary(tenantId, subProductId) {
  * Cancel a movement and reverse its stock effect.
  */
 async function cancelMovement(movementId, tenantId, performedBy, reason) {
-  const movement = await InventoryMovement.findById(movementId);
+  // Build filter — tenant-scoped when tenantId provided, platform-wide when null (super_admin)
+  const filter = { _id: movementId };
+  if (tenantId) filter.tenant = tenantId;
+
+  const movement = await InventoryMovement.findOne(filter);
   if (!movement) throw new Error('Movement not found');
   if (movement.status === 'cancelled') throw new Error('Movement is already cancelled');
 
-  // Reverse stock effect
-  const sp = await SubProduct.findById(movement.subProduct).select(
+  // Reverse stock effect — scope SubProduct by tenant for defense-in-depth
+  const spFilter = { _id: movement.subProduct };
+  if (tenantId) spFilter.tenant = tenantId;
+  const sp = await SubProduct.findOne(spFilter).select(
     'totalStock availableStock lowStockThreshold stockStatus tenant'
   );
   if (sp) {

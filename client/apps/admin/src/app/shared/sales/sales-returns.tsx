@@ -77,7 +77,7 @@ export default function SalesReturns() {
           </button>
           <Link
             href={routes.eCommerce.createSalesReturn}
-            className="flex items-center gap-1.5 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101]"
+            className="flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark"
           >
             <PiPlus className="h-4 w-4" /> New Return
           </Link>

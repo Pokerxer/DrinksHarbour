@@ -423,7 +423,7 @@ export default function SalesCatalogCard({
                   type="button"
                   onClick={addSizeless}
                   disabled={outOfStock}
-                  className="w-full rounded-lg bg-[#b20202] px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-[#9a0101] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="w-full rounded-lg bg-brand px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Add
                 </button>
@@ -438,7 +438,7 @@ export default function SalesCatalogCard({
                 type="button"
                 onClick={() => setExpanded((v) => !v)}
                 disabled={outOfStock}
-                className="w-full rounded-lg bg-[#b20202] px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-[#9a0101] disabled:cursor-not-allowed disabled:opacity-40"
+                className="w-full rounded-lg bg-brand px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {expanded ? 'Hide sizes' : 'Choose size'}
               </button>
@@ -494,7 +494,7 @@ export default function SalesCatalogCard({
                               type="button"
                               onClick={() => addSize(s)}
                               disabled={sOut}
-                              className="shrink-0 rounded-lg bg-[#b20202] px-2 py-1 text-[10px] font-semibold text-white hover:bg-[#9a0101] disabled:cursor-not-allowed disabled:opacity-40"
+                              className="shrink-0 rounded-lg bg-brand px-2 py-1 text-[10px] font-semibold text-white hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40"
                             >
                               Add
                             </button>

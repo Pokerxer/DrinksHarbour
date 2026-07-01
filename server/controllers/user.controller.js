@@ -3,6 +3,11 @@
 const userService = require('../services/user.service');
 const asyncHandler = require('../utils/asyncHandler');
 const { successResponse } = require('../utils/response');
+const { ForbiddenError } = require('../utils/errors');
+const { getTenantId, normalizeTenantId } = require('../utils/tenantContext');
+const { logPrivilegedAction } = require('../utils/auditLog');
+
+const ADMIN_ROLES = ['super_admin', 'admin'];
 
 /**
  * @desc    Register new user
@@ -41,7 +46,15 @@ exports.loginUser = asyncHandler(async (req, res) => {
  * @access  Private/Admin
  */
 exports.getAllUsers = asyncHandler(async (req, res) => {
-  const result = await userService.getAllUsers(req.query);
+  const query = { ...req.query };
+
+  // Tenant admins can only see users in their own tenant
+  if (!ADMIN_ROLES.includes(req.user.role)) {
+    const tenantId = getTenantId(req);
+    query.tenant = tenantId;
+  }
+
+  const result = await userService.getAllUsers(query);
 
   successResponse(res, result, 'Users retrieved successfully');
 });
@@ -272,7 +285,25 @@ exports.updateAvatar = asyncHandler(async (req, res) => {
 exports.suspendUser = asyncHandler(async (req, res) => {
   const { reason } = req.body;
 
+  // Tenant admins can only suspend users in their own tenant
+  if (!ADMIN_ROLES.includes(req.user.role)) {
+    const targetUser = await userService.getUserById(req.params.id);
+    const callerTenantId = getTenantId(req);
+    const targetTenantId = normalizeTenantId(targetUser?.tenant);
+    if (callerTenantId !== targetTenantId) {
+      throw new ForbiddenError('User not found');
+    }
+  }
+
   const result = await userService.suspendUser(req.params.id, reason, req.user._id);
+
+  // Audit: user suspension
+  logPrivilegedAction(req, 'USER_SUSPEND', 'suspend', {
+    targetType: 'User',
+    targetId: req.params.id,
+    targetTenantId: normalizeTenantId(targetUser?.tenant),
+    justification: reason,
+  });
 
   successResponse(res, result, 'User suspended successfully');
 });
@@ -283,7 +314,24 @@ exports.suspendUser = asyncHandler(async (req, res) => {
  * @access  Private/Admin
  */
 exports.activateUser = asyncHandler(async (req, res) => {
+  // Tenant admins can only activate users in their own tenant
+  if (!ADMIN_ROLES.includes(req.user.role)) {
+    const targetUser = await userService.getUserById(req.params.id);
+    const callerTenantId = getTenantId(req);
+    const targetTenantId = normalizeTenantId(targetUser?.tenant);
+    if (callerTenantId !== targetTenantId) {
+      throw new ForbiddenError('User not found');
+    }
+  }
+
   const result = await userService.activateUser(req.params.id, req.user._id);
+
+  // Audit: user activation
+  logPrivilegedAction(req, 'USER_ACTIVATE', 'activate', {
+    targetType: 'User',
+    targetId: req.params.id,
+    targetTenantId: normalizeTenantId(targetUser?.tenant),
+  });
 
   successResponse(res, result, 'User activated successfully');
 });
@@ -294,7 +342,17 @@ exports.activateUser = asyncHandler(async (req, res) => {
  * @access  Private/Admin or Tenant Admin
  */
 exports.getUsersByTenant = asyncHandler(async (req, res) => {
-  const result = await userService.getUsersByTenant(req.params.tenantId, req.query);
+  const { tenantId: targetTenantId } = req.params;
+
+  // Tenant admins can only list users in their own tenant
+  if (!ADMIN_ROLES.includes(req.user.role)) {
+    const callerTenantId = getTenantId(req);
+    if (callerTenantId !== targetTenantId) {
+      throw new ForbiddenError('You do not have access to this tenant');
+    }
+  }
+
+  const result = await userService.getUsersByTenant(targetTenantId, req.query);
 
   successResponse(res, result, 'Tenant users retrieved successfully');
 });
@@ -385,7 +443,7 @@ exports.refreshAuthToken = asyncHandler(async (req, res) => {
     });
   }
 
-  const result = await userService.refreshAuthToken(refreshToken);
+  const result = await userService.refreshAuthToken(refreshToken, req);
 
   successResponse(res, result, 'Token refreshed successfully');
 });
@@ -439,10 +497,12 @@ exports.searchUsers = asyncHandler(async (req, res) => {
     });
   }
 
-  const users = await userService.searchUsers(q, { 
-    limit: parseInt(limit), 
-    role, 
-    status 
+  const users = await userService.searchUsers(q, {
+    limit: parseInt(limit),
+    role,
+    status,
+    // Tenant admins can only search within their own tenant
+    tenant: !ADMIN_ROLES.includes(req.user.role) ? getTenantId(req) : undefined,
   });
 
   successResponse(res, users, 'Search results retrieved successfully');
@@ -470,7 +530,25 @@ exports.bulkUpdateUsers = asyncHandler(async (req, res) => {
     });
   }
 
-  const result = await userService.bulkUpdateUsers(userIds, updateData, req.user._id, req.user.role);
+  // Field allowlist — strip privileged fields unless caller is super_admin
+  const ALLOWED_FIELDS = ['firstName', 'lastName', 'displayName', 'phone', 'avatar', 'status', 'isActive'];
+  const SENSITIVE_FIELDS = ['role', 'tenant', 'passwordHash', 'posPinHash', 'isEmailVerified', 'isAgeVerified'];
+
+  const sanitizedUpdateData = {};
+  for (const key of Object.keys(updateData)) {
+    if (SENSITIVE_FIELDS.includes(key)) {
+      // Only super_admin can modify sensitive fields
+      if (req.user.role === 'super_admin') {
+        sanitizedUpdateData[key] = updateData[key];
+      }
+      // else: silently strip — do not error to avoid leaking field names
+    } else if (ALLOWED_FIELDS.includes(key)) {
+      sanitizedUpdateData[key] = updateData[key];
+    }
+    // Unknown fields are silently stripped
+  }
+
+  const result = await userService.bulkUpdateUsers(userIds, sanitizedUpdateData, req.user._id, req.user.role);
 
   successResponse(res, result, 'Users updated successfully');
 });
@@ -481,6 +559,12 @@ exports.bulkUpdateUsers = asyncHandler(async (req, res) => {
  * @access  Private/SuperAdmin
  */
 exports.permanentlyDeleteUser = asyncHandler(async (req, res) => {
+  // Audit BEFORE deletion (target won't exist after)
+  logPrivilegedAction(req, 'USER_PERMANENT_DELETE', 'delete', {
+    targetType: 'User',
+    targetId: req.params.id,
+  });
+
   const result = await userService.permanentlyDeleteUser(req.params.id);
 
   successResponse(res, result, 'User permanently deleted');

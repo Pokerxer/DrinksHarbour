@@ -983,7 +983,7 @@ export default function CreateEditSubProduct({
 
         // After successful create, redirect to the edit page (Odoo-style)
         if (!isEditMode && createdId) {
-          router.replace(`/ecommerce/sub-products/${createdId}/edit`);
+          router.replace(`/sub-products/${createdId}/edit`);
           return true;
         }
 
@@ -1156,7 +1156,7 @@ export default function CreateEditSubProduct({
               variant="solid"
               onClick={() =>
                 router.push(
-                  `/ecommerce/sub-products/${createdSubProductId}/edit`
+                  `/sub-products/${createdSubProductId}/edit`
                 )
               }
             >
@@ -1173,7 +1173,7 @@ export default function CreateEditSubProduct({
             variant="outline"
             onClick={() => {
               if (createdSubProductId) {
-                router.push(`/ecommerce/sub-products/create`);
+                router.push(`/sub-products/create`);
                 setTimeout(() => {
                   setIsSuccess(false);
                   setCreatedSubProductId(null);

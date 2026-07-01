@@ -1,11 +1,8 @@
-import FileDashboard from '@/app/shared/file/dashboard';
-import { metaObject } from '@/config/site.config';
+import { redirect } from 'next/navigation';
+import { routes } from '@/config/routes';
 
-export const metadata = {
-  ...metaObject(),
-};
+export const dynamic = 'force-dynamic';
 
-export default function FileDashboardPage() {
-  // return <>Hello</>;
-  return <FileDashboard />;
+export default function RootIndexPage() {
+  redirect(routes.eCommerce.dashboard);
 }

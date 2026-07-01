@@ -262,7 +262,11 @@ export default function POSProductGrid({ onAddToCart }: ProductGridProps) {
       setError('');
       try {
         const products = isOnline
-          ? await getProductsOffline(token, activeShop?._id, warehouseId || undefined)
+          ? await getProductsOffline(
+              token,
+              activeShop?._id,
+              warehouseId || undefined
+            )
           : await getProductsWithLocalStock();
         setAllProducts((products || []) as unknown as POSProduct[]);
         setGlobalProducts((products || []) as unknown as POSProduct[]);

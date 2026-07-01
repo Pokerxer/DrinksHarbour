@@ -145,7 +145,7 @@ export default function SalesPrintSheet({
         {/* Red header band */}
         <div
           style={{
-            background: 'linear-gradient(135deg,#b20202 0%,#8b0000 100%)',
+            background: 'linear-gradient(135deg,rgb(var(--brand-default)) 0%,rgb(var(--brand-dark)) 100%)',
             padding: '20px 36px 16px',
             display: 'flex',
             justifyContent: 'space-between',
@@ -236,7 +236,7 @@ export default function SalesPrintSheet({
             <div
               style={{
                 border: '1px solid #fecaca',
-                borderTop: '3px solid #b20202',
+                borderTop: '3px solid rgb(var(--brand-default))',
                 borderRadius: 8,
                 padding: '10px 14px',
                 background: '#fff8f8',
@@ -247,7 +247,7 @@ export default function SalesPrintSheet({
                   fontSize: 8,
                   fontWeight: 800,
                   letterSpacing: '0.16em',
-                  color: '#b20202',
+                  color: 'rgb(var(--brand-default))',
                   textTransform: 'uppercase',
                   marginBottom: 6,
                 }}
@@ -454,7 +454,7 @@ export default function SalesPrintSheet({
           >
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ background: '#b20202' }}>
+                <tr style={{ background: 'rgb(var(--brand-default))' }}>
                   {[
                     { label: 'Item', align: 'left', w: '35%' },
                     { label: 'Qty', align: 'right', w: '8%' },

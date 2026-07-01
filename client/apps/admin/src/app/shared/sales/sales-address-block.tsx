@@ -5,7 +5,7 @@ import { PiArrowsCounterClockwise } from 'react-icons/pi';
 import type { SalesOrderAddress } from '@/services/salesOrder.service';
 
 export const INPUT_CLS =
-  'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20';
+  'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
 
 const ADDRESS_FIELDS: {
   key: keyof SalesOrderAddress;
@@ -88,7 +88,7 @@ export default function SalesAddressBlock({
               type="button"
               onClick={onLoadCustomerAddress}
               disabled={loadingCustomerAddress}
-              className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline disabled:opacity-50"
+              className="flex items-center gap-1.5 text-xs font-medium text-brand hover:underline disabled:opacity-50"
             >
               <PiArrowsCounterClockwise className="h-3.5 w-3.5" />
               {loadingCustomerAddress ? 'Loading…' : 'Use customer’s address'}
@@ -104,7 +104,7 @@ export default function SalesAddressBlock({
             type="checkbox"
             checked={deliverDifferent}
             onChange={(e) => onToggleDeliverDifferent(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-300 text-[#b20202] focus:ring-[#b20202]/20"
+            className="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand/20"
           />
           Deliver to a different address
         </label>
@@ -119,7 +119,7 @@ export default function SalesAddressBlock({
                 type="button"
                 onClick={onLoadCustomerAddress}
                 disabled={loadingCustomerAddress}
-                className="flex items-center gap-1.5 text-xs font-medium text-[#b20202] hover:underline disabled:opacity-50"
+                className="flex items-center gap-1.5 text-xs font-medium text-brand hover:underline disabled:opacity-50"
               >
                 <PiArrowsCounterClockwise className="h-3.5 w-3.5" />
                 {loadingCustomerAddress ? 'Loading…' : 'Use customer’s address'}

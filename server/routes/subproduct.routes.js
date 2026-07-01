@@ -21,6 +21,7 @@ const {
 const { body, param } = require('express-validator');
 const SubProduct = require('../models/SubProduct');
 const { checkSkuLimit } = require('../middleware/plan.middleware');
+const { logPrivilegedAction } = require('../utils/auditLog');
 // All SubProduct routes require authentication
 router.use(authenticate);
 router.use(attachTenant);
@@ -1409,6 +1410,10 @@ router.patch(
       let filter;
       if (isAdmin && applyToAll) {
         filter = {};
+        // Audit: platform-wide bulk promotion affects ALL tenants — must be audited
+        logPrivilegedAction(req, 'BULK_PROMOTE_ALL_TENANTS', 'bulk', {
+          justification: `saleType=${saleType} discount=${saleDiscountValue} ids=${ids?.length || 'all'}`,
+        });
       } else {
         const tenantId = req.tenant?._id || req.user?.tenant;
         if (!tenantId) {

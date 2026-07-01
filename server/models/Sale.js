@@ -322,9 +322,17 @@ saleSchema.statics.applySaleToProduct = async function (saleId, productId) {
   const Product = require('./Product');
   const SubProduct = require('./SubProduct');
 
-  // Update all subproducts of the product
+  // Scope to the sale's tenant only — never write across all tenants' SubProducts.
+  // Global sales (isGlobal=true) target all tenants; tenant-scoped sales target only that tenant.
+  const subProductFilter = { product: productId };
+  if (sale.isGlobal) {
+    // Global sale: applies to all tenants' SubProducts for this product
+  } else {
+    subProductFilter.tenant = sale.tenant;
+  }
+
   await SubProduct.updateMany(
-    { product: productId },
+    subProductFilter,
     {
       $set: {
         salePrice: null, // Will be calculated

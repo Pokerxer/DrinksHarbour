@@ -2,7 +2,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import toast from 'react-hot-toast';
 import {
   PiArrowLeft,
   PiCaretRight,
@@ -25,6 +27,7 @@ import {
 import { routes } from '@/config/routes';
 import { StagePill } from './sales-stage-pill';
 import { quoteStatusLabel, orderStatusLabel } from './sales-helpers';
+import { salesOrderService } from '@/services/salesOrder.service';
 import type { SalesOrder } from '@/services/salesOrder.service';
 
 export interface SalesCreateHeaderProps {
@@ -32,6 +35,8 @@ export interface SalesCreateHeaderProps {
   initial?: SalesOrder;
   saving: boolean;
   hasLines: boolean;
+  orderId?: string;
+  token: string;
   autoSaveStatus?: 'idle' | 'saving' | 'saved' | 'error';
   onManualSave?: () => void;
   onSaveQuotation?: () => void;
@@ -39,16 +44,13 @@ export interface SalesCreateHeaderProps {
   onSaveEdit?: () => void;
   onPrint?: () => void;
   onSendProForma?: () => void;
-  onDuplicate?: () => void;
-  onMarkAsSent?: () => void;
-  onGeneratePaymentLink?: () => void;
-  onAccruedRevenueEntry?: () => void;
+  onStatusChange?: () => void;
 }
 
 const BTN_BASE =
   'inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40';
 
-const BTN_PRIMARY = `${BTN_BASE} bg-[#b20202] text-white hover:bg-[#9a0101] active:scale-[0.98]`;
+const BTN_PRIMARY = `${BTN_BASE} bg-brand text-white hover:bg-brand-dark active:scale-[0.98]`;
 const BTN_GHOST = `${BTN_BASE} bg-white text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50`;
 
 const AUTO_SAVE_LABEL: Record<string, string> = {
@@ -63,6 +65,8 @@ export default function SalesCreateHeader({
   initial,
   saving,
   hasLines,
+  orderId,
+  token,
   autoSaveStatus = 'idle',
   onManualSave,
   onSaveQuotation,
@@ -70,10 +74,7 @@ export default function SalesCreateHeader({
   onSaveEdit,
   onPrint,
   onSendProForma,
-  onDuplicate,
-  onMarkAsSent,
-  onGeneratePaymentLink,
-  onAccruedRevenueEntry,
+  onStatusChange,
 }: SalesCreateHeaderProps) {
   const isEdit = mode === 'edit' && !!initial;
   const backHref = isEdit
@@ -81,9 +82,78 @@ export default function SalesCreateHeader({
     : routes.eCommerce.salesOrders;
   const cancelHref = backHref;
 
+  const router = useRouter();
+
   // Derived action handlers
   const handleSend = isEdit ? onSaveEdit : onSaveQuotation;
   const handleConfirm = isEdit ? onSaveEdit : onCreateOrder;
+
+  // Gear action handlers
+  const handleDuplicate = async () => {
+    if (!orderId) { toast('No order to duplicate'); return; }
+    try {
+      const res = await salesOrderService.duplicate(orderId, token);
+      toast('Order duplicated');
+      router.push(`/shared/sales/${res.data._id}`);
+    } catch { toast('Failed to duplicate order'); }
+  };
+
+  const handleMarkAsSent = async () => {
+    if (!orderId) { toast('No order to mark'); return; }
+    try {
+      await salesOrderService.send(orderId, token);
+      toast('Marked as sent');
+      onStatusChange?.();
+    } catch { toast('Failed to mark as sent'); }
+  };
+
+  const handleGeneratePaymentLink = async () => {
+    if (!orderId) { toast('No order selected'); return; }
+    try {
+      const res = await salesOrderService.generatePaymentLink(orderId, token);
+      window.open(res.data.paymentLink, '_blank');
+      toast('Payment link generated');
+    } catch { toast('Failed to generate payment link'); }
+  };
+
+  const handleAccruedRevenueEntry = async () => {
+    if (!orderId) { toast('No order selected'); return; }
+    try {
+      await salesOrderService.accruedRevenue(orderId, token);
+      toast('Accrued revenue entry created');
+    } catch { toast('Failed to create accrued revenue entry'); }
+  };
+
+  const handleRequestSignature = async () => {
+    if (!orderId) { toast('No order selected'); return; }
+    try {
+      await salesOrderService.requestSignature(orderId, token);
+      toast('Signature request sent');
+    } catch { toast('Failed to request signature'); }
+  };
+
+  const handleSendEmail = async () => {
+    if (!orderId) { toast('No order selected'); return; }
+    try {
+      await salesOrderService.sendEmail(orderId, token);
+      toast('Email sent');
+    } catch { toast('Failed to send email'); }
+  };
+
+  const handleShare = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      toast('Link copied to clipboard');
+    } catch { toast('Failed to copy link'); }
+  };
+
+  const handleCreateProject = async () => {
+    if (!orderId) { toast('No order selected'); return; }
+    try {
+      await salesOrderService.createProject(orderId, token);
+      toast('Project created');
+    } catch { toast('Failed to create project'); }
+  };
 
   // Gear dropdown state
   const [gearOpen, setGearOpen] = useState(false);
@@ -151,12 +221,15 @@ export default function SalesCreateHeader({
           onClick={onManualSave}
           disabled={autoSaveStatus === 'saving' || !hasLines}
           title={
-            autoSaveStatus === 'saving' ? 'Saving…'
-            : autoSaveStatus === 'saved'  ? 'Saved'
-            : autoSaveStatus === 'error'  ? 'Save failed — click to retry'
-            : 'Save draft'
+            autoSaveStatus === 'saving'
+              ? 'Saving…'
+              : autoSaveStatus === 'saved'
+                ? 'Saved'
+                : autoSaveStatus === 'error'
+                  ? 'Save failed — click to retry'
+                  : 'Save draft'
           }
-          className="flex items-center gap-1 rounded-md p-1.5 transition-colors disabled:cursor-not-allowed disabled:opacity-40 hover:bg-gray-100"
+          className="flex items-center gap-1 rounded-md p-1.5 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {autoSaveStatus === 'saving' ? (
             <PiCircleNotch className="h-5 w-5 animate-spin text-gray-400" />
@@ -188,23 +261,23 @@ export default function SalesCreateHeader({
                 'Send PRO-FORMA Invoice',
                 PiPaperPlaneTilt
               )}
-              {gearItem(undefined, 'Request Signature', PiPencilSimple)}
-              {gearItem(onDuplicate, 'Duplicate', PiCopy)}
+              {gearItem(handleRequestSignature, 'Request Signature', PiPencilSimple)}
+              {gearItem(handleDuplicate, 'Duplicate', PiCopy)}
               <div className="my-1 border-t border-gray-100" />
               {gearItem(
-                onAccruedRevenueEntry,
+                handleAccruedRevenueEntry,
                 'Accrued Revenue Entry',
                 PiChartLineUp
               )}
               {gearItem(
-                onGeneratePaymentLink,
+                handleGeneratePaymentLink,
                 'Generate a Payment Link',
                 PiLink
               )}
-              {gearItem(undefined, 'Send an email', PiEnvelope)}
-              {gearItem(onMarkAsSent, 'Mark Quotation as Sent', PiTag)}
-              {gearItem(undefined, 'Share', PiShareNetwork)}
-              {gearItem(undefined, 'Create Project', PiFolderSimplePlus)}
+              {gearItem(handleSendEmail, 'Send an email', PiEnvelope)}
+              {gearItem(handleMarkAsSent, 'Mark Quotation as Sent', PiTag)}
+              {gearItem(handleShare, 'Share', PiShareNetwork)}
+              {gearItem(handleCreateProject, 'Create Project', PiFolderSimplePlus)}
             </div>
           )}
         </div>

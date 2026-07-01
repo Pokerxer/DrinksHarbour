@@ -279,18 +279,38 @@ router.post(
 // ============================================================
 
 router.use(protect);
-// DEBUG: log user role so we can diagnose 403 issues
-router.use((req, res, next) => {
-  console.log('[products admin] user:', req.user ? `${req.user.email} role=${req.user.role}` : 'none');
-  next();
-});
 // tenant_owner included so owners can browse the product catalogue
 router.use(authorize('super_admin', 'tenant_admin', 'admin', 'tenant_owner'));
 
 /**
+ * Get all products (admin with stats)
+ * @route GET /api/products/admin/all
+ * @access Private/Admin (incl. tenant_admin/owner for read-only browsing)
+ */
+router.get('/admin/all', productController.getAllProducts);
+
+/**
+ * Get all products directly from DB for admin CRUD (all statuses, no tenant filtering)
+ * @route GET /api/products/admin/list
+ * @access Private/Admin (incl. tenant_admin/owner for read-only browsing)
+ */
+router.get('/admin/list', productController.getAdminProductList);
+
+/**
+ * Get pending products
+ * @route GET /api/products/admin/pending
+ * @access Private/Admin (incl. tenant_admin/owner for read-only browsing)
+ */
+router.get('/admin/pending', productController.getPendingProducts);
+
+// ── Product mutations — restricted to platform admins only ──────────────────
+// Central Products are platform-owned; tenants may only create pending proposals.
+router.use(authorize('super_admin', 'admin'));
+
+/**
  * Create new product
  * @route POST /api/products
- * @access Private/Admin
+ * @access Private/PlatformAdmin
  */
 router.post(
   '/',
@@ -302,7 +322,7 @@ router.post(
 /**
  * Update product
  * @route PUT /api/products/:id
- * @access Private/Admin
+ * @access Private/PlatformAdmin
  */
 router.put(
   '/:id',
@@ -314,7 +334,7 @@ router.put(
 /**
  * Delete product (soft delete)
  * @route DELETE /api/products/:id
- * @access Private/Admin
+ * @access Private/PlatformAdmin
  */
 router.delete(
   '/:id',
@@ -324,45 +344,26 @@ router.delete(
 );
 
 /**
- * Get all products (admin with stats)
- * @route GET /api/products/admin/all
- * @access Private/Admin
- */
-router.get('/admin/all', productController.getAllProducts);
-
-/**
- * Get all products directly from DB for admin CRUD (all statuses, no tenant filtering)
- * @route GET /api/products/admin/list
- * @access Private/Admin
- */
-router.get('/admin/list', productController.getAdminProductList);
-
-/**
- * Get pending products
- * @route GET /api/products/admin/pending
- * @access Private/Admin
- */
-router.get('/admin/pending', productController.getPendingProducts);
-
-/**
- * Approve product
+ * Approve product — super_admin only (AGENTS.md: "pending until super-admin publishes")
  * @route POST /api/products/:id/approve
- * @access Private/Admin
+ * @access Private/SuperAdmin
  */
 router.post(
   '/:id/approve',
+  authorize('super_admin'),
   mongoIdValidation,
   validate,
   productController.approveProduct
 );
 
 /**
- * Reject product
+ * Reject product — super_admin only
  * @route POST /api/products/:id/reject
- * @access Private/Admin
+ * @access Private/SuperAdmin
  */
 router.post(
   '/:id/reject',
+  authorize('super_admin'),
   mongoIdValidation,
   validate,
   productController.rejectProduct

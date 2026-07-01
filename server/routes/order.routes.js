@@ -77,8 +77,11 @@ router.post(
   orderController.createOrder
 );
 
+// Order lookup by number — requires auth + email verification (was public, leaked any order)
 router.get(
   '/number/:orderNumber',
+  protect,
+  attachTenant,
   param('orderNumber').notEmpty(),
   query('email').optional().isEmail(),
   validate,
@@ -98,7 +101,6 @@ router.get('/my-orders', orderController.getMyOrders);
 
 router.get(
   '/:id',
-  optionalProtect,
   param('id').isMongoId(),
   validate,
   orderController.getOrder
@@ -135,8 +137,10 @@ router.post(
   posController.refundPOSOrder
 );
 
+// Order status update — restricted to tenant admin or super admin (was open to any authenticated user)
 router.put(
   '/:id/status',
+  tenantAdminOrSuperAdmin,
   param('id').isMongoId(),
   body('status')
     .isIn(['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'])

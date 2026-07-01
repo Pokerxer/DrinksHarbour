@@ -1,0 +1,248 @@
+0 verbose cli /usr/local/bin/node /usr/local/lib/node_modules/npm/bin/npm-cli.js
+1 info using npm@10.9.8
+2 info using node@v22.23.1
+3 silly config load:file:/usr/local/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/mac/Documents/drinksharbour/.npmrc
+5 silly config load:file:/Users/mac/.npmrc
+6 silly config load:file:/usr/local/etc/npmrc
+7 verbose title npm exec pnpm@9.15.0 --version
+8 verbose argv "exec" "--yes" "--" "pnpm@9.15.0" "--version"
+9 verbose logfile logs-max:10 dir:/Users/mac/Documents/drinksharbour/.npm-cache/_logs/2026-06-29T02_33_16_640Z-
+10 verbose logfile /Users/mac/Documents/drinksharbour/.npm-cache/_logs/2026-06-29T02_33_16_640Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
+13 http fetch GET 200 https://registry.npmjs.org/pnpm 2147ms (cache miss)
+14 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
+15 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
+16 silly idealTree buildDeps
+17 silly fetch manifest pnpm@9.15.0
+18 silly packumentCache full:https://registry.npmjs.org/pnpm cache-miss
+19 http fetch GET 200 https://registry.npmjs.org/pnpm 2506ms (cache miss)
+20 silly packumentCache full:https://registry.npmjs.org/pnpm set size:undefined disposed:false
+21 silly placeDep ROOT pnpm@9.15.0 OK for:  want: 9.15.0
+22 silly reify moves {}
+23 silly audit bulk request { pnpm: [ '9.15.0' ] }
+24 http cache pnpm@https://registry.npmjs.org/pnpm/-/pnpm-9.15.0.tgz 0ms (cache hit)
+25 silly tarball no local data for pnpm@https://registry.npmjs.org/pnpm/-/pnpm-9.15.0.tgz. Extracting by manifest.
+26 http fetch POST 200 https://registry.npmjs.org/-/npm/v1/security/advisories/bulk 333ms
+27 silly audit report {
+27 silly audit report   pnpm: [
+27 silly audit report     {
+27 silly audit report       id: 1104027,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-8cc4-rfj6-fhg4',
+27 silly audit report       title: 'pnpm uses the md5 path shortening function causes packet paths to coincide, which causes indirect packet overwriting',
+27 silly audit report       severity: 'moderate',
+27 silly audit report       vulnerable_versions: '<10.0.0',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1111961,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-7vhp-vf5g-r2fw',
+27 silly audit report       title: 'pnpm Has Lockfile Integrity Bypass that Allows Remote Dynamic Dependencies',
+27 silly audit report       severity: 'high',
+27 silly audit report       vulnerable_versions: '<10.26.0',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1112536,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-v253-rj99-jwpq',
+27 silly audit report       title: 'pnpm has Path Traversal via arbitrary file permission modification ',
+27 silly audit report       severity: 'moderate',
+27 silly audit report       vulnerable_versions: '<10.28.2',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1112639,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-6pfh-p556-v868',
+27 silly audit report       title: 'pnpm: Binary ZIP extraction allows arbitrary file write via path traversal (Zip Slip)',
+27 silly audit report       severity: 'moderate',
+27 silly audit report       vulnerable_versions: '<10.28.1',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1112679,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-6x96-7vc8-cm3p',
+27 silly audit report       title: 'pnpm has Windows-specific tarball Path Traversal',
+27 silly audit report       severity: 'moderate',
+27 silly audit report       vulnerable_versions: '<10.28.1',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1112680,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-xpqm-wm3m-f34h',
+27 silly audit report       title: 'pnpm scoped bin name Path Traversal allows arbitrary file creation outside node_modules/.bin',
+27 silly audit report       severity: 'moderate',
+27 silly audit report       vulnerable_versions: '<10.28.1',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1112681,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-m733-5w8f-5ggw',
+27 silly audit report       title: 'pnpm has symlink traversal in file:/git dependencies',
+27 silly audit report       severity: 'moderate',
+27 silly audit report       vulnerable_versions: '<10.28.2',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1121805,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-hg3w-7f8c-63hp',
+27 silly audit report       title: 'pnpm: Tarball hash of GitHub git dependencies is not stored in lockfile',
+27 silly audit report       severity: 'moderate',
+27 silly audit report       vulnerable_versions: '<10.33.4',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1121809,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-rxhj-4m44-96r4',
+27 silly audit report       title: 'pnpm Vulnerable to Arbitrary File Write/Delete via Malicious Patch File (Path Traversal)',
+27 silly audit report       severity: 'high',
+27 silly audit report       vulnerable_versions: '<10.34.0',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1121811,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-cjhr-43r9-cfmw',
+27 silly audit report       title: 'pnpm binds unscoped user-level npm auth credentials to a repository-selected registry',
+27 silly audit report       severity: 'moderate',
+27 silly audit report       vulnerable_versions: '<10.34.0',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1121813,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-hwx4-2j3j-g496',
+27 silly audit report       title: 'pnpm: Transitive dependency alias path traversal allows project path override via symlink replacement',
+27 silly audit report       severity: 'high',
+27 silly audit report       vulnerable_versions: '<10.34.0',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1121837,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-qrv3-253h-g69c',
+27 silly audit report       title: 'pnpm: Path traversal in configDependencies env lockfile allows symlink creation outside node_modules/.pnpm-config',
+27 silly audit report       severity: 'high',
+27 silly audit report       vulnerable_versions: '<10.34.4',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1121815,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-p4xf-rf54-rj3x',
+27 silly audit report       title: 'pnpm: Git Fetch Argument Injection via Lockfile resolution.commit',
+27 silly audit report       severity: 'moderate',
+27 silly audit report       vulnerable_versions: '<10.34.0',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1121816,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-q6j5-fjx5-2mc3',
+27 silly audit report       title: 'pnpm Has an Integrity Check Bypass via Missing Lockfile Integrity Field',
+27 silly audit report       severity: 'moderate',
+27 silly audit report       vulnerable_versions: '<10.34.1',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1121819,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-54hh-g5mx-jqcp',
+27 silly audit report       title: 'pnpm: Unsafe default behavior breaks integrity check',
+27 silly audit report       severity: 'moderate',
+27 silly audit report       vulnerable_versions: '<10.34.0',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1121829,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-4gxm-v5v7-fqc4',
+27 silly audit report       title: 'pnpm: Reserved bin name deletes PNPM_HOME during global remove',
+27 silly audit report       severity: 'moderate',
+27 silly audit report       vulnerable_versions: '<10.34.2',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1121831,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-w466-c33r-3gjp',
+27 silly audit report       title: 'pnpm: Project env lockfile can short-circuit package-manager resolution and execute lockfile-selected pnpm bytes',
+27 silly audit report       severity: 'high',
+27 silly audit report       vulnerable_versions: '<10.34.2',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1121822,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-gj8w-mvpf-x27x',
+27 silly audit report       title: 'pnpm: Repository-controlled configDependencies can select a pacquet native install engine',
+27 silly audit report       severity: 'high',
+27 silly audit report       vulnerable_versions: '<10.34.2',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1121824,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-5wx6-mg75-v57r',
+27 silly audit report       title: 'pnpm: Manifest identity spoof satisfies allowBuilds and runs attacker lifecycle',
+27 silly audit report       severity: 'high',
+27 silly audit report       vulnerable_versions: '<10.34.2',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1121826,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-3qhv-2rgh-x77r',
+27 silly audit report       title: 'pnpm: Repository config can expand victim environment secrets into registry requests before scripts run',
+27 silly audit report       severity: 'moderate',
+27 silly audit report       vulnerable_versions: '<10.34.2',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1121833,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-72r4-9c5j-mj57',
+27 silly audit report       title: 'pnpm: `patch-remove` could delete project-selected files outside the patches directory',
+27 silly audit report       severity: 'high',
+27 silly audit report       vulnerable_versions: '<10.34.4',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1121835,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-fr4h-3cph-29xv',
+27 silly audit report       title: 'pnpm: Hoisted install imports lockfile alias outside node_modules',
+27 silly audit report       severity: 'high',
+27 silly audit report       vulnerable_versions: '<10.34.4',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     },
+27 silly audit report     {
+27 silly audit report       id: 1117386,
+27 silly audit report       url: 'https://github.com/advisories/GHSA-2phv-j68v-wwqx',
+27 silly audit report       title: 'pnpm vulnerable to Command Injection via environment variable substitution',
+27 silly audit report       severity: 'high',
+27 silly audit report       vulnerable_versions: '>=6.25.0 <10.27.0',
+27 silly audit report       cwe: [Array],
+27 silly audit report       cvss: [Object]
+27 silly audit report     }
+27 silly audit report   ]
+27 silly audit report }
+28 silly packumentCache corgi:https://registry.npmjs.org/pnpm cache-miss
+29 http cache https://registry.npmjs.org/pnpm 12ms (cache hit)
+30 silly packumentCache corgi:https://registry.npmjs.org/pnpm set size:1794481 disposed:false
+31 http fetch GET 200 https://registry.npmjs.org/pnpm/-/pnpm-9.15.0.tgz 10111ms (cache miss)
+32 verbose cwd /Users/mac/Documents/drinksharbour
+33 verbose os Darwin 23.0.0
+34 verbose node v22.23.1
+35 verbose npm  v10.9.8
+36 verbose exit 0
+37 info ok

@@ -13,8 +13,10 @@ test('lineTaxOf applies the per-line rate to the post-discount line total', () =
   const { lineTaxOf } = require('../services/salesOrder.service');
   // (1000 - 0) * 10 = 10000 untaxed; 7.5% => 750
   assert.strictEqual(lineTaxOf({ unitPrice: 1000, discount: 0, quantity: 10, taxRate: 7.5 }), 750);
-  // discount is per-unit and applied before tax: (1000-200)*5 = 4000; 10% => 400
-  assert.strictEqual(lineTaxOf({ unitPrice: 1000, discount: 200, quantity: 5, taxRate: 10 }), 400);
+  // fixed discount is a flat ₦ off the WHOLE line, before tax: (1000*5 - 200) = 4800; 10% => 480
+  assert.strictEqual(lineTaxOf({ unitPrice: 1000, discount: 200, quantity: 5, taxRate: 10 }), 480);
+  // percentage discount is a percent of each unit: 20% off 1000*5 = 4000; 10% => 400
+  assert.strictEqual(lineTaxOf({ unitPrice: 1000, discount: 20, discountType: 'percentage', quantity: 5, taxRate: 10 }), 400);
   // no rate => no tax
   assert.strictEqual(lineTaxOf({ unitPrice: 1000, discount: 0, quantity: 3, taxRate: 0 }), 0);
   assert.strictEqual(lineTaxOf({ unitPrice: 1000, discount: 0, quantity: 3 }), 0);
@@ -24,14 +26,14 @@ test('computeTotals returns Odoo-style untaxed/tax/total with mixed per-line rat
   const { computeTotals } = require('../services/salesOrder.service');
   const items = [
     { unitPrice: 1000, discount: 0, quantity: 10, taxRate: 7.5 }, // untaxed 10000, tax 750
-    { unitPrice: 500, discount: 100, quantity: 4, taxRate: 0 },   // untaxed 1600, tax 0
+    { unitPrice: 500, discount: 100, quantity: 4, taxRate: 0 },   // flat ₦100 off line: untaxed 1900, tax 0
   ];
   const t = computeTotals(items);
   assert.strictEqual(t.subtotal, 12000);       // gross: 1000*10 + 500*4
-  assert.strictEqual(t.discountTotal, 400);    // 0*10 + 100*4
+  assert.strictEqual(t.discountTotal, 100);    // flat ₦100 off the second line
   assert.strictEqual(t.taxTotal, 750);         // 750 + 0
-  // untaxed amount = subtotal - discountTotal = 11600; total = 11600 + 750
-  assert.strictEqual(t.total, 12350);
+  // untaxed amount = subtotal - discountTotal = 11900; total = 11900 + 750
+  assert.strictEqual(t.total, 12650);
 });
 
 test('computeTotals on an all-zero-rate basket leaves total == untaxed (back-compat)', () => {

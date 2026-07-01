@@ -960,7 +960,10 @@ function ActionsModal({
     {
       label: 'Quotation/Order',
       icon: <PiLinkSimple className="h-5 w-5" />,
-      fn: () => { onQuotationOrder(); onClose(); },
+      fn: () => {
+        onQuotationOrder();
+        onClose();
+      },
     },
     {
       label: 'Reward',
@@ -1377,8 +1380,11 @@ export default function POSCart() {
   function handleLoadOrder(so: any) {
     if (
       items.length > 0 &&
-      !window.confirm('Loading this order will clear the current cart. Continue?')
-    ) return;
+      !window.confirm(
+        'Loading this order will clear the current cart. Continue?'
+      )
+    )
+      return;
     clearCart();
     if (so.customerSnapshot?.name) {
       setCustomer({
@@ -1389,7 +1395,9 @@ export default function POSCart() {
         customerId: so.customer ?? undefined,
       });
     }
-    for (const line of (so.items ?? []).filter((l: any) => l.lineType !== 'section' && l.lineType !== 'note')) {
+    for (const line of (so.items ?? []).filter(
+      (l: any) => l.lineType !== 'section' && l.lineType !== 'note'
+    )) {
       if (!line.subproduct) continue;
       addItem({
         subProductId: line.subproduct,
@@ -2043,15 +2051,12 @@ export default function POSCart() {
                 return entries.map((entry) => {
                   if (entry.kind === 'combo') {
                     const { instanceId, comboName, groupItems } = entry;
-                    const comboTotal = groupItems.reduce(
-                      (s, i) => {
-                        const { price: effPrice } = selectedPricelist
-                          ? getEffectiveBundlePriceForItem(i, selectedPricelist)
-                          : getEffectiveBundlePrice(i);
-                        return s + effPrice * i.quantity;
-                      },
-                      0
-                    );
+                    const comboTotal = groupItems.reduce((s, i) => {
+                      const { price: effPrice } = selectedPricelist
+                        ? getEffectiveBundlePriceForItem(i, selectedPricelist)
+                        : getEffectiveBundlePrice(i);
+                      return s + effPrice * i.quantity;
+                    }, 0);
                     const anySelected = groupItems.some(
                       (i) => selectedKey === itemKey(i)
                     );
@@ -2384,7 +2389,9 @@ export default function POSCart() {
         {/* ── Warehouse selector ── */}
         {warehouses.length > 0 && (
           <div className="flex items-center gap-2 border-t border-gray-100 bg-gray-50/60 px-3 py-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Warehouse</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+              Warehouse
+            </span>
             <select
               value={warehouseId}
               onChange={(e) => setWarehouseId(e.target.value)}
@@ -2393,7 +2400,8 @@ export default function POSCart() {
               <option value="">— select —</option>
               {warehouses.map((w) => (
                 <option key={w._id} value={w._id}>
-                  {w.name}{w.isDefault ? ' ✓' : ''}
+                  {w.name}
+                  {w.isDefault ? ' ✓' : ''}
                 </option>
               ))}
             </select>
@@ -2661,15 +2669,15 @@ export default function POSCart() {
             for (const ci of cart.items) {
               addItem({
                 subProductId: ci.subProductId,
-                productId:    ci.productId,
-                sizeId:       ci.sizeId,
-                name:         ci.name,
-                variant:      ci.variant,
-                sku:          ci.sku,
-                quantity:     ci.quantity,
-                price:        ci.price,
-                discount:     ci.discount,
-                stock:        999, // client re-fetches from grid on mount
+                productId: ci.productId,
+                sizeId: ci.sizeId,
+                name: ci.name,
+                variant: ci.variant,
+                sku: ci.sku,
+                quantity: ci.quantity,
+                price: ci.price,
+                discount: ci.discount,
+                stock: 999, // client re-fetches from grid on mount
               });
             }
             setShowHeldOrders(false);
@@ -2689,7 +2697,9 @@ function HeldOrdersModal({
   onClose,
 }: {
   token: string | null;
-  onRecall: (cart: import('@/app/shared/point-of-sale/types').POSRecallCart) => void;
+  onRecall: (
+    cart: import('@/app/shared/point-of-sale/types').POSRecallCart
+  ) => void;
   onClose: () => void;
 }) {
   const [orders, setOrders] = useState<
@@ -2751,7 +2761,9 @@ function HeldOrdersModal({
               <PiSpinner className="h-4 w-4 animate-spin" /> Loading…
             </div>
           ) : error ? (
-            <p className="px-5 py-8 text-center text-xs text-red-500">{error}</p>
+            <p className="px-5 py-8 text-center text-xs text-red-500">
+              {error}
+            </p>
           ) : orders.length === 0 ? (
             <div className="py-12 text-center">
               <PiNote className="mx-auto mb-2 h-8 w-8 text-gray-300" />

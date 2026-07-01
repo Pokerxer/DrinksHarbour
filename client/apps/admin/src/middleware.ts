@@ -112,15 +112,25 @@ const authMiddleware = withAuth(
     // Platform-only ecommerce pages — tenant management, brand management
     // Tenant roles should only manage their own data via the tenant sidebar
     const PLATFORM_ONLY_PATHS = [
-      '/ecommerce/tenants',
-      '/ecommerce/products',  // main product catalog is platform-only; tenants use /ecommerce/sub-products
+      '/tenants',
+      '/products',  // main product catalog is platform-only; tenants use /sub-products
     ];
     if (TENANT_ROLES.includes(role) && PLATFORM_ONLY_PATHS.some((p) => path.startsWith(p))) {
       return NextResponse.redirect(new URL('/access-denied', req.url));
     }
 
     // General ecommerce/logistics — require tenantId for tenant roles
-    if (path.startsWith('/ecommerce') || path.startsWith('/logistics')) {
+    const ECOMMERCE_PREFIXES = [
+      '/ecommerce',
+      '/products',
+      '/sub-products',
+      '/categories',
+      '/sub-categories',
+      '/brands',
+      '/tenants',
+      '/banners',
+    ];
+    if (ECOMMERCE_PREFIXES.some((p) => path.startsWith(p)) || path.startsWith('/logistics')) {
       if (TENANT_ROLES.includes(role) && !tenantId) {
         return NextResponse.redirect(new URL('/access-denied', req.url));
       }
@@ -163,6 +173,13 @@ export const config = {
     '/analytics/:path*',
     '/logistics/:path*',
     '/ecommerce/:path*',
+    '/products/:path*',
+    '/sub-products/:path*',
+    '/categories/:path*',
+    '/sub-categories/:path*',
+    '/brands/:path*',
+    '/tenants/:path*',
+    '/banners/:path*',
     '/support/:path*',
     '/file/:path*',
     '/file-manager',

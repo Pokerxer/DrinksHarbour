@@ -3,8 +3,8 @@
 const jwt = require('jsonwebtoken');
 const asyncHandler = require('../utils/asyncHandler');
 const User = require('../models/User');
-const Tenant = require('../models/Tenant');
 const { ForbiddenError, UnauthorizedError } = require('../utils/errors');
+const { resolveTenantContext } = require('./tenant.middleware');
 
 // super_admin has all tenant_owner privileges
 const TENANT_OWNER_ROLES = ['super_admin', 'admin', 'tenant_owner'];
@@ -30,15 +30,13 @@ const protect = asyncHandler(async (req, res, next) => {
   }
 
   try {
-    console.log('JWT_SECRET in middleware:', process.env.JWT_SECRET ? 'loaded' : 'undefined');
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Attach user (lean + select minimal fields)
+    // Attach user (lean + select minimal fields + passwordChangedAt for token invalidation)
     // JWT payload uses userId, not id
     const userId = decoded.userId || decoded.id;
-    console.log('JWT decoded:', { userId, exp: decoded.exp, iat: decoded.iat });
     req.user = await User.findById(userId)
-      .select('_id email role tenant status firstName lastName')
+      .select('_id email role tenant status firstName lastName passwordChangedAt mfaEnabled')
       .lean();
 
     if (!req.user) {
@@ -47,6 +45,15 @@ const protect = asyncHandler(async (req, res, next) => {
 
     if (req.user.status !== 'active') {
       throw new ForbiddenError('Account is not active');
+    }
+
+    // ── Invalidate JWTs issued before a password change/reset ────────────────
+    // If passwordChangedAt exists and the token was issued before it, reject.
+    if (req.user.passwordChangedAt && decoded.iat) {
+      const passwordChangedTimestamp = Math.floor(req.user.passwordChangedAt.getTime() / 1000);
+      if (decoded.iat < passwordChangedTimestamp) {
+        throw new UnauthorizedError('Token invalidated by recent password change — please log in again');
+      }
     }
 
     next();
@@ -87,8 +94,17 @@ const optionalProtect = asyncHandler(async (req, res, next) => {
     // JWT payload uses userId, not id
     const userId = decoded.userId || decoded.id;
     req.user = await User.findById(userId)
-      .select('_id email role tenant status firstName lastName')
+      .select('_id email role tenant status firstName lastName passwordChangedAt')
       .lean();
+
+    // Invalidate JWTs issued before a password change (same as protect)
+    if (req.user?.passwordChangedAt && decoded.iat) {
+      const passwordChangedTimestamp = Math.floor(req.user.passwordChangedAt.getTime() / 1000);
+      if (decoded.iat < passwordChangedTimestamp) {
+        // Token is stale — treat as guest (don't attach user)
+        req.user = null;
+      }
+    }
 
     next();
   } catch (error) {
@@ -98,57 +114,11 @@ const optionalProtect = asyncHandler(async (req, res, next) => {
 });
 
 /**
- * Tenant context middleware (renamed from tenantAuth to attachTenant)
- * Sets req.tenant based on:
- *  1. Subdomain (shopname.drinksharbour.com → slug = "shopname")
- *  2. X-Tenant-Slug header (for API calls)
- *  3. User.tenant (if user belongs to a tenant)
- *
- * Does NOT throw - just attaches tenant if available
+ * Tenant context middleware — resolves req.tenant from JWT authority first.
+ * Delegates to the single source of truth: resolveTenantContext in tenant.middleware.js.
+ * Alias kept for backward compatibility with route files that import attachTenant.
  */
-const attachTenant = asyncHandler(async (req, res, next) => {
-  let tenant;
-
-  // 1. Try subdomain (most common for tenant storefronts)
-  const host = req.headers.host || '';
-  const subdomain = host.split('.')[0].toLowerCase();
-
-  if (subdomain && subdomain !== 'www' && subdomain !== 'drinksharbour' && subdomain !== 'localhost') {
-    tenant = await Tenant.findOne({ slug: subdomain })
-      .select('_id name slug status subscriptionStatus revenueModel markupPercentage commissionPercentage defaultCurrency')
-      .lean();
-
-    if (tenant && (tenant.status !== 'approved' || !['active', 'trialing'].includes(tenant.subscriptionStatus))) {
-      throw new ForbiddenError('Tenant account is not active');
-    }
-  }
-
-  // 2. Try custom header (useful for tenant dashboard API calls)
-  if (!tenant && req.headers['x-tenant-slug']) {
-    const tenantSlug = req.headers['x-tenant-slug'].toLowerCase();
-    tenant = await Tenant.findOne({ slug: tenantSlug })
-      .select('_id name slug status subscriptionStatus revenueModel markupPercentage commissionPercentage defaultCurrency')
-      .lean();
-  }
-
-  // Alternative: X-Tenant-Id header (if using IDs instead of slugs)
-  if (!tenant && req.headers['x-tenant-id']) {
-    tenant = await Tenant.findById(req.headers['x-tenant-id'])
-      .select('_id name slug status subscriptionStatus revenueModel markupPercentage commissionPercentage defaultCurrency')
-      .lean();
-  }
-
-  // 3. Fallback to user.tenant (if authenticated user belongs to tenant)
-  if (!tenant && req.user?.tenant) {
-    tenant = await Tenant.findById(req.user.tenant)
-      .select('_id name slug status subscriptionStatus revenueModel markupPercentage commissionPercentage defaultCurrency')
-      .lean();
-  }
-
-  req.tenant = tenant || null;
-
-  next();
-});
+const attachTenant = resolveTenantContext;
 
 /**
  * Require tenant context (use after attachTenant)

@@ -2,7 +2,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { protect, authorize } = require('../middleware/auth.middleware');
+const { protect, authorize, superAdminOnly } = require('../middleware/auth.middleware');
 const { uploadBrandImages } = require('../middleware/imageUpload.middleware');
 const tenantController = require('../controllers/tenant.controller');
 
@@ -16,6 +16,7 @@ router.get('/admin', protect, authorize(...adminRoles), tenantController.getAdmi
 router.get('/admin/:id', protect, authorize(...adminRoles), tenantController.getAdminTenantById);
 router.post('/admin', protect, authorize(...adminRoles), uploadBrandImages, tenantController.createAdminTenant);
 router.put('/admin/:id', protect, authorize(...adminRoles), uploadBrandImages, tenantController.updateAdminTenant);
-router.delete('/admin/:id', protect, authorize(...adminRoles), tenantController.deleteAdminTenant);
+// Tenant deletion — super_admin only (most destructive operation)
+router.delete('/admin/:id', protect, authorize('super_admin'), superAdminOnly, tenantController.deleteAdminTenant);
 
 module.exports = router;

@@ -10,6 +10,8 @@ const asyncHandler = require('../utils/asyncHandler');
 const { generateOrderNumber } = require('../utils/orderUtils');
 const { calcPlatformCostPrice, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
 const inventoryService = require('../services/inventory.service');
+const { getTenantId, normalizeTenantId } = require('../utils/tenantContext');
+const { ForbiddenError } = require('../utils/errors');
 const {
   sendOrderConfirmationToCustomer,
   sendNewOrderNotificationToTenant,
@@ -70,32 +72,48 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
   const orderNumber = await generateOrderNumber();
 
-  // Fetch tenant information for proper revenue calculation
-  const tenantIds = [...new Set(items.map(item => item.tenantId).filter(Boolean))];
-  const tenants = await Tenant.find({ _id: { $in: tenantIds } })
-    .select('_id name revenueModel markupPercentage commissionPercentage platformMarkupPercentage')
-    .lean();
-  const tenantMap = new Map(tenants.map(t => [t._id.toString(), t]));
-
   // Bulk-fetch SubProducts and Sizes to get actual cost data
+  // IMPORTANT: tenantId is derived from SubProduct.tenant (server-authoritative),
+  // never trusted from client-supplied item.tenantId.
   const subProductIds = [...new Set(items.map(i => i.subProductId).filter(Boolean))];
   const sizeIds       = [...new Set(items.map(i => i.sizeId).filter(Boolean))];
 
   const [subProducts, sizes] = await Promise.all([
     subProductIds.length
-      ? SubProduct.find({ _id: { $in: subProductIds } })
-          .select('_id costPrice baseSellingPrice')
+      ? SubProduct.find({ _id: { $in: subProductIds }, isPublished: true, status: 'active' })
+          .select('_id costPrice baseSellingPrice tenant')
           .lean()
       : Promise.resolve([]),
     sizeIds.length
       ? Size.find({ _id: { $in: sizeIds } })
-          .select('_id costPrice sellingPrice')
+          .select('_id costPrice sellingPrice tenant')
           .lean()
       : Promise.resolve([]),
   ]);
 
   const subProductMap = new Map(subProducts.map(sp => [sp._id.toString(), sp]));
   const sizeMap       = new Map(sizes.map(s  => [s._id.toString(),  s]));
+
+  // Validate: every item's subProductId must resolve to a published, active SubProduct
+  const invalidItems = items.filter(item => {
+    if (!item.subProductId) return false;
+    return !subProductMap.has(item.subProductId.toString());
+  });
+  if (invalidItems.length) {
+    return res.status(400).json({
+      success: false,
+      message: 'One or more items are unavailable or no longer in stock',
+    });
+  }
+
+  // Build tenant map from the SubProducts' actual tenant field (server-authoritative)
+  const resolvedTenantIds = [...new Set(
+    subProducts.map(sp => sp.tenant?.toString()).filter(Boolean)
+  )];
+  const tenants = await Tenant.find({ _id: { $in: resolvedTenantIds } })
+    .select('_id name revenueModel markupPercentage commissionPercentage platformMarkupPercentage')
+    .lean();
+  const tenantMap = new Map(tenants.map(t => [t._id.toString(), t]));
 
   // ── Build orderItems ─────────────────────────────────────────────────────
   //
@@ -109,9 +127,11 @@ exports.createOrder = asyncHandler(async (req, res) => {
   // costPrice/sellingPrice use Size values when present, falling back to SubProduct.
   // Fallback when no cost data: vendorPayout = customerPrice ÷ (1 + DEFAULT_PLATFORM_MARKUP%)
   const orderItems = items.map(item => {
-    const tenant        = tenantMap.get(item.tenantId?.toString());
     const sp            = subProductMap.get(item.subProductId?.toString());
     const sz            = sizeMap.get(item.sizeId?.toString());
+    // Derive tenant from the SubProduct (server-authoritative), NOT from client body
+    const tenantId      = sp?.tenant?.toString() || item.tenantId || null;
+    const tenant        = tenantMap.get(tenantId);
     const revenueModel  = tenant?.revenueModel ?? 'markup';
     const markupPct     = tenant?.markupPercentage     ?? 25;
     const commissionPct = tenant?.commissionPercentage ?? 12;
@@ -139,7 +159,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
       product:               item.productId,
       subproduct:            item.subProductId || null,
       size:                  item.sizeId || null,
-      tenant:                item.tenantId || null,
+      tenant:                tenantId,
       quantity:              qty,
       priceAtPurchase:       customerPrice,
       itemSubtotal:          Math.round(itemSubtotal     * 100) / 100,
@@ -284,9 +304,8 @@ exports.createOrder = asyncHandler(async (req, res) => {
           .catch(e  => console.error('❌ WhatsApp to customer failed:', e.message)),
       ]);
 
-      // 2. Tenants — email + WhatsApp alert
-      const tenantIds = [...new Set(items.map(item => item.tenantId).filter(Boolean))];
-      for (const tenantId of tenantIds) {
+      // 2. Tenants — email + WhatsApp alert (use server-resolved tenant IDs, not client-supplied)
+      for (const tenantId of resolvedTenantIds) {
         try {
           const tenant = await Tenant.findById(tenantId);
           if (!tenant) continue;
@@ -364,6 +383,12 @@ exports.getAllOrders = asyncHandler(async (req, res) => {
 
   const filter = {};
 
+  // Tenant admins can only see orders containing items from their own tenant
+  if (!['super_admin', 'admin'].includes(req.user.role)) {
+    const tenantId = getTenantId(req);
+    filter['items.tenant'] = tenantId;
+  }
+
   if (status)        filter.status                = status;
   if (payment)       filter.paymentStatus         = payment;
   if (subProductId)  filter['items.subproduct']   = subProductId;
@@ -400,9 +425,13 @@ exports.getAllOrders = asyncHandler(async (req, res) => {
     Order.countDocuments(filter),
   ]);
 
-  // Status summary counts
+  // Status summary counts (scoped by tenant for tenant admins)
+  const statusMatch = !['super_admin', 'admin'].includes(req.user.role)
+    ? { $match: { 'items.tenant': getTenantId(req) } }
+    : [];
   const [statusCounts] = await Promise.all([
     Order.aggregate([
+      ...statusMatch,
       { $group: { _id: '$status', count: { $sum: 1 } } },
     ]),
   ]);
@@ -502,6 +531,26 @@ exports.getOrderByNumber = asyncHandler(async (req, res) => {
     });
   }
 
+  // Access control: authenticated user can view if they own the order,
+  // are an admin, or verify via email match
+  let canAccess = false;
+  if (req.user) {
+    canAccess = order.user?.toString() === req.user._id.toString() ||
+      ['admin', 'super_admin'].includes(req.user.role);
+  }
+  if (!canAccess && email) {
+    const emailLower = email.toLowerCase();
+    canAccess = order.shippingAddress?.email?.toLowerCase() === emailLower ||
+      order.customer?.email?.toLowerCase() === emailLower;
+  }
+
+  if (!canAccess) {
+    return res.status(403).json({
+      success: false,
+      message: 'Email verification required to view this order',
+    });
+  }
+
   res.status(200).json({
     success: true,
     data: { order },
@@ -516,7 +565,14 @@ exports.getOrderByNumber = asyncHandler(async (req, res) => {
 exports.getOrderByReceipt = asyncHandler(async (req, res) => {
   const { receiptNumber } = req.params;
 
-  const order = await Order.findOne({ receiptNumber })
+  const filter = { receiptNumber };
+
+  // Tenant admins can only look up receipts for orders containing their tenant's items
+  if (!['super_admin', 'admin'].includes(req.user.role)) {
+    filter['items.tenant'] = getTenantId(req);
+  }
+
+  const order = await Order.findOne(filter)
     .populate('items.product', 'name slug images type')
     .populate('items.subproduct', 'name sku images baseSellingPrice')
     .populate('items.size', 'displayName size sellingPrice')
@@ -591,7 +647,13 @@ exports.cancelOrder = asyncHandler(async (req, res) => {
     });
   }
 
-  if (order.user?.toString() !== req.user._id.toString()) {
+  // Access control: order owner, platform admin, or tenant staff for orders containing their tenant's items
+  const isOwner = order.user?.toString() === req.user._id.toString();
+  const isPlatformAdmin = ['admin', 'super_admin'].includes(req.user.role);
+  const isTenantStaff = ['tenant_admin', 'tenant_owner', 'tenant_staff'].includes(req.user.role) &&
+    order.items.some(i => i.tenant?.toString() === req.user.tenant?.toString());
+
+  if (!isOwner && !isPlatformAdmin && !isTenantStaff) {
     return res.status(403).json({
       success: false,
       message: 'Not authorized to cancel this order',
@@ -605,6 +667,7 @@ exports.cancelOrder = asyncHandler(async (req, res) => {
     });
   }
 
+  const previousStatus = order.status;  // BUGFIX: was undefined before
   order.status = 'cancelled';
   order.cancelledAt = new Date();
   order.cancelReason = req.body.reason || 'Cancelled by customer';
@@ -660,6 +723,15 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const order = await Order.findById(req.params.id);
   if (!order) {
     return res.status(404).json({ success: false, message: 'Order not found' });
+  }
+
+  // Tenant scoping: non-platform-admins can only update orders containing their tenant's items
+  if (!['super_admin', 'admin'].includes(req.user.role)) {
+    const callerTenantId = req.user.tenant?.toString();
+    const orderHasTenantItem = order.items.some(i => i.tenant?.toString() === callerTenantId);
+    if (!orderHasTenantItem) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
   }
 
   const previousStatus = order.status;
@@ -727,6 +799,15 @@ exports.updatePaymentStatus = asyncHandler(async (req, res) => {
   const order = await Order.findById(req.params.id);
   if (!order) {
     return res.status(404).json({ success: false, message: 'Order not found' });
+  }
+
+  // Tenant scoping: non-platform-admins can only update payment for orders containing their tenant's items
+  if (!['super_admin', 'admin'].includes(req.user.role)) {
+    const callerTenantId = req.user.tenant?.toString();
+    const orderHasTenantItem = order.items.some(i => i.tenant?.toString() === callerTenantId);
+    if (!orderHasTenantItem) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
   }
 
   const now = new Date();

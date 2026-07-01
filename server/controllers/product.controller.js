@@ -8,6 +8,7 @@ const wishlistService = require('../services/wishlist.service');
 const Review = require('../models/Review');
 const Order  = require('../models/Order');
 const cloudinaryService = require('../services/cloudinary.service');
+const { logPrivilegedAction } = require('../utils/auditLog');
 
 /**
  * @desc    Create a new product (central catalog)
@@ -122,6 +123,13 @@ const approveProduct = asyncHandler(async (req, res) => {
 
   const product = await productService.approveProduct(id, user);
 
+  // Audit: super-admin approval of a pending product
+  logPrivilegedAction(req, 'PRODUCT_APPROVE', 'approve', {
+    targetType: 'Product',
+    targetId: id,
+    changes: { before: { status: 'pending' }, after: { status: 'approved' } },
+  });
+
   res.status(200).json({
     success: true,
     message: 'Product approved successfully',
@@ -140,6 +148,14 @@ const rejectProduct = asyncHandler(async (req, res) => {
   const user = req.user;
 
   const product = await productService.rejectProduct(id, reason, user);
+
+  // Audit: super-admin rejection of a pending product
+  logPrivilegedAction(req, 'PRODUCT_REJECT', 'reject', {
+    targetType: 'Product',
+    targetId: id,
+    justification: reason,
+    changes: { before: { status: 'pending' }, after: { status: 'rejected', rejectedReason: reason } },
+  });
 
   res.status(200).json({
     success: true,

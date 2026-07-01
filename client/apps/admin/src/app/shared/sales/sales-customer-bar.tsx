@@ -97,7 +97,8 @@ export default function SalesCustomerBar({
             <option value="">— Select warehouse —</option>
             {warehouses.map((w) => (
               <option key={w._id} value={w._id}>
-                {w.name}{w.isDefault ? ' (default)' : ''}
+                {w.name}
+                {w.isDefault ? ' (default)' : ''}
               </option>
             ))}
           </select>

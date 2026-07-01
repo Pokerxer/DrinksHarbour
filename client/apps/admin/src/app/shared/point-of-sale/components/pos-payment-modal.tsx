@@ -1059,9 +1059,12 @@ export default function POSPaymentModal() {
   const settings = usePOSSettings();
   const isOnline = useOnlineStatus();
   const { warehouseId } = usePOSWarehouse();
-  const { linkedSalesOrderId, setLinkedSalesOrderId } = usePOSLinkedSalesOrder();
+  const { linkedSalesOrderId, setLinkedSalesOrderId } =
+    usePOSLinkedSalesOrder();
 
-  const [fulfillStatus, setFulfillStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [fulfillStatus, setFulfillStatus] = useState<
+    'idle' | 'running' | 'done' | 'error'
+  >('idle');
   const [fulfillError, setFulfillError] = useState<string | null>(null);
 
   const [lines, setLines] = useState<PaymentLine[]>([]);
@@ -1421,18 +1424,24 @@ export default function POSPaymentModal() {
       // Auto-fulfill the linked sales order (non-blocking — cashier can print/new-sale regardless)
       if (linkedSalesOrderId && token) {
         setFulfillStatus('running');
-        posApi.fulfillSalesOrder(token, linkedSalesOrderId, {
-          warehouseId: warehouseId || '',
-          items: orderItems.map((i: any) => ({
-            subProductId: i.subProductId,
-            sizeId: i.sizeId,
-            quantity: i.quantity,
-          })),
-        })
-          .then(() => { setFulfillStatus('done'); setLinkedSalesOrderId(null); })
+        posApi
+          .fulfillSalesOrder(token, linkedSalesOrderId, {
+            warehouseId: warehouseId || '',
+            items: orderItems.map((i: any) => ({
+              subProductId: i.subProductId,
+              sizeId: i.sizeId,
+              quantity: i.quantity,
+            })),
+          })
+          .then(() => {
+            setFulfillStatus('done');
+            setLinkedSalesOrderId(null);
+          })
           .catch((err: unknown) => {
             setFulfillStatus('error');
-            setFulfillError(err instanceof Error ? err.message : 'Fulfillment failed');
+            setFulfillError(
+              err instanceof Error ? err.message : 'Fulfillment failed'
+            );
           });
       }
 
@@ -1554,7 +1563,26 @@ export default function POSPaymentModal() {
           <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2">
             {fulfillStatus === 'running' && (
               <div className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-medium text-white shadow-lg">
-                <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" strokeOpacity=".3"/><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/></svg>
+                <svg
+                  className="h-3.5 w-3.5 animate-spin"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    strokeOpacity=".3"
+                  />
+                  <path
+                    d="M22 12a10 10 0 0 1-10 10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    strokeLinecap="round"
+                  />
+                </svg>
                 Fulfilling linked sales order…
               </div>
             )}
@@ -1565,7 +1593,8 @@ export default function POSPaymentModal() {
             )}
             {fulfillStatus === 'error' && (
               <div className="rounded-xl bg-red-600 px-4 py-2.5 text-xs font-medium text-white shadow-lg">
-                Fulfillment failed: {fulfillError} — fulfill manually from Sales module.
+                Fulfillment failed: {fulfillError} — fulfill manually from Sales
+                module.
               </div>
             )}
           </div>

@@ -160,7 +160,7 @@ export default function SalesFulfillDetail({ id }: { id: string }) {
             <select
               value={warehouseId}
               onChange={(e) => setWarehouseId(e.target.value)}
-              className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-[#b20202] focus:outline-none"
+              className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand focus:outline-none"
             >
               <option value="">Select warehouse…</option>
               {warehouses.map((w) => (
@@ -174,7 +174,7 @@ export default function SalesFulfillDetail({ id }: { id: string }) {
             type="button"
             disabled={submitting || totalShipping === 0}
             onClick={handleFulfill}
-            className="mt-5 flex items-center gap-2 rounded-lg bg-[#b20202] px-4 py-2 text-sm font-semibold text-white hover:bg-[#9a0101] disabled:opacity-50"
+            className="mt-5 flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-50"
           >
             <PiTruck className="h-4 w-4" />
             {submitting ? 'Fulfilling…' : `Fulfill ${totalShipping} unit(s)`}

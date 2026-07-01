@@ -8,7 +8,7 @@ import type { POSCustomer } from '@/app/shared/point-of-sale/types';
 import { routes } from '@/config/routes';
 
 const INPUT_CLS =
-  'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-2 focus:ring-[#b20202]/20';
+  'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
 
 function customerName(c: POSCustomer) {
   return `${c.firstName} ${c.lastName}`.trim();
@@ -84,7 +84,7 @@ export default function CustomerSearch({
   if (selected) {
     return (
       <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#b20202]/10 text-sm font-bold text-[#b20202]">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand/10 text-sm font-bold text-brand">
           {initials(selected)}
         </div>
         <div className="min-w-0 flex-1">
@@ -140,6 +140,17 @@ export default function CustomerSearch({
         )}
       </div>
 
+      {/* No customer picked → the order defaults to a Walk-in Customer. */}
+      <div className="mt-2 flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand/10 text-brand">
+          <PiUser className="h-3.5 w-3.5" />
+        </span>
+        <p className="text-xs text-gray-500">
+          <span className="font-semibold text-gray-700">Walk-in Customer</span>{' '}
+          — default. Search above to attach a customer.
+        </p>
+      </div>
+
       {open && (
         <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
           {results.length === 0 && !loading ? (
@@ -162,7 +173,7 @@ export default function CustomerSearch({
                   }}
                   className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-gray-50"
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#b20202]/10 text-xs font-bold text-[#b20202]">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/10 text-xs font-bold text-brand">
                     {initials(c)}
                   </div>
                   <div className="min-w-0 flex-1">
@@ -192,7 +203,7 @@ export default function CustomerSearch({
               target="_blank"
               rel="noreferrer"
               onMouseDown={(e) => e.stopPropagation()}
-              className="flex w-full items-center gap-2 px-4 py-2.5 text-sm font-medium text-[#b20202] hover:bg-gray-50"
+              className="flex w-full items-center gap-2 px-4 py-2.5 text-sm font-medium text-brand hover:bg-gray-50"
             >
               <PiPlus className="h-4 w-4" />
               Add new customer

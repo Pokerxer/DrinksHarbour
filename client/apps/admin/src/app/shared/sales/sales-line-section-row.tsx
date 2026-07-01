@@ -7,7 +7,7 @@ import { fmtCur } from '../purchases/purchases-analytics-helpers';
 import type { PricedLine } from './sales-line-table';
 
 const TITLE_CLS =
-  'w-full border-0 border-b border-transparent bg-transparent px-1 py-1 text-sm font-bold text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-0';
+  'w-full border-0 border-b border-transparent bg-transparent px-1 py-1 text-sm font-bold text-gray-900 placeholder-gray-400 focus:border-brand focus:outline-none focus:ring-0';
 
 export interface SalesLineSectionRowProps {
   line: PricedLine;

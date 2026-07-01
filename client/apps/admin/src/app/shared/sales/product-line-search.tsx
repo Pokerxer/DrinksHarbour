@@ -248,7 +248,7 @@ export default function ProductLineSearch({
             setOpen(true);
           }}
           placeholder="Search product…"
-          className="w-full rounded-lg border border-gray-200 py-1.5 pl-8 pr-3 text-xs text-gray-900 placeholder-gray-400 focus:border-[#b20202] focus:outline-none focus:ring-1 focus:ring-[#b20202]/20"
+          className="w-full rounded-lg border border-gray-200 py-1.5 pl-8 pr-3 text-xs text-gray-900 placeholder-gray-400 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
         />
         {loading && (
           <span className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-pulse text-[10px] text-gray-400">
@@ -376,7 +376,7 @@ export default function ProductLineSearch({
               target="_blank"
               rel="noreferrer"
               onMouseDown={(e) => e.stopPropagation()}
-              className="flex w-full items-center gap-2 px-3 py-2.5 text-xs font-medium text-[#b20202] hover:bg-gray-50"
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-xs font-medium text-brand hover:bg-gray-50"
             >
               <PiPlus className="h-3.5 w-3.5" />
               Create new product

@@ -1,5 +1,34 @@
 # DrinksHarbour - OpenCode Skills
 
+> **First read `AGENTS.md` → "Skill-First Operating Protocol."** The recipes below are DrinksHarbour-specific
+> shortcuts. They do **not** replace the installed skill library — always invoke the relevant installed skills
+> (superpowers / ecc / vercel / fullstack-dev-skills / design) *before and alongside* these recipes, without
+> asking permission. These are the "what to type in this repo"; the installed skills are the "how to do it well."
+
+## Installed-Skill Routing — invoke these first
+
+| DrinksHarbour work | Invoke these installed skills |
+|---|---|
+| Any new feature / behaviour change | `superpowers:brainstorming` → `superpowers:writing-plans` |
+| Any code change | `superpowers:test-driven-development` → language reviewer (`typescript-reviewer` / `ecc:python-review` etc.) |
+| Debugging | `superpowers:systematic-debugging` |
+| Multi-tenant / plan-gating / subdomain | `multi-tenant-saas-architecture`, `multi-tenant-architecture`, `ecc:hexagonal-architecture` |
+| ERM billing (Paystack subs, tiers, dunning) | `ecc:finance-billing-ops`, `ecc:customer-billing-ops` |
+| ERM feature parity (inventory/POS/invoicing/CRM) | `odoo-19`, `odoo-development`, `ecc:inventory-demand-planning` |
+| Next.js / React / storefront | `vercel:nextjs`, `next-best-practices`, `frontend-design`, `ui-ux-pro-max` |
+| Node/Express backend | `nodejs-backend-patterns`, `fullstack-dev-skills:api-designer` |
+| Real-time (venue booking, live inventory) | `fullstack-dev-skills:websocket-engineer` |
+| Mongo schema / migration | `database-migration`, `fullstack-dev-skills:database-optimizer` |
+| Auth / tenant scoping / security | `vercel:auth`, `ecc:security-review`, `code-review` |
+| SEO / acquisition | `seo`, `programmatic-seo`, `ecc:seo` |
+| Testing | `webapp-testing`, `e2e-testing-patterns` |
+| Before "done" | `superpowers:verification-before-completion`, `superpowers:requesting-code-review` |
+
+The 7 revenue streams (marketplace, ERM SaaS, ads, loyalty, clubs/venues, subscriptions & gifting, direct
+distribution) are described in `AGENTS.md` → "Product Scope." Map the stream to the row above before you start.
+
+---
+
 ## Skill: Create-Product-Form
 Creates a new Product form with proper structure matching the existing Product/SubProduct patterns.
 
