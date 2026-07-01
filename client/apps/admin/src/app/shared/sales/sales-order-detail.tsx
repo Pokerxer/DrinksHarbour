@@ -98,6 +98,7 @@ export default function SalesOrderDetail({
         open={confirmOpen}
         busy={busy}
         total={so.total}
+        initialRedeemPoints={so.plannedRedeemPoints}
         onClose={() => setConfirmOpen(false)}
         onConfirm={handleConfirm}
       />

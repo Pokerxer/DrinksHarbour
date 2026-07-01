@@ -196,12 +196,28 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
               </Text>
             </Text>
           )}
+          {(so.couponDiscount ?? 0) > 0 && (
+            <Text className="flex items-center justify-between border-b border-gray-100 py-2 text-emerald-600">
+              Coupon{so.couponCode ? ` (${so.couponCode})` : ''}:{' '}
+              <Text as="span" className="font-semibold text-emerald-600">
+                −{fmtCur(so.couponDiscount ?? 0, so.currency)}
+              </Text>
+            </Text>
+          )}
           <Text className="flex items-center justify-between border-b border-gray-100 py-2">
             Tax:{' '}
             <Text as="span" className="font-semibold">
               {fmtCur(so.taxTotal ?? 0, so.currency)}
             </Text>
           </Text>
+          {(so.shippingFee ?? 0) > 0 && (
+            <Text className="flex items-center justify-between border-b border-gray-100 py-2">
+              Shipping:{' '}
+              <Text as="span" className="font-semibold">
+                {fmtCur(so.shippingFee ?? 0, so.currency)}
+              </Text>
+            </Text>
+          )}
           <Text className="flex items-center justify-between pt-3 text-base font-semibold text-gray-900">
             Total: <span>{fmtCur(so.total, so.currency)}</span>
           </Text>

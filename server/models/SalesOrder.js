@@ -77,7 +77,16 @@ const SalesOrderSchema = new Schema(
     discountTotal: { type: Number, default: 0 }, // sum(per-line discount off the whole line)
     promotionTotal:{ type: Number, default: 0 }, // sum(line promoDiscount) from auto-applied promotions
     taxTotal:      { type: Number, default: 0 }, // sum(line taxAmount); untaxed = subtotal - discountTotal - promotionTotal
-    total:         { type: Number, default: 0 }, // grand total: (subtotal - discountTotal) + taxTotal
+    total:         { type: Number, default: 0 }, // grand total: max(0, untaxed + tax - couponDiscount) + shippingFee
+
+    // Footer adjustments (Odoo-style quotation footer)
+    shippingFee:    { type: Number, default: 0, min: 0 }, // flat delivery charge added to the total
+    couponCode:     { type: String, default: '' },        // applied Promotion code (uppercased)
+    couponName:     { type: String, default: '' },        // snapshot of the promotion's name
+    couponDiscount: { type: Number, default: 0, min: 0 }, // ₦ off the untaxed+tax total (snapshot at apply time)
+    // Loyalty points the operator plans to redeem — actual redemption still
+    // happens at confirm via capturePayment (this only pre-fills the modal).
+    plannedRedeemPoints: { type: Number, default: 0, min: 0 },
 
     // Quotation lifecycle (only when docType === 'quotation')
     quoteStatus: {

@@ -21,6 +21,8 @@ interface Props {
   total: number;
   onClose: () => void;
   onConfirm: (paymentMethod: string, amountTendered?: number, redeemPoints?: number) => void;
+  /** Pre-fill the loyalty redemption input (planned at quotation time). */
+  initialRedeemPoints?: number;
 }
 
 export default function SalesConfirmPaymentModal({
@@ -30,10 +32,13 @@ export default function SalesConfirmPaymentModal({
   total,
   onClose,
   onConfirm,
+  initialRedeemPoints,
 }: Props) {
   const [method, setMethod] = useState('cash');
   const [tendered, setTendered] = useState('');
-  const [redeem, setRedeem] = useState('');
+  const [redeem, setRedeem] = useState(
+    initialRedeemPoints ? String(initialRedeemPoints) : ''
+  );
 
   if (!open) return null;
 

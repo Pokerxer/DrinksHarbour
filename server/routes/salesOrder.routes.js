@@ -4,6 +4,7 @@ const router = express.Router();
 const {
   createSalesOrder, getSalesOrders, getSalesOrder, updateSalesOrder, deleteSalesOrder,
   updatePrices,
+  applyCoupon,
   sendQuotation, acceptQuotation, rejectQuotation, convertQuotation, confirmSalesOrder,
   fulfillSalesOrder, returnSalesOrder,
   duplicateSalesOrder, importSalesOrders,
@@ -31,6 +32,7 @@ router.post('/:id/reject', rejectQuotation);
 router.post('/:id/convert', convertQuotation);
 router.post('/:id/confirm', confirmSalesOrder);
 router.post('/:id/update-prices', updatePrices);
+router.post('/:id/coupon', applyCoupon);
 router.post('/:id/fulfill', fulfillSalesOrder);
 router.post('/:id/return', returnSalesOrder);
 

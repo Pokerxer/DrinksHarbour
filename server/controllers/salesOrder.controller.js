@@ -204,6 +204,34 @@ exports.updatePrices = asyncHandler(async (req, res) => {
   res.json({ success: true, data: so });
 });
 
+// Apply (POST body {code}) or clear (body {code: null|''}) a coupon on an
+// editable order. The code resolves against tenant Promotions (findByCode).
+exports.applyCoupon = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  if (!requireResolvedTenant(tenantId, res)) return;
+  const so = await SalesOrder.findOne({ _id: req.params.id, tenant: tenantId });
+  if (!so) return res.status(404).json({ success: false, message: 'Sales order not found' });
+  if (!svc.canEdit(so)) {
+    return res.status(409).json({ success: false, message: 'This document can no longer be edited' });
+  }
+  const code = (req.body?.code ?? '').toString().trim();
+  try {
+    await svc.applyCouponToOrder(so, code);
+  } catch (err) {
+    return res
+      .status(err.statusCode || 400)
+      .json({ success: false, message: err.message || 'Could not apply coupon' });
+  }
+  await so.save();
+  await salesLog.logActivity(tenantId, so._id, {
+    subject: code
+      ? `Coupon ${so.couponCode} applied (−${salesLog.formatMoney(so.couponDiscount)})`
+      : 'Coupon removed',
+    userId: req.user?._id,
+  });
+  res.json({ success: true, data: so });
+});
+
 exports.deleteSalesOrder = asyncHandler(async (req, res) => {
   const tenantId = req.tenant?._id;
   if (!requireResolvedTenant(tenantId, res)) return;

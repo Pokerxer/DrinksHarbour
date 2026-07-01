@@ -54,6 +54,8 @@ export default function SalesCreate({
       paymentTerms: form.paymentTerms,
       pricelistId: form.pricelistId,
       warehouseId: form.warehouseId as string,
+      shippingFee: form.shippingFee,
+      plannedRedeemPoints: form.plannedRedeemPoints,
       buildPayload: form.buildPayload,
     });
 
@@ -61,6 +63,7 @@ export default function SalesCreate({
   const [historyKey, setHistoryKey] = useState(0);
   const [confirmPrices, setConfirmPrices] = useState(false);
   const [pricesBusy, setPricesBusy] = useState(false);
+  const [couponBusy, setCouponBusy] = useState(false);
   useEffect(() => {
     if (autoSaveStatus === 'saved') setHistoryKey((k) => k + 1);
   }, [autoSaveStatus]);
@@ -84,6 +87,36 @@ export default function SalesCreate({
       );
     } finally {
       setPricesBusy(false);
+    }
+  }
+
+  // Coupons are validated server-side against tenant Promotions, so the
+  // document must exist first (same ensureSaved pattern as Update Prices).
+  async function handleCoupon(code: string) {
+    setCouponBusy(true);
+    try {
+      const id = await ensureSaved();
+      if (!id) {
+        toast.error('Add a product first');
+        return;
+      }
+      const res = await salesOrderService.applyCoupon(id, code, token);
+      const so = res.data;
+      form.setCoupon(
+        so.couponCode
+          ? {
+              code: so.couponCode,
+              name: so.couponName ?? '',
+              discount: so.couponDiscount ?? 0,
+            }
+          : null
+      );
+      toast.success(code ? `Coupon ${so.couponCode} applied` : 'Coupon removed');
+      setHistoryKey((k) => k + 1);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Could not apply coupon');
+    } finally {
+      setCouponBusy(false);
     }
   }
 
@@ -265,6 +298,17 @@ export default function SalesCreate({
                     discountTotal={form.discountTotal}
                     taxTotal={form.taxTotal}
                     grandTotal={form.grandTotal}
+                    coupon={form.coupon}
+                    couponBusy={couponBusy}
+                    onApplyCoupon={handleCoupon}
+                    onClearCoupon={() => handleCoupon('')}
+                    shippingFee={form.shippingFee}
+                    onShippingChange={form.setShippingFee}
+                    onApplyDiscount={form.applyGlobalDiscount}
+                    customerPoints={form.customer?.loyaltyPoints ?? null}
+                    plannedRedeemPoints={form.plannedRedeemPoints}
+                    onRedeemPointsChange={form.setPlannedRedeemPoints}
+                    onOpenTerms={() => handleTabChange('other')}
                   />
                 </>
               ) : (

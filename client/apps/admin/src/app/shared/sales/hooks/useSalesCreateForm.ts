@@ -86,6 +86,15 @@ export function useSalesCreateForm({
     { _id: string; name: string; isDefault?: boolean }[]
   >([]);
   const [loadingCustomerAddress, setLoadingCustomerAddress] = useState(false);
+  // Footer adjustments (Odoo-style): flat shipping fee, applied coupon
+  // snapshot (validated server-side), and planned loyalty redemption.
+  const [shippingFee, setShippingFee] = useState(0);
+  const [coupon, setCoupon] = useState<{
+    code: string;
+    name: string;
+    discount: number;
+  } | null>(null);
+  const [plannedRedeemPoints, setPlannedRedeemPoints] = useState(0);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
 
@@ -121,6 +130,17 @@ export function useSalesCreateForm({
       setPricelistOverridden(true);
     }
     if (initial.warehouseId) setWarehouseId(initial.warehouseId);
+    setShippingFee(initial.shippingFee ?? 0);
+    setPlannedRedeemPoints(initial.plannedRedeemPoints ?? 0);
+    setCoupon(
+      initial.couponCode
+        ? {
+            code: initial.couponCode,
+            name: initial.couponName ?? '',
+            discount: initial.couponDiscount ?? 0,
+          }
+        : null
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps — only `initial` should trigger; state setters are stable
   }, [initial]);
 
@@ -429,7 +449,13 @@ export function useSalesCreateForm({
   const taxTotal = priced
     .filter((l) => l.lineType === 'product')
     .reduce((s, l) => s + l.taxAmount, 0);
-  const grandTotal = untaxedAmount - discountTotal + taxTotal;
+  // Mirrors server refreshOrderTotal: coupon comes off the untaxed+tax figure
+  // (floored at 0), shipping is added on top.
+  const grandTotal =
+    Math.max(
+      0,
+      untaxedAmount - discountTotal + taxTotal - (coupon?.discount ?? 0)
+    ) + Math.max(0, shippingFee);
   const hasLines = lines.some((l) => l.subProductId);
 
   const loadCustomerAddress = useCallback(
@@ -544,6 +570,8 @@ export function useSalesCreateForm({
       notes: notes || undefined,
       terms: terms || undefined,
       warehouseId: warehouseId || undefined,
+      shippingFee,
+      plannedRedeemPoints,
     };
   }, [
     priced,
@@ -558,7 +586,22 @@ export function useSalesCreateForm({
     notes,
     terms,
     warehouseId,
+    shippingFee,
+    plannedRedeemPoints,
   ]);
+
+  /** Apply a percentage discount to every product line (Odoo's global
+   *  Discount button). 0 clears all line discounts. */
+  const applyGlobalDiscount = useCallback((pct: number) => {
+    const v = Math.min(100, Math.max(0, pct));
+    setLines((prev) =>
+      prev.map((l) =>
+        l.lineType === 'product' && l.subProductId
+          ? { ...l, discount: v, discountType: 'percentage' as const }
+          : l
+      )
+    );
+  }, []);
 
   return {
     customer, setCustomer,
@@ -589,6 +632,10 @@ export function useSalesCreateForm({
     grandTotal,
     hasLines,
     catalogQtyMap,
+    shippingFee, setShippingFee,
+    coupon, setCoupon,
+    plannedRedeemPoints, setPlannedRedeemPoints,
+    applyGlobalDiscount,
     updateLine,
     addLine,
     addSection,

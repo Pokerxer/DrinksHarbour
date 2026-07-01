@@ -18,6 +18,8 @@ export interface UseSalesAutosaveOptions {
   paymentTerms: string;
   pricelistId: string;
   warehouseId: string;
+  shippingFee?: number;
+  plannedRedeemPoints?: number;
   buildPayload: () => Record<string, any>;
 }
 
@@ -32,6 +34,8 @@ export function useSalesAutosave({
   paymentTerms,
   pricelistId,
   warehouseId,
+  shippingFee,
+  plannedRedeemPoints,
   buildPayload,
 }: UseSalesAutosaveOptions) {
   const [autoSaveStatus, setAutoSaveStatus] = useState<
@@ -67,6 +71,8 @@ export function useSalesAutosave({
     paymentTerms,
     pricelistId,
     warehouseId,
+    shippingFee,
+    plannedRedeemPoints,
   ]);
 
   const tokenRef = useRef(token);
@@ -167,6 +173,8 @@ export function useSalesAutosave({
     paymentTerms,
     pricelistId,
     warehouseId,
+    shippingFee,
+    plannedRedeemPoints,
     token,
   ]);
 

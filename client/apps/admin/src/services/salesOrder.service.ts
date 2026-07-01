@@ -82,6 +82,11 @@ export interface SalesOrder {
   promotionTotal?: number;
   taxTotal?: number;
   total: number;
+  shippingFee?: number;
+  couponCode?: string;
+  couponName?: string;
+  couponDiscount?: number;
+  plannedRedeemPoints?: number;
   quoteStatus?: QuoteStatus;
   validUntil?: string;
   orderStatus?: OrderStatus;
@@ -519,6 +524,21 @@ export const salesOrderService = {
       }
     );
     await parseErrorOrThrow(response, 'Failed to update prices');
+    return response.json();
+  },
+
+  /** Apply (code) or clear (code = '') a coupon on an editable order. */
+  async applyCoupon(
+    id: string,
+    code: string,
+    token: string
+  ): Promise<SalesOrderResponse> {
+    const response = await fetch(`${API_URL}/api/sales-orders/${id}/coupon`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify({ code }),
+    });
+    await parseErrorOrThrow(response, 'Failed to apply coupon');
     return response.json();
   },
 

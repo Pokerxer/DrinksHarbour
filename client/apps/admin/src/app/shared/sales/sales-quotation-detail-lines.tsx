@@ -83,7 +83,7 @@ export default function SalesQuotationDetailLines({ so }: Props) {
             )}
           </tbody>
           <tfoot>
-            {(so.discountTotal > 0 || (so.promotionTotal ?? 0) > 0) && (
+            {(so.discountTotal > 0 || (so.promotionTotal ?? 0) > 0 || (so.couponDiscount ?? 0) > 0 || (so.shippingFee ?? 0) > 0) && (
               <tr className="border-t border-gray-100 bg-gray-50/50">
                 <td colSpan={4} className="px-5 py-2.5 text-right text-xs font-medium text-gray-500">Subtotal</td>
                 <td className="px-5 py-2.5 text-right font-mono text-sm text-gray-700">{fmtCur(so.subtotal, so.currency)}</td>
@@ -105,10 +105,26 @@ export default function SalesQuotationDetailLines({ so }: Props) {
                 </td>
               </tr>
             )}
+            {(so.couponDiscount ?? 0) > 0 && (
+              <tr className="bg-gray-50/50">
+                <td colSpan={4} className="px-5 py-2.5 text-right text-xs font-medium text-gray-500">
+                  Coupon{so.couponCode ? ` (${so.couponCode})` : ''}
+                </td>
+                <td className="px-5 py-2.5 text-right font-mono text-sm font-semibold text-emerald-600">
+                  −{fmtCur(so.couponDiscount ?? 0, so.currency)}
+                </td>
+              </tr>
+            )}
             {(so.taxTotal ?? 0) > 0 && (
               <tr className="bg-gray-50/50">
                 <td colSpan={4} className="px-5 py-2.5 text-right text-xs font-medium text-gray-500">Tax</td>
                 <td className="px-5 py-2.5 text-right font-mono text-sm text-gray-700">{fmtCur(so.taxTotal ?? 0, so.currency)}</td>
+              </tr>
+            )}
+            {(so.shippingFee ?? 0) > 0 && (
+              <tr className="bg-gray-50/50">
+                <td colSpan={4} className="px-5 py-2.5 text-right text-xs font-medium text-gray-500">Shipping</td>
+                <td className="px-5 py-2.5 text-right font-mono text-sm text-gray-700">{fmtCur(so.shippingFee ?? 0, so.currency)}</td>
               </tr>
             )}
             <tr className="border-t-2 border-gray-100">

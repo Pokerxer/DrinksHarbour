@@ -250,6 +250,70 @@ function computeTotals(items) {
   return { subtotal, discountTotal, promotionTotal, taxTotal, total: untaxed + taxTotal };
 }
 
+/**
+ * Re-derive the grand total from the order's stored totals plus the footer
+ * adjustments (coupon discount, shipping fee). Single place where the final
+ * `total` is assembled so create/edit/recompute/coupon paths can't drift:
+ *   total = max(0, (subtotal - discountTotal - promotionTotal) + taxTotal - couponDiscount) + shippingFee
+ */
+function refreshOrderTotal(so) {
+  const untaxed = Math.max(
+    0,
+    (Number(so.subtotal) || 0) - (Number(so.discountTotal) || 0) - (Number(so.promotionTotal) || 0)
+  );
+  const beforeAdjust = untaxed + (Number(so.taxTotal) || 0);
+  so.total =
+    Math.max(0, beforeAdjust - (Number(so.couponDiscount) || 0)) +
+    Math.max(0, Number(so.shippingFee) || 0);
+  return so;
+}
+
+/**
+ * Apply (or clear, when `code` is falsy) a coupon to an editable order. The
+ * code must match a tenant Promotion (Promotion.findByCode: active + enabled)
+ * with a percentage/fixed discountValue; the resolved ₦ discount is snapshotted
+ * on the order and the grand total refreshed. `deps.findByCode` is injectable
+ * for offline tests. Usage-count tracking is not implemented yet.
+ */
+async function applyCouponToOrder(so, code, deps = {}) {
+  if (!code) {
+    so.couponCode = '';
+    so.couponName = '';
+    so.couponDiscount = 0;
+    return refreshOrderTotal(so);
+  }
+  const findByCode =
+    deps.findByCode ||
+    ((tenantId, c) => require('../models/Promotion').findByCode(tenantId, c));
+  const promo = await findByCode(so.tenant, String(code).trim());
+  if (!promo) {
+    const err = new Error('Invalid or inactive coupon code');
+    err.statusCode = 400;
+    throw err;
+  }
+  const now = new Date();
+  if (promo.endDate && new Date(promo.endDate) < now) {
+    const err = new Error('This coupon has expired');
+    err.statusCode = 400;
+    throw err;
+  }
+  const untaxed = Math.max(
+    0,
+    (Number(so.subtotal) || 0) - (Number(so.discountTotal) || 0) - (Number(so.promotionTotal) || 0)
+  );
+  const base = untaxed + (Number(so.taxTotal) || 0);
+  const value = Math.max(0, Number(promo.discountValue) || 0);
+  let discount =
+    promo.discountType === 'fixed' ? value : Math.round((base * Math.min(100, value)) / 100);
+  const cap = Number(promo.maxDiscountAmount) || 0;
+  if (cap > 0) discount = Math.min(discount, cap);
+  discount = Math.min(discount, base);
+  so.couponCode = String(promo.code || code).toUpperCase();
+  so.couponName = promo.name || '';
+  so.couponDiscount = discount;
+  return refreshOrderTotal(so);
+}
+
 /** Normalize one inbound line into a stored line, snapshotting tax + totals.
  *  Preserves the lineType discriminator; section/note lines carry no product
  *  reference and zero pricing so they never affect totals. */
@@ -333,6 +397,8 @@ async function createSalesOrderDoc({ tenantId, salesperson, body }) {
   const soNumber = await generateSalesOrderNumber();
   const paymentTerms = normalizePaymentTerms(body.paymentTerms);
 
+  const shippingFee = Math.max(0, Number(body.shippingFee) || 0);
+  totals.total += shippingFee;
   return SalesOrder.create({
     tenant: tenantId,
     soNumber,
@@ -344,7 +410,9 @@ async function createSalesOrderDoc({ tenantId, salesperson, body }) {
     appliedPricelist,
     currency: body.currency || 'NGN',
     items,
-    ...totals, // subtotal, discountTotal, taxTotal, total
+    ...totals, // subtotal, discountTotal, taxTotal, total (refreshed below for footer adjustments)
+    shippingFee: Math.max(0, Number(body.shippingFee) || 0),
+    plannedRedeemPoints: Math.max(0, Math.round(Number(body.plannedRedeemPoints) || 0)),
     validUntil: body.validUntil || undefined,
     paymentTerms,
     dueDate: computeDueDate(paymentTerms),
@@ -387,7 +455,7 @@ async function recomputeOrderPricing(so, { tenantId, clearOverrides = false } = 
   so.discountTotal = totals.discountTotal;
   so.promotionTotal = totals.promotionTotal;
   so.taxTotal = totals.taxTotal;
-  so.total = totals.total;
+  refreshOrderTotal(so);
   return so;
 }
 
@@ -465,7 +533,7 @@ async function applyEdit(so, body) {
       so.discountTotal = totals.discountTotal;
       so.promotionTotal = totals.promotionTotal;
       so.taxTotal = totals.taxTotal;
-      so.total = totals.total;
+      refreshOrderTotal(so);
     } else {
       so.items = body.items;
       await recomputeOrderPricing(so, { tenantId: so.tenant });
@@ -482,6 +550,13 @@ async function applyEdit(so, body) {
   if (body.invoiceAddress !== undefined) so.invoiceAddress = normalizeAddress(body.invoiceAddress);
   if (body.deliveryAddress !== undefined) so.deliveryAddress = normalizeAddress(body.deliveryAddress);
   if (body.warehouseId !== undefined) so.warehouseId = body.warehouseId || null;
+  if (body.shippingFee !== undefined) {
+    so.shippingFee = Math.max(0, Number(body.shippingFee) || 0);
+    refreshOrderTotal(so);
+  }
+  if (body.plannedRedeemPoints !== undefined) {
+    so.plannedRedeemPoints = Math.max(0, Math.round(Number(body.plannedRedeemPoints) || 0));
+  }
 }
 
 /**
@@ -796,7 +871,8 @@ async function getGroupedOrders({ matchQuery, groupBy, groupBySubOption, sort })
 }
 
 module.exports = {
-  lineTotalOf, lineTaxOf, mapLine, computeTotals, createSalesOrderDoc,
+  lineTotalOf, lineTaxOf, mapLine, computeTotals, refreshOrderTotal,
+  applyCouponToOrder, createSalesOrderDoc,
   canEdit, canCancel, applyEdit, recomputeOrderPricing, updatePricesForOrder,
   convertQuotationToOrder, duplicateSalesOrderDoc,
   PAYMENT_TERMS, computeDueDate, normalizePaymentTerms, normalizeAddress,
