@@ -94,7 +94,7 @@ export default function SalesCreateHeader({
     try {
       const res = await salesOrderService.duplicate(orderId, token);
       toast('Order duplicated');
-      router.push(`/shared/sales/${res.data._id}`);
+      router.push(routes.eCommerce.salesDetails(res.data._id));
     } catch { toast('Failed to duplicate order'); }
   };
 
