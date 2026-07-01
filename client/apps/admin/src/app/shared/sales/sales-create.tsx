@@ -18,6 +18,8 @@ import SalesCatalogModal from './sales-catalog-modal';
 import SalesScanDrawer from './sales-scan-drawer';
 import SalesPrintSheet, { type PrintSheetType } from './sales-print-sheet';
 import SalesActivityPanel from './sales-activity-panel';
+import SalesConfirmModal from './sales-confirm-modal';
+import type { DraftLine } from './sales-line-table';
 import type { CreateTab } from './sales-stage-pill';
 
 export default function SalesCreate({
@@ -55,9 +57,52 @@ export default function SalesCreate({
 
   const orderId = initial?._id ?? draftId ?? undefined;
   const [historyKey, setHistoryKey] = useState(0);
+  const [confirmPrices, setConfirmPrices] = useState(false);
+  const [pricesBusy, setPricesBusy] = useState(false);
   useEffect(() => {
     if (autoSaveStatus === 'saved') setHistoryKey((k) => k + 1);
   }, [autoSaveStatus]);
+
+  async function handleUpdatePrices() {
+    setPricesBusy(true);
+    try {
+      const id = await ensureSaved();
+      if (!id) {
+        toast.error('Add a product first');
+        return;
+      }
+      const res = await salesOrderService.updatePrices(id, token);
+      form.setLines(
+        res.data.items.map((it) => ({
+          key: it._id,
+          lineType: (it.lineType ?? 'product') as DraftLine['lineType'],
+          subProductId: it.subproduct ?? '',
+          product: it.product,
+          name: it.name ?? '',
+          sku: it.sku ?? '',
+          sizeId: it.size,
+          sizeName: undefined,
+          quantity: it.quantity,
+          baseUnitPrice: it.unitPrice,
+          discount: it.discount,
+          discountType: (it.discountType ?? 'fixed') as DraftLine['discountType'],
+          taxRate: it.taxRate ?? 0,
+          costPrice: 0,
+          priceOverridden: false,
+          description: it.description ?? '',
+        }))
+      );
+      toast.success('Prices updated');
+      setHistoryKey((k) => k + 1);
+      setConfirmPrices(false);
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to update prices'
+      );
+    } finally {
+      setPricesBusy(false);
+    }
+  }
 
   function validateFilled() {
     const filled = form.priced.filter(
@@ -174,6 +219,7 @@ export default function SalesCreate({
           form.setPricelistId(id);
           form.setPricelistOverridden(true);
         }}
+        onUpdatePrices={() => setConfirmPrices(true)}
         resolvedPricelistId={form.resolvedPricelistId}
         validUntil={form.validUntil}
         onValidUntilChange={form.setValidUntil}
@@ -291,6 +337,15 @@ export default function SalesCreate({
       {printState && (
         <SalesPrintSheet so={printState.so} type={printState.type} />
       )}
+
+      <SalesConfirmModal
+        open={confirmPrices}
+        title="Confirmation"
+        body="This will update the unit price of all products based on the new pricelist."
+        busy={pricesBusy}
+        onClose={() => setConfirmPrices(false)}
+        onConfirm={handleUpdatePrices}
+      />
     </div>
   );
 }
