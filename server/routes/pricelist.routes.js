@@ -9,6 +9,57 @@ const { enforceSingleDefault } = require('../services/pricelist.service');
 router.use(authenticate);
 router.use(attachTenant);
 
+/**
+ * Tenant-scoped Pricelist lookup (Workstream B — never bare findById).
+ *
+ * For tenant_owner/tenant_admin (tenant in JWT): scopes by { _id, tenant } so
+ * a cross-tenant _id returns null → 404.
+ *
+ * For super_admin/admin: if req.tenant is resolved (via x-tenant-slug), scope
+ * by it; otherwise fall back to bare findById (platform-wide — intentional per
+ * tenant.middleware.js: "req.tenant = null is intentional for super_admin").
+ *
+ * @param {object} req  - Express request with req.tenant + req.user
+ * @param {string} id   - Pricelist _id
+ * @param {object} opts - { lean: boolean } — lean returns a plain object
+ * @returns {Promise<object|null>} the pricelist doc or null (404)
+ */
+async function loadTenantPricelist(req, id, opts = {}) {
+  const tenantId = req.tenant?._id;
+  const isPlatformAdmin = ['super_admin', 'admin'].includes(req.user?.role);
+  if (tenantId) {
+    const q = Pricelist.findOne({ _id: id, tenant: tenantId });
+    return opts.lean ? q.lean() : q;
+  }
+  // super_admin/admin with no x-tenant-slug → platform-wide
+  if (isPlatformAdmin) {
+    const q = Pricelist.findById(id);
+    return opts.lean ? q.lean() : q;
+  }
+  // No tenant context and not a platform admin — deny.
+  return null;
+}
+
+/**
+ * Whitelist of client-owned rule fields for add/update. Server-owned fields
+ * (sequence, ruleCategory) are NEVER accepted from the client — they are
+ * derived server-side (sequence = append-to-end on add; reorder endpoint owns
+ * re-assignment; ruleCategory = derived from priceType).
+ */
+const RULE_FIELDS = [
+  'subProduct', 'appliedOn', 'priceType',
+  'fixedPrice', 'markupPercentage',
+  'discountType', 'discountPercentage', 'discountAmount',
+  'flashSalePercentage', 'flashSaleQty',
+  'bundleName', 'bundleQuantity', 'bundleDiscount', 'bundleDiscountType',
+  'minQuantity', 'startDate', 'endDate',
+];
+
+/** Derive ruleCategory from priceType (mirrors the schema default function). */
+function deriveRuleCategory(priceType) {
+  return ['fixed', 'formula'].includes(priceType) ? 'permanent' : 'dynamic';
+}
+
 // ── List ──────────────────────────────────────────────────────────────────────
 router.get('/', tenantAdminOrSuperAdmin, async (req, res, next) => {
   try {
@@ -54,7 +105,17 @@ router.post('/', tenantAdminOrSuperAdmin, async (req, res, next) => {
 // ── Get one (rules + populated subproduct names + current promo state) ────────
 router.get('/:id', tenantAdminOrSuperAdmin, async (req, res, next) => {
   try {
-    const pl = await Pricelist.findById(req.params.id)
+    const tenantId = req.tenant?._id;
+    const isPlatformAdmin = ['super_admin', 'admin'].includes(req.user?.role);
+    let q;
+    if (tenantId) {
+      q = Pricelist.findOne({ _id: req.params.id, tenant: tenantId });
+    } else if (isPlatformAdmin) {
+      q = Pricelist.findById(req.params.id);
+    } else {
+      return res.status(404).json({ success: false, message: 'Pricelist not found' });
+    }
+    const pl = await q
       .populate({
         path: 'rules.subProduct',
         select: 'sku product baseSellingPrice costPrice saleType saleDiscountValue isOnSale flashSale bundleDeals',
@@ -80,9 +141,17 @@ router.patch('/:id', tenantAdminOrSuperAdmin, async (req, res, next) => {
     if (warehouses    !== undefined) $set.warehouses     = Array.isArray(warehouses) ? warehouses : [];
     if (isDefault     !== undefined) $set.isDefault      = !!isDefault;
 
-    const pl = await Pricelist.findByIdAndUpdate(req.params.id, { $set }, { new: true, runValidators: true }).lean();
+    const tenantId = req.tenant?._id;
+    const filter = tenantId
+      ? { _id: req.params.id, tenant: tenantId }
+      : ['super_admin', 'admin'].includes(req.user?.role)
+        ? { _id: req.params.id }
+        : null;
+    if (!filter) return res.status(404).json({ success: false, message: 'Pricelist not found' });
+
+    const pl = await Pricelist.findOneAndUpdate(filter, { $set }, { new: true, runValidators: true }).lean();
     if (!pl) return res.status(404).json({ success: false, message: 'Pricelist not found' });
-    if ($set.isDefault === true) await enforceSingleDefault(req.tenant?._id, pl._id);
+    if ($set.isDefault === true) await enforceSingleDefault(tenantId || pl.tenant, pl._id);
     res.json({ success: true, data: pl });
   } catch (err) { next(err); }
 });
@@ -90,7 +159,15 @@ router.patch('/:id', tenantAdminOrSuperAdmin, async (req, res, next) => {
 // ── Delete ────────────────────────────────────────────────────────────────────
 router.delete('/:id', tenantAdminOrSuperAdmin, async (req, res, next) => {
   try {
-    await Pricelist.findByIdAndDelete(req.params.id);
+    const tenantId = req.tenant?._id;
+    const filter = tenantId
+      ? { _id: req.params.id, tenant: tenantId }
+      : ['super_admin', 'admin'].includes(req.user?.role)
+        ? { _id: req.params.id }
+        : null;
+    if (!filter) return res.status(404).json({ success: false, message: 'Pricelist not found' });
+    const result = await Pricelist.deleteOne(filter);
+    if (result.deletedCount === 0) return res.status(404).json({ success: false, message: 'Pricelist not found' });
     res.json({ success: true });
   } catch (err) { next(err); }
 });
@@ -98,7 +175,7 @@ router.delete('/:id', tenantAdminOrSuperAdmin, async (req, res, next) => {
 // ── Add rule ──────────────────────────────────────────────────────────────────
 router.post('/:id/rules', tenantAdminOrSuperAdmin, async (req, res, next) => {
   try {
-    const pl = await Pricelist.findById(req.params.id);
+    const pl = await loadTenantPricelist(req, req.params.id);
     if (!pl) return res.status(404).json({ success: false, message: 'Pricelist not found' });
 
     const {
@@ -136,11 +213,25 @@ router.post('/:id/rules', tenantAdminOrSuperAdmin, async (req, res, next) => {
 // ── Update rule ───────────────────────────────────────────────────────────────
 router.patch('/:id/rules/:ruleId', tenantAdminOrSuperAdmin, async (req, res, next) => {
   try {
-    const pl = await Pricelist.findById(req.params.id);
+    const pl = await loadTenantPricelist(req, req.params.id);
     if (!pl) return res.status(404).json({ success: false, message: 'Pricelist not found' });
     const rule = pl.rules.id(req.params.ruleId);
     if (!rule) return res.status(404).json({ success: false, message: 'Rule not found' });
-    Object.assign(rule, req.body);
+
+    // Whitelist: only client-owned rule fields are applied. Server-owned
+    // sequence (owned by the reorder endpoint) and ruleCategory (derived from
+    // priceType) are NEVER copied from req.body — Object.assign was replaced
+    // to prevent clients from hijacking them.
+    for (const field of RULE_FIELDS) {
+      if (req.body[field] !== undefined) {
+        rule[field] = req.body[field];
+      }
+    }
+    // Re-derive ruleCategory from the (possibly changed) priceType.
+    if (req.body.priceType !== undefined) {
+      rule.ruleCategory = deriveRuleCategory(req.body.priceType);
+    }
+
     await pl.save();
     res.json({ success: true, data: rule });
   } catch (err) { next(err); }
@@ -149,7 +240,7 @@ router.patch('/:id/rules/:ruleId', tenantAdminOrSuperAdmin, async (req, res, nex
 // ── Delete rule ───────────────────────────────────────────────────────────────
 router.delete('/:id/rules/:ruleId', tenantAdminOrSuperAdmin, async (req, res, next) => {
   try {
-    const pl = await Pricelist.findById(req.params.id);
+    const pl = await loadTenantPricelist(req, req.params.id);
     if (!pl) return res.status(404).json({ success: false, message: 'Pricelist not found' });
     const rule = pl.rules.id(req.params.ruleId);
     if (!rule) return res.status(404).json({ success: false, message: 'Rule not found' });
@@ -226,7 +317,7 @@ router.patch('/:id/rules/reorder', tenantAdminOrSuperAdmin, async (req, res, nex
     const { orderedIds } = req.body;
     if (!Array.isArray(orderedIds)) return res.status(400).json({ success: false, message: 'orderedIds array required' });
 
-    const pl = await Pricelist.findById(req.params.id);
+    const pl = await loadTenantPricelist(req, req.params.id);
     if (!pl) return res.status(404).json({ success: false, message: 'Pricelist not found' });
 
     // Atomic batch: assign all sequences in one save to prevent duplicate sequences
@@ -246,7 +337,7 @@ router.patch('/:id/rules/reorder', tenantAdminOrSuperAdmin, async (req, res, nex
 // Rules without subProduct reference apply to ALL SubProducts for the tenant.
 router.post('/:id/apply', tenantAdminOrSuperAdmin, async (req, res, next) => {
   try {
-    const pl = await Pricelist.findById(req.params.id).lean();
+    const pl = await loadTenantPricelist(req, req.params.id, { lean: true });
     if (!pl) return res.status(404).json({ success: false, message: 'Pricelist not found' });
 
     const tenantId = req.tenant?._id;
