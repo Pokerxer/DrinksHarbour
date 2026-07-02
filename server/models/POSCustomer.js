@@ -18,6 +18,9 @@ const POSCustomerSchema = new mongoose.Schema(
     // used for pricing whenever this customer is chosen on the POS sell page.
     // Resolution still bounds it to the tenant's pricelists (see pricelist.service).
     pricelist:     { type: mongoose.Schema.Types.ObjectId, ref: 'Pricelist', default: null },
+    // Customer-group tags for pricelist targeting (e.g. ['wholesale','vip']).
+    // Pricelists with customerTags only resolve for customers whose tags intersect.
+    tags:          [{ type: String }],
     notes:         { type: String, default: '' },
   },
   { timestamps: true }

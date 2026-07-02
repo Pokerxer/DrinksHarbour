@@ -2031,11 +2031,13 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   // resolution (it's the per-customer auto-pick) but is still bounded by the
   // allowed set, so a customer can never be charged an off-tenant pricelist.
   let customerPricelistId = null;
+  let customerTags = null;
   if (customer.customerId) {
     try {
       const cust = await POSCustomer.findOne({ _id: customer.customerId, tenant: tenantId })
-        .select('pricelist').lean();
+        .select('pricelist tags').lean();
       customerPricelistId = cust?.pricelist ? String(cust.pricelist) : null;
+      customerTags = Array.isArray(cust?.tags) ? cust.tags.map(String) : [];
     } catch (_) { /* non-fatal — fall back to shop resolution */ }
   }
 
@@ -2046,7 +2048,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
   let selectedPricelist = null;
   try {
     const { resolveShopPricelist } = require('../services/pricelist.service');
-    const { resolved, allowed } = await resolveShopPricelist(req.tenant, tenantId, shopId, customerPricelistId);
+    const { resolved, allowed } = await resolveShopPricelist(req.tenant, tenantId, shopId, customerPricelistId, null, customerTags);
     if (pricelistId) {
       const override = allowed.find((p) => String(p._id) === String(pricelistId));
       selectedPricelist = override || resolved || null;

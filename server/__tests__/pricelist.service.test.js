@@ -11,6 +11,7 @@ const pl = (over = {}) => ({
   shops: over.shops || [],
   warehouses: over.warehouses || [],
   isDefault: over.isDefault ?? false,
+  customerTags: over.customerTags || [],
   createdAt: over.createdAt || new Date('2020-01-01'),
 });
 
@@ -142,4 +143,59 @@ test('customer precedence does not change resolution when no customer id is give
     pricelists: [shopPL], shopId: 'shop1', warehouseId: 'wh1',
   });
   assert.strictEqual(String(resolved._id), 's');
+});
+
+// ── Customer-group targeting (tags) ──────────────────────────────────────────
+
+test('tagged pricelist excluded from allowed/resolved when customer has no matching tags', () => {
+  const shopPL = pl({ _id: 's', shops: ['shop1'], customerTags: ['wholesale'] });
+  const { resolved, allowed } = pickPricelistForShop({
+    pricelists: [shopPL], shopId: 'shop1', warehouseId: 'wh1',
+    customerTags: ['retail'],
+  });
+  assert.strictEqual(resolved, null, 'tagged pricelist must not resolve');
+  assert.deepStrictEqual(allowed, [], 'tagged pricelist must not be allowed');
+});
+
+test('tagged pricelist included when customer has at least one matching tag', () => {
+  const shopPL = pl({ _id: 's', shops: ['shop1'], customerTags: ['wholesale', 'vip'] });
+  const { resolved, allowed } = pickPricelistForShop({
+    pricelists: [shopPL], shopId: 'shop1', warehouseId: 'wh1',
+    customerTags: ['vip'],
+  });
+  assert.strictEqual(String(resolved._id), 's');
+  assert.deepStrictEqual(allowed.map((p) => String(p._id)), ['s']);
+});
+
+test('untagged pricelist always included regardless of customer tags', () => {
+  const shopPL = pl({ _id: 's', shops: ['shop1'] }); // no customerTags
+  const { resolved, allowed } = pickPricelistForShop({
+    pricelists: [shopPL], shopId: 'shop1', warehouseId: 'wh1',
+    customerTags: ['wholesale'],
+  });
+  assert.strictEqual(String(resolved._id), 's');
+  assert.deepStrictEqual(allowed.map((p) => String(p._id)), ['s']);
+});
+
+test('tagged pricelist included when customer has no tags at all (null customerTags)', () => {
+  // A walk-in customer (no tags) should still see untagged pricelists, but
+  // tagged ones are filtered out. This test confirms the untagged one survives.
+  const untagged = pl({ _id: 'u', shops: ['shop1'] });
+  const tagged = pl({ _id: 't', shops: ['shop1'], customerTags: ['wholesale'] });
+  const { resolved, allowed } = pickPricelistForShop({
+    pricelists: [untagged, tagged], shopId: 'shop1', warehouseId: 'wh1',
+    customerTags: null,
+  });
+  assert.strictEqual(String(resolved._id), 'u');
+  assert.deepStrictEqual(allowed.map((p) => String(p._id)), ['u']);
+});
+
+test('customer manually-assigned pricelist bypasses the tag filter', () => {
+  const tagged = pl({ _id: 't', customerTags: ['wholesale'] });
+  const { resolved } = pickPricelistForShop({
+    pricelists: [tagged], shopId: 'shop1', warehouseId: 'wh1',
+    customerPricelistId: 't', customerTags: ['retail'],
+  });
+  // The customer's explicit pricelist assignment wins despite no tag match.
+  assert.strictEqual(String(resolved._id), 't');
 });

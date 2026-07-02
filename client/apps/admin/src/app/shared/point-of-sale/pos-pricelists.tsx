@@ -1620,6 +1620,9 @@ function PricelistPanel({ pl, token, onClose, onRefresh }) {
     (pl?.warehouses || []).map(String)
   );
   const [isDefault, setIsDefault] = useState(!!pl?.isDefault);
+  const [customerTagsInput, setCustomerTagsInput] = useState(
+    (pl?.customerTags || []).join(', ')
+  );
   const [shopOptions, setShopOptions] = useState<
     { _id: string; name: string }[]
   >([]);
@@ -1655,6 +1658,7 @@ function PricelistPanel({ pl, token, onClose, onRefresh }) {
       setBoundShops(pl?.shops || []);
       setBoundWarehouses((pl?.warehouses || []).map(String));
       setIsDefault(!!pl?.isDefault);
+      setCustomerTagsInput((pl?.customerTags || []).join(', '));
     }
   }, [pl?._id]); // only re-sync when the pricelist ID changes, not on every rule update
 
@@ -1711,6 +1715,10 @@ function PricelistPanel({ pl, token, onClose, onRefresh }) {
           isSelectable: selectable,
           shops: boundShops,
           warehouses: boundWarehouses,
+          customerTags: customerTagsInput
+            .split(',')
+            .map((t) => t.trim())
+            .filter(Boolean),
           isDefault,
         },
         token
@@ -2012,6 +2020,25 @@ function PricelistPanel({ pl, token, onClose, onRefresh }) {
               Unscoped — offered everywhere as a manual option.
             </span>
           )}
+        {/* ── Customer tags ── */}
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+            Customer tags
+          </span>
+          <input
+            type="text"
+            value={customerTagsInput}
+            onChange={(e) => {
+              setCustomerTagsInput(e.target.value);
+              setDirty(true);
+            }}
+            placeholder="wholesale, vip, …"
+            className="h-7 w-48 rounded-lg border border-gray-200 px-2 text-[11px] text-gray-700 outline-none focus:border-[#b20202] focus:ring-1 focus:ring-[#b20202]/10"
+          />
+          <span className="text-[9px] text-gray-300">
+            Blank = all customers
+          </span>
+        </div>
       </div>
 
       {/* ── Tabs ── */}

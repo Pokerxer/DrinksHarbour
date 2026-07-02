@@ -18,10 +18,11 @@ const { resolveShopWarehouse } = require('./warehouse.service');
  * dangling/off-tenant id is ignored so a customer can never be priced against a
  * pricelist that isn't theirs.
  */
-function pickPricelistForShop({ pricelists, shopId, warehouseId, customerPricelistId }) {
+function pickPricelistForShop({ pricelists, shopId, warehouseId, customerPricelistId, customerTags }) {
   const sid = String(shopId || '');
   const wid = warehouseId ? String(warehouseId) : null;
   const cid = customerPricelistId ? String(customerPricelistId) : null;
+  const cTags = Array.isArray(customerTags) ? customerTags.map(String) : [];
   const list = Array.isArray(pricelists) ? pricelists : [];
 
   const hasShop = (p) => (p.shops || []).map(String).includes(sid);
@@ -31,12 +32,27 @@ function pickPricelistForShop({ pricelists, shopId, warehouseId, customerPriceli
   const byCreated = (a, b) =>
     new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
 
+  // Customer-group filter: a pricelist with customerTags is only eligible when
+  // the customer's tags intersect. Pricelists with no customerTags are unscoped
+  // by customer (always eligible). The customer's manually-assigned pricelist
+  // (customerPricelistId) bypasses this filter — it's an explicit assignment.
+  const tagsMatch = (p) => {
+    const plTags = (p.customerTags || []).map(String);
+    if (!plTags.length) return true; // unscoped by customer
+    return plTags.some((t) => cTags.includes(t));
+  };
+
   // Only honour a customer id that resolves to a real tenant pricelist.
-  const customerMatch = cid ? list.find((p) => String(p._id) === cid) || null : null;
-  const shopMatch = list.filter(hasShop).sort(byCreated);
-  const whMatch = list.filter(hasWh).sort(byCreated);
-  const defMatch = list.filter((p) => p.isDefault).sort(byCreated);
-  const unscoped = list.filter(isUnscoped).sort(byCreated);
+  // The customer's explicit assignment bypasses the tag filter.
+  const customerMatch = cid
+    ? (list.find((p) => String(p._id) === cid) || null)
+    : null;
+
+  const tagFiltered = list.filter(tagsMatch);
+  const shopMatch = tagFiltered.filter(hasShop).sort(byCreated);
+  const whMatch = tagFiltered.filter(hasWh).sort(byCreated);
+  const defMatch = tagFiltered.filter((p) => p.isDefault).sort(byCreated);
+  const unscoped = tagFiltered.filter(isUnscoped).sort(byCreated);
 
   const resolved = customerMatch || shopMatch[0] || whMatch[0] || defMatch[0] || null;
 
@@ -57,11 +73,11 @@ function pickPricelistForShop({ pricelists, shopId, warehouseId, customerPriceli
  * precedence — still bounded by `allowed`, so an off-tenant id is ignored.
  * Returns { resolved, allowed, warehouseId }.
  */
-async function resolveShopPricelist(tenant, tenantId, shopId, customerPricelistId = null, warehouseOverride = null) {
+async function resolveShopPricelist(tenant, tenantId, shopId, customerPricelistId = null, warehouseOverride = null, customerTags = null) {
   const warehouseId = warehouseOverride || await resolveShopWarehouse(tenant, tenantId, shopId);
   const pricelists = await Pricelist.find({ tenant: tenantId }).lean();
   const { resolved, allowed } = pickPricelistForShop({
-    pricelists, shopId, warehouseId, customerPricelistId,
+    pricelists, shopId, warehouseId, customerPricelistId, customerTags,
   });
   return { resolved, allowed, warehouseId };
 }

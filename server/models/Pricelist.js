@@ -68,6 +68,9 @@ const pricelistSchema = new Schema({
   // option but never auto-resolved.
   shops:         [{ type: String }],
   warehouses:    [{ type: Schema.Types.ObjectId, ref: 'Warehouse' }],
+  // Customer-group targeting: when non-empty, this pricelist only resolves for
+  // customers whose POSCustomer.tags intersect. Empty = unscoped (all customers).
+  customerTags:  [{ type: String }],
   isDefault:     { type: Boolean, default: false },
 
   rules:         [priceRuleSchema],

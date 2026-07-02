@@ -146,7 +146,7 @@ router.get('/', tenantAdminOrSuperAdmin, async (req, res, next) => {
 router.post('/', tenantAdminOrSuperAdmin, async (req, res, next) => {
   try {
     const tenantId = req.tenant?._id;
-    const { name, currency, countryGroups, website, isSelectable, shops, warehouses, isDefault } = req.body;
+    const { name, currency, countryGroups, website, isSelectable, shops, warehouses, isDefault, customerTags } = req.body;
     if (!name?.trim()) return res.status(400).json({ success: false, message: 'Name is required' });
 
     const pl = await Pricelist.create({
@@ -155,6 +155,7 @@ router.post('/', tenantAdminOrSuperAdmin, async (req, res, next) => {
       isSelectable: !!isSelectable,
       shops: Array.isArray(shops) ? shops.map(String) : [],
       warehouses: Array.isArray(warehouses) ? warehouses : [],
+      customerTags: Array.isArray(customerTags) ? customerTags.map(String) : [],
       isDefault: !!isDefault,
       tenant: tenantId, rules: [],
     });
@@ -191,7 +192,7 @@ router.get('/:id', tenantAdminOrSuperAdmin, async (req, res, next) => {
 // ── Update meta ───────────────────────────────────────────────────────────────
 router.patch('/:id', tenantAdminOrSuperAdmin, async (req, res, next) => {
   try {
-    const { name, currency, countryGroups, website, isSelectable, shops, warehouses, isDefault } = req.body;
+    const { name, currency, countryGroups, website, isSelectable, shops, warehouses, isDefault, customerTags } = req.body;
     const $set = {};
     if (name          !== undefined) $set.name          = name;
     if (currency      !== undefined) $set.currency       = currency;
@@ -200,6 +201,7 @@ router.patch('/:id', tenantAdminOrSuperAdmin, async (req, res, next) => {
     if (isSelectable  !== undefined) $set.isSelectable   = isSelectable;
     if (shops         !== undefined) $set.shops          = Array.isArray(shops) ? shops.map(String) : [];
     if (warehouses    !== undefined) $set.warehouses     = Array.isArray(warehouses) ? warehouses : [];
+    if (customerTags  !== undefined) $set.customerTags   = Array.isArray(customerTags) ? customerTags.map(String) : [];
     if (isDefault     !== undefined) $set.isDefault      = !!isDefault;
 
     const tenantId = req.tenant?._id;

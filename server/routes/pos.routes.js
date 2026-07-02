@@ -125,17 +125,19 @@ router.get('/pricelists', protectPOSOrAdmin, async (req, res, next) => {
     // gracefully to "customer → tenant default warehouse → default" when
     // shopId is absent (e.g. the Sales module, which has no shop concept).
     let customerPricelistId = null;
+    let customerTags = null;
     if (customerId) {
       const POSCustomer = require('../models/POSCustomer');
       const cust = await POSCustomer.findOne({ _id: customerId, tenant: tenantId })
-        .select('pricelist').lean();
+        .select('pricelist tags').lean();
       customerPricelistId = cust?.pricelist ? String(cust.pricelist) : null;
+      customerTags = Array.isArray(cust?.tags) ? cust.tags.map(String) : [];
     }
 
     const { resolveShopPricelist } = require('../services/pricelist.service');
     const { resolved, allowed } = await resolveShopPricelist(
       req.tenant, tenantId, shopId, customerPricelistId,
-      warehouseOverride || null
+      warehouseOverride || null, customerTags
     );
     res.json({
       success: true,
