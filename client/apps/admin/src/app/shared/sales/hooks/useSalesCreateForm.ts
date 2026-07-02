@@ -23,6 +23,7 @@ import type { DraftLine, PricedLine } from '../sales-line-table';
 import type { ProductLineSelection } from '../product-line-search';
 import type { CreateTab } from '../sales-stage-pill';
 import { subproductService } from '@/services/subproduct.service';
+import { salesOrderService } from '@/services/salesOrder.service';
 
 function toLinePayload(l: PricedLine) {
   if (l.lineType !== 'product') {
@@ -308,6 +309,70 @@ export function useSalesCreateForm({
     () => pricelists.find((p) => p._id === pricelistId) ?? null,
     [pricelists, pricelistId]
   );
+
+  /**
+   * Server-authoritative line pricing. The save path reprices every
+   * non-overridden line through the server engine (platform pipeline +
+   * pricelist rules), which can differ from the raw catalog sellingPrice the
+   * search seeds lines with — the operator used to see one price and get
+   * another after save. Whenever the priceable shape of the lines changes
+   * (product/size/qty/override/pricelist), ask the server to price them and
+   * pin the result via enginePriced so the display equals what a save will
+   * persist. Best-effort: on failure the client-side estimate stands and the
+   * server still reprices on save.
+   */
+  const pricingSig = useMemo(() => {
+    const parts = lines
+      .filter(
+        (l) => l.lineType === 'product' && l.subProductId && !l.priceOverridden
+      )
+      .map((l) => `${l.subProductId}|${l.sizeId ?? ''}|${l.quantity}`);
+    return parts.length ? `${pricelistId}::${parts.join(';')}` : '';
+  }, [lines, pricelistId]);
+
+  const priceSeqRef = useRef(0);
+  useEffect(() => {
+    if (!token || !pricingSig) return;
+    const seq = ++priceSeqRef.current;
+    const t = setTimeout(async () => {
+      try {
+        const items = linesRef.current
+          .filter(
+            (l) =>
+              l.lineType === 'product' && l.subProductId && !l.priceOverridden
+          )
+          .map((l) => ({
+            key: l.key,
+            subproduct: l.subProductId,
+            size: l.sizeId,
+            quantity: l.quantity,
+            unitPrice: l.baseUnitPrice,
+            priceOverridden: false,
+          }));
+        if (!items.length) return;
+        const res = await salesOrderService.priceLines(
+          { items, pricelist: pricelistId || null },
+          token
+        );
+        if (seq !== priceSeqRef.current) return; // a newer request superseded this one
+        const byKey = new Map(
+          (res?.data?.items ?? []).map((it) => [it.key, it.unitPrice])
+        );
+        setLines((prev) =>
+          prev.map((l) => {
+            const p = byKey.get(l.key);
+            if (typeof p !== 'number' || !isFinite(p) || l.priceOverridden)
+              return l;
+            if (l.enginePriced && l.baseUnitPrice === p) return l;
+            return { ...l, baseUnitPrice: p, enginePriced: true };
+          })
+        );
+      } catch {
+        // keep the client-side estimate; the server reprices on save anyway
+      }
+    }, 350);
+    return () => clearTimeout(t);
+  }, [pricingSig, token, pricelistId]);
 
   const updateLine = useCallback((key: string, patch: Partial<DraftLine>) => {
     setLines((prev) =>

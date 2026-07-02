@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const {
   createSalesOrder, getSalesOrders, getSalesOrder, updateSalesOrder, deleteSalesOrder,
-  updatePrices,
+  updatePrices, priceLines,
   applyCoupon,
   sendQuotation, acceptQuotation, rejectQuotation, convertQuotation, confirmSalesOrder,
   fulfillSalesOrder, returnSalesOrder,
@@ -24,6 +24,11 @@ const { protect, attachTenant, tenantUserOnly } = require('../middleware/auth.mi
 router.use(protect, attachTenant, tenantUserOnly);
 
 router.route('/').get(getSalesOrders).post(createSalesOrder);
+
+// Price draft lines through the authoritative engine (no document involved) —
+// must be registered before /:id so "price-lines" isn't captured as an id.
+router.post('/price-lines', priceLines);
+
 router.route('/:id').get(getSalesOrder).put(updateSalesOrder).delete(deleteSalesOrder);
 
 router.post('/:id/send', sendQuotation);

@@ -28,6 +28,10 @@ export function soItemToDraftLine(it: SalesLineItem): DraftLine {
     taxRate: it.taxRate ?? 0,
     costPrice: 0,
     priceOverridden: !!it.priceOverridden,
+    // A stored line's unitPrice IS the server engine's output (or a manual
+    // override) — display it verbatim rather than re-running client pricelist
+    // math on top of an already-adjusted figure.
+    enginePriced: !it.priceOverridden,
     description: it.description ?? '',
   };
 }
@@ -53,11 +57,13 @@ export function blankLine(lineType: DraftLine['lineType'] = 'product'): DraftLin
 
 /**
  * Live unit price after pricelist + bundle rules, unless the operator overrode it.
- * Section/note lines carry no price.
+ * Engine-priced lines (server's authoritative figure — rules already folded in)
+ * are shown verbatim. Section/note lines carry no price.
  */
 export function liveUnitPrice(line: DraftLine, pricelist: unknown): number {
   if (line.lineType !== 'product') return 0;
   if (line.priceOverridden) return line.baseUnitPrice;
+  if (line.enginePriced) return line.baseUnitPrice;
   if (!line.subProductId || !pricelist) return line.baseUnitPrice;
   const pricingItem: POSCartItem = {
     subProductId: line.subProductId,

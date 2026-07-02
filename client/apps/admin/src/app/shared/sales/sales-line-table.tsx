@@ -69,6 +69,11 @@ export interface DraftLine {
    * then ignores the live pricelist/bundle computation and the server trusts
    * it verbatim. Reset to false whenever a new product/size is picked. */
   priceOverridden: boolean;
+  /** True when baseUnitPrice came from the server's authoritative pricing
+   * engine (price-lines endpoint or a stored order line). Engine prices are
+   * final — pricelist/bundle rules are already folded in — so the client
+   * displays them verbatim instead of re-running its own pricelist math. */
+  enginePriced?: boolean;
   availableStock?: number;
   /** Operator-entered per-line note (newline of the line; shown under the product). */
   description?: string;

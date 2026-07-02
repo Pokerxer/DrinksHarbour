@@ -172,6 +172,25 @@ exports.updateSalesOrder = asyncHandler(async (req, res) => {
   res.json({ success: true, data: so });
 });
 
+// Price draft lines through the same authoritative engine createSalesOrderDoc
+// runs on save (resolveLinePricing → computeAuthoritativeLinePrices), without
+// touching any document. The create/edit pages call this so the unit price the
+// operator sees is exactly the one the saved order will carry; priceOverridden
+// lines pass through verbatim. Tenant-scoped, read-only.
+exports.priceLines = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  if (!requireResolvedTenant(tenantId, res)) return;
+  const { items, pricelist } = req.body || {};
+  if (!Array.isArray(items)) {
+    return res.status(400).json({ success: false, message: 'items must be an array' });
+  }
+  const priced = await svc.resolveLinePricing(items, {
+    tenantId,
+    pricelistId: pricelist || null,
+  });
+  res.json({ success: true, data: { items: priced } });
+});
+
 // Recompute every product line's unit price from the order's current pricelist,
 // clearing manual price overrides, then re-snapshot totals. Tenant-scoped.
 exports.updatePrices = asyncHandler(async (req, res) => {

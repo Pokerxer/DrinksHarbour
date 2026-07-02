@@ -515,6 +515,41 @@ export const salesOrderService = {
     return response.json();
   },
 
+  /**
+   * Price draft lines through the server's authoritative engine — the same
+   * path createSalesOrderDoc runs on save — so the create/edit pages display
+   * exactly what a save would persist. Extra fields on each item (e.g. `key`)
+   * are echoed back untouched for correlation.
+   */
+  async priceLines(
+    input: {
+      items: Array<{
+        key?: string;
+        subproduct: string;
+        size?: string;
+        quantity: number;
+        unitPrice: number;
+        priceOverridden?: boolean;
+      }>;
+      pricelist?: string | null;
+    },
+    token: string
+  ): Promise<{
+    success: boolean;
+    data: { items: Array<{ key?: string; unitPrice: number }> };
+  }> {
+    const response = await fetch(`${API_URL}/api/sales-orders/price-lines`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify(input),
+    });
+    await parseErrorOrThrow(response, 'Failed to price lines');
+    return (await response.json()) as {
+      success: boolean;
+      data: { items: Array<{ key?: string; unitPrice: number }> };
+    };
+  },
+
   async updatePrices(id: string, token: string): Promise<SalesOrderResponse> {
     const response = await fetch(
       `${API_URL}/api/sales-orders/${id}/update-prices`,
