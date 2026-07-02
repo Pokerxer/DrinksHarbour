@@ -1547,12 +1547,23 @@ function ruleDescription(rule: any): string {
     case 'bundle': {
       const qty = rule.bundleQuantity || 2;
       const dt = rule.bundleDiscountType;
+      const target = rule.bundleTargetSubProduct;
+      const targetName = target
+        ? (target.product?.name || target.sku || 'another product')
+        : null;
+      const targetSuffix = targetName ? ` off ${targetName}` : '';
       if (dt === 'markup_on_cost')
-        return `Buy ${qty}+ → Cost +${rule.bundleDiscount || 0}% markup`;
-      if (dt === 'no_discount') return `Buy ${qty}+ → No discount (base price)`;
+        return `Buy ${qty}+ → Cost +${rule.bundleDiscount || 0}% markup${targetSuffix}`;
+      if (dt === 'no_discount') return `Buy ${qty}+ → No discount (base price)${targetSuffix}`;
       if (dt === 'fixed')
-        return `Buy ${qty}+ → -₦${Number(rule.bundleDiscount || 0).toFixed(0)} per unit`;
-      return `Buy ${qty}+ → ${rule.bundleDiscount || 0}% off`;
+        return `Buy ${qty}+ → -₦${Number(rule.bundleDiscount || 0).toFixed(0)} per unit${targetSuffix}`;
+      return `Buy ${qty}+ → ${rule.bundleDiscount || 0}% off${targetSuffix}`;
+    }
+    case 'cart_threshold': {
+      const thresh = fmt(rule.thresholdAmount || 0);
+      if (rule.discountType === 'fixed')
+        return `Spend ${thresh}+ → -₦${Number(rule.discountAmount || 0).toFixed(0)} off cart`;
+      return `Spend ${thresh}+ → ${rule.discountPercentage || 0}% off cart`;
     }
     default:
       return '—';
@@ -1584,9 +1595,11 @@ function RuleCard({
   const status = ruleStatus(rule);
   const isExpired = status.label === 'Expired';
 
-  // "All products" when subProduct is absent AND appliedOn is blank or literally 'All products'
+  // "All products" when subProduct is absent AND appliedOn is blank or literally 'All products'.
+  // Cart-level rules (cart_threshold) are not product-scoped — they apply to the cart.
+  const isCartLevel = rule.priceType === 'cart_threshold';
   const isAllProducts =
-    !sp && (!rule.appliedOn || rule.appliedOn === 'All products');
+    !sp && !isCartLevel && (!rule.appliedOn || rule.appliedOn === 'All products');
   const productName = isAllProducts
     ? null
     : rule.appliedOn || sp?.product?.name || sp?.sku;
@@ -1640,7 +1653,11 @@ function RuleCard({
           >
             {meta.label}
           </span>
-          {isAllProducts ? (
+          {isCartLevel ? (
+            <span className="rounded-md border border-teal-200 bg-teal-50 px-1.5 py-0.5 text-[10px] font-bold text-teal-700">
+              Cart-level
+            </span>
+          ) : isAllProducts ? (
             <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
               All products
             </span>
@@ -2848,6 +2865,14 @@ export default function POSPricelists() {
                                 >
                                   {(pl.shops || []).length}s ·{' '}
                                   {(pl.warehouses || []).length}w
+                                </span>
+                              )}
+                              {(pl.customerTags || []).length > 0 && (
+                                <span
+                                  className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${isSel ? 'bg-white/15 text-red-100' : 'bg-teal-50 text-teal-600'}`}
+                                  title={`Customer tags: ${(pl.customerTags || []).join(', ')}`}
+                                >
+                                  {(pl.customerTags || []).join(', ')}
                                 </span>
                               )}
                             </span>
