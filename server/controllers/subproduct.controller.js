@@ -77,7 +77,9 @@ const getSubProduct = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const tenantId = getTenantId(req);
 
-  const subProduct = await subProductService.getSubProduct(id, tenantId);
+  const subProduct = await subProductService.getSubProduct(id, tenantId, {
+    warehouseId: req.query.warehouseId || null,
+  });
 
   res.status(200).json({
     success: true,

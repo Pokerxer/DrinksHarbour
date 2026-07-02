@@ -336,8 +336,13 @@ export const subproductService = {
     return response.json();
   },
 
-  async getSubProduct(id: string, token: string) {
-    const response = await fetch(`${API_URL}/api/subproducts/${id}`, {
+  async getSubProduct(
+    id: string,
+    token: string,
+    params?: Record<string, string>
+  ) {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : '';
+    const response = await fetch(`${API_URL}/api/subproducts/${id}${qs}`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },

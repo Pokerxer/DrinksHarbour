@@ -1134,10 +1134,11 @@ const createSubProduct = async (data, tenantId, user) => {
 /**
  * Get single SubProduct details
  */
-const getSubProduct = async (subProductId, tenantId) => {
+const getSubProduct = async (subProductId, tenantId, options = {}) => {
   if (!/^[0-9a-fA-F]{24}$/.test(subProductId)) {
     throw new ValidationError('Invalid SubProduct ID');
   }
+  const { warehouseId = null } = options;
 
   // First, fetch without populating shipping/warehouse to check for corrupt data
   const rawSubProduct = await SubProduct.findOne({
@@ -1240,6 +1241,22 @@ const getSubProduct = async (subProductId, tenantId) => {
       pricing: calculateSizePricing(size, subProduct.product, subProduct.tenant, subProduct.costPrice, subProduct.baseSellingPrice)
     };
   });
+
+  // When a warehouse is specified, overlay per-size availableStock from
+  // WarehouseStock (the per-warehouse source of truth) — 0 when the product
+  // has no rows there. Mirrors the enrichment getMySubProducts applies.
+  if (warehouseId && tenantId) {
+    const whRows = await WarehouseStock.find({
+      tenant: tenantId,
+      warehouse: warehouseId,
+      subProduct: subProductId,
+    }).select('size currentQuantity').lean();
+    const bySize = new Map(whRows.map((r) => [String(r.size), r.currentQuantity]));
+    for (const size of sizesWithPricing) {
+      size.availableStock = bySize.get(String(size._id)) ?? 0;
+    }
+    subProduct.availableStock = whRows.reduce((sum, r) => sum + (r.currentQuantity || 0), 0);
+  }
 
   return {
     ...subProduct,

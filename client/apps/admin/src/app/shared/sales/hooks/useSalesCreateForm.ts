@@ -172,48 +172,31 @@ export function useSalesCreateForm({
    * Enrich product lines with catalog metadata the order document doesn't
    * carry: sizeName, costPrice, availableStock, activeBundles, originalPrice.
    * Metadata only — never touches baseUnitPrice / priceOverridden. When a
-   * warehouse is selected, stock is warehouse-scoped via the list endpoint
-   * (which omits out-of-stock rows there, so a miss means 0 in that
-   * warehouse); otherwise the global per-size stock applies. Best-effort: any
-   * fetch failure leaves the lines unchanged.
+   * warehouse is selected the single-get overlays per-size availableStock
+   * from WarehouseStock (0 when the product has no rows there); otherwise
+   * the global per-size stock applies. Best-effort: any fetch failure leaves
+   * the lines unchanged.
    */
   const hydrateLineMeta = useCallback(
     async (targetLines: DraftLine[], whId?: string) => {
       if (!token) return;
-      const skuBySub = new Map<string, string>();
+      const skuBySub = new Set<string>();
       for (const l of targetLines) {
-        if (l.lineType === 'product' && l.subProductId && !skuBySub.has(l.subProductId)) {
-          skuBySub.set(l.subProductId, l.sku);
-        }
+        if (l.lineType === 'product' && l.subProductId) skuBySub.add(l.subProductId);
       }
       if (!skuBySub.size) return;
-      const fetchGlobal = async (id: string) => {
-        const res: any = await subproductService.getSubProduct(id, token);
-        return res?.data?.subProduct ?? res?.subProduct ?? res?.data ?? res;
-      };
       const results = await Promise.all(
-        Array.from(skuBySub.entries()).map(async ([id, sku]) => {
+        Array.from(skuBySub).map(async (id) => {
           try {
-            if (whId && sku) {
-              const res: any = await subproductService.getSubProducts(token, {
-                search: sku,
-                warehouseId: whId,
-                limit: 10,
-              });
-              const sp = (res?.data?.subProducts ?? []).find(
-                (s: any) => s._id === id
-              );
-              if (sp) return sp;
-              const doc = await fetchGlobal(id);
-              if (doc?._id) {
-                doc.availableStock = 0;
-                (doc.sizes ?? []).forEach((s: any) => {
-                  s.availableStock = 0;
-                });
-              }
-              return doc;
-            }
-            return await fetchGlobal(id);
+            // Fetch by id — line SKUs are size-level and don't match the
+            // catalog search (which indexes subproduct SKUs); the single-get
+            // overlays per-warehouse availableStock when warehouseId is set.
+            const res: any = await subproductService.getSubProduct(
+              id,
+              token,
+              whId ? { warehouseId: whId } : undefined
+            );
+            return res?.data?.subProduct ?? res?.subProduct ?? res?.data ?? res;
           } catch {
             return null;
           }
