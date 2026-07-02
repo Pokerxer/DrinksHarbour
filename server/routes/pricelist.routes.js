@@ -60,6 +60,67 @@ function deriveRuleCategory(priceType) {
   return ['fixed', 'formula'].includes(priceType) ? 'permanent' : 'dynamic';
 }
 
+/**
+ * Strict numeric parse — returns NaN on garbage (not 0). Replaces Number(x) || 0
+ * which silently zeroed '500abc' instead of rejecting it. Uses Number() (not
+ * parseFloat) so '500abc' → NaN, not 500 (parseFloat parses leading prefixes).
+ */
+function parseFloatStrict(v) {
+  if (v === null || v === undefined || v === '') return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+/**
+ * Cross-field validation per priceType. Returns { errors } (field-keyed) or null.
+ * Enforces the same invariants the client validates (pos-pricelists.tsx:568)
+ * so a direct API caller gets a structured 400, not a silent no-op rule.
+ */
+function validateRuleFields(body) {
+  const errors = {};
+  const pt = body.priceType;
+
+  if (pt === 'fixed') {
+    const fp = parseFloatStrict(body.fixedPrice);
+    if (Number.isNaN(fp) || fp <= 0) errors.fixedPrice = 'Enter a price';
+  } else if (pt === 'formula') {
+    const mp = parseFloatStrict(body.markupPercentage);
+    if (Number.isNaN(mp) || mp <= 0) errors.markupPercentage = 'Enter a markup %';
+  } else if (pt === 'discount') {
+    if (body.discountType === 'fixed') {
+      const amt = parseFloatStrict(body.discountAmount);
+      if (Number.isNaN(amt) || amt <= 0) errors.discountAmount = 'Enter an amount';
+    } else {
+      const pct = parseFloatStrict(body.discountPercentage);
+      if (Number.isNaN(pct) || pct <= 0) errors.discountPercentage = 'Enter a discount %';
+    }
+  } else if (pt === 'flash_sale') {
+    const pct = parseFloatStrict(body.flashSalePercentage);
+    if (Number.isNaN(pct) || pct <= 0) errors.flashSalePercentage = 'Enter a discount %';
+  } else if (pt === 'bundle') {
+    const qty = parseFloatStrict(body.bundleQuantity);
+    if (Number.isNaN(qty) || qty < 2) errors.bundleQuantity = 'Min 2 units';
+    if (body.bundleDiscountType !== 'no_discount') {
+      const disc = parseFloatStrict(body.bundleDiscount);
+      if (Number.isNaN(disc) || disc <= 0) {
+        errors.bundleDiscount = body.bundleDiscountType === 'markup_on_cost'
+          ? 'Enter a markup %' : 'Enter a discount';
+      }
+    }
+  }
+
+  // Date window: end must be after start (when both set).
+  if (body.startDate && body.endDate) {
+    const start = new Date(body.startDate);
+    const end = new Date(body.endDate);
+    if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end < start) {
+      errors.endDate = 'End must be after start';
+    }
+  }
+
+  return Object.keys(errors).length ? errors : null;
+}
+
 // ── List ──────────────────────────────────────────────────────────────────────
 router.get('/', tenantAdminOrSuperAdmin, async (req, res, next) => {
   try {
@@ -178,6 +239,18 @@ router.post('/:id/rules', tenantAdminOrSuperAdmin, async (req, res, next) => {
     const pl = await loadTenantPricelist(req, req.params.id);
     if (!pl) return res.status(404).json({ success: false, message: 'Pricelist not found' });
 
+    const body = req.body || {};
+
+    // Cross-field validation per priceType — structured 400, not a silent no-op.
+    const fieldErrors = validateRuleFields(body);
+    if (fieldErrors) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please fix the highlighted fields',
+        errors: fieldErrors,
+      });
+    }
+
     const {
       subProduct, appliedOn, priceType,
       fixedPrice, markupPercentage,
@@ -185,24 +258,30 @@ router.post('/:id/rules', tenantAdminOrSuperAdmin, async (req, res, next) => {
       flashSalePercentage, flashSaleQty,
       bundleName, bundleQuantity, bundleDiscount, bundleDiscountType,
       minQuantity, startDate, endDate,
-    } = req.body;
+    } = body;
+
+    // Force bundleDiscount = 0 when no_discount (client does this at
+    // pos-pricelists.tsx:630, but a direct API caller could send a contradiction).
+    const effectiveBundleDiscount = bundleDiscountType === 'no_discount'
+      ? 0
+      : (Number.isNaN(parseFloatStrict(bundleDiscount)) ? 0 : parseFloatStrict(bundleDiscount));
 
     pl.rules.push({
       subProduct, appliedOn, priceType,
       sequence: pl.rules.length, // append to end; lower = higher priority
-      ruleCategory: ['fixed', 'formula'].includes(priceType) ? 'permanent' : 'dynamic',
-      fixedPrice:          Number(fixedPrice)          || 0,
-      markupPercentage:    Number(markupPercentage)    || 0,
-      discountType:        discountType                || 'percentage',
-      discountPercentage:  Number(discountPercentage)  || 0,
-      discountAmount:      Number(discountAmount)      || 0,
-      flashSalePercentage: Number(flashSalePercentage) || 0,
-      flashSaleQty:        Number(flashSaleQty)        || 0,
-      bundleName:          bundleName                  || '',
-      bundleQuantity:      Number(bundleQuantity)      || 2,
-      bundleDiscount:      Number(bundleDiscount)      || 10,
-      bundleDiscountType:  bundleDiscountType          || 'percentage',
-      minQuantity:         Number(minQuantity)         || 0,
+      ruleCategory: deriveRuleCategory(priceType),
+      fixedPrice:          parseFloatStrict(fixedPrice)          || 0,
+      markupPercentage:    parseFloatStrict(markupPercentage)    || 0,
+      discountType:        discountType                          || 'percentage',
+      discountPercentage:  parseFloatStrict(discountPercentage)  || 0,
+      discountAmount:      parseFloatStrict(discountAmount)      || 0,
+      flashSalePercentage: parseFloatStrict(flashSalePercentage) || 0,
+      flashSaleQty:        parseFloatStrict(flashSaleQty)        || 0,
+      bundleName:          bundleName                            || '',
+      bundleQuantity:      parseFloatStrict(bundleQuantity)      || 2,
+      bundleDiscount:      effectiveBundleDiscount,
+      bundleDiscountType:  bundleDiscountType                    || 'percentage',
+      minQuantity:         parseFloatStrict(minQuantity)         || 0,
       startDate, endDate,
     });
     await pl.save();
@@ -218,6 +297,18 @@ router.patch('/:id/rules/:ruleId', tenantAdminOrSuperAdmin, async (req, res, nex
     const rule = pl.rules.id(req.params.ruleId);
     if (!rule) return res.status(404).json({ success: false, message: 'Rule not found' });
 
+    // Cross-field validation — merge the patch over the existing rule so the
+    // validator sees the effective priceType/discountType/etc.
+    const merged = { ...rule.toObject ? rule.toObject() : rule, ...req.body };
+    const fieldErrors = validateRuleFields(merged);
+    if (fieldErrors) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please fix the highlighted fields',
+        errors: fieldErrors,
+      });
+    }
+
     // Whitelist: only client-owned rule fields are applied. Server-owned
     // sequence (owned by the reorder endpoint) and ruleCategory (derived from
     // priceType) are NEVER copied from req.body — Object.assign was replaced
@@ -230,6 +321,10 @@ router.patch('/:id/rules/:ruleId', tenantAdminOrSuperAdmin, async (req, res, nex
     // Re-derive ruleCategory from the (possibly changed) priceType.
     if (req.body.priceType !== undefined) {
       rule.ruleCategory = deriveRuleCategory(req.body.priceType);
+    }
+    // Force bundleDiscount = 0 when no_discount (server-side, defense-in-depth).
+    if (req.body.bundleDiscountType === 'no_discount') {
+      rule.bundleDiscount = 0;
     }
 
     await pl.save();

@@ -311,3 +311,158 @@ test('add-rule ignores client-sent sequence (appends to end)', async (t) => {
   assert.strictEqual(added.priceType, 'flash_sale');
   assert.strictEqual(added.ruleCategory, 'dynamic');
 });
+
+// ── Cross-field validation (Commit 2) ────────────────────────────────────────
+// The server must reject rules whose required field for their priceType is
+// missing/zero, with a structured 400 + field-keyed errors object — not trust
+// the client and persist a no-op rule.
+
+function setupAddRuleMock(t, tenantA, plA) {
+  const Pricelist = require('../models/Pricelist');
+  t.mock.method(Pricelist, 'findOne', async (filter) => {
+    if (filter.tenant && String(filter.tenant) !== String(tenantA)) return null;
+    return plA;
+  });
+}
+
+test('add-rule 400s when fixed priceType has no fixedPrice', async (t) => {
+  bypassAuth(t);
+  const tenantA = oid();
+  const plA = makePricelistDoc({ _id: oid(), tenant: tenantA, rules: [] });
+  setupAddRuleMock(t, tenantA, plA);
+
+  const res = await dispatch(getRouter(), {
+    method: 'POST',
+    url: `/${String(plA._id)}/rules`,
+    params: { id: String(plA._id) },
+    tenant: { _id: tenantA },
+    user: { role: 'tenant_admin', tenant: tenantA },
+    body: { priceType: 'fixed', fixedPrice: 0 },
+  });
+
+  assert.strictEqual(res.statusCode, 400);
+  assert.strictEqual(res.body?.success, false);
+  assert.ok(res.body?.errors?.fixedPrice, 'must name the missing field');
+  assert.strictEqual(plA.rules.length, 0, 'no rule pushed');
+});
+
+test('add-rule 400s when formula priceType has no markupPercentage', async (t) => {
+  bypassAuth(t);
+  const tenantA = oid();
+  const plA = makePricelistDoc({ _id: oid(), tenant: tenantA, rules: [] });
+  setupAddRuleMock(t, tenantA, plA);
+
+  const res = await dispatch(getRouter(), {
+    method: 'POST',
+    url: `/${String(plA._id)}/rules`,
+    params: { id: String(plA._id) },
+    tenant: { _id: tenantA },
+    user: { role: 'tenant_admin', tenant: tenantA },
+    body: { priceType: 'formula', markupPercentage: 0 },
+  });
+
+  assert.strictEqual(res.statusCode, 400);
+  assert.ok(res.body?.errors?.markupPercentage);
+});
+
+test('add-rule 400s when discount priceType (percentage) has no discountPercentage', async (t) => {
+  bypassAuth(t);
+  const tenantA = oid();
+  const plA = makePricelistDoc({ _id: oid(), tenant: tenantA, rules: [] });
+  setupAddRuleMock(t, tenantA, plA);
+
+  const res = await dispatch(getRouter(), {
+    method: 'POST',
+    url: `/${String(plA._id)}/rules`,
+    params: { id: String(plA._id) },
+    tenant: { _id: tenantA },
+    user: { role: 'tenant_admin', tenant: tenantA },
+    body: { priceType: 'discount', discountType: 'percentage', discountPercentage: 0 },
+  });
+
+  assert.strictEqual(res.statusCode, 400);
+  assert.ok(res.body?.errors?.discountPercentage);
+});
+
+test('add-rule 400s when flash_sale priceType has no flashSalePercentage', async (t) => {
+  bypassAuth(t);
+  const tenantA = oid();
+  const plA = makePricelistDoc({ _id: oid(), tenant: tenantA, rules: [] });
+  setupAddRuleMock(t, tenantA, plA);
+
+  const res = await dispatch(getRouter(), {
+    method: 'POST',
+    url: `/${String(plA._id)}/rules`,
+    params: { id: String(plA._id) },
+    tenant: { _id: tenantA },
+    user: { role: 'tenant_admin', tenant: tenantA },
+    body: { priceType: 'flash_sale', flashSalePercentage: 0 },
+  });
+
+  assert.strictEqual(res.statusCode, 400);
+  assert.ok(res.body?.errors?.flashSalePercentage);
+});
+
+test('add-rule 400s when bundle priceType has bundleDiscount but bundleDiscountType is no_discount', async (t) => {
+  bypassAuth(t);
+  const tenantA = oid();
+  const plA = makePricelistDoc({ _id: oid(), tenant: tenantA, rules: [] });
+  setupAddRuleMock(t, tenantA, plA);
+
+  // no_discount with a nonzero bundleDiscount is contradictory — server must
+  // zero it, not persist the contradiction.
+  const res = await dispatch(getRouter(), {
+    method: 'POST',
+    url: `/${String(plA._id)}/rules`,
+    params: { id: String(plA._id) },
+    tenant: { _id: tenantA },
+    user: { role: 'tenant_admin', tenant: tenantA },
+    body: { priceType: 'bundle', bundleQuantity: 2, bundleDiscount: 50, bundleDiscountType: 'no_discount' },
+  });
+
+  // no_discount is valid — the rule is accepted but bundleDiscount is zeroed
+  assert.strictEqual(res.statusCode, 201);
+  const added = plA.rules[plA.rules.length - 1];
+  assert.strictEqual(added.bundleDiscount, 0, 'no_discount must zero bundleDiscount');
+});
+
+test('add-rule 400s when endDate is before startDate', async (t) => {
+  bypassAuth(t);
+  const tenantA = oid();
+  const plA = makePricelistDoc({ _id: oid(), tenant: tenantA, rules: [] });
+  setupAddRuleMock(t, tenantA, plA);
+
+  const res = await dispatch(getRouter(), {
+    method: 'POST',
+    url: `/${String(plA._id)}/rules`,
+    params: { id: String(plA._id) },
+    tenant: { _id: tenantA },
+    user: { role: 'tenant_admin', tenant: tenantA },
+    body: {
+      priceType: 'discount', discountType: 'percentage', discountPercentage: 10,
+      startDate: '2026-07-10', endDate: '2026-07-01',
+    },
+  });
+
+  assert.strictEqual(res.statusCode, 400);
+  assert.ok(res.body?.errors?.endDate);
+});
+
+test('add-rule 400s on garbage numeric input (not silently zeroed)', async (t) => {
+  bypassAuth(t);
+  const tenantA = oid();
+  const plA = makePricelistDoc({ _id: oid(), tenant: tenantA, rules: [] });
+  setupAddRuleMock(t, tenantA, plA);
+
+  const res = await dispatch(getRouter(), {
+    method: 'POST',
+    url: `/${String(plA._id)}/rules`,
+    params: { id: String(plA._id) },
+    tenant: { _id: tenantA },
+    user: { role: 'tenant_admin', tenant: tenantA },
+    body: { priceType: 'fixed', fixedPrice: '500abc' },
+  });
+
+  assert.strictEqual(res.statusCode, 400, 'garbage numeric must 400, not silently become 0');
+  assert.ok(res.body?.success === false);
+});

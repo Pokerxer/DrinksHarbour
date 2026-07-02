@@ -20,7 +20,12 @@ function findMatchingPriceRules(rules, subProductId, quantity) {
     r.priceType !== 'bundle' &&
     !(r.endDate && new Date(r.endDate) < now) &&
     !(r.startDate && new Date(r.startDate) > now) &&
-    (Number(r.minQuantity) || 0) <= quantity
+    (Number(r.minQuantity) || 0) <= quantity &&
+    // flash_sale qty cap: flashSaleQty > 0 limits the rule to qty <= flashSaleQty.
+    // 0 (default) = unlimited. Only applies to flash_sale rules.
+    !(r.priceType === 'flash_sale' &&
+      (Number(r.flashSaleQty) || 0) > 0 &&
+      quantity > (Number(r.flashSaleQty) || 0))
   );
 
   const specific = eligible.filter((r) => {

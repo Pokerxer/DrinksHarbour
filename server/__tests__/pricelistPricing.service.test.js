@@ -126,3 +126,30 @@ test('computeBundleLineDiscount returns 0 when the bundle already overrode the p
 test('computeBundleLineDiscount returns 0 when there is no bundle', () => {
   assert.strictEqual(computeBundleLineDiscount(null, 4000, 4, 0, false), 0);
 });
+
+// ── flashSaleQty qty cap (was dead data — engine never enforced it) ──────────
+
+test('findMatchingPriceRules excludes a flash_sale rule when flashSaleQty > 0 and quantity exceeds it', () => {
+  const rules = [
+    { _id: 'fs', priceType: 'flash_sale', flashSalePercentage: 20, flashSaleQty: 3, minQuantity: 0, sequence: 0 },
+  ];
+  // qty 3 qualifies (== flashSaleQty)
+  assert.deepStrictEqual(findMatchingPriceRules(rules, 'sp1', 3).map((r) => r._id), ['fs']);
+  // qty 4 excluded (> flashSaleQty)
+  assert.deepStrictEqual(findMatchingPriceRules(rules, 'sp1', 4), []);
+});
+
+test('findMatchingPriceRules treats flashSaleQty=0 as unlimited (existing behavior)', () => {
+  const rules = [
+    { _id: 'fs', priceType: 'flash_sale', flashSalePercentage: 20, flashSaleQty: 0, minQuantity: 0, sequence: 0 },
+  ];
+  assert.deepStrictEqual(findMatchingPriceRules(rules, 'sp1', 100).map((r) => r._id), ['fs']);
+});
+
+test('flashSaleQty cap does not affect non-flash_sale rules', () => {
+  const rules = [
+    { _id: 'd', priceType: 'discount', discountPercentage: 10, flashSaleQty: 3, minQuantity: 0, sequence: 0 },
+  ];
+  // discount rule with a stray flashSaleQty should still qualify at qty 5
+  assert.deepStrictEqual(findMatchingPriceRules(rules, 'sp1', 5).map((r) => r._id), ['d']);
+});

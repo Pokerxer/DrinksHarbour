@@ -657,6 +657,15 @@ function CreateRuleModal({
         setErrors({});
         searchRef.current?.focus();
       }
+    } catch (e: any) {
+      // Surface server-side field-keyed validation errors (400 with
+      // { success:false, errors: { field: 'message' } }) in the per-field
+      // error display, so the operator sees exactly which field failed.
+      const serverErrors = e?.body?.errors;
+      if (serverErrors && typeof serverErrors === 'object') {
+        setErrors((prev) => ({ ...prev, ...serverErrors }));
+      }
+      throw e;
     } finally {
       setSaving(null);
     }

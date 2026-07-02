@@ -10,7 +10,13 @@ async function req(url: string, token: string, opts: RequestInit = {}) {
     },
   });
   const body = await res.json();
-  if (!res.ok || !body.success) throw new Error(body.message || 'Request failed');
+  if (!res.ok || !body.success) {
+    const err = new Error(body.message || 'Request failed');
+    // Attach the full body so callers can surface field-keyed validation errors
+    // (e.g. the rule modal maps body.errors to per-field error displays).
+    (err as any).body = body;
+    throw err;
+  }
   return body;
 }
 
