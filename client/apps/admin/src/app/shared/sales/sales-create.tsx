@@ -189,10 +189,7 @@ export default function SalesCreate({
     }
   }
 
-  async function handleTabChange(next: CreateTab) {
-    if (next !== form.tab && isDirtyRef.current) {
-      await handleManualSave();
-    }
+  function handleTabChange(next: CreateTab) {
     form.setTab(next);
   }
 
@@ -292,6 +289,11 @@ export default function SalesCreate({
                     onRemove={form.removeLine}
                     onReorder={form.reorderLines}
                     warehouseId={(form.warehouseId as string) || undefined}
+                    warehouseName={
+                      form.warehouses.find(
+                        (w) => w._id === (form.warehouseId as string)
+                      )?.name
+                    }
                   />
                   <SalesTotals
                     untaxedAmount={form.untaxedAmount}

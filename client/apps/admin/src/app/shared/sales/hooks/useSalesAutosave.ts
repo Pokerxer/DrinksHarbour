@@ -127,56 +127,19 @@ export function useSalesAutosave({
     // eslint-disable-next-line react-hooks/exhaustive-deps — intentional: restarts interval only when token or doc ID changes; form data read from refs
   }, [token, initial?._id]);
 
+  // Deliberate autosave policy: NO debounced background save on every edit.
+  // The document persists only on explicit triggers — the manual save button,
+  // a warehouse switch (below), a confirmed pricelist recompute / coupon /
+  // print (via ensureSaved), and page leave (beforeunload/unmount bgSave).
+  const manualSaveRef = useRef<() => Promise<void>>(async () => {});
+  const prevWarehouseRef = useRef(warehouseId);
   useEffect(() => {
-    if (!token) return;
-    const productLines = priced.filter(
-      (l) => l.lineType === 'product' && l.subProductId
-    );
-    if (productLines.length === 0) return;
-
-    const timer = setTimeout(async () => {
-      if (!autoSaveEnabledRef.current) return;
-      setAutoSaveStatus('saving');
-      try {
-        const payload = buildPayload();
-        const existingId = initial?._id ?? draftIdRef.current;
-        if (existingId) {
-          await salesOrderService.update(existingId, payload as any, token);
-        } else {
-          const res = await salesOrderService.create(
-            { ...payload, docType: 'quotation' } as any,
-            token
-          );
-          const newId = res.data._id;
-          assignDraftId(newId);
-          window.history.replaceState(
-            null,
-            '',
-            routes.eCommerce.salesEdit(newId)
-          );
-        }
-        isDirtyRef.current = false;
-        setAutoSaveStatus('saved');
-      } catch {
-        setAutoSaveStatus('error');
-      }
-    }, 3000);
-
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps — buildPayload omitted to prevent infinite loop; refs omitted intentionally
-  }, [
-    priced,
-    customer,
-    notes,
-    terms,
-    validUntil,
-    paymentTerms,
-    pricelistId,
-    warehouseId,
-    shippingFee,
-    plannedRedeemPoints,
-    token,
-  ]);
+    if (prevWarehouseRef.current === warehouseId) return;
+    prevWarehouseRef.current = warehouseId;
+    if (!autoSaveEnabledRef.current) return;
+    void manualSaveRef.current();
+    // eslint-disable-next-line react-hooks/exhaustive-deps — save-on-warehouse-change only
+  }, [warehouseId]);
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -224,9 +187,16 @@ export function useSalesAutosave({
     }
   }
 
+  manualSaveRef.current = handleManualSave;
+
   async function ensureSaved(): Promise<string | null> {
     const existingId = initial?._id ?? draftIdRef.current;
-    if (existingId) return existingId;
+    if (existingId) {
+      // Flush pending edits so server-side actions (Update Prices, coupon,
+      // print) operate on what the operator sees.
+      if (isDirtyRef.current) await handleManualSave();
+      return existingId;
+    }
     const productLines = priced.filter(
       (l) => l.lineType === 'product' && l.subProductId
     );

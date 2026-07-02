@@ -39,6 +39,7 @@ import ProductLineSearch, {
 } from './product-line-search';
 import SalesLineSectionRow from './sales-line-section-row';
 import SalesLineNoteRow from './sales-line-note-row';
+import SalesNumberInput from './sales-number-input';
 
 const INLINE_CELL_CLS =
   'w-full border-0 border-b border-transparent bg-transparent px-1 py-1 text-right text-sm text-gray-900 focus:border-brand focus:outline-none focus:ring-0';
@@ -94,6 +95,8 @@ export interface SalesLineTableProps {
   /** Reorder lines by drag-and-drop. Receives the dragged key + the target key. */
   onReorder: (activeKey: string, overKey: string) => void;
   warehouseId?: string;
+  /** Display name of the selected warehouse (for the stock tooltip). */
+  warehouseName?: string;
 }
 
 /**
@@ -117,6 +120,7 @@ export default function SalesLineTable({
   onRemove,
   onReorder,
   warehouseId,
+  warehouseName,
 }: SalesLineTableProps) {
   const sectionSubtotals = computeSectionSubtotals(lines);
   const hasEmptyProductRow = lines.some(
@@ -178,6 +182,7 @@ export default function SalesLineTable({
                   onUpdate={onUpdate}
                   onRemove={onRemove}
                   warehouseId={warehouseId}
+                  warehouseName={warehouseName}
                 />
               ))}
             </tbody>
@@ -276,6 +281,7 @@ interface SortableLineRowProps {
   onUpdate: (key: string, patch: Partial<DraftLine>) => void;
   onRemove: (key: string) => void;
   warehouseId?: string;
+  warehouseName?: string;
 }
 
 /** Sortable wrapper that applies the dnd-kit transform to the <tr> and renders
@@ -287,6 +293,7 @@ function SortableLineRow({
   onUpdate,
   onRemove,
   warehouseId,
+  warehouseName,
 }: SortableLineRowProps) {
   const {
     attributes,
@@ -348,6 +355,7 @@ function SortableLineRow({
       attributes={attributes}
       dragHandle={dragHandle}
       warehouseId={warehouseId}
+      warehouseName={warehouseName}
     />
   );
 }
@@ -363,6 +371,7 @@ interface SalesLineProductRowProps {
   attributes: DraggableAttributes;
   dragHandle: ReactNode;
   warehouseId?: string;
+  warehouseName?: string;
 }
 
 /** A product line rendered as a single sortable <tr>: the product cell holds
@@ -379,6 +388,7 @@ function SalesLineProductRow({
   attributes,
   dragHandle,
   warehouseId,
+  warehouseName,
 }: SalesLineProductRowProps) {
   return (
     <tr ref={setNodeRef} style={style} {...attributes}>
@@ -427,6 +437,11 @@ function SalesLineProductRow({
             }
           />
         )}
+        {hasProduct && warehouseId && line.availableStock === 0 && (
+          <p className="mt-1 inline-flex items-center rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-600">
+            Not available in this warehouse
+          </p>
+        )}
         {hasProduct && (
           <input
             type="text"
@@ -441,15 +456,11 @@ function SalesLineProductRow({
       </td>
       <td className="px-2 py-2 align-top">
         <div className="flex items-center gap-1.5">
-          <input
-            type="number"
-            min={1}
+          <SalesNumberInput
             value={line.quantity}
-            onChange={(e) =>
-              onUpdate(line.key, {
-                quantity: Math.max(1, Number(e.target.value) || 1),
-              })
-            }
+            min={1}
+            fallback={1}
+            onCommit={(v) => onUpdate(line.key, { quantity: Math.round(v) })}
             className={`${INLINE_CELL_CLS} w-16`}
           />
           {line.availableStock != null &&
@@ -470,7 +481,9 @@ function SalesLineProductRow({
                       </span>
                     )}
                     <span className="flex items-center justify-between text-[11px]">
-                      <span className="text-gray-500">Available</span>
+                      <span className="text-gray-500">
+                        Available{warehouseName ? ` · ${warehouseName}` : ''}
+                      </span>
                       <span className="font-semibold text-gray-800">
                         {line.availableStock}
                       </span>
@@ -507,15 +520,11 @@ function SalesLineProductRow({
               className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
             />
           )}
-          <input
-            type="number"
-            min={0}
+          <SalesNumberInput
             value={line.unitPrice}
-            onChange={(e) =>
-              onUpdate(line.key, {
-                baseUnitPrice: Math.max(0, Number(e.target.value) || 0),
-                priceOverridden: true,
-              })
+            min={0}
+            onCommit={(v) =>
+              onUpdate(line.key, { baseUnitPrice: v, priceOverridden: true })
             }
             className={`${INLINE_CELL_CLS} w-24`}
           />
@@ -523,17 +532,12 @@ function SalesLineProductRow({
       </td>
       <td className="px-2 py-2 align-top">
         <div className="flex items-center justify-end gap-1">
-          <input
-            type="number"
+          <SalesNumberInput
+            value={line.discount}
             min={0}
             max={line.discountType === 'percentage' ? 100 : undefined}
             step={line.discountType === 'percentage' ? 0.5 : undefined}
-            value={line.discount}
-            onChange={(e) =>
-              onUpdate(line.key, {
-                discount: Math.max(0, Number(e.target.value) || 0),
-              })
-            }
+            onCommit={(v) => onUpdate(line.key, { discount: v })}
             className={`${INLINE_CELL_CLS} w-16`}
           />
           <button
@@ -562,17 +566,12 @@ function SalesLineProductRow({
         )}
       </td>
       <td className="px-2 py-2 align-top">
-        <input
-          type="number"
+        <SalesNumberInput
+          value={line.taxRate}
           min={0}
           max={100}
           step="0.5"
-          value={line.taxRate}
-          onChange={(e) =>
-            onUpdate(line.key, {
-              taxRate: Math.min(100, Math.max(0, Number(e.target.value) || 0)),
-            })
-          }
+          onCommit={(v) => onUpdate(line.key, { taxRate: v })}
           className={`${INLINE_CELL_CLS} w-16`}
         />
       </td>

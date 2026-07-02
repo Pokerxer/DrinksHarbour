@@ -2,6 +2,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import toast from 'react-hot-toast';
 import type {
   SalesLineItem,
   SalesOrder,
@@ -220,7 +221,24 @@ export function useSalesCreateForm({
       );
       const spMap = new Map<string, any>();
       for (const sp of results) if (sp?._id) spMap.set(sp._id, sp);
-      if (!spMap.size) return;
+      if (!spMap.size) return [];
+      // Names of lines with zero stock in the target warehouse (callers may
+      // warn the operator after a warehouse switch).
+      const unavailable: string[] = [];
+      if (whId) {
+        for (const l of targetLines) {
+          if (l.lineType !== 'product' || !l.subProductId) continue;
+          const sp = spMap.get(l.subProductId);
+          if (!sp) continue;
+          const size = sp.sizes?.find(
+            (x: any) => String(x._id ?? x.size) === String(l.sizeId ?? '')
+          );
+          const stock = size
+            ? (size.availableStock ?? size.stock ?? 0)
+            : (sp.availableStock ?? 0);
+          if (!stock) unavailable.push(l.name);
+        }
+      }
       setLines((prev) =>
         prev.map((line) => {
           if (line.lineType !== 'product' || !line.subProductId) return line;
@@ -250,6 +268,7 @@ export function useSalesCreateForm({
           };
         })
       );
+      return unavailable;
     },
     [token]
   );
@@ -274,7 +293,18 @@ export function useSalesCreateForm({
   useEffect(() => {
     if (prevWarehouseRef.current === warehouseIdStr) return;
     prevWarehouseRef.current = warehouseIdStr;
-    void hydrateLineMeta(linesRef.current, warehouseIdStr || undefined);
+    void (async () => {
+      const unavailable = await hydrateLineMeta(
+        linesRef.current,
+        warehouseIdStr || undefined
+      );
+      if (unavailable && unavailable.length) {
+        toast.error(
+          `Not available in the selected warehouse: ${unavailable.join(', ')}. Remove these lines or switch back.`,
+          { duration: 6000 }
+        );
+      }
+    })();
   }, [warehouseIdStr, hydrateLineMeta]);
 
   const {
