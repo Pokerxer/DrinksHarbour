@@ -148,10 +148,79 @@ function computeBundleLineDiscount(bestBundle, lineGross, quantity, itemDiscAmt,
   return Math.max(0, amt);
 }
 
+/**
+ * Cross-product bundle adjustments (Buy X of A, get discount on B).
+ * Scans the whole cart: for each bundle rule with bundleTargetSubProduct set,
+ * checks if the trigger product's total quantity meets the threshold, then
+ * applies the discount to the target product's lines.
+ *
+ * Same-product bundles (no bundleTargetSubProduct) are NOT handled here —
+ * those run through the existing per-line pickBestBundle path.
+ *
+ * @param {Array<{subProductId, quantity, price, costPrice}>} lines
+ * @param {Array} pricelistRules
+ * @returns {Array<{subProductId, discountAmount?, overridePrice?}>} per-target
+ *   adjustments. discountAmount = line-level discount (percentage/fixed).
+ *   overridePrice = new per-unit price (markup_on_cost/no_discount).
+ */
+function applyCartBundles(lines, pricelistRules) {
+  if (!lines?.length || !pricelistRules?.length) return [];
+  const now = new Date();
+  const qtyByProduct = new Map();
+  for (const l of lines) {
+    const sid = String(l.subProductId);
+    qtyByProduct.set(sid, (qtyByProduct.get(sid) || 0) + (Number(l.quantity) || 0));
+  }
+
+  const adjustments = [];
+  for (const r of pricelistRules) {
+    if (r.priceType !== 'bundle') continue;
+    if (!r.bundleTargetSubProduct) continue; // same-product bundle — skip
+    if (!r.bundleQuantity) continue;
+    if (r.endDate && new Date(r.endDate) < now) continue;
+    if (r.startDate && new Date(r.startDate) > now) continue;
+
+    const triggerId = r.subProduct ? String(r.subProduct) : null;
+    const targetId = String(r.bundleTargetSubProduct);
+    const triggerQty = triggerId ? (qtyByProduct.get(triggerId) || 0) : 0;
+    if (triggerQty < (Number(r.bundleQuantity) || 2)) continue;
+
+    // Find the target line(s)
+    const targetLines = lines.filter((l) => String(l.subProductId) === targetId);
+    if (!targetLines.length) continue;
+
+    const dt = r.bundleDiscountType || 'percentage';
+    const disc = Number(r.bundleDiscount) || 0;
+
+    for (const tl of targetLines) {
+      const qty = Number(tl.quantity) || 0;
+      const lineGross = (Number(tl.price) || 0) * qty;
+      const cost = Number(tl.costPrice) || 0;
+
+      if (dt === 'percentage') {
+        const amt = parseFloat(((lineGross * Math.min(100, disc)) / 100).toFixed(2));
+        adjustments.push({ subProductId: targetId, discountAmount: Math.max(0, amt) });
+      } else if (dt === 'fixed') {
+        const amt = Math.min(disc * qty, lineGross);
+        adjustments.push({ subProductId: targetId, discountAmount: Math.max(0, amt) });
+      } else if (dt === 'markup_on_cost' && cost > 0) {
+        const overridePrice = Math.round(cost * (1 + disc / 100) * 100) / 100;
+        adjustments.push({ subProductId: targetId, overridePrice });
+      } else if (dt === 'no_discount') {
+        // Keep the target's own price (no sale price to restore in this context;
+        // the line's price IS the original). Mark it so the caller knows.
+        adjustments.push({ subProductId: targetId, overridePrice: Number(tl.price) || 0 });
+      }
+    }
+  }
+  return adjustments;
+}
+
 module.exports = {
   findMatchingPriceRules,
   applyPriceRules,
   pickBestBundle,
   applyBundleOverride,
   computeBundleLineDiscount,
+  applyCartBundles,
 };

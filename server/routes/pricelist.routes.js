@@ -52,6 +52,7 @@ const RULE_FIELDS = [
   'discountType', 'discountPercentage', 'discountAmount',
   'flashSalePercentage', 'flashSaleQty',
   'bundleName', 'bundleQuantity', 'bundleDiscount', 'bundleDiscountType',
+  'bundleTargetSubProduct',
   'minQuantity', 'startDate', 'endDate',
 ];
 
@@ -259,6 +260,7 @@ router.post('/:id/rules', tenantAdminOrSuperAdmin, async (req, res, next) => {
       discountType, discountPercentage, discountAmount,
       flashSalePercentage, flashSaleQty,
       bundleName, bundleQuantity, bundleDiscount, bundleDiscountType,
+      bundleTargetSubProduct,
       minQuantity, startDate, endDate,
     } = body;
 
@@ -283,6 +285,7 @@ router.post('/:id/rules', tenantAdminOrSuperAdmin, async (req, res, next) => {
       bundleQuantity:      parseFloatStrict(bundleQuantity)      || 2,
       bundleDiscount:      effectiveBundleDiscount,
       bundleDiscountType:  bundleDiscountType                    || 'percentage',
+      bundleTargetSubProduct: bundleTargetSubProduct || undefined,
       minQuantity:         parseFloatStrict(minQuantity)         || 0,
       startDate, endDate,
     });

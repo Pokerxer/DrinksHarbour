@@ -184,6 +184,7 @@ const RULE_EMPTY = {
   bundleQuantity: '2',
   bundleDiscount: '',
   bundleDiscountType: 'percentage',
+  bundleTargetSubProduct: '',
   minQuantity: '',
   startDate: '',
   endDate: '',
@@ -321,6 +322,11 @@ function ruleToFormValues(rule: any): typeof RULE_EMPTY {
     bundleQuantity: rule.bundleQuantity ? String(rule.bundleQuantity) : '2',
     bundleDiscount: rule.bundleDiscount ? String(rule.bundleDiscount) : '',
     bundleDiscountType: rule.bundleDiscountType || 'percentage',
+    bundleTargetSubProduct: rule.bundleTargetSubProduct
+      ? (rule.bundleTargetSubProduct._id
+        ? String(rule.bundleTargetSubProduct._id)
+        : String(rule.bundleTargetSubProduct))
+      : '',
     minQuantity: rule.minQuantity ? String(rule.minQuantity) : '',
     startDate: toDateStr(rule.startDate),
     endDate: toDateStr(rule.endDate),
@@ -629,6 +635,7 @@ function CreateRuleModal({
       bundleQuantity: qty,
       bundleDiscount: form.bundleDiscountType === 'no_discount' ? 0 : disc,
       bundleDiscountType: form.bundleDiscountType,
+      bundleTargetSubProduct: form.bundleTargetSubProduct || undefined,
       minQuantity: parseFloat(form.minQuantity) || 0,
       startDate: form.startDate || undefined,
       endDate: form.endDate || undefined,
@@ -1091,6 +1098,62 @@ function CreateRuleModal({
                       onChange={(e) => f('bundleQuantity', e.target.value)}
                       className="h-8 w-14 rounded-lg border border-gray-200 bg-white px-2 text-center text-sm outline-none focus:border-purple-400"
                     />
+                  </div>
+                </RuleField>
+
+                {/* Cross-product target — optional "Get product" picker */}
+                <RuleField
+                  label="Get product (optional)"
+                  hint="Leave blank for same-product bundle. Set to apply the discount to a different product when the trigger qty is met."
+                >
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={
+                        form.bundleTargetSubProduct
+                          ? (products.find(
+                              (p: any) => p._id === form.bundleTargetSubProduct
+                            )?.product?.name ||
+                             form.bundleTargetSubProduct)
+                          : ''
+                      }
+                      onChange={(e) => {
+                        const q = e.target.value.toLowerCase();
+                        const match = products.find(
+                          (p: any) =>
+                            `${p.product?.name || ''} ${p.sku || ''}`
+                              .toLowerCase()
+                              .includes(q)
+                        );
+                        if (match && q) {
+                          f('bundleTargetSubProduct', match._id);
+                        } else if (!q) {
+                          f('bundleTargetSubProduct', '');
+                        }
+                      }}
+                      list="bundle-target-products"
+                      placeholder="Search product to discount…"
+                      className="h-9 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
+                    />
+                    <datalist id="bundle-target-products">
+                      {products.slice(0, 100).map((p: any) => (
+                        <option
+                          key={p._id}
+                          value={p.product?.name || p.sku}
+                        >
+                          {p.sku} · {fmt(p.baseSellingPrice || 0)}
+                        </option>
+                      ))}
+                    </datalist>
+                    {form.bundleTargetSubProduct && (
+                      <button
+                        type="button"
+                        onClick={() => f('bundleTargetSubProduct', '')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        <PiX className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                 </RuleField>
 

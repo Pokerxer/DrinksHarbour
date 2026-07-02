@@ -7,6 +7,7 @@ const {
   pickBestBundle,
   applyBundleOverride,
   computeBundleLineDiscount,
+  applyCartBundles,
 } = require('../services/pricelistPricing.service');
 
 test('findMatchingPriceRules excludes bundle rules and rules below minQuantity, sorts by sequence then minQuantity desc', () => {
@@ -152,4 +153,102 @@ test('flashSaleQty cap does not affect non-flash_sale rules', () => {
   ];
   // discount rule with a stray flashSaleQty should still qualify at qty 5
   assert.deepStrictEqual(findMatchingPriceRules(rules, 'sp1', 5).map((r) => r._id), ['d']);
+});
+
+// ── Cross-product bundles (Buy X Get Y) — applyCartBundles ───────────────────
+
+function cartLine(subProductId, quantity, price, costPrice = 0) {
+  return { subProductId, quantity, price, costPrice };
+}
+
+test('applyCartBundles: trigger qty met → target line gets percentage discount', () => {
+  const rules = [{
+    priceType: 'bundle', subProduct: 'A', bundleTargetSubProduct: 'B',
+    bundleQuantity: 6, bundleDiscount: 10, bundleDiscountType: 'percentage',
+    minQuantity: 0,
+  }];
+  const lines = [cartLine('A', 6, 1000), cartLine('B', 2, 500, 300)];
+  const adj = applyCartBundles(lines, rules);
+  // Target B line: 2 units × 500 = 1000 gross; 10% = 100 discount
+  assert.strictEqual(adj.length, 1);
+  assert.strictEqual(String(adj[0].subProductId), 'B');
+  assert.strictEqual(adj[0].discountAmount, 100);
+});
+
+test('applyCartBundles: trigger qty not met → no discount', () => {
+  const rules = [{
+    priceType: 'bundle', subProduct: 'A', bundleTargetSubProduct: 'B',
+    bundleQuantity: 6, bundleDiscount: 10, bundleDiscountType: 'percentage',
+  }];
+  const lines = [cartLine('A', 3, 1000), cartLine('B', 2, 500)];
+  const adj = applyCartBundles(lines, rules);
+  assert.strictEqual(adj.length, 0);
+});
+
+test('applyCartBundles: target not in cart → no adjustment', () => {
+  const rules = [{
+    priceType: 'bundle', subProduct: 'A', bundleTargetSubProduct: 'B',
+    bundleQuantity: 6, bundleDiscount: 10, bundleDiscountType: 'percentage',
+  }];
+  const lines = [cartLine('A', 6, 1000)]; // B not in cart
+  const adj = applyCartBundles(lines, rules);
+  assert.strictEqual(adj.length, 0);
+});
+
+test('applyCartBundles: fixed discount type applies flat amount off target line', () => {
+  const rules = [{
+    priceType: 'bundle', subProduct: 'A', bundleTargetSubProduct: 'B',
+    bundleQuantity: 6, bundleDiscount: 50, bundleDiscountType: 'fixed',
+  }];
+  const lines = [cartLine('A', 6, 1000), cartLine('B', 2, 500)];
+  const adj = applyCartBundles(lines, rules);
+  // fixed 50 per unit × 2 = 100
+  assert.strictEqual(adj[0].discountAmount, 100);
+});
+
+test('applyCartBundles: markup_on_cost overrides target per-unit price', () => {
+  const rules = [{
+    priceType: 'bundle', subProduct: 'A', bundleTargetSubProduct: 'B',
+    bundleQuantity: 6, bundleDiscount: 20, bundleDiscountType: 'markup_on_cost',
+  }];
+  const lines = [cartLine('A', 6, 1000), cartLine('B', 2, 500, 300)];
+  const adj = applyCartBundles(lines, rules);
+  // cost 300 × (1 + 20%) = 360 override price
+  assert.strictEqual(adj[0].overridePrice, 360);
+});
+
+test('applyCartBundles: no_discount restores original price on target', () => {
+  const rules = [{
+    priceType: 'bundle', subProduct: 'A', bundleTargetSubProduct: 'B',
+    bundleQuantity: 6, bundleDiscount: 0, bundleDiscountType: 'no_discount',
+  }];
+  const lines = [cartLine('A', 6, 1000), cartLine('B', 2, 400)];
+  const adj = applyCartBundles(lines, rules);
+  // no_discount: target keeps its own price (no override needed when not on sale)
+  // but the adjustment marks it; overridePrice = the line's own price (no change)
+  assert.strictEqual(adj.length, 1);
+  assert.strictEqual(adj[0].overridePrice, 400);
+});
+
+test('applyCartBundles: same-product bundles (no bundleTargetSubProduct) are ignored', () => {
+  // Same-product bundles are handled by the existing per-line pickBestBundle path.
+  // applyCartBundles only processes cross-product rules (bundleTargetSubProduct set).
+  const rules = [{
+    priceType: 'bundle', subProduct: 'A', // no bundleTargetSubProduct
+    bundleQuantity: 6, bundleDiscount: 10, bundleDiscountType: 'percentage',
+  }];
+  const lines = [cartLine('A', 6, 1000)];
+  const adj = applyCartBundles(lines, rules);
+  assert.strictEqual(adj.length, 0);
+});
+
+test('applyCartBundles: expired rule is skipped', () => {
+  const rules = [{
+    priceType: 'bundle', subProduct: 'A', bundleTargetSubProduct: 'B',
+    bundleQuantity: 6, bundleDiscount: 10, bundleDiscountType: 'percentage',
+    endDate: new Date('2020-01-01'),
+  }];
+  const lines = [cartLine('A', 6, 1000), cartLine('B', 2, 500)];
+  const adj = applyCartBundles(lines, rules);
+  assert.strictEqual(adj.length, 0);
 });

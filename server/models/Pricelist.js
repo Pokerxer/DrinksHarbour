@@ -38,6 +38,10 @@ const priceRuleSchema = new Schema({
   bundleQuantity:     { type: Number, min: 2, default: 2 },
   bundleDiscount:     { type: Number, min: 0, default: 10 },
   bundleDiscountType: { type: String, enum: ['percentage', 'fixed', 'markup_on_cost', 'no_discount'], default: 'percentage' },
+  // Cross-product bundle target: when set, the bundle is "buy N of subProduct
+  // (trigger), get discount on bundleTargetSubProduct (target)". Null = same-
+  // product bundle (existing behavior).
+  bundleTargetSubProduct: { type: Schema.Types.ObjectId, ref: 'SubProduct', required: false },
 
   // ── shared ────────────────────────────────────────────────────────────────
   minQuantity: { type: Number, default: 0, min: 0 },
