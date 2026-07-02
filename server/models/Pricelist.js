@@ -8,7 +8,7 @@ const priceRuleSchema = new Schema({
 
   priceType: {
     type: String,
-    enum: ['fixed', 'formula', 'discount', 'flash_sale', 'bundle'],
+    enum: ['fixed', 'formula', 'discount', 'flash_sale', 'bundle', 'cart_threshold'],
     default: 'fixed',
   },
 
@@ -42,6 +42,12 @@ const priceRuleSchema = new Schema({
   // (trigger), get discount on bundleTargetSubProduct (target)". Null = same-
   // product bundle (existing behavior).
   bundleTargetSubProduct: { type: Schema.Types.ObjectId, ref: 'SubProduct', required: false },
+
+  // ── cart_threshold ──────────────────────────────────────────────────────────
+  // Cart-level spend threshold: when the cart subtotal >= thresholdAmount, the
+  // discount (discountType + discountPercentage/discountAmount) applies to the
+  // whole cart. Multiple cart_threshold rules stack in sequence order.
+  thresholdAmount: { type: Number, min: 0, default: 0 },
 
   // ── shared ────────────────────────────────────────────────────────────────
   minQuantity: { type: Number, default: 0, min: 0 },

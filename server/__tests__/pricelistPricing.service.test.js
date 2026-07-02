@@ -8,6 +8,8 @@ const {
   applyBundleOverride,
   computeBundleLineDiscount,
   applyCartBundles,
+  findCartThresholdRules,
+  computeCartThresholdDiscount,
 } = require('../services/pricelistPricing.service');
 
 test('findMatchingPriceRules excludes bundle rules and rules below minQuantity, sorts by sequence then minQuantity desc', () => {
@@ -251,4 +253,51 @@ test('applyCartBundles: expired rule is skipped', () => {
   const lines = [cartLine('A', 6, 1000), cartLine('B', 2, 500)];
   const adj = applyCartBundles(lines, rules);
   assert.strictEqual(adj.length, 0);
+});
+
+// ── Cart spend-threshold discount ────────────────────────────────────────────
+
+test('findCartThresholdRules: subtotal below threshold → no rules', () => {
+  const rules = [{ priceType: 'cart_threshold', thresholdAmount: 50000, discountType: 'percentage', discountPercentage: 5, sequence: 0 }];
+  assert.deepStrictEqual(findCartThresholdRules(rules, 49999), []);
+});
+
+test('findCartThresholdRules: subtotal above threshold → rule qualifies', () => {
+  const rules = [{ _id: 't1', priceType: 'cart_threshold', thresholdAmount: 50000, discountType: 'percentage', discountPercentage: 5, sequence: 0 }];
+  const result = findCartThresholdRules(rules, 50000);
+  assert.deepStrictEqual(result.map((r) => r._id), ['t1']);
+});
+
+test('findCartThresholdRules: expired rule is excluded', () => {
+  const rules = [{ priceType: 'cart_threshold', thresholdAmount: 50000, discountType: 'percentage', discountPercentage: 5, endDate: new Date('2020-01-01') }];
+  assert.deepStrictEqual(findCartThresholdRules(rules, 60000), []);
+});
+
+test('findCartThresholdRules: non-cart_threshold rules are ignored', () => {
+  const rules = [
+    { _id: 'd', priceType: 'discount', discountPercentage: 10, thresholdAmount: 50000 },
+    { _id: 't', priceType: 'cart_threshold', thresholdAmount: 50000, discountType: 'percentage', discountPercentage: 5, sequence: 0 },
+  ];
+  const result = findCartThresholdRules(rules, 60000);
+  assert.deepStrictEqual(result.map((r) => r._id), ['t']);
+});
+
+test('computeCartThresholdDiscount: single percentage rule', () => {
+  const rules = [{ priceType: 'cart_threshold', thresholdAmount: 50000, discountType: 'percentage', discountPercentage: 5, sequence: 0 }];
+  // 100000 × 5% = 5000
+  assert.strictEqual(computeCartThresholdDiscount(rules, 100000), 5000);
+});
+
+test('computeCartThresholdDiscount: single fixed rule', () => {
+  const rules = [{ priceType: 'cart_threshold', thresholdAmount: 50000, discountType: 'fixed', discountAmount: 2000, sequence: 0 }];
+  assert.strictEqual(computeCartThresholdDiscount(rules, 100000), 2000);
+});
+
+test('computeCartThresholdDiscount: multiple rules stack sequentially', () => {
+  const rules = [
+    { priceType: 'cart_threshold', thresholdAmount: 50000, discountType: 'percentage', discountPercentage: 5, sequence: 0 },
+    { priceType: 'cart_threshold', thresholdAmount: 100000, discountType: 'percentage', discountPercentage: 10, sequence: 1 },
+  ];
+  // 100000 → -5% = 95000 → -10% = 85500; total discount = 14500
+  assert.strictEqual(computeCartThresholdDiscount(rules, 100000), 14500);
 });

@@ -53,6 +53,7 @@ const RULE_FIELDS = [
   'flashSalePercentage', 'flashSaleQty',
   'bundleName', 'bundleQuantity', 'bundleDiscount', 'bundleDiscountType',
   'bundleTargetSubProduct',
+  'thresholdAmount',
   'minQuantity', 'startDate', 'endDate',
 ];
 
@@ -107,6 +108,16 @@ function validateRuleFields(body) {
         errors.bundleDiscount = body.bundleDiscountType === 'markup_on_cost'
           ? 'Enter a markup %' : 'Enter a discount';
       }
+    }
+  } else if (pt === 'cart_threshold') {
+    const thresh = parseFloatStrict(body.thresholdAmount);
+    if (Number.isNaN(thresh) || thresh <= 0) errors.thresholdAmount = 'Enter a spend threshold';
+    if (body.discountType === 'fixed') {
+      const amt = parseFloatStrict(body.discountAmount);
+      if (Number.isNaN(amt) || amt <= 0) errors.discountAmount = 'Enter an amount';
+    } else {
+      const pct = parseFloatStrict(body.discountPercentage);
+      if (Number.isNaN(pct) || pct <= 0) errors.discountPercentage = 'Enter a discount %';
     }
   }
 
@@ -261,6 +272,7 @@ router.post('/:id/rules', tenantAdminOrSuperAdmin, async (req, res, next) => {
       flashSalePercentage, flashSaleQty,
       bundleName, bundleQuantity, bundleDiscount, bundleDiscountType,
       bundleTargetSubProduct,
+      thresholdAmount,
       minQuantity, startDate, endDate,
     } = body;
 
@@ -286,6 +298,7 @@ router.post('/:id/rules', tenantAdminOrSuperAdmin, async (req, res, next) => {
       bundleDiscount:      effectiveBundleDiscount,
       bundleDiscountType:  bundleDiscountType                    || 'percentage',
       bundleTargetSubProduct: bundleTargetSubProduct || undefined,
+      thresholdAmount:        parseFloatStrict(thresholdAmount)        || 0,
       minQuantity:         parseFloatStrict(minQuantity)         || 0,
       startDate, endDate,
     });

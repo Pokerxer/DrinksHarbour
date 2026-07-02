@@ -40,6 +40,7 @@ import {
   PiArrowUp,
   PiWarning,
   PiPencilSimple,
+  PiStorefront,
 } from 'react-icons/pi';
 
 const fmt = (n: number) =>
@@ -77,6 +78,12 @@ function priceLabel(rule: any) {
       return `-₦${Number(rule.discountAmount || 0).toFixed(2)}`;
     return `${rule.discountPercentage || 0}% discount`;
   }
+  if (rule.priceType === 'cart_threshold') {
+    const thresh = fmt(rule.thresholdAmount || 0);
+    if (rule.discountType === 'fixed')
+      return `Spend ${thresh}+ → -₦${Number(rule.discountAmount || 0).toFixed(0)}`;
+    return `Spend ${thresh}+ → ${rule.discountPercentage || 0}% off cart`;
+  }
   return '—';
 }
 
@@ -87,6 +94,7 @@ function priceTypeBadge(priceType: string) {
     discount: 'bg-emerald-50 text-emerald-700',
     flash_sale: 'bg-amber-50 text-amber-700',
     bundle: 'bg-purple-50 text-purple-700',
+    cart_threshold: 'bg-teal-50 text-teal-700',
   };
   return map[priceType] || 'bg-gray-100 text-gray-500';
 }
@@ -185,6 +193,7 @@ const RULE_EMPTY = {
   bundleDiscount: '',
   bundleDiscountType: 'percentage',
   bundleTargetSubProduct: '',
+  thresholdAmount: '',
   minQuantity: '',
   startDate: '',
   endDate: '',
@@ -230,6 +239,14 @@ const RULE_TYPE_META = {
     bg: '#faf5ff',
     border: '#e9d5ff',
     hint: 'Applied at order time when qty threshold is met',
+  },
+  cart_threshold: {
+    label: 'Spend Threshold',
+    Icon: PiStorefront,
+    color: '#0d9488',
+    bg: '#f0fdfa',
+    border: '#99f6e4',
+    hint: 'Cart-level discount when spend threshold is met',
   },
 };
 
@@ -327,6 +344,7 @@ function ruleToFormValues(rule: any): typeof RULE_EMPTY {
         ? String(rule.bundleTargetSubProduct._id)
         : String(rule.bundleTargetSubProduct))
       : '',
+    thresholdAmount: rule.thresholdAmount ? String(rule.thresholdAmount) : '',
     minQuantity: rule.minQuantity ? String(rule.minQuantity) : '',
     startDate: toDateStr(rule.startDate),
     endDate: toDateStr(rule.endDate),
@@ -604,6 +622,20 @@ function CreateRuleModal({
             ? 'Enter a markup %'
             : 'Enter a discount';
     }
+    if (pt === 'cart_threshold') {
+      if (!(parseFloat(form.thresholdAmount) || 0))
+        e.thresholdAmount = 'Enter a spend threshold';
+      if (
+        form.discountType === 'percentage' &&
+        !(parseFloat(form.discountPercentage) || 0)
+      )
+        e.discountPercentage = 'Enter a discount %';
+      if (
+        form.discountType === 'fixed' &&
+        !(parseFloat(form.discountAmount) || 0)
+      )
+        e.discountAmount = 'Enter an amount';
+    }
     if (
       form.startDate &&
       form.endDate &&
@@ -636,6 +668,7 @@ function CreateRuleModal({
       bundleDiscount: form.bundleDiscountType === 'no_discount' ? 0 : disc,
       bundleDiscountType: form.bundleDiscountType,
       bundleTargetSubProduct: form.bundleTargetSubProduct || undefined,
+      thresholdAmount: parseFloat(form.thresholdAmount) || 0,
       minQuantity: parseFloat(form.minQuantity) || 0,
       startDate: form.startDate || undefined,
       endDate: form.endDate || undefined,
@@ -737,7 +770,7 @@ function CreateRuleModal({
             <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-gray-400">
               Rule Type
             </p>
-            <div className="grid grid-cols-5 gap-1.5">
+            <div className="grid grid-cols-6 gap-1.5">
               {Object.entries(RULE_TYPE_META).map(([v, m]) => {
                 const active = form.priceType === v;
                 const Icon = m.Icon;
@@ -1274,6 +1307,64 @@ function CreateRuleModal({
                     flash-sale discount is removed.
                   </div>
                 )}
+              </>
+            )}
+
+            {/* ── Cart Threshold fields ── */}
+            {form.priceType === 'cart_threshold' && (
+              <>
+                <RuleField
+                  label="Spend threshold"
+                  error={errors.thresholdAmount}
+                  hint="Discount activates when the cart subtotal reaches this amount"
+                >
+                  <RuleInput
+                    type="number"
+                    min="0"
+                    step="any"
+                    prefix="₦"
+                    value={form.thresholdAmount}
+                    hasError={!!errors.thresholdAmount}
+                    onChange={(e: any) => f('thresholdAmount', e.target.value)}
+                  />
+                </RuleField>
+
+                <RuleField label="Discount type">
+                  <Seg
+                    options={[
+                      ['percentage', '% Off'],
+                      ['fixed', '₦ Off'],
+                    ]}
+                    value={form.discountType}
+                    onChange={(v) => f('discountType', v)}
+                    activeColor={RULE_TYPE_META.cart_threshold.color}
+                  />
+                </RuleField>
+
+                <RuleField
+                  label={form.discountType === 'fixed' ? 'Discount amount' : 'Discount percentage'}
+                  error={form.discountType === 'fixed' ? errors.discountAmount : errors.discountPercentage}
+                >
+                  <RuleInput
+                    type="number"
+                    min="0"
+                    step="any"
+                    prefix={form.discountType === 'fixed' ? '₦' : undefined}
+                    suffix={form.discountType !== 'fixed' ? '%' : undefined}
+                    value={form.discountType === 'fixed' ? form.discountAmount : form.discountPercentage}
+                    hasError={!!(form.discountType === 'fixed' ? errors.discountAmount : errors.discountPercentage)}
+                    onChange={(e: any) =>
+                      f(form.discountType === 'fixed' ? 'discountAmount' : 'discountPercentage', e.target.value)
+                    }
+                  />
+                  {form.discountType !== 'fixed' && (
+                    <PctChips
+                      value={form.discountPercentage}
+                      onChange={(v) => f('discountPercentage', v)}
+                      activeColor={RULE_TYPE_META.cart_threshold.color}
+                    />
+                  )}
+                </RuleField>
               </>
             )}
           </div>

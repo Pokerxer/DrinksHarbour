@@ -216,6 +216,42 @@ function applyCartBundles(lines, pricelistRules) {
   return adjustments;
 }
 
+/**
+ * Cart spend-threshold rules: filters cart_threshold rules whose threshold is
+ * met and date window is valid, sorted by sequence (they stack sequentially).
+ */
+function findCartThresholdRules(rules, cartSubtotal) {
+  if (!rules?.length) return [];
+  const now = new Date();
+  return rules
+    .filter((r) =>
+      r.priceType === 'cart_threshold' &&
+      (Number(r.thresholdAmount) || 0) <= cartSubtotal &&
+      !(r.endDate && new Date(r.endDate) < now) &&
+      !(r.startDate && new Date(r.startDate) > now)
+    )
+    .sort((a, b) => (Number(a.sequence) || 0) - (Number(b.sequence) || 0));
+}
+
+/**
+ * Sequentially applies cart-threshold rules to a running subtotal.
+ * Each percentage rule reduces the running amount; each fixed rule subtracts
+ * a flat amount. Returns the total discount (subtotal - finalRunning).
+ */
+function computeCartThresholdDiscount(rules, subtotal) {
+  if (!rules?.length) return 0;
+  let running = subtotal;
+  for (const r of rules) {
+    if (r.discountType === 'fixed') {
+      running -= Math.min(Number(r.discountAmount) || 0, running);
+    } else {
+      running -= running * (Math.min(100, Number(r.discountPercentage) || 0) / 100);
+    }
+    running = Math.max(0, running);
+  }
+  return Math.max(0, subtotal - running);
+}
+
 module.exports = {
   findMatchingPriceRules,
   applyPriceRules,
@@ -223,4 +259,6 @@ module.exports = {
   applyBundleOverride,
   computeBundleLineDiscount,
   applyCartBundles,
+  findCartThresholdRules,
+  computeCartThresholdDiscount,
 };
