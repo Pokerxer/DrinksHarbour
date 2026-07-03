@@ -244,6 +244,45 @@ const userSchema = new Schema(
       min: 0,
     },
 
+    // ── "Corks & Points" platform loyalty (ecommerce customers) ────────────────
+    // Authoritative loyalty-points balance for an online customer — the customer-
+    // facing side of the loyalty program, DISTINCT from the in-store-only
+    // POSCustomer.loyaltyPoints / LoyaltyTransaction ledger. Mutated only alongside
+    // an appended PlatformLoyaltyTransaction; never goes negative.
+    loyaltyPoints: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    // The loyalty tier a customer currently sits in ('cork' | 'barrel' | 'cellar' |
+    // 'vault'). Recomputed from lifetime points on each earn; stored for fast reads.
+    loyaltyTier: {
+      type: String,
+      enum: ['cork', 'barrel', 'cellar', 'vault'],
+      default: 'cork',
+      index: true,
+    },
+    // Lifetime loyalty points (never decremented by redeems) — drives tier upgrades.
+    loyaltyLifetimePoints: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    loyaltyTierUpdatedAt: { type: Date, default: Date.now },
+
+    // ── Referral program (loyalty stream) ─────────────────────────────────────
+    // A short unique code the customer shares; new customers can apply it at signup
+    // to earn both sides a one-time bonus. `referredBy` stores the referrer's _id.
+    referralCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+      uppercase: true,
+      trim: true,
+    },
+    referredBy: { type: ObjectId, ref: 'User', sparse: true, index: true },
+    referralBonusEarned: { type: Number, default: 0, min: 0 },
+
     // ────────────────────────────────────────────────
     // Customer preferences & personalization
     // ────────────────────────────────────────────────
@@ -517,6 +556,20 @@ userSchema.methods.toPublicProfile = function () {
     language: this.language,
     createdAt: this.createdAt,
   };
+};
+
+/**
+ * Generate a short, unique referral code (e.g. DH-AB23CD). Caller must save().
+ * @returns {string} The plain referral code.
+ */
+userSchema.methods.generateReferralCode = function () {
+  const crypto = require('crypto');
+  const ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'; // no 0/O,1/I/L
+  const pick = () => ALPHABET[crypto.randomInt(ALPHABET.length)];
+  let body = '';
+  for (let i = 0; i < 6; i++) body += pick();
+  this.referralCode = `DH-${body}`;
+  return this.referralCode;
 };
 
 const User = mongoose.models.User || mongoose.model('User', userSchema);
