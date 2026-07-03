@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import * as Icon from 'react-icons/pi';
 import { useAuth } from '@/context/AuthContext';
+import { validateEmail } from '@/lib/validation';
 
 // ─── Password strength ────────────────────────────────────────────────────────
 
@@ -16,11 +17,8 @@ interface FormErrors {
 
 function validateForm(email: string, password: string): FormErrors {
   const errors: FormErrors = {};
-  if (!email) {
-    errors.email = 'Email is required';
-  } else if (!/\S+@\S+\.\S+/.test(email)) {
-    errors.email = 'Please enter a valid email';
-  }
+  const emailError = validateEmail(email);
+  if (emailError) errors.email = emailError;
   if (!password) {
     errors.password = 'Password is required';
   } else if (password.length < 8) {
@@ -46,6 +44,17 @@ function LoginForm() {
   const [needsVerify,  setNeedsVerify]  = useState(false);
 
   const redirectTo = searchParams.get('redirect') || '/';
+  const expiredReason = searchParams.get('reason');
+
+  // Surface a "session expired" banner if redirected from a 401 refresh failure
+  // or an MFA-expired 403 from an admin route
+  useEffect(() => {
+    if (expiredReason === 'expired') {
+      setServerError('Your session has expired. Please sign in again to continue.');
+    } else if (expiredReason === 'mfa_expired') {
+      setServerError('Your MFA verification has expired. Please sign in again to re-verify.');
+    }
+  }, [expiredReason]);
 
   // Already logged in — redirect immediately
   useEffect(() => {
@@ -69,6 +78,12 @@ function LoginForm() {
 
     if (result.success) {
       router.push(redirectTo);
+    } else if (result.mfaRequired && result.pendingMfaToken) {
+      // Store the pending MFA token so the challenge page can read it,
+      // then redirect to the MFA challenge screen.
+      const store = rememberMe ? localStorage : sessionStorage;
+      store.setItem('dh_pending_mfa', result.pendingMfaToken);
+      router.push(`/login/mfa-challenge?remember=${rememberMe ? '1' : '0'}`);
     } else if (result.requiresEmailVerification) {
       setNeedsVerify(true);
       setServerError(result.error || 'Please verify your email before logging in.');
@@ -114,7 +129,7 @@ function LoginForm() {
                   {serverError}
                   {needsVerify && (
                     <Link
-                      href={`/verify-email?resend=true&email=${encodeURIComponent(email)}`}
+                      href={`/verify-email?email=${encodeURIComponent(email)}`}
                       className="block mt-1 font-semibold underline hover:text-red-900"
                     >
                       Resend verification email →

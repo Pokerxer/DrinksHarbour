@@ -252,9 +252,11 @@ function computeTotals(items) {
 
 /**
  * Re-derive the grand total from the order's stored totals plus the footer
- * adjustments (coupon discount, shipping fee). Single place where the final
- * `total` is assembled so create/edit/recompute/coupon paths can't drift:
- *   total = max(0, (subtotal - discountTotal - promotionTotal) + taxTotal - couponDiscount) + shippingFee
+ * adjustments (coupon discount, pricelist cart discount, shipping fee).
+ * Single place where the final `total` is assembled so
+ * create/edit/recompute/coupon paths can't drift:
+ *   total = max(0, (subtotal - discountTotal - promotionTotal) + taxTotal
+ *                  - couponDiscount - pricelistCartDiscount) + shippingFee
  */
 function refreshOrderTotal(so) {
   const untaxed = Math.max(
@@ -263,9 +265,39 @@ function refreshOrderTotal(so) {
   );
   const beforeAdjust = untaxed + (Number(so.taxTotal) || 0);
   so.total =
-    Math.max(0, beforeAdjust - (Number(so.couponDiscount) || 0)) +
+    Math.max(
+      0,
+      beforeAdjust - (Number(so.couponDiscount) || 0) - (Number(so.pricelistCartDiscount) || 0)
+    ) +
     Math.max(0, Number(so.shippingFee) || 0);
   return so;
+}
+
+/**
+ * Cart spend-threshold discount (cart_threshold pricelist rules) for the
+ * order's untaxed base. Live-DB guarded like the pricing/promotion engines so
+ * offline unit tests never hang on Mongoose buffering; any failure → 0.
+ */
+async function resolveCartThresholdDiscount(so, pricelistId, deps = {}) {
+  const compute = deps.computeCartThresholdForOrder || (() => {
+    try {
+      const mongoose = require('mongoose');
+      if (mongoose.connection && mongoose.connection.readyState === 1) {
+        return require('./salesPricing.service').computeCartThresholdForOrder;
+      }
+    } catch { /* mongoose/salesPricing unavailable — no threshold discount */ }
+    return null;
+  })();
+  if (!compute || !pricelistId) return 0;
+  const base = Math.max(
+    0,
+    (Number(so.subtotal) || 0) - (Number(so.discountTotal) || 0) - (Number(so.promotionTotal) || 0)
+  );
+  try {
+    return Math.max(0, Math.round(Number(await compute(base, { tenantId: so.tenant, pricelistId })) || 0));
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -398,7 +430,11 @@ async function createSalesOrderDoc({ tenantId, salesperson, body }) {
   const paymentTerms = normalizePaymentTerms(body.paymentTerms);
 
   const shippingFee = Math.max(0, Number(body.shippingFee) || 0);
-  totals.total += shippingFee;
+  const pricelistCartDiscount = await resolveCartThresholdDiscount(
+    { ...totals, tenant: tenantId },
+    body.pricelist
+  );
+  totals.total = Math.max(0, totals.total - pricelistCartDiscount) + shippingFee;
   return SalesOrder.create({
     tenant: tenantId,
     soNumber,
@@ -411,6 +447,7 @@ async function createSalesOrderDoc({ tenantId, salesperson, body }) {
     currency: body.currency || 'NGN',
     items,
     ...totals, // subtotal, discountTotal, taxTotal, total (refreshed below for footer adjustments)
+    pricelistCartDiscount,
     shippingFee: Math.max(0, Number(body.shippingFee) || 0),
     plannedRedeemPoints: Math.max(0, Math.round(Number(body.plannedRedeemPoints) || 0)),
     validUntil: body.validUntil || undefined,
@@ -455,6 +492,7 @@ async function recomputeOrderPricing(so, { tenantId, clearOverrides = false } = 
   so.discountTotal = totals.discountTotal;
   so.promotionTotal = totals.promotionTotal;
   so.taxTotal = totals.taxTotal;
+  so.pricelistCartDiscount = await resolveCartThresholdDiscount(so, so.pricelist);
   refreshOrderTotal(so);
   return so;
 }
@@ -533,6 +571,10 @@ async function applyEdit(so, body) {
       so.discountTotal = totals.discountTotal;
       so.promotionTotal = totals.promotionTotal;
       so.taxTotal = totals.taxTotal;
+      // The spend-threshold discount depends on the subtotal, so it must be
+      // refreshed even on this line-only fast path (single pricelist lookup —
+      // still skips the per-line pricing engine).
+      so.pricelistCartDiscount = await resolveCartThresholdDiscount(so, so.pricelist);
       refreshOrderTotal(so);
     } else {
       so.items = body.items;
@@ -587,6 +629,7 @@ async function convertQuotationToOrder(quotation) {
     })),
     subtotal: quotation.subtotal, discountTotal: quotation.discountTotal,
     promotionTotal: quotation.promotionTotal,
+    pricelistCartDiscount: quotation.pricelistCartDiscount || 0,
     taxTotal: quotation.taxTotal, total: quotation.total,
     paymentTerms: quotation.paymentTerms || 'immediate',
     dueDate: computeDueDate(quotation.paymentTerms || 'immediate'),
@@ -634,7 +677,8 @@ async function duplicateSalesOrderDoc(so) {
     currency: so.currency,
     items,
     subtotal: so.subtotal, discountTotal: so.discountTotal,
-    promotionTotal: so.promotionTotal, taxTotal: so.taxTotal, total: so.total,
+    promotionTotal: so.promotionTotal, pricelistCartDiscount: so.pricelistCartDiscount || 0,
+    taxTotal: so.taxTotal, total: so.total,
     paymentTerms: so.paymentTerms || 'immediate',
     dueDate: so.dueDate,
     invoiceAddress: so.invoiceAddress, deliveryAddress: so.deliveryAddress,
@@ -872,6 +916,7 @@ async function getGroupedOrders({ matchQuery, groupBy, groupBySubOption, sort })
 
 module.exports = {
   lineTotalOf, lineTaxOf, mapLine, computeTotals, refreshOrderTotal,
+  resolveCartThresholdDiscount,
   applyCouponToOrder, createSalesOrderDoc,
   canEdit, canCancel, applyEdit, recomputeOrderPricing, updatePricesForOrder,
   convertQuotationToOrder, duplicateSalesOrderDoc,

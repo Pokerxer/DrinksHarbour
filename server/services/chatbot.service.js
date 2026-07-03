@@ -104,9 +104,11 @@ const callClaude = async (prompt, systemPrompt = null, conversationHistory = [])
 const BASE_SYSTEM_PROMPT = `You are DrinksHarbour AI — the friendly, expert beverage assistant for DrinksHarbour.com, Nigeria's premier drinks marketplace.
 
 PERSONA:
-- You are a world-class beverage expert — sommelier-level knowledge of wines, spirits, beers, and cocktails.
+- You are a world-class beverage expert — sommelier-level knowledge of wines, spirits, beers, cocktails, AND non-alcoholic drinks (juices, mocktails, soft drinks, malt drinks, energy drinks, alcohol-free wines and beers).
+- Your #1 mission is customer satisfaction: be genuinely helpful, never dismissive, always leave the customer with a clear next step.
 - Warm, passionate, and detailed when explaining drinks. Sound like a knowledgeable Nigerian drinks connoisseur.
 - Use emojis naturally (🍷🍺🥃🎉) but don't overdo it.
+- If a customer is unhappy or has an issue (delivery, wrong item, refund), apologize sincerely and direct them to the support page or their order history — never argue.
 
 FORMAT RULES:
 - Use **bold** for product names and prices.
@@ -167,12 +169,16 @@ const analyzeImage = async (imageUrl, userContext = '') => {
 4. **Appearance:** Describe the bottle, label color, any age statement or edition visible.
 5. **Your Assessment:** What do you know about this product — origin, taste profile, typical price range?
 
-Be as precise as possible with the brand name so it can be searched in our catalog.${userContext ? `\n\nCustomer's question: "${userContext}"` : ''}`;
+Be as precise as possible with the brand name so it can be searched in our catalog.${userContext ? `\n\nCustomer's question: "${userContext}"` : ''}
+
+After your analysis, output on the very last line (nothing after it) exactly:
+IDENTIFIED_JSON: {"name":"<full product name>","brand":"<brand only>","type":"<one of: wine|champagne|beer|whiskey|vodka|gin|rum|tequila|cognac|liqueur|non_alcoholic|other>","subType":"<style e.g. red wine, single malt, IPA>","abv":<number or null>,"estimatedPriceNgn":<typical Nigerian retail price in naira for this bottle, number or null>}
+Use null for anything you cannot determine.`;
 
   try {
     const response = await anthropic.messages.create({
       model: CLAUDE_MODEL,
-      max_tokens: 700,
+      max_tokens: 800,
       temperature: 0.3,
       messages: [{
         role: 'user',
@@ -183,7 +189,16 @@ Be as precise as possible with the brand name so it can be searched in our catal
       }],
     });
     const textBlock = response.content.find(b => b.type === 'text');
-    if (textBlock?.text) return textBlock.text;
+    if (textBlock?.text) {
+      const raw = textBlock.text;
+      let identified = null;
+      const jsonMatch = raw.match(/IDENTIFIED_JSON:\s*(\{[\s\S]*\})/);
+      if (jsonMatch) {
+        try { identified = JSON.parse(jsonMatch[1]); } catch { /* keep prose only */ }
+      }
+      const text = raw.replace(/IDENTIFIED_JSON:\s*\{[\s\S]*\}\s*$/, '').trim();
+      return { text, identified };
+    }
   } catch (err) {
     console.error(`analyzeImage: Claude vision failed — ${err.message}`);
   }
@@ -350,14 +365,18 @@ const extractIntent = (query, conversationHistory = []) => {
 };
 
 // ── Full catalog loader — mirrors exactly what /shop shows ──────────────────
-let _catalogCache = null;
-let _catalogCacheTime = 0;
+// Cached per tenant. Returns { text, entries }: `text` is the prompt context,
+// `entries` carry structured data (category, brand, abv, prices, image) used
+// for substitute matching when an identified drink isn't in the catalog.
+let _catalogCache = {};
 const CATALOG_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
 
-const buildFullCatalogContext = async (tenantId = null) => {
+const loadCatalog = async (tenantId = null) => {
+  const cacheKey = tenantId ? tenantId.toString() : 'all';
   const now = Date.now();
-  if (_catalogCache && (now - _catalogCacheTime) < CATALOG_CACHE_TTL) {
-    return _catalogCache;
+  const cached = _catalogCache[cacheKey];
+  if (cached && (now - cached.time) < CATALOG_CACHE_TTL) {
+    return cached.value;
   }
 
   const { calculateSizePricing, calculateSubProductPricing, isDiscountActive } = require('../utils/pricing');
@@ -380,9 +399,10 @@ const buildFullCatalogContext = async (tenantId = null) => {
 
     // Step 2: All approved products — include platformMarkup & platformDiscount
     const products = await ProductModel.find({ status: 'approved' })
-      .select('name slug type subType category subCategory images platformMarkup platformDiscount')
+      .select('name slug type subType category subCategory images platformMarkup platformDiscount abv brand')
       .populate('category', 'name slug')
       .populate('subCategory', 'name slug')
+      .populate('brand', 'name')
       .lean();
 
     if (products.length === 0) return null;
@@ -418,8 +438,9 @@ const buildFullCatalogContext = async (tenantId = null) => {
       spByProduct[pid].push(sp);
     });
 
-    // Step 6: Build catalog lines
+    // Step 6: Build catalog lines + structured entries
     const catalogLines = [];
+    const entries = [];
     const categorySet = new Set();
 
     for (const p of products) {
@@ -497,6 +518,10 @@ const buildFullCatalogContext = async (tenantId = null) => {
 
       let line = `• ${p.name}`;
       if (catName) line += ` [${catName}${subCatName ? ' > ' + subCatName : ''}]`;
+      const meta = [];
+      if (p.brand?.name) meta.push(p.brand.name);
+      if (p.abv != null && p.abv !== '') meta.push(`${p.abv}% ABV`);
+      if (meta.length) line += ` (${meta.join(', ')})`;
       line += ` — from ₦${Math.round(minPrice).toLocaleString()}`;
       if (minPrice !== maxPrice) line += ` to ₦${Math.round(maxPrice).toLocaleString()}`;
       if (anyOnSale) line += ' [ON SALE]';
@@ -504,20 +529,114 @@ const buildFullCatalogContext = async (tenantId = null) => {
       line += '\n' + sizeLines.join('\n');
 
       catalogLines.push(line);
+
+      entries.push({
+        id: p._id.toString(),
+        name: p.name,
+        slug: p.slug,
+        type: p.type || '',
+        subType: p.subType || '',
+        category: catName,
+        subCategory: subCatName,
+        brand: p.brand?.name || '',
+        abv: typeof p.abv === 'number' ? p.abv : null,
+        minPrice,
+        maxPrice,
+        totalStock,
+        onSale: anyOnSale,
+        image: p.images?.[0]?.url || p.images?.[0] || null,
+        sizes: [...sizeMap.values()],
+      });
     }
 
     if (catalogLines.length === 0) return null;
 
     const categoriesLine = categorySet.size > 0 ? `CATEGORIES IN CATALOG: ${[...categorySet].join(', ')}\n\n` : '';
-    const result = `${categoriesLine}PRODUCTS:\n${catalogLines.join('\n')}`;
+    const text = `${categoriesLine}PRODUCTS:\n${catalogLines.join('\n')}`;
 
-    _catalogCache = result;
-    _catalogCacheTime = now;
-    return result;
+    const value = { text, entries };
+    _catalogCache[cacheKey] = { time: now, value };
+    return value;
   } catch (err) {
-    console.error('buildFullCatalogContext error:', err.message);
+    console.error('loadCatalog error:', err.message);
     return null;
   }
+};
+
+// Back-compat: string-only catalog context for prompt building
+const buildFullCatalogContext = async (tenantId = null) => {
+  const catalog = await loadCatalog(tenantId);
+  return catalog?.text || null;
+};
+
+// ── Substitute matching ──────────────────────────────────────────────────────
+// Given a drink identified from a photo (or described in text), rank in-stock
+// catalog entries by similarity: category → sub-category → brand → ABV
+// proximity → price-range proximity.
+const findSubstitutes = (identified, entries, limit = 4, excludeIds = []) => {
+  if (!identified || !entries || entries.length === 0) return [];
+  const norm = (s) => (s || '').toString().toLowerCase().trim();
+
+  const idType = norm(identified.type);
+  const idSub = norm(identified.subType);
+  const idBrand = norm(identified.brand);
+  const idAbv = typeof identified.abv === 'number' ? identified.abv : null;
+  const idPrice = typeof identified.estimatedPriceNgn === 'number' && identified.estimatedPriceNgn > 0
+    ? identified.estimatedPriceNgn : null;
+
+  // Words that indicate the same broad category as the identified drink
+  const typeGroups = {
+    wine: ['wine', 'merlot', 'cabernet', 'shiraz', 'chardonnay', 'sauvignon', 'moscato', 'rosé', 'rose'],
+    champagne: ['champagne', 'prosecco', 'sparkling', 'cava'],
+    beer: ['beer', 'lager', 'stout', 'ale', 'pilsner'],
+    whiskey: ['whiskey', 'whisky', 'scotch', 'bourbon', 'malt', 'rye'],
+    vodka: ['vodka'],
+    gin: ['gin'],
+    rum: ['rum'],
+    tequila: ['tequila', 'mezcal'],
+    cognac: ['cognac', 'brandy', 'armagnac'],
+    liqueur: ['liqueur', 'cream', 'amaretto', 'schnapps'],
+    non_alcoholic: ['juice', 'soda', 'water', 'soft drink', 'non-alcoholic', 'malt', 'mocktail', 'energy'],
+  };
+  const groupWords = typeGroups[idType] || (idType ? [idType] : []);
+
+  const scored = [];
+  for (const e of entries) {
+    if (!e.totalStock || e.minPrice <= 0) continue;
+    if (excludeIds.includes(e.id)) continue;
+
+    const haystack = norm(`${e.name} ${e.type} ${e.subType} ${e.category} ${e.subCategory}`);
+    let score = 0;
+
+    // Category affinity (strongest signal)
+    if (groupWords.length > 0 && groupWords.some((w) => haystack.includes(w))) score += 40;
+    else if (idType && norm(e.type).includes(idType)) score += 30;
+
+    // Sub-category / style affinity
+    if (idSub && haystack.includes(idSub)) score += 15;
+
+    // Same brand, different bottle (e.g. another Hennessy expression)
+    if (idBrand && idBrand.length > 2 && norm(`${e.name} ${e.brand}`).includes(idBrand)) score += 25;
+
+    // ABV proximity
+    if (idAbv != null && e.abv != null) {
+      const diff = Math.abs(e.abv - idAbv);
+      if (diff <= 3) score += 10;
+      else if (diff <= 8) score += 5;
+    }
+
+    // Price-range proximity to the drink's typical retail price
+    if (idPrice) {
+      const ratio = e.minPrice / idPrice;
+      if (ratio >= 0.7 && ratio <= 1.3) score += 15;
+      else if (ratio >= 0.5 && ratio <= 1.8) score += 8;
+    }
+
+    if (score > 0) scored.push({ entry: e, score });
+  }
+
+  scored.sort((a, b) => b.score - a.score || a.entry.minPrice - b.entry.minPrice);
+  return scored.slice(0, limit).map((s) => s.entry);
 };
 
 // Query products from database
@@ -888,24 +1007,34 @@ const extractLastProductFromHistory = (conversationHistory) => {
 
 // Main chatbot query handler
 const handleChatbotQuery = async (options) => {
-  const { query, imageUrls, imageUrl, tenantId, conversationHistory = [], fileContent, fileName, userId } = options;
+  const { query, imageUrls, imageUrl, tenantId, conversationHistory = [], fileContent, fileName, fileUnreadable, userId } = options;
 
   // Support both single imageUrl and multiple imageUrls
   const images = imageUrls || (imageUrl ? [imageUrl] : []);
 
-  if (!query || query.trim().length < 1) {
-    return await getGreetingResponse();
-  }
-
   try {
-    // Handle image query (single or multiple)
+    // Handle image query first — customers often send a photo with no text
     if (images.length > 0) {
-      return await handleImageQuery(images, query, tenantId);
+      return await handleImageQuery(images, query || '', tenantId);
+    }
+
+    // File was attached but nothing readable could be extracted
+    if (fileUnreadable) {
+      return {
+        response: `I couldn't read **${fileName || 'that file'}** 😕 — it may be scanned, empty, or in a format I don't support.\n\nPlease send your drink list as a **PDF, Word, Excel, CSV, or plain text** file — or simply type the items here, one per line:\n• 2 Heineken\n• 1 Hennessy VS\n• 3 Red wine`,
+        products: [],
+        quickReplies: [{ label: '⌨️ Type my list', query: 'I want to type my drink list' }, { label: '🍷 Browse catalog', query: 'What do you have?' }],
+        intent: 'file_query',
+      };
     }
 
     // Handle file content (drink list)
     if (fileContent) {
-      return await handleFileQuery(fileContent, fileName, query, tenantId);
+      return await handleFileQuery(fileContent, fileName, query || '', tenantId);
+    }
+
+    if (!query || query.trim().length < 1) {
+      return await getGreetingResponse();
     }
 
     const intent = extractIntent(query, conversationHistory);
@@ -1021,7 +1150,7 @@ ${intent.type === 'price' ? '- Lead with the price clearly from the catalog. Lis
 ${intent.type === 'price_complaint' ? '- Acknowledge the price empathetically (1 short sentence). Then list ONLY cheaper products from the CATALOG DATA. Show exact catalog prices. If none cheaper, say so and suggest browsing /shop.' : ''}
 ${intent.type === 'recommendation' ? '- Give a confident recommendation from the catalog. Briefly explain why it suits them using your expert knowledge.' : ''}
 ${intent.type === 'comparison' ? '- Compare key differences using your expert knowledge: taste, ABV, origin, style. For prices, use catalog only.' : ''}
-${intent.type === 'event_planning' ? '- Ask about guest count and budget if not mentioned. Recommend quantities and products from the catalog.' : ''}
+${intent.type === 'event_planning' ? `- You are now an event drinks planner. If guest count or budget is missing, ask for both in ONE friendly question. Once known, build a complete plan using standard consumption rates: wine 1 bottle per 2 guests, champagne 1 bottle per 8 guests (toast), beer 2-3 bottles per beer drinker, spirits 1 x 75cl bottle per 8-10 guests, non-alcoholic 1 option per 3 guests (always include some). Recommend SPECIFIC catalog products with quantities and line totals in ₦, then a grand total that respects their budget. Format as a clear shopping list.` : ''}
 ${intent.type === 'discount' ? '- Highlight on-sale items from the catalog first. Show original vs sale price.' : ''}
 ${intent.type === 'cocktail' ? '- Give a full cocktail recipe using your expert knowledge. Mention if the base spirit is in our catalog.' : ''}
 ${intent.type === 'gift' ? '- Recommend premium gifting options from the catalog. Suggest presentation ideas.' : ''}
@@ -1144,13 +1273,18 @@ const handleImageQuery = async (imageUrls, userQuery = '', tenantId = null) => {
       };
     }
 
-    // Step 2: Extract product names from analyses and search catalog
+    // Step 2: Search catalog using the structured identification (fallback: prose)
     const allProducts = [];
-    for (const analysis of analyses) {
-      const productName = extractProductNameFromAnalysis(analysis);
+    for (const a of analyses) {
+      const identifiedName = a.identified?.name || a.identified?.brand || null;
+      const productName = identifiedName || extractProductNameFromAnalysis(a.text);
       if (productName) {
         const intent = extractIntent(productName);
-        const found = await queryProducts(intent.filters, productName, 4, null, tenantId);
+        let found = await queryProducts(intent.filters, productName, 4, null, tenantId);
+        // Retry with brand alone if the full name found nothing
+        if (found.length === 0 && a.identified?.brand && a.identified.brand !== productName) {
+          found = await queryProducts({}, a.identified.brand, 4, null, tenantId);
+        }
         allProducts.push(...found);
       }
     }
@@ -1158,17 +1292,39 @@ const handleImageQuery = async (imageUrls, userQuery = '', tenantId = null) => {
       arr.findIndex(x => x._id.toString() === p._id.toString()) === i
     );
 
-    // Step 3: Load full catalog for context
-    const fullCatalog = await buildFullCatalogContext(tenantId);
+    // Step 3: Load full catalog (text for prompt, entries for substitute matching)
+    const catalog = await loadCatalog(tenantId);
+    const fullCatalog = catalog?.text || null;
+
+    // Step 3b: If the exact bottle isn't stocked, rank the closest substitutes
+    // by category, sub-category, brand, ABV proximity, and price range.
+    const inStockMatches = uniqueProducts.filter(p => p.totalStock > 0);
+    let substitutes = [];
+    const identified = analyses.find(a => a.identified)?.identified || null;
+    if (inStockMatches.length === 0 && identified) {
+      substitutes = findSubstitutes(
+        identified,
+        catalog?.entries || [],
+        4,
+        uniqueProducts.map(p => p._id.toString())
+      );
+    }
 
     // Step 4: Build a rich AI response using vision analysis + catalog + expert knowledge
     const imageContext = analyses.length === 1
-      ? analyses[0]
-      : analyses.map((a, i) => `**Image ${i + 1}:**\n${a}`).join('\n\n');
+      ? analyses[0].text
+      : analyses.map((a, i) => `**Image ${i + 1}:**\n${a.text}`).join('\n\n');
 
     const catalogMatches = uniqueProducts.length > 0
-      ? `\nCATALOG MATCHES FOUND:\n${uniqueProducts.map(p => `• ${p.name} — ₦${(p.minPrice || 0).toLocaleString()} [In Stock: ${p.totalStock > 0}]`).join('\n')}`
+      ? `\nCATALOG MATCHES FOUND:\n${uniqueProducts.map(p => `• ${p.name} — ₦${(p.minPrice || 0).toLocaleString()} [${p.totalStock > 0 ? 'In Stock' : 'Out of Stock'}]`).join('\n')}`
       : '\nNo exact catalog matches found for this product.';
+
+    const substituteBlock = substitutes.length > 0
+      ? `\nCLOSEST AVAILABLE SUBSTITUTES (in stock, ranked by similarity of category, brand, ABV and price):\n${substitutes.map(s => {
+          const meta = [s.brand, s.abv != null ? `${s.abv}% ABV` : ''].filter(Boolean).join(', ');
+          return `• ${s.name}${meta ? ` (${meta})` : ''} [${s.category}${s.subCategory ? ' > ' + s.subCategory : ''}] — from ₦${Math.round(s.minPrice).toLocaleString()}`;
+        }).join('\n')}`
+      : '';
 
     const systemPrompt = `${BASE_SYSTEM_PROMPT}
 
@@ -1176,28 +1332,37 @@ ${fullCatalog ? `FULL SHOP CATALOG:\n${fullCatalog}` : ''}
 
 IMAGE ANALYSIS RESULT:
 ${imageContext}
-${catalogMatches}
+${catalogMatches}${substituteBlock}
 
 INSTRUCTIONS:
-- The customer sent a photo of a drink. Use the image analysis above to identify it.
+- The customer sent a photo of a drink. Use the image analysis above to identify it — open by naming the drink confidently.
 - If the drink is in our catalog (see CATALOG MATCHES), tell them the price and availability from the catalog.
 - Give a brief but expert description of the drink: what it is, origin, taste profile.
-- If it's NOT in our catalog, say so honestly but still describe the drink expertly and suggest the closest catalog alternatives.
+- If it's NOT in stock, say so honestly, then recommend the CLOSEST AVAILABLE SUBSTITUTES above by name — one line each explaining WHY it's a good stand-in (same style, similar strength, similar price). Use exact catalog prices.
 - Keep response warm, concise, and expert-sounding.`;
 
     const userPrompt = userQuery || 'What drink is this? Tell me about it and check if you have it available.';
     const response = await callClaude(userPrompt, systemPrompt) || imageContext;
 
+    const matchCards = uniqueProducts.slice(0, 4).map(p => ({
+      id: p._id, name: p.name, slug: p.slug, type: p.type,
+      minPrice: p.minPrice, hasDiscount: p.hasDiscount,
+      image: (p.images && p.images[0]) ? (p.images[0].url || p.images[0]) : null
+    }));
+    const substituteCards = substitutes.map(s => ({
+      id: s.id, name: s.name, slug: s.slug, type: s.type,
+      minPrice: Math.round(s.minPrice), hasDiscount: s.onSale,
+      image: s.image, isSubstitute: true
+    }));
+
     return {
       response,
-      products: uniqueProducts.slice(0, 4).map(p => ({
-        id: p._id, name: p.name, slug: p.slug, type: p.type,
-        minPrice: p.minPrice, hasDiscount: p.hasDiscount,
-        image: (p.images && p.images[0]) ? (p.images[0].url || p.images[0]) : null
-      })),
+      products: [...matchCards, ...substituteCards].slice(0, 6),
       quickReplies: uniqueProducts.length > 0
         ? [{ label: '🛒 View product', query: `Tell me more about ${uniqueProducts[0].name}` }, { label: '💰 Price details', query: `Price of ${uniqueProducts[0].name}` }]
-        : [{ label: '🔍 Search similar', query: analyses[0]?.split('\n')[0] || 'Search drinks' }, { label: '🍷 Browse catalog', query: 'What do you have?' }],
+        : substitutes.length > 0
+          ? [{ label: '🔄 More alternatives', query: `More drinks like ${identified?.name || identified?.brand || 'this'}` }, { label: '🍷 Browse catalog', query: 'What do you have?' }]
+          : [{ label: '🔍 Search similar', query: identified?.name || analyses[0]?.text.split('\n')[0] || 'Search drinks' }, { label: '🍷 Browse catalog', query: 'What do you have?' }],
       intent: 'image_analysis',
       imageAnalyzed: true
     };
@@ -1383,17 +1548,30 @@ const extractProductNameFromAnalysis = (analysis) => {
   return null;
 };
 
-// Get greeting response — generated by Claude so it's varied and on-brand
-const FALLBACK_GREETING = "👋 Hi! I'm your DrinksHarbour assistant. Ask me about drinks, prices, or planning an event!";
-
+// Get greeting response — instant (no AI round-trip) so the widget opens fast.
+// Time-of-day aware with rotating variants so it doesn't feel canned.
 const getGreetingResponse = async () => {
-  const greetingPrompt = 'A new customer just opened the chat widget. Greet them warmly as DrinksHarbour AI in 2-3 sentences, and invite them to ask about drinks, prices, or event planning.';
-  const response = await callClaude(greetingPrompt, BASE_SYSTEM_PROMPT) || FALLBACK_GREETING;
+  const hour = new Date().getHours();
+  const timeGreeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+
+  const variants = [
+    `${timeGreeting}! 🍷 I'm your DrinksHarbour drinks expert. Ask me anything about wines, spirits, beers or soft drinks — or snap a photo of a bottle and I'll check if we have it in stock!`,
+    `${timeGreeting}! 🥂 Welcome to DrinksHarbour. I can recommend the perfect drink, check prices and stock, plan drinks for your event, or identify any bottle from a photo. What can I do for you?`,
+    `${timeGreeting}! 🍾 I'm here to help you find the perfect drink. Try me: ask for a recommendation, send a photo of a bottle, or upload your party drink list and I'll price it instantly.`,
+  ];
+  const response = variants[Math.floor(Math.random() * variants.length)];
 
   return {
     response,
     products: [],
-    quickReplies: ['Wines', 'Beers', 'Spirits', 'Events', 'Deals'],
+    quickReplies: [
+      { label: '🍷 Wines', query: 'Show me your best wines' },
+      { label: '🥃 Spirits', query: 'Show me your whiskeys and spirits' },
+      { label: '🍺 Beers', query: 'What beers do you have?' },
+      { label: '🥤 Non-alcoholic', query: 'Show me non-alcoholic drinks' },
+      { label: '🎉 Plan an event', query: 'Help me plan drinks for an event' },
+      { label: '🔥 Deals', query: "What's on sale today?" },
+    ],
     categories: [
       { name: 'Wine', icon: '🍷', slug: 'wine' },
       { name: 'Beer', icon: '🍺', slug: 'beer' },
@@ -1513,6 +1691,8 @@ module.exports = {
   extractIntent,
   queryProducts,
   buildFullCatalogContext,
+  loadCatalog,
+  findSubstitutes,
   getGreetingResponse,
   anthropic
 };

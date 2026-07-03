@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Unkempt, Kavoon } from "next/font/google";
 import "@/styles/styles.scss";
 import GlobalProvider from "./GlobalProvider";
 import ModalCart from "@/components/Modal/ModalCart";
@@ -19,7 +19,8 @@ import AnalyticsTracker from "@/components/Analytics/AnalyticsTracker";
 import { TenantProvider } from "@/context/TenantContext";
 import { resolveTenant } from "@/lib/tenant";
 
-const inter = Inter({ subsets: ["latin"] });
+const unkempt = Unkempt({ subsets: ["latin"], weight: ["400", "700"], variable: "--font-unkempt" });
+const kavoon = Kavoon({ subsets: ["latin"], weight: ["400"], variable: "--font-kavoon", display: "swap" });
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 
@@ -131,7 +132,7 @@ export default async function RootLayout({
     <GlobalProvider>
       <TenantProvider initialTenant={tenant}>
         <html lang="en">
-          <body className={inter.className}>
+          <body className={`${unkempt.className} ${kavoon.variable}`}>
             <script
               type="application/ld+json"
               dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd) }}

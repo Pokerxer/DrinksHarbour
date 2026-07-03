@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const morgan = require('morgan');
 const helmet = require('helmet');
 const compression = require('compression');
@@ -94,6 +95,8 @@ const corsOptions = {
     'Origin',
     'x-tenant-slug',
     'x-is-tenant-site',
+    'x-mfa-token',
+    'x-csrf-token',
   ],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
   maxAge: 86400,
@@ -132,6 +135,14 @@ app.use(compression());
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser());
+
+// ────────────────────────────────────────────────
+// CSRF protection (double-submit cookie pattern)
+// Applied to all /api routes — safe methods (GET/HEAD/OPTIONS) are exempt.
+// ────────────────────────────────────────────────
+const { csrfProtection } = require('./middleware/csrf.middleware');
+app.use('/api', csrfProtection);
 
 // ────────────────────────────────────────────────
 // Rate Limiting

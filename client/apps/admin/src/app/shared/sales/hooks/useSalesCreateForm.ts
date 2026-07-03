@@ -11,6 +11,10 @@ import type {
 import type { POSCustomer } from '@/app/shared/point-of-sale/types';
 import { posApi } from '@/app/shared/point-of-sale/api';
 import { useSalesCustomerPricelist } from '../use-sales-customer-pricelist';
+import {
+  findCartThresholdRules,
+  computeCartThresholdDiscount,
+} from '@/app/shared/point-of-sale/utils';
 import { addressesDiffer } from '../sales-helpers';
 import {
   blankLine,
@@ -159,9 +163,7 @@ export function useSalesCreateForm({
         const list = body?.data?.warehouses ?? body?.data ?? [];
         setWarehouses(list);
         if (!warehouseId) {
-          const def = list.find(
-            (w: { isDefault?: boolean }) => w.isDefault
-          );
+          const def = list.find((w: { isDefault?: boolean }) => w.isDefault);
           if (def) setWarehouseId(def._id);
         }
       })
@@ -183,7 +185,8 @@ export function useSalesCreateForm({
       if (!token) return;
       const skuBySub = new Set<string>();
       for (const l of targetLines) {
-        if (l.lineType === 'product' && l.subProductId) skuBySub.add(l.subProductId);
+        if (l.lineType === 'product' && l.subProductId)
+          skuBySub.add(l.subProductId);
       }
       if (!skuBySub.size) return;
       const results = await Promise.all(
@@ -244,8 +247,7 @@ export function useSalesCreateForm({
             sizeName: matchedSize
               ? (matchedSize.displayName ?? matchedSize.size)
               : line.sizeName,
-            costPrice:
-              matchedSize?.costPrice ?? sp.costPrice ?? line.costPrice,
+            costPrice: matchedSize?.costPrice ?? sp.costPrice ?? line.costPrice,
             availableStock: stock ?? line.availableStock,
             activeBundles: sp.bundleDeals ?? line.activeBundles,
             originalPrice: catalogPrice || line.originalPrice,
@@ -394,23 +396,19 @@ export function useSalesCreateForm({
     []
   );
 
-  const reorderLines = useCallback(
-    (activeKey: string, overKey: string) => {
-      setLines((p) => {
-        const oldIndex = p.findIndex((l) => l.key === activeKey);
-        const newIndex = p.findIndex((l) => l.key === overKey);
-        if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return p;
-        const next = [...p];
-        const [moved] = next.splice(oldIndex, 1);
-        next.splice(newIndex, 0, moved);
-        return next;
-      });
-    },
-    []
-  );
+  const reorderLines = useCallback((activeKey: string, overKey: string) => {
+    setLines((p) => {
+      const oldIndex = p.findIndex((l) => l.key === activeKey);
+      const newIndex = p.findIndex((l) => l.key === overKey);
+      if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return p;
+      const next = [...p];
+      const [moved] = next.splice(oldIndex, 1);
+      next.splice(newIndex, 0, moved);
+      return next;
+    });
+  }, []);
 
-  const catalogLineKey = (sub: string, size?: string) =>
-    `${sub}|${size ?? ''}`;
+  const catalogLineKey = (sub: string, size?: string) => `${sub}|${size ?? ''}`;
 
   const catalogQtyMap = useMemo(() => {
     const m: Record<string, number> = {};
@@ -510,9 +508,7 @@ export function useSalesCreateForm({
           ...l,
           unitPrice,
           lineTotal,
-          taxAmount: Math.round(
-            lineTotal * (Math.max(0, l.taxRate) / 100)
-          ),
+          taxAmount: Math.round(lineTotal * (Math.max(0, l.taxRate) / 100)),
         };
       }),
     [lines, pricelist]
@@ -527,12 +523,27 @@ export function useSalesCreateForm({
   const taxTotal = priced
     .filter((l) => l.lineType === 'product')
     .reduce((s, l) => s + l.taxAmount, 0);
-  // Mirrors server refreshOrderTotal: coupon comes off the untaxed+tax figure
-  // (floored at 0), shipping is added on top.
+  // Cart spend-threshold discount (cart_threshold pricelist rules) — same
+  // base as the server: the post-line-discount untaxed amount. The server
+  // recomputes authoritatively on save; this keeps the footer preview live.
+  const pricelistCartDiscount = useMemo(() => {
+    const rules = (pricelist as any)?.rules;
+    const base = Math.max(0, untaxedAmount - discountTotal);
+    if (!rules?.length || base <= 0) return 0;
+    return Math.round(
+      computeCartThresholdDiscount(findCartThresholdRules(rules, base), base)
+    );
+  }, [pricelist, untaxedAmount, discountTotal]);
+  // Mirrors server refreshOrderTotal: coupon + spend-threshold discounts come
+  // off the untaxed+tax figure (floored at 0), shipping is added on top.
   const grandTotal =
     Math.max(
       0,
-      untaxedAmount - discountTotal + taxTotal - (coupon?.discount ?? 0)
+      untaxedAmount -
+        discountTotal +
+        taxTotal -
+        (coupon?.discount ?? 0) -
+        pricelistCartDiscount
     ) + Math.max(0, shippingFee);
   const hasLines = lines.some((l) => l.subProductId);
 
@@ -682,24 +693,40 @@ export function useSalesCreateForm({
   }, []);
 
   return {
-    customer, setCustomer,
-    lines, setLines,
-    notes, setNotes,
-    terms, setTerms,
-    validUntil, setValidUntil,
-    paymentTerms, setPaymentTerms,
-    invoiceAddress, setInvoiceAddress,
-    deliverDifferent, setDeliverDifferent,
-    deliveryAddress, setDeliveryAddress,
-    pricelistId, setPricelistId,
-    pricelistOverridden, setPricelistOverridden,
-    warehouseId, setWarehouseId,
+    customer,
+    setCustomer,
+    lines,
+    setLines,
+    notes,
+    setNotes,
+    terms,
+    setTerms,
+    validUntil,
+    setValidUntil,
+    paymentTerms,
+    setPaymentTerms,
+    invoiceAddress,
+    setInvoiceAddress,
+    deliverDifferent,
+    setDeliverDifferent,
+    deliveryAddress,
+    setDeliveryAddress,
+    pricelistId,
+    setPricelistId,
+    pricelistOverridden,
+    setPricelistOverridden,
+    warehouseId,
+    setWarehouseId,
     warehouses,
     loadingCustomerAddress,
-    saving, setSaving,
-    tab, setTab,
-    catalogOpen, setCatalogOpen,
-    scanOpen, setScanOpen,
+    saving,
+    setSaving,
+    tab,
+    setTab,
+    catalogOpen,
+    setCatalogOpen,
+    scanOpen,
+    setScanOpen,
     pricelist,
     pricelists,
     resolvedPricelistId: resolvedId,
@@ -707,12 +734,16 @@ export function useSalesCreateForm({
     untaxedAmount,
     discountTotal,
     taxTotal,
+    pricelistCartDiscount,
     grandTotal,
     hasLines,
     catalogQtyMap,
-    shippingFee, setShippingFee,
-    coupon, setCoupon,
-    plannedRedeemPoints, setPlannedRedeemPoints,
+    shippingFee,
+    setShippingFee,
+    coupon,
+    setCoupon,
+    plannedRedeemPoints,
+    setPlannedRedeemPoints,
     applyGlobalDiscount,
     updateLine,
     addLine,

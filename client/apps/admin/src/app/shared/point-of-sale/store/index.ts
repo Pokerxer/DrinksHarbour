@@ -17,6 +17,10 @@ import {
   findBestPricelistRule,
   findMatchingPricelistRules,
   applyRuleTransform,
+  applyCartBundleAdjustments,
+  findCartThresholdRules,
+  computeCartThresholdDiscount,
+  PER_LINE_PRICE_TYPES,
 } from '@/app/shared/point-of-sale/utils';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 
@@ -346,8 +350,8 @@ export function getBestBundleForItem(
 ): POSBundleDeal | null {
   // When a pricelist with price rules (formula/fixed/discount/flash_sale) is active,
   // suppress DB bundles — the pricelist is the authoritative pricing policy.
-  const hasPriceRules = pricelist?.rules?.some(
-    (r: any) => r.priceType !== 'bundle'
+  const hasPriceRules = pricelist?.rules?.some((r: any) =>
+    PER_LINE_PRICE_TYPES.includes(r.priceType)
   );
   const dbBundles: POSBundleDeal[] =
     (hasPriceRules ? [] : item.activeBundles) || [];
@@ -357,6 +361,9 @@ export function getBestBundleForItem(
     const now = new Date();
     for (const r of pricelist.rules as any[]) {
       if (r.priceType !== 'bundle') continue;
+      // Cross-product bundles (buy X of trigger → discount target) are applied
+      // by the cart-wide pass in computeSubtotal, never as a same-product deal.
+      if (r.bundleTargetSubProduct) continue;
       if (r.endDate && new Date(r.endDate) < now) continue;
       if (r.startDate && new Date(r.startDate) > now) continue;
       if (!r.bundleQuantity) continue;
@@ -453,7 +460,9 @@ export function getEffectiveBundlePrice(item: POSCartItem): {
 }
 
 function computeSubtotal(items: POSCartItem[], pricelist?: any) {
-  return items.reduce((sum, item) => {
+  // ── Per-line pass: pricelist price rules + same-product bundles ────────────
+  const lineNets: number[] = [];
+  const effectiveLines = items.map((item, i) => {
     const best = pricelist
       ? getBestBundleForItem(item, pricelist)
       : getBestBundle(item);
@@ -478,8 +487,48 @@ function computeSubtotal(items: POSCartItem[], pricelist?: any) {
       bundleDiscAmt = Math.max(0, bundleDiscAmt);
     }
 
-    return sum + lineGross - Math.min(lineGross, itemDiscAmt + bundleDiscAmt);
-  }, 0);
+    lineNets[i] = lineGross - Math.min(lineGross, itemDiscAmt + bundleDiscAmt);
+    return {
+      subProductId: item.subProductId,
+      quantity: item.quantity,
+      price: effectivePrice,
+      costPrice: Number(item.costPrice) || 0,
+      originalPrice: Number(item.originalPrice) || 0,
+    };
+  });
+
+  // ── Cart-wide pass: cross-product Buy-X-Get-Y bundle rules ────────────────
+  // Mirrors the server exactly: overridePrice types re-price the target line;
+  // percentage/fixed types come off the target line's net.
+  if (pricelist?.rules?.length) {
+    for (const adj of applyCartBundleAdjustments(
+      effectiveLines,
+      pricelist.rules
+    )) {
+      const item = items[adj.lineIndex];
+      if (!item) continue;
+      if (adj.overridePrice != null && adj.overridePrice > 0) {
+        const lineGross = adj.overridePrice * item.quantity;
+        const itemDiscAmt =
+          (lineGross * Math.max(0, Math.min(100, item.discount))) / 100;
+        lineNets[adj.lineIndex] = lineGross - Math.min(lineGross, itemDiscAmt);
+      } else if ((adj.discountAmount ?? 0) > 0) {
+        lineNets[adj.lineIndex] = Math.max(
+          0,
+          lineNets[adj.lineIndex] - (adj.discountAmount ?? 0)
+        );
+      }
+    }
+  }
+
+  return lineNets.reduce((s, n) => s + n, 0);
+}
+
+/** Cart spend-threshold discount (cart_threshold pricelist rules) for a subtotal. */
+function computeThresholdDiscount(subtotal: number, pricelist?: any) {
+  if (!pricelist?.rules?.length || subtotal <= 0) return 0;
+  const rules = findCartThresholdRules(pricelist.rules, subtotal);
+  return parseFloat(computeCartThresholdDiscount(rules, subtotal).toFixed(2));
 }
 
 function computeDiscountAmount(
@@ -708,6 +757,12 @@ export const usePOSCart = () => {
     () => computeDiscountAmount(subtotal, discountType, discountValue),
     [subtotal, discountType, discountValue]
   );
+  // Cart spend-threshold discount (cart_threshold pricelist rules) — same
+  // base as the server: the pre-cashier-discount subtotal.
+  const thresholdDiscount = useMemo(
+    () => computeThresholdDiscount(subtotal, selectedPricelist ?? undefined),
+    [subtotal, selectedPricelist]
+  );
   const rewardsDiscountTotal = useMemo(() => {
     const afterCartDisc = Math.max(0, subtotal - discountAmount);
     return appliedRewards.reduce(
@@ -716,8 +771,12 @@ export const usePOSCart = () => {
     );
   }, [appliedRewards, items, subtotal, discountAmount]);
   const total = useMemo(
-    () => Math.max(0, subtotal - discountAmount - rewardsDiscountTotal),
-    [subtotal, discountAmount, rewardsDiscountTotal]
+    () =>
+      Math.max(
+        0,
+        subtotal - discountAmount - thresholdDiscount - rewardsDiscountTotal
+      ),
+    [subtotal, discountAmount, thresholdDiscount, rewardsDiscountTotal]
   );
   const itemCount = useMemo(
     () => items.reduce((s, i) => s + i.quantity, 0),
@@ -1125,6 +1184,7 @@ export const usePOSCart = () => {
       note,
       subtotal,
       discountAmount,
+      thresholdDiscount,
       rewardsDiscountTotal,
       total,
       itemCount,
@@ -1161,6 +1221,7 @@ export const usePOSCart = () => {
       note,
       subtotal,
       discountAmount,
+      thresholdDiscount,
       rewardsDiscountTotal,
       total,
       itemCount,

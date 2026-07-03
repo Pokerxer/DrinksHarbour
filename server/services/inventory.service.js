@@ -870,7 +870,8 @@ async function getLowStockItems(tenantId) {
     tenant: tenantId,
     $or: [{ stockStatus: 'low_stock' }, { stockStatus: 'out_of_stock' }],
   })
-    .select('name totalStock availableStock lowStockThreshold stockStatus')
+    .populate('product', 'name')
+    .select('sku totalStock availableStock lowStockThreshold stockStatus reorderPoint reorderQuantity')
     .lean();
 }
 
@@ -878,17 +879,60 @@ async function getLowStockItems(tenantId) {
  * Get inventory valuation for a tenant.
  */
 async function getInventoryValuation(tenantId) {
-  return SubProduct.aggregate([
-    { $match: { tenant: new mongoose.Types.ObjectId(tenantId.toString()) } },
+  const tId = new mongoose.Types.ObjectId(tenantId.toString());
+
+  // Primary source: per-line warehouse stock, valued with the tenant's
+  // valuation method (FIFO / average / standard via batch unit costs) and the
+  // same cost/selling fallbacks (size price, else subProduct price) as the
+  // stock report — so the KPIs always agree with what the stock page shows.
+  const warehouseService = require('./warehouse.service'); // lazy: avoids a require cycle
+  const Tenant = require('../models/Tenant');
+  const tenant = await Tenant.findById(tId).select('warehouseSettings').lean();
+  const rows = await warehouseService.getAllStock(tId, tenant?.warehouseSettings || {});
+
+  if (rows.length > 0) {
+    const products = new Set();
+    let totalUnits = 0;
+    let totalValue = 0;
+    let totalRetailValue = 0;
+    for (const r of rows) {
+      if (r.subProductId) products.add(r.subProductId);
+      totalUnits += r.currentQuantity;
+      totalValue += r.currentQuantity * (r.costPrice || 0);
+      totalRetailValue += r.currentQuantity * (r.sellingPrice || 0);
+    }
+    return {
+      totalItems: products.size,
+      totalUnits,
+      totalValue: Math.round(totalValue),
+      totalRetailValue: Math.round(totalRetailValue),
+      potentialProfit: Math.round(totalRetailValue - totalValue),
+    };
+  }
+
+  // Fallback for tenants with no WarehouseStock lines yet: value SubProduct
+  // totals directly.
+  const [agg] = await SubProduct.aggregate([
+    { $match: { tenant: tId, totalStock: { $gt: 0 } } },
     {
       $group: {
         _id: null,
-        totalUnits:     { $sum: '$totalStock' },
-        totalCostValue: { $sum: { $multiply: ['$totalStock', { $ifNull: ['$costPrice', 0] }] } },
-        productCount:   { $sum: 1 },
+        totalUnits: { $sum: '$totalStock' },
+        totalValue: { $sum: { $multiply: ['$totalStock', { $ifNull: ['$costPrice', 0] }] } },
+        totalRetailValue: { $sum: { $multiply: ['$totalStock', { $ifNull: ['$sellingPrice', 0] }] } },
+        productCount: { $sum: 1 },
       },
     },
   ]);
+  const totalValue = Math.round(agg?.totalValue ?? 0);
+  const totalRetailValue = Math.round(agg?.totalRetailValue ?? 0);
+  return {
+    totalItems: agg?.productCount ?? 0,
+    totalUnits: agg?.totalUnits ?? 0,
+    totalValue,
+    totalRetailValue,
+    potentialProfit: totalRetailValue - totalValue,
+  };
 }
 
 module.exports = {

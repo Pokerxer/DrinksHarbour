@@ -40,7 +40,7 @@ test('mapLine carries priceOverridden through into the stored line shape', () =>
   assert.strictEqual(line2.priceOverridden, false);
 });
 
-test('applyEdit updates pricelist + appliedPricelist when present in the patch body', async () => {
+test('applyEdit updates pricelist and derives appliedPricelist server-side', async () => {
   const svc = require('../services/salesOrder.service');
   const so = {
     tenant: oid(),
@@ -49,45 +49,161 @@ test('applyEdit updates pricelist + appliedPricelist when present in the patch b
     pricelist: null,
     appliedPricelist: undefined,
   };
-  await svc.applyEdit(so, { pricelist: 'pl1', appliedPricelist: { pricelistId: 'pl1', pricelistName: 'Wholesale' } });
+  // appliedPricelist is now derived server-side from the actual pricelist doc.
+  // Without a live DB connection the lookup fails gracefully → undefined.
+  await svc.applyEdit(so, { pricelist: 'pl1' });
   assert.strictEqual(so.pricelist, 'pl1');
-  assert.strictEqual(so.appliedPricelist.pricelistName, 'Wholesale');
+  assert.strictEqual(so.appliedPricelist, undefined);
 });
 
-test('applyEdit recomputes line unitPrice via the pricing engine when items are not overridden', async (t) => {
+test('applyEdit clears appliedPricelist when pricelist is set to null', async () => {
+  const svc = require('../services/salesOrder.service');
+  const so = {
+    tenant: oid(),
+    items: [],
+    createdAt: new Date(),
+    pricelist: 'pl1',
+    appliedPricelist: { pricelistId: 'pl1', pricelistName: 'Old' },
+  };
+  await svc.applyEdit(so, { pricelist: null });
+  assert.strictEqual(so.pricelist, null);
+  assert.strictEqual(so.appliedPricelist, undefined);
+});
+
+/** Get the Pricelist model for mocking (lazy-required so this doesn't fail
+ *  in environments without the model registered). */
+function getPricelistModel() {
+  try { return require('../models/Pricelist'); } catch { return null; }
+}
+
+test('applyEdit runs the pricing engine when pricelist is omitted from body (safety net)', async (t) => {
   const svc = require('../services/salesOrder.service');
   const pricingSvc = require('../services/salesPricing.service');
   const mongoose = require('mongoose');
 
-  // Engage defaultPricingEngine by pretending a live DB connection is present
-  // (readyState === 1). Without this the guard short-circuits and the submitted
-  // unitPrice is left untouched — the existing "no live DB" tests cover that.
+  const Pricelist = getPricelistModel();
+  if (Pricelist) {
+    t.mock.method(Pricelist, 'exists', async () => true);
+    t.mock.method(Pricelist, 'findById', () => ({
+      select: () => ({ lean: async () => ({ _id: oid(), name: 'Test Pricelist' }) }),
+    }));
+  }
+
   const origDescriptor = Object.getOwnPropertyDescriptor(mongoose.connection, 'readyState');
   Object.defineProperty(mongoose.connection, 'readyState', { value: 1, configurable: true });
 
-  // Inject a fake authoritative engine: every line becomes 999. Mutating the
-  // cached module export is picked up because defaultPricingEngine reads
-  // `require('./salesPricing.service').computeAuthoritativeLinePrices` at call
-  // time — no real DB, no module-reload needed.
   const origCompute = pricingSvc.computeAuthoritativeLinePrices;
   pricingSvc.computeAuthoritativeLinePrices = async (items) =>
     items.map((it) => ({ ...it, unitPrice: 999 }));
 
   try {
+    const plId = oid().toString();
     const so = {
       tenant: oid(),
       items: [],
       createdAt: new Date(),
-      pricelist: null,
+      pricelist: plId,
       subtotal: 0, discountTotal: 0, promotionTotal: 0, taxTotal: 0, total: 0,
     };
+    // pricelist NOT in body → body.pricelist === undefined → still run engine
     await svc.applyEdit(so, {
       items: [{ subproduct: oid(), quantity: 2, unitPrice: 1234, priceOverridden: false }],
-      pricelist: null,
     });
-    // resolveLinePricing ran the fake engine → 999 replaces the submitted 1234.
     assert.strictEqual(so.items[0].unitPrice, 999);
-    // Totals are re-snapshot off the recomputed line.
+    assert.strictEqual(so.subtotal, 999 * 2);
+  } finally {
+    pricingSvc.computeAuthoritativeLinePrices = origCompute;
+    if (origDescriptor) {
+      Object.defineProperty(mongoose.connection, 'readyState', origDescriptor);
+    } else {
+      delete mongoose.connection.readyState;
+    }
+  }
+});
+
+test('applyEdit skips the pricing engine when pricelist is the same (trusts client prices)', async (t) => {
+  const svc = require('../services/salesOrder.service');
+  const pricingSvc = require('../services/salesPricing.service');
+  const mongoose = require('mongoose');
+
+  const origDescriptor = Object.getOwnPropertyDescriptor(mongoose.connection, 'readyState');
+  Object.defineProperty(mongoose.connection, 'readyState', { value: 1, configurable: true });
+
+  const origCompute = pricingSvc.computeAuthoritativeLinePrices;
+  pricingSvc.computeAuthoritativeLinePrices = async (items) =>
+    items.map((it) => ({ ...it, unitPrice: 999 }));
+
+  const Pricelist = getPricelistModel();
+  if (Pricelist) {
+    t.mock.method(Pricelist, 'exists', async () => true);
+    t.mock.method(Pricelist, 'findById', () => ({
+      select: () => ({ lean: async () => null }),
+    }));
+    // findById returns null to simulate a missing pricelist doc → appliedPricelist = undefined
+  }
+
+  try {
+    const sameId = oid().toString();
+    const so = {
+      tenant: oid(),
+      items: [],
+      createdAt: new Date(),
+      pricelist: sameId,
+      subtotal: 0, discountTotal: 0, promotionTotal: 0, taxTotal: 0, total: 0,
+    };
+    // Same pricelist ID → engine is NOT called, client prices kept
+    await svc.applyEdit(so, {
+      items: [{ subproduct: oid(), quantity: 2, unitPrice: 1234, priceOverridden: false }],
+      pricelist: sameId,
+    });
+    assert.strictEqual(so.items[0].unitPrice, 1234);
+    assert.strictEqual(so.subtotal, 1234 * 2);
+  } finally {
+    pricingSvc.computeAuthoritativeLinePrices = origCompute;
+    if (origDescriptor) {
+      Object.defineProperty(mongoose.connection, 'readyState', origDescriptor);
+    } else {
+      delete mongoose.connection.readyState;
+    }
+  }
+});
+
+test('applyEdit runs the pricing engine when pricelist changes', async (t) => {
+  const svc = require('../services/salesOrder.service');
+  const pricingSvc = require('../services/salesPricing.service');
+  const mongoose = require('mongoose');
+
+  const origDescriptor = Object.getOwnPropertyDescriptor(mongoose.connection, 'readyState');
+  Object.defineProperty(mongoose.connection, 'readyState', { value: 1, configurable: true });
+
+  const origCompute = pricingSvc.computeAuthoritativeLinePrices;
+  pricingSvc.computeAuthoritativeLinePrices = async (items) =>
+    items.map((it) => ({ ...it, unitPrice: 999 }));
+
+  const Pricelist = getPricelistModel();
+  if (Pricelist) {
+    t.mock.method(Pricelist, 'exists', async () => true);
+    t.mock.method(Pricelist, 'findById', () => ({
+      select: () => ({ lean: async () => null }),
+    }));
+  }
+
+  try {
+    const oldPl = oid().toString();
+    const newPl = oid().toString();
+    const so = {
+      tenant: oid(),
+      items: [],
+      createdAt: new Date(),
+      pricelist: oldPl,
+      subtotal: 0, discountTotal: 0, promotionTotal: 0, taxTotal: 0, total: 0,
+    };
+    // Different pricelist → engine runs
+    await svc.applyEdit(so, {
+      items: [{ subproduct: oid(), quantity: 2, unitPrice: 1234, priceOverridden: false }],
+      pricelist: newPl,
+    });
+    assert.strictEqual(so.items[0].unitPrice, 999);
     assert.strictEqual(so.subtotal, 999 * 2);
   } finally {
     pricingSvc.computeAuthoritativeLinePrices = origCompute;

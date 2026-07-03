@@ -1332,6 +1332,7 @@ export default function POSCart() {
     addReward,
     removeReward,
     rewardsDiscountTotal,
+    thresholdDiscount,
   } = usePOSCart();
 
   const { setActiveView } = usePOSUI();
@@ -2320,7 +2321,7 @@ export default function POSCart() {
 
         {/* ── Total ── */}
         <div className="shrink-0 border-t border-gray-200 px-4 py-2.5">
-          {discountAmount > 0 && (
+          {(discountAmount > 0 || thresholdDiscount > 0) && (
             <div className="mb-1 flex justify-between text-sm text-gray-500">
               <span>Subtotal</span>
               <span>{formatCurrency(subtotal)}</span>
@@ -2330,6 +2331,15 @@ export default function POSCart() {
             <div className="mb-1 flex justify-between text-sm text-[#b20202]">
               <span>Discount</span>
               <span>-{formatCurrency(discountAmount)}</span>
+            </div>
+          )}
+          {thresholdDiscount > 0 && (
+            <div className="mb-1 flex justify-between text-sm text-teal-700">
+              <span>
+                Spend discount
+                {selectedPricelist?.name ? ` · ${selectedPricelist.name}` : ''}
+              </span>
+              <span>-{formatCurrency(thresholdDiscount)}</span>
             </div>
           )}
           {/* BXGY rewards are shown as "Free Product" lines in the item list — skip here */}

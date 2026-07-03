@@ -77,10 +77,13 @@ const SalesOrderSchema = new Schema(
     discountTotal: { type: Number, default: 0 }, // sum(per-line discount off the whole line)
     promotionTotal:{ type: Number, default: 0 }, // sum(line promoDiscount) from auto-applied promotions
     taxTotal:      { type: Number, default: 0 }, // sum(line taxAmount); untaxed = subtotal - discountTotal - promotionTotal
-    total:         { type: Number, default: 0 }, // grand total: max(0, untaxed + tax - couponDiscount) + shippingFee
+    total:         { type: Number, default: 0 }, // grand total: max(0, untaxed + tax - couponDiscount - pricelistCartDiscount) + shippingFee
 
     // Footer adjustments (Odoo-style quotation footer)
     shippingFee:    { type: Number, default: 0, min: 0 }, // flat delivery charge added to the total
+    // Cart-level spend-threshold discount from the order's pricelist
+    // (cart_threshold rules) — recomputed whenever lines/pricelist change.
+    pricelistCartDiscount: { type: Number, default: 0, min: 0 },
     couponCode:     { type: String, default: '' },        // applied Promotion code (uppercased)
     couponName:     { type: String, default: '' },        // snapshot of the promotion's name
     couponDiscount: { type: Number, default: 0, min: 0 }, // ₦ off the untaxed+tax total (snapshot at apply time)

@@ -11,6 +11,7 @@ import React, {
 } from "react";
 import { ProductType } from "@/types/product.types";
 import { API_URL } from "@/lib/api";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 
 interface CartItem extends ProductType {
   cartItemId: string;
@@ -460,9 +461,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (payload.length === 0) return;
 
-      const res  = await fetch(`${API_URL}/api/cart/validate`, {
+      const res  = await fetchWithAuth(`${API_URL}/api/cart/validate`, {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ items: payload }),
       });
       const data = await res.json();
@@ -571,9 +571,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-        const response = await fetch(`${API_URL}/api/cart/save`, {
+        const response = await fetchWithAuth(`${API_URL}/api/cart/save`, {
           method: 'POST',
-          headers,
           body: JSON.stringify({ items }),
           signal: controller.signal,
         });
@@ -610,9 +609,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     try {
-      const response = await fetch(`${API_URL}/api/cart`, {
-        headers,
-      });
+      const response = await fetchWithAuth(`${API_URL}/api/cart`);
 
       const data = await response.json();
 

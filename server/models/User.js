@@ -96,6 +96,7 @@ const userSchema = new Schema(
       type: Boolean,
       default: false,
     },
+    emailVerifiedAt: Date,
     emailVerificationToken: String,
     emailVerificationExpires: Date,
 
@@ -109,6 +110,9 @@ const userSchema = new Schema(
       default: 'none',
     },
     ageVerificationDate: Date,
+    ageVerifiedAt: Date,
+    dateOfBirth: Date,
+    ageVerificationDocument: String,
 
     // ────────────────────────────────────────────────
     // Customer lightweight trackers

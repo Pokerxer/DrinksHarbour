@@ -10,6 +10,7 @@ import React, {
   ReactNode,
 } from 'react';
 import { API_URL } from '@/lib/api';
+import { setAuthTokens, logoutServer } from '@/lib/fetchWithAuth';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -19,18 +20,22 @@ export interface AuthUser {
   email: string;
   firstName: string;
   lastName: string;
+  name?: string;
   role: string;
   isEmailVerified: boolean;
   isAgeVerified: boolean;
   phoneNumber?: string;
+  phone?: string;
   avatar?: string;
   dateOfBirth?: string;
+  mfaEnabled?: boolean;
 }
 
 interface AuthState {
   user: AuthUser | null;
   token: string | null;
   refreshToken: string | null;
+  mfaToken: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
 }
@@ -39,6 +44,8 @@ interface LoginResult {
   success: boolean;
   error?: string;
   requiresEmailVerification?: boolean;
+  mfaRequired?: boolean;
+  pendingMfaToken?: string;
 }
 
 interface RegisterResult {
@@ -50,9 +57,12 @@ interface RegisterResult {
 interface AuthContextValue extends AuthState {
   login: (email: string, password: string, rememberMe?: boolean) => Promise<LoginResult>;
   register: (data: RegisterPayload) => Promise<RegisterResult>;
-  logout: () => void;
+  logout: () => Promise<void>;
   refreshAuth: () => Promise<boolean>;
   updateUser: (updates: Partial<AuthUser>) => void;
+  loadProfile: () => Promise<void>;
+  completeMfaLogin: (pendingMfaToken: string, code: string, rememberMe?: boolean) => Promise<LoginResult>;
+  setMfaToken: (token: string | null) => void;
 }
 
 export interface RegisterPayload {
@@ -73,6 +83,7 @@ const KEYS = {
   refreshToken: 'dh_refresh_token',
   user:         'dh_user',
   rememberMe:   'dh_remember_me',
+  mfaToken:     'dh_mfa_token',
 };
 
 function saveSession(token: string, refreshToken: string, user: AuthUser, rememberMe: boolean) {
@@ -137,6 +148,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     user:            null,
     token:           null,
     refreshToken:    null,
+    mfaToken:        null,
     isLoading:       true,
     isAuthenticated: false,
   });
@@ -154,16 +166,58 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch { /* non-JWT token — skip */ }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Hydrate from storage on mount ─────────────────────────────────────────
+  // ── Hydrate from cookies (primary) or legacy localStorage (fallback) ──────
+  // In the cookie model, we don't have the raw token in JS — we just check
+  // if there's an active session by calling /api/users/me with credentials: include.
   useEffect(() => {
-    const { token, refreshToken, user } = readSession();
-    if (token && user) {
-      setState({ user, token, refreshToken, isLoading: false, isAuthenticated: true });
-      scheduleRefresh(token);
-    } else {
-      setState((s) => ({ ...s, isLoading: false }));
+    let cancelled = false;
+
+    async function hydrate() {
+      // 1. Try cookie-based session (the future state)
+      try {
+        const res = await fetch(`${API_URL}/api/users/me`, {
+          credentials: 'include',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const u = data.data?.user || data.user || data.data;
+          if (u && !cancelled) {
+            // Store the user profile in localStorage for instant hydration on next load
+            try { localStorage.setItem(KEYS.user, JSON.stringify(u)); } catch {}
+            setState((s) => ({
+              ...s,
+              user: u as AuthUser,
+              token: 'cookie', // sentinel — tokens are in httpOnly cookies, not JS
+              refreshToken: 'cookie',
+              isAuthenticated: true,
+              isLoading: false,
+            }));
+            return;
+          }
+        }
+      } catch { /* network — fall through to legacy */ }
+
+      // 2. Fall back to legacy localStorage tokens (backwards compat)
+      const { token, refreshToken, user } = readSession();
+      setAuthTokens(token, refreshToken);
+      if (token && user && !cancelled) {
+        setState((s) => ({
+          ...s,
+          user,
+          token,
+          refreshToken,
+          mfaToken: null,
+          isAuthenticated: true,
+          isLoading: false,
+        }));
+        scheduleRefresh(token);
+      } else if (!cancelled) {
+        setState((s) => ({ ...s, isLoading: false }));
+      }
     }
-    return () => { if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current); };
+
+    hydrate();
+    return () => { cancelled = true; if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current); };
   }, [scheduleRefresh]);
 
   // ── Login ──────────────────────────────────────────────────────────────────
@@ -176,6 +230,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const res = await fetch(`${API_URL}/api/users/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // send + receive httpOnly auth cookies
         body: JSON.stringify({ email, password }),
       });
 
@@ -189,15 +244,47 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { success: false, error: data.message || 'Login failed' };
       }
 
+      // ── MFA challenge: backend returns mfaRequired + pendingMfaToken ────────
+      if (data.mfaRequired || data.data?.mfaRequired) {
+        return {
+          success: false,
+          mfaRequired: true,
+          pendingMfaToken: data.pendingMfaToken ?? data.data?.pendingMfaToken,
+          error: data.message || 'MFA verification required.',
+        };
+      }
+
       const token        = data.token        ?? data.data?.token;
       const refreshToken = data.refreshToken ?? data.data?.refreshToken ?? '';
       const user: AuthUser = data.user ?? data.data?.user;
 
-      if (!token || !user) return { success: false, error: 'Invalid response from server' };
+      if (!user) return { success: false, error: 'Invalid response from server' };
 
-      saveSession(token, refreshToken, user, rememberMe);
-      setState({ user, token, refreshToken, isLoading: false, isAuthenticated: true });
-      scheduleRefresh(token);
+      // In cookie mode, the backend sets httpOnly cookies — we don't store the
+      // raw token in localStorage. In legacy mode (no cookies), fall back to storage.
+      if (token) {
+        const hasCookies = typeof document !== 'undefined' && /(?:^|;\s*)dh_access=/.test(document.cookie);
+        if (!hasCookies) {
+          saveSession(token, refreshToken, user, rememberMe);
+          setAuthTokens(token, refreshToken);
+          scheduleRefresh(token);
+        } else {
+          setAuthTokens(null, null); // cookie mode — don't use Bearer header
+        }
+      }
+
+      // Store user profile for instant hydration on next page load
+      try { localStorage.setItem(KEYS.user, JSON.stringify(user)); } catch {}
+
+      setState((s) => ({
+        ...s,
+        user,
+        token: token || 'cookie',
+        refreshToken: refreshToken || 'cookie',
+        mfaToken: s.mfaToken,
+        isLoading: false,
+        isAuthenticated: true,
+      }));
 
       return { success: true };
     } catch {
@@ -211,6 +298,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const res = await fetch(`${API_URL}/api/users/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // receive httpOnly auth cookies
         body: JSON.stringify(payload),
       });
 
@@ -220,16 +308,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { success: false, error: data.message || 'Registration failed' };
       }
 
-      // Some flows return a token immediately; others require email verification first
       const token        = data.token        ?? data.data?.token;
       const refreshToken = data.refreshToken ?? data.data?.refreshToken ?? '';
       const user: AuthUser | undefined = data.user ?? data.data?.user;
 
       if (token && user) {
-        saveSession(token, refreshToken, user, false);
-        setState({ user, token, refreshToken, isLoading: false, isAuthenticated: true });
-        scheduleRefresh(token);
-        // Registration succeeded and returned a session — but email may still need verification
+        const hasCookies = typeof document !== 'undefined' && /(?:^|;\s*)dh_access=/.test(document.cookie);
+        if (!hasCookies) {
+          saveSession(token, refreshToken, user, false);
+          setAuthTokens(token, refreshToken);
+          scheduleRefresh(token);
+        } else {
+          setAuthTokens(null, null);
+        }
+        try { localStorage.setItem(KEYS.user, JSON.stringify(user)); } catch {}
+        setState((s) => ({ ...s, user, token: token || 'cookie', refreshToken: refreshToken || 'cookie', isLoading: false, isAuthenticated: true }));
         return {
           success: true,
           requiresEmailVerification: !user.isEmailVerified,
@@ -243,23 +336,83 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [scheduleRefresh]);
 
-  // ── Logout ─────────────────────────────────────────────────────────────────
-  const logout = useCallback(() => {
+  // ── Logout (canonical: revokes refresh token server-side, then clears local) ─
+  const logout = useCallback(async (): Promise<void> => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-    clearSession();
-    setState({ user: null, token: null, refreshToken: null, isLoading: false, isAuthenticated: false });
+    await logoutServer();
+    setAuthTokens(null, null);
+    [localStorage, sessionStorage].forEach((s) => s.removeItem(KEYS.mfaToken));
+    setState({ user: null, token: null, refreshToken: null, mfaToken: null, isLoading: false, isAuthenticated: false });
+  }, []);
+
+  // ── Complete MFA login (second half of the MFA flow) ───────────────────────
+  const completeMfaLogin = useCallback(async (
+    pendingMfaToken: string,
+    code: string,
+    rememberMe = false,
+  ): Promise<LoginResult> => {
+    try {
+      const res = await fetch(`${API_URL}/api/users/mfa/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // receive httpOnly auth cookies
+        body: JSON.stringify({ pendingMfaToken, code }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.message || 'MFA verification failed' };
+      }
+      const token        = data.token        ?? data.data?.token;
+      const refreshToken = data.refreshToken ?? data.data?.refreshToken ?? '';
+      const user: AuthUser = data.user ?? data.data?.user;
+      if (!user) return { success: false, error: 'Invalid response from server' };
+
+      // Cookie mode: backend sets cookies. Legacy mode: store in localStorage.
+      if (token) {
+        const hasCookies = typeof document !== 'undefined' && /(?:^|;\s*)dh_access=/.test(document.cookie);
+        if (!hasCookies) {
+          saveSession(token, refreshToken, user, rememberMe);
+          setAuthTokens(token, refreshToken);
+          scheduleRefresh(token);
+        } else {
+          setAuthTokens(null, null);
+        }
+      }
+      try { localStorage.setItem(KEYS.user, JSON.stringify(user)); } catch {}
+      setState((s) => ({ ...s, user, token: token || 'cookie', refreshToken: refreshToken || 'cookie', mfaToken: s.mfaToken, isLoading: false, isAuthenticated: true }));
+      return { success: true };
+    } catch {
+      return { success: false, error: 'Network error. Please check your connection.' };
+    }
+  }, [scheduleRefresh]);
+
+  // ── Set/clear the MFA-verified token (used by admin API calls via x-mfa-token) ──
+  const setMfaToken = useCallback((token: string | null) => {
+    setState((s) => {
+      const rememberMe = !!localStorage.getItem(KEYS.rememberMe);
+      const store = rememberMe ? localStorage : sessionStorage;
+      if (token) store.setItem(KEYS.mfaToken, token);
+      else store.removeItem(KEYS.mfaToken);
+      return { ...s, mfaToken: token };
+    });
   }, []);
 
   // ── Token refresh ──────────────────────────────────────────────────────────
+  // In cookie mode, the refresh token is in the dh_refresh cookie — just POST
+  // with credentials: 'include' and the backend rotates the cookies.
+  // In legacy mode, send the refresh token in the body.
   const refreshAuth = useCallback(async (): Promise<boolean> => {
+    const hasCookies = typeof document !== 'undefined' && /(?:^|;\s*)dh_refresh=/.test(document.cookie);
     const { refreshToken } = readSession();
-    if (!refreshToken) { logout(); return false; }
+
+    if (!hasCookies && !refreshToken) { logout(); return false; }
 
     try {
       const res = await fetch(`${API_URL}/api/users/refresh-token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
+        credentials: 'include',
+        ...(hasCookies ? {} : { body: JSON.stringify({ refreshToken }) }),
       });
 
       const data = await res.json();
@@ -269,12 +422,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const newRefreshToken = data.refreshToken ?? data.data?.refreshToken ?? refreshToken;
       const user: AuthUser  = data.user         ?? data.data?.user ?? state.user;
 
-      if (!newToken) { logout(); return false; }
+      if (!newToken && !hasCookies) { logout(); return false; }
 
-      const rememberMe = !!localStorage.getItem(KEYS.rememberMe);
-      saveSession(newToken, newRefreshToken, user, rememberMe);
-      setState((s) => ({ ...s, token: newToken, refreshToken: newRefreshToken, user }));
-      scheduleRefresh(newToken);
+      // In legacy mode, persist rotated tokens. In cookie mode, cookies are already set.
+      if (newToken && !hasCookies) {
+        const rememberMe = !!localStorage.getItem(KEYS.rememberMe);
+        saveSession(newToken, newRefreshToken, user, rememberMe);
+        setAuthTokens(newToken, newRefreshToken);
+        scheduleRefresh(newToken);
+      }
+
+      setState((s) => ({ ...s, token: newToken || 'cookie', refreshToken: newRefreshToken || 'cookie', user }));
       return true;
     } catch {
       logout();
@@ -294,6 +452,27 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   }, []);
 
+  // ── Load fresh profile from /api/users/me ──────────────────────────────────
+  // Uses credentials: 'include' (cookie mode) with Bearer header fallback (legacy).
+  const loadProfile = useCallback(async (): Promise<void> => {
+    const { token } = readSession();
+    const hasCookies = typeof document !== 'undefined' && /(?:^|;\s*)dh_access=/.test(document.cookie);
+    if (!token && !hasCookies && !state.isAuthenticated) return;
+    try {
+      const res = await fetch(`${API_URL}/api/users/me`, {
+        credentials: 'include',
+        ...(hasCookies ? {} : { headers: { Authorization: `Bearer ${token}` } }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const u = data.data?.user || data.user || data.data;
+      if (u) {
+        try { localStorage.setItem(KEYS.user, JSON.stringify(u)); } catch {}
+        setState((s) => ({ ...s, user: { ...s.user, ...u } as AuthUser }));
+      }
+    } catch { /* network — keep cached user */ }
+  }, [state.isAuthenticated]);
+
   const value: AuthContextValue = {
     ...state,
     login,
@@ -301,6 +480,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     logout,
     refreshAuth,
     updateUser,
+    loadProfile,
+    completeMfaLogin,
+    setMfaToken,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

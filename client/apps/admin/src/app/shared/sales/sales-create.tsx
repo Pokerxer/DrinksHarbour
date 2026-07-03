@@ -111,10 +111,14 @@ export default function SalesCreate({
             }
           : null
       );
-      toast.success(code ? `Coupon ${so.couponCode} applied` : 'Coupon removed');
+      toast.success(
+        code ? `Coupon ${so.couponCode} applied` : 'Coupon removed'
+      );
       setHistoryKey((k) => k + 1);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Could not apply coupon');
+      toast.error(
+        err instanceof Error ? err.message : 'Could not apply coupon'
+      );
     } finally {
       setCouponBusy(false);
     }
@@ -226,7 +230,7 @@ export default function SalesCreate({
         onSendProForma={() => handlePrint('proforma')}
       />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[7fr_3fr]">
         <div className="min-w-0">
           <SalesCustomerBar
             token={token}
@@ -302,6 +306,8 @@ export default function SalesCreate({
                     grandTotal={form.grandTotal}
                     coupon={form.coupon}
                     couponBusy={couponBusy}
+                    pricelistCartDiscount={form.pricelistCartDiscount}
+                    pricelistName={(form.pricelist as any)?.name || undefined}
                     onApplyCoupon={handleCoupon}
                     onClearCoupon={() => handleCoupon('')}
                     shippingFee={form.shippingFee}

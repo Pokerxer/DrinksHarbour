@@ -310,13 +310,20 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
   const { openQuickview } = useModalQuickviewContext();
 
   const cardVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' as const } }
+    hidden: { opacity: 0, y: 24, scale: 0.96 },
+    visible: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] as const } },
+    hover:   { y: -6, scale: 1.015, transition: { duration: 0.35, ease: [0.16, 1, 0.3, 1] as const } },
   };
 
   const buttonVariants = {
     hover: { scale: 1.05, transition: { duration: 0.2 } },
     tap: { scale: 0.95 }
+  };
+
+  // Cinematic shine sweep — runs once when card becomes visible
+  const shineVariants = {
+    hidden: { x: '-120%', skewX: -12, opacity: 0 },
+    visible: { x: '220%', skewX: -12, opacity: [0, 0.55, 0], transition: { duration: 1.4, ease: [0.16, 1, 0.3, 1] as const, delay: 0.3 } },
   };
 
   // Helper function to determine if data is BeverageProduct
@@ -868,7 +875,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
             className="product-main cursor-pointer h-full flex flex-col"
             onClick={handleCardClick}
           >
-            <div className="product-thumb bg-gray-50 relative overflow-hidden rounded-2xl transition-all duration-500 ease-out group-hover:shadow-2xl group-hover:shadow-black/10 group-hover:scale-[1.02]">
+            <div className="product-thumb bg-gray-50 relative overflow-hidden rounded-2xl transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:shadow-[0_18px_50px_-12px_rgba(0,0,0,0.22)] group-hover:scale-[1.02]">
               {/* Badges - Responsive positioning (ranked: Flash > Fixed > Percentage > Product) */}
               <div className="absolute top-2 left-2 right-2 z-10 flex flex-wrap gap-1">
                 {/* Sale Badge - Hidden when marquee is visible (marquee already communicates the deal) */}
@@ -978,13 +985,28 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                     height={500}
                     priority={priority}
                     alt={mappedProduct.name}
-                    className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
+                    className="w-full h-full object-contain transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-110 group-hover:rotate-[0.5deg]"
                     onError={() => setImageError(true)}
                   />
                 )}
                 
+                {/* Cinematic shine sweep — one-shot on reveal */}
+                <motion.div
+                  variants={shineVariants}
+                  initial="hidden"
+                  animate="visible"
+                  className="absolute inset-0 z-20 pointer-events-none"
+                  style={{
+                    background: 'linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.6) 50%, transparent 70%)',
+                    mixBlendMode: 'overlay',
+                  }}
+                />
+
                 {/* Subtle gradient overlay on hover */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none z-30" />
+
+                {/* Cinematic glow ring — appears on hover */}
+                <div className="absolute inset-0 rounded-2xl pointer-events-none z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{ boxShadow: 'inset 0 0 40px rgba(245,176,66,0.18), 0 8px 30px rgba(0,0,0,0.10)' }} />
               </div>
 
               {/* Sale Marquee - Only show when there's an actual sale */}
@@ -1334,7 +1356,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
           <div className="product-main flex items-start sm:items-center gap-3 sm:gap-7">
             <div
               onClick={handleCardClick}
-              className="product-thumb bg-gray-50 relative overflow-hidden rounded-xl sm:rounded-2xl block w-24 sm:w-auto flex-shrink-0 cursor-pointer"
+              className="product-thumb bg-gray-50 relative overflow-hidden rounded-xl sm:rounded-2xl block w-24 sm:w-auto flex-shrink-0 cursor-pointer transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] hover:shadow-[0_12px_36px_-10px_rgba(0,0,0,0.20)]"
             >
               {/* Badges - Ranked (Flash > Fixed > Percentage > Product) */}
               <div className="absolute top-1 left-1.5 z-10 flex flex-col gap-0.5">
@@ -1364,7 +1386,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                 )}
               </div>
 
-              <div className="product-img w-24 sm:w-32 aspect-square rounded-xl sm:rounded-2xl overflow-hidden flex items-center justify-center bg-gray-50">
+              <div className="product-img w-24 sm:w-32 aspect-square rounded-xl sm:rounded-2xl overflow-hidden flex items-center justify-center bg-gray-50 relative group/list-img">
                 {imageError ? (
                   <div className="w-full h-full flex items-center justify-center">
                     <Icon.PiImageBold className="w-8 h-8 sm:w-10 sm:h-10 text-gray-300" />
@@ -1376,10 +1398,12 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                     height={500}
                     priority={priority}
                     alt={mappedProduct.name}
-                    className="w-full h-full object-contain duration-500 sm:duration-700 hover:scale-105"
+                    className="w-full h-full object-contain duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover/list-img:scale-110"
                     onError={() => setImageError(true)}
                   />
                 )}
+                {/* Cinematic glow ring on hover */}
+                <div className="absolute inset-0 rounded-xl sm:rounded-2xl pointer-events-none opacity-0 group-hover/list-img:opacity-100 transition-opacity duration-500" style={{ boxShadow: 'inset 0 0 24px rgba(245,176,66,0.20), 0 6px 20px rgba(0,0,0,0.10)' }} />
               </div>
             </div>
 

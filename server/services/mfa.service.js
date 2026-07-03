@@ -1,58 +1,48 @@
 // services/mfa.service.js
+//
+// TOTP MFA implementation using otplib (RFC 6238 compliant).
+// Replaces the placeholder "accept any 6-digit code" foundation.
+
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+const otplib = require('otplib');
 const User = require('../models/User');
-const { NotFoundError, ValidationError, AuthorizationError } = require('../utils/errors');
+const { NotFoundError, ValidationError } = require('../utils/errors');
+
+const ISSUER = 'DrinksHarbour';
 
 /**
- * Generate a new TOTP secret for a user (Base32-encoded).
- * Returns the secret + otpauth URL for QR code display.
- *
- * NOTE: This is a foundation. For production use, integrate with a library
- * like `otplib` or `speakeasy` for proper TOTP RFC 6238 compliance.
- * The secret here is a random 32-byte buffer encoded as base32.
+ * Generate a new TOTP secret (Base32, RFC 4648) using otplib.
  */
-const generateTotpSecret = () => {
-  const buffer = crypto.randomBytes(20);
-  // Base32 encoding (RFC 4648)
-  const base32Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-  let secret = '';
-  let bits = 0;
-  let value = 0;
-  for (const byte of buffer) {
-    value = (value << 8) | byte;
-    bits += 8;
-    while (bits >= 5) {
-      secret += base32Chars[(value >>> (bits - 5)) & 31];
-      bits -= 5;
-    }
-  }
-  if (bits > 0) {
-    secret += base32Chars[(value << (5 - bits)) & 31];
-  }
-  return secret;
-};
+const generateTotpSecret = () => otplib.generateSecret();
 
 /**
  * Build the otpauth:// URL for QR code generators (Google Authenticator, Authy, etc.)
+ * Format: otpauth://totp/DrinksHarbour:user@example.com?secret=...&issuer=DrinksHarbour
  */
-const buildOtpauthUrl = (secret, userEmail, issuer = 'DrinksHarbour') => {
-  const label = encodeURIComponent(`${issuer}:${userEmail}`);
-  const params = new URLSearchParams({
+const buildOtpauthUrl = (secret, userEmail, issuer = ISSUER) =>
+  otplib.generateURI({
     secret,
+    strategy: 'totp',
+    label: userEmail,
     issuer,
-    algorithm: 'SHA1',
-    digits: '6',
-    period: '30',
   });
-  return `otpauth://totp/${label}?${params.toString()}`;
+
+/**
+ * Verify a TOTP code against a secret using otplib (RFC 6238).
+ * Allows a ±1 time-step window to tolerate clock drift.
+ */
+const verifyTotp = (secret, code) => {
+  if (!secret || !/^\d{6}$/.test(code)) return false;
+  const result = otplib.verifySync({ token: code, secret, strategy: 'totp' });
+  return !!(result && result.valid);
 };
 
 /**
  * Enable MFA for a user.
- * Steps:
  * 1. Generate a new TOTP secret
  * 2. Store it on the user (mfaEnabled stays false until verified)
- * 3. Return the secret + otpauth URL for the client to display as QR code
+ * 3. Return the secret + otpauth URL for the client to display as a QR code
  * 4. Client scans QR, enters a verification code → calls verifyMfaSetup()
  */
 const enableMfa = async (userId) => {
@@ -80,10 +70,8 @@ const enableMfa = async (userId) => {
 
 /**
  * Verify MFA setup — called after the user scans the QR code and enters a TOTP code.
- * If the code matches (placeholder: real TOTP verification needs otplib/speakeasy),
- * set mfaEnabled = true and generate backup codes.
- *
- * TODO: Replace the placeholder verification with a proper TOTP implementation.
+ * If the code matches (real otplib verification), set mfaEnabled = true and
+ * generate 8 one-time backup codes.
  */
 const verifyMfaSetup = async (userId, code) => {
   const user = await User.findById(userId).select('+mfaSecret');
@@ -97,17 +85,14 @@ const verifyMfaSetup = async (userId, code) => {
     throw new ValidationError('MFA is already enabled');
   }
 
-  // ── Placeholder verification ───────────────────────────────────────────────
-  // In production, use otplib.authenticator.verify({ token: code, secret: user.mfaSecret })
-  // For now, accept any 6-digit code (foundation only — replace before production!)
-  if (!/^\d{6}$/.test(code)) {
-    throw new ValidationError('Invalid verification code. Must be 6 digits.');
+  if (!verifyTotp(user.mfaSecret, code)) {
+    throw new ValidationError('Invalid verification code. Please try again.');
   }
 
   user.mfaEnabled = true;
   user.mfaEnabledAt = new Date();
 
-  // Generate 8 one-time backup codes
+  // Generate 8 one-time backup codes (8-char hex, uppercase)
   user.mfaBackupCodes = Array.from({ length: 8 }, () =>
     crypto.randomBytes(4).toString('hex').toUpperCase()
   );
@@ -115,7 +100,7 @@ const verifyMfaSetup = async (userId, code) => {
   await user.save();
 
   return {
-    message: 'MFA enabled successfully',
+    message: 'MFA enabled successfully. Save your backup codes — you will need them if you lose access to your authenticator app.',
     backupCodes: user.mfaBackupCodes,
   };
 };
@@ -132,9 +117,19 @@ const disableMfa = async (userId, code) => {
     throw new ValidationError('MFA is not enabled for this account');
   }
 
-  // ── Placeholder: verify code (replace with otplib in production) ──────────
-  if (!/^\d{6}$/.test(code)) {
-    throw new ValidationError('Invalid verification code');
+  // Accept either a TOTP code or a backup code
+  const isTotpValid = verifyTotp(user.mfaSecret, code);
+  const backupIndex = user.mfaBackupCodes.findIndex(
+    (c) => c.toUpperCase() === code.toUpperCase()
+  );
+
+  if (!isTotpValid && backupIndex === -1) {
+    throw new ValidationError('Invalid verification code. Please try again.');
+  }
+
+  // Consume the backup code if that's what was used
+  if (backupIndex !== -1) {
+    user.mfaBackupCodes.splice(backupIndex, 1);
   }
 
   user.mfaEnabled = false;
@@ -148,19 +143,77 @@ const disableMfa = async (userId, code) => {
 };
 
 /**
- * Verify a TOTP code (for login MFA challenge).
- * Placeholder — replace with otplib.authenticator.verify in production.
+ * Verify a TOTP/backup code for a login MFA challenge.
+ * Does NOT modify the user record (the login flow handles session issuance).
+ * Returns the backup code index consumed, or -1 if a TOTP code was used.
  */
-const verifyTotp = (secret, code) => {
-  // Foundation: accept any 6-digit code. TODO: implement real TOTP.
-  return /^\d{6}$/.test(code);
+const verifyLoginMfa = async (userId, code) => {
+  const user = await User.findById(userId).select('+mfaSecret +mfaBackupCodes');
+  if (!user) throw new NotFoundError('User not found');
+
+  if (!user.mfaEnabled) {
+    throw new ValidationError('MFA is not enabled for this account');
+  }
+
+  // Try TOTP first
+  if (verifyTotp(user.mfaSecret, code)) {
+    return { method: 'totp' };
+  }
+
+  // Then try a backup code
+  const backupIndex = user.mfaBackupCodes.findIndex(
+    (c) => c.toUpperCase() === code.toUpperCase()
+  );
+  if (backupIndex !== -1) {
+    // Consume the backup code
+    user.mfaBackupCodes.splice(backupIndex, 1);
+    await user.save();
+    return { method: 'backup' };
+  }
+
+  throw new ValidationError('Invalid MFA code. Please try again.');
+};
+
+/**
+ * Issue a short-lived MFA-verified JWT.
+ * The client sends this as the Bearer token to MFA-protected routes.
+ * Expires in 10 minutes. Payload: { userId, type: 'mfa', jti }.
+ */
+const generateMfaVerifiedToken = (userId) => {
+  const payload = {
+    userId,
+    type: 'mfa',
+    jti: crypto.randomUUID(),
+  };
+  return jwt.sign(payload, process.env.JWT_SECRET, {
+    expiresIn: '10m',
+  });
+};
+
+/**
+ * Verify an MFA-verified JWT.
+ * Returns the decoded payload if valid and of type 'mfa', else null.
+ */
+const verifyMfaVerifiedToken = (token) => {
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded && decoded.type === 'mfa' && decoded.userId) {
+      return decoded;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 };
 
 module.exports = {
   generateTotpSecret,
   buildOtpauthUrl,
+  verifyTotp,
   enableMfa,
   verifyMfaSetup,
   disableMfa,
-  verifyTotp,
+  verifyLoginMfa,
+  generateMfaVerifiedToken,
+  verifyMfaVerifiedToken,
 };

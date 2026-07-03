@@ -1033,11 +1033,99 @@ const sendPurchaseOrderToVendor = async (purchaseOrder, vendor, tenant) => {
   });
 };
 
+// ─── 6. Password reset email ─────────────────────────────────────────────────
+
+const sendPasswordResetEmail = async ({ email, firstName, resetToken }) => {
+  const frontendUrl = process.env.FRONTEND_URL || 'https://drinksharbour.com';
+  const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
+
+  const html = emailShell({
+    accentColor:    '#dc2626',
+    accentLabel:    '&#128272; Reset Your Password',
+    accentSubtitle: 'Secure your DrinksHarbour account',
+    body: `
+      <p style="font-size:16px;color:#374151;margin:0 0 16px 0;">Hello <strong>${firstName || 'there'}</strong>,</p>
+      <p style="font-size:14px;color:#6b7280;line-height:1.7;margin:0 0 24px 0;">
+        We received a request to reset your DrinksHarbour account password. Click the button below to choose a new password.
+      </p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+        <tr>
+          <td style="text-align:center;">
+            <a href="${resetUrl}" style="display:inline-block;background:linear-gradient(135deg,#dc2626,#991b1b);color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;padding:14px 36px;border-radius:8px;box-shadow:0 4px 14px rgba(220,38,38,0.30);">
+              Reset Password
+            </a>
+          </td>
+        </tr>
+      </table>
+      <p style="font-size:13px;color:#9ca3af;text-align:center;margin:0 0 20px 0;">
+        &#9200; This link expires in <strong style="color:#dc2626;">1 hour</strong>
+      </p>
+      <p style="font-size:13px;color:#6b7280;line-height:1.7;margin:0 0 16px 0;">
+        If the button doesn't work, copy and paste this link into your browser:<br/>
+        <a href="${resetUrl}" style="color:#dc2626;word-break:break-all;">${resetUrl}</a>
+      </p>
+      <div style="background-color:#fffbeb;border-left:4px solid #f59e0b;padding:14px 18px;border-radius:6px;">
+        <p style="font-size:13px;color:#92400e;margin:0;">
+          <strong>&#128272; Security notice:</strong> If you didn't request a password reset, you can safely ignore this email. Your account is still secure.
+        </p>
+      </div>
+    `,
+    footerNote: 'Need help? Email support@drinksharbour.com',
+  });
+
+  return sendEmail({
+    to: email,
+    subject: '&#128272; Reset Your Password - DrinksHarbour',
+    html,
+  });
+};
+
+// ─── 7. Email verification (6-digit code) ─────────────────────────────────────
+
+const sendEmailVerificationEmail = async ({ email, firstName, code }) => {
+  const html = emailShell({
+    accentColor:    '#b20202',
+    accentLabel:    '&#9989; Verify Your Email',
+    accentSubtitle: 'Complete your DrinksHarbour registration',
+    body: `
+      <p style="font-size:16px;color:#374151;margin:0 0 16px 0;">Hello <strong>${firstName || 'there'}</strong>,</p>
+      <p style="font-size:14px;color:#6b7280;line-height:1.7;margin:0 0 24px 0;">
+        Welcome to DrinksHarbour! Use the 6-digit code below to verify your email address and activate your account.
+      </p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+        <tr>
+          <td style="background:linear-gradient(135deg,#f5f7fa,#c3cfe2);border-radius:12px;padding:28px;text-align:center;">
+            <p style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:2px;margin:0 0 12px 0;">Your Verification Code</p>
+            <p style="font-size:44px;font-weight:800;color:#b20202;letter-spacing:10px;font-family:Courier New,monospace;margin:0;">${code}</p>
+          </td>
+        </tr>
+      </table>
+      <p style="font-size:13px;color:#9ca3af;text-align:center;margin:0 0 20px 0;">
+        &#9200; This code expires in <strong style="color:#dc2626;">10 minutes</strong>
+      </p>
+      <div style="background-color:#fffbeb;border-left:4px solid #f59e0b;padding:14px 18px;border-radius:6px;">
+        <p style="font-size:13px;color:#92400e;margin:0;">
+          <strong>&#128272; Security notice:</strong> Never share this code. Our team will never ask for it.
+        </p>
+      </div>
+    `,
+    footerNote: 'Need help? Email support@drinksharbour.com',
+  });
+
+  return sendEmail({
+    to: email,
+    subject: '&#9989; Verify Your Email - DrinksHarbour',
+    html,
+  });
+};
+
 module.exports = {
   sendEmail,
   sendOrderConfirmationToCustomer,
   sendNewOrderNotificationToTenant,
   sendNewOrderNotificationToAdmin,
   sendVerificationCodeEmail,
+  sendEmailVerificationEmail,
+  sendPasswordResetEmail,
   sendPurchaseOrderToVendor,
 };

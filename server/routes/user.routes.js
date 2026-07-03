@@ -4,7 +4,9 @@ const express = require('express');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
 const userController = require('../controllers/user.controller');
+const mfaController = require('../controllers/mfa.controller');
 const { protect, authorize, superAdminOnly } = require('../middleware/auth.middleware');
+const { requireMfa } = require('../middleware/mfa.middleware');
 const { validate } = require('../middleware/validation.middleware');
 const { body, param, query } = require('express-validator');
 
@@ -47,6 +49,15 @@ const refreshTokenLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Too many token refresh requests. Please try again later.' },
+  validate: { xForwardedForHeader: false, forwardedHeader: false },
+});
+
+const mfaVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 MFA verify attempts per IP per 15 min (brute-force protection on 6-digit codes)
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many MFA attempts. Please try again later.' },
   validate: { xForwardedForHeader: false, forwardedHeader: false },
 });
 
@@ -208,12 +219,15 @@ router.post(
 );
 
 /**
- * Verify email with token
- * @route GET /api/users/verify-email/:token
+ * Verify email with 6-digit code
+ * @route POST /api/users/verify-email
  */
-router.get(
-  '/verify-email/:token',
-  [param('token').notEmpty().withMessage('Verification token is required')],
+router.post(
+  '/verify-email',
+  [
+    body('email').isEmail().normalizeEmail().withMessage('Please provide a valid email'),
+    body('code').isLength({ min: 6, max: 6 }).isNumeric().withMessage('Verification code must be 6 digits'),
+  ],
   validate,
   userController.verifyEmail
 );
@@ -239,6 +253,21 @@ router.post(
   [body('refreshToken').notEmpty().withMessage('Refresh token is required')],
   validate,
   userController.refreshAuthToken
+);
+
+/**
+ * Verify MFA challenge at login (public — uses pending-mfa token in body)
+ * @route POST /api/users/mfa/verify
+ */
+router.post(
+  '/mfa/verify',
+  mfaVerifyLimiter,
+  [
+    body('pendingMfaToken').notEmpty().withMessage('Pending MFA token is required'),
+    body('code').isLength({ min: 6, max: 8 }).withMessage('MFA code must be 6-8 characters'),
+  ],
+  validate,
+  mfaController.verifyLoginMfa
 );
 
 // ============================================================
@@ -310,6 +339,36 @@ router.post(
 router.post('/logout', userController.logoutUser);
 
 /**
+ * MFA: Start setup — generate TOTP secret + QR otpauth URL
+ * @route POST /api/users/mfa/enable
+ */
+router.post('/mfa/enable', mfaController.enableMfa);
+
+/**
+ * MFA: Verify setup — confirm code, enable MFA, return backup codes
+ * @route POST /api/users/mfa/verify-setup
+ */
+router.post(
+  '/mfa/verify-setup',
+  mfaVerifyLimiter,
+  [body('code').isLength({ min: 6, max: 6 }).isNumeric().withMessage('Verification code must be 6 digits')],
+  validate,
+  mfaController.verifyMfaSetup
+);
+
+/**
+ * MFA: Disable — requires current TOTP or backup code
+ * @route POST /api/users/mfa/disable
+ */
+router.post(
+  '/mfa/disable',
+  mfaVerifyLimiter,
+  [body('code').notEmpty().withMessage('Verification code is required')],
+  validate,
+  mfaController.disableMfa
+);
+
+/**
  * Get recently viewed products
  * @route GET /api/users/recently-viewed
  */
@@ -332,6 +391,7 @@ router.delete('/recently-viewed', userController.clearRecentlyViewed);
 // ============================================================
 
 router.use(authorize('admin', 'super_admin'));
+router.use(requireMfa);
 
 /**
  * Search users

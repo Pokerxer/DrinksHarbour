@@ -109,7 +109,7 @@ function parseMarkdown(text: string): React.ReactNode {
       elements.push(
         <ul key={`list-${elements.length}`} className="list-disc pl-5 my-2 space-y-1.5">
           {listItems.map((item, i) => (
-            <li key={i} className="text-sm text-slate-700">{parseInline(item)}</li>
+            <li key={i} className="text-xs text-slate-700">{parseInline(item)}</li>
           ))}
         </ul>
       );
@@ -145,15 +145,15 @@ function parseMarkdown(text: string): React.ReactNode {
     const trimmedLine = line.trim();
     
     if (trimmedLine.startsWith('### ')) {
-      elements.push(<h4 key={i} className="text-sm font-bold mt-4 mb-2 text-slate-800">{trimmedLine.replace('### ', '')}</h4>);
+      elements.push(<h4 key={i} className="text-xs font-bold mt-4 mb-2 text-slate-800">{trimmedLine.replace('### ', '')}</h4>);
     } else if (trimmedLine.startsWith('## ')) {
       elements.push(<h3 key={i} className="text-base font-bold mt-5 mb-2 text-slate-800">{trimmedLine.replace('## ', '')}</h3>);
     } else if (trimmedLine.startsWith('# ')) {
       elements.push(<h2 key={i} className="text-lg font-bold mt-5 mb-2 text-slate-800">{trimmedLine.replace('# ', '')}</h2>);
     } else if (trimmedLine.match(/^[\*\-]\s/)) {
-      elements.push(<li key={i} className="text-sm ml-4 text-slate-700">{parseInline(trimmedLine.replace(/^[\*\-]\s/, ''))}</li>);
+      elements.push(<li key={i} className="text-xs ml-4 text-slate-700">{parseInline(trimmedLine.replace(/^[\*\-]\s/, ''))}</li>);
     } else if (trimmedLine) {
-      elements.push(<p key={i} className="text-sm my-1.5 text-slate-700 leading-relaxed">{parseInline(trimmedLine)}</p>);
+      elements.push(<p key={i} className="text-xs my-1.5 text-slate-700 leading-relaxed">{parseInline(trimmedLine)}</p>);
     }
   }
   
@@ -660,7 +660,7 @@ export default function ChatbotWidget() {
                       ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white rounded-br-md' 
                       : 'bg-white text-slate-800 rounded-bl-md border border-slate-200/60'
                   }`}>
-                    <div className="text-sm sm:text-base leading-relaxed">
+                    <div className="text-xs sm:text-sm leading-relaxed">
                       {msg.role === 'user' ? (
                         <p className="whitespace-pre-wrap">{msg.content}</p>
                       ) : (
@@ -678,9 +678,9 @@ export default function ChatbotWidget() {
                   {msg.role === 'assistant' && msg.products && msg.products.length > 0 && (
                     <div className="mt-3 space-y-2">
                       <p className="text-xs font-medium text-slate-500 ml-1">Suggested for you</p>
-                      {msg.products.slice(0, 3).map((product) => (
+                      {msg.products.slice(0, 3).map((product, idx) => (
                         <a
-                          key={product.id}
+                          key={`${product.id}-${idx}`}
                           href={`/product/${product.slug}`}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -698,8 +698,8 @@ export default function ChatbotWidget() {
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-slate-800 truncate">{product.name}</p>
-                            <p className="text-sm font-bold text-emerald-600 mt-0.5">
+                            <p className="text-xs font-semibold text-slate-800 truncate">{product.name}</p>
+                            <p className="text-xs font-bold text-emerald-600 mt-0.5">
                               {formatPrice(product.minPrice)}
                               {product.hasDiscount && <span className="ml-1.5 text-xs text-rose-500 font-medium px-1.5 py-0.5 bg-rose-50 rounded-full">Sale!</span>}
                             </p>
@@ -857,7 +857,7 @@ export default function ChatbotWidget() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
                 placeholder={hasContent ? "Add a message..." : "Ask me anything about drinks..."}
-                className="flex-1 px-4 py-3 sm:py-3.5 bg-slate-50 border-0 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-white transition-all placeholder:text-slate-400"
+                className="flex-1 px-4 py-3 sm:py-3.5 bg-slate-50 border-0 rounded-2xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-white transition-all placeholder:text-slate-400"
                 disabled={isLoading}
               />
               <button

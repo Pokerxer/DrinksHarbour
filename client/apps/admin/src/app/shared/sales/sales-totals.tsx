@@ -28,6 +28,10 @@ export interface SalesTotalsProps {
   /** Footer adjustments — all optional so read-only contexts can omit them. */
   coupon?: SalesTotalsCoupon | null;
   couponBusy?: boolean;
+  /** Cart spend-threshold discount (cart_threshold pricelist rules); 0 hides the row. */
+  pricelistCartDiscount?: number;
+  /** Pricelist name shown next to the spend-discount row. */
+  pricelistName?: string;
   onApplyCoupon?: (code: string) => void | Promise<void>;
   onClearCoupon?: () => void;
   shippingFee?: number;
@@ -62,6 +66,8 @@ export default function SalesTotals({
   currency = 'NGN',
   coupon,
   couponBusy,
+  pricelistCartDiscount = 0,
+  pricelistName,
   onApplyCoupon,
   onClearCoupon,
   shippingFee = 0,
@@ -247,7 +253,9 @@ export default function SalesTotals({
           )}
           {panel === 'shipping' && onShippingChange && (
             <FooterPanel onClose={() => setPanel(null)}>
-              <span className="text-xs text-gray-500">Flat delivery charge</span>
+              <span className="text-xs text-gray-500">
+                Flat delivery charge
+              </span>
               <input
                 type="number"
                 min={0}
@@ -300,6 +308,14 @@ export default function SalesTotals({
                 cls="text-emerald-600"
               >
                 −{fmtCur(coupon.discount, currency)}
+              </Row>
+            )}
+            {pricelistCartDiscount > 0 && (
+              <Row
+                label={`Spend Discount${pricelistName ? ` (${pricelistName})` : ''}`}
+                cls="text-teal-600"
+              >
+                −{fmtCur(pricelistCartDiscount, currency)}
               </Row>
             )}
             <Row label="Tax">{fmtCur(taxTotal, currency)}</Row>

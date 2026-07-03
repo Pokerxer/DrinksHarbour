@@ -44,7 +44,12 @@ const navItems: NavItem[] = [
   },
   {
     label: 'Inventory',
+    href: routes.inventory.index,
     icon: <PiCubeDuotone />,
+  },
+  {
+    label: 'Catalog',
+    icon: <PiPackageDuotone />,
     items: [
       {
         label: 'Products',

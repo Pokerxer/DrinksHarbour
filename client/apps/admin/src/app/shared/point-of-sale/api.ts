@@ -681,12 +681,9 @@ export const posApi = {
     return request<{
       salesOrders: unknown[];
       pagination: { page: number; limit: number; total: number; pages: number };
-    }>(
-      `${API_URL}/api/pos/sales-orders?${qs}`,
-      {
-        headers: authHeaders(token),
-      }
-    );
+    }>(`${API_URL}/api/pos/sales-orders?${qs}`, {
+      headers: authHeaders(token),
+    });
   },
 
   // Reconcile a linked Sales Order after a POS sale. The POS sale already

@@ -8,6 +8,8 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { NotFoundError, ValidationError, AuthorizationError } = require('../utils/errors');
 const mongoose = require('mongoose');
+const emailService = require('./email.service');
+const verificationService = require('./verification.service');
 
 /**
  * Register a new user
@@ -24,7 +26,6 @@ const registerUser = async (userData) => {
     dateOfBirth,
   } = userData;
 
-  console.log('userData', userData);
   // Validate email format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
@@ -101,9 +102,20 @@ const registerUser = async (userData) => {
   // Create user
   const user = await User.create(newUserData);
 
-  // Generate email verification token
-  const verificationToken = user.generateEmailVerificationToken();
-  await user.save();
+  // Generate a 6-digit verification code and email it to the user.
+  // The code is stored in the verification service (in-memory; TODO: Redis)
+  // keyed by email, with a 10-minute expiry and a 3-attempt cap.
+  const verificationCode = verificationService.generateVerificationCode();
+  verificationService.storeVerificationCode(user.email, verificationCode);
+  try {
+    await emailService.sendEmailVerificationEmail({
+      email: user.email,
+      firstName: user.firstName,
+      code: verificationCode,
+    });
+  } catch (err) {
+    console.error('Failed to send verification email:', err.message);
+  }
 
   // Generate auth token
   const token = generateAuthToken(user);
@@ -114,8 +126,8 @@ const registerUser = async (userData) => {
   return {
     user: userResponse,
     token,
-    verificationToken, // Can be used to send verification email
-    message: 'User registered successfully. Please verify your email.',
+    requiresEmailVerification: true,
+    message: 'User registered successfully. A 6-digit verification code has been sent to your email.',
   };
 };
 
@@ -164,7 +176,7 @@ const loginUser = async (email, password, options = {}) => {
 
   // Check account status
   if (user.status === 'suspended') {
-    const reason = user.suspensionReason ? ` Reason: ${user.suspensionReason}` : '';
+    const reason = user.suspendedReason ? ` Reason: ${user.suspendedReason}` : '';
     throw new AuthorizationError(`Your account has been suspended.${reason} Please contact support.`);
   }
 
@@ -194,6 +206,26 @@ const loginUser = async (email, password, options = {}) => {
   user.lastLoginUserAgent = userAgent;
   await user.save();
 
+  // ── MFA challenge ──────────────────────────────────────────────────────────
+  // If the user has MFA enabled, do NOT issue access/refresh tokens yet.
+  // Instead, issue a short-lived pending-mfa token that the client uses to
+  // call POST /api/users/mfa/verify with their TOTP/backup code. On success,
+  // completeMfaLogin() issues the full access + refresh tokens.
+  if (user.mfaEnabled) {
+    const pendingMfaToken = jwt.sign(
+      { userId: user._id.toString(), type: 'pending_mfa', jti: crypto.randomUUID() },
+      process.env.JWT_SECRET,
+      { expiresIn: '5m' }
+    );
+    const userResponse = sanitizeUser(user.toObject());
+    return {
+      user: userResponse,
+      mfaRequired: true,
+      pendingMfaToken,
+      message: 'MFA verification required. Please enter your authenticator code.',
+    };
+  }
+
   // Generate auth token
   const token = generateAuthToken(user);
 
@@ -212,6 +244,44 @@ const loginUser = async (email, password, options = {}) => {
   // Remove sensitive data
   const userResponse = sanitizeUser(user.toObject());
 
+  return {
+    user: userResponse,
+    token,
+    refreshToken: refreshTokenObj.token,
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  };
+};
+
+/**
+ * Complete MFA login — called after a successful TOTP/backup code verification.
+ * Issues the full access + refresh tokens (the second half of the MFA login flow).
+ */
+const completeMfaLogin = async (userId, options = {}) => {
+  const { ipAddress, userAgent } = options;
+  const user = await User.findById(userId)
+    .populate('tenant', 'name slug status subscriptionStatus logo primaryColor');
+  if (!user) throw new NotFoundError('User not found');
+
+  // Update login metadata (the pending-mfa phase already updated lastLogin, but
+  // we refresh the timestamp to mark the actual successful login completion)
+  user.lastLogin = new Date();
+  user.lastLoginIp = ipAddress || user.lastLoginIp;
+  user.lastLoginUserAgent = userAgent || user.lastLoginUserAgent;
+  await user.save();
+
+  const token = generateAuthToken(user);
+  const refreshTokenObj = generateRefreshToken(user);
+  await RefreshToken.store({
+    jti: refreshTokenObj.jti,
+    tokenHash: hashToken(refreshTokenObj.token),
+    userId: user._id,
+    tenantId: user.tenant || undefined,
+    expiresAt: refreshTokenObj.expiresAt,
+    userAgent: userAgent || undefined,
+    ipAddress: ipAddress || undefined,
+  });
+
+  const userResponse = sanitizeUser(user.toObject());
   return {
     user: userResponse,
     token,
@@ -711,14 +781,19 @@ const requestPasswordReset = async (email) => {
   const resetToken = user.generatePasswordResetToken();
   await user.save();
 
-  // TODO: Send email with reset link
-  // const resetUrl = `${process.env.FRONTEND_URL}/auth/reset-password/${resetToken}`;
+  // Email the reset link to the user (never return the raw token to the client)
+  try {
+    await emailService.sendPasswordResetEmail({
+      email: user.email,
+      firstName: user.firstName,
+      resetToken,
+    });
+  } catch (err) {
+    console.error('Failed to send password reset email:', err.message);
+  }
 
   return {
-    message: 'Password reset link has been sent to your email.',
-    resetToken, // Return for testing/development (remove in production)
-    userId: user._id,
-    expiresIn: '1 hour',
+    message: 'If an account with that email exists, a password reset link has been sent.',
   };
 };
 
@@ -781,49 +856,17 @@ const resetPassword = async (resetToken, newPassword) => {
 };
 
 /**
- * Verify email with token
+ * Verify email with 6-digit code
  */
-const verifyEmail = async (verificationToken) => {
-  // Hash token
-  const hashedToken = crypto
-    .createHash('sha256')
-    .update(verificationToken)
-    .digest('hex');
+const verifyEmail = async (email, code) => {
+  const normalizedEmail = email.toLowerCase();
 
-  // Find user with valid token
-  const user = await User.findOne({
-    emailVerificationToken: hashedToken,
-    emailVerificationExpires: { $gt: Date.now() },
-  });
-
-  if (!user) {
-    throw new ValidationError('Invalid or expired verification token');
+  const result = verificationService.verifyCode(normalizedEmail, code);
+  if (!result.valid) {
+    throw new ValidationError(result.message);
   }
 
-  // Verify email
-  user.isEmailVerified = true;
-  user.emailVerifiedAt = new Date();
-  user.emailVerificationToken = undefined;
-  user.emailVerificationExpires = undefined;
-  await user.save();
-
-  return {
-    message: 'Email verified successfully. You can now access all features.',
-    user: {
-      _id: user._id,
-      email: user.email,
-      isEmailVerified: user.isEmailVerified,
-      emailVerifiedAt: user.emailVerifiedAt,
-    },
-  };
-};
-
-/**
- * Resend email verification
- */
-const resendEmailVerification = async (email) => {
-  const user = await User.findOne({ email: email.toLowerCase() });
-
+  const user = await User.findOne({ email: normalizedEmail });
   if (!user) {
     throw new NotFoundError('User not found');
   }
@@ -832,25 +875,59 @@ const resendEmailVerification = async (email) => {
     throw new ValidationError('Email is already verified');
   }
 
-  // Check if recent verification was sent (rate limiting)
-  if (user.emailVerificationExpires && user.emailVerificationExpires > Date.now()) {
-    const minutesLeft = Math.ceil((user.emailVerificationExpires - Date.now()) / 60000);
+  // Verify email
+  user.isEmailVerified = true;
+  user.emailVerifiedAt = new Date();
+  await user.save();
+
+  return {
+    message: 'Email verified successfully. You can now access all features.',
+    user: {
+      _id: user._id,
+      email: user.email,
+      isEmailVerified: user.isEmailVerified,
+    },
+  };
+};
+
+/**
+ * Resend email verification (6-digit code)
+ */
+const resendEmailVerification = async (email) => {
+  const normalizedEmail = email.toLowerCase();
+
+  const user = await User.findOne({ email: normalizedEmail });
+
+  if (!user) {
+    // Don't reveal whether the user exists
+    return { message: 'If an account with that email exists, a new verification code has been sent.' };
+  }
+
+  if (user.isEmailVerified) {
+    throw new ValidationError('Email is already verified');
+  }
+
+  // Rate-limit resend: reject if a code is still within its validity window
+  if (verificationService.hasPendingVerification(normalizedEmail)) {
     throw new ValidationError(
-      `Verification email was recently sent. Please wait ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''} before requesting a new one.`
+      'A verification code was recently sent. Please wait for it to expire (10 minutes) before requesting a new one.'
     );
   }
 
-  // Generate new verification token
-  const verificationToken = user.generateEmailVerificationToken();
-  await user.save();
-
-  // TODO: Send verification email
-  // const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
+  const verificationCode = verificationService.generateVerificationCode();
+  verificationService.storeVerificationCode(normalizedEmail, verificationCode);
+  try {
+    await emailService.sendEmailVerificationEmail({
+      email: user.email,
+      firstName: user.firstName,
+      code: verificationCode,
+    });
+  } catch (err) {
+    console.error('Failed to resend verification email:', err.message);
+  }
 
   return {
-    message: 'Verification email has been sent to your email address.',
-    verificationToken, // Return for testing/development (remove in production)
-    expiresIn: '24 hours',
+    message: 'A new 6-digit verification code has been sent to your email address.',
   };
 };
 
@@ -1036,7 +1113,7 @@ const suspendUser = async (userId, reason, suspendedBy) => {
       email: user.email,
       status: user.status,
       suspendedAt: user.suspendedAt,
-      suspensionReason: user.suspensionReason,
+      suspendedReason: user.suspendedReason,
     },
   };
 };
@@ -1057,7 +1134,7 @@ const activateUser = async (userId, activatedBy) => {
 
   user.status = 'active';
   user.suspendedAt = undefined;
-  user.suspensionReason = undefined;
+  user.suspendedReason = undefined;
   user.suspendedBy = undefined;
   user.activatedBy = activatedBy;
   user.activatedAt = new Date();
@@ -1515,6 +1592,7 @@ const clearRecentlyViewed = async (userId) => {
 module.exports = {
   registerUser,
   loginUser,
+  completeMfaLogin,
   refreshAuthToken,
   getAllUsers,
   getUserById,

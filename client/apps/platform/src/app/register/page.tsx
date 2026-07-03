@@ -5,6 +5,14 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { useAuth } from '@/context/AuthContext';
+import {
+  validateEmail,
+  validateStrongPassword,
+  validateConfirmPassword,
+  validateNigerianPhone,
+  normalizePhone,
+  getPasswordStrength,
+} from '@/lib/validation';
 
 interface FormData {
   firstName: string;
@@ -16,15 +24,6 @@ interface FormData {
   dateOfBirth: string;
   agreeTerms: boolean;
   agreeAge: boolean;
-}
-
-/** Convert Nigerian local / short numbers to E.164 (+234XXXXXXXXXX) */
-function normalizePhone(raw: string): string {
-  const digits = raw.replace(/[\s\-().+]/g, '');
-  if (digits.startsWith('234')) return `+${digits}`;          // already international
-  if (digits.startsWith('0'))   return `+234${digits.slice(1)}`; // 0XXXXXXXXXX → +234XXXXXXXXXX
-  if (/^[7-9]/.test(digits))   return `+234${digits}`;        // XXXXXXXXXX  → +234XXXXXXXXXX
-  return raw; // fallback — return as-is
 }
 
 const Register = () => {
@@ -69,50 +68,21 @@ const Register = () => {
       newErrors.lastName = 'Last name cannot exceed 50 characters';
     }
 
-    // Email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!formData.email) {
-      newErrors.email = 'Email is required';
-    } else if (!emailRegex.test(formData.email)) {
-      newErrors.email = 'Please provide a valid email address';
-    }
+    // Email validation (shared helper)
+    const emailError = validateEmail(formData.email);
+    if (emailError) newErrors.email = emailError;
 
-    // Password validation
-    if (!formData.password) {
-      newErrors.password = 'Password is required';
-    } else if (formData.password.length < 8) {
-      newErrors.password = 'Password must be at least 8 characters';
-    } else {
-      const hasUpperCase = /[A-Z]/.test(formData.password);
-      const hasLowerCase = /[a-z]/.test(formData.password);
-      const hasNumber = /\d/.test(formData.password);
-      const hasSpecialChar = /[@$!%*?&]/.test(formData.password);
+    // Password validation (shared helper — consistent with security page)
+    const passwordError = validateStrongPassword(formData.password);
+    if (passwordError) newErrors.password = passwordError;
 
-      if (!hasUpperCase || !hasLowerCase || !hasNumber || !hasSpecialChar) {
-        newErrors.password =
-          'Password must contain uppercase, lowercase, number, and special character (@$!%*?&)';
-      }
-    }
+    // Confirm password (shared helper)
+    const confirmError = validateConfirmPassword(formData.password, formData.confirmPassword);
+    if (confirmError) newErrors.confirmPassword = confirmError;
 
-    // Confirm password validation
-    if (!formData.confirmPassword) {
-      newErrors.confirmPassword = 'Please confirm your password';
-    } else if (formData.password !== formData.confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match';
-    }
-
-    // Phone number validation (optional)
-    // Accepts: 07035609301 · 7035609301 · +2347035609301 · 2347035609301
-    if (formData.phoneNumber) {
-      const raw = formData.phoneNumber.replace(/[\s\-().]/g, '');
-      const isValid =
-        /^0[7-9][01]\d{8}$/.test(raw) ||          // Nigerian local:  0XXXXXXXXXX (11 digits)
-        /^[7-9][01]\d{8}$/.test(raw)  ||          // Without leading 0: XXXXXXXXXX (10 digits)
-        /^\+?234[7-9][01]\d{8}$/.test(raw);       // E.164 international: +234XXXXXXXXXX
-      if (!isValid) {
-        newErrors.phoneNumber = 'Enter a valid Nigerian number, e.g. 07035609301 or +2347035609301';
-      }
-    }
+    // Phone number validation (shared helper)
+    const phoneError = validateNigerianPhone(formData.phoneNumber);
+    if (phoneError) newErrors.phoneNumber = phoneError;
 
     // Date of birth validation (optional)
     if (formData.dateOfBirth) {
@@ -147,23 +117,6 @@ const Register = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const getPasswordStrength = () => {
-    const password = formData.password;
-    let strength = 0;
-
-    if (password.length >= 8) strength++;
-    if (password.length >= 12) strength++;
-    if (/[A-Z]/.test(password)) strength++;
-    if (/[a-z]/.test(password)) strength++;
-    if (/\d/.test(password)) strength++;
-    if (/[@$!%*?&]/.test(password)) strength++;
-
-    if (strength <= 2) return { level: 'Weak', color: 'bg-red-500', percent: '25%' };
-    if (strength <= 3) return { level: 'Fair', color: 'bg-yellow-500', percent: '50%' };
-    if (strength <= 4) return { level: 'Good', color: 'bg-blue-500', percent: '75%' };
-    return { level: 'Strong', color: 'bg-green-500', percent: '100%' };
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setGeneralError('');
@@ -194,7 +147,7 @@ const Register = () => {
 
     if (result.requiresEmailVerification) {
       setSuccessMessage(
-        'Account created! Please check your email and click the verification link before signing in.'
+        'Account created! We sent a 6-digit verification code to your email. Enter it to activate your account.'
       );
       setTimeout(() => {
         router.push(`/verify-email?email=${encodeURIComponent(formData.email)}`);
@@ -227,7 +180,14 @@ const Register = () => {
     }
   };
 
-  const passwordStrength = formData.password ? getPasswordStrength() : null;
+  // Map shared getPasswordStrength (score/label) → the {level,color,percent} shape the UI expects
+  const passwordStrength = (() => {
+    if (!formData.password) return null;
+    const { score, label } = getPasswordStrength(formData.password);
+    const colors = ['bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-blue-500', 'bg-[#b20202]'];
+    const percents = ['20%', '40%', '60%', '80%', '100%'];
+    return { level: label, color: colors[score], percent: percents[score] };
+  })();
 
   return (
     <>
@@ -259,8 +219,8 @@ const Register = () => {
               {/* Success Message */}
               {successMessage && (
                 <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl flex items-start gap-3">
-                  <Icon.PiCheckCircle size={20} className="text-green-500 mt-0.5 flex-shrink-0" />
-                  <p className="text-green-700 text-sm">{successMessage}</p>
+                  <Icon.PiCheckCircle size={20} className="text-[#b20202] mt-0.5 flex-shrink-0" />
+                  <p className="text-[#8b0000] text-sm">{successMessage}</p>
                 </div>
               )}
 
@@ -294,7 +254,7 @@ const Register = () => {
                       className={`w-full px-4 py-3 rounded-lg border ${
                         errors.firstName
                           ? 'border-red-300 focus:ring-red-500'
-                          : 'border-gray-300 focus:ring-green-500'
+                          : 'border-gray-300 focus:ring-[#b20202]'
                       } focus:outline-none focus:ring-2 focus:border-transparent transition-all`}
                     />
                     {errors.firstName && (
@@ -324,7 +284,7 @@ const Register = () => {
                       className={`w-full px-4 py-3 rounded-lg border ${
                         errors.lastName
                           ? 'border-red-300 focus:ring-red-500'
-                          : 'border-gray-300 focus:ring-green-500'
+                          : 'border-gray-300 focus:ring-[#b20202]'
                       } focus:outline-none focus:ring-2 focus:border-transparent transition-all`}
                     />
                     {errors.lastName && (
@@ -354,7 +314,7 @@ const Register = () => {
                       className={`w-full px-4 py-3 pr-12 rounded-lg border ${
                         errors.email
                           ? 'border-red-300 focus:ring-red-500'
-                          : 'border-gray-300 focus:ring-green-500'
+                          : 'border-gray-300 focus:ring-[#b20202]'
                       } focus:outline-none focus:ring-2 focus:border-transparent transition-all`}
                     />
                     <Icon.PiEnvelope
@@ -390,7 +350,7 @@ const Register = () => {
                       className={`w-full px-4 py-3 pr-12 rounded-lg border ${
                         errors.phoneNumber
                           ? 'border-red-300 focus:ring-red-500'
-                          : 'border-gray-300 focus:ring-green-500'
+                          : 'border-gray-300 focus:ring-[#b20202]'
                       } focus:outline-none focus:ring-2 focus:border-transparent transition-all`}
                     />
                     <Icon.PiPhone
@@ -434,7 +394,7 @@ const Register = () => {
                       className={`w-full px-4 py-3 pr-12 rounded-lg border ${
                         errors.dateOfBirth
                           ? 'border-red-300 focus:ring-red-500'
-                          : 'border-gray-300 focus:ring-green-500'
+                          : 'border-gray-300 focus:ring-[#b20202]'
                       } focus:outline-none focus:ring-2 focus:border-transparent transition-all`}
                     />
                     <Icon.PiCalendar
@@ -476,7 +436,7 @@ const Register = () => {
                       className={`w-full px-4 py-3 pr-12 rounded-lg border ${
                         errors.password
                           ? 'border-red-300 focus:ring-red-500'
-                          : 'border-gray-300 focus:ring-green-500'
+                          : 'border-gray-300 focus:ring-[#b20202]'
                       } focus:outline-none focus:ring-2 focus:border-transparent transition-all`}
                     />
                     <button
@@ -507,7 +467,7 @@ const Register = () => {
                               ? 'text-yellow-500'
                               : passwordStrength.level === 'Good'
                               ? 'text-blue-500'
-                              : 'text-green-500'
+                              : 'text-[#b20202]'
                           }`}
                         >
                           {passwordStrength.level}
@@ -549,8 +509,8 @@ const Register = () => {
                         errors.confirmPassword
                           ? 'border-red-300 focus:ring-red-500'
                           : formData.confirmPassword && formData.password === formData.confirmPassword
-                          ? 'border-green-300 focus:ring-green-500'
-                          : 'border-gray-300 focus:ring-green-500'
+                          ? 'border-[#b20202] focus:ring-[#b20202]'
+                          : 'border-gray-300 focus:ring-[#b20202]'
                       } focus:outline-none focus:ring-2 focus:border-transparent transition-all`}
                     />
                     <button
@@ -575,7 +535,7 @@ const Register = () => {
                   {!errors.confirmPassword &&
                     formData.confirmPassword &&
                     formData.password === formData.confirmPassword && (
-                      <p className="mt-1.5 text-sm text-green-600 flex items-center gap-1">
+                      <p className="mt-1.5 text-sm text-[#b20202] flex items-center gap-1">
                         <Icon.PiCheckCircle size={14} />
                         Passwords match
                       </p>
@@ -594,7 +554,7 @@ const Register = () => {
                         checked={formData.agreeAge}
                         onChange={handleChange}
                         required
-                        className="w-4 h-4 mt-1 rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer"
+                        className="w-4 h-4 mt-1 rounded border-gray-300 text-[#b20202] focus:ring-[#b20202] cursor-pointer"
                       />
                       <label
                         htmlFor="agreeAge"
@@ -624,7 +584,7 @@ const Register = () => {
                         checked={formData.agreeTerms}
                         onChange={handleChange}
                         required
-                        className="w-4 h-4 mt-1 rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer"
+                        className="w-4 h-4 mt-1 rounded border-gray-300 text-[#b20202] focus:ring-[#b20202] cursor-pointer"
                       />
                       <label
                         htmlFor="agreeTerms"
@@ -633,7 +593,7 @@ const Register = () => {
                         I agree to the{' '}
                         <Link
                           href="/terms"
-                          className="text-green-600 hover:underline font-medium"
+                          className="text-[#b20202] hover:underline font-medium"
                           target="_blank"
                         >
                           Terms of Service
@@ -641,7 +601,7 @@ const Register = () => {
                         ,{' '}
                         <Link
                           href="/privacy"
-                          className="text-green-600 hover:underline font-medium"
+                          className="text-[#b20202] hover:underline font-medium"
                           target="_blank"
                         >
                           Privacy Policy
@@ -649,7 +609,7 @@ const Register = () => {
                         , and{' '}
                         <Link
                           href="/age-policy"
-                          className="text-green-600 hover:underline font-medium"
+                          className="text-[#b20202] hover:underline font-medium"
                           target="_blank"
                         >
                           Age Verification Policy
@@ -669,7 +629,7 @@ const Register = () => {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full py-3.5 px-6 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 active:bg-green-800 transition-colors disabled:bg-green-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-6 shadow-sm"
+                  className="w-full py-3.5 px-6 bg-[#b20202] text-white font-semibold rounded-lg hover:bg-[#8b0000] active:bg-[#6b0000] transition-colors disabled:bg-[#b20202] disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-6 shadow-sm"
                 >
                   {isLoading ? (
                     <>
@@ -689,7 +649,7 @@ const Register = () => {
               <div className="mt-8 text-center">
                 <p className="text-gray-600 text-sm">
                   Already have an account?{' '}
-                  <Link href="/login" className="text-green-600 hover:underline font-medium">
+                  <Link href="/login" className="text-[#b20202] hover:underline font-medium">
                     Sign in
                   </Link>
                 </p>
@@ -709,8 +669,8 @@ const Register = () => {
 
                 <div className="space-y-4 mb-8">
                   <div className="flex items-start gap-4 p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <Icon.PiShoppingCart size={20} className="text-green-600" />
+                    <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <Icon.PiShoppingCart size={20} className="text-[#b20202]" />
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-900 mb-1">Easy Ordering</h3>
@@ -721,8 +681,8 @@ const Register = () => {
                   </div>
 
                   <div className="flex items-start gap-4 p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <Icon.PiHeart size={20} className="text-green-600" />
+                    <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <Icon.PiHeart size={20} className="text-[#b20202]" />
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-900 mb-1">Wishlist & Favorites</h3>
@@ -733,8 +693,8 @@ const Register = () => {
                   </div>
 
                   <div className="flex items-start gap-4 p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <Icon.PiClock size={20} className="text-green-600" />
+                    <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <Icon.PiClock size={20} className="text-[#b20202]" />
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-900 mb-1">Order Tracking</h3>
@@ -745,8 +705,8 @@ const Register = () => {
                   </div>
 
                   <div className="flex items-start gap-4 p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <Icon.PiGift size={20} className="text-green-600" />
+                    <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <Icon.PiGift size={20} className="text-[#b20202]" />
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-900 mb-1">Exclusive Offers</h3>
@@ -757,8 +717,8 @@ const Register = () => {
                   </div>
 
                   <div className="flex items-start gap-4 p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <Icon.PiStar size={20} className="text-green-600" />
+                    <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <Icon.PiStar size={20} className="text-[#b20202]" />
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-900 mb-1">Age Verification</h3>
@@ -769,12 +729,12 @@ const Register = () => {
                   </div>
                 </div>
 
-                <div className="p-5 bg-green-50 rounded-xl border border-green-200">
+                <div className="p-5 bg-red-50 rounded-xl border border-red-200">
                   <div className="flex items-start gap-3">
-                    <Icon.PiShieldCheck size={24} className="text-green-600 flex-shrink-0 mt-0.5" />
+                    <Icon.PiShieldCheck size={24} className="text-[#b20202] flex-shrink-0 mt-0.5" />
                     <div>
-                      <h3 className="font-semibold text-green-800 mb-1">Secure & Private</h3>
-                      <p className="text-green-700 text-sm">
+                      <h3 className="font-semibold text-red-800 mb-1">Secure & Private</h3>
+                      <p className="text-[#8b0000] text-sm">
                         Your personal information is protected with industry-standard security
                         measures. We never share your data with third parties.
                       </p>

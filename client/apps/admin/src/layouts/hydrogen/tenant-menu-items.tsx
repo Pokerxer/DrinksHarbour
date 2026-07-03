@@ -25,6 +25,7 @@ import {
   PiFileTextDuotone,
   PiTrayArrowDownDuotone,
   PiArrowUUpLeftDuotone,
+  PiPackageDuotone,
 } from 'react-icons/pi';
 
 // ─── Plan hierarchy ──────────────────────────────────────────────────────────
@@ -134,6 +135,20 @@ export const tenantMenuItems: TenantMenuEntry[] = [
 
   // ─── Inventory ──────────────────────────────────────────────
   { label: 'Inventory' },
+  {
+    name: 'Inventory',
+    href: routes.inventory.index,
+    icon: <PiPackageDuotone />,
+    dropdownItems: [
+      { name: 'Overview', href: routes.inventory.index },
+      { name: 'Transfers', href: routes.inventory.transfers },
+      { name: 'Receipts', href: routes.inventory.receipts },
+      { name: 'Deliveries', href: routes.inventory.deliveries },
+      { name: 'Adjustments', href: routes.inventory.adjustments },
+      { name: 'Stock', href: routes.inventory.stock },
+      { name: 'Replenishment', href: routes.inventory.replenishment },
+    ],
+  },
   {
     name: 'Warehouses',
     href: routes.warehouses.list,

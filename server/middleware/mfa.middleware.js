@@ -1,19 +1,22 @@
 // middleware/mfa.middleware.js
+//
+// Enforces MFA verification for privileged roles.
+//
+// The MFA verification endpoint (POST /api/users/mfa/verify) issues a
+// short-lived mfa-verified JWT (type: 'mfa', 10-min expiry). The client sends
+// it as the x-mfa-token header on requests to MFA-protected routes.
+
 const { UnauthorizedError, ForbiddenError } = require('../utils/errors');
+const mfaService = require('../services/mfa.service');
 
 /**
  * Require MFA verification for privileged roles.
  *
  * If the user has MFA enabled AND hasn't completed MFA verification in this
- * session (indicated by req.mfaVerified), the request is rejected with 403
- * and a clear message telling the client to complete MFA.
+ * session (indicated by a valid x-mfa-token header), the request is rejected
+ * with 403 and a clear message telling the client to complete MFA.
  *
- * Place this AFTER protect() but BEFORE tenantAdminOrSuperAdmin() on
- * super-admin-only routes.
- *
- * The actual MFA verification endpoint sets req.mfaVerified via a short-lived
- * session token (e.g. a separate JWT or a cookie flag). For now this is a
- * foundation: it checks the flag but the verification flow is a TODO.
+ * Place this AFTER protect() on privileged routes.
  */
 const requireMfa = (req, res, next) => {
   if (!req.user) {
@@ -26,22 +29,25 @@ const requireMfa = (req, res, next) => {
     return next();
   }
 
-  // If user has MFA enabled but hasn't verified in this session
-  if (req.user.mfaEnabled && !req.mfaVerified) {
+  // If the user doesn't have MFA enabled, no verification needed
+  if (!req.user.mfaEnabled) {
+    return next();
+  }
+
+  // Check for a valid mfa-verified token in the x-mfa-token header or dh_mfa cookie
+  const mfaToken = req.headers['x-mfa-token'] || req.cookies?.dh_mfa;
+  if (!mfaToken) {
     throw new ForbiddenError('MFA verification required. Please complete MFA verification to access this resource.');
   }
 
+  const decoded = mfaService.verifyMfaVerifiedToken(mfaToken);
+  if (!decoded || decoded.userId !== String(req.user._id)) {
+    throw new ForbiddenError('Invalid or expired MFA verification. Please re-verify.');
+  }
+
+  // MFA verified for this session
+  req.mfaVerified = true;
   next();
 };
 
-/**
- * Set MFA verified flag on the request.
- * Called by the MFA verification endpoint after successful TOTP/SMS code check.
- * In production this should set a short-lived signed cookie or session flag,
- * not just req.mfaVerified (which is per-request only).
- */
-const setMfaVerified = (req) => {
-  req.mfaVerified = true;
-};
-
-module.exports = { requireMfa, setMfaVerified };
+module.exports = { requireMfa };

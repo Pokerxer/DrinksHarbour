@@ -78,7 +78,7 @@ export default function SalesActivityComposer({
             : 'Save first to add notes'
         }
         disabled={!orderId || busy}
-        className="w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none placeholder:text-gray-400 focus:border-brand focus:ring-1 focus:ring-brand disabled:bg-gray-100"
+        className="w-full resize-none rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-800 outline-none placeholder:text-gray-400 focus:border-brand focus:ring-1 focus:ring-brand disabled:bg-gray-100"
       />
 
       <div className="mt-2 flex justify-end">

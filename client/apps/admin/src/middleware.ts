@@ -51,8 +51,10 @@ const SESSION_COOKIES = [
  * cookie keeps resending, triggering JWT_SESSION_ERROR on every request.
  * Clear the bad cookie here and redirect to sign-in once, ending the loop.
  */
-async function clearStaleCookieIfNeeded(req: NextRequest): Promise<NextResponse | null> {
-  const hasCookie = SESSION_COOKIES.some(name => req.cookies.has(name));
+async function clearStaleCookieIfNeeded(
+  req: NextRequest
+): Promise<NextResponse | null> {
+  const hasCookie = SESSION_COOKIES.some((name) => req.cookies.has(name));
   if (!hasCookie) return null;
 
   try {
@@ -66,7 +68,7 @@ async function clearStaleCookieIfNeeded(req: NextRequest): Promise<NextResponse 
   const signInUrl = new URL(pagesOptions.signIn ?? '/signin', req.url);
   signInUrl.searchParams.set('callbackUrl', req.nextUrl.pathname);
   const res = NextResponse.redirect(signInUrl);
-  SESSION_COOKIES.forEach(name => res.cookies.delete(name));
+  SESSION_COOKIES.forEach((name) => res.cookies.delete(name));
   return res;
 }
 
@@ -113,9 +115,12 @@ const authMiddleware = withAuth(
     // Tenant roles should only manage their own data via the tenant sidebar
     const PLATFORM_ONLY_PATHS = [
       '/tenants',
-      '/products',  // main product catalog is platform-only; tenants use /sub-products
+      '/products', // main product catalog is platform-only; tenants use /sub-products
     ];
-    if (TENANT_ROLES.includes(role) && PLATFORM_ONLY_PATHS.some((p) => path.startsWith(p))) {
+    if (
+      TENANT_ROLES.includes(role) &&
+      PLATFORM_ONLY_PATHS.some((p) => path.startsWith(p))
+    ) {
       return NextResponse.redirect(new URL('/access-denied', req.url));
     }
 
@@ -130,7 +135,10 @@ const authMiddleware = withAuth(
       '/tenants',
       '/banners',
     ];
-    if (ECOMMERCE_PREFIXES.some((p) => path.startsWith(p)) || path.startsWith('/logistics')) {
+    if (
+      ECOMMERCE_PREFIXES.some((p) => path.startsWith(p)) ||
+      path.startsWith('/logistics')
+    ) {
       if (TENANT_ROLES.includes(role) && !tenantId) {
         return NextResponse.redirect(new URL('/access-denied', req.url));
       }
@@ -138,7 +146,11 @@ const authMiddleware = withAuth(
 
     // User/role management — platform admins + tenant owners/admins only
     if (path.startsWith('/roles-permissions') || path.startsWith('/users')) {
-      if (!PLATFORM_ROLES.includes(role) && role !== 'tenant_admin' && role !== 'tenant_owner') {
+      if (
+        !PLATFORM_ROLES.includes(role) &&
+        role !== 'tenant_admin' &&
+        role !== 'tenant_owner'
+      ) {
         return NextResponse.redirect(new URL('/access-denied', req.url));
       }
     }
@@ -188,6 +200,7 @@ export const config = {
     '/roles-permissions/:path*',
     '/users/:path*',
     '/point-of-sale/:path*',
+    '/inventory/:path*',
     '/pos/sell',
     '/pos/orders',
     '/pos/sessions',

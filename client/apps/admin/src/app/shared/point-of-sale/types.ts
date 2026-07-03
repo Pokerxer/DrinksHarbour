@@ -468,6 +468,8 @@ export interface POSOrderResponse {
   originalSubtotal?: number;
   pricelistSavings?: number;
   pricelistName?: string;
+  /** Cart-level spend-threshold discount from cart_threshold pricelist rules. */
+  thresholdDiscount?: number;
   discountTotal?: number;
   paymentMethod: string;
   splitPayments?: { method: string; amount: number }[];

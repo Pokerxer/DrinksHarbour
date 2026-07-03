@@ -46,7 +46,7 @@ export default function SalesActivityPanel({
     <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/[0.04]">
       <div className="mb-3 flex items-center gap-2">
         <PiClockCounterClockwise className="h-4 w-4 text-brand" />
-        <h3 className="text-sm font-semibold text-gray-800">History</h3>
+        <h3 className="text-xs font-semibold text-gray-800">History</h3>
       </div>
 
       {!orderId ? (

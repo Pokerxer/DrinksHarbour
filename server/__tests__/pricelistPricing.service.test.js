@@ -157,6 +157,25 @@ test('flashSaleQty cap does not affect non-flash_sale rules', () => {
   assert.deepStrictEqual(findMatchingPriceRules(rules, 'sp1', 5).map((r) => r._id), ['d']);
 });
 
+// ── Rule-scope guards (cart-scoped types never leak into per-line paths) ─────
+
+test('findMatchingPriceRules excludes cart_threshold rules from per-line matching', () => {
+  const rules = [
+    { _id: 't', priceType: 'cart_threshold', thresholdAmount: 100, discountType: 'percentage', discountPercentage: 5, minQuantity: 0, sequence: 0 },
+    { _id: 'd', priceType: 'discount', discountPercentage: 10, minQuantity: 0, sequence: 1 },
+  ];
+  assert.deepStrictEqual(findMatchingPriceRules(rules, 'sp1', 1).map((r) => r._id), ['d']);
+});
+
+test('pickBestBundle ignores cross-product rules (bundleTargetSubProduct set) — they must not discount the trigger', () => {
+  const rules = [{
+    priceType: 'bundle', subProduct: 'A', bundleTargetSubProduct: 'B',
+    bundleQuantity: 2, bundleDiscount: 50, bundleDiscountType: 'percentage', minQuantity: 0,
+  }];
+  // Scanning product A (the trigger) at qty 6 must NOT pick this bundle.
+  assert.strictEqual(pickBestBundle([], rules, 6, 'A', { price: 1000, costPrice: 600 }), null);
+});
+
 // ── Cross-product bundles (Buy X Get Y) — applyCartBundles ───────────────────
 
 function cartLine(subProductId, quantity, price, costPrice = 0) {
@@ -242,6 +261,39 @@ test('applyCartBundles: same-product bundles (no bundleTargetSubProduct) are ign
   const lines = [cartLine('A', 6, 1000)];
   const adj = applyCartBundles(lines, rules);
   assert.strictEqual(adj.length, 0);
+});
+
+test('applyCartBundles: minQuantity above trigger qty blocks the rule', () => {
+  const rules = [{
+    priceType: 'bundle', subProduct: 'A', bundleTargetSubProduct: 'B',
+    bundleQuantity: 6, bundleDiscount: 10, bundleDiscountType: 'percentage',
+    minQuantity: 12,
+  }];
+  const lines = [cartLine('A', 6, 1000), cartLine('B', 2, 500)];
+  assert.strictEqual(applyCartBundles(lines, rules).length, 0);
+});
+
+test('applyCartBundles: lineIndex addresses the exact target line (size variants share a subProductId)', () => {
+  const rules = [{
+    priceType: 'bundle', subProduct: 'A', bundleTargetSubProduct: 'B',
+    bundleQuantity: 6, bundleDiscount: 10, bundleDiscountType: 'percentage',
+  }];
+  const lines = [cartLine('A', 6, 1000), cartLine('B', 1, 500), cartLine('B', 2, 800)];
+  const adj = applyCartBundles(lines, rules);
+  assert.strictEqual(adj.length, 2);
+  assert.deepStrictEqual(adj.map((a) => a.lineIndex), [1, 2]);
+  assert.strictEqual(adj[0].discountAmount, 50);  // 500 × 1 × 10%
+  assert.strictEqual(adj[1].discountAmount, 160); // 800 × 2 × 10%
+});
+
+test('applyCartBundles: no_discount restores originalPrice when the target line is on sale', () => {
+  const rules = [{
+    priceType: 'bundle', subProduct: 'A', bundleTargetSubProduct: 'B',
+    bundleQuantity: 6, bundleDiscount: 0, bundleDiscountType: 'no_discount',
+  }];
+  const lines = [cartLine('A', 6, 1000), { ...cartLine('B', 2, 400), originalPrice: 600 }];
+  const adj = applyCartBundles(lines, rules);
+  assert.strictEqual(adj[0].overridePrice, 600);
 });
 
 test('applyCartBundles: expired rule is skipped', () => {

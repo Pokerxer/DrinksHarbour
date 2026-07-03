@@ -378,6 +378,9 @@ const orderSchema = new Schema(
     appliedPricelist: {
       pricelistId:   { type: Schema.Types.ObjectId, ref: 'Pricelist' },
       pricelistName: { type: String, default: '' },
+      // Cart-level spend-threshold discount granted by cart_threshold rules
+      // (already included in discountTotal; kept here for receipt breakdown).
+      thresholdDiscount: { type: Number, default: 0 },
     },
 
     // Cart metadata for hold orders — stores client-side cart context so it

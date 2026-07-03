@@ -10,6 +10,33 @@ export const routes = {
     settings: '/settings#warehouses',
     inventorySettings: '/settings#pos_inventory',
   },
+  inventory: {
+    index: '/inventory',
+    // Operations
+    transfers: '/inventory/transfers',
+    receipts: '/inventory/receipts',
+    deliveries: '/inventory/deliveries',
+    internal: '/inventory/internal',
+    adjustments: '/inventory/adjustments',
+    physicalInventory: '/inventory/physical-inventory',
+    scrap: '/inventory/scrap',
+    procurement: '/inventory/procurement',
+    replenishment: '/inventory/replenishment',
+    // Reporting
+    stock: '/inventory/stock',
+    locations: '/inventory/locations',
+    valuation: '/inventory/valuation',
+    movesHistory: '/inventory/moves',
+    // Configuration (backed pages live elsewhere; placeholders live here)
+    settings: '/settings#warehouses',
+    operationTypes: '/inventory/configuration/operation-types',
+    configLocations: '/inventory/configuration/locations',
+    storageCategories: '/inventory/configuration/storage-categories',
+    putawayRules: '/inventory/configuration/putaway-rules',
+    attributes: '/inventory/configuration/attributes',
+    deliveryMethods: '/inventory/configuration/delivery-methods',
+    packageTypes: '/inventory/configuration/package-types',
+  },
   employees: {
     list: '/employees',
     detail: (id: string) => `/employees/${id}`,

@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
+import { validateEmail } from '@/lib/validation';
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');
@@ -13,8 +14,9 @@ export default function ForgotPassword() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) {
-      setMessage({ type: 'error', text: 'Please enter your email address.' });
+    const emailError = validateEmail(email);
+    if (emailError) {
+      setMessage({ type: 'error', text: emailError });
       return;
     }
     setIsLoading(true);
@@ -24,12 +26,18 @@ export default function ForgotPassword() {
       const response = await fetch(`${API_URL}/api/users/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ email: email.trim().toLowerCase() }),
       });
 
       const data = await response.json();
 
-      if (data.success) {
+      // 429 Too Many Requests — rate-limited (5/hr per AGENTS.md)
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('Retry-After');
+        const mins = retryAfter ? Math.ceil(parseInt(retryAfter, 10) / 60) : 15;
+        setMessage({ type: 'error', text: `Too many attempts. Please try again in ${mins} minute${mins > 1 ? 's' : ''}.` });
+      } else if (data.success) {
         setSent(true);
       } else {
         setMessage({ type: 'error', text: data.message || 'Failed to send reset instructions. Please try again.' });

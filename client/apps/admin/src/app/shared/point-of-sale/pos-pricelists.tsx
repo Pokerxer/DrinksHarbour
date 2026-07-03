@@ -193,6 +193,7 @@ const RULE_EMPTY = {
   bundleDiscount: '',
   bundleDiscountType: 'percentage',
   bundleTargetSubProduct: '',
+  bundleTargetName: '', // display-only — resolved from the populated target on edit
   thresholdAmount: '',
   minQuantity: '',
   startDate: '',
@@ -344,6 +345,10 @@ function ruleToFormValues(rule: any): typeof RULE_EMPTY {
         ? String(rule.bundleTargetSubProduct._id)
         : String(rule.bundleTargetSubProduct))
       : '',
+    bundleTargetName:
+      rule.bundleTargetSubProduct?.product?.name ||
+      rule.bundleTargetSubProduct?.sku ||
+      '',
     thresholdAmount: rule.thresholdAmount ? String(rule.thresholdAmount) : '',
     minQuantity: rule.minQuantity ? String(rule.minQuantity) : '',
     startDate: toDateStr(rule.startDate),
@@ -1147,6 +1152,7 @@ function CreateRuleModal({
                           ? (products.find(
                               (p: any) => p._id === form.bundleTargetSubProduct
                             )?.product?.name ||
+                             form.bundleTargetName ||
                              form.bundleTargetSubProduct)
                           : ''
                       }

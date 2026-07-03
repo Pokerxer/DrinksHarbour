@@ -93,9 +93,9 @@ export default function SalesActivityItem({
       : 'bg-amber-50 text-amber-600';
 
   return (
-    <div className="flex gap-3 py-2.5">
+    <div className="flex gap-2 py-1.5">
       <div
-        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${iconTint}`}
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${iconTint}`}
         aria-hidden
       >
         {isSystem ? <Icon className="h-4 w-4" /> : initialsFrom(userName)}
@@ -103,10 +103,10 @@ export default function SalesActivityItem({
 
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
-          <p className="text-sm font-medium text-gray-800">
+          <p className="text-xs font-medium text-gray-800">
             {activity.subject}
           </p>
-          <time className="shrink-0 whitespace-nowrap text-[11px] text-gray-400">
+          <time className="shrink-0 whitespace-nowrap text-[10px] text-gray-400">
             {timeOf(activity.createdAt)}
           </time>
         </div>
@@ -114,13 +114,13 @@ export default function SalesActivityItem({
         <ChangeMeta activity={activity} />
 
         {activity.description && (
-          <p className="mt-0.5 whitespace-pre-wrap text-xs text-gray-500">
+          <p className="mt-0.5 whitespace-pre-wrap text-[11px] text-gray-500">
             {activity.description}
           </p>
         )}
 
         {!isSystem && userName && (
-          <p className="mt-0.5 text-[11px] text-gray-400">by {userName}</p>
+          <p className="mt-0.5 text-[10px] text-gray-400">by {userName}</p>
         )}
       </div>
     </div>

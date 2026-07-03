@@ -288,10 +288,14 @@ async function getAllStock(tenantId, settings = null) {
     WarehouseStock.find({ tenant: tenantId })
       .populate({
         path: 'subProduct',
-        select: 'sku costPrice product',
-        populate: { path: 'product', select: 'name' },
+        select: 'sku costPrice baseSellingPrice product',
+        populate: {
+          path: 'product',
+          select: 'name category',
+          populate: { path: 'category', select: 'name' },
+        },
       })
-      .populate('size', 'size costPrice')
+      .populate('size', 'size costPrice sellingPrice')
       .populate('warehouse', 'name code')
       .lean(),
     WarehouseBatch.find({
@@ -340,12 +344,15 @@ async function getAllStock(tenantId, settings = null) {
       warehouseName: wh.name || 'Unknown Warehouse',
       subProductId: spId,
       productName: sp.product?.name || sp.sku || 'Unknown Product',
+      categoryId: sp.product?.category?._id ? String(sp.product.category._id) : null,
+      categoryName: sp.product?.category?.name || 'Uncategorized',
       sku: sp.sku || '',
       sizeId: szId,
       sizeName: sz.size || '—',
       currentQuantity: r.currentQuantity || 0,
       reservedQuantity: r.reservedQuantity || 0,
       costPrice: cost,
+      sellingPrice: (sz.sellingPrice > 0 ? sz.sellingPrice : null) ?? sp.baseSellingPrice ?? 0,
       valuationMethod,
       minStockLevel: r.minStockLevel || 0,
       earliestExpiry,

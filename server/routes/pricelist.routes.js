@@ -109,6 +109,11 @@ function validateRuleFields(body) {
           ? 'Enter a markup %' : 'Enter a discount';
       }
     }
+    // A cross-product bundle needs a specific trigger product — "buy N of
+    // (all products) → discount target" can never fire in the cart engine.
+    if (body.bundleTargetSubProduct && !body.subProduct) {
+      errors.subProduct = 'Pick the trigger product for a Buy X Get Y bundle';
+    }
   } else if (pt === 'cart_threshold') {
     const thresh = parseFloatStrict(body.thresholdAmount);
     if (Number.isNaN(thresh) || thresh <= 0) errors.thresholdAmount = 'Enter a spend threshold';
@@ -193,6 +198,13 @@ router.get('/:id', tenantAdminOrSuperAdmin, async (req, res, next) => {
       .populate({
         path: 'rules.subProduct',
         select: 'sku product baseSellingPrice costPrice saleType saleDiscountValue isOnSale flashSale bundleDeals',
+        populate: { path: 'product', select: 'name' },
+      })
+      .populate({
+        // Buy X Get Y target — without this the rule card can only render
+        // "another product" instead of the target's name on initial view.
+        path: 'rules.bundleTargetSubProduct',
+        select: 'sku product',
         populate: { path: 'product', select: 'name' },
       })
       .lean();

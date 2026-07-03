@@ -86,6 +86,8 @@ export interface SalesOrder {
   couponCode?: string;
   couponName?: string;
   couponDiscount?: number;
+  /** Cart-level spend-threshold discount from the pricelist's cart_threshold rules. */
+  pricelistCartDiscount?: number;
   plannedRedeemPoints?: number;
   quoteStatus?: QuoteStatus;
   validUntil?: string;

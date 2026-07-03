@@ -6,6 +6,7 @@ import * as Icon from "react-icons/pi";
 import { useModalCartContext } from "@/context/ModalCartContext";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
+import { useAuth } from "@/context/AuthContext";
 import { UserDropdown } from "./UserDropdown";
 import { TenantData } from "@/context/TenantContext";
 
@@ -25,15 +26,13 @@ export const HeaderActions: React.FC<HeaderActionsProps> = ({
   const { openModalCart } = useModalCartContext();
   const { cartCount } = useCart();
   const { wishlistState } = useWishlist();
+  const { isAuthenticated, logout } = useAuth();
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const userDropdownRef = useRef<HTMLDivElement>(null);
   const isDark = variant === "dark";
 
-  useEffect(() => {
-    const token = localStorage.getItem("dh_token") || sessionStorage.getItem("dh_token");
-    setIsLoggedIn(!!token);
-  }, []);
+  // isLoggedIn is now reactive — derived directly from AuthContext
+  const isLoggedIn = isAuthenticated;
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -45,12 +44,8 @@ export const HeaderActions: React.FC<HeaderActionsProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem("dh_token");
-    localStorage.removeItem("dh_user");
-    sessionStorage.removeItem("dh_token");
-    sessionStorage.removeItem("dh_user");
-    setIsLoggedIn(false);
+  const handleLogout = async () => {
+    await logout();
     setUserDropdownOpen(false);
   };
 

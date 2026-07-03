@@ -11,6 +11,7 @@ import { useCart } from '@/context/CartContext';
 import CouponComponent from '@/components/Coupon/Coupon';
 import PaymentHandler from '@/components/Payment/PaymentHandler';
 import { API_URL } from '@/lib/api';
+import { fetchWithAuth } from '@/lib/fetchWithAuth';
 import AddressAutocomplete, { type AddressDetails } from '@/components/AddressAutocomplete/AddressAutocomplete';
 import LocationPickerMap from '@/components/LocationPickerMap/LocationPickerMap';
 
@@ -327,9 +328,8 @@ export default function CheckoutPage() {
 
   // ── After successful payment: create order ────────────────────────────────
   const createOrderAfterPayment = async (paymentDetails: any) => {
-    const res = await fetch(`${API_URL}/api/orders`, {
+    const res = await fetchWithAuth(`${API_URL}/api/orders`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
       body: JSON.stringify({
         customer: buildCustomer(),
         shipping: buildShipping(),
@@ -355,9 +355,8 @@ export default function CheckoutPage() {
     setIsLoading(true);
     setError('');
     try {
-      const res  = await fetch(`${API_URL}/api/payments/stripe/initialize`, {
+      const res  = await fetchWithAuth(`${API_URL}/api/payments/stripe/initialize`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
         body: JSON.stringify({
           amount: total, currency: 'ngn',
           metadata: { customerEmail: form.email, customerName: `${form.firstName} ${form.lastName}` },
@@ -419,9 +418,7 @@ export default function CheckoutPage() {
             // Verify with our server, then create order
             try {
               setIsLoading(true);
-              const verifyRes  = await fetch(`${API_URL}/api/payments/paystack/verify/${response.reference}`, {
-                headers: { Authorization: `Bearer ${token()}` },
-              });
+              const verifyRes  = await fetchWithAuth(`${API_URL}/api/payments/paystack/verify/${response.reference}`);
               const verifyData = await verifyRes.json();
               if (!verifyRes.ok || !verifyData.success) throw new Error(verifyData.message || 'Verification failed');
 
@@ -453,9 +450,8 @@ export default function CheckoutPage() {
       }
 
       // Fallback: redirect to Paystack
-      const res  = await fetch(`${API_URL}/api/payments/paystack/initialize`, {
+      const res  = await fetchWithAuth(`${API_URL}/api/payments/paystack/initialize`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
         body: JSON.stringify({
           amount: total, email: form.email,
           metadata: { customerName: `${form.firstName} ${form.lastName}`, customerPhone: form.phone },
@@ -485,9 +481,8 @@ export default function CheckoutPage() {
     setIsLoading(true);
     try {
       await syncCartToServer();
-      const res  = await fetch(`${API_URL}/api/orders`, {
+      const res  = await fetchWithAuth(`${API_URL}/api/orders`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
         body: JSON.stringify({
           customer: buildCustomer(),
           shipping: buildShipping(),
@@ -538,9 +533,8 @@ export default function CheckoutPage() {
         return;
       }
 
-      const res  = await fetch(`${API_URL}/api/cart/validate`, {
+      const res  = await fetchWithAuth(`${API_URL}/api/cart/validate`, {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ items: payload }),
       });
       const data = await res.json();

@@ -22,9 +22,7 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
   const subtotals = sectionSubtotals(so.items);
   const ship = so.deliveryAddress;
   const showShipTo =
-    !!ship &&
-    !addressIsEmpty(ship) &&
-    addressesDiffer(ship, so.invoiceAddress);
+    !!ship && !addressIsEmpty(ship) && addressesDiffer(ship, so.invoiceAddress);
 
   return (
     <div className="w-full rounded-xl border border-gray-200 bg-white p-5 text-sm sm:p-6">
@@ -116,7 +114,8 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
           </Title>
           <Text>
             {paymentTermsLabel(so.paymentTerms)}
-            {so.dueDate && ` · due ${new Date(so.dueDate).toLocaleDateString()}`}
+            {so.dueDate &&
+              ` · due ${new Date(so.dueDate).toLocaleDateString()}`}
           </Text>
         </div>
       </div>
@@ -149,7 +148,11 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
                   key={item._id}
                   item={item}
                   cols={5}
-                  subtotal={item.lineType === 'section' ? subtotals.get(item._id) : undefined}
+                  subtotal={
+                    item.lineType === 'section'
+                      ? subtotals.get(item._id)
+                      : undefined
+                  }
                   currency={so.currency}
                 />
               ) : (
@@ -201,6 +204,18 @@ export default function SalesInvoiceView({ so }: { so: SalesOrder }) {
               Coupon{so.couponCode ? ` (${so.couponCode})` : ''}:{' '}
               <Text as="span" className="font-semibold text-emerald-600">
                 −{fmtCur(so.couponDiscount ?? 0, so.currency)}
+              </Text>
+            </Text>
+          )}
+          {(so.pricelistCartDiscount ?? 0) > 0 && (
+            <Text className="flex items-center justify-between border-b border-gray-100 py-2 text-teal-600">
+              Spend Discount
+              {so.appliedPricelist?.pricelistName
+                ? ` (${so.appliedPricelist.pricelistName})`
+                : ''}
+              :{' '}
+              <Text as="span" className="font-semibold text-teal-600">
+                −{fmtCur(so.pricelistCartDiscount ?? 0, so.currency)}
               </Text>
             </Text>
           )}

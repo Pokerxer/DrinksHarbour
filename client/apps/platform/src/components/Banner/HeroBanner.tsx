@@ -102,21 +102,44 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
 
   const slides = banners.length > 0 ? banners : FALLBACK_SLIDES;
 
+  // Cinematic transition — layered parallax (dolly) + rack-focus + light-wipe
+  // Background, gradient, and text move at different parallax depths.
   const slideVariants = {
-    enter:  (d: number) => ({ x: d > 0 ? '100%' : '-100%', opacity: 0, scale: 1.04 }),
-    center: { zIndex: 1, x: 0, opacity: 1, scale: 1 },
-    exit:   (d: number) => ({ zIndex: 0, x: d < 0 ? '100%' : '-100%', opacity: 0, scale: 0.96 }),
+    enter:  (d: number) => ({ opacity: 0, scale: 1.18, filter: 'blur(14px)' }),
+    center: { zIndex: 1, opacity: 1, scale: 1, filter: 'blur(0px)' },
+    exit:   (d: number) => ({ zIndex: 0, opacity: 0, scale: 0.94, filter: 'blur(12px)' }),
+  };
+
+  // Parallax depth layers — background drifts opposite to foreground
+  const bgParallaxVariants: Variants = {
+    enter:  (d: number) => ({ x: d > 0 ? '6%' : '-6%', scale: 1.18 }),
+    center: { x: '0%', scale: 1.08 },
+    exit:   (d: number) => ({ x: d < 0 ? '6%' : '-6%', scale: 1.14 }),
+  };
+
+  // Gradient/light layer — drifts slower (midground) + a directional light-wipe opacity
+  const midParallaxVariants: Variants = {
+    enter:  (d: number) => ({ x: d > 0 ? '3%' : '-3%', opacity: 0 }),
+    center: { x: '0%', opacity: 1 },
+    exit:   (d: number) => ({ x: d < 0 ? '3%' : '-3%', opacity: 0 }),
+  };
+
+  // Staggered text entrance — badge → title → desc → CTA → pills
+  const containerVariants: Variants = {
+    initial: { opacity: 1 },
+    animate: { opacity: 1, transition: { staggerChildren: 0.12, delayChildren: 0.3 } },
+    exit:    { opacity: 1, transition: { staggerChildren: 0.035, staggerDirection: -1 } },
   };
 
   const textVariants: Variants = {
-    initial:  { y: 28, opacity: 0 },
-    animate:  { y: 0, opacity: 1, transition: { duration: 0.55, ease: 'easeOut' } },
-    exit:     { y: -20, opacity: 0, transition: { duration: 0.3 } },
+    initial:  { y: 36, opacity: 0, filter: 'blur(10px)' },
+    animate:  { y: 0, opacity: 1, filter: 'blur(0px)', transition: { duration: 0.85, ease: [0.16, 1, 0.3, 1] } },
+    exit:     { y: -22, opacity: 0, filter: 'blur(8px)', transition: { duration: 0.4, ease: [0.4, 0, 1, 1] } },
   };
 
   const btnVariants: Variants = {
-    initial:  { scale: 0.82, opacity: 0 },
-    animate:  { scale: 1, opacity: 1, transition: { delay: 0.38, duration: 0.45, ease: [0.34, 1.56, 0.64, 1] } },
+    initial:  { scale: 0.82, opacity: 0, y: 18, filter: 'blur(6px)' },
+    animate:  { scale: 1, opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: 0.7, ease: [0.34, 1.56, 0.64, 1] } },
   };
 
   // Auto-advance
@@ -159,8 +182,8 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   const textAlign = (a = 'center') => ({ left: 'text-left', right: 'text-right', center: 'text-center' }[a] ?? 'text-center');
 
   const ctaClass = (style = 'primary') => {
-    if (style === 'primary')   return 'bg-gradient-to-r from-red-700 to-red-800 hover:from-red-800 hover:to-red-900 text-white shadow-lg shadow-red-900/30';
-    if (style === 'secondary') return 'bg-white/15 backdrop-blur-sm border border-white/30 text-white hover:bg-white/25';
+    if (style === 'primary')   return 'bg-gradient-to-r from-red-700 to-red-800 hover:from-red-800 hover:to-red-900 text-white shadow-lg shadow-red-900/40 ring-1 ring-amber-400/30';
+    if (style === 'secondary') return 'bg-white/12 backdrop-blur-md border border-amber-300/35 text-white hover:bg-white/22 shadow-[0_2px_18px_rgba(245,176,66,0.18)]';
     return 'bg-transparent text-white hover:underline';
   };
 
@@ -183,7 +206,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
     >
-      <AnimatePresence initial={false} custom={direction} mode="wait">
+      <AnimatePresence initial={false} custom={direction} mode="sync">
         <motion.div
           key={slide._id}
           custom={direction}
@@ -191,51 +214,104 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
           initial="enter"
           animate="center"
           exit="exit"
-          transition={{ x: { type: 'spring', stiffness: 280, damping: 28 }, opacity: { duration: 0.35 }, scale: { duration: 0.35 } }}
+          transition={{
+            opacity: { duration: 0.7, ease: [0.16, 1, 0.3, 1] },
+            scale: { duration: 1.1, ease: [0.16, 1, 0.3, 1] },
+            filter: { duration: 0.7, ease: [0.16, 1, 0.3, 1] },
+          }}
           className="absolute inset-0"
         >
-          {/* Background */}
-          <div className="absolute inset-0">
-            <Image
-              src={imgSrc}
-              alt={slide.image.alt || slide.title}
-              fill
-              className="object-cover"
-              priority
-              sizes="100vw"
-              onError={() => setImgErrors(p => ({ ...p, [slide._id]: true }))}
-            />
+          {/* Background — deepest parallax layer (background image) */}
+          <div className="absolute inset-0 overflow-hidden">
+            <motion.div
+              custom={direction}
+              variants={bgParallaxVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{
+                x: { type: 'spring', stiffness: 90, damping: 28, mass: 1.4 },
+                scale: { duration: 1.3, ease: [0.16, 1, 0.3, 1] },
+              }}
+              className="absolute inset-0"
+            >
+              <Image
+                src={imgSrc}
+                alt={slide.image.alt || slide.title}
+                fill
+                className="object-cover"
+                priority
+                sizes="100vw"
+                onError={() => setImgErrors(p => ({ ...p, [slide._id]: true }))}
+              />
+            </motion.div>
             {/* Dark overlay */}
             {(slide.overlayOpacity ?? 0) > 0 && (
               <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${(slide.overlayOpacity ?? 0) / 100})` }} />
             )}
-            {/* Edge gradient */}
+          </div>
+
+          {/* Midground — gradient + vignette drift at mid-depth (slower parallax) */}
+          <motion.div
+            custom={direction}
+            variants={midParallaxVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{
+              x: { type: 'spring', stiffness: 120, damping: 30, mass: 1 },
+              opacity: { duration: 0.6, ease: [0.16, 1, 0.3, 1] },
+            }}
+            className="absolute inset-0 pointer-events-none"
+          >
+            {/* Cinematic golden-hour gradient — warm depth-of-field treatment */}
             <div
               className="absolute inset-0"
               style={{
-                background: `linear-gradient(to right, ${slide.backgroundColor || '#1A1A2E'}e0 0%, ${slide.backgroundColor || '#1A1A2E'}55 45%, transparent 70%), linear-gradient(to top, ${slide.backgroundColor || '#1A1A2E'}88 0%, transparent 35%)`,
+                background: `linear-gradient(110deg, ${slide.backgroundColor || '#1A1A2E'}f2 0%, ${slide.backgroundColor || '#1A1A2E'}b3 32%, ${slide.backgroundColor || '#1A1A2E'}40 60%, transparent 78%), radial-gradient(ellipse at 78% 28%, rgba(245, 176, 66, 0.22) 0%, transparent 45%), linear-gradient(to top, ${slide.backgroundColor || '#1A1A2E'}e6 0%, transparent 38%)`,
               }}
             />
-          </div>
+            {/* Cinematic vignette for depth-of-field feel */}
+            <div
+              className="absolute inset-0"
+              style={{
+                background: 'radial-gradient(ellipse at center, transparent 52%, rgba(0,0,0,0.42) 100%)',
+              }}
+            />
+            {/* Light-wipe sweep — directional light bleed that fades with the slide */}
+            <div
+              className="absolute inset-0"
+              style={{
+                background: `linear-gradient(${direction > 0 ? 105 : 255}deg, transparent 40%, rgba(245,176,66,0.10) 55%, transparent 72%)`,
+              }}
+            />
+          </motion.div>
 
           {/* Content */}
           <div className={`relative z-10 container mx-auto px-5 md:px-10 h-full flex ${contentPos(slide.contentPosition)}`}>
-            <motion.div className={`max-w-2xl ${textAlign(slide.textAlignment || 'left')}`}>
+            <motion.div
+              variants={containerVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className={`max-w-2xl ${textAlign(slide.textAlignment || 'left')}`}
+            >
 
               {/* Badge */}
               {slide.subtitle && (
-                <motion.div variants={textVariants} initial="initial" animate="animate" exit="exit" className="mb-4">
-                  <span className="inline-flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur-sm rounded-full text-sm font-semibold text-white/90 border border-white/15">
-                    <Icon.PiSparkleFill className="text-amber-400" size={13} />
+                <motion.div variants={textVariants} className="mb-4">
+                  <span className="inline-flex items-center gap-2 px-4 py-2 bg-amber-400/12 backdrop-blur-md rounded-full text-sm font-semibold text-amber-100 border border-amber-300/25 shadow-[0_2px_12px_rgba(245,176,66,0.18)]">
+                    <Icon.PiSparkleFill className="text-amber-300" size={13} />
                     {slide.subtitle}
                   </span>
                 </motion.div>
               )}
 
-              {/* Title */}
+              {/* Title — Kavoon display for cinematic hero presence */}
               <motion.h1
-                variants={textVariants} initial="initial" animate="animate" exit="exit"
-                className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-black text-white mb-4 leading-tight tracking-tight"
+                variants={textVariants}
+                className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-black text-white mb-4 leading-[1.05] tracking-tight drop-shadow-[0_2px_24px_rgba(0,0,0,0.55)]"
+                style={{ fontFamily: "var(--font-kavoon), 'Kavoon', serif" }}
               >
                 {slide.title}
               </motion.h1>
@@ -243,9 +319,8 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
               {/* Description */}
               {slide.description && (
                 <motion.p
-                  variants={textVariants} initial="initial" animate="animate" exit="exit"
-                  transition={{ delay: 0.1, duration: 0.5, ease: 'easeOut' }}
-                  className="text-base md:text-lg text-white/75 mb-8 max-w-lg leading-relaxed"
+                  variants={textVariants}
+                  className="text-base md:text-lg text-white/80 mb-8 max-w-lg leading-relaxed"
                 >
                   {slide.description}
                 </motion.p>
@@ -253,7 +328,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
 
               {/* CTA */}
               {slide.ctaText && (
-                <motion.div variants={btnVariants} initial="initial" animate="animate">
+                <motion.div variants={btnVariants}>
                   {slide.linkType === 'external' ? (
                     <a
                       href={slide.ctaLink}
@@ -278,8 +353,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
 
               {/* Trust pills */}
               <motion.div
-                variants={textVariants} initial="initial" animate="animate" exit="exit"
-                transition={{ delay: 0.55, duration: 0.5, ease: 'easeOut' }}
+                variants={textVariants}
                 className="flex flex-wrap gap-3 mt-10"
               >
                 {[
@@ -287,8 +361,8 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
                   { icon: <Icon.PiSealCheck size={14} />, label: 'Authentic Products' },
                   { icon: <Icon.PiLockKey size={14} />, label: 'Secure Checkout' },
                 ].map(({ icon, label }) => (
-                  <div key={label} className="flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur-sm rounded-full text-xs text-white/85 border border-white/10">
-                    <span className="text-red-400">{icon}</span>
+                  <div key={label} className="flex items-center gap-2 px-4 py-2 bg-white/8 backdrop-blur-md rounded-full text-xs text-white/90 border border-white/12">
+                    <span className="text-amber-300">{icon}</span>
                     {label}
                   </div>
                 ))}
@@ -305,7 +379,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
             initial={{ opacity: 0, x: -40 }} animate={{ opacity: 1, x: 0 }}
             whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }}
             onClick={handlePrev}
-            className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 md:w-13 md:h-13 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all"
+            className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 md:w-13 md:h-13 rounded-full bg-black/30 backdrop-blur-md border border-amber-300/25 flex items-center justify-center text-white hover:bg-black/50 hover:border-amber-300/50 transition-all"
             aria-label="Previous slide"
           >
             <Icon.PiCaretLeft size={20} />
@@ -314,7 +388,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
             initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }}
             whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }}
             onClick={handleNext}
-            className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 md:w-13 md:h-13 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all"
+            className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 md:w-13 md:h-13 rounded-full bg-black/30 backdrop-blur-md border border-amber-300/25 flex items-center justify-center text-white hover:bg-black/50 hover:border-amber-300/50 transition-all"
             aria-label="Next slide"
           >
             <Icon.PiCaretRight size={20} />
@@ -330,18 +404,18 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
               key={i}
               onClick={() => handleDotClick(i)}
               aria-label={`Slide ${i + 1}`}
-              className={`h-2 rounded-full transition-all duration-300 ${i === currentIndex ? 'bg-white w-7' : 'bg-white/40 hover:bg-white/65 w-2'}`}
+              className={`h-2 rounded-full transition-all duration-300 ${i === currentIndex ? 'bg-amber-400 w-7 shadow-[0_0_10px_rgba(245,176,66,0.6)]' : 'bg-white/35 hover:bg-white/60 w-2'}`}
             />
           ))}
         </div>
       )}
 
-      {/* Progress bar */}
+      {/* Progress bar — warm amber on brand red */}
       {autoPlay && slides.length > 1 && !isPaused && (
         <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/10 z-20">
           <motion.div
             key={`pb-${slide._id}`}
-            className="h-full bg-gradient-to-r from-red-600 to-red-400"
+            className="h-full bg-gradient-to-r from-amber-500 via-amber-400 to-red-500"
             initial={{ width: '0%' }}
             animate={{ width: '100%' }}
             transition={{ duration: (slides[currentIndex]?.autoplay?.interval || 6000) / 1000, ease: 'linear' }}

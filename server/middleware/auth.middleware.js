@@ -16,14 +16,17 @@ const TENANT_OWNER_ROLES = ['super_admin', 'admin', 'tenant_owner'];
 const protect = asyncHandler(async (req, res, next) => {
   let token;
 
+  // 1. Read from Authorization: Bearer header (mobile apps, API clients)
   if (
     req.headers.authorization &&
     req.headers.authorization.startsWith('Bearer')
   ) {
     token = req.headers.authorization.split(' ')[1];
   }
-  // Optional: also allow token in cookie for web clients
-  // else if (req.cookies?.token) { token = req.cookies.token; }
+  // 2. Fall back to httpOnly cookie (web clients — Phase 5 cookie migration)
+  else if (req.cookies?.dh_access) {
+    token = req.cookies.dh_access;
+  }
 
   if (!token) {
     throw new UnauthorizedError('Not authorized - no token provided');
@@ -31,6 +34,11 @@ const protect = asyncHandler(async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Expose the raw token + decoded payload to downstream handlers
+    // (e.g. logout needs the jti to revoke the refresh-token chain)
+    req.token = token;
+    req.tokenPayload = decoded;
 
     // Attach user (lean + select minimal fields + passwordChangedAt for token invalidation)
     // JWT payload uses userId, not id
@@ -82,6 +90,10 @@ const optionalProtect = asyncHandler(async (req, res, next) => {
     req.headers.authorization.startsWith('Bearer')
   ) {
     token = req.headers.authorization.split(' ')[1];
+  }
+  // Also read from httpOnly cookie (web clients)
+  else if (req.cookies?.dh_access) {
+    token = req.cookies.dh_access;
   }
 
   if (!token) {

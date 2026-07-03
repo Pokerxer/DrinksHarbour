@@ -6,6 +6,7 @@ import React, { useEffect, useRef, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
+import { fetchWithAuth } from '@/lib/fetchWithAuth';
 import { useCart } from '@/context/CartContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -152,12 +153,8 @@ function VerifyContent() {
         paymentStatus: 'paid',
       };
 
-      const orderRes = await fetch(`${API_URL}/api/orders`, {
+      const orderRes = await fetchWithAuth(`${API_URL}/api/orders`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
         body: JSON.stringify(orderData),
       });
 

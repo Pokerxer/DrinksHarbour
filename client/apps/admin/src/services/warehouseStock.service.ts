@@ -62,12 +62,17 @@ export interface StockRow {
   warehouseName: string;
   subProductId: string;
   productName: string;
+  /** Central product category (from Product.category), 'Uncategorized' when unset. */
+  categoryId?: string | null;
+  categoryName?: string;
   sku: string;
   sizeId: string;
   sizeName: string;
   currentQuantity: number;
   reservedQuantity: number;
   costPrice: number;
+  /** Retail price for the line (size sellingPrice, else subProduct sellingPrice). */
+  sellingPrice?: number;
   /** Valuation method used to derive costPrice (fifo | average | standard). */
   valuationMethod?: string;
   minStockLevel: number;

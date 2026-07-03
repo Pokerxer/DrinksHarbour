@@ -5,11 +5,18 @@
 // module compute pricing identically. No DB access — every function takes
 // plain data and returns plain data.
 
+// Rule types that transform a single line's unit price. bundle and
+// cart_threshold are cart-scoped and must never enter the per-line pipeline
+// (a stray cart_threshold rule would otherwise pollute the matched-rule pool
+// and the appliedPricelistRule snapshot).
+const PER_LINE_PRICE_TYPES = ['fixed', 'formula', 'discount', 'flash_sale'];
+
 /**
- * Eligible price rules (fixed/formula/discount/flash_sale — excludes bundle),
- * filtered by date window + minQuantity, then sorted: ascending sequence,
- * then descending minQuantity (so a higher volume tier wins a tie). Product-
- * specific rules shadow all-products rules entirely when any exist.
+ * Eligible price rules (fixed/formula/discount/flash_sale — excludes bundle
+ * and cart_threshold), filtered by date window + minQuantity, then sorted:
+ * ascending sequence, then descending minQuantity (so a higher volume tier
+ * wins a tie). Product-specific rules shadow all-products rules entirely
+ * when any exist.
  */
 function findMatchingPriceRules(rules, subProductId, quantity) {
   if (!rules?.length) return [];
@@ -17,7 +24,7 @@ function findMatchingPriceRules(rules, subProductId, quantity) {
   const pid = String(subProductId);
 
   const eligible = rules.filter((r) =>
-    r.priceType !== 'bundle' &&
+    PER_LINE_PRICE_TYPES.includes(r.priceType) &&
     !(r.endDate && new Date(r.endDate) < now) &&
     !(r.startDate && new Date(r.startDate) > now) &&
     (Number(r.minQuantity) || 0) <= quantity &&
@@ -78,6 +85,10 @@ function pickBestBundle(dbBundles, pricelistRules, quantity, subProductId, { pri
 
   for (const r of pricelistRules || []) {
     if (r.priceType !== 'bundle' || !r.bundleQuantity) continue;
+    // Cross-product rules (buy X of trigger → discount target) are cart-scoped
+    // and handled by applyCartBundles. Without this guard a cross-product rule
+    // would wrongly discount the TRIGGER product here (rid === trigger id).
+    if (r.bundleTargetSubProduct) continue;
     if (r.endDate && new Date(r.endDate) < now) continue;
     if (r.startDate && new Date(r.startDate) > now) continue;
     if (r.bundleDiscountType !== 'no_discount' && !r.bundleDiscount) continue;
@@ -157,15 +168,18 @@ function computeBundleLineDiscount(bestBundle, lineGross, quantity, itemDiscAmt,
  * Same-product bundles (no bundleTargetSubProduct) are NOT handled here —
  * those run through the existing per-line pickBestBundle path.
  *
- * @param {Array<{subProductId, quantity, price, costPrice}>} lines
+ * @param {Array<{subProductId, quantity, price, costPrice, originalPrice?}>} lines
  * @param {Array} pricelistRules
- * @returns {Array<{subProductId, discountAmount?, overridePrice?}>} per-target
- *   adjustments. discountAmount = line-level discount (percentage/fixed).
- *   overridePrice = new per-unit price (markup_on_cost/no_discount).
+ * @returns {Array<{subProductId, lineIndex, ruleName?, discountAmount?, overridePrice?}>}
+ *   per-target adjustments. lineIndex points at the exact line in `lines` (size
+ *   variants can share a subProductId). discountAmount = line-level discount
+ *   (percentage/fixed). overridePrice = new per-unit price
+ *   (markup_on_cost/no_discount).
  */
 function applyCartBundles(lines, pricelistRules) {
   if (!lines?.length || !pricelistRules?.length) return [];
   const now = new Date();
+  const refId = (v) => (v?._id ? String(v._id) : v ? String(v) : null);
   const qtyByProduct = new Map();
   for (const l of lines) {
     const sid = String(l.subProductId);
@@ -180,36 +194,41 @@ function applyCartBundles(lines, pricelistRules) {
     if (r.endDate && new Date(r.endDate) < now) continue;
     if (r.startDate && new Date(r.startDate) > now) continue;
 
-    const triggerId = r.subProduct ? String(r.subProduct) : null;
-    const targetId = String(r.bundleTargetSubProduct);
+    const triggerId = refId(r.subProduct);
+    const targetId = refId(r.bundleTargetSubProduct);
     const triggerQty = triggerId ? (qtyByProduct.get(triggerId) || 0) : 0;
     if (triggerQty < (Number(r.bundleQuantity) || 2)) continue;
-
-    // Find the target line(s)
-    const targetLines = lines.filter((l) => String(l.subProductId) === targetId);
-    if (!targetLines.length) continue;
+    // minQuantity is the rule's overall activation threshold, same semantics
+    // as the per-line engine: the trigger quantity must also meet it.
+    if ((Number(r.minQuantity) || 0) > triggerQty) continue;
 
     const dt = r.bundleDiscountType || 'percentage';
     const disc = Number(r.bundleDiscount) || 0;
+    if (dt !== 'no_discount' && disc <= 0) continue;
 
-    for (const tl of targetLines) {
+    for (let i = 0; i < lines.length; i++) {
+      const tl = lines[i];
+      if (String(tl.subProductId) !== targetId) continue;
       const qty = Number(tl.quantity) || 0;
       const lineGross = (Number(tl.price) || 0) * qty;
       const cost = Number(tl.costPrice) || 0;
+      const ruleName = r.bundleName || `Buy ${r.bundleQuantity} get target deal`;
 
       if (dt === 'percentage') {
         const amt = parseFloat(((lineGross * Math.min(100, disc)) / 100).toFixed(2));
-        adjustments.push({ subProductId: targetId, discountAmount: Math.max(0, amt) });
+        adjustments.push({ subProductId: targetId, lineIndex: i, ruleName, discountAmount: Math.max(0, amt) });
       } else if (dt === 'fixed') {
         const amt = Math.min(disc * qty, lineGross);
-        adjustments.push({ subProductId: targetId, discountAmount: Math.max(0, amt) });
+        adjustments.push({ subProductId: targetId, lineIndex: i, ruleName, discountAmount: Math.max(0, amt) });
       } else if (dt === 'markup_on_cost' && cost > 0) {
         const overridePrice = Math.round(cost * (1 + disc / 100) * 100) / 100;
-        adjustments.push({ subProductId: targetId, overridePrice });
+        adjustments.push({ subProductId: targetId, lineIndex: i, ruleName, overridePrice });
       } else if (dt === 'no_discount') {
-        // Keep the target's own price (no sale price to restore in this context;
-        // the line's price IS the original). Mark it so the caller knows.
-        adjustments.push({ subProductId: targetId, overridePrice: Number(tl.price) || 0 });
+        // Restore the target's pre-sale price when the caller supplies one;
+        // otherwise keep the line's own price (it IS the original).
+        const orig = Number(tl.originalPrice) || 0;
+        const own = Number(tl.price) || 0;
+        adjustments.push({ subProductId: targetId, lineIndex: i, ruleName, overridePrice: orig > own ? orig : own });
       }
     }
   }

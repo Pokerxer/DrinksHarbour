@@ -6,6 +6,9 @@ const { successResponse } = require('../utils/response');
 const { ForbiddenError } = require('../utils/errors');
 const { getTenantId, normalizeTenantId } = require('../utils/tenantContext');
 const { logPrivilegedAction } = require('../utils/auditLog');
+const RefreshToken = require('../models/RefreshToken');
+const jwt = require('jsonwebtoken');
+const { setAuthCookies, setCsrfCookie, generateCsrfToken, clearAuthCookies } = require('../utils/cookies');
 
 const ADMIN_ROLES = ['super_admin', 'admin'];
 
@@ -16,6 +19,13 @@ const ADMIN_ROLES = ['super_admin', 'admin'];
  */
 exports.registerUser = asyncHandler(async (req, res) => {
   const result = await userService.registerUser(req.body);
+
+  // Set auth cookies if a token was issued (registration may return a session)
+  if (result.token) {
+    setAuthCookies(res, result.token, result.refreshToken || '');
+    const csrfToken = generateCsrfToken();
+    setCsrfCookie(res, csrfToken);
+  }
 
   successResponse(res, result, 'User registered successfully. Please verify your email.', 201);
 });
@@ -35,7 +45,18 @@ exports.loginUser = asyncHandler(async (req, res) => {
     });
   }
 
-  const result = await userService.loginUser(email, password);
+  const result = await userService.loginUser(email, password, {
+    ipAddress: req.ip,
+    userAgent: req.get('User-Agent'),
+  });
+
+  // Set auth cookies if the login succeeded and issued tokens
+  // (MFA-required logins don't issue tokens yet — they return a pendingMfaToken)
+  if (result.token) {
+    setAuthCookies(res, result.token, result.refreshToken || '');
+    const csrfToken = generateCsrfToken();
+    setCsrfCookie(res, csrfToken);
+  }
 
   successResponse(res, result, 'Login successful');
 });
@@ -190,14 +211,21 @@ exports.resetPassword = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Verify email with token
- * @route   GET /api/users/verify-email/:token
+ * @desc    Verify email with 6-digit code
+ * @route   POST /api/users/verify-email
  * @access  Public
  */
 exports.verifyEmail = asyncHandler(async (req, res) => {
-  const { token } = req.params;
+  const { email, code } = req.body;
 
-  const result = await userService.verifyEmail(token);
+  if (!email || !code) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide email and verification code',
+    });
+  }
+
+  const result = await userService.verifyEmail(email, code);
 
   successResponse(res, result, 'Email verified successfully');
 });
@@ -358,14 +386,29 @@ exports.getUsersByTenant = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Logout user (client-side token removal)
+ * @desc    Logout user (revoke refresh token server-side + clear cookies)
  * @route   POST /api/users/logout
  * @access  Private
  */
 exports.logoutUser = asyncHandler(async (req, res) => {
-  // In a stateless JWT system, logout is handled client-side
-  // However, we can log this event if needed
-  
+  // Read refresh token from cookie or body
+  const refreshToken = req.cookies?.dh_refresh || req.body?.refreshToken;
+
+  if (refreshToken) {
+    try {
+      const decodedRefresh = jwt.verify(
+        refreshToken,
+        process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET
+      );
+      if (decodedRefresh?.jti) {
+        await RefreshToken.revoke(decodedRefresh.jti, req.user?._id, 'logout').catch(() => {});
+      }
+    } catch { /* expired/invalid refresh token — nothing to revoke */ }
+  }
+
+  // Clear all auth cookies
+  clearAuthCookies(res);
+
   successResponse(res, null, 'Logout successful');
 });
 
@@ -434,7 +477,8 @@ exports.getUserStatistics = asyncHandler(async (req, res) => {
  * @access  Public
  */
 exports.refreshAuthToken = asyncHandler(async (req, res) => {
-  const { refreshToken } = req.body;
+  // Read refresh token from cookie first, fall back to body (backwards compat)
+  const refreshToken = req.cookies?.dh_refresh || req.body?.refreshToken;
 
   if (!refreshToken) {
     return res.status(400).json({
@@ -444,6 +488,13 @@ exports.refreshAuthToken = asyncHandler(async (req, res) => {
   }
 
   const result = await userService.refreshAuthToken(refreshToken, req);
+
+  // Rotate the auth cookies with the new tokens
+  if (result.token) {
+    setAuthCookies(res, result.token, result.refreshToken || '');
+    const csrfToken = generateCsrfToken();
+    setCsrfCookie(res, csrfToken);
+  }
 
   successResponse(res, result, 'Token refreshed successfully');
 });

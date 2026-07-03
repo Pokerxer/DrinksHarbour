@@ -116,6 +116,7 @@ export interface InventorySummary {
 
 export interface InventoryValuation {
   totalItems: number;
+  totalUnits?: number;
   totalValue: number;
   totalRetailValue: number;
   potentialProfit: number;
