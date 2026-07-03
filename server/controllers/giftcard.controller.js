@@ -11,6 +11,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const { successResponse } = require('../utils/response');
 const GiftCard = require('../models/GiftCard');
 const GiftCardTransaction = require('../models/GiftCardTransaction');
+const User = require('../models/User');
 const {
   issueGiftCard,
   redeemGiftCard,
@@ -214,6 +215,26 @@ const redeemMyGiftCard = asyncHandler(async (req, res) => {
 
   const card = await GiftCard.findOne({ _id: req.params.id, purchasedBy: req.user._id }).select('_id status balance code');
   if (!card) return res.status(404).json({ success: false, message: 'Gift card not found' });
+
+  // Idempotency: reject an accidental duplicate redeem of the same amount off the
+  // same card within a short window (double-click / retry).
+  const DUP_WINDOW_MS = 10000;
+  const recentDup = await GiftCardTransaction.findOne({
+    giftCardId: card._id,
+    type: 'redeem',
+    amount: n,
+    createdAt: { $gte: new Date(Date.now() - DUP_WINDOW_MS) },
+  }).lean();
+  if (recentDup) {
+    const fresh = await GiftCard.findById(card._id).select('balance status').lean();
+    const u = await User.findById(req.user._id).select('platformWalletBalance').lean();
+    return successResponse(res, {
+      cardBalance: fresh.balance,
+      cardStatus: fresh.status,
+      walletBalance: u.platformWalletBalance,
+      alreadyProcessed: true,
+    }, 'Redemption already processed');
+  }
 
   // Debit the card.
   const debited = await redeemGiftCard({ giftCardId: card._id, amount: n, createdBy: req.user._id });

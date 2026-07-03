@@ -149,6 +149,25 @@ const redeemLoyaltyPoints = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Redeemable amount too small' });
   }
 
+  // Idempotency: reject an accidental duplicate of the same redeem within a short
+  // window (double-click / retry). A legitimate repeat redeem after the window is fine.
+  const DUP_WINDOW_MS = 10000;
+  const recent = await PlatformLoyaltyTransaction.find({
+    userId: req.user._id,
+    type: 'redeem',
+    createdAt: { $gte: new Date(Date.now() - DUP_WINDOW_MS) },
+  }).lean();
+  if (recent.some(t => Math.abs(t.points) === n)) {
+    const u = await User.findById(req.user._id).select('loyaltyPoints platformWalletBalance');
+    return successResponse(res, {
+      pointsRedeemed: n,
+      amountCredited: amountNgn,
+      pointsBalance: u.loyaltyPoints,
+      walletBalance: u.platformWalletBalance,
+      alreadyProcessed: true,
+    }, 'Redemption already processed');
+  }
+
   // Debit the points atomically.
   const debited = await mutatePlatformLoyalty({
     userId: req.user._id,
