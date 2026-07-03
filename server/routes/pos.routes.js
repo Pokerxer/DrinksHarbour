@@ -66,6 +66,8 @@ const {
   getPOSCustomer,
   updatePOSCustomerLoyalty,
   getPOSCustomerDefaultAddress,
+  getSalesOrdersForPOS,
+  reconcileSalesOrderFromPOS,
 } = require('../controllers/pos.controller');
 
 // ── Reject POS tokens on admin routes ────────────────────────────────────────
@@ -214,6 +216,13 @@ router.get('/combos', protectPOS, async (req, res, next) => {
     res.json({ success: true, data: { combos: enriched } });
   } catch (err) { next(err); }
 });
+
+// ── Sales Orders (quotations & orders for POS) ──────────────────────────────
+// POS terminals need to load existing quotations/orders into the cart. This
+// endpoint is reachable by both POS tokens and admin JWTs so the back-office
+// sales module can also use it if needed.
+router.get('/sales-orders', protectPOSOrAdmin, getSalesOrdersForPOS);
+router.post('/sales-orders/:id/reconcile', protectPOS, requirePOSPermission('pos:sell'), reconcileSalesOrderFromPOS);
 
 // ── POS Customers (loyalty) ───────────────────────────────────────────────────
 // GET (search) is also called by the Sales module's customer picker outside a

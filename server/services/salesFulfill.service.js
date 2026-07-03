@@ -1,6 +1,52 @@
 // server/services/salesFulfill.service.js
 const { applyFulfillment, buildPostingLines, fulfillStatus, postShippedStock, buildSalesRow } = require('./salesFulfill.helpers');
 
+/**
+ * Mark-only reconciliation for orders fulfilled through the POS terminal.
+ *
+ * The POS sale (createPOSOrder) is the single source of truth for stock and
+ * revenue: it has already deducted stock and written the Sales rows. This
+ * reconciliation therefore advances the SO's fulfilledQty to reflect what was
+ * sold and recomputes orderStatus WITHOUT posting stock again or writing
+ * duplicate Sales rows.
+ *
+ * postedQty is advanced in lockstep with fulfilledQty so buildPostingLines()
+ * yields a zero delta afterward — a later manual /fulfill on the same order
+ * cannot double-deduct these units.
+ *
+ * @param {Object}   args
+ * @param {Object}   args.salesOrder   loaded SalesOrder doc (docType 'order')
+ * @param {Array}    args.fulfillLines [{ lineId, qty }] keyed by SO line _id
+ * @param {ObjectId} args.userId
+ * @returns {Promise<{ order, reconciled: number }>}
+ */
+async function reconcileFulfillment({ salesOrder, fulfillLines, userId }) {
+  const { lines } = applyFulfillment(salesOrder.items, fulfillLines);
+  const byId = new Map(salesOrder.items.map((it) => [String(it._id), it]));
+
+  for (const l of lines) {
+    const item = byId.get(String(l.lineId));
+    if (!item) continue;
+    item.fulfilledQty = l.newFulfilledQty;
+    // Keep the posting invariant (postedQty <= fulfilledQty) true so a later
+    // real /fulfill treats these units as already accounted for.
+    item.postedQty = item.fulfilledQty;
+  }
+
+  if (lines.length > 0) {
+    salesOrder.fulfillments.push({
+      items: lines.map((l) => ({ lineId: String(l.lineId), qty: l.delta })),
+      status: 'reconciled', at: new Date(), by: userId,
+    });
+  }
+
+  const status = fulfillStatus(salesOrder.items);
+  if (status) salesOrder.orderStatus = status;
+
+  await salesOrder.save();
+  return { order: salesOrder, reconciled: lines.length };
+}
+
 /** Default unit-cost lookup: SubProduct.costPrice (0 if missing/not found). */
 async function defaultGetUnitCost(subproductId) {
   const SubProduct = require('../models/SubProduct');
@@ -138,4 +184,4 @@ async function returnOrder({ salesOrder, tenantId, warehouseId, returnLines, use
   return { order: salesOrder, restock };
 }
 
-module.exports = { fulfillOrder, returnOrder };
+module.exports = { fulfillOrder, returnOrder, reconcileFulfillment };

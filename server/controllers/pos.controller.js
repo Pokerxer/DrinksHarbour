@@ -15,6 +15,7 @@ const WarehouseStock  = require('../models/WarehouseStock');
 const { sellStock, returnStock, resolveShopWarehouse } = require('../services/warehouse.service');
 const { getTenantWarehouseSettings } = require('./warehouse.controller');
 const InventoryMovement = require('../models/InventoryMovement');
+const SalesOrder = require('../models/SalesOrder');
 const POSCustomer = require('../models/POSCustomer');
 const WalletTransaction = require('../models/WalletTransaction');
 const LoyaltyTransaction = require('../models/LoyaltyTransaction');
@@ -30,6 +31,9 @@ const {
   pickBestBundle,
   applyBundleOverride,
   computeBundleLineDiscount,
+  applyCartBundles,
+  findCartThresholdRules,
+  computeCartThresholdDiscount,
 } = require('../services/pricelistPricing.service');
 
 // ─── Stock helpers ────────────────────────────────────────────────────────────
@@ -2181,12 +2185,22 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       let effectivePrice      = bundleOverride.price;
       let bundleOverridePrice = bundleOverride.overridden;
 
-      // If the client sent its authoritative effectivePrice (computed after pricelist
-      // + bundle rules), trust it over the server's re-computation. This ensures the
-      // receipt charge always matches what the cart displayed, even when DB bundle
-      // deals have drifted from the client cache.
+      // If the client sent the effectivePrice its cart displayed (computed after
+      // pricelist + bundle rules), reconcile toward it — but only within a small
+      // tolerance of the server's own computation. Client and server share the
+      // same rule engine, so a matching cart differs at most by rounding; a
+      // larger gap means a stale client cache or a tampered payload, and the
+      // server-computed pricelist price wins.
       if (item.clientPrice != null && Number(item.clientPrice) > 0) {
-        effectivePrice = Number(item.clientPrice);
+        const cp = Number(item.clientPrice);
+        const tolerance = Math.max(1, effectivePrice * 0.01);
+        if (Math.abs(cp - effectivePrice) <= tolerance) {
+          effectivePrice = cp;
+        } else {
+          console.warn(
+            `[POS] clientPrice ${cp} rejected for ${subProductId} — server price ${effectivePrice} (pricelist ${selectedPricelist?._id || 'none'})`
+          );
+        }
       }
 
       // Item-level cashier discount (always percentage from the dialpad)
@@ -2257,6 +2271,42 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     }
   }
 
+  // ── Cross-product Buy-X-Get-Y bundle rules (cart-wide pass) ────────────────
+  // Per-line pricing above can't see the rest of the cart, so "buy N of A,
+  // discount B" rules are applied here: overridePrice types replace the
+  // target's unit price; percentage/fixed types add to the line discount.
+  // Revenue-split fields are re-derived from the adjusted line subtotal.
+  const crossBundleAdjs = applyCartBundles(
+    orderItems.map((it) => ({
+      subProductId: it.subproduct,
+      quantity:     it.quantity,
+      price:        it.priceAtPurchase,
+      costPrice:    it.vendorPriceAtPurchase,
+      originalPrice: it.originalPriceAtPurchase,
+    })),
+    selectedPricelist?.rules
+  );
+  for (const adj of crossBundleAdjs) {
+    const it = orderItems[adj.lineIndex];
+    if (!it) continue;
+    if (adj.overridePrice != null && adj.overridePrice > 0) {
+      it.priceAtPurchase = adj.overridePrice;
+    } else if (!(adj.discountAmount > 0)) {
+      continue;
+    }
+    const lineGross = it.priceAtPurchase * it.quantity;
+    it.discountAmount = parseFloat(
+      Math.min(lineGross, (it.discountAmount || 0) + (adj.discountAmount || 0)).toFixed(2)
+    );
+    it.itemSubtotal = parseFloat((lineGross - it.discountAmount).toFixed(2));
+    if (it.tenantRevenueModel === 'commission') {
+      it.tenantRevenueShare = parseFloat(
+        (it.itemSubtotal * (1 - (it.revenueRateAtPurchase || 0) / 100)).toFixed(2)
+      );
+    }
+    it.platformCommission = parseFloat((it.itemSubtotal - it.tenantRevenueShare).toFixed(2));
+  }
+
   // Compute totals — itemSubtotal already has item-level discount applied
   const subtotal = orderItems.reduce((s, it) => s + it.itemSubtotal, 0);
   // Gross before any per-item discounts (pricelist-effective price × qty).
@@ -2275,7 +2325,16 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
       ? Math.min(discountValue, subtotal)
       : subtotal * discountValue / 100;
   }
-  const total = Math.max(0, subtotal - orderDiscountAmount);
+
+  // ── Cart spend-threshold rules (pricelist cart-level discount) ─────────────
+  // Qualification and stacking are both computed off the pre-cashier-discount
+  // subtotal, matching the client cart display.
+  const thresholdRules = findCartThresholdRules(selectedPricelist?.rules, subtotal);
+  const cartThresholdDiscount = parseFloat(
+    computeCartThresholdDiscount(thresholdRules, subtotal).toFixed(2)
+  );
+
+  const total = Math.max(0, subtotal - orderDiscountAmount - cartThresholdDiscount);
 
   // Determine active session — prefer the caller's terminal type
   const orderTerminal = ['retail', 'wholesale'].includes(req.body.terminalType)
@@ -2331,7 +2390,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     subtotal,
     shippingFee:   0,
     totalAmount:   total,                 // schema field is totalAmount
-    discountTotal: orderDiscountAmount || 0,
+    discountTotal: (orderDiscountAmount || 0) + (cartThresholdDiscount || 0),
     paymentMethod,
     paymentStatus: 'paid',
     paymentDetails: {
@@ -2354,6 +2413,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
     appliedPricelist: selectedPricelist ? {
       pricelistId:   selectedPricelist._id,
       pricelistName: selectedPricelist.name || '',
+      thresholdDiscount: cartThresholdDiscount || 0,
     } : undefined,
     });
   } catch (orderErr) {
@@ -2464,6 +2524,7 @@ exports.createPOSOrder = asyncHandler(async (req, res) => {
         originalSubtotal:  originalSubtotal,
         pricelistSavings:  pricelistSavings > 0 ? pricelistSavings : undefined,
         pricelistName:     selectedPricelist?.name || undefined,
+        thresholdDiscount: cartThresholdDiscount > 0 ? cartThresholdDiscount : undefined,
         discountTotal: orderDiscountAmount || 0,
         paymentMethod: order.paymentMethod,
         splitPayments: paymentMethod === 'split' ? splitPayments : undefined,
@@ -3425,4 +3486,183 @@ exports.getPOSNotifications = asyncHandler(async (req, res) => {
   }));
 
   res.json({ success: true, data: { notifications } });
+});
+
+// ─── Sales Orders for POS ──────────────────────────────────────────────────────
+// Returns SalesOrder docs (quotations and orders) for the POS terminal.
+// POS tokens cannot reach the /api/sales-orders admin route (which requires
+// protect + tenantUserOnly), so this endpoint lives under protectPOS.
+
+const POS_SALES_ORDER_FIELDS = [
+  '_id', 'soNumber', 'docType', 'quoteStatus', 'orderStatus',
+  'customerSnapshot', 'total', 'createdAt', 'items',
+  'warehouseId', 'salesperson', 'paymentMethod', 'paymentStatus',
+];
+
+exports.getSalesOrdersForPOS = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  if (!tenantId) {
+    return res.status(401).json({ success: false, message: 'Tenant not resolved' });
+  }
+
+  const {
+    docType, status, search,
+    limit = '50', page = '1',
+    dateFrom, dateTo,
+  } = req.query;
+
+  const q = { tenant: tenantId };
+
+  // Doc-type filter — omit to get both quotations and orders
+  if (docType && ['quotation', 'order'].includes(docType)) {
+    q.docType = docType;
+  }
+
+  // Status filter — scoped to docType by caller
+  if (status) {
+    if (q.docType === 'quotation') {
+      q.quoteStatus = status;
+    } else if (q.docType === 'order') {
+      q.orderStatus = status;
+    } else {
+      // Mixed: search both status fields
+      q.$or = [
+        { quoteStatus: status },
+        { orderStatus: status },
+      ];
+    }
+  }
+
+  // Text search
+  if (search) {
+    const searchRegex = { $regex: search, $options: 'i' };
+    const textFilter = [
+      { soNumber: searchRegex },
+      { 'customerSnapshot.name': searchRegex },
+    ];
+    if (q.$or) {
+      // Merge with status $or
+      q.$and = [{ $or: q.$or }, { $or: textFilter }];
+      delete q.$or;
+    } else {
+      q.$or = textFilter;
+    }
+  }
+
+  // Date range
+  if (dateFrom || dateTo) {
+    q.createdAt = {};
+    if (dateFrom) q.createdAt.$gte = new Date(dateFrom);
+    if (dateTo) q.createdAt.$lte = new Date(dateTo);
+  }
+
+  const pageSize = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
+  const skip = (Math.max(parseInt(page, 10) || 1, 1) - 1) * pageSize;
+
+  const [data, total] = await Promise.all([
+    SalesOrder.find(q)
+      .select(POS_SALES_ORDER_FIELDS.join(' '))
+      .populate('warehouseId', 'name code')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(pageSize)
+      .lean(),
+    SalesOrder.countDocuments(q),
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      salesOrders: data,
+      pagination: {
+        page: Math.max(parseInt(page, 10) || 1, 1),
+        limit: pageSize,
+        total,
+        pages: Math.ceil(total / pageSize),
+      },
+    },
+  });
+});
+
+// ─── Reconcile a linked Sales Order after a POS sale ───────────────────────────
+// The POS sale (createPOSOrder) already deducted stock and wrote the Sales rows,
+// so this only reconciles the linked SalesOrder's status — advancing fulfilledQty
+// for what was sold and marking it paid — with NO second stock deduction and NO
+// duplicate Sales rows. A loaded quotation is converted to an order first. Lives
+// under protectPOS because the /api/sales-orders/:id/fulfill admin route rejects
+// POS tokens.
+
+exports.reconcileSalesOrderFromPOS = asyncHandler(async (req, res) => {
+  const tenantId = req.tenant?._id;
+  if (!tenantId) {
+    return res.status(401).json({ success: false, message: 'Tenant not resolved' });
+  }
+
+  const salesFulfillSvc = require('../services/salesFulfill.service');
+  const salesOrderSvc   = require('../services/salesOrder.service');
+  const salesLog        = require('../services/salesActivity.service');
+
+  let so = await SalesOrder.findOne({ _id: req.params.id, tenant: tenantId });
+  if (!so) return res.status(404).json({ success: false, message: 'Sales order not found' });
+
+  // Quotation → order (skip only terminally-dead quotations)
+  if (so.docType === 'quotation') {
+    if (['rejected', 'expired'].includes(so.quoteStatus)) {
+      return res.status(409).json({ success: false, message: 'Quotation cannot be fulfilled' });
+    }
+    if (so.quoteStatus !== 'converted') {
+      so = await salesOrderSvc.convertQuotationToOrder(so);
+    } else if (so.convertedTo) {
+      // Already converted — reconcile the resulting order instead.
+      const linked = await SalesOrder.findOne({ _id: so.convertedTo, tenant: tenantId });
+      if (linked) so = linked;
+    }
+  }
+
+  if (so.orderStatus === 'cancelled') {
+    return res.status(409).json({ success: false, message: 'A cancelled order cannot be fulfilled' });
+  }
+  if (so.orderStatus === 'fulfilled') {
+    return res.status(409).json({ success: false, message: 'Order already fulfilled' });
+  }
+
+  const { paymentMethod, items: soldItems } = req.body;
+
+  // Map POS sold items → SO line ids (match on subproduct + size, clamp to
+  // outstanding). Each SO line is consumed at most once.
+  const consumed = new Set();
+  const fulfillLines = [];
+  for (const sold of soldItems || []) {
+    const qtyWanted = Math.max(0, Number(sold.quantity) || 0);
+    if (qtyWanted <= 0) continue;
+    const line = so.items.find((it) => {
+      if (consumed.has(String(it._id))) return false;
+      if (it.lineType === 'section' || it.lineType === 'note') return false;
+      if (String(it.subproduct || '') !== String(sold.subProductId || '')) return false;
+      if (sold.sizeId && String(it.size || '') !== String(sold.sizeId)) return false;
+      return true;
+    });
+    if (!line) continue;
+    consumed.add(String(line._id));
+    const outstanding = (line.quantity || 0) - (line.fulfilledQty || 0);
+    const qty = Math.min(qtyWanted, outstanding);
+    if (qty > 0) fulfillLines.push({ lineId: String(line._id), qty });
+  }
+
+  const { order, reconciled } = await salesFulfillSvc.reconcileFulfillment({
+    salesOrder: so, fulfillLines, userId: req.posUser?._id || req.user?._id,
+  });
+
+  if (order.orderStatus === 'draft') order.orderStatus = 'confirmed';
+  order.paymentStatus = 'paid';
+  if (paymentMethod) order.paymentMethod = paymentMethod;
+  order.amountPaid = order.total;
+  await order.save();
+
+  res.json({ success: true, data: order, reconciled });
+
+  await salesLog.logActivity(tenantId, order._id, {
+    subject: 'Sales Order fulfilled via POS',
+    userId: req.posUser?._id || req.user?._id,
+  });
 });

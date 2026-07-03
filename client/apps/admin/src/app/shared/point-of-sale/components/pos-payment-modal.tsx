@@ -34,7 +34,6 @@ import {
   getEffectiveBundlePriceForItem,
   usePOSSettings,
   usePOSActiveShop,
-  usePOSWarehouse,
   usePOSLinkedSalesOrder,
 } from '@/app/shared/point-of-sale/store';
 import { posApi } from '@/app/shared/point-of-sale/api';
@@ -582,7 +581,9 @@ function ReceiptScreen({
               const hasItemDisc = totalItemDisc > 0.005;
               const hasOrderDisc = displayDiscount > 0.005;
               const hasPricelist = (order.pricelistSavings ?? 0) > 0.005;
-              const showBreakdown = hasItemDisc || hasOrderDisc || hasPricelist;
+              const hasThreshold = (order.thresholdDiscount ?? 0) > 0.005;
+              const showBreakdown =
+                hasItemDisc || hasOrderDisc || hasPricelist || hasThreshold;
 
               // Build named discount rows; fall back to a single generic row
               const autoTotal = autoDiscounts.reduce(
@@ -671,6 +672,18 @@ function ReceiptScreen({
                             vStyle={R.red}
                           />
                         )}
+                      {/* Pricelist cart spend-threshold discount */}
+                      {hasThreshold && (
+                        <Row
+                          label={
+                            order.pricelistName
+                              ? `Spend Discount (${order.pricelistName})`
+                              : 'Spend Discount'
+                          }
+                          value={`-${formatCurrency(order.thresholdDiscount!)}`}
+                          vStyle={R.green}
+                        />
+                      )}
                     </>
                   )}
                 </>
@@ -1058,7 +1071,6 @@ export default function POSPaymentModal() {
   const posSettings = tenant?.posSettings;
   const settings = usePOSSettings();
   const isOnline = useOnlineStatus();
-  const { warehouseId } = usePOSWarehouse();
   const { linkedSalesOrderId, setLinkedSalesOrderId } =
     usePOSLinkedSalesOrder();
 
@@ -1421,12 +1433,14 @@ export default function POSPaymentModal() {
       setOrderResult(result.order);
       notifySale();
 
-      // Auto-fulfill the linked sales order (non-blocking — cashier can print/new-sale regardless)
+      // Reconcile the linked sales order (non-blocking — cashier can print/new-sale
+      // regardless). The POS sale above already deducted stock and recorded
+      // revenue, so this only marks the SO fulfilled + paid; no second stock move.
       if (linkedSalesOrderId && token) {
         setFulfillStatus('running');
         posApi
-          .fulfillSalesOrder(token, linkedSalesOrderId, {
-            warehouseId: warehouseId || '',
+          .reconcileSalesOrder(token, linkedSalesOrderId, {
+            paymentMethod,
             items: orderItems.map((i: any) => ({
               subProductId: i.subProductId,
               sizeId: i.sizeId,

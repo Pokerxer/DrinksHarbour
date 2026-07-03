@@ -663,32 +663,45 @@ export const posApi = {
 
   async getSalesOrdersForPOS(
     token: string,
-    params: { search?: string; status?: string; limit?: number }
+    params: {
+      search?: string;
+      docType?: 'quotation' | 'order';
+      status?: string;
+      page?: number;
+      limit?: number;
+    }
   ) {
     const qs = new URLSearchParams(
       Object.fromEntries(
         Object.entries({ limit: '50', ...params }).filter(
-          ([, v]) => v != null && v !== ''
+          ([, v]) => v != null && v !== undefined && v !== ''
         )
       ) as Record<string, string>
     ).toString();
-    return request<{ salesOrders: unknown[] }>(
-      `${API_URL}/api/sales-orders?${qs}`,
+    return request<{
+      salesOrders: unknown[];
+      pagination: { page: number; limit: number; total: number; pages: number };
+    }>(
+      `${API_URL}/api/pos/sales-orders?${qs}`,
       {
         headers: authHeaders(token),
       }
     );
   },
 
-  async fulfillSalesOrder(
+  // Reconcile a linked Sales Order after a POS sale. The POS sale already
+  // deducted stock and recorded revenue, so this only marks the SO fulfilled +
+  // paid (quotations are converted to orders first) — no second stock movement
+  // and no duplicate Sales rows. Runs under the POS token (not the admin route).
+  async reconcileSalesOrder(
     token: string,
     id: string,
     body: {
-      warehouseId: string;
+      paymentMethod?: string;
       items?: { subProductId: string; sizeId?: string; quantity: number }[];
     }
   ) {
-    return request<unknown>(`${API_URL}/api/sales-orders/${id}/fulfill`, {
+    return request<unknown>(`${API_URL}/api/pos/sales-orders/${id}/reconcile`, {
       method: 'POST',
       headers: authHeaders(token),
       body: JSON.stringify(body),
