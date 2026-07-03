@@ -16,6 +16,7 @@ const {
   signGiftCardToken,
   validateGiftCardRedeem,
   computeStatusAfterRedeem,
+  giftCardTierForAmount,
 } = require('./giftCard.helpers');
 
 const QR_SECRET = process.env.GIFTCARD_QR_SECRET || '';
@@ -48,6 +49,7 @@ async function issueGiftCard({ giftCardId, paymentRef, createdBy }) {
   card.qrToken = qrToken;
   card.balance = card.initialAmount;
   card.status = 'active';
+  card.design = { ...(card.design?.toObject?.() ?? card.design ?? {}), tier: giftCardTierForAmount(card.initialAmount).id };
   if (paymentRef) card.paymentRef = paymentRef;
   await card.save();
 

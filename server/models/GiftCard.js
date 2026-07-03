@@ -28,6 +28,7 @@ const GiftCardSchema = new mongoose.Schema(
     design: {
       templateId: { type: String, trim: true },
       theme:      { type: String, trim: true },
+      tier:       { type: String, trim: true }, // derived amount-tier id, stamped on issue
     },
     expiresAt:  { type: Date },
     paymentRef: { type: String, trim: true, sparse: true },

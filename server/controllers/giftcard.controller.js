@@ -24,7 +24,7 @@ const paymentService = require('../services/payment.service');
 const emailService = require('../services/email.service');
 
 const MIN_AMOUNT = 1000; // NGN
-const MAX_AMOUNT = 200000; // NGN
+const MAX_AMOUNT = 20000000; // NGN — ceiling for the top "Black" (≥₦5M) tier; Paystack/fraud sanity cap
 const EXPIRY_MONTHS = 12;
 
 /**
