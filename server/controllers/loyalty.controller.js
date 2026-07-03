@@ -160,12 +160,12 @@ const redeemLoyaltyPoints = asyncHandler(async (req, res) => {
   if (recent.some(t => Math.abs(t.points) === n)) {
     const u = await User.findById(req.user._id).select('loyaltyPoints platformWalletBalance');
     return successResponse(res, {
-      pointsRedeemed: n,
-      amountCredited: amountNgn,
+      pointsRedeemed: 0,
+      amountCredited: 0, // nothing was credited in THIS call — it was a duplicate
       pointsBalance: u.loyaltyPoints,
       walletBalance: u.platformWalletBalance,
       alreadyProcessed: true,
-    }, 'Redemption already processed');
+    }, 'This looks like a duplicate of a recent redemption — it was not processed again');
   }
 
   // Debit the points atomically.
