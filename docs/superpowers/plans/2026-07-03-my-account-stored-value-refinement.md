@@ -415,28 +415,20 @@ git commit -m "fix(stored-value): short-window idempotency guard on loyalty & gi
 - Produces: `GET /api/wallet/transactions` accepts optional `type` (`credit|debit|refund|adjustment`), `from`, `to` (ISO dates). Absent/invalid values are ignored (behavior unchanged).
 - `useWallet().fetchTransactions(page?, opts?)` where `opts?: { type?: string; from?: string; to?: string }`.
 
-- [ ] **Step 1: Extend the controller filter**
+- [ ] **Step 1: Add an exported filter-builder helper (single source of truth)**
 
-In `server/controllers/wallet.controller.js`, in `getWalletTransactions`, replace `const filter = { userId: req.user._id };` with:
+The filter logic must be tested without an HTTP harness, so extract it as an exported pure
+function the controller and the test both import (no duplicated logic block).
 
-```js
-  const filter = { userId: req.user._id };
-  const { type, from, to } = req.query;
-  if (['credit', 'debit', 'refund', 'adjustment'].includes(type)) filter.type = type;
-  const createdAt = {};
-  if (from) { const d = new Date(from); if (!Number.isNaN(d.getTime())) createdAt.$gte = d; }
-  if (to)   { const d = new Date(to);   if (!Number.isNaN(d.getTime())) { d.setHours(23, 59, 59, 999); createdAt.$lte = d; } }
-  if (Object.keys(createdAt).length) filter.createdAt = createdAt;
-```
-
-- [ ] **Step 2: Write the failing test**
-
-Create `server/__tests__/wallet.transactions.filter.test.js`:
+In `server/controllers/wallet.controller.js`, add near the top (after the imports):
 
 ```js
-function buildFilter(userId, query) {
+/**
+ * Build the Mongo filter for a user's wallet-transaction query from optional
+ * `type`/`from`/`to` request params. Unknown/invalid values are ignored.
+ */
+function buildTransactionFilter(userId, { type, from, to } = {}) {
   const filter = { userId };
-  const { type, from, to } = query;
   if (['credit', 'debit', 'refund', 'adjustment'].includes(type)) filter.type = type;
   const createdAt = {};
   if (from) { const d = new Date(from); if (!Number.isNaN(d.getTime())) createdAt.$gte = d; }
@@ -444,21 +436,35 @@ function buildFilter(userId, query) {
   if (Object.keys(createdAt).length) filter.createdAt = createdAt;
   return filter;
 }
+```
+
+In `getWalletTransactions`, replace `const filter = { userId: req.user._id };` with:
+
+```js
+  const filter = buildTransactionFilter(req.user._id, req.query);
+```
+
+And add `buildTransactionFilter` to `module.exports` alongside the existing handlers.
+
+- [ ] **Step 2: Write the failing test (imports the helper — no duplication)**
+
+Create `server/__tests__/wallet.transactions.filter.test.js`:
+
+```js
+const { buildTransactionFilter } = require('../controllers/wallet.controller');
 
 test('valid type is applied, invalid type ignored', () => {
-  expect(buildFilter('u1', { type: 'credit' }).type).toBe('credit');
-  expect(buildFilter('u1', { type: 'bogus' }).type).toBeUndefined();
+  expect(buildTransactionFilter('u1', { type: 'credit' }).type).toBe('credit');
+  expect(buildTransactionFilter('u1', { type: 'bogus' }).type).toBeUndefined();
 });
 
 test('date range builds a createdAt window; absent dates omit it', () => {
-  const f = buildFilter('u1', { from: '2026-01-01', to: '2026-01-31' });
+  const f = buildTransactionFilter('u1', { from: '2026-01-01', to: '2026-01-31' });
   expect(f.createdAt.$gte).toBeInstanceOf(Date);
   expect(f.createdAt.$lte).toBeInstanceOf(Date);
-  expect(buildFilter('u1', {}).createdAt).toBeUndefined();
+  expect(buildTransactionFilter('u1', {}).createdAt).toBeUndefined();
 });
 ```
-
-> This mirrors the exact filter-building logic added to the controller so it is verified in isolation. Keep the two copies identical.
 
 - [ ] **Step 3: Run test to verify it passes**
 
