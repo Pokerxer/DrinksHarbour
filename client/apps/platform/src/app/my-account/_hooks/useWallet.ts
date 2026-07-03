@@ -13,7 +13,7 @@ interface UseWalletReturn {
   txLoading: boolean;
   txPage: number;
   txTotalPages: number;
-  fetchTransactions: (page?: number) => Promise<void>;
+  fetchTransactions: (page?: number, opts?: { type?: string; from?: string; to?: string }) => Promise<void>;
   fundWallet: (amount: number) => Promise<{ ok: boolean; authUrl?: string; reference?: string; message?: string }>;
   verifyFunding: (reference: string) => Promise<{ ok: boolean; balance?: number; message?: string; alreadyCredited?: boolean }>;
   refresh: () => Promise<void>;
@@ -46,11 +46,15 @@ export function useWallet(token: string | null): UseWalletReturn {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const fetchTransactions = useCallback(async (page = 1) => {
+  const fetchTransactions = useCallback(async (page = 1, opts: { type?: string; from?: string; to?: string } = {}) => {
     if (!token) return;
     setTxLoading(true);
     try {
-      const res = await fetchWithAuth(`${API_URL}/api/wallet/transactions?page=${page}&limit=20`);
+      const params = new URLSearchParams({ page: String(page), limit: '20' });
+      if (opts.type && opts.type !== 'all') params.set('type', opts.type);
+      if (opts.from) params.set('from', opts.from);
+      if (opts.to) params.set('to', opts.to);
+      const res = await fetchWithAuth(`${API_URL}/api/wallet/transactions?${params.toString()}`);
       if (!res.ok) throw new Error('Failed to load transactions');
       const data = await res.json();
       const payload = data.data ?? data;

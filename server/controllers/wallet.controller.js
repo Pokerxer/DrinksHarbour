@@ -20,6 +20,20 @@ const MIN_FUND_AMOUNT = 500; // NGN — floor to keep Paystack fees sane.
 const MAX_FUND_AMOUNT = 10000000; // NGN — single-transaction ceiling (₦10M).
 
 /**
+ * Build the Mongo filter for a user's wallet-transaction query from optional
+ * `type`/`from`/`to` request params. Unknown/invalid values are ignored.
+ */
+function buildTransactionFilter(userId, { type, from, to } = {}) {
+  const filter = { userId };
+  if (['credit', 'debit', 'refund', 'adjustment'].includes(type)) filter.type = type;
+  const createdAt = {};
+  if (from) { const d = new Date(from); if (!Number.isNaN(d.getTime())) createdAt.$gte = d; }
+  if (to)   { const d = new Date(to);   if (!Number.isNaN(d.getTime())) { d.setHours(23, 59, 59, 999); createdAt.$lte = d; } }
+  if (Object.keys(createdAt).length) filter.createdAt = createdAt;
+  return filter;
+}
+
+/**
  * @desc    Get the authenticated customer's wallet balance + summary.
  * @route   GET /api/wallet
  * @access  Private (customer)
@@ -64,7 +78,7 @@ const getWalletTransactions = asyncHandler(async (req, res) => {
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
 
-  const filter = { userId: req.user._id };
+  const filter = buildTransactionFilter(req.user._id, req.query);
   const [total, items] = await Promise.all([
     PlatformWalletTransaction.countDocuments(filter),
     PlatformWalletTransaction.find(filter)
@@ -183,4 +197,5 @@ module.exports = {
   getWalletTransactions,
   fundWallet,
   verifyFundWallet,
+  buildTransactionFilter,
 };
