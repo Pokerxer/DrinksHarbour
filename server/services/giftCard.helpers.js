@@ -227,6 +227,32 @@ function verifyGiftCardToken(token, secret) {
   return { ok: true, payload };
 }
 
+// Amount-driven gift-card tiers (single source of truth; mirrored client-side in
+// gift-cards/_giftCardTiers.ts). The card art + label are derived from the purchase
+// amount — higher amounts get more premium styling. Bands are inclusive lower bounds.
+const GIFT_CARD_TIERS = [
+  { id: 'classic',  name: 'Classic',  minAmount: 1000,    gradient: 'from-stone-800 to-red-900',     textClass: 'text-white',      accentClass: 'text-red-200' },
+  { id: 'silver',   name: 'Silver',   minAmount: 50000,   gradient: 'from-slate-400 to-slate-600',   textClass: 'text-white',      accentClass: 'text-slate-100' },
+  { id: 'gold',     name: 'Gold',     minAmount: 200000,  gradient: 'from-amber-500 to-yellow-600',  textClass: 'text-stone-900',  accentClass: 'text-amber-900' },
+  { id: 'platinum', name: 'Platinum', minAmount: 500000,  gradient: 'from-zinc-300 to-zinc-500',     textClass: 'text-stone-900',  accentClass: 'text-zinc-700' },
+  { id: 'premium',  name: 'Premium',  minAmount: 1000000, gradient: 'from-indigo-700 to-purple-800', textClass: 'text-white',      accentClass: 'text-indigo-200' },
+  { id: 'black',    name: 'Black',    minAmount: 5000000, gradient: 'from-neutral-900 to-black',      textClass: 'text-white',      accentClass: 'text-amber-300' },
+];
+
+/**
+ * Resolve the tier for a purchase amount: the highest tier whose minAmount <= amount.
+ * Amounts below the first band clamp to the first (classic) tier.
+ * @returns {object} a GIFT_CARD_TIERS entry.
+ */
+function giftCardTierForAmount(amount) {
+  const n = Number(amount) || 0;
+  let tier = GIFT_CARD_TIERS[0];
+  for (const t of GIFT_CARD_TIERS) {
+    if (n >= t.minAmount) tier = t;
+  }
+  return tier;
+}
+
 module.exports = {
   GIFT_CARD_STATUSES,
   GIFT_CARD_TX_TYPES,
@@ -244,4 +270,6 @@ module.exports = {
   summarizeGiftCard,
   signGiftCardToken,
   verifyGiftCardToken,
+  GIFT_CARD_TIERS,
+  giftCardTierForAmount,
 };
