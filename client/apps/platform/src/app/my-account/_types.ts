@@ -144,7 +144,7 @@ export interface GiftCardItem {
   currency: string;
   status: 'pending_payment' | 'active' | 'redeemed' | 'expired' | 'disabled';
   recipient?: GiftCardRecipient;
-  design?: { templateId?: string; theme?: string };
+  design?: { templateId?: string; theme?: string; tier?: string };
   expiresAt?: string;
   createdAt: string;
 }

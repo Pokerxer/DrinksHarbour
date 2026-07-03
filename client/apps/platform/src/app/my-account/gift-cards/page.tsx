@@ -8,14 +8,13 @@ import { useAccount } from '../AccountShell';
 import { useGiftCards } from '../_hooks/useGiftCards';
 import type { GiftCardItem } from '../_types';
 import { fmtNgn, fmtDate } from '../_components/format';
+import { giftCardTierForAmount, giftCardTierById } from './_giftCardTiers';
+import InlineAlert from '../_components/InlineAlert';
+import StatCard from '../_components/StatCard';
 
-const PRESETS = [2000, 5000, 10000, 25000, 50000, 100000];
-const THEMES = [
-  { id: 'classic',   label: 'Classic',   bg: 'from-stone-800 to-red-900' },
-  { id: 'celebration', label: 'Celebration', bg: 'from-purple-700 to-pink-600' },
-  { id: 'sunset',    label: 'Sunset',    bg: 'from-orange-600 to-red-700' },
-  { id: 'midnight',  label: 'Midnight',  bg: 'from-slate-900 to-blue-900' },
-];
+const PRESETS = [5000, 25000, 100000, 500000, 1000000, 5000000];
+const MIN_GC = 1000;
+const MAX_GC = 20000000;
 
 const STATUS_BADGE: Record<string, string> = {
   pending_payment: 'bg-amber-50 text-amber-700 border-amber-200',
@@ -25,13 +24,13 @@ const STATUS_BADGE: Record<string, string> = {
   disabled: 'bg-stone-100 text-stone-500 border-stone-200',
 };
 
-function GiftCardPreview({ amount, theme, code }: { amount: number; theme: string; code?: string }) {
-  const t = THEMES.find(x => x.id === theme) || THEMES[0];
+function GiftCardPreview({ amount, tierId, code }: { amount: number; tierId?: string; code?: string }) {
+  const t = giftCardTierById(tierId, amount);
   return (
-    <div className={`rounded-2xl p-5 bg-gradient-to-br ${t.bg} text-white shadow-lg aspect-[1.6/1] flex flex-col justify-between`}>
+    <div className={`rounded-2xl p-5 bg-gradient-to-br ${t.gradient} ${t.textClass} shadow-lg aspect-[1.6/1] flex flex-col justify-between`}>
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-[10px] uppercase tracking-widest opacity-80 font-bold">DrinksHarbour</p>
+          <p className={`text-[10px] uppercase tracking-widest font-bold ${t.accentClass}`}>DrinksHarbour · {t.name}</p>
           <p className="text-2xl font-black mt-1">{fmtNgn(amount)}</p>
         </div>
         <Icon.PiGiftBold size={22} className="opacity-60" />
@@ -46,24 +45,25 @@ function GiftCardPreview({ amount, theme, code }: { amount: number; theme: strin
 
 function GiftCardPurchaseModal({ open, onClose, onPurchase }:
   { open: boolean; onClose: () => void; onPurchase: (data: any) => Promise<{ ok: boolean; authUrl?: string; message?: string }> }) {
-  const [amount, setAmount] = useState(5000);
+  const [amount, setAmount] = useState(25000);
   const [custom, setCustom] = useState('');
-  const [theme, setTheme] = useState('classic');
   const [recipient, setRecipient] = useState({ email: '', name: '', message: '' });
   const [forSomeone, setForSomeone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (!open) return null;
   const finalAmount = custom ? Number(custom) : amount;
+  const tier = giftCardTierForAmount(finalAmount || 0);
 
   const handleBuy = async () => {
     const n = Number(finalAmount);
-    if (!Number.isInteger(n) || n < 1000) { setError('Enter a whole amount of at least ₦1,000'); return; }
+    if (!Number.isInteger(n) || n < MIN_GC || n > MAX_GC) {
+      setError(`Enter a whole amount between ${fmtNgn(MIN_GC)} and ${fmtNgn(MAX_GC)}`); return;
+    }
     if (forSomeone && recipient.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient.email)) { setError('Recipient email is invalid'); return; }
     setSubmitting(true); setError(null);
     const res = await onPurchase({
       amount: n,
-      design: { theme },
       recipient: forSomeone ? {
         email: recipient.email || undefined,
         name: recipient.name || undefined,
@@ -97,19 +97,13 @@ function GiftCardPurchaseModal({ open, onClose, onPurchase }:
             </div>
             <div>
               <p className="text-xs font-semibold text-stone-600 mb-1.5">Custom amount (₦)</p>
-              <input type="number" min={1000} step={500} value={custom} onChange={e => setCustom(e.target.value)} placeholder="e.g. 15000"
+              <input type="number" min={MIN_GC} max={MAX_GC} step={500} value={custom} onChange={e => setCustom(e.target.value)} placeholder="e.g. 15000"
                 className="w-full px-4 py-2.5 border border-stone-200 rounded-xl text-sm bg-stone-50 focus:bg-white focus:border-red-400 focus:ring-2 focus:ring-red-100 outline-none" />
             </div>
-            <div>
-              <p className="text-xs font-semibold text-stone-600 mb-2">Design</p>
-              <div className="grid grid-cols-4 gap-2">
-                {THEMES.map(t => (
-                  <button key={t.id} onClick={() => setTheme(t.id)}
-                    className={`rounded-xl h-10 bg-gradient-to-br ${t.bg} flex items-center justify-center text-[10px] font-bold text-white border-2 transition-all ${theme === t.id ? 'border-stone-900' : 'border-transparent'}`}>
-                    {t.label}
-                  </button>
-                ))}
-              </div>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-stone-500">This is a</span>
+              <span className={`px-2 py-1 rounded-full font-bold bg-gradient-to-br ${tier.gradient} ${tier.textClass}`}>{tier.name}</span>
+              <span className="text-stone-500">gift card</span>
             </div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={forSomeone} onChange={e => setForSomeone(e.target.checked)} className="rounded border-stone-300 text-red-700 focus:ring-red-200" />
@@ -134,7 +128,7 @@ function GiftCardPurchaseModal({ open, onClose, onPurchase }:
           </div>
           <div>
             <p className="text-xs font-semibold text-stone-600 mb-2">Preview</p>
-            <GiftCardPreview amount={finalAmount || amount} theme={theme} />
+            <GiftCardPreview amount={finalAmount || amount} tierId={tier.id} />
             <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2">
               <Icon.PiLockBold size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
               <p className="text-xs text-amber-700">Gift cards are valid for 12 months and redeemable at any tenant on DrinksHarbour. A unique code + QR is generated on successful payment.</p>
@@ -148,14 +142,15 @@ function GiftCardPurchaseModal({ open, onClose, onPurchase }:
 
 function GiftCardTile({ card }: { card: GiftCardItem }) {
   const [copied, setCopied] = useState(false);
-  const copy = () => {
+  const copy = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     if (!card.code) return;
     navigator.clipboard.writeText(card.code).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   };
-  const theme = card.design?.theme || 'classic';
   return (
-    <div className="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden hover:shadow-md transition-all">
-      <GiftCardPreview amount={card.initialAmount} theme={theme} code={card.code || undefined} />
+    <Link href={`/my-account/gift-cards/${card._id}`} className="block bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden hover:shadow-md transition-all">
+      <GiftCardPreview amount={card.initialAmount} tierId={card.design?.tier} code={card.code || undefined} />
       <div className="p-4 space-y-3">
         <div className="flex items-center justify-between">
           <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${STATUS_BADGE[card.status] || STATUS_BADGE.disabled}`}>{card.status.replace('_', ' ')}</span>
@@ -175,7 +170,7 @@ function GiftCardTile({ card }: { card: GiftCardItem }) {
         </div>
         {card.recipient?.email && <p className="text-xs text-stone-400">For {card.recipient.name || card.recipient.email}</p>}
       </div>
-    </div>
+    </Link>
   );
 }
 
@@ -226,23 +221,13 @@ function GiftCardsPageInner() {
         </button>
       </div>
 
-      {verifying && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-3">
-          <span className="w-4 h-4 border-2 border-blue-200 border-t-blue-700 rounded-full animate-spin" />
-          <p className="text-sm font-semibold text-blue-700">Verifying your gift-card purchase…</p>
-        </div>
-      )}
-      {verifyMsg && (
-        <div className={`rounded-xl p-4 flex items-center gap-3 ${verifyMsg.ok ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
-          <Icon.PiCheckCircleBold size={16} />
-          <p className="text-sm font-semibold">{verifyMsg.text}</p>
-        </div>
-      )}
+      {verifying && <InlineAlert variant="pending" spinning>Verifying your gift-card purchase…</InlineAlert>}
+      {verifyMsg && <InlineAlert variant={verifyMsg.ok ? 'success' : 'error'}>{verifyMsg.text}</InlineAlert>}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-        <StatCardInline icon={Icon.PiGiftBold} label="Total Cards" value={cards.length} color="bg-purple-50 text-purple-700" loading={loading} />
-        <StatCardInline icon={Icon.PiCheckCircleBold} label="Active" value={activeCount} color="bg-green-50 text-green-700" loading={loading} />
-        <StatCardInline icon={Icon.PiWalletBold} label="Total Value" value={fmtNgn(totalValue)} color="bg-amber-50 text-amber-700" loading={loading} />
+        <StatCard icon={Icon.PiGiftBold} label="Total Cards" value={cards.length} color="bg-purple-50 text-purple-700" loading={loading} />
+        <StatCard icon={Icon.PiCheckCircleBold} label="Active" value={activeCount} color="bg-green-50 text-green-700" loading={loading} />
+        <StatCard icon={Icon.PiWalletBold} label="Total Value" value={fmtNgn(totalValue)} color="bg-amber-50 text-amber-700" loading={loading} />
       </div>
 
       {loading ? (
@@ -265,17 +250,6 @@ function GiftCardsPageInner() {
       )}
 
       <GiftCardPurchaseModal open={buyOpen} onClose={() => setBuyOpen(false)} onPurchase={handlePurchase} />
-    </div>
-  );
-}
-
-function StatCardInline({ icon: Icon2, label, value, color, loading }: any) {
-  if (loading) return <div className="bg-white rounded-xl border border-stone-200 shadow-sm p-4 h-[88px] animate-pulse" />;
-  return (
-    <div className="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
-      <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3 ${color}`}><Icon2 size={18} /></div>
-      <p className="text-xl font-black text-stone-900">{value}</p>
-      <p className="text-xs text-stone-500 mt-0.5">{label}</p>
     </div>
   );
 }
