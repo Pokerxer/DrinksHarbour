@@ -22,6 +22,7 @@ const {
 } = require('../services/giftCard.helpers');
 const paymentService = require('../services/payment.service');
 const emailService = require('../services/email.service');
+const QRCode = require('qrcode');
 
 const MIN_AMOUNT = 1000; // NGN
 const MAX_AMOUNT = 20000000; // NGN — ceiling for the top "Black" (≥₦5M) tier; Paystack/fraud sanity cap
@@ -60,6 +61,13 @@ const getGiftCard = asyncHandler(async (req, res) => {
   const card = await GiftCard.findOne({ _id: req.params.id, purchasedBy: req.user._id }).lean();
   if (!card) return res.status(404).json({ success: false, message: 'Gift card not found' });
 
+  // Render the signed QR token to a scannable image (owner-only; endpoint is scoped).
+  let qrDataUrl = null;
+  if (card.qrToken) {
+    try { qrDataUrl = await QRCode.toDataURL(card.qrToken, { margin: 1, width: 240 }); }
+    catch { qrDataUrl = null; }
+  }
+
   const transactions = await GiftCardTransaction.find({ giftCardId: card._id })
     .sort({ createdAt: -1 })
     .lean();
@@ -77,6 +85,8 @@ const getGiftCard = asyncHandler(async (req, res) => {
     design: card.design,
     expiresAt: card.expiresAt,
     createdAt: card.createdAt,
+    qrToken: card.qrToken || null,
+    qrDataUrl,
     summary,
     transactions: transactions.map(t => ({
       _id: t._id,
