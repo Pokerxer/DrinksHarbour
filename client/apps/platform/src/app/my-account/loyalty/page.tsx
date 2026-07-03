@@ -6,12 +6,13 @@ import { useAccount } from '../AccountShell';
 import { useLoyalty } from '../_hooks/useLoyalty';
 import type { LoyaltyTier } from '../_types';
 import { fmtNgn, fmtDateTime } from '../_components/format';
+import StatCard from '../_components/StatCard';
 
-const TIER_META: Record<LoyaltyTier, { name: string; color: string; bg: string; icon: any; perk: string }> = {
-  cork:   { name: 'Cork',   color: 'text-amber-700', bg: 'from-amber-500 to-amber-700', icon: Icon.PiCrownBold, perk: '1× earn rate · standard rewards' },
-  barrel: { name: 'Barrel',  color: 'text-blue-700',  bg: 'from-blue-600 to-blue-800',   icon: Icon.PiCrownBold, perk: '1.1× earn rate · early access to drops' },
-  cellar: { name: 'Cellar',  color: 'text-purple-700',bg: 'from-purple-600 to-purple-800',icon: Icon.PiCrownBold, perk: '1.25× earn rate · exclusive tastings' },
-  vault:  { name: 'Vault',   color: 'text-stone-900',bg: 'from-stone-800 to-stone-950',  icon: Icon.PiCrownBold, perk: '1.5× earn rate · concierge & priority' },
+const TIER_META: Record<LoyaltyTier, { name: string; color: string; bg: string; icon: any; perk: string; threshold: number }> = {
+  cork:   { name: 'Cork',   color: 'text-amber-700', bg: 'from-amber-500 to-amber-700', icon: Icon.PiCrownBold, perk: '1× earn rate · standard rewards', threshold: 0 },
+  barrel: { name: 'Barrel',  color: 'text-blue-700',  bg: 'from-blue-600 to-blue-800',   icon: Icon.PiCrownBold, perk: '1.1× earn rate · early access to drops', threshold: 2500 },
+  cellar: { name: 'Cellar',  color: 'text-purple-700',bg: 'from-purple-600 to-purple-800',icon: Icon.PiCrownBold, perk: '1.25× earn rate · exclusive tastings', threshold: 7500 },
+  vault:  { name: 'Vault',   color: 'text-stone-900',bg: 'from-stone-800 to-stone-950',  icon: Icon.PiCrownBold, perk: '1.5× earn rate · concierge & priority', threshold: 20000 },
 };
 
 const TX_META: Record<string, { label: string; color: string; sign: string }> = {
@@ -25,13 +26,18 @@ const TX_META: Record<string, { label: string; color: string; sign: string }> = 
 
 function TierCard({ tier, active, lifetimePoints }: { tier: LoyaltyTier; active: boolean; lifetimePoints: number }) {
   const meta = TIER_META[tier];
+  const unlocked = lifetimePoints >= meta.threshold;
+  const toGo = Math.max(meta.threshold - lifetimePoints, 0);
   return (
-    <div className={`rounded-xl border-2 p-4 transition-all ${active ? 'border-red-700 shadow-md' : 'border-stone-200'}`}>
-      <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${meta.bg} flex items-center justify-center text-white mb-3`}>
-        <meta.icon size={18} />
+    <div className={`rounded-xl border-2 p-4 transition-all ${active ? 'border-red-700 shadow-md' : unlocked ? 'border-stone-200' : 'border-stone-100 opacity-70'}`}>
+      <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${meta.bg} flex items-center justify-center text-white mb-3 ${unlocked ? '' : 'grayscale'}`}>
+        {unlocked ? <meta.icon size={18} /> : <Icon.PiLockBold size={16} />}
       </div>
-      <p className={`font-black text-stone-900 ${meta.color}`}>{meta.name}</p>
+      <p className={`font-black ${meta.color}`}>{meta.name}</p>
       <p className="text-xs text-stone-400 mt-0.5">{meta.perk}</p>
+      <p className="text-[11px] font-semibold mt-1.5 text-stone-500">
+        {active ? 'Current tier' : unlocked ? 'Unlocked' : `${toGo.toLocaleString()} pts to unlock`}
+      </p>
     </div>
   );
 }
@@ -242,20 +248,32 @@ export default function LoyaltyPage() {
         </div>
       </div>
 
+      {/* Ways to earn & redeem */}
+      <div className="bg-white rounded-xl border border-stone-200 shadow-sm p-6">
+        <h2 className="font-black text-stone-900 text-sm mb-4 flex items-center gap-2"><Icon.PiInfoBold size={15} className="text-red-700" /> Ways to earn & redeem</h2>
+        <div className="grid sm:grid-cols-3 gap-4">
+          {[
+            { icon: Icon.PiShoppingCartBold, title: 'Earn on every order', body: `${loyalty.earnMultiplier}× points per ₦1 spent at your ${TIER_META[loyalty.tier].name} tier.` },
+            { icon: Icon.PiWalletBold, title: 'Redeem to wallet', body: `From ${loyalty.minRedeemPoints} pts, in steps of ${loyalty.redeemStepPoints}, at ₦${loyalty.redeemRateNgnPerPoint.toFixed(2)} per point.` },
+            { icon: Icon.PiShareNetworkBold, title: 'Refer friends', body: 'You and your friend each get 500 points on their first order.' },
+          ].map(x => (
+            <div key={x.title} className="flex gap-3">
+              <div className="w-9 h-9 rounded-xl bg-red-50 text-red-700 flex items-center justify-center flex-shrink-0"><x.icon size={16} /></div>
+              <div>
+                <p className="text-sm font-bold text-stone-800">{x.title}</p>
+                <p className="text-xs text-stone-500 mt-0.5">{x.body}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {[
-          { icon: Icon.PiCoinsBold, label: 'Lifetime Points', value: loyalty.lifetimePoints.toLocaleString(), color: 'bg-amber-50 text-amber-700' },
-          { icon: Icon.PiStarBold,   label: 'Earned',          value: (loyalty.summary.earned || 0).toLocaleString(), color: 'bg-green-50 text-green-700' },
-          { icon: Icon.PiWalletBold, label: 'Redeemed',        value: (loyalty.summary.redeemed || 0).toLocaleString(), color: 'bg-red-50 text-red-700' },
-          { icon: Icon.PiShareNetworkBold, label: 'Referral Bonus', value: (loyalty.summary.referralBonus || 0).toLocaleString(), color: 'bg-purple-50 text-purple-700' },
-        ].map(s => (
-          <div key={s.label} className="bg-white rounded-xl border border-stone-200 shadow-sm p-4">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3 ${s.color}`}><s.icon size={18} /></div>
-            <p className="text-xl font-black text-stone-900">{s.value}</p>
-            <p className="text-xs text-stone-500 mt-0.5">{s.label}</p>
-          </div>
-        ))}
+        <StatCard icon={Icon.PiCoinsBold} label="Lifetime Points" value={loyalty.lifetimePoints.toLocaleString()} color="bg-amber-50 text-amber-700" />
+        <StatCard icon={Icon.PiStarBold} label="Earned" value={(loyalty.summary.earned || 0).toLocaleString()} color="bg-green-50 text-green-700" />
+        <StatCard icon={Icon.PiWalletBold} label="Redeemed" value={(loyalty.summary.redeemed || 0).toLocaleString()} color="bg-red-50 text-red-700" />
+        <StatCard icon={Icon.PiShareNetworkBold} label="Referral Bonus" value={(loyalty.summary.referralBonus || 0).toLocaleString()} color="bg-purple-50 text-purple-700" />
       </div>
 
       {/* Referral */}
