@@ -349,9 +349,9 @@ const DEFAULT_CONFIG: CategoryConfig = {
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface ShopHeroBannerProps {
-  category?: string | null;
-  subcategory?: string | null;
-  brand?: string | null;
+  category?: string | string[] | null;
+  subcategory?: string | string[] | null;
+  brand?: string | string[] | null;
   totalProducts?: number;
 }
 
@@ -372,6 +372,15 @@ const btnVariants = {
   animate: { scale: 1, opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.34, 1.56, 0.64, 1] } },
 };
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// Normalize a possibly comma-joined param into a lowercase, trimmed slug list.
+function toList(v?: string | string[] | null): string[] {
+  if (!v) return [];
+  const arr = Array.isArray(v) ? v : v.split(',');
+  return arr.map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ShopHeroBanner({
@@ -383,25 +392,39 @@ export default function ShopHeroBanner({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // Resolve config
-  const { config, activeSub, isDefault } = useMemo(() => {
-    const cat = typeof category === 'string' ? category.toLowerCase() : null;
-    const sub = typeof subcategory === 'string' ? subcategory.toLowerCase() : null;
-    const parentCat = sub ? (SUBCAT_PARENT[sub] ?? cat) : cat;
+  // Resolve theme from active filters (single or multi-select).
+  const { config, activeSubs, activeCats, isDefault, countSubtitle, singleSub } = useMemo(() => {
+    const cats = toList(category);
+    const subs = toList(subcategory);
+    // Primary theme: first selected category, else parent of first subcategory.
+    const parentCat = cats[0] ?? (subs[0] ? (SUBCAT_PARENT[subs[0]] ?? null) : null);
     const cfg = parentCat ? (CONFIGS[parentCat] ?? null) : null;
-    return { config: cfg ?? DEFAULT_CONFIG, activeSub: sub, isDefault: !parentCat };
+
+    let countSubtitle: string | null = null;
+    if (cats.length > 1) countSubtitle = `${cats.length} categories selected`;
+    else if (subs.length > 1) countSubtitle = `${subs.length} styles selected`;
+
+    return {
+      config: cfg ?? DEFAULT_CONFIG,
+      activeSubs: new Set(subs),
+      activeCats: new Set(cats),
+      isDefault: !parentCat,
+      countSubtitle,
+      singleSub: subs.length === 1 ? subs[0] : null,
+    };
   }, [category, subcategory]);
 
-  // Subcategory-level overrides
-  const subcatInfo = activeSub ? SUBCAT_LABELS[activeSub] : null;
+  // Subcategory-level overrides only apply when exactly one subcategory is active.
+  const subcatInfo = singleSub ? SUBCAT_LABELS[singleSub] : null;
 
-  const displayLabel       = subcatInfo?.label       ?? config.label;
-  const displaySubtitle    = subcatInfo?.subtitle     ?? config.subtitle;
-  const displayDescription = subcatInfo?.description  ?? config.description;
+  const displayLabel       = subcatInfo?.label      ?? config.label;
+  const displaySubtitle    = countSubtitle ?? subcatInfo?.subtitle ?? config.subtitle;
+  const displayDescription = subcatInfo?.description ?? config.description;
 
   // Brand override — when only brand is active
-  const brandLabel = brand && !category && !subcategory
-    ? brand.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+  const brandList = toList(brand);
+  const brandLabel = brandList.length === 1 && activeCats.size === 0 && activeSubs.size === 0
+    ? brandList[0].replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
     : null;
 
   // Build CTA URL (just clears subcategory, keeps category)
@@ -580,20 +603,27 @@ export default function ShopHeroBanner({
           {isDefault ? (
             /* Default: top-level category shortcuts */
             <>
-              {DEFAULT_CONFIG.subcategories.map((chip) => (
-                <Link
-                  key={chip.slug}
-                  href={makeCategoryUrl(chip.slug)}
-                  className="px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all hover:scale-105"
-                  style={{
-                    background: 'rgba(255,255,255,0.09)',
-                    color: 'rgba(255,255,255,0.85)',
-                    border: '1px solid rgba(255,255,255,0.15)',
-                  }}
-                >
-                  {chip.label}
-                </Link>
-              ))}
+              {DEFAULT_CONFIG.subcategories.map((chip) => {
+                const isActive = activeCats.has(chip.slug);
+                return (
+                  <Link
+                    key={chip.slug}
+                    href={makeCategoryUrl(chip.slug)}
+                    className="px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all hover:scale-105"
+                    style={
+                      isActive
+                        ? { background: accent, color: '#000', border: `1px solid ${accent}` }
+                        : {
+                            background: 'rgba(255,255,255,0.09)',
+                            color: 'rgba(255,255,255,0.85)',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                          }
+                    }
+                  >
+                    {chip.label}
+                  </Link>
+                );
+              })}
             </>
           ) : (
             /* Category / subcategory: "All" reset + per-subcategory chips */
@@ -603,7 +633,7 @@ export default function ShopHeroBanner({
                   href={makeSubUrl(null)}
                   className="px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all"
                   style={
-                    !activeSub
+                    activeSubs.size === 0
                       ? { background: accent, color: '#000', border: `1px solid ${accent}` }
                       : { background: `${glow}20`, color: accent, border: `1px solid ${glow}40` }
                   }
@@ -612,7 +642,7 @@ export default function ShopHeroBanner({
                 </Link>
               )}
               {config.subcategories.map((chip) => {
-                const isActive = activeSub === chip.slug || activeSub === chip.slug.replace(/-/g, ' ');
+                const isActive = activeSubs.has(chip.slug) || activeSubs.has(chip.slug.replace(/-/g, ' '));
                 return (
                   <Link
                     key={chip.slug}
