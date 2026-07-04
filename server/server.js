@@ -216,6 +216,7 @@ app.use('/api/banners',            bannerRoutes);
 app.use('/api/chatbot',            chatbotRoutes);
 app.use('/api/places',             placesRoutes);
 app.use('/api/tenants',            require('./routes/tenant.routes'));
+app.use('/api/stores',             require('./routes/store.routes'));
 app.use('/api/erm',                require('./routes/erm.routes'));
 app.use('/api/employees',          require('./routes/employee.routes'));
 app.use('/api/contacts',           require('./routes/contact.routes'));

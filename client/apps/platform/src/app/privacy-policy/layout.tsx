@@ -14,6 +14,26 @@ export const metadata: Metadata = {
   alternates: { canonical: `${BASE_URL}/privacy-policy` },
 };
 
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  name: "Privacy Policy",
+  description: "How DrinksHarbour collects, uses, and protects your personal information.",
+  url: `${BASE_URL}/privacy-policy`,
+  breadcrumb: {
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: BASE_URL },
+      { "@type": "ListItem", position: 2, name: "Privacy Policy", item: `${BASE_URL}/privacy-policy` },
+    ],
+  },
+};
+
 export default function PrivacyPolicyLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return (
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      {children}
+    </>
+  );
 }

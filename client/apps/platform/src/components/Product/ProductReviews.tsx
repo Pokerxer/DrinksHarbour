@@ -148,7 +148,7 @@ function ImageUploadZone({
         {/* Existing previews */}
         {images.map((img, i) => (
           <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden border border-gray-200 group flex-shrink-0">
-            <img src={img.preview} alt="" className="w-full h-full object-cover" />
+            <img src={img.preview} alt="Review image preview" className="w-full h-full object-cover" />
             <button
               type="button"
               onClick={() => remove(i)}
@@ -325,7 +325,7 @@ function ReviewCard({ r }: { r: Review }) {
             >
               <img
                 src={r.images[lightbox].url}
-                alt=""
+                alt="Enlarged review image"
                 className="w-full max-h-[80vh] object-contain rounded-2xl"
               />
               {r.images.length > 1 && (

@@ -14,6 +14,26 @@ export const metadata: Metadata = {
   alternates: { canonical: `${BASE_URL}/vip-signup` },
 };
 
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  name: "VIP Membership — DrinksHarbour",
+  description: "Join DrinksHarbour VIP for exclusive discounts, early access, and members-only offers on premium beverages.",
+  url: `${BASE_URL}/vip-signup`,
+  breadcrumb: {
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: BASE_URL },
+      { "@type": "ListItem", position: 2, name: "VIP Membership", item: `${BASE_URL}/vip-signup` },
+    ],
+  },
+};
+
 export default function VipSignupLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return (
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      {children}
+    </>
+  );
 }

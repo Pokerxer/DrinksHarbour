@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     title: 'Blog — Drinks Guides, Recipes & Lifestyle | DrinksHarbour',
     description:
       'Expert drink guides, cocktail recipes, tasting notes, and lifestyle articles from Nigeria\'s premier beverage store.',
-    images: [{ url: '/og-default.jpg', width: 1200, height: 630, alt: 'DrinksHarbour Blog' }],
+    images: [{ url: '/images/logo.png', width: 1200, height: 630, alt: 'DrinksHarbour Blog' }],
     locale: 'en_NG',
   },
   twitter: {
@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     site: '@DrinkHarbour',
     title: 'Blog — Drinks Guides, Recipes & Lifestyle | DrinksHarbour',
     description: 'Expert drink guides, cocktail recipes, tasting notes and lifestyle content.',
-    images: ['/og-default.jpg'],
+    images: ['/images/logo.png'],
   },
 };
 

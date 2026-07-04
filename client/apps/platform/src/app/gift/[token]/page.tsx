@@ -73,7 +73,7 @@ export default function GiftClaimPage() {
         <div className="w-16 h-16 rounded-2xl bg-stone-100 flex items-center justify-center">
           <Icon.PiGiftBold size={28} className="text-stone-400" />
         </div>
-        <p className="text-stone-600 font-semibold">{loadErr}</p>
+        <h1 className="text-lg font-semibold text-stone-600">{loadErr}</h1>
         <Link href="/" className="text-sm font-semibold text-red-700 flex items-center gap-1">
           <Icon.PiArrowLeftBold size={12} /> Back to DrinksHarbour
         </Link>
@@ -96,7 +96,7 @@ export default function GiftClaimPage() {
           <Icon.PiCheckCircleBold size={32} className="text-green-600" />
         </div>
         <div className="text-center">
-          <p className="text-lg font-black text-stone-900">Gift card claimed!</p>
+          <h1 className="text-lg font-black text-stone-900">Gift card claimed!</h1>
           <p className="text-sm text-stone-500 mt-1">{fmtNgn(gift.amount)} has been added to your gift cards.</p>
         </div>
         <Link
@@ -113,6 +113,7 @@ export default function GiftClaimPage() {
     <div className="min-h-[70vh] bg-stone-50 py-12 px-4">
       <div className="max-w-md mx-auto space-y-6">
         <div className="text-center">
+          <h1 className="sr-only">Claim your gift card</h1>
           <div className="inline-flex items-center gap-2 bg-red-50 text-red-700 px-4 py-1.5 rounded-full text-sm font-bold mb-4">
             <Icon.PiGiftBold size={14} /> You have a gift!
           </div>

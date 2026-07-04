@@ -92,7 +92,7 @@ function MembershipCard({ tier, points, lifetimePoints, multiplier, nextTier, ne
         <div className="flex items-start justify-between mb-6">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <img src="/images/favicon.png" alt="" className="w-4 h-4 opacity-90 brightness-150" />
+              <img src="/images/favicon.png" alt="DrinksHarbour" className="w-4 h-4 opacity-90 brightness-150" />
               <span className="text-[10px] font-bold tracking-[0.18em] uppercase" style={{ color: t.lightText }}>DrinksHarbour</span>
             </div>
             <p className="text-3xl font-black tracking-tight">{t.name}</p>

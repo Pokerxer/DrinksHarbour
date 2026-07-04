@@ -61,7 +61,7 @@ export default function OrderCard({ order, userEmail }: OrderCardProps) {
               return (
                 <div key={i} className="w-11 h-11 rounded-xl border-2 border-white bg-stone-100 overflow-hidden relative">
                   {img ? (
-                    <Image src={img} alt="" fill className="object-cover" />
+                    <Image src={img} alt="Order item thumbnail" fill className="object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <Icon.PiPackageBold size={13} className="text-stone-300" />

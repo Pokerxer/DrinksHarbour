@@ -497,7 +497,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                             style={{ backgroundColor: bg }}
                           >
                             {vendor.tenant.logo?.url ? (
-                              <Image src={vendor.tenant.logo.url} alt="" width={44} height={44} className="rounded-full object-cover" />
+                              <Image src={vendor.tenant.logo.url} alt={`${vendor.tenant.name} logo`} width={44} height={44} className="rounded-full object-cover" />
                             ) : (
                               getInitials(vendor.tenant.name)
                             )}

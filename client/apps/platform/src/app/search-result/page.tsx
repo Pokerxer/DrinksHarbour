@@ -87,9 +87,9 @@ function SearchResultContent() {
       <div className="shop-product breadcrumb1 lg:py-20 md:py-14 py-10">
         <div className="container">
           <div className="flex flex-col items-center">
-            <div className="heading4 text-center">
+            <h1 className="text-2xl font-bold text-gray-900 text-center">
               Found {products.length} results for "{query}"
-            </div>
+            </h1>
             <div className="lg:w-1/2 sm:w-3/5 w-full md:h-[52px] h-[44px] sm:mt-8 mt-5">
               <div className="w-full h-full relative">
                 <input
@@ -118,9 +118,9 @@ function SearchResultContent() {
             ) : products.length === 0 ? (
               <div className="text-center py-20">
                 <Icon.PiMagnifyingGlass size={64} className="mx-auto text-gray-300 mb-4" />
-                <div className="text-2xl font-semibold text-gray-900 mb-2">
+                <h1 className="text-2xl font-semibold text-gray-900 mb-2">
                   No products found
-                </div>
+                </h1>
                 <p className="text-gray-500">
                   We couldn't find any products matching "{query}"
                 </p>

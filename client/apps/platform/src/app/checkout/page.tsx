@@ -740,7 +740,7 @@ export default function CheckoutPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="text-center px-6">
         <Icon.PiShoppingCartBold size={56} className="mx-auto text-gray-200 mb-4" />
-        <h2 className="text-xl font-black text-gray-900 mb-2">Your cart is empty</h2>
+        <h1 className="text-xl font-black text-gray-900 mb-2">Your cart is empty</h1>
         <p className="text-gray-500 text-sm mb-6">Add products before checking out.</p>
         <Link href="/shop" className="inline-flex items-center gap-2 bg-gradient-to-br from-red-700 to-red-900 text-white px-6 py-3 rounded-xl font-bold text-sm">
           <Icon.PiStorefrontBold size={16} /> Browse Shop
@@ -860,6 +860,7 @@ export default function CheckoutPage() {
 
       <div className="bg-gray-50 min-h-screen">
         <div className="container mx-auto max-w-6xl px-4 py-8">
+          <h1 className="sr-only">Checkout</h1>
           <form onSubmit={handleSubmit}>
 
             <AnimatePresence>

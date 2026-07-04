@@ -4036,7 +4036,7 @@ const searchProducts = async (searchParams = {}) => {
                   { $eq: ['$product', '$$productId'] },
                   // active = admin-approved; low_stock/out_of_stock = approved but stock changed
                   { $in: ['$status', ['active', 'low_stock', 'out_of_stock']] },
-                  ...(tenantId ? [{ $eq: ['$tenant', mongoose.Types.ObjectId(tenantId)] }] : []),
+                  ...(tenantId ? [{ $eq: ['$tenant', new mongoose.Types.ObjectId(tenantId)] }] : []),
                 ],
               },
             },

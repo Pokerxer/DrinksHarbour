@@ -602,7 +602,7 @@ export default function ChatbotWidget() {
                           <img
                             key={idx}
                             src={src}
-                            alt=""
+                            alt="Product image from chatbot"
                             className={`rounded-xl object-cover ${msg.images!.length === 1 ? 'max-h-48 w-full' : 'h-24 w-full'}`}
                           />
                         ))}
@@ -734,7 +734,7 @@ export default function ChatbotWidget() {
             <div className="flex gap-2 px-4 py-2 bg-white border-t border-red-100 flex-shrink-0 flex-wrap items-center">
               {imagePreviews.map((src, i) => (
                 <div key={i} className="relative flex-shrink-0">
-                  <img src={src} alt="" className="w-12 h-12 rounded-xl object-cover ring-1 ring-red-100" />
+                  <img src={src} alt="Chat attachment preview" className="w-12 h-12 rounded-xl object-cover ring-1 ring-red-100" />
                   <button
                     onClick={() => removeImage(i)}
                     aria-label="Remove image"

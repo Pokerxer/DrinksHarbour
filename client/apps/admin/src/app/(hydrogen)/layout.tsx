@@ -9,7 +9,9 @@ import { LAYOUT_OPTIONS } from '@/config/enums';
 
 const HeliumLayout = dynamic(() => import('@/layouts/helium/helium-layout'));
 const LithiumLayout = dynamic(() => import('@/layouts/lithium/lithium-layout'));
-const BerylLiumLayout = dynamic(() => import('@/layouts/beryllium/beryllium-layout'));
+const BerylLiumLayout = dynamic(
+  () => import('@/layouts/beryllium/beryllium-layout')
+);
 const BoronLayout = dynamic(() => import('@/layouts/boron/boron-layout'));
 const CarbonLayout = dynamic(() => import('@/layouts/carbon/carbon-layout'));
 

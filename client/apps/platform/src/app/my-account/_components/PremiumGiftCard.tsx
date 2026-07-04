@@ -229,7 +229,7 @@ export default function PremiumGiftCard({
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/images/favicon.png" alt="" style={{ width: 15, height: 15, opacity: 0.9, filter: 'brightness(1.5)' }} />
+                  <img src="/images/favicon.png" alt="DrinksHarbour" style={{ width: 15, height: 15, opacity: 0.9, filter: 'brightness(1.5)' }} />
                   <span style={{ color: accent, fontSize: 8.5, fontWeight: 800, letterSpacing: '0.18em', textTransform: 'uppercase' }}>DrinksHarbour</span>
                 </div>
                 <span style={{ color: accent, fontSize: 8, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', opacity: 0.65 }}>{tierLabel}</span>

@@ -206,11 +206,11 @@ function VerifyContent() {
             </div>
           </div>
 
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">
             {stage === 'verifying' && 'Verifying Payment…'}
             {stage === 'creating' && 'Confirming Order…'}
             {stage === 'success' && 'Payment Successful!'}
-          </h2>
+          </h1>
           <p className="text-gray-500 text-sm">
             {stage === 'verifying' && 'Confirming your payment with Paystack. Please wait.'}
             {stage === 'creating' && 'Creating your order. Please do not close this page.'}
@@ -234,7 +234,7 @@ function VerifyContent() {
         <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
           <Icon.PiWarningCircle size={40} className="text-red-600" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-3">Payment Issue</h2>
+        <h1 className="text-2xl font-bold text-gray-900 mb-3">Payment Issue</h1>
         <p className="text-gray-600 mb-2 text-sm leading-relaxed">{errorMessage}</p>
         {reference && (
           <p className="text-xs text-gray-400 mb-6">

@@ -205,7 +205,7 @@ export default function PrivacyPolicyPage() {
           </div>
 
           {/* ── Policy content ─────────────────────────────────────────────── */}
-          <main className="lg:col-span-3 space-y-10">
+          <div className="lg:col-span-3 space-y-10">
 
             {/* Intro box */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
@@ -490,7 +490,7 @@ export default function PrivacyPolicyPage() {
               </Link>
             </div>
 
-          </main>
+          </div>
         </div>
       </div>
     </div>

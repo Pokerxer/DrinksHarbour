@@ -56,7 +56,7 @@ export default function ForgotPassword() {
           <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-green-50 flex items-center justify-center">
             <Icon.PiEnvelopeBold size={28} className="text-green-600" />
           </div>
-          <h2 className="text-2xl font-black text-gray-900 mb-2">Check your inbox</h2>
+          <h1 className="text-2xl font-black text-gray-900 mb-2">Check your inbox</h1>
           <p className="text-gray-500 text-sm mb-1">We sent a password reset link to</p>
           <p className="font-semibold text-gray-800 mb-6 break-all">{email}</p>
           <p className="text-xs text-gray-400 mb-8">
@@ -91,7 +91,7 @@ export default function ForgotPassword() {
             <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-red-50 flex items-center justify-center">
               <Icon.PiLockKeyBold size={22} className="text-[#b20202]" />
             </div>
-            <h2 className="text-xl font-black text-gray-900">Forgot your password?</h2>
+            <h1 className="text-xl font-black text-gray-900">Forgot your password?</h1>
             <p className="mt-2 text-sm text-gray-500">
               Enter your email and we&apos;ll send you a reset link.
             </p>

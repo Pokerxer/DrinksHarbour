@@ -15,6 +15,26 @@ export const metadata: Metadata = {
   alternates: { canonical: `${BASE_URL}/sustainability` },
 };
 
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  name: "Sustainability",
+  description: "DrinksHarbour's commitment to sustainable practices, responsible sourcing, and supporting local communities across Nigeria.",
+  url: `${BASE_URL}/sustainability`,
+  breadcrumb: {
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: BASE_URL },
+      { "@type": "ListItem", position: 2, name: "Sustainability", item: `${BASE_URL}/sustainability` },
+    ],
+  },
+};
+
 export default function SustainabilityLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return (
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      {children}
+    </>
+  );
 }

@@ -564,7 +564,7 @@ const ModalQuickview: React.FC = () => {
                   {typeof selectedVendor.tenant.logo === "string" ? (
                     <Image
                       src={selectedVendor.tenant.logo}
-                      alt=""
+                      alt={`${selectedVendor.tenant.name} logo`}
                       width={48}
                       height={48}
                       className="rounded-xl"
@@ -632,7 +632,7 @@ const ModalQuickview: React.FC = () => {
                             {typeof vendor.tenant.logo === "string" ? (
                               <Image
                                 src={vendor.tenant.logo}
-                                alt=""
+                                alt={`${vendor.tenant.name} logo`}
                                 width={24}
                                 height={24}
                                 className="rounded-full"

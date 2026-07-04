@@ -24,7 +24,7 @@ const ChatbotWidget   = dynamic(() => import("@/components/Chatbot/ChatbotWidget
 const WhatsAppButton  = dynamic(() => import("@/components/WhatsApp/WhatsAppButton"));
 const PopupBanner     = dynamic(() => import("@/components/Banner/PopupBanner"));
 
-const unkempt = Unkempt({ subsets: ["latin"], weight: ["400", "700"], variable: "--font-unkempt" });
+const unkempt = Unkempt({ subsets: ["latin"], weight: ["400", "700"], variable: "--font-unkempt", display: "swap" });
 const kavoon = Kavoon({ subsets: ["latin"], weight: ["400"], variable: "--font-kavoon", display: "swap" });
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
@@ -63,7 +63,7 @@ export const metadata: Metadata = {
       "Nigeria's premier online beverage store. Shop wines, spirits, beers and more with fast delivery.",
     images: [
       {
-        url: "/og-default.jpg",
+        url: "/images/logo.png",
         width: 1200,
         height: 630,
         alt: "DrinksHarbour — Premium Beverages",
@@ -75,7 +75,7 @@ export const metadata: Metadata = {
     title: "DrinksHarbour — Premium Beverages Delivered in Nigeria",
     description:
       "Nigeria's premier online beverage store. Shop wines, spirits, beers and more with fast delivery.",
-    images: ["/og-default.jpg"],
+    images: ["/images/logo.png"],
     site: "@drinksharbour",
     creator: "@drinksharbour",
   },
@@ -101,11 +101,10 @@ const orgJsonLd = {
     "https://www.instagram.com/drinksharbour",
     "https://www.facebook.com/drinksharbour",
   ],
-  contactPoint: {
-    "@type": "ContactPoint",
-    contactType: "customer support",
-    availableLanguage: "English",
-  },
+  contactPoint: [
+    { "@type": "ContactPoint", contactType: "customer support", telephone: "+234-1-234-5678", email: "hello@drinksharbour.com", availableLanguage: "English" },
+    { "@type": "ContactPoint", contactType: "sales", telephone: "+234-1-234-5679", email: "sales@drinksharbour.com", availableLanguage: "English" },
+  ],
 };
 
 const websiteJsonLd = {
@@ -136,7 +135,7 @@ export default async function RootLayout({
   return (
     <GlobalProvider>
       <TenantProvider initialTenant={tenant}>
-        <html lang="en">
+        <html lang="en-NG">
           <body className={`${unkempt.className} ${kavoon.variable}`}>
             <script
               type="application/ld+json"
@@ -147,13 +146,19 @@ export default async function RootLayout({
               dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
             />
             {/* Preload LCP hero image */}
-            <link rel="preload" as="image" href="/og-default.jpg" fetchpriority="high" />
+            <link rel="preload" as="image" href="/images/logo.png" fetchpriority="high" />
             {/* Preconnect to third-party origins */}
             <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
+            {/* Speculation Rules — prerender likely navigations on hover */}
+            <script type="speculationrules">
+              {JSON.stringify({
+                prerender: [{ where: { href_matches: "/*" }, eagerness: "moderate" }],
+              })}
+            </script>
             <AnalyticsTracker />
             <AgeGate />
             <Header variant="default" showAnnouncement={false} />
-            {children}
+            <main id="main-content">{children}</main>
             <ModalCart />
             <ModalWishlist />
             <ModalSearch />

@@ -58,7 +58,7 @@ export async function generateMetadata({
   const title      = buildTitle(p);
   const description = buildDescription(p);
   const keywords   = buildKeywords(p);
-  const ogImage    = p.primaryImage?.url || p.images?.[0]?.url || `${BASE_URL}/og-default.jpg`;
+  const ogImage    = p.primaryImage?.url || p.images?.[0]?.url || `${BASE_URL}/images/logo.png`;
   const allImages  = [
     ...(p.primaryImage?.url ? [{ url: p.primaryImage.url, width: 800, height: 800, alt: p.name }] : []),
     ...(p.images ?? [])
@@ -255,7 +255,7 @@ function buildProductSchema(p: any, slug: string): object {
     "@type":    "Product",
     name:        p.name,
     description: p.metaDescription || p.shortDescription || p.description || undefined,
-    image:       allImageUrls.length > 0 ? allImageUrls : (p.primaryImage?.url || `${BASE_URL}/og-default.jpg`),
+    image:       allImageUrls.length > 0 ? allImageUrls : (p.primaryImage?.url || `${BASE_URL}/images/logo.png`),
     url:         productUrl,
     // Prefer real identifiers over MongoDB _id
     ...(p.sku     ? { sku:    p.sku }     : { sku: p._id }),

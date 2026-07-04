@@ -96,7 +96,7 @@ function ResetPasswordContent() {
           <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-red-50 flex items-center justify-center">
             <Icon.PiLockKeyOpenBold size={22} className="text-[#b20202]" />
           </div>
-          <h2 className="text-xl font-black text-gray-900">Set a new password</h2>
+          <h1 className="text-xl font-black text-gray-900">Set a new password</h1>
           <p className="mt-1.5 text-sm text-gray-500">
             Must be 8+ characters with uppercase, lowercase, number & special character.
           </p>

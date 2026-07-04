@@ -15,6 +15,26 @@ export const metadata: Metadata = {
   alternates: { canonical: `${BASE_URL}/careers` },
 };
 
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  name: "Careers at DrinksHarbour",
+  description: "Career opportunities at DrinksHarbour, Nigeria's leading online beverage platform.",
+  url: `${BASE_URL}/careers`,
+  breadcrumb: {
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: BASE_URL },
+      { "@type": "ListItem", position: 2, name: "Careers", item: `${BASE_URL}/careers` },
+    ],
+  },
+};
+
 export default function CareersLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return (
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      {children}
+    </>
+  );
 }

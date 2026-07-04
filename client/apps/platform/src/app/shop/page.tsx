@@ -1083,8 +1083,8 @@ export async function generateMetadata({
         'DrinksHarbour sale', 'online drinks sale Nigeria',
       ],
       alternates: { canonical: `${BASE_URL}/shop?sale=true` },
-      openGraph: { type: 'website', url: `${BASE_URL}/shop?sale=true`, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630 }] },
-      twitter:   { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
+      openGraph: { type: 'website', url: `${BASE_URL}/shop?sale=true`, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/images/logo.png', width: 1200, height: 630 }] },
+      twitter:   { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/images/logo.png'] },
     };
   }
 
@@ -1111,8 +1111,8 @@ export async function generateMetadata({
       description,
       keywords: [...new Set([...brandKeywords(brand, subLabel), ...subKw])],
       alternates: { canonical: url },
-      openGraph: { type: 'website', url, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630 }] },
-      twitter:   { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
+      openGraph: { type: 'website', url, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/images/logo.png', width: 1200, height: 630 }] },
+      twitter:   { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/images/logo.png'] },
     };
   }
 
@@ -1130,8 +1130,8 @@ export async function generateMetadata({
       description,
       keywords: [...(subInfo?.keywords ?? [`buy ${subLabel.toLowerCase()} Nigeria`, `${subLabel.toLowerCase()} online Nigeria`, `${subLabel.toLowerCase()} delivery Nigeria`]), SITE_NAME],
       alternates: { canonical: url },
-      openGraph: { type: 'website', url, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630, alt: `${subLabel} — ${SITE_NAME}` }] },
-      twitter:   { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
+      openGraph: { type: 'website', url, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/images/logo.png', width: 1200, height: 630, alt: `${subLabel} — ${SITE_NAME}` }] },
+      twitter:   { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/images/logo.png'] },
     };
   }
 
@@ -1148,8 +1148,8 @@ export async function generateMetadata({
       description,
       keywords: brandKeywords(brand, catLabel),
       alternates: { canonical: url },
-      openGraph: { type: 'website', url, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630 }] },
-      twitter:   { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
+      openGraph: { type: 'website', url, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/images/logo.png', width: 1200, height: 630 }] },
+      twitter:   { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/images/logo.png'] },
     };
   }
 
@@ -1164,8 +1164,8 @@ export async function generateMetadata({
       description,
       keywords: brandKeywords(brand),
       alternates: { canonical: brandUrl },
-      openGraph: { type: 'website', url: brandUrl, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630 }] },
-      twitter:   { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
+      openGraph: { type: 'website', url: brandUrl, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/images/logo.png', width: 1200, height: 630 }] },
+      twitter:   { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/images/logo.png'] },
     };
   }
 
@@ -1190,8 +1190,8 @@ export async function generateMetadata({
         SITE_NAME,
       ],
       alternates: { canonical: originUrl },
-      openGraph: { type: 'website', url: originUrl, siteName: SITE_NAME, title: `${pageTitle} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630, alt: `${originAdj} Drinks — ${SITE_NAME}` }] },
-      twitter:   { card: 'summary_large_image', title: `${pageTitle} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
+      openGraph: { type: 'website', url: originUrl, siteName: SITE_NAME, title: `${pageTitle} | ${SITE_NAME}`, description, images: [{ url: '/images/logo.png', width: 1200, height: 630, alt: `${originAdj} Drinks — ${SITE_NAME}` }] },
+      twitter:   { card: 'summary_large_image', title: `${pageTitle} | ${SITE_NAME}`, description, images: ['/images/logo.png'] },
     };
   }
 
@@ -1216,8 +1216,8 @@ export async function generateMetadata({
         SITE_NAME,
       ],
       alternates: { canonical: flavorUrl },
-      openGraph: { type: 'website', url: flavorUrl, siteName: SITE_NAME, title: `${pageTitle} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630 }] },
-      twitter:   { card: 'summary_large_image', title: `${pageTitle} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
+      openGraph: { type: 'website', url: flavorUrl, siteName: SITE_NAME, title: `${pageTitle} | ${SITE_NAME}`, description, images: [{ url: '/images/logo.png', width: 1200, height: 630 }] },
+      twitter:   { card: 'summary_large_image', title: `${pageTitle} | ${SITE_NAME}`, description, images: ['/images/logo.png'] },
     };
   }
 
@@ -1246,8 +1246,8 @@ export async function generateMetadata({
         SITE_NAME,
       ],
       alternates: { canonical: catUrl },
-      openGraph: { type: 'website', url: catUrl, siteName: SITE_NAME, title: `${pageTitle} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630, alt: `${subLabel || catLabel} — ${SITE_NAME}` }] },
-      twitter:   { card: 'summary_large_image', title: `${pageTitle} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
+      openGraph: { type: 'website', url: catUrl, siteName: SITE_NAME, title: `${pageTitle} | ${SITE_NAME}`, description, images: [{ url: '/images/logo.png', width: 1200, height: 630, alt: `${subLabel || catLabel} — ${SITE_NAME}` }] },
+      twitter:   { card: 'summary_large_image', title: `${pageTitle} | ${SITE_NAME}`, description, images: ['/images/logo.png'] },
     };
   }
 
@@ -1272,9 +1272,9 @@ export async function generateMetadata({
     openGraph: {
       type: 'website', url: canonicalUrl, siteName: SITE_NAME,
       title: `${title} | ${SITE_NAME}`, description,
-      images: [{ url: '/og-default.jpg', width: 1200, height: 630, alt: `${SITE_NAME} Shop` }],
+      images: [{ url: '/images/logo.png', width: 1200, height: 630, alt: `${SITE_NAME} Shop` }],
     },
-    twitter: { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
+    twitter: { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/images/logo.png'] },
   };
 }
 
