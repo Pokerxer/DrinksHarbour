@@ -1,15 +1,17 @@
 // @ts-nocheck
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useIsMounted } from '@core/hooks/use-is-mounted';
 import HydrogenLayout from '@/layouts/hydrogen/layout';
-import HeliumLayout from '@/layouts/helium/helium-layout';
-import LithiumLayout from '@/layouts/lithium/lithium-layout';
-import BerylLiumLayout from '@/layouts/beryllium/beryllium-layout';
-import BoronLayout from '@/layouts/boron/boron-layout';
-import CarbonLayout from '@/layouts/carbon/carbon-layout';
 import { useLayout } from '@/layouts/use-layout';
 import { LAYOUT_OPTIONS } from '@/config/enums';
+
+const HeliumLayout = dynamic(() => import('@/layouts/helium/helium-layout'));
+const LithiumLayout = dynamic(() => import('@/layouts/lithium/lithium-layout'));
+const BerylLiumLayout = dynamic(() => import('@/layouts/beryllium/beryllium-layout'));
+const BoronLayout = dynamic(() => import('@/layouts/boron/boron-layout'));
+const CarbonLayout = dynamic(() => import('@/layouts/carbon/carbon-layout'));
 
 type LayoutProps = {
   children: React.ReactNode;

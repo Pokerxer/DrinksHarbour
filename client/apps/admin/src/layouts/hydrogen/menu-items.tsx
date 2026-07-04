@@ -1,7 +1,6 @@
 import { DUMMY_ID } from '@/config/constants';
 import { routes } from '@/config/routes';
 import {
-  PiAirplaneTiltDuotone,
   PiApplePodcastsLogoDuotone,
   PiArrowsOutDuotone,
   PiArrowsOutLineHorizontalDuotone,
@@ -18,7 +17,6 @@ import {
   PiChatCenteredDotsDuotone,
   PiClipboardTextDuotone,
   PiCodesandboxLogoDuotone,
-  PiCoinDuotone,
   PiCreditCardDuotone,
   PiCurrencyCircleDollarDuotone,
   PiCurrencyDollarDuotone,
@@ -33,7 +31,6 @@ import {
   PiHammerDuotone,
   PiHeadsetDuotone,
   PiHourglassSimpleDuotone,
-  PiHouseLineDuotone,
   PiListNumbersDuotone,
   PiLockKeyDuotone,
   PiMapPinLineDuotone,
@@ -232,28 +229,6 @@ export const menuItems = [
     ],
   },
   // label start
-  {
-    name: 'Search & Filters',
-    platformOnly: true,
-  },
-  {
-    name: 'Real Estate',
-    href: routes.searchAndFilter.realEstate,
-    icon: <PiHouseLineDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'Flight Booking',
-    href: routes.searchAndFilter.flight,
-    icon: <PiAirplaneTiltDuotone />,
-    platformOnly: true,
-  },
-  {
-    name: 'NFT',
-    href: routes.searchAndFilter.nft,
-    icon: <PiCoinDuotone />,
-    platformOnly: true,
-  },
   // label end
   // label start
   {
