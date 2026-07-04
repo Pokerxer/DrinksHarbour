@@ -1119,6 +1119,53 @@ const sendEmailVerificationEmail = async ({ email, firstName, code }) => {
   });
 };
 
+const sendGiftCardEmail = async (to, { amount, senderName, message, expiresAt, claimLink }) => {
+  const formattedAmount = new Intl.NumberFormat('en-NG', {
+    style: 'currency', currency: 'NGN', maximumFractionDigits: 0,
+  }).format(amount);
+
+  const expiryStr = expiresAt
+    ? new Date(expiresAt).toLocaleDateString('en-NG', { dateStyle: 'long' })
+    : 'in 12 months';
+
+  const body = `
+    <div style="text-align:center;padding:24px 0 8px;">
+      <p style="font-size:15px;color:#57534e;margin:0 0 4px 0;">
+        <strong style="color:#1c1917;">${senderName || 'Someone'}</strong> sent you a gift card!
+      </p>
+      <p style="font-size:40px;font-weight:900;color:#c0392b;margin:8px 0 20px 0;">${formattedAmount}</p>
+      ${message ? `
+      <blockquote style="border-left:3px solid #c0392b;margin:0 auto 24px;padding:10px 16px;font-style:italic;color:#44403c;max-width:340px;text-align:left;">
+        &ldquo;${message}&rdquo;
+      </blockquote>` : ''}
+      <p style="font-size:13px;color:#78716c;margin:0 0 28px 0;">
+        Redeemable at any store on DrinksHarbour. Expires ${expiryStr}.
+      </p>
+      <a href="${claimLink}"
+         style="display:inline-block;background:#c0392b;color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 36px;border-radius:8px;">
+        Claim Your Gift
+      </a>
+      <p style="font-size:11px;color:#a8a29e;margin:20px 0 0 0;">
+        Or copy this link into your browser:<br/>${claimLink}
+      </p>
+    </div>
+  `;
+
+  const html = emailShell({
+    accentColor: '#c0392b',
+    accentLabel: `You received a gift card worth ${formattedAmount}`,
+    accentSubtitle: `From ${senderName || 'a friend'} on DrinksHarbour`,
+    body,
+    footerNote: 'Need help? Email support@drinksharbour.com',
+  });
+
+  return sendEmail({
+    to,
+    subject: `🎁 ${senderName || 'Someone'} sent you a ${formattedAmount} DrinksHarbour gift card!`,
+    html,
+  });
+};
+
 module.exports = {
   sendEmail,
   sendOrderConfirmationToCustomer,
@@ -1128,4 +1175,5 @@ module.exports = {
   sendEmailVerificationEmail,
   sendPasswordResetEmail,
   sendPurchaseOrderToVendor,
+  sendGiftCardEmail,
 };
