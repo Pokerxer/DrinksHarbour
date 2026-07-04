@@ -39,7 +39,6 @@
     "naija-state-local-government": "^1.1.2",
     "node-cron": "^3.0.3",
     "nodemailer": "^8.0.1",
-    "otplib": "^13.4.1",
     "papaparse": "^5.5.3",
     "paystack-api": "^2.0.6",
     "pdf-parse": "^1.1.1",
