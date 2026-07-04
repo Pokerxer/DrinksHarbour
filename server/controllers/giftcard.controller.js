@@ -19,6 +19,7 @@ const {
 const {
   validateGiftCardPurchase,
   formatGiftCardCode,
+  formatCardNumber,
   summarizeGiftCard,
 } = require('../services/giftCard.helpers');
 const paymentService = require('../services/payment.service');
@@ -35,22 +36,31 @@ const EXPIRY_MONTHS = 12;
  * @access  Private (customer)
  */
 const getMyGiftCards = asyncHandler(async (req, res) => {
-  const cards = await GiftCard.find({ purchasedBy: req.user._id })
-    .sort({ createdAt: -1 })
-    .lean();
+  const me = req.user._id;
+  const cards = await GiftCard.find({
+    $or: [{ purchasedBy: me }, { claimedBy: me }],
+  }).sort({ createdAt: -1 }).lean();
 
-  successResponse(res, cards.map(c => ({
-    _id: c._id,
-    code: c.code ? formatGiftCardCode(c.code) : null,
-    initialAmount: c.initialAmount,
-    balance: c.balance,
-    currency: c.currency,
-    status: c.status,
-    recipient: c.recipient,
-    design: c.design,
-    expiresAt: c.expiresAt,
-    createdAt: c.createdAt,
-  })), 'Gift cards retrieved');
+  successResponse(res, cards.map(c => {
+    const isBuyer = String(c.purchasedBy) === String(me);
+    return {
+      _id: c._id,
+      code: c.code ? formatGiftCardCode(c.code) : null,
+      cardNumber: c.cardNumber ? formatCardNumber(c.cardNumber) : null,
+      initialAmount: c.initialAmount,
+      balance: c.balance,
+      currency: c.currency,
+      status: c.status,
+      recipient: c.recipient,
+      design: c.design,
+      expiresAt: c.expiresAt,
+      createdAt: c.createdAt,
+      purchasedByMe: isBuyer,
+      claimToken: isBuyer ? (c.claimToken || null) : undefined,
+      claimedBy: c.claimedBy ? String(c.claimedBy) : null,
+      claimedAt: c.claimedAt || null,
+    };
+  }), 'Gift cards retrieved');
 });
 
 /**
@@ -59,7 +69,11 @@ const getMyGiftCards = asyncHandler(async (req, res) => {
  * @access  Private (customer)
  */
 const getGiftCard = asyncHandler(async (req, res) => {
-  const card = await GiftCard.findOne({ _id: req.params.id, purchasedBy: req.user._id }).lean();
+  const me = req.user._id;
+  const card = await GiftCard.findOne({
+    _id: req.params.id,
+    $or: [{ purchasedBy: me }, { claimedBy: me }],
+  }).lean();
   if (!card) return res.status(404).json({ success: false, message: 'Gift card not found' });
 
   // Render the signed QR token to a scannable image (owner-only; endpoint is scoped).
@@ -78,6 +92,7 @@ const getGiftCard = asyncHandler(async (req, res) => {
   successResponse(res, {
     _id: card._id,
     code: card.code ? formatGiftCardCode(card.code) : null,
+    cardNumber: card.cardNumber ? formatCardNumber(card.cardNumber) : null,
     initialAmount: card.initialAmount,
     balance: card.balance,
     currency: card.currency,
@@ -89,6 +104,10 @@ const getGiftCard = asyncHandler(async (req, res) => {
     qrToken: card.qrToken || null,
     qrDataUrl,
     summary,
+    purchasedByMe: String(card.purchasedBy) === String(me),
+    claimToken: String(card.purchasedBy) === String(me) ? (card.claimToken || null) : undefined,
+    claimedBy: card.claimedBy ? String(card.claimedBy) : null,
+    claimedAt: card.claimedAt || null,
     transactions: transactions.map(t => ({
       _id: t._id,
       type: t.type,
@@ -132,12 +151,29 @@ const purchaseGiftCard = asyncHandler(async (req, res) => {
   });
 
   const reference = `DHGC-${card._id}-${Date.now()}`;
-  const payment = await paymentService.createPaystackTransaction(initialAmount, req.user.email, {
-    kind: 'gift_card_purchase',
-    giftCardId: String(card._id),
-    userId: String(req.user._id),
-    reference,
-  });
+  const frontendUrl =
+    process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3002';
+  const payment = await paymentService.createPaystackTransaction(
+    initialAmount,
+    req.user.email,
+    {
+      kind: 'gift_card_purchase',
+      giftCardId: String(card._id),
+      userId: String(req.user._id),
+      reference,
+    },
+    {
+      // Reuse our reference and embed gc_id in the callback URL so Paystack echoes
+      // it back on redirect — the frontend reads it from searchParams without needing
+      // sessionStorage (which can silently fail in certain browsers/modes).
+      reference,
+      callbackUrl: `${frontendUrl}/my-account/gift-cards?gc_id=${card._id}`,
+    },
+  );
+
+  // Persist the reference on the card so the complete-payment endpoint can retry
+  // verification without the client needing to supply the original reference.
+  await GiftCard.updateOne({ _id: card._id }, { paymentRef: reference });
 
   successResponse(res, {
     giftCardId: card._id,
@@ -199,6 +235,42 @@ const verifyPurchaseGiftCard = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Manually complete payment for a pending_payment gift card by re-checking
+ *          its stored Paystack reference. Called when the automatic post-redirect
+ *          verification fails (e.g. network drop, browser crash, popup blocker).
+ * @route   POST /api/gift-cards/:id/complete-payment
+ * @access  Private (customer)
+ */
+const completeGiftCardPayment = asyncHandler(async (req, res) => {
+  const card = await GiftCard.findOne({ _id: req.params.id, purchasedBy: req.user._id })
+    .select('_id status paymentRef');
+  if (!card) return res.status(404).json({ success: false, message: 'Gift card not found' });
+
+  if (card.status !== 'pending_payment') {
+    return successResponse(res, { alreadyIssued: true, giftCardId: card._id }, 'Gift card already issued');
+  }
+
+  if (!card.paymentRef) {
+    return res.status(400).json({ success: false, message: 'No payment reference on file — please contact support' });
+  }
+
+  const result = await paymentService.verifyPaystackTransaction(card.paymentRef);
+  if (!result.success) {
+    return res.status(400).json({ success: false, message: result.message || 'Payment not confirmed by Paystack yet — please wait and try again' });
+  }
+
+  const issued = await issueGiftCard({ giftCardId: card._id, paymentRef: result.data.reference, createdBy: req.user._id });
+  if (!issued.ok) return res.status(issued.status).json({ success: false, message: issued.message });
+
+  successResponse(res, {
+    giftCardId: card._id,
+    code: formatGiftCardCode(issued.card.code),
+    balance: issued.card.balance,
+    status: issued.card.status,
+  }, 'Gift card issued successfully');
+});
+
+/**
  * @desc    Redeem a gift card the customer owns into their platform wallet.
  *          Moves value card → wallet atomically; on a full drain the card flips
  *          to 'redeemed'. Redeeming into the wallet (vs spending at checkout) is
@@ -213,8 +285,18 @@ const redeemMyGiftCard = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Amount must be a positive whole number' });
   }
 
-  const card = await GiftCard.findOne({ _id: req.params.id, purchasedBy: req.user._id }).select('_id status balance code');
+  const me = req.user._id;
+  const card = await GiftCard.findOne({
+    _id: req.params.id,
+    $or: [{ purchasedBy: me }, { claimedBy: me }],
+  }).select('_id status balance code purchasedBy claimToken');
   if (!card) return res.status(404).json({ success: false, message: 'Gift card not found' });
+
+  // Buyer cannot redeem once the card has been designated as a gift.
+  const isBuyer = String(card.purchasedBy) === String(me);
+  if (isBuyer && card.claimToken) {
+    return res.status(403).json({ success: false, message: 'This card has been gifted and cannot be redeemed by the buyer' });
+  }
 
   // Idempotency: reject an accidental duplicate redeem of the same amount off the
   // same card within a short window (double-click / retry).
@@ -261,10 +343,151 @@ const redeemMyGiftCard = asyncHandler(async (req, res) => {
   }, 'Gift card redeemed to wallet');
 });
 
+// POST /api/gift-cards/pay-checkout — spend a gift card at checkout (any bearer with the code)
+const payWithGiftCard = asyncHandler(async (req, res) => {
+  const { code, amount } = req.body;
+  if (!code) return res.status(400).json({ success: false, message: 'Gift card code is required' });
+  const n = Number(amount);
+  if (!Number.isInteger(n) || n <= 0) return res.status(400).json({ success: false, message: 'Amount must be a positive integer' });
+
+  const result = await redeemGiftCard({ code, amount: n, source: 'checkout', createdBy: req.user._id });
+  if (!result.ok) return res.status(result.status || 400).json({ success: false, message: result.message });
+
+  return successResponse(res, {
+    cardBalance: result.balance,
+    cardStatus: result.card.status,
+    transactionId: result.tx?._id,
+  }, 'Gift card payment successful');
+});
+
+// GET /api/gift-cards/check?code=XXX — check an active gift card balance (pre-flight)
+const checkGiftCard = asyncHandler(async (req, res) => {
+  const { code } = req.query;
+  if (!code) return res.status(400).json({ success: false, message: 'Code is required' });
+  const { normalizeGiftCardCode } = require('../services/giftCard.helpers');
+  const card = await GiftCard.findOne({ code: normalizeGiftCardCode(code), status: 'active' }).select('balance cardNumber expiresAt');
+  if (!card) return res.status(404).json({ success: false, message: 'Gift card not found or not active' });
+  return successResponse(res, { balance: card.balance, cardNumber: card.cardNumber ? formatCardNumber(card.cardNumber) : null, expiresAt: card.expiresAt });
+});
+
+/**
+ * @desc    Public: look up a gift card by its claim token (no code/balance exposed).
+ * @route   GET /api/gift-cards/claim/:token
+ * @access  Public
+ */
+const getGiftCardByClaimToken = asyncHandler(async (req, res) => {
+  const card = await GiftCard.findOne({ claimToken: req.params.token })
+    .select('initialAmount currency design recipient claimedBy status')
+    .lean();
+  if (!card) return res.status(404).json({ success: false, message: 'Gift not found' });
+  if (card.claimedBy) {
+    return successResponse(res, { alreadyClaimed: true }, 'Gift already claimed');
+  }
+  if (card.status !== 'active') {
+    return res.status(400).json({ success: false, message: 'This gift card is no longer active' });
+  }
+  successResponse(res, {
+    amount: card.initialAmount,
+    currency: card.currency,
+    tier: card.design?.tier || null,
+    senderName: card.recipient?.name || null,
+    message: card.recipient?.message || null,
+    alreadyClaimed: false,
+  }, 'Gift card info retrieved');
+});
+
+/**
+ * @desc    Claim a gift card by token — links it to the authenticated user's account.
+ * @route   POST /api/gift-cards/claim/:token
+ * @access  Private (customer)
+ */
+const claimGiftCard = asyncHandler(async (req, res) => {
+  const card = await GiftCard.findOne({ claimToken: req.params.token })
+    .select('_id purchasedBy claimedBy status')
+    .lean();
+  if (!card) return res.status(404).json({ success: false, message: 'Gift not found' });
+  if (card.claimedBy) {
+    return res.status(400).json({ success: false, message: 'This gift has already been claimed' });
+  }
+  if (String(card.purchasedBy) === String(req.user._id)) {
+    return res.status(400).json({ success: false, message: 'You cannot claim your own gift card' });
+  }
+  if (card.status !== 'active') {
+    return res.status(400).json({ success: false, message: 'This gift card is no longer active' });
+  }
+
+  // Atomic update — only succeeds if still unclaimed (race-safe).
+  const result = await GiftCard.updateOne(
+    { _id: card._id, claimedBy: null },
+    { $set: { claimedBy: req.user._id, claimedAt: new Date() } }
+  );
+  if (result.modifiedCount === 0) {
+    return res.status(400).json({ success: false, message: 'This gift has already been claimed' });
+  }
+
+  successResponse(res, { giftCardId: card._id }, 'Gift card claimed successfully');
+});
+
+/**
+ * @desc    Send (or resend) a gift notification email for a card the buyer owns.
+ *          Also works on self-bought cards that were not originally gifted.
+ * @route   POST /api/gift-cards/:id/send-gift
+ * @access  Private (buyer only)
+ */
+const sendGiftAsGift = asyncHandler(async (req, res) => {
+  const { email, name, message } = req.body;
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ success: false, message: 'A valid recipient email is required' });
+  }
+
+  const card = await GiftCard.findOne({ _id: req.params.id, purchasedBy: req.user._id });
+  if (!card) return res.status(404).json({ success: false, message: 'Gift card not found' });
+  if (card.status !== 'active') {
+    return res.status(400).json({ success: false, message: 'Only active cards can be gifted' });
+  }
+  if (card.claimedBy) {
+    return res.status(400).json({ success: false, message: 'This card has already been claimed' });
+  }
+
+  // Reuse existing token on resend so old links stay valid.
+  if (!card.claimToken) card.claimToken = require('crypto').randomUUID();
+
+  card.recipient = {
+    email: email.toLowerCase().trim(),
+    name: name ? String(name).trim() : undefined,
+    message: message ? String(message).trim().slice(0, 280) : undefined,
+  };
+  await card.save();
+
+  const frontendUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3002';
+  try {
+    if (emailService?.sendGiftCardEmail) {
+      await emailService.sendGiftCardEmail(card.recipient.email, {
+        amount: card.initialAmount,
+        senderName: req.user.firstName,
+        message: card.recipient.message,
+        expiresAt: card.expiresAt,
+        claimLink: `${frontendUrl}/gift/${card.claimToken}`,
+      });
+    }
+  } catch { /* non-fatal */ }
+
+  successResponse(res, {
+    claimToken: card.claimToken,
+    recipientEmail: card.recipient.email,
+  }, 'Gift notification sent');
+});
+
 module.exports = {
   getMyGiftCards,
   getGiftCard,
   purchaseGiftCard,
   verifyPurchaseGiftCard,
+  completeGiftCardPayment,
   redeemMyGiftCard,
+  payWithGiftCard,
+  checkGiftCard,
+  getGiftCardByClaimToken,
+  claimGiftCard,
+  sendGiftAsGift,
 };
