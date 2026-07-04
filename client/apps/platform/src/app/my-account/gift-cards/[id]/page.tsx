@@ -5,16 +5,17 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 import { useAccount } from '../../AccountShell';
-import { useGiftCardDetail } from '../../_hooks/useGiftCards';
-import { giftCardTierById } from '../_giftCardTiers';
+import { useGiftCardDetail, useGiftCards } from '../../_hooks/useGiftCards';
+import PremiumGiftCard from '../../_components/PremiumGiftCard';
 import InlineAlert from '../../_components/InlineAlert';
 import { fmtNgn, fmtDate, fmtDateTime } from '../../_components/format';
 
-const TX_LABEL: Record<string, { label: string; color: string; sign: string }> = {
-  issue:      { label: 'Issued',     color: 'text-green-700', sign: '+' },
-  redeem:     { label: 'Redeemed',   color: 'text-red-700',   sign: '-' },
-  refund:     { label: 'Refund',     color: 'text-blue-700',  sign: '+' },
-  adjustment: { label: 'Adjustment', color: 'text-amber-700', sign: '' },
+
+const TX_LABEL: Record<string, { label: string; color: string; sign: string; dotBg: string }> = {
+  issue:      { label: 'Issued',     color: 'text-green-700', sign: '+', dotBg: 'bg-green-100' },
+  redeem:     { label: 'Redeemed',   color: 'text-red-700',   sign: '-', dotBg: 'bg-red-100' },
+  refund:     { label: 'Refund',     color: 'text-blue-700',  sign: '+', dotBg: 'bg-blue-100' },
+  adjustment: { label: 'Adjustment', color: 'text-amber-700', sign: '',  dotBg: 'bg-amber-100' },
 };
 
 export default function GiftCardDetailPage() {
@@ -22,11 +23,17 @@ export default function GiftCardDetailPage() {
   const params = useParams();
   const id = typeof params.id === 'string' ? params.id : Array.isArray(params.id) ? params.id[0] : null;
   const { card, transactions, loading, error, redeem } = useGiftCardDetail(token, id);
+  const { sendGift } = useGiftCards(token);
 
   const [redeemAmt, setRedeemAmt] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const [sendGiftOpen, setSendGiftOpen] = useState(false);
+  const [giftForm, setGiftForm] = useState({ email: '', name: '', message: '' });
+  const [sendingGift, setSendingGift] = useState(false);
+  const [resending, setResending] = useState(false);
 
   if (loading && !card) {
     return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-red-100 border-t-red-700 rounded-full animate-spin" /></div>;
@@ -40,9 +47,9 @@ export default function GiftCardDetailPage() {
     );
   }
 
-  const tier = giftCardTierById(card.design?.tier, card.initialAmount);
   const qrDataUrl = (card as any).qrDataUrl as string | null | undefined;
-  const canRedeem = card.status === 'active' && card.balance > 0;
+  // Buyer cannot redeem once claimToken is set (card is a gift in transit or claimed).
+  const canRedeem = card.status === 'active' && card.balance > 0 && !(card.purchasedByMe && card.claimToken);
   const maxRedeem = card.balance;
 
   const copyCode = () => {
@@ -64,63 +71,192 @@ export default function GiftCardDetailPage() {
     }
   };
 
+  const doResend = async () => {
+    if (!card.recipient?.email) return;
+    setResending(true);
+    await sendGift(card._id, {
+      email: card.recipient.email,
+      name: card.recipient.name,
+      message: card.recipient.message,
+    });
+    setResending(false);
+    setMsg({ ok: true, text: `Gift notification resent to ${card.recipient.email}` });
+  };
+
+  const doSendGift = async () => {
+    if (!giftForm.email) return;
+    setSendingGift(true);
+    const res = await sendGift(card._id, giftForm);
+    setSendingGift(false);
+    if (res.ok) {
+      setMsg({ ok: true, text: `Gift notification sent to ${giftForm.email}` });
+      setSendGiftOpen(false);
+      setGiftForm({ email: '', name: '', message: '' });
+    } else {
+      setMsg({ ok: false, text: res.message || 'Failed to send gift' });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Link href="/my-account/gift-cards" className="text-sm font-semibold text-red-700 flex items-center gap-1"><Icon.PiArrowLeftBold size={13} /> Back to gift cards</Link>
 
       {msg && <InlineAlert variant={msg.ok ? 'success' : 'error'}>{msg.text}</InlineAlert>}
 
+      {/* Gift Status panel — shown to buyer when card is in the gift flow */}
+      {card.purchasedByMe && card.claimToken && (
+        <div className={`rounded-xl border p-4 flex items-start justify-between gap-4 ${
+          card.claimedBy ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'
+        }`}>
+          <div className="flex items-start gap-3">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+              card.claimedBy ? 'bg-green-100' : 'bg-blue-100'
+            }`}>
+              {card.claimedBy
+                ? <Icon.PiCheckCircleBold size={16} className="text-green-600" />
+                : <Icon.PiClockBold size={16} className="text-blue-600" />}
+            </div>
+            <div>
+              <p className={`text-sm font-bold ${card.claimedBy ? 'text-green-800' : 'text-blue-800'}`}>
+                {card.claimedBy ? 'Gift claimed' : 'Awaiting claim'}
+              </p>
+              <p className={`text-xs mt-0.5 ${card.claimedBy ? 'text-green-600' : 'text-blue-600'}`}>
+                {card.claimedBy
+                  ? `Claimed${card.claimedAt ? ` on ${fmtDate(card.claimedAt)}` : ''}`
+                  : `Sent to ${card.recipient?.email || 'recipient'}`}
+              </p>
+            </div>
+          </div>
+          {!card.claimedBy && (
+            <button
+              onClick={doResend}
+              disabled={resending}
+              className="flex items-center gap-1.5 text-xs font-bold text-blue-700 bg-white border border-blue-200 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors flex-shrink-0 disabled:opacity-60"
+            >
+              {resending
+                ? <span className="w-3 h-3 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin" />
+                : <Icon.PiPaperPlaneTiltBold size={12} />}
+              Resend
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="grid md:grid-cols-2 gap-6">
         {/* Card art + QR */}
         <div className="space-y-4">
-          <div className={`rounded-2xl p-6 bg-gradient-to-br ${tier.gradient} ${tier.textClass} shadow-lg aspect-[1.6/1] flex flex-col justify-between`}>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className={`text-[10px] uppercase tracking-widest font-bold ${tier.accentClass}`}>DrinksHarbour · {tier.name}</p>
-                <p className="text-3xl font-black mt-1">{fmtNgn(card.balance)}</p>
-                <p className="text-xs opacity-70 mt-0.5">of {fmtNgn(card.initialAmount)}</p>
-              </div>
-              <Icon.PiGiftBold size={26} className="opacity-60" />
-            </div>
-            <p className="font-mono text-base tracking-wider">{card.code || 'DHGC-••••-••••-••••'}</p>
-          </div>
-
-          {qrDataUrl && (
-            <div className="bg-white rounded-xl border border-stone-200 shadow-sm p-5 flex flex-col items-center">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={qrDataUrl} alt="Gift card QR" className="w-40 h-40" />
-              <p className="text-xs text-stone-400 mt-2 text-center">Show this at any DrinksHarbour tenant to redeem in store.</p>
-            </div>
-          )}
+          <PremiumGiftCard
+            amount={card.initialAmount}
+            tierId={card.design?.tier}
+            code={card.code || undefined}
+            cardNumber={(card as any).cardNumber as string | null | undefined}
+            balance={card.balance}
+            qrDataUrl={qrDataUrl}
+            showFlip={true}
+          />
         </div>
 
-        {/* Details + redeem */}
+        {/* Details + actions */}
         <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-stone-200 shadow-sm p-5 space-y-3">
-            <Row label="Status" value={card.status.replace('_', ' ')} />
-            <Row label="Balance" value={`${fmtNgn(card.balance)} / ${fmtNgn(card.initialAmount)}`} />
-            <Row label="Expires" value={fmtDate(card.expiresAt)} />
-            {card.recipient?.name && <Row label="For" value={card.recipient.name} />}
-            {card.code && (
-              <button onClick={copyCode} className="w-full flex items-center justify-center gap-2 text-xs font-semibold text-stone-600 hover:text-red-700 bg-stone-50 px-3 py-2 rounded-lg">
-                {copied ? <Icon.PiCheckBold size={12} className="text-green-600" /> : <Icon.PiCopyBold size={12} />}
-                {copied ? 'Copied' : 'Copy code'}
-              </button>
+          <div className="bg-white rounded-xl border border-stone-200 shadow-sm divide-y divide-stone-100">
+            <div className="px-5 py-3.5 flex items-center justify-between">
+              <span className="text-xs text-stone-400">Status</span>
+              <span className="text-sm font-semibold text-stone-900 capitalize">{card.status.replace('_', ' ')}</span>
+            </div>
+            <div className="px-5 py-3.5 flex items-center justify-between">
+              <span className="text-xs text-stone-400">Balance</span>
+              <span className="text-sm font-semibold text-stone-900">{fmtNgn(card.balance)} <span className="text-xs font-normal text-stone-400">/ {fmtNgn(card.initialAmount)}</span></span>
+            </div>
+            <div className="px-5 py-3.5 flex items-center justify-between">
+              <span className="text-xs text-stone-400">Expires</span>
+              <span className="text-sm font-semibold text-stone-900">{fmtDate(card.expiresAt)}</span>
+            </div>
+            {/* Recipient row — shown to buyer */}
+            {card.purchasedByMe && card.recipient?.name && (
+              <div className="px-5 py-3.5 flex items-center justify-between">
+                <span className="text-xs text-stone-400">Recipient</span>
+                <span className="text-sm font-semibold text-stone-900">{card.recipient.name}</span>
+              </div>
+            )}
+            {/* "Gifted by" row — shown to the recipient */}
+            {!card.purchasedByMe && card.recipient?.name && (
+              <div className="px-5 py-3.5 flex items-center justify-between">
+                <span className="text-xs text-stone-400">Gifted by</span>
+                <span className="text-sm font-semibold text-stone-900 flex items-center gap-1.5">
+                  <Icon.PiGiftBold size={12} className="text-red-700" />
+                  {card.recipient.name}
+                </span>
+              </div>
+            )}
+            {/* Copy code — hidden for gifted-in-transit cards (buyer's view) */}
+            {card.code && !(card.purchasedByMe && card.claimToken) && (
+              <div className="px-5 py-3">
+                <button onClick={copyCode} className="w-full flex items-center justify-center gap-2 text-xs font-semibold text-stone-500 hover:text-red-700 bg-stone-50 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors border border-stone-200 hover:border-red-200">
+                  {copied ? <Icon.PiCheckBold size={12} className="text-green-600" /> : <Icon.PiCopyBold size={12} />}
+                  {copied ? 'Code copied' : 'Copy gift card code'}
+                </button>
+              </div>
+            )}
+            {/* Send as Gift — only on active self-bought cards not yet gifted */}
+            {card.purchasedByMe && !card.claimToken && card.status === 'active' && (
+              <div className="px-5 py-3">
+                <button
+                  onClick={() => setSendGiftOpen(v => !v)}
+                  className="w-full flex items-center justify-center gap-2 text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 px-3 py-2 rounded-lg transition-colors border border-red-200 hover:border-red-300"
+                >
+                  <Icon.PiGiftBold size={12} />
+                  {sendGiftOpen ? 'Cancel' : 'Send as a gift'}
+                </button>
+                {sendGiftOpen && (
+                  <div className="mt-3 space-y-2.5">
+                    <input
+                      type="email"
+                      placeholder="Recipient email *"
+                      value={giftForm.email}
+                      onChange={e => setGiftForm(f => ({ ...f, email: e.target.value }))}
+                      className="w-full px-3 py-2 border border-stone-200 rounded-lg text-sm bg-white focus:border-red-400 outline-none transition-all"
+                    />
+                    <input
+                      placeholder="Recipient name (optional)"
+                      value={giftForm.name}
+                      onChange={e => setGiftForm(f => ({ ...f, name: e.target.value }))}
+                      className="w-full px-3 py-2 border border-stone-200 rounded-lg text-sm bg-white focus:border-red-400 outline-none transition-all"
+                    />
+                    <textarea
+                      placeholder="Personal message (optional)"
+                      rows={2}
+                      value={giftForm.message}
+                      onChange={e => setGiftForm(f => ({ ...f, message: e.target.value }))}
+                      className="w-full px-3 py-2 border border-stone-200 rounded-lg text-sm bg-white focus:border-red-400 outline-none resize-none transition-all"
+                    />
+                    <button
+                      onClick={doSendGift}
+                      disabled={sendingGift || !giftForm.email}
+                      className="w-full flex items-center justify-center gap-2 bg-gradient-to-br from-red-700 to-red-900 text-white py-2 rounded-lg font-bold text-xs hover:from-red-800 hover:to-red-950 disabled:opacity-60 transition-all"
+                    >
+                      {sendingGift
+                        ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        : <Icon.PiPaperPlaneTiltBold size={11} />}
+                      {sendingGift ? 'Sending…' : 'Send gift notification'}
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
           {canRedeem && (
-            <div className="bg-white rounded-xl border border-stone-200 shadow-sm p-5 space-y-3">
-              <h3 className="font-black text-stone-900 text-sm flex items-center gap-2"><Icon.PiWalletBold size={15} className="text-red-700" /> Redeem to wallet</h3>
+            <div className="bg-white rounded-xl border border-stone-200 shadow-sm p-5 space-y-4">
+              <h3 className="font-semibold text-stone-900 text-sm flex items-center gap-2"><Icon.PiWalletBold size={14} className="text-red-700" /> Redeem to wallet</h3>
               <input type="range" min={0} max={maxRedeem} step={100} value={Math.min(redeemAmt, maxRedeem)}
-                onChange={e => setRedeemAmt(Number(e.target.value))} className="w-full accent-red-700" />
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-stone-400">₦0</span>
-                <span className="font-black text-red-700">{fmtNgn(Math.min(redeemAmt, maxRedeem))}</span>
-                <button onClick={() => setRedeemAmt(maxRedeem)} className="text-stone-500 hover:text-red-700 font-semibold">Max {fmtNgn(maxRedeem)}</button>
+                onChange={e => setRedeemAmt(Number(e.target.value))} className="w-full h-1.5 accent-red-700 rounded-full appearance-none bg-stone-100 cursor-pointer" />
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-stone-400">₦0</span>
+                <span className="font-bold text-xl text-red-700">{fmtNgn(Math.min(redeemAmt, maxRedeem))}</span>
+                <button onClick={() => setRedeemAmt(maxRedeem)} className="text-xs font-semibold text-stone-500 hover:text-red-700">Max</button>
               </div>
               <button onClick={doRedeem} disabled={submitting || redeemAmt < 1}
-                className="w-full flex items-center justify-center gap-2 bg-gradient-to-br from-red-700 to-red-900 text-white py-2.5 rounded-xl font-bold text-sm hover:from-red-800 hover:to-red-950 transition-all disabled:opacity-60">
+                className="w-full flex items-center justify-center gap-2 bg-gradient-to-br from-red-700 to-red-900 text-white py-2.5 rounded-xl font-bold text-sm hover:from-red-800 hover:to-red-950 disabled:opacity-60 shadow-lg shadow-red-900/20">
                 {submitting ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Icon.PiArrowRightBold size={14} />}
                 {submitting ? 'Redeeming…' : 'Move to wallet'}
               </button>
@@ -128,20 +264,33 @@ export default function GiftCardDetailPage() {
           )}
 
           <div className="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
-            <div className="px-5 py-3 border-b border-stone-100"><h3 className="font-black text-stone-900 text-sm">Activity</h3></div>
+            <div className="px-5 py-3 border-b border-stone-100">
+              <h3 className="font-semibold text-stone-900 text-sm">Activity</h3>
+            </div>
             {transactions.length === 0 ? (
-              <p className="p-6 text-sm text-stone-400 text-center">No activity yet.</p>
+              <div className="p-8 text-center">
+                <Icon.PiReceiptBold size={24} className="mx-auto text-stone-200 mb-2" />
+                <p className="text-sm text-stone-400">No activity yet.</p>
+              </div>
             ) : (
               <ul className="divide-y divide-stone-100">
                 {transactions.map(t => {
                   const m = TX_LABEL[t.type] || TX_LABEL.adjustment;
                   return (
                     <li key={t._id} className="px-5 py-3 flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-semibold text-stone-800">{m.label}</p>
-                        <p className="text-xs text-stone-400">{fmtDateTime(t.createdAt)}</p>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${m.dotBg}`}>
+                          {t.type === 'issue' ? <Icon.PiPlusBold size={11} className={m.color} /> :
+                           t.type === 'redeem' ? <Icon.PiArrowUpRightBold size={11} className={m.color} /> :
+                           t.type === 'refund' ? <Icon.PiArrowCounterClockwiseBold size={11} className={m.color} /> :
+                           <Icon.PiCircleBold size={11} className={m.color} />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-stone-800">{m.label}</p>
+                          <p className="text-xs text-stone-400">{fmtDateTime(t.createdAt)}</p>
+                        </div>
                       </div>
-                      <p className={`text-sm font-black ${m.color}`}>{m.sign}{fmtNgn(t.amount)}</p>
+                      <p className={`text-sm font-semibold flex-shrink-0 ml-3 ${m.color}`}>{m.sign}{fmtNgn(t.amount)}</p>
                     </li>
                   );
                 })}
@@ -150,15 +299,6 @@ export default function GiftCardDetailPage() {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between text-sm">
-      <span className="text-stone-500">{label}</span>
-      <span className="font-semibold text-stone-900 capitalize">{value}</span>
     </div>
   );
 }
