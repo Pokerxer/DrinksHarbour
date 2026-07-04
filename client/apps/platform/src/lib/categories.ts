@@ -11,6 +11,11 @@
  * with the two exported fetch functions + two filter helpers.
  */
 
+export interface CategoryImage {
+  url?: string;
+  alt?: string;
+}
+
 export interface Category {
   _id: string;
   name: string;
@@ -19,6 +24,8 @@ export interface Category {
   color?: string;
   tagline?: string;
   description?: string;
+  featuredImage?: CategoryImage;
+  bannerImage?: CategoryImage;
   productCount?: number;
   isFeatured?: boolean;
   isTrending?: boolean;
@@ -36,6 +43,8 @@ export interface SubCategory {
   color?: string;
   tagline?: string;
   description?: string;
+  featuredImage?: CategoryImage;
+  bannerImage?: CategoryImage;
   productCount?: number;
   /** Populated by the API — may be an object or a raw ID string */
   parent: string | { _id: string; name: string; slug: string } | null;

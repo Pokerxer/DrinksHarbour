@@ -482,6 +482,11 @@ export default function ShopHeroBanner({
 
   const ctaText = curated?.ctaText ?? (dbCat ? `Explore ${dbCat.name}` : DEFAULT_CONFIG.ctaText);
 
+  // Featured image background — a single active subcategory's image wins, else the category's.
+  const heroImage =
+    (subList.length === 1 ? dbSub?.featuredImage?.url ?? dbSub?.bannerImage?.url : null) ??
+    dbCat?.featuredImage?.url ?? dbCat?.bannerImage?.url ?? null;
+
   // Brand override — when only brand is active
   const brandList = toList(brand);
   const brandLabel = brandList.length === 1 && activeCats.size === 0 && activeSubs.size === 0
@@ -519,11 +524,21 @@ export default function ShopHeroBanner({
         className="relative w-full overflow-hidden"
         style={{ height: 'clamp(336px, 52vh, 576px)' }}
       >
-        {/* Background gradient */}
+        {/* Featured image background */}
+        {heroImage && (
+          <div
+            className="absolute inset-0 bg-cover bg-center"
+            style={{ backgroundImage: `url("${heroImage}")` }}
+          />
+        )}
+
+        {/* Background gradient — opaque when no image, legibility scrim when an image is present */}
         <div
           className="absolute inset-0"
           style={{
-            background: `linear-gradient(115deg, ${dark} 0%, ${mid} 45%, ${dark} 100%)`,
+            background: heroImage
+              ? `linear-gradient(90deg, ${dark}f2 0%, ${dark}cc 35%, ${dark}55 65%, ${dark}22 100%)`
+              : `linear-gradient(115deg, ${dark} 0%, ${mid} 45%, ${dark} 100%)`,
           }}
         />
 
