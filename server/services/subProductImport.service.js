@@ -159,4 +159,119 @@ async function validateImport(rawRows, opts, tenantId, deps) {
   return { ok, groups: groupReports, totals, blocking };
 }
 
-module.exports = { normalizeRows, isValidSize, groupRows, SIZE_ENUM, validateImport, findProductByName };
+function defaultServiceDeps(deps = {}) {
+  const base = defaultDeps(deps);
+  const sp = require('./subproduct.service');
+  const wh = require('./warehouse.service');
+  return {
+    ...base,
+    createSubProduct: deps.createSubProduct || sp.createSubProduct,
+    addSize: deps.addSize || sp.addSize,
+    adjustStock: deps.adjustStock || wh.adjustStock,
+  };
+}
+
+function sizePayload(r) {
+  return {
+    size: r.size,
+    sku: r.sizeSku || undefined,
+    barcode: r.barcode || undefined,
+    basePrice: r.sizePrice ?? undefined,
+    costPrice: r.sizeCostPrice ?? undefined,
+    stock: 0, // opening stock is applied via adjustStock, not Size.stock
+  };
+}
+
+async function commitImport(rawRows, opts, tenantId, user, deps) {
+  const d = defaultServiceDeps(deps);
+  const warehouseId = opts?.warehouseId || null;
+  const rows = normalizeRows(rawRows);
+  const groups = groupRows(rows);
+  const out = { createdProducts: 0, createdSubProducts: 0, createdSizes: 0, stockApplied: 0, skipped: 0, errors: [] };
+
+  for (const g of groups) {
+    try {
+      // Keep only rows with a usable size; de-dupe within the group (first wins).
+      const seen = new Set();
+      const goodRows = g.rows.filter((r) => {
+        if (!r.productName || !isValidSize(r.size) || seen.has(r.size)) return false;
+        seen.add(r.size);
+        return true;
+      });
+      if (goodRows.length === 0) { out.skipped += g.rows.length; continue; }
+
+      const existingProduct = await findProductByName(g.productName, d.Product);
+      const firstSku = goodRows.find((r) => r.subProductSku)?.subProductSku;
+      const existingSub = existingProduct
+        ? await d.SubProduct.findOne({
+            tenant: tenantId,
+            ...(firstSku ? { sku: firstSku } : { product: existingProduct._id }),
+          }).select('_id').lean()
+        : null;
+
+      let subProductId;
+      let createdSizeDocs = []; // { _id, size, _row }
+
+      if (existingSub) {
+        // Add only sizes that don't already exist.
+        subProductId = existingSub._id;
+        const existing = new Set(
+          (await d.Size.find({ subproduct: existingSub._id }).select('size').lean()).map((s) => s.size)
+        );
+        for (const r of goodRows) {
+          if (existing.has(r.size)) { out.skipped += 1; continue; }
+          const sizeDoc = await d.addSize(subProductId, sizePayload(r), tenantId, user); // returns the Size doc
+          createdSizeDocs.push({ _id: sizeDoc._id, size: r.size, _row: r });
+        }
+      } else {
+        const base = goodRows[0];
+        const data = {
+          costPrice: base.costPrice ?? undefined,
+          baseSellingPrice: base.sellingPrice ?? undefined,
+          status: 'active',
+          sizes: goodRows.map(sizePayload),
+        };
+        if (existingProduct) {
+          data.product = existingProduct._id;
+        } else {
+          data.createNewProduct = true;
+          data.newProductData = {
+            name: base.productName,
+            type: base.productType,
+            brand: base.brand || undefined,
+            category: base.category || undefined,
+            subCategory: base.subCategory || undefined,
+          };
+        }
+        const sub = await d.createSubProduct(data, tenantId, user);
+        subProductId = sub._id;
+        if (!existingProduct) out.createdProducts += 1;
+        out.createdSubProducts += 1;
+        // Map returned size docs back to their source rows by size value.
+        const bySize = new Map((sub.sizes || []).map((s) => [s.size, s._id]));
+        createdSizeDocs = goodRows
+          .map((r) => ({ _id: bySize.get(r.size), size: r.size, _row: r }))
+          .filter((s) => s._id);
+      }
+
+      out.createdSizes += createdSizeDocs.length;
+
+      // Apply opening stock for created sizes with qty > 0.
+      for (const s of createdSizeDocs) {
+        const qty = s._row.openingQty;
+        if (qty && qty > 0 && warehouseId) {
+          await d.adjustStock(
+            { warehouseId, subProduct: subProductId, size: s._id, quantity: qty, type: 'received', notes: 'Bulk import opening stock' },
+            user?._id, tenantId
+          );
+          out.stockApplied += 1;
+        }
+      }
+    } catch (err) {
+      out.errors.push({ group: g.key, message: err.message });
+    }
+  }
+  return out;
+}
+
+module.exports = { normalizeRows, isValidSize, groupRows, SIZE_ENUM, validateImport, findProductByName, commitImport };
