@@ -1,10 +1,18 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
+import {
+  fetchAllCategories,
+  fetchAllSubCategories,
+  getRootCategories,
+  getSubcategories,
+  type Category,
+  type SubCategory,
+} from '@/lib/categories';
 
 // ─── Category config ──────────────────────────────────────────────────────────
 
@@ -381,6 +389,20 @@ function toList(v?: string | string[] | null): string[] {
   return arr.map((s) => s.trim().toLowerCase()).filter(Boolean);
 }
 
+// Darken a #rrggbb hex by mixing toward black. amount 0..1 (1 = black).
+function darken(hex: string, amount: number): string {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex.trim());
+  if (!m) return hex;
+  const ch = (h: string) => Math.round(parseInt(h, 16) * (1 - amount));
+  const to2 = (n: number) => n.toString(16).padStart(2, '0');
+  return `#${to2(ch(m[1]))}${to2(ch(m[2]))}${to2(ch(m[3]))}`;
+}
+
+// Build a hero theme from a single DB category colour (fallback when no curated style).
+function themeFromColor(color: string) {
+  return { dark: darken(color, 0.9), mid: darken(color, 0.8), glow: color, accent: color };
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ShopHeroBanner({
@@ -392,34 +414,73 @@ export default function ShopHeroBanner({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // Resolve theme from active filters (single or multi-select).
-  const { config, activeSubs, activeCats, isDefault, countSubtitle, singleSub } = useMemo(() => {
-    const cats = toList(category);
-    const subs = toList(subcategory);
-    // Primary theme: first selected category, else parent of first subcategory.
-    const parentCat = cats[0] ?? (subs[0] ? (SUBCAT_PARENT[subs[0]] ?? null) : null);
-    const cfg = parentCat ? (CONFIGS[parentCat] ?? null) : null;
+  // ── DB-sourced categories/subcategories — the source of truth for chips + slugs ──
+  const [allCats, setAllCats] = useState<Category[]>([]);
+  const [allSubs, setAllSubs] = useState<SubCategory[]>([]);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([fetchAllCategories(), fetchAllSubCategories()]).then(([c, s]) => {
+      if (!alive) return;
+      setAllCats(c);
+      setAllSubs(s);
+    });
+    return () => { alive = false; };
+  }, []);
 
-    let countSubtitle: string | null = null;
-    if (cats.length > 1) countSubtitle = `${cats.length} categories selected`;
-    else if (subs.length > 1) countSubtitle = `${subs.length} styles selected`;
+  // Active filter slugs from the URL (single or multi-select).
+  const activeCats = useMemo(() => new Set(toList(category)), [category]);
+  const activeSubs = useMemo(() => new Set(toList(subcategory)), [subcategory]);
+  const catList = useMemo(() => [...activeCats], [activeCats]);
+  const subList = useMemo(() => [...activeSubs], [activeSubs]);
 
-    return {
-      config: cfg ?? DEFAULT_CONFIG,
-      activeSubs: new Set(subs),
-      activeCats: new Set(cats),
-      isDefault: !parentCat,
-      countSubtitle,
-      singleSub: subs.length === 1 ? subs[0] : null,
-    };
-  }, [category, subcategory]);
+  // Resolve the active DB category: first selected category, else parent of first subcategory.
+  const dbCat = useMemo<Category | null>(() => {
+    if (catList[0]) return allCats.find((c) => c.slug === catList[0]) ?? null;
+    if (subList[0]) {
+      const sub = allSubs.find((s) => s.slug === subList[0]);
+      if (sub) {
+        const pid = typeof sub.parent === 'string' ? sub.parent : (sub.parent as any)?._id;
+        return allCats.find((c) => c._id === pid) ?? null;
+      }
+    }
+    return null;
+  }, [catList, subList, allCats, allSubs]);
 
-  // Subcategory-level overrides only apply when exactly one subcategory is active.
-  const subcatInfo = singleSub ? SUBCAT_LABELS[singleSub] : null;
+  // Copy source when exactly one subcategory is active.
+  const dbSub = useMemo<SubCategory | null>(
+    () => (subList.length === 1 ? allSubs.find((s) => s.slug === subList[0]) ?? null : null),
+    [subList, allSubs],
+  );
 
-  const displayLabel       = subcatInfo?.label      ?? config.label;
-  const displaySubtitle    = countSubtitle ?? subcatInfo?.subtitle ?? config.subtitle;
-  const displayDescription = subcatInfo?.description ?? config.description;
+  // Chip data — always from the DB so every chip yields a valid product filter.
+  const rootCats = useMemo(() => getRootCategories(allCats, allSubs), [allCats, allSubs]);
+  const catSubs = useMemo(() => (dbCat ? getSubcategories(dbCat, allSubs) : []), [dbCat, allSubs]);
+
+  const isDefault = catList.length === 0 && subList.length === 0;
+
+  // ── Visual theme: curated look matched by slug, else derived from the DB colour ──
+  const themeKey = dbCat?.slug ?? catList[0] ?? (subList[0] ? SUBCAT_PARENT[subList[0]] : undefined);
+  const curated = (themeKey && CONFIGS[themeKey]) || null;
+  const curatedSub = subList.length === 1 ? SUBCAT_LABELS[subList[0]] : null;
+
+  const theme = curated
+    ? { dark: curated.dark, mid: curated.mid, glow: curated.glow, accent: curated.accent }
+    : dbCat?.color
+      ? themeFromColor(dbCat.color)
+      : { dark: DEFAULT_CONFIG.dark, mid: DEFAULT_CONFIG.mid, glow: DEFAULT_CONFIG.glow, accent: DEFAULT_CONFIG.accent };
+
+  // ── Count subtitle for multi-select ──
+  const countSubtitle =
+    catList.length > 1 ? `${catList.length} categories selected`
+    : subList.length > 1 ? `${subList.length} styles selected`
+    : null;
+
+  // ── Display copy: DB first, curated fallback, generic last ──
+  const displayLabel       = dbSub?.name ?? curatedSub?.label ?? dbCat?.name ?? curated?.label ?? DEFAULT_CONFIG.label;
+  const displaySubtitle    = countSubtitle ?? dbSub?.tagline ?? curatedSub?.subtitle ?? dbCat?.tagline ?? curated?.subtitle ?? DEFAULT_CONFIG.subtitle;
+  const displayDescription = dbSub?.description ?? curatedSub?.description ?? dbCat?.description ?? curated?.description ?? DEFAULT_CONFIG.description;
+
+  const ctaText = curated?.ctaText ?? (dbCat ? `Explore ${dbCat.name}` : DEFAULT_CONFIG.ctaText);
 
   // Brand override — when only brand is active
   const brandList = toList(brand);
@@ -449,7 +510,7 @@ export default function ShopHeroBanner({
 
   const makeCategoryUrl = (slug: string) => `${pathname}?category=${slug}`;
 
-  const { dark, mid, glow, accent } = config;
+  const { dark, mid, glow, accent } = theme;
 
   return (
     <div className="w-full">
@@ -548,7 +609,7 @@ export default function ShopHeroBanner({
                   boxShadow: `0 4px 20px ${glow}40`,
                 }}
               >
-                {config.ctaText}
+                {ctaText}
                 <Icon.PiArrowRight size={16} />
               </Link>
 
@@ -601,14 +662,14 @@ export default function ShopHeroBanner({
       >
         <div className="flex items-center gap-1.5 px-4 sm:px-6 py-3 w-max">
           {isDefault ? (
-            /* Default: top-level category shortcuts */
+            /* Default: top-level category shortcuts from the DB */
             <>
-              {DEFAULT_CONFIG.subcategories.map((chip) => {
-                const isActive = activeCats.has(chip.slug);
+              {rootCats.map((cat) => {
+                const isActive = activeCats.has(cat.slug);
                 return (
                   <Link
-                    key={chip.slug}
-                    href={makeCategoryUrl(chip.slug)}
+                    key={cat._id}
+                    href={makeCategoryUrl(cat.slug)}
                     className="px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all hover:scale-105"
                     style={
                       isActive
@@ -620,15 +681,15 @@ export default function ShopHeroBanner({
                           }
                     }
                   >
-                    {chip.label}
+                    {cat.name}
                   </Link>
                 );
               })}
             </>
           ) : (
-            /* Category / subcategory: "All" reset + per-subcategory chips */
+            /* Category / subcategory: "All" reset + per-subcategory chips from the DB */
             <>
-              {config.subcategories.length > 0 && (
+              {catSubs.length > 0 && (
                 <Link
                   href={makeSubUrl(null)}
                   className="px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all"
@@ -638,15 +699,15 @@ export default function ShopHeroBanner({
                       : { background: `${glow}20`, color: accent, border: `1px solid ${glow}40` }
                   }
                 >
-                  All {config.label}
+                  All {dbCat?.name ?? displayLabel}
                 </Link>
               )}
-              {config.subcategories.map((chip) => {
-                const isActive = activeSubs.has(chip.slug) || activeSubs.has(chip.slug.replace(/-/g, ' '));
+              {catSubs.map((sub) => {
+                const isActive = activeSubs.has(sub.slug);
                 return (
                   <Link
-                    key={chip.slug}
-                    href={makeSubUrl(chip.slug)}
+                    key={sub._id}
+                    href={makeSubUrl(sub.slug)}
                     className="px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all"
                     style={
                       isActive
@@ -654,7 +715,7 @@ export default function ShopHeroBanner({
                         : { background: `${glow}20`, color: accent, border: `1px solid ${glow}40` }
                     }
                   >
-                    {chip.label}
+                    {sub.name}
                   </Link>
                 );
               })}
