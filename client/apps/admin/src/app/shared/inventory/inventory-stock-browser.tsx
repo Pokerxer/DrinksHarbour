@@ -26,6 +26,7 @@ import {
   PiPrinter,
   PiSquare,
   PiStack,
+  PiUploadSimple,
   PiWarningCircle,
   PiX,
 } from 'react-icons/pi';
@@ -34,6 +35,7 @@ import {
   warehouseStockService,
   type StockRow,
 } from '@/services/warehouseStock.service';
+import InventoryStockImport from './inventory-stock-import';
 import {
   PAGE_SIZE,
   fmtDate,
@@ -556,6 +558,7 @@ export default function InventoryStockBrowser({
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [counts, setCounts] = useState<Record<string, string>>({});
+  const [showImport, setShowImport] = useState(false);
 
   useEffect(() => {
     setSavedSearches(loadSavedFor(meta.savedKey));
@@ -1147,6 +1150,15 @@ export default function InventoryStockBrowser({
             >
               <PiPrinter className="h-4 w-4" />
             </button>
+            {mode === 'stock' && (
+              <button
+                type="button"
+                onClick={() => setShowImport(true)}
+                className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                <PiUploadSimple className="h-3.5 w-3.5" /> Import
+              </button>
+            )}
             <button
               type="button"
               onClick={() => exportStockCsv(filtered, meta.csvPrefix)}
@@ -1628,6 +1640,13 @@ export default function InventoryStockBrowser({
           )}
         </div>
       </div>
+      <InventoryStockImport
+        open={showImport}
+        token={token}
+        warehouses={warehouses}
+        onClose={() => setShowImport(false)}
+        onDone={() => { setShowImport(false); load(); }}
+      />
     </div>
   );
 }
