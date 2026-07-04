@@ -11,6 +11,8 @@ interface UseGiftCardsReturn {
   error: string | null;
   purchase: (data: { amount: number; recipient?: { email?: string; name?: string; message?: string }; design?: { templateId?: string; theme?: string } }) => Promise<{ ok: boolean; authUrl?: string; reference?: string; giftCardId?: string; message?: string }>;
   verifyPurchase: (reference: string, giftCardId: string) => Promise<{ ok: boolean; code?: string; balance?: number; status?: string; message?: string; alreadyIssued?: boolean }>;
+  completePayment: (giftCardId: string) => Promise<{ ok: boolean; code?: string; balance?: number; status?: string; message?: string; alreadyIssued?: boolean }>;
+  sendGift: (cardId: string, data: { email: string; name?: string; message?: string }) => Promise<{ ok: boolean; claimToken?: string; message?: string }>;
   refresh: () => Promise<void>;
 }
 
@@ -68,7 +70,41 @@ export function useGiftCards(token: string | null): UseGiftCardsReturn {
     }
   }, [token, refresh]);
 
-  return { cards, loading, error, purchase, verifyPurchase, refresh };
+  const completePayment = useCallback(async (giftCardId: string) => {
+    if (!token) return { ok: false, message: 'Not authenticated' };
+    try {
+      const res = await fetchWithAuth(`${API_URL}/api/gift-cards/${giftCardId}/complete-payment`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (!res.ok) return { ok: false, message: data.message || 'Verification failed' };
+      const payload = data.data ?? data;
+      await refresh();
+      return { ok: true, code: payload.code, balance: payload.balance, status: payload.status, alreadyIssued: payload.alreadyIssued };
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : 'Network error' };
+    }
+  }, [token, refresh]);
+
+  const sendGift = useCallback(async (cardId: string, data: { email: string; name?: string; message?: string }) => {
+    if (!token) return { ok: false, message: 'Not authenticated' };
+    try {
+      const res = await fetchWithAuth(`${API_URL}/api/gift-cards/${cardId}/send-gift`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!res.ok) return { ok: false, message: json.message || 'Failed to send gift' };
+      const payload = json.data ?? json;
+      await refresh();
+      return { ok: true, claimToken: payload.claimToken };
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : 'Network error' };
+    }
+  }, [token, refresh]);
+
+  return { cards, loading, error, purchase, verifyPurchase, completePayment, sendGift, refresh };
 }
 
 interface UseGiftCardDetailReturn {

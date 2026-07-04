@@ -1,15 +1,13 @@
 import { type ElementType } from 'react';
 
 export interface OrderItem {
-  product?: string | { _id: string; name: string; image?: string; thumbImage?: string[] };
-  subproduct?: string;
-  size?: string;
+  product?: string | { _id: string; name: string; slug?: string; images?: { url: string; alt?: string }[] };
+  subproduct?: string | { _id: string; name: string; sku?: string; imagesOverride?: { url: string }[] };
+  size?: string | { _id: string; displayName?: string; size?: string };
   tenant?: string;
   quantity: number;
   priceAtPurchase: number;
   itemSubtotal: number;
-  image?: string;
-  thumbImage?: string[];
 }
 
 export interface ShippingInfo {
@@ -36,30 +34,42 @@ export interface Order {
   createdAt?: string;
 }
 
+// Matches server Address model exactly
 export interface Address {
   _id: string;
   label: string;
-  firstName: string;
-  lastName: string;
+  fullName: string;
   phone: string;
-  address: string;
-  street?: string;
+  addressLine1: string;
+  addressLine2?: string;
   city: string;
   state: string;
   country: string;
-  isDefault: boolean;
+  postalCode?: string;
+  landmark?: string;
+  additionalInstructions?: string;
+  isDefaultShipping: boolean;
+  isDefaultBilling: boolean;
+  // Derived on client from fullName / isDefaultShipping for convenience
+  firstName?: string;
+  lastName?: string;
+  isDefault?: boolean;
 }
 
+// UI-friendly split form (hook adapts these to server fields on save)
 export interface AddressFormData {
   label: string;
   firstName: string;
   lastName: string;
   phone: string;
-  address: string;
-  city: string;
+  address: string;       // → addressLine1
+  addressLine2?: string;
+  landmark?: string;
+  lga: string;           // → city
   state: string;
   country: string;
-  isDefault: boolean;
+  isDefault: boolean;    // → isDefaultShipping
+  coordinates?: { lat: number; lng: number } | null;
 }
 
 export interface StatusConfig {
@@ -139,6 +149,7 @@ export interface GiftCardRecipient {
 export interface GiftCardItem {
   _id: string;
   code: string | null;
+  cardNumber: string | null;
   initialAmount: number;
   balance: number;
   currency: string;
@@ -147,6 +158,10 @@ export interface GiftCardItem {
   design?: { templateId?: string; theme?: string; tier?: string };
   expiresAt?: string;
   createdAt: string;
+  purchasedByMe?: boolean;
+  claimToken?: string | null;
+  claimedBy?: string | null;
+  claimedAt?: string | null;
 }
 
 export interface GiftCardTransaction {
