@@ -106,7 +106,7 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
             onClick={onOpenSidebar}
             onMouseEnter={() => setIsFilterTooltipVisible(true)}
             onMouseLeave={() => setIsFilterTooltipVisible(false)}
-            className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg transition-colors group relative text-sm sm:text-base"
+            className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-[#b20202] hover:bg-[#8a0101] text-white rounded-lg transition-colors group relative text-sm sm:text-base"
             aria-label="Open filters sidebar"
           >
             <Icon.PiFadersHorizontal size={16} />
@@ -119,7 +119,7 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
                   animate={{ scale: 1, opacity: 1 }}
                   exit={{ scale: 0.6, opacity: 0 }}
                   transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                  className="px-1.5 sm:px-2 py-0.5 bg-white text-gray-900 text-xs font-bold rounded-full"
+                  className="px-1.5 sm:px-2 py-0.5 bg-white text-[#b20202] text-xs font-bold rounded-full"
                 >
                   {activeFiltersCount}
                 </motion.span>
@@ -142,7 +142,7 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
                 onClick={() => onLayoutChange(value)}
                 className={`p-2.5 rounded-lg border-2 transition-all ${
                   layoutCol === value
-                    ? 'border-gray-900 bg-gray-50'
+                    ? 'border-[#b20202] bg-[#fdf3f3]'
                     : 'border-gray-200 hover:border-gray-400'
                 }`}
                 aria-label={label}
@@ -153,7 +153,7 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
                     <div
                       key={i}
                       className={`w-1.5 rounded-sm transition-colors ${
-                        layoutCol === value ? 'bg-gray-900' : 'bg-gray-300'
+                        layoutCol === value ? 'bg-[#b20202]' : 'bg-gray-300'
                       }`}
                       style={{ height: '16px' }}
                     />
@@ -223,13 +223,13 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
                         disabled={option.disabled}
                         className={`w-full px-4 py-3 text-left flex items-center justify-between transition-colors ${
                           filters.sortOption === option.value
-                            ? 'text-gray-900 font-medium bg-gray-50'
+                            ? 'text-[#b20202] font-semibold bg-[#fdf3f3]'
                             : 'text-gray-600 hover:bg-gray-50'
                         } ${option.disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
                         <span>{option.label}</span>
                         {filters.sortOption === option.value && (
-                          <Icon.PiCheck size={18} className="text-gray-900" />
+                          <Icon.PiCheck size={18} className="text-[#b20202]" />
                         )}
                       </button>
                     ))}
@@ -250,7 +250,7 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
                 className="sr-only peer"
               />
               <div
-                className={`w-11 h-6 ${filters.showOnlySale ? 'bg-red-500' : 'bg-gray-200'} peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-100 rounded-full peer cursor-pointer transition-colors`}
+                className={`w-11 h-6 ${filters.showOnlySale ? 'bg-[#b20202]' : 'bg-gray-200'} peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#b20202]/15 rounded-full peer cursor-pointer transition-colors`}
               >
                 <div
                   className={`absolute top-[2px] ${filters.showOnlySale ? 'left-[22px]' : 'left-[2px]'} bg-white border-gray-300 border rounded-full h-5 w-5 shadow-sm transition-transform`}
@@ -260,7 +260,7 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
             <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900 transition-colors hidden sm:flex items-center gap-1.5">
               {filters.showOnlySale ? (
                 <>
-                  <Icon.PiTagFill className="text-red-500" size={14} />
+                  <Icon.PiTagFill className="text-[#b20202]" size={14} />
                   On Sale
                 </>
               ) : (

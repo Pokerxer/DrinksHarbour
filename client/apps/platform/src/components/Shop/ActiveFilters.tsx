@@ -65,50 +65,36 @@ const SORT_LABELS: Record<string, string> = {
   alphabeticalDesc:  'Z → A',
 };
 
-const CHIP_STYLES: Record<FilterChip['color'], {
-  base: string; icon: string; x: string; ring: string;
-}> = {
-  default: {
-    base: 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 hover:border-gray-400 hover:shadow-sm',
-    icon: 'text-gray-400',
-    x:    'text-gray-300 group-hover:text-gray-600',
-    ring: 'focus-visible:ring-gray-400',
-  },
+type ChipStyle = { base: string; icon: string; x: string; ring: string };
+
+// Cohesive, on-brand chip: neutral surface with the site red (#b20202) as accent.
+const BRAND_CHIP: ChipStyle = {
+  base: 'bg-white border-gray-200 text-gray-700 hover:border-[#b20202] hover:text-[#b20202] hover:bg-[#fdf3f3] hover:shadow-sm',
+  icon: 'text-[#b20202]/70',
+  x:    'text-gray-300 group-hover:text-[#b20202]',
+  ring: 'focus-visible:ring-[#b20202]',
+};
+
+const CHIP_STYLES: Record<FilterChip['color'], ChipStyle> = {
+  // Everything shares one brand-aligned look…
+  default: BRAND_CHIP,
+  price:   BRAND_CHIP,
+  alcohol: BRAND_CHIP,
+  sort:    BRAND_CHIP,
+  search:  BRAND_CHIP,
+  // …except "On Sale", which reads as a solid brand-red pill to stand out,
   sale: {
-    base: 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100 hover:border-red-400 hover:shadow-sm',
-    icon: 'text-red-400',
-    x:    'text-red-200 group-hover:text-red-600',
-    ring: 'focus-visible:ring-red-400',
+    base: 'bg-[#b20202] border-[#b20202] text-white hover:bg-[#8a0101] hover:border-[#8a0101] hover:shadow-sm',
+    icon: 'text-white/80',
+    x:    'text-white/70 group-hover:text-white',
+    ring: 'focus-visible:ring-[#b20202]',
   },
+  // …and rating, which keeps amber to match its star iconography.
   rating: {
-    base: 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100 hover:border-amber-400 hover:shadow-sm',
-    icon: 'text-amber-400',
-    x:    'text-amber-200 group-hover:text-amber-600',
+    base: 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100 hover:border-amber-400 hover:shadow-sm',
+    icon: 'text-amber-500',
+    x:    'text-amber-300 group-hover:text-amber-700',
     ring: 'focus-visible:ring-amber-400',
-  },
-  price: {
-    base: 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 hover:border-emerald-400 hover:shadow-sm',
-    icon: 'text-emerald-400',
-    x:    'text-emerald-200 group-hover:text-emerald-600',
-    ring: 'focus-visible:ring-emerald-400',
-  },
-  alcohol: {
-    base: 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100 hover:border-purple-400 hover:shadow-sm',
-    icon: 'text-purple-400',
-    x:    'text-purple-200 group-hover:text-purple-600',
-    ring: 'focus-visible:ring-purple-400',
-  },
-  sort: {
-    base: 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100 hover:border-blue-400 hover:shadow-sm',
-    icon: 'text-blue-400',
-    x:    'text-blue-200 group-hover:text-blue-600',
-    ring: 'focus-visible:ring-blue-400',
-  },
-  search: {
-    base: 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-400 hover:shadow-sm',
-    icon: 'text-indigo-400',
-    x:    'text-indigo-200 group-hover:text-indigo-600',
-    ring: 'focus-visible:ring-indigo-400',
   },
 };
 
