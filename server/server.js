@@ -52,6 +52,7 @@ const salesOrderRoutes       = require('./routes/salesOrder.routes');
 const scanRoutes             = require('./routes/scan.routes');
 const walletRoutes           = require('./routes/wallet.routes');
 const giftCardRoutes         = require('./routes/giftcard.routes');
+const giftCardClaimRoutes    = require('./routes/giftCardClaim.routes');
 const loyaltyRoutes          = require('./routes/loyalty.routes');
 
 const app = express();
@@ -224,6 +225,7 @@ app.use('/api/pos',                require('./routes/pos.routes'));
 app.use('/api/pos-combos',         require('./routes/posCombo.routes'));
 // ── Customer account: platform wallet, gift cards, loyalty (Corks & Points) ──
 app.use('/api/wallet',             walletRoutes);
+app.use('/api/gift-cards/claim',   giftCardClaimRoutes);
 app.use('/api/gift-cards',         giftCardRoutes);
 app.use('/api/loyalty',            loyaltyRoutes);
 
