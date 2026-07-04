@@ -12,6 +12,7 @@ const GiftCard = require('../models/GiftCard');
 const GiftCardTransaction = require('../models/GiftCardTransaction');
 const {
   generateGiftCardCode,
+  generateCardNumber,
   normalizeGiftCardCode,
   signGiftCardToken,
   validateGiftCardRedeem,
@@ -46,11 +47,18 @@ async function issueGiftCard({ giftCardId, paymentRef, createdBy }) {
   const qrToken = signGiftCardToken({ gid: String(card._id), code, nonce }, QR_SECRET);
 
   card.code = code;
+  card.cardNumber = generateCardNumber();
   card.qrToken = qrToken;
   card.balance = card.initialAmount;
   card.status = 'active';
   card.design = { ...(card.design?.toObject?.() ?? card.design ?? {}), tier: giftCardTierForAmount(card.initialAmount).id };
   if (paymentRef) card.paymentRef = paymentRef;
+
+  // Generate a claim token so the buyer can share a gift link with the recipient.
+  if (card.recipient?.email && !card.claimToken) {
+    card.claimToken = crypto.randomUUID();
+  }
+
   await card.save();
 
   await GiftCardTransaction.create({

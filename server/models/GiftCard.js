@@ -30,8 +30,12 @@ const GiftCardSchema = new mongoose.Schema(
       theme:      { type: String, trim: true },
       tier:       { type: String, trim: true }, // derived amount-tier id, stamped on issue
     },
+    cardNumber: { type: String, trim: true, sparse: true }, // 16-digit numeric, display-only
     expiresAt:  { type: Date },
     paymentRef: { type: String, trim: true, sparse: true },
+    claimToken: { type: String, unique: true, sparse: true, trim: true },
+    claimedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    claimedAt:  { type: Date, default: null },
   },
   { timestamps: true }
 );
