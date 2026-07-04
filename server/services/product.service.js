@@ -4647,10 +4647,11 @@ const searchProducts = async (searchParams = {}) => {
 
   if (minPrice !== undefined || maxPrice !== undefined) {
     filteredProducts = processedProducts.filter(({ globalPriceRange }) => {
-      if (minPrice !== undefined && globalPriceRange.min < parseFloat(minPrice)) {
+      // Exclude only when the product's highest price is still below the filter minimum
+      if (minPrice !== undefined && globalPriceRange.max < parseFloat(minPrice)) {
         return false;
       }
-      // Include products that have at least one size within budget (min price <= maxPrice)
+      // Exclude when the product's lowest price is above the filter maximum
       if (maxPrice !== undefined && globalPriceRange.min > parseFloat(maxPrice)) {
         return false;
       }

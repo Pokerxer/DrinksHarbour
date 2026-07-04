@@ -1175,7 +1175,18 @@ const getAllProducts = asyncHandler(async (req, res) => {
  * @access  Public
  */
 const searchProductsPublic = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 12, q, query, category, subCategory, brand, ...filters } = req.query;
+  const {
+    page = 1, limit = 12, q, query,
+    category, subCategory,
+    brand,
+    // Normalize client-side param names → service param names
+    sort,          // client sends "sort", service expects "sortBy"
+    origin,        // client sends "origin", service expects "originCountry"
+    flavor,        // client sends "flavor", service expects "flavors"
+    minABV,        // client sends "minABV", service expects "minAbv"
+    maxABV,        // client sends "maxABV", service expects "maxAbv"
+    ...filters
+  } = req.query;
 
   const searchParams = {
     ...filters,
@@ -1185,6 +1196,12 @@ const searchProductsPublic = asyncHandler(async (req, res) => {
     category: category ? (Array.isArray(category) ? category : category.split(',')) : undefined,
     subCategory: subCategory ? (Array.isArray(subCategory) ? subCategory : subCategory.split(',')) : undefined,
     brand: brand ? (Array.isArray(brand) ? brand : brand.split(',')) : undefined,
+    // Normalized names
+    ...(sort        && { sortBy: sort }),
+    ...(origin      && { originCountry: Array.isArray(origin) ? origin : origin.split(',') }),
+    ...(flavor      && { flavors: Array.isArray(flavor) ? flavor : flavor.split(',') }),
+    ...(minABV      && { minAbv: parseFloat(minABV) }),
+    ...(maxABV      && { maxAbv: parseFloat(maxABV) }),
     // Public shop always shows only approved/published products — not overridable via query param
     status: 'approved',
   };

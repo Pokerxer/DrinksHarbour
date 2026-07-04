@@ -3,7 +3,6 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { FilterState, FilterOptions, SortOption } from '@/types/filter.types';
-import BreadcrumbSection from './BreadcrumbSection';
 import FilterSidebar from './FilterSidebar';
 import FilterHeader from './FilterHeader';
 import ProductGrid from './ProductGrid';
@@ -275,9 +274,10 @@ const Shop: React.FC<Props> = ({
       }
       
       const productMinPrice = product.priceRange?.min || 0;
+      const productMaxPrice = product.priceRange?.max || productMinPrice;
       const filterMinPrice = filters.priceRange?.min ?? 0;
       const filterMaxPrice = filters.priceRange?.max ?? Infinity;
-      if (productMinPrice < filterMinPrice || productMinPrice > filterMaxPrice) return false;
+      if (productMaxPrice < filterMinPrice || productMinPrice > filterMaxPrice) return false;
       
       if (filters.minRating && (product.averageRating || 0) < filters.minRating) return false;
       
@@ -621,13 +621,6 @@ const Shop: React.FC<Props> = ({
 
   return (
     <>
-      <BreadcrumbSection 
-        filters={filters} 
-        updateFilter={updateFilter} 
-        categoryTypes={filterOptions.categoryType}
-        totalProducts={sortedProducts.length}
-      />
-      
       {/* On Sale Highlight Section */}
       {!filters.showOnlySale && (
         <OnSaleHighlight products={data || []} />
