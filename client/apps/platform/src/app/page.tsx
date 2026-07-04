@@ -92,6 +92,9 @@ export default function Home() {
 
       {/* Main Content Area */}
       <div className="min-w-0">
+        {/* Primary H1 — hidden from UI, visible to crawlers */}
+        <h1 className="sr-only">Premium Spirits &amp; Beverages Delivered in Nigeria</h1>
+
         {/* Hero Banner — above the fold, loads immediately */}
         <HeroBanner
           placement="home_hero"

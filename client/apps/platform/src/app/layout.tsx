@@ -1,23 +1,28 @@
 import type { Metadata } from "next";
+import dynamic from "next/dynamic";
 import { Unkempt, Kavoon } from "next/font/google";
 import "@/styles/styles.scss";
 import GlobalProvider from "./GlobalProvider";
-import ModalCart from "@/components/Modal/ModalCart";
-import ModalWishlist from "@/components/Modal/ModalWishlist";
-import ModalSearch from "@/components/Modal/ModalSearch";
-import ModalQuickview from "@/components/Modal/ModalQuickview";
-import ModalCompare from "@/components/Modal/ModalCompare";
+
+// Eager — above-the-fold or critical
 import { Header } from "@/components/Header";
-import { MobileBottomNav } from "@/components/Navigation";
-import ModalNewsletter from "@/components/Modal/ModalNewsletter";
 import Footer from "@/components/Footer/Footer";
-import ChatbotWidget from "@/components/Chatbot/ChatbotWidget";
-import WhatsAppButton from "@/components/WhatsApp/WhatsAppButton";
 import AgeGate from "@/components/AgeGate/AgeGate";
-import PopupBanner from "@/components/Banner/PopupBanner";
 import AnalyticsTracker from "@/components/Analytics/AnalyticsTracker";
 import { TenantProvider } from "@/context/TenantContext";
 import { resolveTenant } from "@/lib/tenant";
+
+// Deferred — non-critical UI, code-split into separate chunks
+const ModalCart       = dynamic(() => import("@/components/Modal/ModalCart"));
+const ModalWishlist   = dynamic(() => import("@/components/Modal/ModalWishlist"));
+const ModalSearch     = dynamic(() => import("@/components/Modal/ModalSearch"));
+const ModalQuickview  = dynamic(() => import("@/components/Modal/ModalQuickview"));
+const ModalCompare    = dynamic(() => import("@/components/Modal/ModalCompare"));
+const ModalNewsletter = dynamic(() => import("@/components/Modal/ModalNewsletter"));
+const MobileBottomNav = dynamic(() => import("@/components/Navigation"));
+const ChatbotWidget   = dynamic(() => import("@/components/Chatbot/ChatbotWidget"));
+const WhatsAppButton  = dynamic(() => import("@/components/WhatsApp/WhatsAppButton"));
+const PopupBanner     = dynamic(() => import("@/components/Banner/PopupBanner"));
 
 const unkempt = Unkempt({ subsets: ["latin"], weight: ["400", "700"], variable: "--font-unkempt" });
 const kavoon = Kavoon({ subsets: ["latin"], weight: ["400"], variable: "--font-kavoon", display: "swap" });
@@ -141,6 +146,10 @@ export default async function RootLayout({
               type="application/ld+json"
               dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
             />
+            {/* Preload LCP hero image */}
+            <link rel="preload" as="image" href="/og-default.jpg" fetchpriority="high" />
+            {/* Preconnect to third-party origins */}
+            <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
             <AnalyticsTracker />
             <AgeGate />
             <Header variant="default" showAnnouncement={false} />

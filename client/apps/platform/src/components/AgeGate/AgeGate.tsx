@@ -109,9 +109,9 @@ const AgeGate: React.FC<AgeGateProps> = ({
               <Icon.PiWineFill size={30} style={{ color: '#ff6060' }} />
             </div>
 
-            <h1 className="text-xl font-black text-white mb-2 leading-tight">
+            <h2 className="modal-title text-xl font-black text-white mb-2 leading-tight">
               Age Verification
-            </h1>
+            </h2>
             <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>
               This site sells alcoholic beverages.<br />
               You must be <span className="font-bold text-white">{minimumAge}+</span> to enter.

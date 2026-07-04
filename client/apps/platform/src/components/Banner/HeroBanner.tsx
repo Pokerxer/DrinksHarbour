@@ -308,13 +308,13 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
               )}
 
               {/* Title — Kavoon display for cinematic hero presence */}
-              <motion.h1
+              <motion.h2
                 variants={textVariants}
                 className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-black text-white mb-4 leading-[1.05] tracking-tight drop-shadow-[0_2px_24px_rgba(0,0,0,0.55)]"
                 style={{ fontFamily: "var(--font-kavoon), 'Kavoon', serif" }}
               >
                 {slide.title}
-              </motion.h1>
+              </motion.h2>
 
               {/* Description */}
               {slide.description && (
