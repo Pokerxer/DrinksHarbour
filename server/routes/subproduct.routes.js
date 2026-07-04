@@ -3,14 +3,15 @@
 const express = require('express');
 const router = express.Router();
 const subProductController = require('../controllers/subproduct.controller');
-const { 
+const subProductImportController = require('../controllers/subProductImport.controller');
+const {
   protect,
   authorize,
-  authenticate, 
-  attachTenant, 
+  authenticate,
+  attachTenant,
   tenantAdminOnly,
   tenantAdminOrSuperAdmin,
-  superAdminOnly 
+  superAdminOnly
 } = require('../middleware/auth.middleware');
 const { 
   validateSubProductCreation,
@@ -25,6 +26,10 @@ const { logPrivilegedAction } = require('../utils/auditLog');
 // All SubProduct routes require authentication
 router.use(authenticate);
 router.use(attachTenant);
+
+// ── Bulk import (CSV/Excel parsed client-side into rows) ─────────────────────
+router.post('/import/preview', tenantAdminOrSuperAdmin, subProductImportController.previewImport);
+router.post('/import/commit', tenantAdminOrSuperAdmin, subProductImportController.commitImport);
 
 // ============================================================
 // Tenant SubProduct Management
