@@ -23,7 +23,7 @@ export default function AddressCard({ address, onEdit, onDelete, onSetDefault, d
   return (
     <div
       className={`bg-white rounded-xl border shadow-sm p-5 transition-all duration-200 hover:shadow-md ${
-        address.isDefault ? 'border-red-200' : 'border-stone-200 hover:border-red-100'
+        address.isDefaultShipping ? 'border-red-200' : 'border-stone-200 hover:border-red-100'
       }`}
     >
       <div className="flex items-start justify-between gap-2 mb-3">
@@ -32,7 +32,7 @@ export default function AddressCard({ address, onEdit, onDelete, onSetDefault, d
             <LabelIcon size={15} />
           </div>
           <span className="font-black text-sm text-stone-900">{address.label}</span>
-          {address.isDefault && (
+          {address.isDefaultShipping && (
             <span className="text-[10px] font-bold bg-red-700 text-white px-2 py-0.5 rounded-full">
               Default
             </span>
@@ -59,16 +59,16 @@ export default function AddressCard({ address, onEdit, onDelete, onSetDefault, d
         </div>
       </div>
 
-      <p className="text-sm font-semibold text-stone-900">
-        {address.firstName} {address.lastName}
-      </p>
-      <p className="text-xs text-stone-500 mt-0.5">{address.address || address.street}</p>
+      <p className="text-sm font-semibold text-stone-900">{address.fullName}</p>
+      <p className="text-xs text-stone-500 mt-0.5">{address.addressLine1}</p>
+      {address.addressLine2 && <p className="text-xs text-stone-500">{address.addressLine2}</p>}
+      {address.landmark && <p className="text-xs text-stone-400 italic">{address.landmark}</p>}
       <p className="text-xs text-stone-500">
-        {address.city}{address.state ? `, ${address.state}` : ''}
+        {[address.city, address.state].filter(Boolean).join(', ')}
       </p>
       {address.phone && <p className="text-xs text-stone-400 mt-1">{address.phone}</p>}
 
-      {!address.isDefault && (
+      {!address.isDefaultShipping && (
         <button
           onClick={onSetDefault}
           className="mt-3 text-xs font-semibold text-red-700 hover:underline"

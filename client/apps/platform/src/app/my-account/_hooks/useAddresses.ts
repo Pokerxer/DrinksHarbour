@@ -15,19 +15,49 @@ interface UseAddressesReturn {
   setDefault: (id: string) => Promise<boolean>;
 }
 
+// Translate UI form → server body
+function toServerBody(data: AddressFormData) {
+  return {
+    label: data.label,
+    fullName: `${data.firstName.trim()} ${data.lastName.trim()}`.trim(),
+    phone: data.phone,
+    addressLine1: data.address,
+    addressLine2: data.addressLine2 || undefined,
+    landmark: data.landmark || undefined,
+    city: data.lga,   // LGA stored as city (consistent with checkout)
+    state: data.state,
+    country: data.country || 'Nigeria',
+    isDefaultShipping: data.isDefault,
+    isDefaultBilling: data.isDefault,
+    ...(data.coordinates ? { coordinates: data.coordinates } : {}),
+  };
+}
+
+// Enrich a raw server address with derived client-side fields
+function normalise(raw: any): Address {
+  const parts = (raw.fullName || '').split(' ');
+  return {
+    ...raw,
+    firstName: parts[0] || '',
+    lastName: parts.slice(1).join(' ') || '',
+    isDefault: raw.isDefaultShipping || false,
+  };
+}
+
 export function useAddresses(token: string | null): UseAddressesReturn {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchAddresses = useCallback(async () => {
-    if (!token) return;
+    if (!token) { setLoading(false); return; }
     setLoading(true);
     try {
       const res = await fetchWithAuth(`${API_URL}/api/addresses`);
       if (!res.ok) throw new Error('Failed to fetch addresses');
       const data = await res.json();
-      setAddresses(data.data?.addresses || data.addresses || []);
+      const raw: any[] = data.data?.addresses || data.addresses || [];
+      setAddresses(raw.map(normalise));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
@@ -41,14 +71,24 @@ export function useAddresses(token: string | null): UseAddressesReturn {
     if (!token) return false;
     try {
       const res = await fetchWithAuth(`${API_URL}/api/addresses`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(toServerBody(data)),
       });
       if (res.ok) {
         const d = await res.json();
-        const addr = d.data?.address || d.address || d.data;
-        setAddresses(prev => [...prev, addr]);
+        const addr = normalise(d.data?.address || d.address || d.data);
+        // If new address is default, clear others
+        setAddresses(prev => {
+          const cleared = addr.isDefaultShipping
+            ? prev.map(x => ({ ...x, isDefaultShipping: false, isDefault: false }))
+            : prev;
+          return [...cleared, addr];
+        });
         return true;
       }
+      const err = await res.json().catch(() => ({}));
+      setError((err as any).message || 'Failed to save address');
       return false;
     } catch { return false; }
   }, [token]);
@@ -57,12 +97,19 @@ export function useAddresses(token: string | null): UseAddressesReturn {
     if (!token) return false;
     try {
       const res = await fetchWithAuth(`${API_URL}/api/addresses/${id}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(toServerBody(data)),
       });
       if (res.ok) {
         const d = await res.json();
-        const addr = d.data?.address || d.address || d.data;
-        setAddresses(prev => prev.map(x => x._id === id ? addr : x));
+        const addr = normalise(d.data?.address || d.address || d.data);
+        setAddresses(prev => {
+          const cleared = addr.isDefaultShipping
+            ? prev.map(x => x._id !== id ? { ...x, isDefaultShipping: false, isDefault: false } : x)
+            : prev;
+          return cleared.map(x => x._id === id ? addr : x);
+        });
         return true;
       }
       return false;
@@ -81,8 +128,19 @@ export function useAddresses(token: string | null): UseAddressesReturn {
   const setDefault = useCallback(async (id: string): Promise<boolean> => {
     if (!token) return false;
     try {
-      const res = await fetchWithAuth(`${API_URL}/api/addresses/${id}/default`, { method: 'PUT' });
-      if (res.ok) { setAddresses(prev => prev.map(x => ({ ...x, isDefault: x._id === id }))); return true; }
+      const res = await fetchWithAuth(`${API_URL}/api/addresses/${id}/default`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'shipping' }),
+      });
+      if (res.ok) {
+        setAddresses(prev => prev.map(x => ({
+          ...x,
+          isDefaultShipping: x._id === id,
+          isDefault: x._id === id,
+        })));
+        return true;
+      }
       return false;
     } catch { return false; }
   }, [token]);

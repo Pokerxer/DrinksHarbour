@@ -25,7 +25,12 @@ function WalletPageInner() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const searchParams = useSearchParams();
-  const fundingRef = searchParams.get('wallet_ref');
+  // Paystack redirects back with ?reference=&trxref= (our own DHW- reference).
+  // Keep wallet_ref for backwards-compatibility with any in-flight links.
+  const fundingRef =
+    searchParams.get('wallet_ref') ||
+    searchParams.get('reference') ||
+    searchParams.get('trxref');
 
   // Handle the return from Paystack after wallet funding.
   useEffect(() => {
@@ -51,10 +56,9 @@ function WalletPageInner() {
     if (res.ok && res.reference && res.authUrl) {
       // Persist reference so we can verify on return; Paystack callback also carries it.
       try { sessionStorage.setItem('dh_wallet_fund_ref', res.reference); } catch {}
-      // Redirect to Paystack, returning here on success with ?wallet_ref=
-      const url = new URL(res.authUrl);
-      url.searchParams.set('callback_url', `${window.location.origin}/my-account/wallet?wallet_ref=${res.reference}`);
-      window.location.href = url.toString();
+      // The return page is set server-side via Paystack's callback_url at init time;
+      // appending it to the checkout URL here has no effect, so redirect straight to it.
+      window.location.href = res.authUrl;
     }
     return res;
   };

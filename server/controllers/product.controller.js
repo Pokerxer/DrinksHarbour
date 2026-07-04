@@ -1435,6 +1435,26 @@ const removeProductFromWishlist = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Get the authenticated user's wishlist
+ * @route   GET /api/products/wishlist
+ * @access  Private
+ */
+const getWishlist = asyncHandler(async (req, res) => {
+  const wishlist = await wishlistService.getWishlist(req.user._id);
+  res.status(200).json({ success: true, data: wishlist });
+});
+
+/**
+ * @desc    Clear the authenticated user's wishlist
+ * @route   DELETE /api/products/wishlist
+ * @access  Private
+ */
+const clearWishlistController = asyncHandler(async (req, res) => {
+  const wishlist = await wishlistService.clearWishlist(req.user._id);
+  res.status(200).json({ success: true, message: 'Wishlist cleared', data: wishlist });
+});
+
 // ============================================================
 // PRODUCT RELATIONS CONTROLLERS
 // ============================================================
@@ -1747,6 +1767,8 @@ module.exports = {
     addProductToCart,
     addProductToWishlist,
     removeProductFromWishlist,
+    getWishlist,
+    clearWishlistController,
 
     // Product Relations
     getRelatedProducts,

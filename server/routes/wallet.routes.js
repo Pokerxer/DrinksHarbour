@@ -37,4 +37,12 @@ router.post(
   walletController.verifyFundWallet
 );
 
+// POST /api/wallet/pay — debit wallet for a checkout order
+router.post(
+  '/pay',
+  [body('amount').isInt({ min: 1 }).withMessage('Amount must be a positive integer')],
+  validate,
+  walletController.payWithWallet
+);
+
 module.exports = router;

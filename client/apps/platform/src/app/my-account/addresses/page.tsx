@@ -15,10 +15,13 @@ const BLANK_FORM: AddressFormData = {
   lastName: '',
   phone: '',
   address: '',
-  city: '',
+  addressLine2: '',
+  landmark: '',
+  lga: '',
   state: '',
   country: 'Nigeria',
   isDefault: false,
+  coordinates: null,
 };
 
 export default function AddressesPage() {
@@ -37,16 +40,20 @@ export default function AddressesPage() {
   };
 
   const openEdit = (addr: Address) => {
+    const parts = (addr.fullName || '').split(' ');
     setForm({
       label: addr.label,
-      firstName: addr.firstName,
-      lastName: addr.lastName,
+      firstName: parts[0] || addr.firstName || '',
+      lastName: parts.slice(1).join(' ') || addr.lastName || '',
       phone: addr.phone,
-      address: addr.address || addr.street || '',
-      city: addr.city,
+      address: addr.addressLine1 || '',
+      addressLine2: addr.addressLine2 || '',
+      landmark: addr.landmark || '',
+      lga: addr.city || '',         // city field holds LGA
       state: addr.state,
       country: addr.country,
-      isDefault: addr.isDefault,
+      isDefault: addr.isDefaultShipping,
+      coordinates: null,            // reset map pin; user can re-pin if desired
     });
     setEditingId(addr._id);
     setShowForm(true);

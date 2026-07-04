@@ -125,11 +125,23 @@ const fundWallet = asyncHandler(async (req, res) => {
   if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
   const reference = `DHW-${user._id}-${Date.now()}`;
-  const payment = await paymentService.createPaystackTransaction(n, user.email, {
-    kind: 'wallet_fund',
-    userId: String(user._id),
-    reference,
-  });
+  const frontendUrl =
+    process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3002';
+  const payment = await paymentService.createPaystackTransaction(
+    n,
+    user.email,
+    {
+      kind: 'wallet_fund',
+      userId: String(user._id),
+      reference,
+    },
+    {
+      // Reuse our reference and return to the wallet page (not the cart callback),
+      // so the ?reference Paystack echoes back is the one we verify + credit.
+      reference,
+      callbackUrl: `${frontendUrl}/my-account/wallet`,
+    },
+  );
 
   successResponse(res, {
     reference,
@@ -192,10 +204,35 @@ const verifyFundWallet = asyncHandler(async (req, res) => {
   successResponse(res, { balance: credit.balance, amount }, 'Wallet funded successfully');
 });
 
+// POST /api/wallet/pay — debit the wallet to pay for a checkout order
+const payWithWallet = asyncHandler(async (req, res) => {
+  const { amount } = req.body;
+  const n = Number(amount);
+  if (!Number.isInteger(n) || n <= 0) {
+    return res.status(400).json({ success: false, message: 'Amount must be a positive integer' });
+  }
+
+  const result = await mutatePlatformWallet({
+    owner: { userId: req.user._id },
+    value: { type: 'debit', amount: n, source: 'online_checkout', reason: 'Order payment via platform wallet' },
+    createdBy: req.user._id,
+  });
+
+  if (!result.ok) {
+    return res.status(result.status || 400).json({ success: false, message: result.message });
+  }
+
+  return successResponse(res, {
+    balance: result.balance,
+    transactionId: result.tx?._id,
+  }, 'Wallet payment successful');
+});
+
 module.exports = {
   getWallet,
   getWalletTransactions,
   fundWallet,
   verifyFundWallet,
   buildTransactionFilter,
+  payWithWallet,
 };

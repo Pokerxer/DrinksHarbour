@@ -7,18 +7,21 @@ export interface GiftCardTier {
   id: 'classic' | 'silver' | 'gold' | 'platinum' | 'premium' | 'black';
   name: string;
   minAmount: number;
-  gradient: string;    // tailwind gradient stops, e.g. "from-stone-800 to-red-900"
-  textClass: string;   // foreground text colour for the card art
-  accentClass: string; // secondary/label colour on the card art
+  gradient: string;
+  textClass: string;
+  accentClass: string;
+  badgeClass: string;
+  overlay: string;
+  watermarkOpacity: string;
 }
 
 export const GIFT_CARD_TIERS: GiftCardTier[] = [
-  { id: 'classic',  name: 'Classic',  minAmount: 1000,    gradient: 'from-stone-800 to-red-900',     textClass: 'text-white',     accentClass: 'text-red-200' },
-  { id: 'silver',   name: 'Silver',   minAmount: 50000,   gradient: 'from-slate-400 to-slate-600',   textClass: 'text-white',     accentClass: 'text-slate-100' },
-  { id: 'gold',     name: 'Gold',     minAmount: 200000,  gradient: 'from-amber-500 to-yellow-600',  textClass: 'text-stone-900', accentClass: 'text-amber-900' },
-  { id: 'platinum', name: 'Platinum', minAmount: 500000,  gradient: 'from-zinc-300 to-zinc-500',     textClass: 'text-stone-900', accentClass: 'text-zinc-700' },
-  { id: 'premium',  name: 'Premium',  minAmount: 1000000, gradient: 'from-indigo-700 to-purple-800', textClass: 'text-white',     accentClass: 'text-indigo-200' },
-  { id: 'black',    name: 'Black',    minAmount: 5000000, gradient: 'from-neutral-900 to-black',      textClass: 'text-white',     accentClass: 'text-amber-300' },
+  { id: 'classic',  name: 'Classic',  minAmount: 1000,    gradient: 'from-stone-800 to-red-900',     textClass: 'text-white',     accentClass: 'text-red-200',    badgeClass: 'bg-red-500/20 text-red-200 border-red-500/30',    overlay: 'from-white/5',  watermarkOpacity: 'opacity-[0.06]' },
+  { id: 'silver',   name: 'Silver',   minAmount: 50000,   gradient: 'from-slate-400 to-slate-600',   textClass: 'text-white',     accentClass: 'text-slate-100',  badgeClass: 'bg-slate-500/20 text-slate-200 border-slate-500/30', overlay: 'from-white/8',  watermarkOpacity: 'opacity-[0.07]' },
+  { id: 'gold',     name: 'Gold',     minAmount: 200000,  gradient: 'from-amber-500 to-yellow-600',  textClass: 'text-stone-900', accentClass: 'text-amber-900',  badgeClass: 'bg-amber-500/20 text-amber-800 border-amber-500/30', overlay: 'from-white/10', watermarkOpacity: 'opacity-[0.08]' },
+  { id: 'platinum', name: 'Platinum', minAmount: 500000,  gradient: 'from-zinc-300 to-zinc-500',     textClass: 'text-stone-900', accentClass: 'text-zinc-700',   badgeClass: 'bg-zinc-500/20 text-zinc-700 border-zinc-500/30',  overlay: 'from-white/10', watermarkOpacity: 'opacity-[0.07]' },
+  { id: 'premium',  name: 'Premium',  minAmount: 1000000, gradient: 'from-indigo-700 to-purple-800', textClass: 'text-white',     accentClass: 'text-indigo-200', badgeClass: 'bg-indigo-500/20 text-indigo-200 border-indigo-500/30', overlay: 'from-white/5',  watermarkOpacity: 'opacity-[0.06]' },
+  { id: 'black',    name: 'Black',    minAmount: 5000000, gradient: 'from-neutral-900 to-black',      textClass: 'text-white',     accentClass: 'text-amber-300',  badgeClass: 'bg-neutral-800/50 text-amber-200 border-neutral-700/50', overlay: 'from-white/4',  watermarkOpacity: 'opacity-[0.09]' },
 ];
 
 /** Highest tier whose minAmount <= amount; clamps below the first band to `classic`. */

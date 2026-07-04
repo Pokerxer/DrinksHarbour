@@ -29,6 +29,7 @@ export interface AuthUser {
   avatar?: string;
   dateOfBirth?: string;
   mfaEnabled?: boolean;
+  loyaltyTier?: 'cork' | 'barrel' | 'cellar' | 'vault';
 }
 
 interface AuthState {

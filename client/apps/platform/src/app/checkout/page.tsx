@@ -43,7 +43,7 @@ interface ShippingRate {
 interface FormData {
   firstName: string; lastName: string; email: string; phone: string;
   address: string; lga: string; state: string; zipCode: string; country: string;
-  paymentMethod: 'card' | 'bank_transfer' | 'cash_on_delivery';
+  paymentMethod: 'card' | 'bank_transfer' | 'cash_on_delivery' | 'wallet' | 'gift_card';
 }
 type FormErrors = Partial<Record<keyof FormData, string>>;
 
@@ -55,9 +55,11 @@ function toApiState(state: string): string {
 }
 
 const PAYMENT_METHODS = [
-  { id: 'cash_on_delivery', name: 'Cash on Delivery',   description: 'Pay cash when your order arrives', icon: Icon.PiMoneyBold, badge: null },
-  { id: 'card',             name: 'Card Payment',        description: 'Visa, Mastercard — powered by Stripe', icon: Icon.PiCreditCardBold, badge: 'Instant' },
-  { id: 'bank_transfer',    name: 'Bank Transfer / USSD', description: 'Pay via Paystack — card, bank, USSD', icon: Icon.PiBankBold, badge: null },
+  { id: 'wallet',           name: 'DH Wallet',            description: 'Pay instantly from your DrinksHarbour balance', icon: Icon.PiWalletBold,      badge: 'Instant' },
+  { id: 'gift_card',        name: 'Gift Card',             description: 'Redeem a DrinksHarbour gift card code',         icon: Icon.PiGiftBold,        badge: null },
+  { id: 'card',             name: 'Card Payment',          description: 'Visa, Mastercard — powered by Stripe',          icon: Icon.PiCreditCardBold,  badge: null },
+  { id: 'bank_transfer',    name: 'Bank Transfer / USSD',  description: 'Pay via Paystack — card, bank, USSD',           icon: Icon.PiBankBold,        badge: null },
+  { id: 'cash_on_delivery', name: 'Cash on Delivery',      description: 'Pay cash when your order arrives',              icon: Icon.PiMoneyBold,       badge: null },
 ] as const;
 
 // ─── Input field ─────────────────────────────────────────────────────────────
@@ -104,13 +106,20 @@ export default function CheckoutPage() {
   const [mounted,         setMounted]         = useState(false);
   const [isLoading,       setIsLoading]       = useState(false);
   const [error,           setError]           = useState('');
-  const [activePayment,   setActivePayment]   = useState<string>('cash_on_delivery');
+  const [activePayment,   setActivePayment]   = useState<string>('wallet');
   const [couponDiscount,  setCouponDiscount]  = useState(0);
+  const [walletBalance,   setWalletBalance]   = useState<number | null>(null);
+  const [giftCardCode,    setGiftCardCode]    = useState('');
+  const [giftCardInfo,    setGiftCardInfo]    = useState<{ balance: number; cardNumber: string | null } | null>(null);
+  const [giftCardChecking, setGiftCardChecking] = useState(false);
+  const [giftCardError,   setGiftCardError]   = useState('');
   const [appliedCoupon,   setAppliedCoupon]   = useState('');
   const [showStripeForm,  setShowStripeForm]  = useState(false);
   const [stripeData,      setStripeData]      = useState<{ clientSecret: string; paymentIntentId: string } | null>(null);
   const [paystackReady,   setPaystackReady]   = useState(false);
   const [addressDetails,  setAddressDetails]  = useState<AddressDetails | null>(null);
+  const [savedAddresses,  setSavedAddresses]  = useState<any[]>([]);
+  const [selectedAddrId,  setSelectedAddrId]  = useState<string | null>(null);
 
   // LGA state
   const [lgaList,         setLgaList]         = useState<string[]>([]);
@@ -131,12 +140,59 @@ export default function CheckoutPage() {
   });
   const [errors, setErrors] = useState<FormErrors>({});
 
+  // Fill checkout form from a saved address object
+  const applyAddressToForm = useCallback((addr: any) => {
+    const parts = (addr.fullName || '').split(' ');
+    setSelectedAddrId(addr._id);
+    setForm(f => ({
+      ...f,
+      firstName: parts[0] || f.firstName,
+      lastName:  parts.slice(1).join(' ') || f.lastName,
+      phone:     addr.phone  || f.phone,
+      address:   addr.addressLine1 || f.address,
+      state:     addr.state  || f.state,
+      lga:       addr.city   || '',   // city field stores LGA
+      zipCode:   addr.postalCode || f.zipCode,
+    }));
+    // Restore saved coordinates onto the map pin if available
+    if (addr.coordinates?.lat) {
+      setAddressDetails({
+        lat: addr.coordinates.lat,
+        lon: addr.coordinates.lng ?? addr.coordinates.lon,
+        formatted: addr.addressLine1 || '',
+        street: addr.addressLine1 || '',
+        city: addr.city || '',
+        state: addr.state || '',
+        postcode: addr.postalCode || '',
+        country: addr.country || 'Nigeria',
+      });
+    } else {
+      setAddressDetails(null);
+    }
+    setErrors({});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const token = localStorage.getItem('dh_token') || sessionStorage.getItem('dh_token');
     if (!token) { router.push('/login?redirect=/checkout'); return; }
     setMounted(true);
     loadServerCart();
+    // Fetch saved addresses
+    fetchWithAuth(`${API_URL}/api/addresses`)
+      .then(r => r.json())
+      .then(d => {
+        const raw: any[] = d.data?.addresses || d.addresses || [];
+        setSavedAddresses(raw);
+        // Auto-select default shipping address
+        const def = raw.find((a: any) => a.isDefaultShipping) || raw[0];
+        if (def) applyAddressToForm(def);
+      })
+      .catch(() => {});
+    fetchWithAuth(`${API_URL}/api/wallet`)
+      .then(r => r.json())
+      .then(d => { if (d.success) setWalletBalance(d.data?.balance ?? 0); })
+      .catch(() => setWalletBalance(0));
   }, [router, loadServerCart]);
 
   // Pre-fill from localStorage
@@ -219,8 +275,7 @@ export default function CheckoutPage() {
   };
 
   const handleAddressSelect = (address: string, details?: AddressDetails) => {
-    // Always save the address as typed — do not replace with geocoded display name.
-    // Coordinates from details (if any) are used only for shipping calculation.
+    setSelectedAddrId(null); // user typed a custom address — clear saved selection
     setAddressDetails(details ?? null);
     setForm(f => ({
       ...f,
@@ -505,6 +560,77 @@ export default function CheckoutPage() {
     }
   };
 
+  // ── Gift card code check ──────────────────────────────────────────────────
+  const checkGiftCard = async (code: string) => {
+    if (!code.trim()) { setGiftCardInfo(null); setGiftCardError(''); return; }
+    setGiftCardChecking(true);
+    setGiftCardError('');
+    try {
+      const res = await fetchWithAuth(`${API_URL}/api/gift-cards/check?code=${encodeURIComponent(code.trim())}`);
+      const data = await res.json();
+      if (!res.ok || !data.success) { setGiftCardInfo(null); setGiftCardError(data.message || 'Invalid gift card'); return; }
+      setGiftCardInfo({ balance: data.data.balance, cardNumber: data.data.cardNumber });
+    } catch { setGiftCardError('Could not verify gift card'); }
+    finally { setGiftCardChecking(false); }
+  };
+
+  // ── Wallet pay ────────────────────────────────────────────────────────────
+  const submitWalletPay = async () => {
+    setIsLoading(true);
+    try {
+      const payRes = await fetchWithAuth(`${API_URL}/api/wallet/pay`, {
+        method: 'POST',
+        body: JSON.stringify({ amount: total }),
+      });
+      const payData = await payRes.json();
+      if (!payRes.ok || !payData.success) throw new Error(payData.message || 'Wallet payment failed');
+
+      const orderId = await createOrderAfterPayment({
+        method: 'wallet',
+        transactionId: payData.data.transactionId,
+        status: 'paid',
+        paidAt: new Date().toISOString(),
+        amount: total,
+      });
+      clearCart();
+      localStorage.setItem('customerEmail', form.email);
+      router.push(`/order-confirmation?orderId=${orderId}`);
+    } catch (e: any) {
+      setError(e.message || 'Wallet payment failed. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ── Gift card pay ─────────────────────────────────────────────────────────
+  const submitGiftCardPay = async () => {
+    if (!giftCardCode.trim()) { setError('Enter your gift card code'); return; }
+    setIsLoading(true);
+    try {
+      const payRes = await fetchWithAuth(`${API_URL}/api/gift-cards/pay-checkout`, {
+        method: 'POST',
+        body: JSON.stringify({ code: giftCardCode.trim(), amount: total }),
+      });
+      const payData = await payRes.json();
+      if (!payRes.ok || !payData.success) throw new Error(payData.message || 'Gift card payment failed');
+
+      const orderId = await createOrderAfterPayment({
+        method: 'gift_card',
+        transactionId: payData.data.transactionId,
+        status: 'paid',
+        paidAt: new Date().toISOString(),
+        amount: total,
+      });
+      clearCart();
+      localStorage.setItem('customerEmail', form.email);
+      router.push(`/order-confirmation?orderId=${orderId}`);
+    } catch (e: any) {
+      setError(e.message || 'Gift card payment failed. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // ── Pre-checkout cart validation ─────────────────────────────────────────
   /**
    * Validates stock & prices before allowing payment to proceed.
@@ -596,14 +722,10 @@ export default function CheckoutPage() {
     if (!validate())                     return;
     if (cartState.cartArray.length === 0) { setError('Your cart is empty'); return; }
 
-    if (activePayment === 'card') {
-      await validateBeforeCheckout(initStripe);
-      return;
-    }
-    if (activePayment === 'bank_transfer') {
-      await validateBeforeCheckout(initPaystack);
-      return;
-    }
+    if (activePayment === 'wallet') { await validateBeforeCheckout(submitWalletPay); return; }
+    if (activePayment === 'gift_card') { await validateBeforeCheckout(submitGiftCardPay); return; }
+    if (activePayment === 'card') { await validateBeforeCheckout(initStripe); return; }
+    if (activePayment === 'bank_transfer') { await validateBeforeCheckout(initPaystack); return; }
     await validateBeforeCheckout(submitCOD);
   };
 
@@ -781,6 +903,42 @@ export default function CheckoutPage() {
                     <h2 className="text-sm font-black text-white">Delivery Address</h2>
                   </div>
                   <div className="p-5 space-y-4">
+                    {/* Saved address picker */}
+                    {savedAddresses.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1.5">
+                          <Icon.PiBookmarkSimpleBold size={12} className="text-red-600" /> Saved Addresses
+                        </p>
+                        <div className="grid sm:grid-cols-2 gap-2">
+                          {savedAddresses.map((addr: any) => (
+                            <button
+                              key={addr._id}
+                              type="button"
+                              onClick={() => applyAddressToForm(addr)}
+                              className={`text-left p-3 rounded-xl border text-xs transition-all ${
+                                selectedAddrId === addr._id
+                                  ? 'border-red-500 bg-red-50 ring-1 ring-red-400'
+                                  : 'border-gray-200 bg-gray-50 hover:border-red-200 hover:bg-red-50/40'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="font-bold text-gray-800">{addr.label || 'Address'}</span>
+                                {addr.isDefaultShipping && (
+                                  <span className="text-[9px] font-bold bg-red-700 text-white px-1.5 py-0.5 rounded-full">Default</span>
+                                )}
+                              </div>
+                              <p className="text-gray-600 truncate">{addr.fullName}</p>
+                              <p className="text-gray-500 truncate">{addr.addressLine1}</p>
+                              <p className="text-gray-500">{addr.city ? `${addr.city}, ` : ''}{addr.state}</p>
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-xs text-gray-400 mt-2 flex items-center gap-1">
+                          <Icon.PiPencilSimple size={11} /> Or enter a new address below
+                        </p>
+                      </div>
+                    )}
+
                     <AddressAutocomplete
                       value={form.address}
                       onChange={handleAddressSelect}
@@ -936,33 +1094,91 @@ export default function CheckoutPage() {
                       <div className="space-y-2.5">
                         {PAYMENT_METHODS.map(({ id, name, description, icon: Ic, badge }) => {
                           const active = activePayment === id;
+                          const walletInsufficient = id === 'wallet' && walletBalance !== null && walletBalance < total;
                           return (
-                            <label
-                              key={id}
-                              onClick={() => { setActivePayment(id); setForm(f => ({ ...f, paymentMethod: id as any })); }}
-                              className={`flex items-center gap-3.5 p-3.5 rounded-xl border cursor-pointer transition-all ${
-                                active ? 'border-red-200 bg-red-50' : 'border-gray-200 hover:border-red-100 bg-white hover:bg-gray-50'
-                              }`}
-                            >
-                              <input type="radio" name="payment" checked={active} readOnly className="sr-only" />
-                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-all ${
-                                active ? 'bg-red-700 text-white' : 'bg-gray-100 text-gray-500'
-                              }`}>
-                                <Ic size={19} />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <p className={`font-bold text-sm ${active ? 'text-red-800' : 'text-gray-800'}`}>{name}</p>
-                                  {badge && <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{badge}</span>}
+                            <div key={id}>
+                              <label
+                                onClick={() => {
+                                  if (walletInsufficient) return;
+                                  setActivePayment(id);
+                                  setForm(f => ({ ...f, paymentMethod: id as any }));
+                                  setGiftCardError('');
+                                }}
+                                className={`flex items-center gap-3.5 p-3.5 rounded-xl border transition-all ${
+                                  walletInsufficient
+                                    ? 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed'
+                                    : active
+                                      ? 'border-red-200 bg-red-50 cursor-pointer'
+                                      : 'border-gray-200 hover:border-red-100 bg-white hover:bg-gray-50 cursor-pointer'
+                                }`}
+                              >
+                                <input type="radio" name="payment" checked={active} readOnly className="sr-only" />
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-all ${
+                                  active ? 'bg-red-700 text-white' : 'bg-gray-100 text-gray-500'
+                                }`}>
+                                  <Ic size={19} />
                                 </div>
-                                <p className="text-xs text-gray-400 mt-0.5">{description}</p>
-                              </div>
-                              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
-                                active ? 'border-red-700 bg-red-700' : 'border-gray-300'
-                              }`}>
-                                {active && <Icon.PiCheckBold size={11} className="text-white" />}
-                              </div>
-                            </label>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className={`font-bold text-sm ${active ? 'text-red-800' : 'text-gray-800'}`}>{name}</p>
+                                    {badge && !walletInsufficient && (
+                                      <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{badge}</span>
+                                    )}
+                                    {id === 'wallet' && walletBalance !== null && (
+                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                        walletInsufficient ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-700'
+                                      }`}>
+                                        {fmt(walletBalance)} available{walletInsufficient ? ' — insufficient' : ''}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-gray-400 mt-0.5">{description}</p>
+                                </div>
+                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                                  active ? 'border-red-700 bg-red-700' : 'border-gray-300'
+                                }`}>
+                                  {active && <Icon.PiCheckBold size={11} className="text-white" />}
+                                </div>
+                              </label>
+
+                              {/* Gift card code input — shown when gift_card is selected */}
+                              {id === 'gift_card' && active && (
+                                <div className="mt-2 px-3 pb-3 bg-red-50 rounded-b-xl border border-t-0 border-red-200">
+                                  <p className="text-xs font-semibold text-gray-600 mb-2 pt-2">Enter gift card code</p>
+                                  <div className="flex gap-2">
+                                    <input
+                                      type="text"
+                                      value={giftCardCode}
+                                      onChange={e => { setGiftCardCode(e.target.value.toUpperCase()); setGiftCardInfo(null); setGiftCardError(''); }}
+                                      placeholder="XXXX-XXXX-XXXX"
+                                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono bg-white focus:outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100 uppercase"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => checkGiftCard(giftCardCode)}
+                                      disabled={giftCardChecking || !giftCardCode.trim()}
+                                      className="px-3 py-2 bg-red-700 text-white text-xs font-bold rounded-lg hover:bg-red-800 transition-colors disabled:opacity-50"
+                                    >
+                                      {giftCardChecking ? '…' : 'Check'}
+                                    </button>
+                                  </div>
+                                  {giftCardError && (
+                                    <p className="mt-1.5 text-xs text-red-600 flex items-center gap-1">
+                                      <Icon.PiWarningCircleBold size={11} />{giftCardError}
+                                    </p>
+                                  )}
+                                  {giftCardInfo && (
+                                    <div className={`mt-2 flex items-center gap-2 text-xs font-semibold rounded-lg px-3 py-2 ${
+                                      giftCardInfo.balance >= total ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                                    }`}>
+                                      <Icon.PiCheckCircleBold size={13} />
+                                      Balance: {fmt(giftCardInfo.balance)}
+                                      {giftCardInfo.balance < total && ` — insufficient for ${fmt(total)}`}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           );
                         })}
                       </div>
@@ -1077,7 +1293,7 @@ export default function CheckoutPage() {
                     {!showStripeForm && (
                       <button
                         type="submit"
-                        disabled={isLoading}
+                        disabled={isLoading || (activePayment === 'gift_card' && (!giftCardCode.trim() || (giftCardInfo !== null && giftCardInfo.balance < total)))}
                         className="w-full flex items-center justify-center gap-2.5 bg-gradient-to-br from-red-700 to-red-900 text-white py-3.5 rounded-xl font-bold text-sm hover:from-red-800 hover:to-red-950 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
                       >
                         {isLoading ? (
@@ -1085,7 +1301,7 @@ export default function CheckoutPage() {
                         ) : (
                           <>
                             <Icon.PiLockKeyBold size={16} />
-                            {activePayment === 'cash_on_delivery' ? 'Place Order' : `Pay ${fmt(total)}`}
+                            {activePayment === 'cash_on_delivery' ? 'Place Order' : activePayment === 'wallet' ? `Pay ${fmt(total)} from Wallet` : activePayment === 'gift_card' ? `Pay ${fmt(total)} with Gift Card` : `Pay ${fmt(total)}`}
                           </>
                         )}
                       </button>

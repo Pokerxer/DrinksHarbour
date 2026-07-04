@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  sassOptions: {
+    silenceDeprecations: ['import'],
+  },
   typescript: {
     ignoreBuildErrors: true,
   },

@@ -7,6 +7,13 @@ import * as Icon from 'react-icons/pi';
 import { useAuth } from '@/context/AuthContext';
 import { NAV_ITEMS } from '../_constants';
 
+const TIER_BADGE: Record<string, { label: string; color: string }> = {
+  cork:   { label: 'Cork',   color: 'bg-amber-100 text-amber-700 border-amber-200' },
+  barrel: { label: 'Barrel', color: 'bg-blue-100 text-blue-700 border-blue-200' },
+  cellar: { label: 'Cellar', color: 'bg-purple-100 text-purple-700 border-purple-200' },
+  vault:  { label: 'Vault',  color: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
+};
+
 export default function MobileNav() {
   const pathname = usePathname();
   const router = useRouter();
@@ -15,6 +22,8 @@ export default function MobileNav() {
 
   const displayName = user?.firstName || user?.email?.split('@')[0] || 'User';
   const initials = displayName.slice(0, 2).toUpperCase();
+  const tier = user?.loyaltyTier || 'cork';
+  const badge = TIER_BADGE[tier];
 
   const handleLogout = async () => {
     await logout();
@@ -29,6 +38,7 @@ export default function MobileNav() {
             {initials}
           </div>
           <span className="font-bold text-stone-900 text-sm">{displayName}</span>
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.color}`}>{badge.label}</span>
         </div>
         <button onClick={() => setOpen(o => !o)} className="p-2 rounded-xl hover:bg-stone-100 text-stone-500">
           {open ? <Icon.PiX size={20} /> : <Icon.PiList size={20} />}

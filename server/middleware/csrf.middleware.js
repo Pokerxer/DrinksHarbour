@@ -18,6 +18,10 @@
 //   (POS, mobile, API clients) — they are inherently immune to CSRF because
 //   the attacker cannot read the token from another origin
 // - /api/pos and /api/pos-combos use their own JWT auth (not cookies) — exempt
+// - /api/analytics/track — public sendBeacon / pixel endpoints; no session data
+//   is mutated, so CSRF protection is unnecessary and would block valid beacons
+// - Auth endpoints (login/register/logout/…) — must work even when a stale auth
+//   cookie is present but the CSRF cookie has been cleared (expired session)
 
 const { UnauthorizedError } = require('../utils/errors');
 const { COOKIE_NAMES } = require('../utils/cookies');
@@ -27,13 +31,39 @@ const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 // Paths that use Bearer-token auth exclusively (no cookie-based sessions)
 const BEARER_ONLY_PREFIXES = ['/api/pos', '/api/pos-combos'];
 
+// Public fire-and-forget paths that must never require CSRF
+// (sendBeacon / analytics pings — browser sends no cookies or custom headers)
+const PUBLIC_WRITE_PREFIXES = ['/api/analytics/track'];
+
+// Auth endpoints that must work even when a stale auth cookie is present.
+// A user with an expired session needs to be able to log in/out/register
+// regardless of whether their old cookies are still in the browser.
+const AUTH_PATHS = new Set([
+  '/api/users/login',
+  '/api/users/register',
+  '/api/users/logout',
+  '/api/users/forgot-password',
+  '/api/users/refresh-token',
+  '/api/users/verify-age',
+]);
+
 function isBearerAuth(req) {
   const auth = req.headers.authorization;
   return !!auth && auth.startsWith('Bearer ') && auth.split(' ')[1]?.length > 0;
 }
 
 function isBearerOnlyPath(req) {
-  return BEARER_ONLY_PREFIXES.some((p) => req.path.startsWith(p));
+  return BEARER_ONLY_PREFIXES.some((p) => req.originalUrl.startsWith(p));
+}
+
+function isPublicWritePath(req) {
+  return PUBLIC_WRITE_PREFIXES.some((p) => req.originalUrl.startsWith(p));
+}
+
+function isAuthPath(req) {
+  // Strip query string for comparison
+  const path = req.originalUrl.split('?')[0];
+  return AUTH_PATHS.has(path);
 }
 
 /**
@@ -57,6 +87,16 @@ const csrfProtection = (req, res, next) => {
 
   // Bearer-token-authenticated requests are immune to CSRF
   if (isBearerAuth(req) || isBearerOnlyPath(req)) {
+    return next();
+  }
+
+  // Public write paths (analytics beacons, pixels) — never carry CSRF tokens
+  if (isPublicWritePath(req)) {
+    return next();
+  }
+
+  // Auth endpoints must work even when a stale auth cookie is in the browser
+  if (isAuthPath(req)) {
     return next();
   }
 

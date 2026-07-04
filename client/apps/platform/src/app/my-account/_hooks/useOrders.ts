@@ -65,3 +65,44 @@ export function useOrders(token: string | null): UseOrdersReturn {
 
   return { orders, loading, error, pagination, filters, setFilters, goToPage, refetch: fetchOrders };
 }
+
+// ── Single order detail ────────────────────────────────────────────────────────
+
+export function useOrderDetail(token: string | null, id: string | null) {
+  const [order, setOrder] = useState<Order | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchOrder = useCallback(async () => {
+    if (!token || !id) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetchWithAuth(`${API_URL}/api/orders/${id}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Order not found');
+      setOrder(data.data?.order || data.order || data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load order');
+    } finally {
+      setLoading(false);
+    }
+  }, [token, id]);
+
+  useEffect(() => { fetchOrder(); }, [fetchOrder]);
+
+  const cancel = useCallback(async () => {
+    if (!token || !id) return { ok: false, message: 'Not authenticated' };
+    try {
+      const res = await fetchWithAuth(`${API_URL}/api/orders/${id}/cancel`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) return { ok: false, message: data.message || 'Cancellation failed' };
+      await fetchOrder();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : 'Network error' };
+    }
+  }, [token, id, fetchOrder]);
+
+  return { order, loading, error, refetch: fetchOrder, cancel };
+}

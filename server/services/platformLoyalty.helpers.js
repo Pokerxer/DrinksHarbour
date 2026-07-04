@@ -16,9 +16,9 @@ const PLATFORM_LOYALTY_REASON_MAX = 280;
 // Tier thresholds (lifetime points). Vault is the top tier.
 const TIER_THRESHOLDS = {
   cork:   0,
-  barrel: 2500,
-  cellar: 7500,
-  vault:  20000,
+  barrel: 50000,
+  cellar: 150000,
+  vault:  500000,
 };
 
 const TIER_ORDER = ['cork', 'barrel', 'cellar', 'vault'];

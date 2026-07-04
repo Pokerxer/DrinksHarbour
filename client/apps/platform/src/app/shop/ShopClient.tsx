@@ -7,6 +7,7 @@ import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 const _shopCache = new Map<string, { data: any[]; total: number; ts: number }>();
 const SHOP_CACHE_TTL = 30_000;
 import Shop from '@/components/Shop';
+import ShopHeroBanner from '@/components/Shop/ShopHeroBanner';
 import LoadingSpinner from '@/components/loader/LoadingSpinner';
 import * as Icon from 'react-icons/pi';
 import RecommendedForYou from '@/components/Shop/RecommendedForYou';
@@ -624,6 +625,16 @@ function ShopPageContent({ params }: PageProps) {
             </div>
           )}
         </>
+      )}
+
+      {/* ── Category / subcategory hero banner ──────────────────────────── */}
+      {!isSalePage && !searchQuery && (
+        <ShopHeroBanner
+          category={categoryParam}
+          subcategory={subcategoryParam}
+          brand={brandParam}
+          totalProducts={totalProducts}
+        />
       )}
 
       {/* ── Search results header ────────────────────────────────────────── */}

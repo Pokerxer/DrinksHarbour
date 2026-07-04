@@ -7,6 +7,13 @@ import * as Icon from 'react-icons/pi';
 import { useAuth } from '@/context/AuthContext';
 import { NAV_ITEMS } from '../_constants';
 
+const TIER_BADGE: Record<string, { label: string; color: string }> = {
+  cork:   { label: 'Cork',   color: 'bg-amber-400/20 text-amber-200 border-amber-400/30' },
+  barrel: { label: 'Barrel', color: 'bg-blue-400/20 text-blue-200 border-blue-400/30' },
+  cellar: { label: 'Cellar', color: 'bg-purple-400/20 text-purple-200 border-purple-400/30' },
+  vault:  { label: 'Vault',  color: 'bg-yellow-300/20 text-yellow-200 border-yellow-300/30' },
+};
+
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -14,6 +21,8 @@ export default function Sidebar() {
 
   const displayName = user?.firstName || user?.email?.split('@')[0] || 'User';
   const initials = displayName.slice(0, 2).toUpperCase();
+  const tier = user?.loyaltyTier || 'cork';
+  const badge = TIER_BADGE[tier];
 
   const handleLogout = async () => {
     await logout();
@@ -28,8 +37,13 @@ export default function Sidebar() {
             {initials}
           </div>
           <div className="min-w-0">
-            <p className="font-bold text-sm truncate">{displayName}</p>
-            <p className="text-xs text-red-200 truncate">{user?.email}</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-bold text-sm truncate">{displayName}</p>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${badge.color}`}>
+                {badge.label}
+              </span>
+            </div>
+            <p className="text-xs text-red-200 truncate mt-0.5">{user?.email}</p>
           </div>
         </div>
       </div>

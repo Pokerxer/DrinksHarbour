@@ -111,21 +111,39 @@ const attachPaymentToOrder = async (orderId, paymentData) => {
 };
 
 /**
- * Initialize Paystack transaction (without order)
+ * Initialize Paystack transaction (without order).
+ *
+ * @param {number} amount   Amount in major units (NGN).
+ * @param {string} email    Customer email.
+ * @param {object} metadata Arbitrary metadata forwarded to Paystack.
+ * @param {object} [options]
+ * @param {string} [options.reference]   Force Paystack to use OUR reference so the
+ *   callback + verify echo the same value (wallet/gift-card funding rely on this).
+ * @param {string} [options.callbackUrl] Where Paystack redirects after payment.
+ *   Defaults to the cart flow's /payment/verify page.
+ *
+ * NOTE: Paystack honours the callback_url set HERE at initialization time. Appending
+ * a callback_url query param to the returned checkout URL has no effect, so callers
+ * that need a different return page MUST pass options.callbackUrl.
  */
-const createPaystackTransaction = async (amount, email, metadata = {}) => {
+const createPaystackTransaction = async (amount, email, metadata = {}, options = {}) => {
   try {
+    const payload = {
+      email: email,
+      amount: Math.round(amount * 100), // Paystack uses kobo
+      metadata: {
+        ...metadata,
+        createdAt: new Date().toISOString(),
+      },
+      callback_url:
+        options.callbackUrl ||
+        `${process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3002'}/payment/verify`,
+    };
+    if (options.reference) payload.reference = options.reference;
+
     const response = await axios.post(
       `${PAYSTACK_BASE_URL}/transaction/initialize`,
-      {
-        email: email,
-        amount: Math.round(amount * 100), // Paystack uses kobo
-        metadata: {
-          ...metadata,
-          createdAt: new Date().toISOString(),
-        },
-        callback_url: `${process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3002'}/payment/verify`,
-      },
+      payload,
       {
         headers: {
           Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,

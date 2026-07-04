@@ -13,7 +13,10 @@ exports.mapsScript = async (req, res) => {
     const { callback, libraries } = req.query;
     const script = await placesService.fetchMapsScript(callback, libraries);
     res.set('Content-Type', 'application/javascript; charset=utf-8');
-    res.set('Cache-Control', 'public, max-age=3600');
+    // Don't cache — the Maps JS bundle contains the API key. A stale bundle
+    // that embeds an old/expired key would keep showing ExpiredKeyMapError even
+    // after the key is rotated, for up to the previous TTL.
+    res.set('Cache-Control', 'no-store');
     // Global helmet default is same-origin CORP, which blocks <script src> loads
     // from the frontend's domain. This endpoint is meant to be loaded cross-origin.
     res.set('Cross-Origin-Resource-Policy', 'cross-origin');

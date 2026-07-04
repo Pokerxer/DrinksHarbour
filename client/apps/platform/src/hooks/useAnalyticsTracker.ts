@@ -5,9 +5,18 @@ import { usePathname } from 'next/navigation';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
-function generateSessionId(): string {
-  return crypto.randomUUID();
-}
+// ── Module-level dedup state ──────────────────────────────────────────────────
+// Persists across remounts of the same component within the same page session.
+// Prevents the track/duration/track loop caused by rapid remounts.
+
+const MIN_TRACK_INTERVAL_MS = 5_000;   // don't re-fire pageview for the same path < 5s
+const MIN_DURATION_SECONDS  = 2;       // ignore durations shorter than 2s (spurious cleanups)
+
+const lastTracked: Map<string, number> = new Map(); // path → timestamp of last pageview fire
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function generateSessionId(): string { return crypto.randomUUID(); }
 
 function getOrCreateSessionId(): string {
   const existing = sessionStorage.getItem('dh_session_id');
@@ -19,19 +28,13 @@ function getOrCreateSessionId(): string {
 
 function checkIsNewUser(): boolean {
   const visited = localStorage.getItem('dh_first_visit');
-  if (!visited) {
-    localStorage.setItem('dh_first_visit', new Date().toISOString());
-    return true;
-  }
+  if (!visited) { localStorage.setItem('dh_first_visit', new Date().toISOString()); return true; }
   return false;
 }
 
 function checkIsFirstInSession(): boolean {
   const started = sessionStorage.getItem('dh_session_started');
-  if (!started) {
-    sessionStorage.setItem('dh_session_started', '1');
-    return true;
-  }
+  if (!started) { sessionStorage.setItem('dh_session_started', '1'); return true; }
   return false;
 }
 
@@ -49,79 +52,71 @@ function detectDevice(): 'mobile' | 'tablet' | 'desktop' {
   return 'desktop';
 }
 
-interface UTMParams {
-  utmSource: string | null;
-  utmMedium: string | null;
-  utmCampaign: string | null;
+function parseUTMParams() {
+  if (typeof window === 'undefined') return { utmSource: null, utmMedium: null, utmCampaign: null };
+  const p = new URLSearchParams(window.location.search);
+  return { utmSource: p.get('utm_source'), utmMedium: p.get('utm_medium'), utmCampaign: p.get('utm_campaign') };
 }
 
-function parseUTMParams(): UTMParams {
-  if (typeof window === 'undefined') {
-    return { utmSource: null, utmMedium: null, utmCampaign: null };
-  }
-  const params = new URLSearchParams(window.location.search);
-  return {
-    utmSource: params.get('utm_source'),
-    utmMedium: params.get('utm_medium'),
-    utmCampaign: params.get('utm_campaign'),
-  };
-}
+// ── Hook ──────────────────────────────────────────────────────────────────────
 
 export default function useAnalyticsTracker(): void {
-  const pathname = usePathname();
-  const startTimeRef = useRef<number>(Date.now());
-  const currentPageRef = useRef<string>(pathname);
-  const sessionIdRef = useRef<string>('');
+  const pathname         = usePathname();
+  const startTimeRef     = useRef<number>(Date.now());
+  const currentPageRef   = useRef<string>(pathname);
+  const sessionIdRef     = useRef<string>('');
+  const trackedThisMount = useRef<boolean>(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    const now = Date.now();
+    const lastFire = lastTracked.get(pathname) ?? 0;
+
+    // Dedup: skip if we already tracked this path within MIN_TRACK_INTERVAL_MS.
+    // This stops the mount → cleanup → remount → cleanup → … loop cold.
+    if (now - lastFire < MIN_TRACK_INTERVAL_MS) {
+      // Still reset the timer so duration is measured from now
+      startTimeRef.current = now;
+      currentPageRef.current = pathname;
+      return;
+    }
+
+    lastTracked.set(pathname, now);
+    trackedThisMount.current = true;
+
     const sessionId = getOrCreateSessionId();
     sessionIdRef.current = sessionId;
+    startTimeRef.current = now;
+    currentPageRef.current = pathname;
 
-    const isNewUser = checkIsNewUser();
-    const isFirstInSession = checkIsFirstInSession();
-    const pageViewsInSession = incrementPageViewCount();
-    const device = detectDevice();
     const { utmSource, utmMedium, utmCampaign } = parseUTMParams();
-
-    const page = pathname;
-    const title = document.title;
-    const referrer = document.referrer;
-
-    currentPageRef.current = page;
-    startTimeRef.current = Date.now();
-
-    const payload = {
-      sessionId,
-      page,
-      title,
-      referrer,
-      device,
-      isNewUser,
-      isFirstInSession,
-      pageViewsInSession,
-      ...(utmSource && { utmSource }),
-      ...(utmMedium && { utmMedium }),
-      ...(utmCampaign && { utmCampaign }),
-    };
 
     fetch(`${API_URL}/api/analytics/track`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      // Use keepalive so the request survives short-lived navigations
       keepalive: true,
-    }).catch(() => {
-      // Silently swallow analytics errors to avoid disrupting UX
-    });
-
-    // Send duration for the PREVIOUS page on navigation change
-    // (handled by cleanup below)
+      body: JSON.stringify({
+        sessionId,
+        page: pathname,
+        title: document.title,
+        referrer: document.referrer,
+        device: detectDevice(),
+        isNewUser: checkIsNewUser(),
+        isFirstInSession: checkIsFirstInSession(),
+        pageViewsInSession: incrementPageViewCount(),
+        ...(utmSource   && { utmSource }),
+        ...(utmMedium   && { utmMedium }),
+        ...(utmCampaign && { utmCampaign }),
+      }),
+    }).catch(() => {});
 
     function sendDuration() {
+      // Don't fire for spurious cleanups (remounts < MIN_DURATION_SECONDS)
       const duration = Math.round((Date.now() - startTimeRef.current) / 1000);
-      const durationPayload = JSON.stringify({
+      if (duration < MIN_DURATION_SECONDS) return;
+
+      const body = JSON.stringify({
         sessionId: sessionIdRef.current,
         page: currentPageRef.current,
         duration,
@@ -129,27 +124,23 @@ export default function useAnalyticsTracker(): void {
 
       const sent = navigator.sendBeacon(
         `${API_URL}/api/analytics/track/duration`,
-        new Blob([durationPayload], { type: 'application/json' })
+        new Blob([body], { type: 'application/json' }),
       );
 
-      // Fallback to fetch if sendBeacon is unavailable or fails
       if (!sent) {
         fetch(`${API_URL}/api/analytics/track/duration`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: durationPayload,
           keepalive: true,
+          body,
         }).catch(() => {});
       }
     }
 
     window.addEventListener('beforeunload', sendDuration);
-
     return () => {
       window.removeEventListener('beforeunload', sendDuration);
-      // Send duration when navigating away (SPA route change)
-      sendDuration();
+      sendDuration(); // SPA navigation or unmount
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 }

@@ -39,6 +39,23 @@ function generateGiftCardCode(rng = crypto) {
   return CODE_PREFIX + body;
 }
 
+/**
+ * Generate a 16-digit numeric card number for display on the card face.
+ * First digit is always 4–9 (avoids BIN-reserved 0–3 prefixes).
+ */
+function generateCardNumber(rng = crypto) {
+  const first = 4 + rng.randomInt(6); // 4–9
+  let rest = '';
+  for (let i = 0; i < 15; i++) rest += rng.randomInt(10);
+  return String(first) + rest;
+}
+
+/** Format 16-digit number as XXXX XXXX XXXX XXXX */
+function formatCardNumber(num) {
+  if (!num || num.length !== 16) return '•••• •••• •••• ••••';
+  return num.replace(/(.{4})/g, '$1 ').trim();
+}
+
 /** Uppercase + strip spaces/dashes; the lookup key matching the stored `code`. */
 function normalizeGiftCardCode(code) {
   return typeof code === 'string' ? code.toUpperCase().replace(/[\s-]/g, '') : '';
@@ -260,6 +277,8 @@ module.exports = {
   CODE_PREFIX,
   CODE_ALPHABET,
   generateGiftCardCode,
+  generateCardNumber,
+  formatCardNumber,
   normalizeGiftCardCode,
   formatGiftCardCode,
   validateGiftCardPurchase,

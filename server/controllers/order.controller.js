@@ -29,6 +29,11 @@ const {
   sendNewOrderAlertWhatsApp,
 } = require('../services/whatsapp.service');
 
+const { mutatePlatformLoyalty } = require('../services/platformLoyalty.service');
+const { earnMultiplierForTier, pointsForSpend } = require('../services/platformLoyalty.helpers');
+
+const LOYALTY_POINTS_PER_NGN = 1 / 100; // 1 pt per ₦100 base rate
+
 
 /**
  * @desc    Create new order
@@ -256,7 +261,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
   // Populate order items for email notifications
   await order.populate([
     { path: 'items.product', select: 'name slug images' },
-    { path: 'items.subproduct', select: 'name sku images' },
+    { path: 'items.subproduct', select: 'name sku imagesOverride' },
     { path: 'items.size', select: 'name' },
     { path: 'items.tenant', select: 'name' },
   ]);
@@ -332,6 +337,30 @@ exports.createOrder = asyncHandler(async (req, res) => {
       await sendNewOrderNotificationToAdmin(order, customer)
         .then(() => console.log('✅ Order notification email → admin'))
         .catch(e  => console.error('❌ Email to admin failed:', e.message));
+
+      // 4. Loyalty points — 1 pt per ₦100 spent (paid orders only, logged-in users)
+      if (userId && order.paymentStatus === 'paid') {
+        try {
+          const loyaltyUser = await User.findById(userId).select('loyaltyTier').lean();
+          const multiplier = earnMultiplierForTier(loyaltyUser?.loyaltyTier || 'cork');
+          const earnedPoints = Math.floor((order.totalAmount || 0) * LOYALTY_POINTS_PER_NGN * multiplier);
+          if (earnedPoints > 0) {
+            const loyaltyResult = await mutatePlatformLoyalty({
+              userId,
+              value: { type: 'earn', points: earnedPoints, reason: `Order ${order.orderNumber} — ₦${order.totalAmount.toLocaleString()} spent` },
+              relatedOrder: order._id,
+              createdBy: userId,
+            });
+            if (loyaltyResult.ok) {
+              console.log(`✅ Loyalty: +${earnedPoints} pts → user ${userId} (balance: ${loyaltyResult.balance})`);
+            } else {
+              console.error('❌ Loyalty credit failed:', loyaltyResult.message);
+            }
+          }
+        } catch (loyaltyErr) {
+          console.error('❌ Loyalty credit error:', loyaltyErr.message);
+        }
+      }
 
     } catch (err) {
       console.error('❌ Unexpected error in order notification block:', err.message);
@@ -464,7 +493,7 @@ exports.getAllOrders = asyncHandler(async (req, res) => {
 exports.getOrder = asyncHandler(async (req, res) => {
   const order = await Order.findById(req.params.id)
     .populate('items.product', 'name slug images type')
-    .populate('items.subproduct', 'name sku images baseSellingPrice')
+    .populate('items.subproduct', 'name sku imagesOverride baseSellingPrice')
     .populate('items.size', 'displayName size sellingPrice')
     .populate('items.tenant', 'name')
     .populate('posStaff', 'firstName lastName posName email')
@@ -574,7 +603,7 @@ exports.getOrderByReceipt = asyncHandler(async (req, res) => {
 
   const order = await Order.findOne(filter)
     .populate('items.product', 'name slug images type')
-    .populate('items.subproduct', 'name sku images baseSellingPrice')
+    .populate('items.subproduct', 'name sku imagesOverride baseSellingPrice')
     .populate('items.size', 'displayName size sellingPrice')
     .populate('items.tenant', 'name')
     .populate('posStaff', 'firstName lastName posName email');

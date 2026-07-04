@@ -150,6 +150,34 @@ router.get(
   })
 );
 
+// ============================================================
+// WISHLIST ROUTES (must be before /:id to avoid param capture)
+// ============================================================
+
+/**
+ * Get user's wishlist
+ * @route GET /api/products/wishlist
+ */
+router.get('/wishlist', protect, productController.getWishlist);
+
+/**
+ * Clear entire wishlist
+ * @route DELETE /api/products/wishlist
+ */
+router.delete('/wishlist', protect, productController.clearWishlistController);
+
+/**
+ * Add product to wishlist
+ * @route POST /api/products/wishlist/:id
+ */
+router.post('/wishlist/:id', protect, mongoIdValidation, validate, productController.addProductToWishlist);
+
+/**
+ * Remove product from wishlist
+ * @route DELETE /api/products/wishlist/:id
+ */
+router.delete('/wishlist/:id', protect, mongoIdValidation, validate, productController.removeProductFromWishlist);
+
 /**
  * Get single product by ID
  * @route GET /api/products/:id
@@ -232,34 +260,6 @@ router.post(
   '/reviews/:reviewId/helpful',
   protect,
   productController.markReviewHelpful
-);
-
-// ============================================================
-// WISHLIST & CART ROUTES (Optional Auth)
-// ============================================================
-
-/**
- * Add product to wishlist
- * @route POST /api/products/wishlist/:id
- * @access Public (optional auth)
- */
-router.post(
-  '/wishlist/:id',
-  mongoIdValidation,
-  validate,
-  productController.addProductToWishlist
-);
-
-/**
- * Remove product from wishlist
- * @route DELETE /api/products/wishlist/:id
- * @access Public (optional auth)
- */
-router.delete(
-  '/wishlist/:id',
-  mongoIdValidation,
-  validate,
-  productController.removeProductFromWishlist
 );
 
 /**
