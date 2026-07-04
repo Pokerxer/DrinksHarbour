@@ -517,7 +517,7 @@ export default function ShopHeroBanner({
       {/* ── Full-height hero ────────────────────────────────────────────────── */}
       <div
         className="relative w-full overflow-hidden"
-        style={{ height: 'clamp(420px, 65vh, 720px)' }}
+        style={{ height: 'clamp(336px, 52vh, 576px)' }}
       >
         {/* Background gradient */}
         <div
