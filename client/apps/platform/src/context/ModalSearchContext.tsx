@@ -6,6 +6,7 @@ import React, {
   useState,
   useCallback,
   useRef,
+  useMemo,
   useEffect,
   ReactNode,
 } from 'react';
@@ -35,54 +36,117 @@ export interface RecentSearch {
   timestamp: number;
 }
 
-interface ModalSearchContextValue {
-  // Modal
+// ─── UI Context (modal open/close only — stable, rarely changes) ─────────────
+
+interface ModalSearchUIValue {
   isModalOpen: boolean;
   openModalSearch: () => void;
   closeModalSearch: () => void;
   toggleModalSearch: () => void;
+}
 
-  // Search state
+const ModalSearchUIContext = createContext<ModalSearchUIValue | undefined>(undefined);
+
+export const useModalSearchUIContext = (): ModalSearchUIValue => {
+  const ctx = useContext(ModalSearchUIContext);
+  if (!ctx) throw new Error('useModalSearchUIContext must be used within ModalSearchUIProvider');
+  return ctx;
+};
+
+export const ModalSearchUIProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const originalOverflow = useRef<string>('');
+
+  const openModalSearch = useCallback(() => {
+    if (typeof document !== 'undefined') {
+      originalOverflow.current = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+    }
+    setIsModalOpen(true);
+  }, []);
+
+  const closeModalSearch = useCallback(() => {
+    if (typeof document !== 'undefined') {
+      document.body.style.overflow = originalOverflow.current;
+    }
+    setIsModalOpen(false);
+  }, []);
+
+  const toggleModalSearch = useCallback(() => {
+    setIsModalOpen((open) => {
+      if (open) {
+        if (typeof document !== 'undefined')
+          document.body.style.overflow = originalOverflow.current;
+        return false;
+      } else {
+        if (typeof document !== 'undefined') {
+          originalOverflow.current = document.body.style.overflow;
+          document.body.style.overflow = 'hidden';
+        }
+        return true;
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (typeof document !== 'undefined')
+        document.body.style.overflow = originalOverflow.current;
+    };
+  }, []);
+
+  const value = useMemo(
+    () => ({ isModalOpen, openModalSearch, closeModalSearch, toggleModalSearch }),
+    [isModalOpen, openModalSearch, closeModalSearch, toggleModalSearch],
+  );
+
+  return (
+    <ModalSearchUIContext.Provider value={value}>
+      {children}
+    </ModalSearchUIContext.Provider>
+  );
+};
+
+// ─── Data Context (search state, results, suggestions — changes frequently) ──
+
+export interface ModalSearchDataValue {
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   searchResults: SearchResult | null;
   isSearching: boolean;
   searchError: string | null;
   hasMore: boolean;
-
-  // Filters
   filters: SearchFilters;
   setFilters: (filters: SearchFilters) => void;
   updateFilter: <K extends keyof SearchFilters>(key: K, value: SearchFilters[K]) => void;
   clearFilters: () => void;
-
-  // Actions
   performSearch: (query?: string, page?: number) => Promise<void>;
   loadMoreResults: () => Promise<void>;
   clearSearch: () => void;
-
-  // Recent searches
   recentSearches: RecentSearch[];
   addRecentSearch: (query: string, filters?: SearchFilters) => void;
   clearRecentSearches: () => void;
   removeRecentSearch: (query: string) => void;
-
-  // Popular searches
   popularSearches: string[];
-
-  // Suggestions
   suggestions: string[];
   isLoadingSuggestions: boolean;
   fetchSuggestions: (query: string) => void;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+const ModalSearchDataContext = createContext<ModalSearchDataValue | undefined>(undefined);
+
+export const useModalSearchContext = (): ModalSearchDataValue => {
+  const ctx = useContext(ModalSearchDataContext);
+  if (!ctx) throw new Error('useModalSearchContext must be used within a ModalSearchProvider');
+  return ctx;
+};
+
+// ─── Helpers & constants ──────────────────────────────────────────────────────
 
 const LS_KEY = 'dh_recentSearches';
 const MAX_RECENT = 10;
 const SUGGESTION_DEBOUNCE_MS = 250;
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
-
 const POPULAR_SEARCHES: string[] = [
   'Whiskey', 'Red Wine', 'Beer', 'Vodka',
   'Champagne', 'Gin', 'Rum', 'Brandy',
@@ -125,95 +189,62 @@ function writeLocalRecents(searches: RecentSearch[]): void {
   } catch { /* quota exceeded — ignore */ }
 }
 
-// ─── Context ─────────────────────────────────────────────────────────────────
-
-const ModalSearchContext = createContext<ModalSearchContextValue | undefined>(undefined);
-
-export const useModalSearchContext = (): ModalSearchContextValue => {
-  const ctx = useContext(ModalSearchContext);
-  if (!ctx) throw new Error('useModalSearchContext must be used within a ModalSearchProvider');
-  return ctx;
-};
-
-// ─── Provider ────────────────────────────────────────────────────────────────
+// ─── Data Provider ────────────────────────────────────────────────────────────
 
 export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Modal
-  const [isModalOpen, setIsModalOpen]     = useState(false);
-  const originalOverflow                  = useRef<string>('');
+  const [searchQuery, setSearchQuery]       = useState('');
+  const [searchResults, setSearchResults]   = useState<SearchResult | null>(null);
+  const [isSearching, setIsSearching]       = useState(false);
+  const [searchError, setSearchError]       = useState<string | null>(null);
+  const [currentPage, setCurrentPage]       = useState(1);
 
-  // Search
-  const [searchQuery, setSearchQuery]     = useState('');
-  const [searchResults, setSearchResults] = useState<SearchResult | null>(null);
-  const [isSearching, setIsSearching]     = useState(false);
-  const [searchError, setSearchError]     = useState<string | null>(null);
-  const [currentPage, setCurrentPage]     = useState(1);
-
-  // Track the exact term + filters used for the current result set (for loadMore)
   const lastSearchRef = useRef<{ query: string; filters: SearchFilters }>({ query: '', filters: {} });
 
-  // Filters
-  const [filters, setFilters]             = useState<SearchFilters>({});
+  const [filters, setFilters]               = useState<SearchFilters>({});
 
-  // Recent searches
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>(readLocalRecents);
 
-  // Popular searches
-  const [popularSearches] = useState<string[]>(POPULAR_SEARCHES);
-
-  // Suggestions
-  const [suggestions, setSuggestions]               = useState<string[]>([]);
+  const [suggestions, setSuggestions]                   = useState<string[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
-  const suggestionAbortRef                           = useRef<AbortController | null>(null);
-  const suggestionTimerRef                           = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suggestionAbortRef   = useRef<AbortController | null>(null);
+  const suggestionTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Abort controller for main search
   const searchAbortRef = useRef<AbortController | null>(null);
 
-  // ── Derived ────────────────────────────────────────────────────────────────
-  const hasMore = Boolean(searchResults && currentPage < searchResults.totalPages);
+  // ── Refs for transient values (keep callbacks stable) ────────────────────
+  const searchQueryRef = useRef(searchQuery);
+  useEffect(() => { searchQueryRef.current = searchQuery; }, [searchQuery]);
 
-  // ── Body scroll lock ───────────────────────────────────────────────────────
-  const openModalSearch = useCallback(() => {
-    if (typeof document !== 'undefined') {
-      originalOverflow.current = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-    }
-    setIsModalOpen(true);
-  }, []);
+  const filtersRef = useRef(filters);
+  useEffect(() => { filtersRef.current = filters; }, [filters]);
 
-  const closeModalSearch = useCallback(() => {
-    if (typeof document !== 'undefined') {
-      document.body.style.overflow = originalOverflow.current;
-    }
-    setIsModalOpen(false);
-  }, []);
+  const recentSearchesRef = useRef(recentSearches);
+  useEffect(() => { recentSearchesRef.current = recentSearches; }, [recentSearches]);
 
-  const toggleModalSearch = useCallback(() => {
-    setIsModalOpen((open) => {
-      if (open) {
-        if (typeof document !== 'undefined')
-          document.body.style.overflow = originalOverflow.current;
-        return false;
-      } else {
-        if (typeof document !== 'undefined') {
-          originalOverflow.current = document.body.style.overflow;
-          document.body.style.overflow = 'hidden';
-        }
-        return true;
-      }
-    });
-  }, []);
+  const isSearchingRef = useRef(isSearching);
+  useEffect(() => { isSearchingRef.current = isSearching; }, [isSearching]);
 
-  // Restore scroll on unmount (safety net)
-  useEffect(() => {
-    return () => {
-      if (typeof document !== 'undefined')
-        document.body.style.overflow = originalOverflow.current;
-    };
-  }, []);
+  const currentPageRef = useRef(currentPage);
+  useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
 
-  // ── Recent searches ────────────────────────────────────────────────────────
+  // ── In-memory search result cache ─────────────────────────────────────────
+  const searchCacheRef = useRef<Map<string, SearchResult>>(new Map());
+  const CACHE_MAX = 30;
+
+  function getCacheKey(query: string, filters: SearchFilters, page: number): string {
+    return `${query}:${JSON.stringify(filters)}:${page}`;
+  }
+
+  // ── Derived ──────────────────────────────────────────────────────────────
+  const hasMore = useMemo(
+    () => Boolean(searchResults && currentPage < searchResults.totalPages),
+    [searchResults, currentPage],
+  );
+
+  const hasMoreRef = useRef(hasMore);
+  useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
+
+  // ── Recent searches ──────────────────────────────────────────────────────
   const addRecentSearch = useCallback((query: string, searchFilters?: SearchFilters) => {
     if (!query.trim()) return;
     setRecentSearches((prev) => {
@@ -238,7 +269,7 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
     });
   }, []);
 
-  // ── Filters ────────────────────────────────────────────────────────────────
+  // ── Filters ──────────────────────────────────────────────────────────────
   const updateFilter = useCallback(<K extends keyof SearchFilters>(
     key: K,
     value: SearchFilters[K],
@@ -248,7 +279,7 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   const clearFilters = useCallback(() => setFilters({}), []);
 
-  // ── Core fetch helper ──────────────────────────────────────────────────────
+  // ── Core fetch helper (no deps — always stable) ─────────────────────────
   const fetchSearchPage = useCallback(async (
     query: string,
     activeFilters: SearchFilters,
@@ -275,11 +306,28 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
     };
   }, []);
 
-  // ── performSearch ──────────────────────────────────────────────────────────
+  // ── performSearch (reads transient values from refs — stable ref) ───────
   const performSearch = useCallback(async (query?: string, page = 1) => {
-    const term = (query ?? searchQuery).trim();
+    const term = (query ?? searchQueryRef.current).trim();
+    const activeFilters = filtersRef.current;
 
-    // Abort any in-flight search
+    // Fast path: return cached result instantly (no network, no loading state)
+    const cacheKey = getCacheKey(term, activeFilters, page);
+    const cached = searchCacheRef.current.get(cacheKey);
+    if (cached) {
+      setSearchResults(cached);
+      setCurrentPage(page);
+      setSearchError(null);
+      lastSearchRef.current = { query: term, filters: activeFilters };
+      if (term) {
+        const recent = recentSearchesRef.current;
+        if (!recent.length || recent[0].query.toLowerCase() !== term.toLowerCase()) {
+          addRecentSearch(term, activeFilters);
+        }
+      }
+      return;
+    }
+
     searchAbortRef.current?.abort();
     const controller = new AbortController();
     searchAbortRef.current = controller;
@@ -289,28 +337,39 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
     if (page === 1) setCurrentPage(1);
 
     try {
-      const result = await fetchSearchPage(term, filters, page, controller.signal);
+      const result = await fetchSearchPage(term, activeFilters, page, controller.signal);
+
+      // Cache the result (evict oldest if over limit)
+      searchCacheRef.current.set(cacheKey, result);
+      if (searchCacheRef.current.size > CACHE_MAX) {
+        const firstKey = searchCacheRef.current.keys().next().value;
+        if (firstKey) searchCacheRef.current.delete(firstKey);
+      }
 
       setSearchResults(result);
       setCurrentPage(page);
-      lastSearchRef.current = { query: term, filters };
+      lastSearchRef.current = { query: term, filters: activeFilters };
 
-      // Only add non-empty queries to history
-      if (term) addRecentSearch(term, filters);
+      if (term) {
+        const recent = recentSearchesRef.current;
+        if (!recent.length || recent[0].query.toLowerCase() !== term.toLowerCase()) {
+          addRecentSearch(term, activeFilters);
+        }
+      }
     } catch (err: any) {
-      if (err.name === 'AbortError') return;           // intentionally cancelled
+      if (err.name === 'AbortError') return;
       setSearchError(err.message ?? 'Search failed');
       if (page === 1) setSearchResults({ products: [], total: 0, page: 1, totalPages: 0 });
     } finally {
       setIsSearching(false);
     }
-  }, [searchQuery, filters, fetchSearchPage, addRecentSearch]);
+  }, [fetchSearchPage, addRecentSearch]);
 
-  // ── loadMoreResults ────────────────────────────────────────────────────────
+  // ── loadMoreResults (reads transient values from refs — stable ref) ─────
   const loadMoreResults = useCallback(async () => {
-    if (!hasMore || isSearching) return;
+    if (!hasMoreRef.current || isSearchingRef.current) return;
 
-    const nextPage   = currentPage + 1;
+    const nextPage = (currentPageRef.current ?? 1) + 1;
     const { query, filters: f } = lastSearchRef.current;
 
     searchAbortRef.current?.abort();
@@ -334,9 +393,9 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
     } finally {
       setIsSearching(false);
     }
-  }, [hasMore, isSearching, currentPage, fetchSearchPage]);
+  }, [fetchSearchPage]);
 
-  // ── clearSearch ────────────────────────────────────────────────────────────
+  // ── clearSearch ──────────────────────────────────────────────────────────
   const clearSearch = useCallback(() => {
     searchAbortRef.current?.abort();
     setSearchQuery('');
@@ -348,9 +407,8 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
     lastSearchRef.current = { query: '', filters: {} };
   }, []);
 
-  // ── fetchSuggestions (debounced + abortable) ───────────────────────────────
+  // ── fetchSuggestions (read recentSearches from ref — stable ref) ────────
   const fetchSuggestions = useCallback((query: string) => {
-    // Clear pending timer and in-flight request
     if (suggestionTimerRef.current) clearTimeout(suggestionTimerRef.current);
     suggestionAbortRef.current?.abort();
 
@@ -383,12 +441,12 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
         setIsLoadingSuggestions(false);
       }
 
-      // Fallback: merge recent + popular, deduplicated, matching prefix/substring
+      // Fallback: read from ref — no closure dep on recentSearches state
       const q    = query.toLowerCase();
       const seen = new Set<string>();
       const fb: string[] = [];
 
-      for (const s of [...recentSearches.map((r) => r.query), ...popularSearches]) {
+      for (const s of [...recentSearchesRef.current.map((r) => r.query), ...POPULAR_SEARCHES]) {
         const lower = s.toLowerCase();
         if (lower.includes(q) && !seen.has(lower)) {
           seen.add(lower);
@@ -399,9 +457,9 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
 
       setSuggestions(fb);
     }, SUGGESTION_DEBOUNCE_MS);
-  }, [recentSearches, popularSearches]);
+  }, []);
 
-  // Cleanup timers on unmount
+  // ── Cleanup timers on unmount ─────────────────────────────────────────────
   useEffect(() => {
     return () => {
       if (suggestionTimerRef.current) clearTimeout(suggestionTimerRef.current);
@@ -410,44 +468,44 @@ export const ModalSearchProvider: React.FC<{ children: ReactNode }> = ({ childre
     };
   }, []);
 
-  // ── Context value ──────────────────────────────────────────────────────────
-  const value: ModalSearchContextValue = {
-    isModalOpen,
-    openModalSearch,
-    closeModalSearch,
-    toggleModalSearch,
-
-    searchQuery,
-    setSearchQuery,
-    searchResults,
-    isSearching,
-    searchError,
-    hasMore,
-
-    filters,
-    setFilters,
-    updateFilter,
-    clearFilters,
-
-    performSearch,
-    loadMoreResults,
-    clearSearch,
-
-    recentSearches,
-    addRecentSearch,
-    clearRecentSearches,
-    removeRecentSearch,
-
-    popularSearches,
-
-    suggestions,
-    isLoadingSuggestions,
-    fetchSuggestions,
-  };
+  // ── Memoized context value ────────────────────────────────────────────────
+  const value = useMemo<ModalSearchDataValue>(
+    () => ({
+      searchQuery,
+      setSearchQuery,
+      searchResults,
+      isSearching,
+      searchError,
+      hasMore,
+      filters,
+      setFilters,
+      updateFilter,
+      clearFilters,
+      performSearch,
+      loadMoreResults,
+      clearSearch,
+      recentSearches,
+      addRecentSearch,
+      clearRecentSearches,
+      removeRecentSearch,
+      popularSearches: POPULAR_SEARCHES,
+      suggestions,
+      isLoadingSuggestions,
+      fetchSuggestions,
+    }),
+    [
+      searchQuery, setSearchQuery,
+      searchResults, isSearching, searchError, hasMore,
+      filters, setFilters, updateFilter, clearFilters,
+      performSearch, loadMoreResults, clearSearch,
+      recentSearches, addRecentSearch, clearRecentSearches, removeRecentSearch,
+      suggestions, isLoadingSuggestions, fetchSuggestions,
+    ],
+  );
 
   return (
-    <ModalSearchContext.Provider value={value}>
+    <ModalSearchDataContext.Provider value={value}>
       {children}
-    </ModalSearchContext.Provider>
+    </ModalSearchDataContext.Provider>
   );
 };

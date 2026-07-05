@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import * as Icon from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useModalSearchContext } from '@/context/ModalSearchContext';
+import { useModalSearchContext, useModalSearchUIContext } from '@/context/ModalSearchContext';
 import { useModalQuickviewContext } from '@/context/ModalQuickviewContext';
 import { ProductType } from '@/types/product.types';
 
@@ -143,9 +143,9 @@ const ModalSearch: React.FC = () => {
 
   const { openQuickview } = useModalQuickviewContext() || {};
 
+  const { isModalOpen, closeModalSearch } = useModalSearchUIContext();
   const {
-    isModalOpen, closeModalSearch,
-    searchQuery,  setSearchQuery,
+    searchQuery, setSearchQuery,
     searchResults, isSearching, searchError,
     recentSearches, removeRecentSearch, clearRecentSearches,
     popularSearches, performSearch,
@@ -161,7 +161,7 @@ const ModalSearch: React.FC = () => {
   useEffect(() => {
     const q = searchQuery.trim();
     if (!q) return;
-    const t = setTimeout(() => performSearch(q), 120);
+    const t = setTimeout(() => performSearch(q), 80);
     return () => clearTimeout(t);
   }, [searchQuery, performSearch]);
 
@@ -360,12 +360,11 @@ const ModalSearch: React.FC = () => {
             <AnimatePresence mode="wait">
 
               {/* ─ Results ─ */}
-              {hasResults && (
+              {hasResults && !isSearching && (
                 <motion.div
                   key="results"
                   {...fade}
                   className="p-4 md:p-5 space-y-2 relative"
-                  style={{ opacity: isSearching ? 0.55 : 1, transition: 'opacity 0.2s' }}
                 >
                   {products.map((product, idx) => {
                     const { price, original } = getPrice(product);
@@ -457,7 +456,7 @@ const ModalSearch: React.FC = () => {
               )}
 
               {/* ─ Loading skeletons ─ */}
-              {isSearching && !hasResults && (
+              {isSearching && (
                 <motion.div key="loading" {...fade} className="p-4 md:p-5 space-y-2">
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="flex gap-3 p-3 rounded-xl">

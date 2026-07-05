@@ -2,8 +2,17 @@
 
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import ProductCard from '@/components/Product/Card';
-import { ProductCardSkeleton } from '@/components/loader/Skeleton';
-import * as Icon from 'react-icons/pi';
+import { ProductCardSkeleton } from '@/components/Product/Card/Skeleton';
+import {
+  PiSparkle,
+  PiTrendUp,
+  PiFire,
+  PiArrowClockwise,
+  PiCaretLeft,
+  PiCaretRight,
+  PiArrowRight,
+  PiPackage,
+} from 'react-icons/pi';
 import { getProductGridLayoutClasses } from './ProductGrid';
 
 interface RecommendedForYouProps {
@@ -25,28 +34,28 @@ const SECTION_MAP: Record<SectionKey, SectionConfig> = {
   recommended: {
     title: 'Recommended For You',
     subtitle: 'Based on your browsing history',
-    icon: <Icon.PiSparkle size={20} />,
+    icon: <PiSparkle size={20} />,
     iconBgColor: 'bg-rose-100',
     iconColor: 'text-rose-600',
   },
   trending: {
     title: 'Trending Now',
     subtitle: 'Popular with other shoppers',
-    icon: <Icon.PiTrendUp size={20} />,
+    icon: <PiTrendUp size={20} />,
     iconBgColor: 'bg-emerald-100',
     iconColor: 'text-emerald-600',
   },
   bestsellers: {
     title: 'Best Sellers',
     subtitle: 'Most purchased items',
-    icon: <Icon.PiFire size={20} />,
+    icon: <PiFire size={20} />,
     iconBgColor: 'bg-orange-100',
     iconColor: 'text-orange-600',
   },
   newArrivals: {
     title: 'New Arrivals',
     subtitle: 'Fresh additions to our catalog',
-    icon: <Icon.PiSparkle size={20} />,
+    icon: <PiSparkle size={20} />,
     iconBgColor: 'bg-violet-100',
     iconColor: 'text-violet-600',
   },
@@ -225,7 +234,6 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
   maxItems = 12,
   layoutCol = 4,
 }) => {
-  // Seed from cache synchronously so remounts never flash a skeleton
   const [products, setProducts] = useState<any[]>(() => getInitialCache(maxItems) ?? []);
   const [loading, setLoading] = useState(() => !getInitialCache(maxItems));
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -264,7 +272,6 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
   );
 
   const handleRefresh = useCallback(() => {
-    // Bust cache for current section then reload
     const cacheKey = `${currentSection}:${isAuthenticated ? 'auth' : 'anon'}:${maxItems}`;
     _recCache.delete(cacheKey);
     setIsRefreshing(true);
@@ -275,11 +282,9 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
     if (initDoneRef.current) return;
     initDoneRef.current = true;
 
-    // Already have fresh cached data from a previous visit — skip the fetch
     if (getInitialCache(maxItems)) return;
 
     const init = async () => {
-      // Fire trending + auth check in parallel
       const [trendingProducts, isAuth] = await Promise.all([
         loadSectionData('recommended', false, maxItems),
         fetchWithTimeout(`${API_BASE}/api/auth/me`, {}, 3000)
@@ -294,7 +299,6 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
         setProducts(trendingProducts);
         setLoading(false);
 
-        // Silently upgrade to personalized if authenticated
         if (isAuth) {
           const personalized = await loadSectionData('recommended', true, maxItems);
           if (personalized.length > 0) {
@@ -311,8 +315,8 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
     init();
   }, [maxItems]);
 
-  // ─── Shared header ──────────────────────────────────────────────────────────
-  const SectionHeader = (
+  // ─── Memoized header / tabs ─────────────────────────────────────────────────
+  const sectionHeader = useMemo(() => (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
       <div className="flex items-center gap-3">
         <div className={`p-2.5 ${sectionConfig.iconBgColor} ${sectionConfig.iconColor} rounded-xl`}>
@@ -330,33 +334,33 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
         <button
           onClick={handleRefresh}
           disabled={isRefreshing || loading}
-          className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-40"
-          title="Refresh"
+          className="min-h-11 min-w-11 flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-40"
+          aria-label="Refresh recommendations"
         >
-          <Icon.PiArrowClockwise
+          <PiArrowClockwise
             size={20}
             className={isRefreshing ? 'animate-spin' : ''}
           />
         </button>
         <button
           onClick={() => scrollRef.current?.scrollBy({ left: -300, behavior: 'smooth' })}
-          className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors sm:hidden"
-          title="Scroll left"
+          className="min-h-11 min-w-11 flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors md:hidden"
+          aria-label="Scroll left"
         >
-          <Icon.PiCaretLeft size={20} />
+          <PiCaretLeft size={20} />
         </button>
         <button
           onClick={() => scrollRef.current?.scrollBy({ left: 300, behavior: 'smooth' })}
-          className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors sm:hidden"
-          title="Scroll right"
+          className="min-h-11 min-w-11 flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors md:hidden"
+          aria-label="Scroll right"
         >
-          <Icon.PiCaretRight size={20} />
+          <PiCaretRight size={20} />
         </button>
       </div>
     </div>
-  );
+  ), [sectionConfig, handleRefresh, isRefreshing, loading]);
 
-  const SectionTabs = (
+  const sectionTabs = useMemo(() => (
     <div className="flex flex-wrap gap-2 mb-5">
       {SECTION_KEYS.map(section => (
         <button
@@ -372,70 +376,78 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
         </button>
       ))}
     </div>
-  );
+  ), [currentSection, handleSectionChange]);
 
   // ─── Loading state ───────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="py-8 bg-white border-t border-gray-100">
+      <section className="py-8 bg-white border-t border-gray-100">
         <div className="container mx-auto px-4">
-          {SectionHeader}
-          {SectionTabs}
+          {sectionHeader}
+          {sectionTabs}
           <div className={getProductGridLayoutClasses(layoutCol)}>
             <ProductCardSkeleton count={layoutCol * 2} layout="grid" />
           </div>
         </div>
-      </div>
+      </section>
     );
   }
 
   // ─── Error / empty state ─────────────────────────────────────────────────────
   if (hasError || !displayedProducts.length) {
     return (
-      <div className="py-8 bg-white border-t border-gray-100">
+      <section className="py-8 bg-white border-t border-gray-100">
         <div className="container mx-auto px-4">
-          {SectionHeader}
-          {SectionTabs}
+          {sectionHeader}
+          {sectionTabs}
           <div className="text-center py-16">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Icon.PiPackage size={32} className="text-gray-400" />
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
+              <PiPackage size={32} className="text-gray-400" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No products available</h3>
-            <p className="text-gray-500 mb-4">
-              We're having trouble loading recommendations. Please try again.
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Nothing here yet
+            </h3>
+            <p className="text-gray-500 max-w-sm mx-auto mb-6">
+              We couldn&apos;t load recommendations right now. Try refreshing or browse our full catalog.
             </p>
-            <button
-              onClick={handleRefresh}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
-            >
-              <Icon.PiArrowClockwise size={16} />
-              Try Again
-            </button>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                onClick={handleRefresh}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-colors font-medium"
+              >
+                <PiArrowClockwise size={16} />
+                Try Again
+              </button>
+              <a
+                href="/shop"
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors font-medium"
+              >
+                Browse Shop
+              </a>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
     );
   }
 
   // ─── Populated state ─────────────────────────────────────────────────────────
   return (
-    <div className="py-8 bg-white border-t border-gray-100">
+    <section className="py-8 bg-white border-t border-gray-100">
       <div className="container mx-auto px-4">
-        {SectionHeader}
-        {SectionTabs}
+        {sectionHeader}
+        {sectionTabs}
 
-        {/* Mobile: horizontal scroll. md+: responsive grid */}
-        <div key={fadeKey} className="animate-fade-in">
-          {/* Horizontal scroll on mobile */}
+        <div key={fadeKey} className="motion-safe:animate-fade-in">
+          {/* Mobile: horizontal scroll */}
           <div
             ref={scrollRef}
-            className="flex gap-3 overflow-x-auto pb-3 md:hidden"
-            style={{ scrollbarWidth: 'none' }}
+            className="flex gap-3 overflow-x-auto pb-3 scrollbar-hide md:hidden snap-x snap-mandatory"
           >
             {displayedProducts.map(product => (
               <div
                 key={product._id || product.id}
-                className="flex-shrink-0 w-[calc(50vw-24px)] max-w-[200px]"
+                className="flex-shrink-0 w-[calc(50vw-24px)] max-w-[200px] snap-start"
               >
                 <ProductCard data={product} type="grid" />
               </div>
@@ -445,9 +457,7 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
           {/* Grid on md+ */}
           <div className="hidden md:grid grid-cols-3 lg:grid-cols-4 gap-4">
             {displayedProducts.map(product => (
-              <div key={product._id || product.id}>
-                <ProductCard data={product} type="grid" />
-              </div>
+              <ProductCard key={product._id || product.id} data={product} type="grid" />
             ))}
           </div>
         </div>
@@ -459,12 +469,12 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
               className="inline-flex items-center gap-2 px-6 py-3 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-colors font-medium"
             >
               View All Products
-              <Icon.PiArrowRight size={18} />
+              <PiArrowRight size={18} />
             </a>
           </div>
         )}
       </div>
-    </div>
+    </section>
   );
 };
 

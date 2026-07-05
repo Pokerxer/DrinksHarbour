@@ -316,6 +316,16 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-fade-in-up,
+  .animate-slide-up,
+  .animate-scale-in {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+  }
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -1517,6 +1527,20 @@ div[style="z-index: 1000001;"],
   scrollbar-width: none; /* Firefox */
 }
 
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* content-visibility: auto for virtualized rendering of grid items */
+.content-visibility-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: 380px;
+}
+
 /* pos top slider bullets style */
 
 .pos-all-items-top-slider .swiper-pagination {
@@ -1594,4 +1618,37 @@ div[style="z-index: 1000001;"],
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #a1a1a1;
+}
+
+/* Benefit section keyframe animations */
+@keyframes blobFloat {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -30px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.9); }
+}
+
+@keyframes blobPulse {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.2); }
+}
+
+@keyframes particleFloat {
+  0%, 100% { transform: translateY(0) scale(1); opacity: 0.5; }
+  50% { transform: translateY(-20px) scale(1.3); opacity: 1; }
+}
+
+@keyframes iconFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.particle {
+  animation: particleFloat var(--duration, 3s) ease-in-out infinite var(--delay, 0s);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .particle,
+  [class*="animate-"] {
+    animation: none !important;
+  }
 }

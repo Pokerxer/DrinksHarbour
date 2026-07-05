@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import * as Icon from "react-icons/pi";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCart } from "@/context/CartContext";
-import { useModalSearchContext } from "@/context/ModalSearchContext";
+import { useModalSearchUIContext } from "@/context/ModalSearchContext";
 import { useModalCartContext } from "@/context/ModalCartContext";
 import {
   fetchAllCategories,
@@ -63,7 +63,7 @@ const MobileBottomNav: React.FC = () => {
   const pathname = usePathname();
   const { cartCount } = useCart();
   const { openModalCart } = useModalCartContext();
-  const { openModalSearch } = useModalSearchContext();
+  const { openModalSearch } = useModalSearchUIContext();
 
   const [showCategories, setShowCategories] = useState(false);
   const [allCategories, setAllCategories] = useState<Category[]>([]);

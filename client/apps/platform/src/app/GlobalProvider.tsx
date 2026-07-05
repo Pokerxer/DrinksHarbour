@@ -6,7 +6,7 @@ import { WishlistProvider } from "@/context/WishlistContext";
 import { ModalWishlistProvider } from "@/context/ModalWishlistContext";
 import { CompareProvider } from "@/context/CompareContext";
 import { ModalCompareProvider } from "@/context/ModalCompareContext";
-import { ModalSearchProvider } from "@/context/ModalSearchContext";
+import { ModalSearchProvider, ModalSearchUIProvider } from "@/context/ModalSearchContext";
 import { ModalQuickviewProvider } from "@/context/ModalQuickviewContext";
 import { TenantProvider } from "@/context/TenantContext";
 
@@ -22,12 +22,14 @@ const GlobalProvider: React.FC<{
               <ModalWishlistProvider>
                 <CompareProvider>
                   <ModalCompareProvider>
-                    <ModalSearchProvider>
+                    <ModalSearchUIProvider>
+                      <ModalSearchProvider>
                       <ModalQuickviewProvider>
                         {children}
                       </ModalQuickviewProvider>
-                    </ModalSearchProvider>
-                  </ModalCompareProvider>
+                      </ModalSearchProvider>
+                    </ModalSearchUIProvider>
+                    </ModalCompareProvider>
                 </CompareProvider>
               </ModalWishlistProvider>
             </WishlistProvider>

@@ -1,12 +1,20 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, memo } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { Autoplay, Navigation } from "swiper/modules";
 import { useModalQuickviewContext } from "@/context/ModalQuickviewContext";
 import { StockStatus } from "@/components/StockStatus";
-import * as Icon from "react-icons/pi";
+import {
+  PiLightningFill,
+  PiClock,
+  PiShoppingCartSimple,
+  PiFireSimple,
+  PiArrowRight,
+  PiImageBroken,
+} from "react-icons/pi";
 import "swiper/css";
 import "swiper/css/navigation";
 
@@ -70,7 +78,6 @@ interface SaleProduct {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Extract the best (most-discounted) sale info for a product */
 function getBestSale(product: SaleProduct) {
   const allAt = product.availableAt || [];
 
@@ -91,7 +98,6 @@ function getBestSale(product: SaleProduct) {
   }
 
   if (!bestDiscount || !bestSize || !bestAt) {
-    // Fallback: use priceRange min vs originalWebsitePrice from first size
     const firstAt = allAt[0];
     const firstSize = firstAt?.sizes?.[0];
     const pricing = firstSize?.pricing || {};
@@ -122,7 +128,6 @@ function getBestSale(product: SaleProduct) {
   };
 }
 
-/** Pick the nearest upcoming sale end time from all products */
 function getNearestEndTime(products: SaleProduct[]): Date {
   const now = Date.now();
   const times = products
@@ -132,11 +137,10 @@ function getNearestEndTime(products: SaleProduct[]): Date {
     .filter((t) => t > now);
 
   times.sort((a, b) => a - b);
-  // Return nearest end, or 8-hour fallback
   return times.length > 0 ? new Date(times[0]) : new Date(now + 8 * 60 * 60 * 1000);
 }
 
-// ─── CountdownTimer ───────────────────────────────────────────────────────────
+// ─── Memoized CountdownTimer ──────────────────────────────────────────────────
 
 interface TimeLeft {
   days: number;
@@ -146,19 +150,23 @@ interface TimeLeft {
   isExpired: boolean;
 }
 
-const CountdownTimer = ({
+const CountdownTimer = memo(function CountdownTimer({
   endTime,
   onExpire,
 }: {
   endTime: Date;
   onExpire?: () => void;
-}) => {
-  const [timeLeft, setTimeLeft] = useState<TimeLeft>({
-    days: 0,
-    hours: 0,
-    minutes: 0,
-    seconds: 0,
-    isExpired: false,
+}) {
+  const [timeLeft, setTimeLeft] = useState<TimeLeft>(() => {
+    const diff = endTime.getTime() - Date.now();
+    if (diff <= 0) return { days: 0, hours: 0, minutes: 0, seconds: 0, isExpired: true };
+    return {
+      days: Math.floor(diff / (1000 * 60 * 60 * 24)),
+      hours: Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
+      minutes: Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)),
+      seconds: Math.floor((diff % (1000 * 60)) / 1000),
+      isExpired: false,
+    };
   });
   const expiredRef = useRef(false);
 
@@ -166,6 +174,8 @@ const CountdownTimer = ({
     expiredRef.current = false;
 
     const calculate = () => {
+      if (document.hidden) return;
+
       const diff = endTime.getTime() - Date.now();
       if (diff <= 0) {
         setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0, isExpired: true });
@@ -192,7 +202,7 @@ const CountdownTimer = ({
   if (timeLeft.isExpired) {
     return (
       <div className="flex items-center gap-1.5 text-white/80 text-xs">
-        <Icon.PiClock size={14} />
+        <PiClock size={14} />
         <span>Sale Ended</span>
       </div>
     );
@@ -230,17 +240,17 @@ const CountdownTimer = ({
       <TimeBox value={timeLeft.seconds} label="Sec" />
     </div>
   );
-};
+});
 
-// ─── FlashSaleCard ────────────────────────────────────────────────────────────
+// ─── Memoized FlashSaleCard ───────────────────────────────────────────────────
 
-const FlashSaleCard = ({
+const FlashSaleCard = memo(function FlashSaleCard({
   product,
   onQuickView,
 }: {
   product: SaleProduct;
   onQuickView: (product: SaleProduct) => void;
-}) => {
+}) {
   const [imageError, setImageError] = useState(false);
   const sale = getBestSale(product);
 
@@ -252,20 +262,22 @@ const FlashSaleCard = ({
   const availableStock = product.stockInfo?.availableStock ?? sale.stock ?? 100;
 
   return (
-    <div className="relative bg-white rounded-2xl overflow-hidden shadow-md border border-gray-100 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 group">
+    <div className="relative bg-white rounded-2xl overflow-hidden shadow-md border border-gray-100 motion-safe:hover:shadow-lg motion-safe:hover:-translate-y-0.5 transition-all duration-200 group">
       <Link href={`/product/${product.slug}`} className="block">
         {/* Image */}
         <div className="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100">
           {!imageError && imageUrl ? (
-            <img
+            <Image
               src={imageUrl}
               alt={product.name}
-              className="w-full h-full object-contain p-2 group-hover:scale-105 transition-transform duration-300"
+              fill
+              sizes="(max-width: 480px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 20vw, 16vw"
+              className="object-contain p-2 motion-safe:group-hover:scale-105 transition-transform duration-300"
               onError={() => setImageError(true)}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
-              <span className="text-5xl opacity-30">🍹</span>
+              <PiImageBroken size={44} className="text-gray-300" />
             </div>
           )}
 
@@ -281,7 +293,7 @@ const FlashSaleCard = ({
                       : "bg-gradient-to-br from-red-500 to-pink-600"
                 }`}
               >
-                {isFlashSale && <Icon.PiLightningFill size={9} />}
+                {isFlashSale && <PiLightningFill size={9} />}
                 {sale.discountLabel ||
                   (isFixed
                     ? `₦${(sale.originalPrice - sale.currentPrice).toLocaleString()} OFF`
@@ -293,8 +305,8 @@ const FlashSaleCard = ({
           {/* Flash Sale type indicator */}
           {isFlashSale && (
             <div className="absolute top-0 right-0 m-1">
-              <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center animate-pulse">
-                <Icon.PiLightningFill size={12} className="text-white" />
+              <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center motion-safe:animate-pulse">
+                <PiLightningFill size={12} className="text-white" />
               </div>
             </div>
           )}
@@ -330,22 +342,23 @@ const FlashSaleCard = ({
             </div>
 
             <button
+              type="button"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 onQuickView(product);
               }}
-              className="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-orange-500 to-red-600 text-white rounded-xl hover:from-orange-600 hover:to-red-700 active:scale-95 transition-all flex items-center justify-center shadow-sm"
-              aria-label="Quick add to cart"
+              className="flex-shrink-0 min-h-10 min-w-10 bg-gradient-to-br from-orange-500 to-red-600 text-white rounded-xl hover:from-orange-600 hover:to-red-700 motion-safe:active:scale-95 transition-all flex items-center justify-center shadow-sm"
+              aria-label={`Quick view ${product.name}`}
             >
-              <Icon.PiShoppingCartSimple size={15} />
+              <PiShoppingCartSimple size={15} />
             </button>
           </div>
 
           {/* Sold count */}
           {(product.totalSold ?? 0) > 0 && (
             <div className="mt-1 flex items-center gap-1">
-              <Icon.PiFireSimple size={10} className="text-orange-400" />
+              <PiFireSimple size={10} className="text-orange-400" />
               <span className="text-[9px] text-gray-400">
                 {(product.totalSold! >= 1000
                   ? `${(product.totalSold! / 1000).toFixed(1)}k`
@@ -359,12 +372,12 @@ const FlashSaleCard = ({
       </Link>
     </div>
   );
-};
+});
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
 const SkeletonCard = () => (
-  <div className="bg-white/20 rounded-2xl overflow-hidden animate-pulse">
+  <div className="bg-white/20 rounded-2xl overflow-hidden motion-safe:animate-pulse">
     <div className="aspect-square bg-white/20" />
     <div className="p-2.5 space-y-2">
       <div className="h-3 bg-white/20 rounded w-4/5" />
@@ -378,7 +391,6 @@ const SkeletonCard = () => (
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
 
-// In-memory cache: 60 seconds TTL to avoid repeated fetches on navigation
 const _saleCache = new Map<string, { data: SaleProduct[]; ts: number }>();
 const SALE_CACHE_TTL = 60_000;
 
@@ -386,7 +398,7 @@ async function fetchSaleProducts(saleType?: string): Promise<SaleProduct[]> {
   const params = new URLSearchParams({
     onSale: "true",
     limit: "20",
-    inStock: "false", // include out-of-stock to keep section populated
+    inStock: "false",
   });
   if (saleType) params.set("saleType", saleType);
 
@@ -407,8 +419,14 @@ async function fetchSaleProducts(saleType?: string): Promise<SaleProduct[]> {
 }
 
 const FlashSale = () => {
-  const [products, setProducts] = useState<SaleProduct[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState<SaleProduct[]>(() => {
+    const cached = _saleCache.get("onSale=true&limit=20&inStock=false");
+    return cached && Date.now() - cached.ts < SALE_CACHE_TTL ? cached.data.slice(0, 20) : [];
+  });
+  const [loading, setLoading] = useState(() => {
+    const cached = _saleCache.get("onSale=true&limit=20&inStock=false");
+    return !(cached && Date.now() - cached.ts < SALE_CACHE_TTL);
+  });
   const [isFlashSaleSection, setIsFlashSaleSection] = useState(false);
   const { openQuickview } = useModalQuickviewContext() || {};
 
@@ -420,7 +438,6 @@ const FlashSale = () => {
         (p.availableAt || []).some((at) => at.saleType === "flash_sale")
       ));
 
-      // Keep only products with an active price discount
       const withDiscount = items.filter((p) =>
         (p.availableAt || []).some((at) =>
           (at.sizes || []).some((s) => s.discount?.hasDiscount)
@@ -450,8 +467,8 @@ const FlashSale = () => {
       <section className="bg-gradient-to-r from-red-500 via-orange-500 to-red-500 py-5">
         <div className="container mx-auto px-4">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 bg-white/20 rounded-xl animate-pulse" />
-            <div className="h-6 w-32 bg-white/20 rounded-lg animate-pulse" />
+            <div className="w-10 h-10 bg-white/20 rounded-xl motion-safe:animate-pulse" />
+            <div className="h-6 w-32 bg-white/20 rounded-lg motion-safe:animate-pulse" />
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
             {[...Array(6)].map((_, i) => <SkeletonCard key={i} />)}
@@ -479,14 +496,14 @@ const FlashSale = () => {
           <div className="flex items-center gap-3">
             <div className="relative flex-shrink-0">
               <div className="w-11 h-11 bg-white rounded-xl flex items-center justify-center shadow-lg shadow-red-900/30">
-                <Icon.PiLightningFill size={22} className="text-orange-500" />
+                <PiLightningFill size={22} className="text-orange-500" />
               </div>
-              <span className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full animate-bounce border-2 border-orange-500" />
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full motion-safe:animate-bounce border-2 border-orange-500" />
             </div>
             <div>
               <h2 className="text-white font-black text-xl leading-tight flex items-center gap-2">
                 {label}
-                <span className="px-2 py-0.5 bg-yellow-400 text-red-700 text-[10px] font-black rounded-full animate-pulse">
+                <span className="px-2 py-0.5 bg-yellow-400 text-red-700 text-[10px] font-black rounded-full motion-safe:animate-pulse">
                   LIVE
                 </span>
               </h2>
@@ -497,14 +514,14 @@ const FlashSale = () => {
           {/* Right: countdown + view all */}
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2 bg-black/20 backdrop-blur-sm border border-white/20 rounded-2xl px-3 py-2">
-              <Icon.PiClock size={15} className="text-white/70 flex-shrink-0" />
+              <PiClock size={15} className="text-white/70 flex-shrink-0" />
               <CountdownTimer endTime={saleEndTime} onExpire={load} />
             </div>
             <Link
               href="/shop?sale=true"
-              className="hidden sm:flex items-center gap-1.5 px-4 py-2.5 bg-white text-orange-600 rounded-xl text-xs font-black hover:bg-orange-50 active:scale-95 transition-all shadow-sm"
+              className="hidden sm:flex items-center gap-1.5 px-4 py-2.5 bg-white text-orange-600 rounded-xl text-xs font-black hover:bg-orange-50 motion-safe:active:scale-95 transition-all shadow-sm"
             >
-              View All <Icon.PiArrowRight size={13} />
+              View All <PiArrowRight size={13} />
             </Link>
           </div>
         </div>
@@ -538,7 +555,7 @@ const FlashSale = () => {
             href="/shop?sale=true"
             className="inline-flex items-center gap-1.5 px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-sm font-bold rounded-xl transition-colors"
           >
-            View All {products.length}+ Deals <Icon.PiArrowRight size={14} />
+            View All {products.length}+ Deals <PiArrowRight size={14} />
           </Link>
         </div>
       </div>

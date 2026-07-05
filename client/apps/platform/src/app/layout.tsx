@@ -19,7 +19,7 @@ const ModalSearch     = dynamic(() => import("@/components/Modal/ModalSearch"));
 const ModalQuickview  = dynamic(() => import("@/components/Modal/ModalQuickview"));
 const ModalCompare    = dynamic(() => import("@/components/Modal/ModalCompare"));
 const ModalNewsletter = dynamic(() => import("@/components/Modal/ModalNewsletter"));
-const MobileBottomNav = dynamic(() => import("@/components/Navigation"));
+const MobileBottomNav = dynamic(() => import("@/components/Navigation").then(mod => mod.MobileBottomNav));
 const ChatbotWidget   = dynamic(() => import("@/components/Chatbot/ChatbotWidget"));
 const WhatsAppButton  = dynamic(() => import("@/components/WhatsApp/WhatsAppButton"));
 const PopupBanner     = dynamic(() => import("@/components/Banner/PopupBanner"));

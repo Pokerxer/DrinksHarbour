@@ -2,14 +2,14 @@
 
 import React from "react";
 import * as Icon from "react-icons/pi";
-import { useModalSearchContext } from "@/context/ModalSearchContext";
+import { useModalSearchUIContext } from "@/context/ModalSearchContext";
 
 interface HeaderSearchProps {
   variant: "default" | "transparent" | "dark";
 }
 
 export const HeaderSearch: React.FC<HeaderSearchProps> = ({ variant }) => {
-  const { openModalSearch } = useModalSearchContext();
+  const { openModalSearch } = useModalSearchUIContext();
   const isDark = variant === "dark";
 
   return (
