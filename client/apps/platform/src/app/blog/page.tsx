@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useSearchParams } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { type Category, type Post, POSTS, CATEGORY_COLORS } from './data';
 
@@ -29,6 +30,7 @@ function PostCard({ post, large = false }: { post: Post; large?: boolean }) {
           src={post.image}
           alt={post.title}
           fill
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
           className="object-cover group-hover:scale-105 transition-transform duration-500"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
@@ -78,8 +80,12 @@ function PostCard({ post, large = false }: { post: Post; large?: boolean }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function BlogPage() {
-  const [activeCategory, setActiveCategory] = useState<Category>('all');
-  const [search, setSearch] = useState('');
+  const searchParams = useSearchParams();
+  const [activeCategory, setActiveCategory] = useState<Category>(() => {
+    const cat = searchParams.get('category') as Category | null;
+    return cat && CATEGORIES.some(c => c.key === cat) ? cat : 'all';
+  });
+  const [search, setSearch] = useState(() => searchParams.get('q') || '');
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -90,12 +96,15 @@ export default function BlogPage() {
     });
   }, [activeCategory, search]);
 
-  const featured   = POSTS.find(p => p.featured);
-  const showFeatured = activeCategory === 'all' && !search && featured;
-  const grid       = filtered.filter(p => !showFeatured || p.id !== featured?.id);
+  const featured     = POSTS.find(p => p.featured);
+  const isFiltered   = search !== '' || activeCategory !== 'all';
+  const showFeatured = !isFiltered && featured;
+  const grid         = filtered.filter(p => !showFeatured || p.id !== featured?.id);
 
   return (
     <div className="min-h-screen bg-gray-50">
+
+      {isFiltered && <meta name="robots" content="noindex,follow" />}
 
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
       <div className="relative bg-gradient-to-br from-gray-900 via-red-950 to-gray-900 text-white overflow-hidden">
@@ -109,10 +118,10 @@ export default function BlogPage() {
             The DrinksHarbour Journal
           </div>
           <h1 className="text-3xl sm:text-4xl font-black tracking-tight mb-3">
-            Drinks Guides, Recipes & Lifestyle
+            Nigeria Drinks Guides, Recipes & Lifestyle
           </h1>
           <p className="text-gray-300 text-sm sm:text-base max-w-xl mx-auto mb-7">
-            Expert tips, tasting notes, cocktail recipes, and everything you need to drink better.
+            Expert tips, tasting notes, cocktail recipes, and everything you need to drink better in Nigeria.
           </p>
 
           {/* Search */}
@@ -141,14 +150,22 @@ export default function BlogPage() {
 
       <div className="container mx-auto max-w-5xl px-4 py-10 pb-16">
 
+        {/* ── Visible breadcrumb ────────────────────────────────────────── */}
+        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-xs text-gray-400 mb-6">
+          <Link href="/" className="hover:text-red-700 transition-colors">Home</Link>
+          <Icon.PiCaretRight size={11} />
+          <span className="text-gray-700 font-semibold">Blog</span>
+        </nav>
+
         {/* ── Category tabs ─────────────────────────────────────────────── */}
         <div className="flex gap-2 flex-wrap mb-8">
           {CATEGORIES.map(({ key, icon: Ic }) => {
             const active = activeCategory === key;
             const count  = key === 'all' ? POSTS.length : POSTS.filter(p => p.category === key).length;
             return (
-              <button
+              <Link
                 key={key}
+                href={key === 'all' ? '/blog' : `/blog?category=${encodeURIComponent(key)}`}
                 onClick={() => setActiveCategory(key)}
                 className={`flex items-center gap-1.5 px-4 py-2 rounded-xl border text-xs font-semibold transition-all ${
                   active
@@ -161,7 +178,7 @@ export default function BlogPage() {
                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-0.5 ${active ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-400'}`}>
                   {count}
                 </span>
-              </button>
+              </Link>
             );
           })}
         </div>
@@ -188,12 +205,12 @@ export default function BlogPage() {
             <Icon.PiMagnifyingGlass size={36} className="mx-auto text-gray-300 mb-3" />
             <p className="font-semibold text-gray-700 mb-1">No articles found</p>
             <p className="text-sm text-gray-400 mb-5">Try a different search or browse all categories.</p>
-            <button
-              onClick={() => { setSearch(''); setActiveCategory('all'); }}
+            <Link
+              href="/blog"
               className="text-sm text-red-700 font-semibold hover:underline"
             >
               Clear filters
-            </button>
+            </Link>
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -216,11 +233,14 @@ export default function BlogPage() {
               Get the latest drink guides, recipes, and exclusive offers delivered to your inbox every week.
             </p>
             <form
+              action="/api/newsletter/subscribe"
+              method="POST"
               className="flex gap-2 max-w-sm mx-auto"
-              onSubmit={e => e.preventDefault()}
             >
               <input
                 type="email"
+                name="email"
+                required
                 placeholder="your@email.com"
                 className="flex-1 px-4 py-3 rounded-xl bg-white/15 border border-white/25 text-white placeholder-white/50 text-sm focus:outline-none focus:border-white/50 focus:bg-white/20 transition-all"
               />

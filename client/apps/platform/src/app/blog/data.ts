@@ -19,12 +19,13 @@ export interface Post {
   excerpt: string;
   category: Exclude<Category, 'all'>;
   date: string;
+  isoDate: string;
   readTime: string;
   image: string;
   slug: string;
   featured?: boolean;
   tags: string[];
-  author: { name: string; role: string };
+  author: { name: string; role: string; bio: string };
   content: ContentBlock[];
 }
 
@@ -35,12 +36,13 @@ export const POSTS: Post[] = [
     excerpt: "Starting your wine journey? We've rounded up the most approachable, crowd-pleasing bottles available right now — all at sensible prices.",
     category: 'Wine Guide',
     date: 'May 5, 2026',
+    isoDate: '2026-05-05',
     readTime: '6 min read',
     image: 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=1200&q=80',
     slug: 'top-10-wines-for-beginners',
     featured: true,
     tags: ['Wine', 'Beginners', 'Guide'],
-    author: { name: 'Adaeze Nwosu', role: 'Wine Sommelier' },
+    author: { name: 'Adaeze Nwosu', role: 'Wine Sommelier', bio: 'A certified sommelier with seven years of experience curating wine lists for Lagos top restaurants. Adaeze trained at the Wine & Spirit Education Trust and believes great wine is for everyone.' },
     content: [
       { type: 'p', text: "Wine can feel intimidating — but it doesn't have to be. The key is starting with styles that are fruit-forward, low in tannins, and widely available in Nigeria. Here are our top picks for anyone just getting started." },
       { type: 'h2', text: '1. Jacob\'s Creek Classic Shiraz (Australia)' },
@@ -70,11 +72,12 @@ export const POSTS: Post[] = [
     excerpt: 'Learn to make a Negroni, Whiskey Sour, and five other timeless cocktails at home with minimal equipment and maximum flavour.',
     category: 'Recipes',
     date: 'April 28, 2026',
+    isoDate: '2026-04-28',
     readTime: '8 min read',
     image: 'https://images.unsplash.com/photo-1514362545857-3bc16549766b?w=1200&q=80',
     slug: 'art-of-mixology-cocktail-recipes',
     tags: ['Cocktails', 'Recipes', 'Mixology'],
-    author: { name: 'Emeka Obi', role: 'Head Bartender' },
+    author: { name: 'Emeka Obi', role: 'Head Bartender', bio: 'Head bartender at one of Lagos most awarded cocktail bars. Emeka has competed in international mixology competitions and is passionate about elevating Nigeria drinking culture.' },
     content: [
       { type: 'p', text: 'You don\'t need a professional bar to make great cocktails. With a few basic tools — a shaker, a jigger, and a strainer — you can craft drinks that rival any high-end lounge.' },
       { type: 'h2', text: 'Essential Equipment' },
@@ -99,11 +102,12 @@ export const POSTS: Post[] = [
     excerpt: 'Lager, IPA, stout, wheat beer — what actually makes each style different? We break it all down with tasting notes and food pairing suggestions.',
     category: 'Beer Guide',
     date: 'April 20, 2026',
+    isoDate: '2026-04-20',
     readTime: '7 min read',
     image: 'https://images.unsplash.com/photo-1535958636474-b021ee887b13?w=1200&q=80',
     slug: 'understanding-beer-styles',
     tags: ['Beer', 'Guide', 'Craft Beer'],
-    author: { name: 'Tunde Fashola', role: 'Craft Beer Specialist' },
+    author: { name: 'Tunde Fashola', role: 'Craft Beer Specialist', bio: 'Nigeria leading craft beer advocate and founder of a popular beer appreciation club. Tunde has visited over 50 breweries worldwide and hosts regular tasting events in Lagos.' },
     content: [
       { type: 'p', text: 'Beer is the world\'s most consumed alcoholic drink — and yet most people stick to just one or two styles. Expanding your beer horizons is one of the simplest ways to elevate your drinking experience.' },
       { type: 'h2', text: 'Lager' },
@@ -131,11 +135,12 @@ export const POSTS: Post[] = [
     excerpt: "Single malt, blended, bourbon — what's the difference? Our expert guide walks you through colour, nose, palate, and finish for any dram.",
     category: 'Spirits Guide',
     date: 'April 12, 2026',
+    isoDate: '2026-04-12',
     readTime: '9 min read',
     image: 'https://images.unsplash.com/photo-1569529465841-dfecdab7503b?w=1200&q=80',
     slug: 'whiskey-tasting-101',
     tags: ['Whiskey', 'Tasting', 'Spirits'],
-    author: { name: 'Dr. Chidi Eze', role: 'Whisky Educator' },
+    author: { name: 'Dr. Chidi Eze', role: 'Whisky Educator', bio: 'A certified whisky educator and PhD in Food Science. Dr. Eze has taught tasting courses to over 2,000 students and writes extensively on the science behind spirit appreciation.' },
     content: [
       { type: 'p', text: 'Tasting whiskey properly is less about rules and more about slowing down and paying attention. Here is a simple framework that works for any style — Scotch, Irish, Bourbon, or Japanese.' },
       { type: 'h2', text: 'Step 1: Colour' },
@@ -163,11 +168,12 @@ export const POSTS: Post[] = [
     excerpt: 'From stocking the right drinks fridge to building a playlist, here is our definitive guide to throwing an unforgettable celebration at home.',
     category: 'Entertaining',
     date: 'April 5, 2026',
+    isoDate: '2026-04-05',
     readTime: '5 min read',
     image: 'https://images.unsplash.com/photo-1514933651103-005eec06c04b?w=1200&q=80',
     slug: 'host-perfect-house-party',
     tags: ['Party', 'Entertaining', 'Tips'],
-    author: { name: 'Sola Adeyemi', role: 'Events Consultant' },
+    author: { name: 'Sola Adeyemi', role: 'Events Consultant', bio: 'An events consultant with a decade of experience planning everything from intimate dinner parties to large-scale corporate events in Lagos and Abuja.' },
     content: [
       { type: 'p', text: 'Lagos parties have a reputation to uphold. Whether it\'s a birthday, a housewarming, or a spontaneous get-together, the drinks selection can make or break the night.' },
       { type: 'h2', text: 'Calculate Your Drinks Quantity' },
@@ -195,11 +201,12 @@ export const POSTS: Post[] = [
     excerpt: 'Mocktails, kombuchas, sparkling botanicals — the zero-proof world has never been more exciting. Here are our top picks available in Nigeria.',
     category: 'Lifestyle',
     date: 'March 28, 2026',
+    isoDate: '2026-03-28',
     readTime: '5 min read',
     image: 'https://images.unsplash.com/photo-1536935338788-846bb9981813?w=1200&q=80',
     slug: 'best-non-alcoholic-drinks',
     tags: ['Mocktail', 'Non-Alcoholic', 'Wellness'],
-    author: { name: 'Ngozi Okafor', role: 'Wellness Writer' },
+    author: { name: 'Ngozi Okafor', role: 'Wellness Writer', bio: 'A wellness journalist and certified nutritionist who covers the intersection of drinks, health, and Nigerian lifestyle. She is passionate about normalising non-alcoholic options in social settings.' },
     content: [
       { type: 'p', text: 'Whether you are sober-curious, pregnant, driving, or simply taking a break, the non-alcoholic drinks market has transformed beyond recognition. Here is what to reach for.' },
       { type: 'h2', text: 'Classic Nigerian Mocktails' },
@@ -221,11 +228,12 @@ export const POSTS: Post[] = [
     excerpt: 'The age-old question answered once and for all — food pairing rules, temperature tips, and why the best wine is simply the one you enjoy.',
     category: 'Wine Guide',
     date: 'March 20, 2026',
+    isoDate: '2026-03-20',
     readTime: '6 min read',
     image: 'https://images.unsplash.com/photo-1505275350441-83dcda8eeef5?w=1200&q=80',
     slug: 'red-vs-white-wine',
     tags: ['Wine', 'Food Pairing', 'Guide'],
-    author: { name: 'Adaeze Nwosu', role: 'Wine Sommelier' },
+    author: { name: 'Adaeze Nwosu', role: 'Wine Sommelier', bio: 'A certified sommelier with seven years of experience curating wine lists for Lagos top restaurants. Adaeze trained at the Wine & Spirit Education Trust and believes great wine is for everyone.' },
     content: [
       { type: 'p', text: 'The red vs white debate is as old as wine itself. The truth: neither is better. They are just different tools for different occasions.' },
       { type: 'h2', text: 'Red Wine: What You Need to Know' },
@@ -250,11 +258,12 @@ export const POSTS: Post[] = [
     excerpt: 'From London Dry to contemporary botanicals, gin has exploded in popularity. We look at why — and the best bottles to start your collection.',
     category: 'Spirits Guide',
     date: 'March 12, 2026',
+    isoDate: '2026-03-12',
     readTime: '7 min read',
     image: 'https://images.unsplash.com/photo-1551538827-9c037cb4f32a?w=1200&q=80',
     slug: 'gin-renaissance',
     tags: ['Gin', 'Spirits', 'Trends'],
-    author: { name: 'Emeka Obi', role: 'Head Bartender' },
+    author: { name: 'Emeka Obi', role: 'Head Bartender', bio: 'Head bartender at one of Lagos most awarded cocktail bars. Emeka has competed in international mixology competitions and is passionate about elevating Nigeria drinking culture.' },
     content: [
       { type: 'p', text: 'Ten years ago, gin was your grandmother\'s drink. Today it is the spirit of choice for a new generation of drinkers who love botanical complexity and the explosion of craft distilling.' },
       { type: 'h2', text: 'What Makes Gin, Gin?' },
@@ -278,11 +287,12 @@ export const POSTS: Post[] = [
     excerpt: 'A curated collection of refreshing, non-alcoholic drinks perfect for breaking your fast — from classic Zobo to sparkling fruit punches.',
     category: 'Lifestyle',
     date: 'March 5, 2026',
+    isoDate: '2026-03-05',
     readTime: '4 min read',
     image: 'https://images.unsplash.com/photo-1499638673689-79a0b5115d87?w=1200&q=80',
     slug: 'ramadan-drinks-guide',
     tags: ['Non-Alcoholic', 'Lifestyle', 'Nigeria'],
-    author: { name: 'Fatima Aliyu', role: 'Food & Drink Writer' },
+    author: { name: 'Fatima Aliyu', role: 'Food & Drink Writer', bio: 'A food and drink writer specialising in Northern Nigerian cuisine and Ramadan traditions. Fatima work has been featured in national publications and cookbooks.' },
     content: [
       { type: 'p', text: 'Breaking your fast with the right drink is both a spiritual and sensory moment. The body craves hydration and gentle sweetness after a day of fasting — these drinks deliver both beautifully.' },
       { type: 'h2', text: 'Start with Water and Dates' },

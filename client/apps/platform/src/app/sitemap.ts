@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { POSTS } from "./blog/data";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -44,5 +45,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.8,
   }));
 
-  return [...staticPages, ...productPages];
+  const blogPages: MetadataRoute.Sitemap = POSTS.map((post) => ({
+    url: `${BASE_URL}/blog/${post.slug}`,
+    lastModified: new Date(post.isoDate),
+    changeFrequency: "monthly",
+    priority: 0.6,
+  }));
+
+  return [...staticPages, ...productPages, ...blogPages];
 }

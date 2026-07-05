@@ -1,10 +1,13 @@
-'use client';
-
-import React, { use } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import * as Icon from 'react-icons/pi';
 import { POSTS, CATEGORY_COLORS, type ContentBlock } from '../data';
+import ShareButtons from './ShareButtons';
+
+export function generateStaticParams() {
+  return POSTS.map(post => ({ slug: post.slug }));
+}
 
 // ─── Content renderer ─────────────────────────────────────────────────────────
 
@@ -15,7 +18,7 @@ function renderBlock(block: ContentBlock, i: number) {
     case 'h3':
       return <h3 key={i} className="text-base font-bold text-gray-900 mt-6 mb-2">{block.text}</h3>;
     case 'p':
-      return <p key={i} className="text-gray-600 leading-relaxed">{block.text}</p>;
+      return <p key={i} className="text-gray-700 leading-relaxed">{block.text}</p>;
     case 'ul':
       return (
         <ul key={i} className="space-y-2 my-1">
@@ -42,14 +45,16 @@ function renderBlock(block: ContentBlock, i: number) {
       );
     case 'quote':
       return (
-        <blockquote key={i} className="border-l-4 border-red-600 pl-5 py-1 my-2 italic text-gray-700 bg-red-50 rounded-r-xl pr-4">
+        <blockquote key={i} className="border-l-[3px] border-red-400 pl-5 py-3 my-3 italic text-gray-600 bg-red-50/50 rounded-r-xl pr-5 leading-relaxed">
           {block.text}
         </blockquote>
       );
     case 'tip':
       return (
-        <div key={i} className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4 my-2">
-          <Icon.PiLightbulbFilamentBold size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
+        <div key={i} className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4 my-2 shadow-sm">
+          <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <Icon.PiLightbulbFilamentBold size={15} className="text-amber-700" />
+          </div>
           <p className="text-sm text-amber-800 leading-relaxed">{block.text}</p>
         </div>
       );
@@ -60,13 +65,12 @@ function renderBlock(block: ContentBlock, i: number) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function BlogPostPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = use(params);
+export default async function BlogPostPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
   const post    = POSTS.find(p => p.slug === slug);
   const related = POSTS.filter(p => p.slug !== slug && p.category === post?.category).slice(0, 3);
   const others  = related.length < 2 ? POSTS.filter(p => p.slug !== slug).slice(0, 3) : related;
 
-  // ── 404 state ──────────────────────────────────────────────────────────────
   if (!post) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -88,128 +92,118 @@ export default function BlogPostPage({ params }: { params: Promise<{ slug: strin
   }
 
   const categoryColor = CATEGORY_COLORS[post.category] ?? 'bg-gray-100 text-gray-700';
+  const postIndex = POSTS.findIndex(p => p.slug === slug);
+  const prevPost = postIndex > 0 ? POSTS[postIndex - 1] : null;
+  const nextPost = postIndex < POSTS.length - 1 ? POSTS[postIndex + 1] : null;
 
   return (
     <div className="min-h-screen bg-gray-50">
-
-      {/* ── Hero image ──────────────────────────────────────────────────────── */}
-      <div className="relative h-72 sm:h-96 w-full overflow-hidden">
-        <Image
+      <main>
+        <div className="relative h-80 min-h-[360px] sm:h-[50vh] w-full overflow-hidden">
+          <style dangerouslySetInnerHTML={{
+            __html: `@keyframes hero-zoom{0%{transform:scale(1)}100%{transform:scale(1.06)}}.hero-zoom{animation:hero-zoom 12s cubic-bezier(.25,.46,.45,.94) forwards}`
+          }} />
+          <Image
           src={post.image}
           alt={post.title}
           fill
           priority
-          className="object-cover"
+          sizes="100vw"
+          className="object-cover hero-zoom"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
 
-        {/* Breadcrumb */}
-        <div className="absolute top-5 left-0 right-0">
+        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-black/40 z-[1]" />
+        <div className="absolute inset-0 bg-gradient-to-br from-black/40 to-transparent z-[1]" />
+
+        <div
+          className="absolute inset-0 z-[2] opacity-[0.04] mix-blend-overlay pointer-events-none"
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+            backgroundRepeat: 'repeat',
+            backgroundSize: '256px 256px',
+          }}
+        />
+
+        <div className="absolute top-6 left-0 right-0 z-10">
           <div className="container mx-auto max-w-3xl px-4">
-            <nav className="flex items-center gap-2 text-xs text-white/70">
-              <Link href="/blog" className="hover:text-white transition-colors flex items-center gap-1">
+            <nav aria-label="Breadcrumb" className="inline-flex items-center gap-2 text-xs backdrop-blur-md bg-black/30 border border-white/10 rounded-full px-4 py-1.5 shadow-lg">
+              <Link href="/blog" className="text-white/70 hover:text-white transition-colors flex items-center gap-1">
                 <Icon.PiBookOpenText size={12} /> Blog
               </Link>
-              <Icon.PiCaretRight size={11} />
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${categoryColor}`}>{post.category}</span>
+              <Icon.PiCaretRight size={11} className="text-white/30" />
+              <Link href={`/blog?category=${encodeURIComponent(post.category)}`} className="bg-white/20 text-white px-2.5 py-0.5 rounded-full text-[10px] font-bold hover:bg-white/30 transition-colors">
+                {post.category}
+              </Link>
             </nav>
           </div>
         </div>
 
-        {/* Title overlay */}
-        <div className="absolute bottom-0 left-0 right-0">
-          <div className="container mx-auto max-w-3xl px-4 pb-7">
-            <h1 className="text-2xl sm:text-3xl font-black text-white leading-tight">{post.title}</h1>
+        <div className="absolute bottom-0 left-0 right-0 pb-8 sm:pb-10 z-10">
+          <div className="container mx-auto max-w-3xl px-4">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white leading-tight drop-shadow-2xl">
+              {post.title}
+            </h1>
           </div>
         </div>
       </div>
 
       <div className="container mx-auto max-w-3xl px-4 py-8 pb-16">
 
-        {/* ── Meta bar ────────────────────────────────────────────────────── */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4 flex flex-wrap items-center justify-between gap-3 mb-8">
           <div className="flex items-center gap-4 text-xs text-gray-500 flex-wrap">
             <span className="flex items-center gap-1.5">
               <Icon.PiUserCircleBold size={14} className="text-red-600" />
-              <span className="font-semibold text-gray-700">{post.author.name}</span>
+              <Link href={`/blog?q=${encodeURIComponent(post.author.name)}`} className="font-semibold text-gray-700 hover:text-red-700 transition-colors">{post.author.name}</Link>
               <span className="text-gray-400">· {post.author.role}</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <Icon.PiCalendar size={13} className="text-red-600" /> {post.date}
+              <time dateTime={post.isoDate}><Icon.PiCalendar size={13} className="text-red-600" /> {post.date}</time>
             </span>
             <span className="flex items-center gap-1.5">
               <Icon.PiClock size={13} className="text-red-600" /> {post.readTime}
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${categoryColor}`}>{post.category}</span>
+            <Link href={`/blog?category=${encodeURIComponent(post.category)}`} className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${categoryColor} hover:opacity-80 transition-opacity`}>{post.category}</Link>
           </div>
         </div>
 
-        {/* ── Excerpt ─────────────────────────────────────────────────────── */}
-        <p className="text-lg text-gray-700 leading-relaxed font-medium border-l-4 border-red-600 pl-4 mb-8 bg-red-50 rounded-r-2xl pr-5 py-4">
+        <p className="text-lg text-gray-800 leading-relaxed font-medium border-l-[3px] border-red-400/60 pl-5 mb-10 py-1.5">
           {post.excerpt}
         </p>
 
-        {/* ── Article body ────────────────────────────────────────────────── */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-8 space-y-4 text-sm">
+        <article className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-8 space-y-5 text-base leading-[1.75]">
           {post.content.map((block, i) => renderBlock(block, i))}
-        </div>
+        </article>
 
-        {/* ── Tags ────────────────────────────────────────────────────────── */}
-        <div className="flex items-center gap-2 flex-wrap mt-6">
-          <span className="text-xs text-gray-400 font-semibold">Tags:</span>
+        <div className="flex items-center gap-2 flex-wrap mt-8">
+          <span className="text-xs text-gray-400 font-semibold tracking-wider uppercase">Tags:</span>
           {post.tags.map(tag => (
             <Link
               key={tag}
               href={`/blog?q=${encodeURIComponent(tag)}`}
-              className="text-xs bg-gray-100 hover:bg-red-50 hover:text-red-700 text-gray-600 px-3 py-1 rounded-full font-medium transition-colors"
+              className="text-xs bg-gray-100 hover:bg-red-50 hover:text-red-700 text-gray-600 px-3 py-1.5 rounded-full font-medium transition-all hover:shadow-sm"
             >
               #{tag}
             </Link>
           ))}
         </div>
 
-        {/* ── Share ───────────────────────────────────────────────────────── */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mt-6 flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <p className="font-bold text-gray-900 text-sm">Enjoyed this article?</p>
-            <p className="text-xs text-gray-400 mt-0.5">Share it with your friends</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {[
-              { icon: Icon.PiWhatsappLogo,  label: 'WhatsApp', color: 'hover:bg-green-50 hover:text-green-700' },
-              { icon: Icon.PiTwitterLogo,   label: 'Twitter',  color: 'hover:bg-blue-50 hover:text-blue-700' },
-              { icon: Icon.PiFacebookLogo,  label: 'Facebook', color: 'hover:bg-blue-50 hover:text-blue-800' },
-              { icon: Icon.PiLink,          label: 'Copy link', color: 'hover:bg-gray-100 hover:text-gray-700' },
-            ].map(({ icon: Ic, label, color }) => (
-              <button
-                key={label}
-                aria-label={label}
-                className={`w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 transition-all ${color}`}
-                onClick={() => label === 'Copy link' && navigator.clipboard?.writeText(window.location.href)}
-              >
-                <Ic size={16} />
-              </button>
-            ))}
-          </div>
-        </div>
+        <ShareButtons />
 
-        {/* ── Author card ─────────────────────────────────────────────────── */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mt-6 flex items-start gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-red-100 to-red-200 flex items-center justify-center flex-shrink-0">
+        <div className="group bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md p-6 mt-6 flex items-start gap-4 transition-all duration-300">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-red-100 to-red-200 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform duration-300">
             <Icon.PiUserCircleBold size={30} className="text-red-700" />
           </div>
-          <div>
+          <div className="flex-1 min-w-0">
             <p className="font-black text-gray-900">{post.author.name}</p>
             <p className="text-xs text-red-700 font-semibold mb-2">{post.author.role}</p>
-            <p className="text-xs text-gray-500 leading-relaxed">
-              A drinks professional writing for DrinksHarbour on all things beverages — from tasting notes and cocktail recipes to lifestyle guides for Nigerian drinkers.
+            <p className="text-sm text-gray-500 leading-relaxed">
+              {post.author.bio}
             </p>
           </div>
         </div>
 
-        {/* ── Related posts ───────────────────────────────────────────────── */}
         {others.length > 0 && (
           <div className="mt-12">
             <div className="flex items-center justify-between mb-5">
@@ -223,13 +217,14 @@ export default function BlogPostPage({ params }: { params: Promise<{ slug: strin
                 <Link
                   key={rel.slug}
                   href={`/blog/${rel.slug}`}
-                  className="group bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md hover:border-red-100 transition-all"
+                  className="group bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-lg hover:border-red-100 transition-all duration-300"
                 >
                   <div className="relative h-36 overflow-hidden">
                     <Image
                       src={rel.image}
                       alt={rel.title}
                       fill
+                      sizes="(max-width: 640px) 100vw, 33vw"
                       className="object-cover group-hover:scale-105 transition-transform duration-500"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
@@ -238,9 +233,9 @@ export default function BlogPostPage({ params }: { params: Promise<{ slug: strin
                     </span>
                   </div>
                   <div className="p-4">
-                    <p className="text-xs font-black text-gray-900 leading-snug group-hover:text-red-700 transition-colors line-clamp-2">
+                    <h3 className="text-xs font-black text-gray-900 leading-snug group-hover:text-red-700 transition-colors line-clamp-2">
                       {rel.title}
-                    </p>
+                    </h3>
                     <p className="text-[10px] text-gray-400 mt-1.5 flex items-center gap-1">
                       <Icon.PiClock size={10} /> {rel.readTime}
                     </p>
@@ -251,17 +246,46 @@ export default function BlogPostPage({ params }: { params: Promise<{ slug: strin
           </div>
         )}
 
-        {/* ── Back to blog ────────────────────────────────────────────────── */}
-        <div className="mt-10 text-center">
+        <div className="mt-10 grid grid-cols-2 gap-3">
+          {prevPost ? (
+            <Link
+              href={`/blog/${prevPost.slug}`}
+              className="group bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:border-red-100 hover:shadow-lg transition-all duration-300 text-left"
+            >
+              <p className="text-[10px] text-gray-400 font-semibold flex items-center gap-1 mb-1 group-hover:text-red-500 transition-colors">
+                <Icon.PiArrowLeft size={10} /> Previous
+              </p>
+              <p className="text-xs font-bold text-gray-700 leading-snug group-hover:text-red-700 transition-colors line-clamp-2">
+                {prevPost.title}
+              </p>
+            </Link>
+          ) : <div />}
+          {nextPost ? (
+            <Link
+              href={`/blog/${nextPost.slug}`}
+              className="group bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:border-red-100 hover:shadow-lg transition-all duration-300 text-right"
+            >
+              <p className="text-[10px] text-gray-400 font-semibold flex items-center gap-1 justify-end mb-1 group-hover:text-red-500 transition-colors">
+                Next <Icon.PiArrowRight size={10} />
+              </p>
+              <p className="text-xs font-bold text-gray-700 leading-snug group-hover:text-red-700 transition-colors line-clamp-2">
+                {nextPost.title}
+              </p>
+            </Link>
+          ) : <div />}
+        </div>
+
+        <div className="mt-4 text-center">
           <Link
             href="/blog"
-            className="inline-flex items-center gap-2 border border-gray-200 text-gray-700 px-6 py-3 rounded-xl font-bold text-sm hover:border-red-200 hover:text-red-700 transition-all"
+            className="inline-flex items-center gap-2 border border-gray-200 text-gray-700 px-6 py-3 rounded-xl font-bold text-sm hover:border-red-200 hover:text-red-700 hover:shadow-sm transition-all duration-300"
           >
             <Icon.PiArrowLeft size={15} /> Back to Blog
           </Link>
         </div>
 
       </div>
+      </main>
     </div>
   );
 }
