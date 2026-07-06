@@ -23,6 +23,23 @@ function str(v) {
 }
 
 /**
+ * Remove size/volume/pack tokens from a product name — the size is tracked as a
+ * separate variant, so it must not live in the parent product name.
+ * "Jack Daniels 75cl" -> "Jack Daniels", "Coca-Cola 1.5L" -> "Coca-Cola".
+ */
+function stripSizeFromName(name) {
+  if (!name) return name;
+  let s = String(name);
+  // Volume tokens: 75cl, 700 ml, 1l, 1.5 L, 50cL, 330ml, 12oz, 70 cl.
+  s = s.replace(/\b\d+(?:[.,]\d+)?\s?(?:cl|ml|l|litre|liter|litres|liters|oz)\b\.?/gi, ' ');
+  // Pack tokens: 6-pack, 6 pack, pack of 6, x6, 6 x, case of 12, 12pk.
+  s = s.replace(/\b(?:pack of \d+|\d+\s?[-\s]?pack|\d+\s?pk|case of \d+|\d+\s?x|x\s?\d+)\b/gi, ' ');
+  // Tidy leftover separators / whitespace.
+  s = s.replace(/\s{2,}/g, ' ').replace(/^[\s,\-–|]+|[\s,\-–|]+$/g, '').trim();
+  return s;
+}
+
+/**
  * Distinct existing Category names (so the model picks real categories that
  * createSubProductCore can resolve by name rather than inventing new ones).
  * Best-effort — returns [] on any failure.
@@ -62,7 +79,7 @@ async function enrichProductFromName(name, opts = {}, deps = {}) {
       ? `Pick "category" and "subCategory" ONLY from this list (use "" if none fits): ${categories.join(', ')}.\n`
       : '') +
     'Return JSON with keys: name, type, brand, category, subCategory, shortDescription, description.\n' +
-    '- name: a clean, properly-capitalized, complete retail product name — expand obvious abbreviations, fix casing/spacing, include brand + variant + volume when clearly implied by the input. Keep it faithful to the input; do not invent a different product. If the input is already a good name, return it as-is.\n' +
+    '- name: a clean, properly-capitalized retail product name — expand obvious abbreviations, fix casing/spacing, include brand + variant. Keep it faithful to the input; do not invent a different product. IMPORTANT: do NOT include any size/volume/pack in the name (no 75cl, 700ml, 1L, 6-pack, etc.) — size is tracked separately, so strip it out.\n' +
     '- brand: the producer/brand name, or "" if unknown.\n' +
     '- shortDescription: <= 180 chars, marketing-style one-liner.\n' +
     '- description: <= 500 chars, factual product description.\n' +
@@ -84,7 +101,7 @@ async function enrichProductFromName(name, opts = {}, deps = {}) {
 
     const type = PRODUCT_TYPES.includes(json.type) ? json.type : undefined;
     return {
-      name: str(json.name).slice(0, 200) || undefined,
+      name: stripSizeFromName(str(json.name)).slice(0, 200) || undefined,
       type,
       brand: str(json.brand) || undefined,
       category: str(json.category) || undefined,
