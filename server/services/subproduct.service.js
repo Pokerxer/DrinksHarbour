@@ -623,7 +623,8 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
       originCountry: newProductData.originCountry || '',
       region: newProductData.region || '',
       producer: newProductData.producer || '',
-      style: newProductData.style || '',
+      // style is an enum path — '' fails validation, so omit when not provided
+      style: newProductData.style || undefined,
       vintage: vintageValue,
       description: newProductData.description || '',
       shortDescription: newProductData.shortDescription || '',

@@ -302,7 +302,12 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
         }
       }
     } catch (err) {
-      out.errors.push({ group: g.key, message: err.message });
+      // Surface duplicate-key failures (e.g. a barcode/sku already used by this
+      // tenant) as a readable message instead of the raw Mongo E11000 dump.
+      const message = (err.code === 11000 || /E11000/.test(err.message || ''))
+        ? `Duplicate value already exists (${Object.entries(err.keyValue || {}).map(([k, v]) => `${k}: ${v}`).join(', ') || 'unique field'}) — group skipped`
+        : err.message;
+      out.errors.push({ group: g.key, message });
     }
   }
   return out;
