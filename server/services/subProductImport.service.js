@@ -1,6 +1,7 @@
 const RealSize = require('../models/Size');
 const RealProduct = require('../models/Product');
 const RealSubProduct = require('../models/SubProduct');
+const RealCategory = require('../models/Category');
 
 const SIZE_ENUM = new Set(RealSize.schema.path('size').enumValues);
 const PRODUCT_TYPES = new Set(RealProduct.schema.path('type').enumValues);
@@ -68,6 +69,7 @@ function defaultDeps(deps = {}) {
     Product: deps.Product || RealProduct,
     SubProduct: deps.SubProduct || RealSubProduct,
     Size: deps.Size || RealSize,
+    Category: deps.Category || RealCategory,
   };
 }
 
@@ -126,8 +128,10 @@ async function validateImport(rawRows, opts, tenantId, deps) {
       } else if (!isValidSize(r.size)) {
         rowErrors.push({ rowNum: r._rowNum, field: 'size', message: `"${r.size}" is not a valid size` });
       }
-      if (action === 'createProduct' && (!r.productType || !PRODUCT_TYPES.has(r.productType))) {
-        rowErrors.push({ rowNum: r._rowNum, field: 'productType', message: 'valid productType required to create a new product' });
+      // New products are AI-enriched from their name at commit, so productType is
+      // NOT required here. Only flag a productType that was supplied but invalid.
+      if (action === 'createProduct' && r.productType && !PRODUCT_TYPES.has(r.productType)) {
+        rowErrors.push({ rowNum: r._rowNum, field: 'productType', message: `"${r.productType}" is not a valid product type` });
       }
       if (action === 'linkProduct' && (r.costPrice == null || r.costPrice <= 0)) {
         rowErrors.push({ rowNum: r._rowNum, field: 'costPrice', message: 'costPrice required when linking an existing product' });
@@ -163,11 +167,15 @@ function defaultServiceDeps(deps = {}) {
   const base = defaultDeps(deps);
   const sp = require('./subproduct.service');
   const wh = require('./warehouse.service');
+  const enrichSvc = require('./productEnrich.service');
   return {
     ...base,
     createSubProduct: deps.createSubProduct || sp.createSubProduct,
     addSize: deps.addSize || sp.addSize,
     adjustStock: deps.adjustStock || wh.adjustStock,
+    // Haiku enrichment for brand-new products (name -> type/brand/category/desc).
+    enrich: deps.enrich || enrichSvc.enrichProductFromName,
+    getCategoryNames: deps.getCategoryNames || enrichSvc.getCategoryNames,
   };
 }
 
@@ -188,6 +196,13 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
   const rows = normalizeRows(rawRows);
   const groups = groupRows(rows);
   const out = { createdProducts: 0, createdSubProducts: 0, createdSizes: 0, stockApplied: 0, skipped: 0, errors: [] };
+
+  // Existing category names, fetched once, so Haiku enrichment picks real
+  // categories that createSubProductCore can resolve by name. Best-effort.
+  let categoryNames = [];
+  try {
+    categoryNames = await d.getCategoryNames({ Category: d.Category });
+  } catch { categoryNames = []; }
 
   // Best-effort bulk import: each group is isolated by try/catch. A group is
   // processed independently; if opening-stock adjustStock throws mid-group the
@@ -242,13 +257,21 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
         if (existingProduct) {
           data.product = existingProduct._id;
         } else {
+          // Brand-new product: derive missing attributes from the name via Haiku.
+          // Spreadsheet-provided values always win; AI only fills the gaps.
+          let ai = {};
+          try {
+            ai = (await d.enrich(base.productName, { categories: categoryNames })) || {};
+          } catch { ai = {}; }
           data.createNewProduct = true;
           data.newProductData = {
             name: base.productName,
-            type: base.productType,
-            brand: base.brand || undefined,
-            category: base.category || undefined,
-            subCategory: base.subCategory || undefined,
+            type: base.productType || ai.type,
+            brand: base.brand || ai.brand || undefined,
+            category: base.category || ai.category || undefined,
+            subCategory: base.subCategory || ai.subCategory || undefined,
+            shortDescription: ai.shortDescription || undefined,
+            description: ai.description || undefined,
           };
         }
         const sub = await d.createSubProduct(data, tenantId, user);

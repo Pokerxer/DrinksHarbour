@@ -33,7 +33,7 @@ test('groupRows groups by subProductSku else name+brand', () => {
   assert.equal(groups[0].rows.length, 2);
 });
 
-test('validateImport flags bad size, missing name, and missing type for new product', async () => {
+test('validateImport flags bad size + missing name, but NOT missing type (AI-enriched)', async () => {
   const deps = {
     Product: { findOne: async () => null },          // no product matches -> create
     SubProduct: { findOne: async () => null },
@@ -41,13 +41,25 @@ test('validateImport flags bad size, missing name, and missing type for new prod
   };
   const rows = [
     { productName: '', size: '75cl' },               // missing name
-    { productName: 'New Gin', size: 'banana' },       // bad size + missing type
+    { productName: 'New Gin', size: 'banana' },       // bad size, missing type is OK (AI fills it)
   ];
   const res = await svc.validateImport(rows, { warehouseId: null }, 'T1', deps);
   assert.equal(res.ok, false);
   const errs = res.groups.flatMap((g) => g.rowErrors.map((e) => e.field));
   assert.ok(errs.includes('productName'));
   assert.ok(errs.includes('size'));
+  assert.ok(!errs.includes('productType'), 'missing productType must not error — AI enriches it');
+});
+
+test('validateImport still flags a productType that is supplied but invalid', async () => {
+  const deps = {
+    Product: { findOne: async () => null },          // no product matches -> create
+    SubProduct: { findOne: async () => null },
+    Size: { find: async () => [] },
+  };
+  const rows = [{ productName: 'New Gin', productType: 'notacategory', size: '75cl' }];
+  const res = await svc.validateImport(rows, { warehouseId: null }, 'T1', deps);
+  const errs = res.groups.flatMap((g) => g.rowErrors.map((e) => e.field));
   assert.ok(errs.includes('productType'));
 });
 
