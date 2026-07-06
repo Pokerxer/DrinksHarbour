@@ -41,16 +41,17 @@ test('commitImport creates a new product + sizes and applies opening stock', asy
 
 test('commitImport enriches a new product from its name (AI fills gaps, CSV wins)', async () => {
   const { deps, calls } = makeDeps({
-    ai: { type: 'gin', brand: 'Bombay Sapphire', category: 'Spirits', subCategory: 'Gin', shortDescription: 'A crisp gin', description: 'Distilled with botanicals' },
+    ai: { name: 'Bombay Sapphire London Dry Gin', type: 'gin', brand: 'Bombay Sapphire', category: 'Spirits', subCategory: 'Gin', shortDescription: 'A crisp gin', description: 'Distilled with botanicals' },
   });
   const rows = [
-    // No productType/brand/category in the row -> AI supplies them.
-    { productName: 'Bombay Sapphire', size: '75cl' },
+    // Raw/abbreviated name; no productType/brand/category -> AI supplies them + a cleaner name.
+    { productName: 'bombay saph gin', size: '75cl' },
   ];
   const res = await svc.commitImport(rows, { warehouseId: null }, 'T1', { _id: 'U1' }, deps);
   assert.equal(res.createdSubProducts, 1);
-  assert.equal(calls.enrich[0], 'Bombay Sapphire');
+  assert.equal(calls.enrich[0], 'bombay saph gin');      // matching uses the raw name
   const np = calls.createSubProduct[0].newProductData;
+  assert.equal(np.name, 'Bombay Sapphire London Dry Gin'); // display name is AI-cleaned
   assert.equal(np.type, 'gin');
   assert.equal(np.brand, 'Bombay Sapphire');
   assert.equal(np.category, 'Spirits');
@@ -67,6 +68,7 @@ test('commitImport lets spreadsheet productType/brand override AI', async () => 
   const np = calls.createSubProduct[0].newProductData;
   assert.equal(np.type, 'gin');        // CSV wins over AI 'vodka'
   assert.equal(np.brand, 'CSV Brand'); // CSV wins over AI 'AI Brand'
+  assert.equal(np.name, 'New Gin');    // no AI name -> falls back to the raw row name
 });
 
 test('commitImport skips a size that already exists on an existing subproduct', async () => {

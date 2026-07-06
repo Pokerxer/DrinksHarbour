@@ -265,7 +265,10 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
           } catch { ai = {}; }
           data.createNewProduct = true;
           data.newProductData = {
-            name: base.productName,
+            // Display name uses the AI-cleaned name; matching/grouping above still
+            // key on the raw row name (a later re-import of the raw name matches
+            // by subProductSku, or creates a fresh listing if no SKU is given).
+            name: ai.name || base.productName,
             type: base.productType || ai.type,
             brand: base.brand || ai.brand || undefined,
             category: base.category || ai.category || undefined,

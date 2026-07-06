@@ -61,7 +61,8 @@ async function enrichProductFromName(name, opts = {}, deps = {}) {
     (categories.length
       ? `Pick "category" and "subCategory" ONLY from this list (use "" if none fits): ${categories.join(', ')}.\n`
       : '') +
-    'Return JSON with keys: type, brand, category, subCategory, shortDescription, description.\n' +
+    'Return JSON with keys: name, type, brand, category, subCategory, shortDescription, description.\n' +
+    '- name: a clean, properly-capitalized, complete retail product name — expand obvious abbreviations, fix casing/spacing, include brand + variant + volume when clearly implied by the input. Keep it faithful to the input; do not invent a different product. If the input is already a good name, return it as-is.\n' +
     '- brand: the producer/brand name, or "" if unknown.\n' +
     '- shortDescription: <= 180 chars, marketing-style one-liner.\n' +
     '- description: <= 500 chars, factual product description.\n' +
@@ -83,6 +84,7 @@ async function enrichProductFromName(name, opts = {}, deps = {}) {
 
     const type = PRODUCT_TYPES.includes(json.type) ? json.type : undefined;
     return {
+      name: str(json.name).slice(0, 200) || undefined,
       type,
       brand: str(json.brand) || undefined,
       category: str(json.category) || undefined,
