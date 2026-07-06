@@ -44,7 +44,10 @@ function previewDeps(overrides = {}) {
       calls.enrich.push({ name, opts });
       return overrides.ai ?? {};
     },
-    getCategoryNames: async () => overrides.categories ?? [],
+    getCategoryOptions: async () => ({
+      categories: overrides.categories ?? [],
+      subcategories: overrides.subcategories ?? {},
+    }),
   };
   return { deps, calls };
 }

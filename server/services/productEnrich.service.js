@@ -40,17 +40,30 @@ function stripSizeFromName(name) {
 }
 
 /**
- * Distinct existing Category names (so the model picks real categories that
- * createSubProductCore can resolve by name rather than inventing new ones).
- * Best-effort — returns [] on any failure.
+ * Existing Category hierarchy as pick-lists for the model: top-level names in
+ * `categories`, and children keyed by parent name in `subcategories` (so the
+ * model can only ever choose real, resolvable categories — never invent one).
+ * Best-effort — returns empty lists on any failure.
  */
-async function getCategoryNames(deps = {}) {
+async function getCategoryOptions(deps = {}) {
   const CategoryModel = deps.Category || Category;
   try {
-    const docs = await CategoryModel.find({}).select('name').lean();
-    return docs.map((c) => c.name).filter(Boolean);
+    const docs = await CategoryModel.find({}).select('name parent').lean();
+    const byId = new Map(docs.map((d) => [String(d._id), d]));
+    const categories = [];
+    const subcategories = {};
+    for (const d of docs) {
+      if (!d.name) continue;
+      const parent = d.parent ? byId.get(String(d.parent)) : null;
+      if (parent && parent.name) {
+        (subcategories[parent.name] = subcategories[parent.name] || []).push(d.name);
+      } else {
+        categories.push(d.name);
+      }
+    }
+    return { categories, subcategories };
   } catch {
-    return [];
+    return { categories: [], subcategories: {} };
   }
 }
 
@@ -67,6 +80,10 @@ async function enrichProductFromName(name, opts = {}, deps = {}) {
 
   const anthropic = deps.anthropic || client();
   const categories = opts.categories || [];
+  const subcategories = opts.subcategories || {};
+  const subLines = categories
+    .filter((c) => (subcategories[c] || []).length)
+    .map((c) => `${c}: ${subcategories[c].join(', ')}`);
 
   const system =
     'You are a drinks-catalog assistant for a Nigerian beverage marketplace. ' +
@@ -76,7 +93,10 @@ async function enrichProductFromName(name, opts = {}, deps = {}) {
     `Product name: "${productName}"\n\n` +
     `Pick the single best "type" from this exact list: ${PRODUCT_TYPES.join(', ')}.\n` +
     (categories.length
-      ? `Pick "category" and "subCategory" ONLY from this list (use "" if none fits): ${categories.join(', ')}.\n`
+      ? `"category": you MUST pick the single best related match from this exact list — never invent a new one or leave it empty: ${categories.join(', ')}.\n` +
+        (subLines.length
+          ? `"subCategory": pick the best match from the chosen category's own subcategories below; use "" if the chosen category has none listed:\n${subLines.join('\n')}\n`
+          : `"subCategory": use "".\n`)
       : '') +
     'Return JSON with keys: name, type, brand, category, subCategory, shortDescription, description.\n' +
     '- name: a clean, properly-capitalized retail product name — expand obvious abbreviations, fix casing/spacing, include brand + variant. Keep it faithful to the input; do not invent a different product. IMPORTANT: do NOT include any size/volume/pack in the name (no 75cl, 700ml, 1L, 6-pack, etc.) — size is tracked separately, so strip it out.\n' +
@@ -100,12 +120,27 @@ async function enrichProductFromName(name, opts = {}, deps = {}) {
     const json = JSON.parse(text.slice(start, end + 1));
 
     const type = PRODUCT_TYPES.includes(json.type) ? json.type : undefined;
+
+    // Snap category/subCategory to canonical DB names — anything the model
+    // returns that isn't already in the catalog is dropped, never created.
+    let category;
+    let subCategory;
+    if (categories.length) {
+      const canon = new Map(categories.map((c) => [c.toLowerCase(), c]));
+      category = canon.get(str(json.category).toLowerCase());
+      if (category) {
+        const subs = subcategories[category] || [];
+        const subCanon = new Map(subs.map((s) => [s.toLowerCase(), s]));
+        subCategory = subCanon.get(str(json.subCategory).toLowerCase());
+      }
+    }
+
     return {
       name: stripSizeFromName(str(json.name)).slice(0, 200) || undefined,
       type,
       brand: str(json.brand) || undefined,
-      category: str(json.category) || undefined,
-      subCategory: str(json.subCategory) || undefined,
+      category,
+      subCategory,
       shortDescription: str(json.shortDescription).slice(0, 280) || undefined,
       description: str(json.description).slice(0, 5000) || undefined,
     };
@@ -114,4 +149,4 @@ async function enrichProductFromName(name, opts = {}, deps = {}) {
   }
 }
 
-module.exports = { enrichProductFromName, getCategoryNames, stripSizeFromName, CLAUDE_MODEL, PRODUCT_TYPES };
+module.exports = { enrichProductFromName, getCategoryOptions, stripSizeFromName, CLAUDE_MODEL, PRODUCT_TYPES };

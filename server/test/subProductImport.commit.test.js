@@ -18,7 +18,10 @@ function makeDeps(overrides = {}) {
     adjustStock: async (args) => { calls.adjustStock.push(args); return { ok: true }; },
     // Haiku enrichment stub — never hits the network in tests.
     enrich: async (name) => { calls.enrich.push(name); return overrides.ai ?? {}; },
-    getCategoryNames: async () => overrides.categories ?? [],
+    getCategoryOptions: async () => ({
+      categories: overrides.categories ?? [],
+      subcategories: overrides.subcategories ?? {},
+    }),
   };
   return { deps, calls };
 }

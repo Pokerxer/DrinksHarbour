@@ -102,7 +102,7 @@ function resolveNewProductFields(base, ai = {}) {
 }
 
 async function validateImport(rawRows, opts, tenantId, deps) {
-  const { Product, SubProduct, Size, Category, enrich, getCategoryNames } = defaultServiceDeps(deps);
+  const { Product, SubProduct, Size, Category, enrich, getCategoryOptions } = defaultServiceDeps(deps);
   const warehouseId = opts?.warehouseId || null;
   const rows = normalizeRows(rawRows);
   const groups = groupRows(rows);
@@ -180,11 +180,11 @@ async function validateImport(rawRows, opts, tenantId, deps) {
   // Enrich brand-new products at preview-time so the admin reviews (and the
   // commit reuses) the resolved name/type/brand/category before confirming.
   if (toEnrich.length) {
-    let categoryNames = [];
-    try { categoryNames = await getCategoryNames({ Category }); } catch { categoryNames = []; }
+    let catalog = { categories: [], subcategories: {} };
+    try { catalog = await getCategoryOptions({ Category }); } catch { /* keep empty */ }
     await Promise.all(toEnrich.map(async ({ report, base }) => {
       let ai = {};
-      try { ai = (await enrich(base.productName, { categories: categoryNames })) || {}; } catch { ai = {}; }
+      try { ai = (await enrich(base.productName, catalog)) || {}; } catch { ai = {}; }
       report.enrichment = resolveNewProductFields(base, ai);
     }));
   }
@@ -208,7 +208,7 @@ function defaultServiceDeps(deps = {}) {
     adjustStock: deps.adjustStock || wh.adjustStock,
     // Haiku enrichment for brand-new products (name -> type/brand/category/desc).
     enrich: deps.enrich || enrichSvc.enrichProductFromName,
-    getCategoryNames: deps.getCategoryNames || enrichSvc.getCategoryNames,
+    getCategoryOptions: deps.getCategoryOptions || enrichSvc.getCategoryOptions,
   };
 }
 
@@ -232,12 +232,12 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
   const groups = groupRows(rows);
   const out = { createdProducts: 0, createdSubProducts: 0, createdSizes: 0, stockApplied: 0, skipped: 0, errors: [] };
 
-  // Existing category names, fetched once, so Haiku enrichment picks real
+  // Existing category hierarchy, fetched once, so Haiku enrichment picks real
   // categories that createSubProductCore can resolve by name. Best-effort.
-  let categoryNames = [];
+  let catalog = { categories: [], subcategories: {} };
   try {
-    categoryNames = await d.getCategoryNames({ Category: d.Category });
-  } catch { categoryNames = []; }
+    catalog = await d.getCategoryOptions({ Category: d.Category });
+  } catch { /* keep empty */ }
 
   // Best-effort bulk import: each group is isolated by try/catch. A group is
   // processed independently; if opening-stock adjustStock throws mid-group the
@@ -301,7 +301,7 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
           let ai = enrichments[g.key];
           if (!ai || typeof ai !== 'object') {
             try {
-              ai = (await d.enrich(base.productName, { categories: categoryNames })) || {};
+              ai = (await d.enrich(base.productName, catalog)) || {};
             } catch { ai = {}; }
           }
           data.createNewProduct = true;
