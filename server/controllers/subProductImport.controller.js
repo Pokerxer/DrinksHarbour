@@ -1,5 +1,7 @@
 const asyncHandler = require('express-async-handler');
+const mongoose = require('mongoose');
 const importSvc = require('../services/subProductImport.service');
+const Warehouse = require('../models/Warehouse');
 const { logPrivilegedAction } = require('../utils/auditLog');
 
 function resolveTenant(req, res) {
@@ -18,6 +20,12 @@ exports.previewImport = asyncHandler(async (req, res) => {
   if (!Array.isArray(rows) || rows.length === 0) {
     return res.status(400).json({ success: false, message: 'rows[] is required' });
   }
+  if (warehouseId) {
+    if (!mongoose.isValidObjectId(warehouseId) ||
+        !(await Warehouse.exists({ _id: warehouseId, tenant: tenantId }))) {
+      return res.status(400).json({ success: false, message: 'Selected warehouse not found for this tenant' });
+    }
+  }
   const data = await importSvc.validateImport(rows, { warehouseId }, tenantId, undefined);
   res.json({ success: true, data });
 });
@@ -28,6 +36,12 @@ exports.commitImport = asyncHandler(async (req, res) => {
   const { rows, warehouseId } = req.body;
   if (!Array.isArray(rows) || rows.length === 0) {
     return res.status(400).json({ success: false, message: 'rows[] is required' });
+  }
+  if (warehouseId) {
+    if (!mongoose.isValidObjectId(warehouseId) ||
+        !(await Warehouse.exists({ _id: warehouseId, tenant: tenantId }))) {
+      return res.status(400).json({ success: false, message: 'Selected warehouse not found for this tenant' });
+    }
   }
   const data = await importSvc.commitImport(rows, { warehouseId }, tenantId, req.user, undefined);
   if (['super_admin', 'admin'].includes(req.user?.role)) {

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
@@ -9,6 +9,7 @@ import {
   subProductImportService, buildTemplateCsv, IMPORT_COLUMNS,
   type ImportRow, type PreviewResult, type CommitResult,
 } from '@/services/subProductImport.service';
+import { warehouseService } from '@/services/warehouse.service';
 
 type Warehouse = { id: string; name: string };
 
@@ -53,9 +54,24 @@ export default function InventoryStockImport({
   const [warehouseId, setWarehouseId] = useState('');
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [whList, setWhList] = useState<Warehouse[]>(warehouses);
+
+  useEffect(() => {
+    if (!open || !token) return;
+    let active = true;
+    warehouseService
+      .getWarehouses(token, { isActive: true })
+      .then((res: { data?: { _id: string; name?: string }[] }) => {
+        if (!active) return;
+        const list = (res.data || []).map((w) => ({ id: w._id, name: w.name || w._id }));
+        if (list.length) setWhList(list);
+      })
+      .catch(() => { /* keep prop fallback */ });
+    return () => { active = false; };
+  }, [open, token, warehouses]);
 
   const reset = useCallback(() => {
-    setRows([]); setFileName(''); setPreview(null); setBusy(false);
+    setRows([]); setFileName(''); setWarehouseId(''); setPreview(null); setBusy(false);
   }, []);
 
   const onDrop = useCallback(async (accepted: File[]) => {
@@ -131,7 +147,7 @@ export default function InventoryStockImport({
               <select value={warehouseId} onChange={(e) => { setWarehouseId(e.target.value); setPreview(null); }}
                 className="h-[32px] rounded-lg border border-gray-200 px-2 text-xs text-gray-700 focus:border-[#b20202] focus:outline-none">
                 <option value="">— none —</option>
-                {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                {whList.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
             </div>
           </div>

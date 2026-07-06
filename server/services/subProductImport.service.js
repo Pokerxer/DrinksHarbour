@@ -144,7 +144,7 @@ async function validateImport(rawRows, opts, tenantId, deps) {
 
     const sizeCount = seen.size;
     totals.sizes += sizeCount;
-    totals.errorRows += rowErrors.length;
+    totals.errorRows += new Set(rowErrors.map((e) => e.rowNum)).size;
     if (action === 'createProduct') totals.willCreateProduct += 1;
     else if (action === 'linkProduct') totals.willLinkProduct += 1;
     else totals.willUpdateSubProduct += 1;
@@ -189,6 +189,14 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
   const groups = groupRows(rows);
   const out = { createdProducts: 0, createdSubProducts: 0, createdSizes: 0, stockApplied: 0, skipped: 0, errors: [] };
 
+  // Best-effort bulk import: each group is isolated by try/catch. A group is
+  // processed independently; if opening-stock adjustStock throws mid-group the
+  // catalog records already created still count in the totals AND the group is
+  // recorded in errors[]. Also: a group that resolves to a newly-created,
+  // still-`pending` Product (e.g. a re-run before admin approval, or two
+  // same-named new-product groups in one file) may fail to link at commit even
+  // when preview said ok — caught here per-group. Surfacing pending status in
+  // preview is a deferred follow-up.
   for (const g of groups) {
     try {
       // Keep only rows with a usable size; de-dupe within the group (first wins).
@@ -259,7 +267,7 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
       // Apply opening stock for created sizes with qty > 0.
       for (const s of createdSizeDocs) {
         const qty = s._row.openingQty;
-        if (qty && qty > 0 && warehouseId) {
+        if (qty > 0 && warehouseId) {
           await d.adjustStock(
             { warehouseId, subProduct: subProductId, size: s._id, quantity: qty, type: 'received', notes: 'Bulk import opening stock' },
             user?._id, tenantId
