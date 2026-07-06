@@ -71,6 +71,35 @@ test('commitImport lets spreadsheet productType/brand override AI', async () => 
   assert.equal(np.name, 'New Gin');    // no AI name -> falls back to the raw row name
 });
 
+test('commitImport uses confirmed preview enrichments instead of re-calling Haiku', async () => {
+  const { deps, calls } = makeDeps({
+    ai: { name: 'WRONG — enrich must not be called', type: 'vodka' },
+  });
+  const rows = [{ productName: 'bombay saph gin', size: '75cl' }];
+  const enrichments = {
+    'bombay saph gin|': { // group key = `${name}|${brand}`.toLowerCase()
+      name: 'Bombay Sapphire London Dry Gin', type: 'gin', brand: 'Bombay Sapphire',
+      category: 'Spirits', subCategory: 'Gin',
+      shortDescription: 'A crisp gin', description: 'Distilled with botanicals',
+    },
+  };
+  const res = await svc.commitImport(rows, { warehouseId: null, enrichments }, 'T1', { _id: 'U1' }, deps);
+  assert.equal(res.createdSubProducts, 1);
+  assert.equal(calls.enrich.length, 0, 'must not re-call Haiku when enrichment is provided');
+  const np = calls.createSubProduct[0].newProductData;
+  assert.equal(np.name, 'Bombay Sapphire London Dry Gin');
+  assert.equal(np.type, 'gin');
+  assert.equal(np.brand, 'Bombay Sapphire');
+  assert.equal(np.shortDescription, 'A crisp gin');
+});
+
+test('commitImport strips size tokens from the raw-name fallback', async () => {
+  const { deps, calls } = makeDeps({ ai: { type: 'gin' } }); // AI returns no name
+  const rows = [{ productName: 'New Gin 70cl', size: '75cl' }];
+  await svc.commitImport(rows, { warehouseId: null }, 'T1', { _id: 'U1' }, deps);
+  assert.equal(calls.createSubProduct[0].newProductData.name, 'New Gin');
+});
+
 test('commitImport skips a size that already exists on an existing subproduct', async () => {
   const { deps, calls } = makeDeps({
     product: { _id: 'p1' }, sub: { _id: 'sp-existing' }, sizes: [{ size: '75cl' }],

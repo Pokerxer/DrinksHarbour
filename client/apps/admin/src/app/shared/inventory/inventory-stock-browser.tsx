@@ -1645,7 +1645,10 @@ export default function InventoryStockBrowser({
         token={token}
         warehouses={warehouses}
         onClose={() => setShowImport(false)}
-        onDone={() => { setShowImport(false); load(); }}
+        onDone={() => {
+          setShowImport(false);
+          load();
+        }}
       />
     </div>
   );

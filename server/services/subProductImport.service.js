@@ -83,8 +83,26 @@ async function findProductByName(name, Product) {
   return (q && typeof q.select === 'function') ? q.select('_id').lean() : q;
 }
 
+/**
+ * Merge spreadsheet values with AI-derived ones for a brand-new product.
+ * Spreadsheet always wins; AI fills the gaps. The display-name fallback strips
+ * size/volume tokens from the raw row name (size is a separate variant).
+ */
+function resolveNewProductFields(base, ai = {}) {
+  const { stripSizeFromName } = require('./productEnrich.service');
+  return {
+    name: str(ai.name) || stripSizeFromName(base.productName) || base.productName,
+    type: base.productType || str(ai.type) || undefined,
+    brand: base.brand || str(ai.brand) || undefined,
+    category: base.category || str(ai.category) || undefined,
+    subCategory: base.subCategory || str(ai.subCategory) || undefined,
+    shortDescription: str(ai.shortDescription) || undefined,
+    description: str(ai.description) || undefined,
+  };
+}
+
 async function validateImport(rawRows, opts, tenantId, deps) {
-  const { Product, SubProduct, Size } = defaultDeps(deps);
+  const { Product, SubProduct, Size, Category, enrich, getCategoryNames } = defaultServiceDeps(deps);
   const warehouseId = opts?.warehouseId || null;
   const rows = normalizeRows(rawRows);
   const groups = groupRows(rows);
@@ -96,6 +114,7 @@ async function validateImport(rawRows, opts, tenantId, deps) {
   let anyQty = false;
 
   const groupReports = [];
+  const toEnrich = []; // createProduct groups, enriched in parallel after the scan
   for (const g of groups) {
     const existingProduct = await findProductByName(g.productName, Product);
     let existingSub = null;
@@ -153,7 +172,21 @@ async function validateImport(rawRows, opts, tenantId, deps) {
     else if (action === 'linkProduct') totals.willLinkProduct += 1;
     else totals.willUpdateSubProduct += 1;
 
-    groupReports.push({ key: g.key, productName: g.productName, action, sizeCount, rowErrors, sizeNotes });
+    const report = { key: g.key, productName: g.productName, action, sizeCount, rowErrors, sizeNotes };
+    if (action === 'createProduct' && g.rows[0]?.productName) toEnrich.push({ report, base: g.rows[0] });
+    groupReports.push(report);
+  }
+
+  // Enrich brand-new products at preview-time so the admin reviews (and the
+  // commit reuses) the resolved name/type/brand/category before confirming.
+  if (toEnrich.length) {
+    let categoryNames = [];
+    try { categoryNames = await getCategoryNames({ Category }); } catch { categoryNames = []; }
+    await Promise.all(toEnrich.map(async ({ report, base }) => {
+      let ai = {};
+      try { ai = (await enrich(base.productName, { categories: categoryNames })) || {}; } catch { ai = {}; }
+      report.enrichment = resolveNewProductFields(base, ai);
+    }));
   }
 
   if (anyQty && !warehouseId) {
@@ -193,6 +226,8 @@ function sizePayload(r) {
 async function commitImport(rawRows, opts, tenantId, user, deps) {
   const d = defaultServiceDeps(deps);
   const warehouseId = opts?.warehouseId || null;
+  // Preview-confirmed enrichments, keyed by group key (see validateImport).
+  const enrichments = (opts?.enrichments && typeof opts.enrichments === 'object') ? opts.enrichments : {};
   const rows = normalizeRows(rawRows);
   const groups = groupRows(rows);
   const out = { createdProducts: 0, createdSubProducts: 0, createdSizes: 0, stockApplied: 0, skipped: 0, errors: [] };
@@ -257,25 +292,20 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
         if (existingProduct) {
           data.product = existingProduct._id;
         } else {
-          // Brand-new product: derive missing attributes from the name via Haiku.
-          // Spreadsheet-provided values always win; AI only fills the gaps.
-          let ai = {};
-          try {
-            ai = (await d.enrich(base.productName, { categories: categoryNames })) || {};
-          } catch { ai = {}; }
+          // Brand-new product. Preview already enriched and the admin approved
+          // those values — use them verbatim when supplied (keyed by group key);
+          // only fall back to a live Haiku call for groups preview never saw.
+          // Display name uses the AI-cleaned name; matching/grouping above still
+          // key on the raw row name (a later re-import of the raw name matches
+          // by subProductSku, or creates a fresh listing if no SKU is given).
+          let ai = enrichments[g.key];
+          if (!ai || typeof ai !== 'object') {
+            try {
+              ai = (await d.enrich(base.productName, { categories: categoryNames })) || {};
+            } catch { ai = {}; }
+          }
           data.createNewProduct = true;
-          data.newProductData = {
-            // Display name uses the AI-cleaned name; matching/grouping above still
-            // key on the raw row name (a later re-import of the raw name matches
-            // by subProductSku, or creates a fresh listing if no SKU is given).
-            name: ai.name || base.productName,
-            type: base.productType || ai.type,
-            brand: base.brand || ai.brand || undefined,
-            category: base.category || ai.category || undefined,
-            subCategory: base.subCategory || ai.subCategory || undefined,
-            shortDescription: ai.shortDescription || undefined,
-            description: ai.description || undefined,
-          };
+          data.newProductData = resolveNewProductFields(base, ai);
         }
         const sub = await d.createSubProduct(data, tenantId, user);
         subProductId = sub._id;

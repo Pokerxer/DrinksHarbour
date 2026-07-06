@@ -114,4 +114,4 @@ async function enrichProductFromName(name, opts = {}, deps = {}) {
   }
 }
 
-module.exports = { enrichProductFromName, getCategoryNames, CLAUDE_MODEL, PRODUCT_TYPES };
+module.exports = { enrichProductFromName, getCategoryNames, stripSizeFromName, CLAUDE_MODEL, PRODUCT_TYPES };

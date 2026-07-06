@@ -33,12 +33,24 @@ test('groupRows groups by subProductSku else name+brand', () => {
   assert.equal(groups[0].rows.length, 2);
 });
 
-test('validateImport flags bad size + missing name, but NOT missing type (AI-enriched)', async () => {
+// Preview stubs: enrich/getCategoryNames must never hit the network in tests.
+function previewDeps(overrides = {}) {
+  const calls = { enrich: [] };
   const deps = {
-    Product: { findOne: async () => null },          // no product matches -> create
-    SubProduct: { findOne: async () => null },
-    Size: { find: async () => [] },
+    Product: overrides.Product || { findOne: async () => null }, // no match -> create
+    SubProduct: overrides.SubProduct || { findOne: async () => null },
+    Size: overrides.Size || { find: async () => [] },
+    enrich: async (name, opts) => {
+      calls.enrich.push({ name, opts });
+      return overrides.ai ?? {};
+    },
+    getCategoryNames: async () => overrides.categories ?? [],
   };
+  return { deps, calls };
+}
+
+test('validateImport flags bad size + missing name, but NOT missing type (AI-enriched)', async () => {
+  const { deps } = previewDeps();
   const rows = [
     { productName: '', size: '75cl' },               // missing name
     { productName: 'New Gin', size: 'banana' },       // bad size, missing type is OK (AI fills it)
@@ -52,11 +64,7 @@ test('validateImport flags bad size + missing name, but NOT missing type (AI-enr
 });
 
 test('validateImport still flags a productType that is supplied but invalid', async () => {
-  const deps = {
-    Product: { findOne: async () => null },          // no product matches -> create
-    SubProduct: { findOne: async () => null },
-    Size: { find: async () => [] },
-  };
+  const { deps } = previewDeps();
   const rows = [{ productName: 'New Gin', productType: 'notacategory', size: '75cl' }];
   const res = await svc.validateImport(rows, { warehouseId: null }, 'T1', deps);
   const errs = res.groups.flatMap((g) => g.rowErrors.map((e) => e.field));
@@ -64,14 +72,48 @@ test('validateImport still flags a productType that is supplied but invalid', as
 });
 
 test('validateImport blocks when openingQty>0 but no warehouse', async () => {
-  const deps = {
+  const { deps } = previewDeps({
     Product: { findOne: async () => ({ _id: 'p1' }) }, // matches existing product
-    SubProduct: { findOne: async () => null },
-    Size: { find: async () => [] },
-  };
+  });
   const rows = [{ productName: 'Old Rum', size: '75cl', costPrice: '900', openingQty: '5' }];
   const res = await svc.validateImport(rows, { warehouseId: null }, 'T1', deps);
   assert.equal(res.ok, false);
   assert.ok(res.blocking.some((m) => /warehouse/i.test(m)));
   assert.equal(res.groups[0].action, 'linkProduct');
+});
+
+test('validateImport attaches AI enrichment to createProduct groups (CSV wins, AI fills gaps)', async () => {
+  const { deps, calls } = previewDeps({
+    ai: { name: 'Bombay Sapphire London Dry Gin', type: 'gin', brand: 'Bombay Sapphire', category: 'Spirits', subCategory: 'Gin', shortDescription: 'A crisp gin', description: 'Distilled with botanicals' },
+    categories: ['Spirits', 'Wine'],
+  });
+  const rows = [{ productName: 'bombay saph gin 70cl', brand: 'CSV Brand', size: '75cl' }];
+  const res = await svc.validateImport(rows, { warehouseId: null }, 'T1', deps);
+  assert.equal(calls.enrich.length, 1);
+  assert.equal(calls.enrich[0].name, 'bombay saph gin 70cl');       // enrich sees the raw name
+  assert.deepEqual(calls.enrich[0].opts.categories, ['Spirits', 'Wine']);
+  const e = res.groups[0].enrichment;
+  assert.ok(e, 'createProduct group must carry an enrichment');
+  assert.equal(e.name, 'Bombay Sapphire London Dry Gin');           // AI-cleaned display name
+  assert.equal(e.type, 'gin');
+  assert.equal(e.brand, 'CSV Brand');                               // spreadsheet wins over AI
+  assert.equal(e.category, 'Spirits');
+  assert.equal(e.shortDescription, 'A crisp gin');
+});
+
+test('validateImport strips size tokens from the fallback name when AI returns no name', async () => {
+  const { deps } = previewDeps({ ai: {} });
+  const rows = [{ productName: 'New Gin 70cl', size: '75cl' }];
+  const res = await svc.validateImport(rows, { warehouseId: null }, 'T1', deps);
+  assert.equal(res.groups[0].enrichment.name, 'New Gin');
+});
+
+test('validateImport does NOT enrich linkProduct/updateSubProduct groups', async () => {
+  const { deps, calls } = previewDeps({
+    Product: { findOne: async () => ({ _id: 'p1' }) }, // existing product -> linkProduct
+  });
+  const rows = [{ productName: 'Old Rum', size: '75cl', costPrice: '900' }];
+  const res = await svc.validateImport(rows, { warehouseId: null }, 'T1', deps);
+  assert.equal(calls.enrich.length, 0);
+  assert.equal(res.groups[0].enrichment, undefined);
 });

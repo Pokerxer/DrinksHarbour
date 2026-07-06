@@ -33,7 +33,7 @@ exports.previewImport = asyncHandler(async (req, res) => {
 exports.commitImport = asyncHandler(async (req, res) => {
   const tenantId = resolveTenant(req, res);
   if (!tenantId) return;
-  const { rows, warehouseId } = req.body;
+  const { rows, warehouseId, enrichments } = req.body;
   if (!Array.isArray(rows) || rows.length === 0) {
     return res.status(400).json({ success: false, message: 'rows[] is required' });
   }
@@ -43,7 +43,7 @@ exports.commitImport = asyncHandler(async (req, res) => {
       return res.status(400).json({ success: false, message: 'Selected warehouse not found for this tenant' });
     }
   }
-  const data = await importSvc.commitImport(rows, { warehouseId }, tenantId, req.user, undefined);
+  const data = await importSvc.commitImport(rows, { warehouseId, enrichments }, tenantId, req.user, undefined);
   if (['super_admin', 'admin'].includes(req.user?.role)) {
     void logPrivilegedAction(req, 'SUBPRODUCT_IMPORT', 'create', {
       targetType: 'SubProduct', targetTenantId: tenantId,
