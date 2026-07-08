@@ -135,6 +135,15 @@ function getSourceBadge(m: InventoryMovement) {
     m.source === 'order' || (m.notes && m.notes.toLowerCase().includes('pos'));
   const isOnline =
     !isPOS && m.relatedOrder && typeof m.relatedOrder === 'object';
+  const isImport =
+    m.reference === 'bulk-import' ||
+    (m.notes && m.notes.toLowerCase().includes('bulk import'));
+  if (isImport)
+    return {
+      label: 'Import',
+      cls: 'bg-indigo-50 text-indigo-700',
+      icon: <PiPackage className="h-2.5 w-2.5" />,
+    };
   if (isPOS)
     return {
       label: 'POS',

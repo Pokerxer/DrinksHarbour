@@ -368,22 +368,29 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
           );
         }
 
-        // Size.stock + InventoryMovement (visible in the sub-product history tab).
-        // recordReceiptMovement increments Size.stock/$availableStock and writes
-        // the InventoryMovement row regardless of whether a warehouse is set.
-        await d.recordReceiptMovement({
-          subProduct: subProductId,
-          tenant: tenantId,
-          size: s._id,
-          warehouse: warehouseId || undefined,
-          quantity: qty,
-          balanceBefore: 0,
-          balanceAfter: qty,
-          unitCost: s._row.sizeCostPrice ?? s._row.costPrice ?? undefined,
-          notes: 'Bulk import opening stock',
-          reference: 'bulk-import',
-          performedBy: user?._id,
-        });
+        // Size.stock — set directly so the shop's inStock filter always sees the
+        // correct value even if the InventoryMovement audit trail fails to save.
+        const Size = require('mongoose').model('Size');
+        await Size.findByIdAndUpdate(s._id, {
+          $set: { stock: qty, availableStock: qty, availability: 'in_stock' },
+        }).catch(() => {});
+
+        // InventoryMovement audit trail — best-effort; failure is non-fatal.
+        try {
+          await d.recordReceiptMovement({
+            subProduct: subProductId,
+            tenant: tenantId,
+            size: s._id,
+            warehouse: warehouseId || undefined,
+            quantity: qty,
+            balanceBefore: 0,
+            balanceAfter: qty,
+            unitCost: s._row.sizeCostPrice ?? s._row.costPrice ?? undefined,
+            notes: 'Bulk import opening stock',
+            reference: 'bulk-import',
+            performedBy: user?._id,
+          });
+        } catch (_) { /* Size.stock already set above */ }
 
         out.stockApplied += 1;
       }
