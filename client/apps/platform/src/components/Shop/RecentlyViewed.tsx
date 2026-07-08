@@ -282,7 +282,13 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 1
   };
 
   const filteredProducts = useMemo(() => {
-    return products.filter(p => p._id !== productId && p.id !== productId);
+    return products.filter(p => {
+      if (p._id === productId || p.id === productId) return false;
+      const hasStock = (p.availableAt || []).some((v: any) =>
+        (v.sizes || []).some((s: any) => (s.stock ?? s.quantity ?? 0) > 0)
+      );
+      return hasStock;
+    });
   }, [products, productId]);
 
   if (loading) {
@@ -297,15 +303,15 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 1
             </div>
           </div>
           {/* Mobile skeleton */}
-          <div className="md:hidden flex gap-3 overflow-x-auto pb-2">
+          <div className="md:hidden flex gap-2 overflow-x-auto pb-2">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="w-[42%] flex-shrink-0 bg-gray-100 rounded-xl animate-pulse aspect-[3/4]" />
+              <div key={i} className="w-[34%] flex-shrink-0 bg-gray-100 rounded-lg animate-pulse aspect-[4/5]" />
             ))}
           </div>
           {/* Desktop skeleton */}
-          <div className="hidden md:grid grid-cols-4 gap-4">
+          <div className="hidden md:grid grid-cols-4 gap-3">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="bg-gray-100 rounded-xl animate-pulse aspect-[3/4]" />
+              <div key={i} className="bg-gray-100 rounded-lg animate-pulse aspect-[4/5]" />
             ))}
           </div>
         </div>
@@ -363,7 +369,7 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 1
         {/* Desktop: CSS Grid */}
 
         {/* Desktop: CSS Grid */}
-        <div className="hidden md:grid gap-4"
+        <div className="hidden md:grid gap-3"
           style={{
             gridTemplateColumns: `repeat(${layoutColumns}, minmax(0, 1fr))`,
           }}
@@ -384,11 +390,11 @@ const RecentlyViewed: React.FC<RecentlyViewedProps> = ({ productId, maxItems = 1
         </div>
 
         {/* Mobile: Horizontal scroll with snap */}
-        <div className="md:hidden flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide -mx-4 px-4">
+        <div className="md:hidden flex gap-2 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide -mx-4 px-4">
           {filteredProducts.slice(0, maxItems).map((product, index) => (
             <div 
               key={`${product._id}-${index}`} 
-              className="w-[42%] flex-shrink-0 snap-start"
+              className="w-[34%] flex-shrink-0 snap-start"
             >
               <RecentlyViewedCard 
                 product={product} 
@@ -438,6 +444,14 @@ const RecentlyViewedCard: React.FC<RecentlyViewedCardProps> = ({
   const currentPrice = getProductPrice(product);
   const originalPrice = getProductOriginalPrice(product);
 
+  const isOutOfStock = useMemo(() => {
+    if (!product.availableAt || product.availableAt.length === 0) return true;
+    const hasStock = product.availableAt.some((v: any) =>
+      v.sizes?.some((s: any) => (s.stock || s.quantity || 0) > 0)
+    );
+    return !hasStock;
+  }, [product]);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -447,17 +461,17 @@ const RecentlyViewedCard: React.FC<RecentlyViewedCardProps> = ({
       <Link href={`/product/${productSlug}`}>
         <motion.div
           whileHover={{ y: -2 }}
-          className="group bg-white rounded-xl overflow-hidden border border-gray-100 hover:border-gray-300 hover:shadow-md transition-all duration-300 h-full"
+          className="group bg-white rounded-lg overflow-hidden border border-gray-100 hover:border-gray-300 hover:shadow-md transition-all duration-300 h-full"
         >
           {/* Image */}
-          <div className="relative aspect-[3/4] bg-gradient-to-br from-gray-100 to-gray-50">
+          <div className="relative aspect-[4/5] bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center overflow-hidden">
             {product.images?.[0]?.url ? (
               <Image
                 src={product.images[0].url}
                 alt={product.name}
                 fill
-                className="object-cover group-hover:scale-105 transition-transform duration-500"
-                sizes="(max-width: 480px) 44vw, (max-width: 768px) 30vw, (max-width: 1024px) 23vw, 18vw"
+                className="object-contain p-2 group-hover:scale-105 transition-transform duration-500"
+                sizes="(max-width: 480px) 34vw, (max-width: 768px) 22vw, (max-width: 1024px) 18vw, 14vw"
               />
             ) : (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -466,10 +480,28 @@ const RecentlyViewedCard: React.FC<RecentlyViewedCardProps> = ({
             )}
 
             {/* Sale badge */}
-            {isOnSale && (
+            {isOnSale && !isOutOfStock && (
               <div className="absolute top-2 left-2">
                 <span className="px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full">
                   -{discount}%
+                </span>
+              </div>
+            )}
+
+            {/* Out of Stock badge */}
+            {isOutOfStock && (
+              <div className="absolute top-2 left-2 z-10">
+                <span className="px-1.5 py-0.5 bg-gray-900/90 text-white text-[10px] font-bold rounded-full">
+                  OUT OF STOCK
+                </span>
+              </div>
+            )}
+
+            {/* Out of Stock overlay */}
+            {isOutOfStock && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 backdrop-blur-[1px]">
+                <span className="px-2.5 py-1 bg-gray-900/85 text-white text-[10px] font-bold rounded-full shadow-lg tracking-wide">
+                  Out of Stock
                 </span>
               </div>
             )}
@@ -483,19 +515,19 @@ const RecentlyViewedCard: React.FC<RecentlyViewedCardProps> = ({
           </div>
 
           {/* Info */}
-          <div className="p-2.5">
-            <p className="text-[10px] text-gray-400 mb-0.5 truncate">
+          <div className="p-2">
+            <p className="text-[9px] text-gray-400 mb-0.5 truncate">
               {product.brand?.name || product.type}
             </p>
-            <h4 className="text-xs font-semibold text-gray-900 line-clamp-2 mb-1.5 min-h-[2.5rem]">
+            <h4 className="text-[11px] font-semibold text-gray-900 line-clamp-2 mb-1 min-h-[2.25rem] leading-tight">
               {product.name}
             </h4>
-            <div className="flex items-baseline gap-1.5 flex-wrap">
-              <span className={`font-bold text-sm ${isOnSale ? 'text-red-600' : 'text-gray-900'}`}>
+            <div className="flex items-baseline gap-1 flex-wrap">
+              <span className={`font-bold text-xs ${isOnSale ? 'text-red-600' : 'text-gray-900'}`}>
                 {formatPrice(currentPrice, currencySymbol)}
               </span>
               {isOnSale && originalPrice > 0 && (
-                <span className="text-[10px] text-gray-400 line-through">
+                <span className="text-[9px] text-gray-400 line-through">
                   {formatPrice(originalPrice, currencySymbol)}
                 </span>
               )}

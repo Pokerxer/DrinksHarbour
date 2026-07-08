@@ -240,6 +240,47 @@ const tenantSchema = new Schema(
     contactPhone: String,
 
     // ────────────────────────────────────────────────
+    // Vendor Application Data (from public apply form)
+    // ────────────────────────────────────────────────
+    businessType: {
+      type: String,
+      trim: true,
+      enum: [
+        'Wine Merchant', 'Spirit Importer', 'Beverage Brand', 'Liquor Store',
+        'Bar / Lounge', 'Restaurant', 'Hotel', 'Distributor', 'Other',
+      ],
+    },
+    cacNumber: { type: String, trim: true, uppercase: true },
+    tin: { type: String, trim: true, uppercase: true },
+    bvn: { type: String, trim: true }, // hash in production — stored as-is for MVP
+    idType: { type: String, trim: true },
+    idNumber: { type: String, trim: true },
+    bankName: { type: String, trim: true },
+    bankAccountNumber: { type: String, trim: true },
+    bankAccountName: { type: String, trim: true },
+    nafdacNumber: { type: String, trim: true, uppercase: true },
+    nafdacRequired: { type: Boolean, default: false },
+    applicationDescription: { type: String, trim: true },
+    cacDocUrl: { type: String, trim: true }, // Cloudinary URL for uploaded CAC cert
+
+    // ────────────────────────────────────────────────
+    // External KYC verification results (Paystack)
+    // ────────────────────────────────────────────────
+    kycVerified: { type: Boolean, default: false },
+    kycChecks: [{
+      check: String,
+      passed: Boolean,
+      skipped: Boolean,
+      detail: String,
+    }],
+    kycWarnings: [String],
+    kycNameCrossCheck: {
+      performed: Boolean,
+      allPassed: Boolean,
+      hasWarnings: Boolean,
+    },
+
+    // ────────────────────────────────────────────────
     // Bank / Payment Accounts (shown on POS invoices)
     // ────────────────────────────────────────────────
     bankAccounts: [

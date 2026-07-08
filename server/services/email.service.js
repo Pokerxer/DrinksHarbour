@@ -1166,6 +1166,137 @@ const sendGiftCardEmail = async (to, { amount, senderName, message, expiresAt, c
   });
 };
 
+// ─── 10. Tenant application — confirmation to applicant ──────────────────────
+
+const sendTenantApplicationReceivedEmail = async ({ email, firstName, businessName, slug, plan }) => {
+  if (!emailServiceReady) {
+    console.log('⚠️  Email service not ready, skipping application confirmation email');
+    return { success: false, message: 'Email service not configured' };
+  }
+
+  const planLabel = {
+    free_trial: 'Free Trial', starter: 'Starter', growth: 'Growth',
+    pro: 'Pro', enterprise: 'Enterprise', venue: 'Venue',
+  }[plan] || 'Free Trial';
+
+  const html = emailShell({
+    accentColor:    '#16a34a',
+    accentLabel:    '&#9989; Application Received',
+    accentSubtitle: `${businessName} · ${planLabel} Plan`,
+    body: `
+      <p style="font-size:16px;color:#374151;margin:0 0 16px 0;">Hello <strong>${firstName || 'there'}</strong>,</p>
+      <p style="font-size:14px;color:#6b7280;line-height:1.7;margin:0 0 24px 0;">
+        Thank you for applying to sell on DrinksHarbour! We've received your application for
+        <strong>${businessName}</strong> on the <strong>${planLabel}</strong> plan.
+      </p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;background:#f9fafb;border-radius:12px;">
+        <tr>
+          <td style="padding:20px;">
+            <p style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px 0;">What happens next?</p>
+            <p style="font-size:14px;color:#374151;line-height:1.6;margin:0 0 8px 0;"><strong>1.</strong> Our team reviews your application within 48 hours.</p>
+            <p style="font-size:14px;color:#374151;line-height:1.6;margin:0 0 8px 0;"><strong>2.</strong> We verify your business details and documents.</p>
+            <p style="font-size:14px;color:#374151;line-height:1.6;margin:0 0 8px 0;"><strong>3.</strong> Once approved, you'll receive an email with login instructions.</p>
+            <p style="font-size:14px;color:#374151;line-height:1.6;margin:0;"><strong>4.</strong> Set your password and start adding products!</p>
+          </td>
+        </tr>
+      </table>
+      <p style="font-size:13px;color:#9ca3af;margin:0;">
+        Your store URL will be: <strong style="color:#374151;">drinksharbour.com/vendors/${slug}</strong>
+      </p>
+    `,
+    footerNote: 'Questions? Email support@drinksharbour.com',
+  });
+
+  return sendEmail({
+    to: email,
+    subject: `&#9989; Application Received — ${businessName} | DrinksHarbour`,
+    html,
+  });
+};
+
+// ─── 11. Tenant application — notification to admin ───────────────────────────
+
+const sendTenantApplicationNotificationToAdmin = async ({
+  businessName, slug, contactName, email, phone, businessType, plan, city, state,
+  kycVerified = false, kycChecks = [], kycWarnings = [], kycNameCrossCheck,
+}) => {
+  if (!emailServiceReady) {
+    console.log('⚠️  Email service not ready, skipping admin notification');
+    return { success: false, message: 'Email service not configured' };
+  }
+
+  const adminEmail = process.env.ADMIN_EMAIL || process.env.SENDER_EMAIL_ADDRESS;
+  if (!adminEmail) {
+    console.log('⚠️  Admin email not configured, skipping admin notification');
+    return { success: false, message: 'Admin email not configured' };
+  }
+
+  const planLabel = {
+    free_trial: 'Free Trial', starter: 'Starter', growth: 'Growth',
+    pro: 'Pro', enterprise: 'Enterprise', venue: 'Venue',
+  }[plan] || 'Free Trial';
+
+  const html = emailShell({
+    accentColor:    '#dc2626',
+    accentLabel:    '&#128276; New Vendor Application',
+    accentSubtitle: `${businessName} · ${planLabel} Plan`,
+    body: `
+      <p style="font-size:16px;color:#374151;margin:0 0 16px 0;">A new vendor application has been submitted.</p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+        <tr><td style="padding:8px 0;font-size:14px;color:#6b7280;border-bottom:1px solid #e5e7eb;">Business</td>
+        <td style="padding:8px 0;font-size:14px;color:#111827;font-weight:600;text-align:right;border-bottom:1px solid #e5e7eb;">${businessName}</td></tr>
+        <tr><td style="padding:8px 0;font-size:14px;color:#6b7280;border-bottom:1px solid #e5e7eb;">Type</td>
+        <td style="padding:8px 0;font-size:14px;color:#111827;font-weight:600;text-align:right;border-bottom:1px solid #e5e7eb;">${businessType || '—'}</td></tr>
+        <tr><td style="padding:8px 0;font-size:14px;color:#6b7280;border-bottom:1px solid #e5e7eb;">Contact</td>
+        <td style="padding:8px 0;font-size:14px;color:#111827;font-weight:600;text-align:right;border-bottom:1px solid #e5e7eb;">${contactName || '—'}</td></tr>
+        <tr><td style="padding:8px 0;font-size:14px;color:#6b7280;border-bottom:1px solid #e5e7eb;">Email</td>
+        <td style="padding:8px 0;font-size:14px;color:#111827;font-weight:600;text-align:right;border-bottom:1px solid #e5e7eb;">${email}</td></tr>
+        <tr><td style="padding:8px 0;font-size:14px;color:#6b7280;border-bottom:1px solid #e5e7eb;">Phone</td>
+        <td style="padding:8px 0;font-size:14px;color:#111827;font-weight:600;text-align:right;border-bottom:1px solid #e5e7eb;">${phone || '—'}</td></tr>
+        <tr><td style="padding:8px 0;font-size:14px;color:#6b7280;border-bottom:1px solid #e5e7eb;">Location</td>
+        <td style="padding:8px 0;font-size:14px;color:#111827;font-weight:600;text-align:right;border-bottom:1px solid #e5e7eb;">${city || '—'}, ${state || '—'}</td></tr>
+        <tr><td style="padding:8px 0;font-size:14px;color:#6b7280;border-bottom:1px solid #e5e7eb;">Plan</td>
+        <td style="padding:8px 0;font-size:14px;color:#111827;font-weight:600;text-align:right;border-bottom:1px solid #e5e7eb;">${planLabel}</td></tr>
+        <tr><td style="padding:8px 0;font-size:14px;color:#6b7280;">Store URL</td>
+        <td style="padding:8px 0;font-size:14px;color:#111827;font-weight:600;text-align:right;">drinksharbour.com/vendors/${slug}</td></tr>
+      </table>
+
+      ${kycChecks.length > 0 ? `
+      <p style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:1px;margin:0 0 10px 0;">External KYC Verification</p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;background:${kycVerified ? '#f0fdf4' : '#fef3c7'};border-radius:12px;">
+        <tr><td style="padding:16px;">
+          <p style="font-size:14px;font-weight:600;color:${kycVerified ? '#15803d' : '#b45309'};margin:0 0 10px 0;">
+            ${kycVerified ? '&#9989; KYC Verified' : '&#9888; KYC Issues Found'}
+            ${kycNameCrossCheck?.performed ? ` &mdash; Name match: ${kycNameCrossCheck.allPassed ? '&#9989; All passed' : '&#9888; ' + (kycNameCrossCheck.hasWarnings ? 'Warnings' : 'Failed')}` : ''}
+          </p>
+          ${kycChecks.map((c) => `
+            <p style="font-size:13px;color:#374151;margin:0 0 6px 0;">
+              ${c.passed ? '&#10004;' : c.skipped ? '&#9986;' : '&#10006;'} <strong>${c.check}:</strong> ${c.detail}
+            </p>
+          `).join('')}
+          ${kycWarnings.length > 0 ? `
+            <p style="font-size:13px;color:#b45309;margin:10px 0 0 0;">
+              <strong>Warnings:</strong> ${kycWarnings.join('; ')}
+            </p>
+          ` : ''}
+        </td></tr>
+      </table>
+      ` : ''}
+
+      <p style="font-size:13px;color:#9ca3af;margin:0;">
+        Review this application in the admin dashboard. Approve or reject to proceed.
+      </p>
+    `,
+    footerNote: 'Admin Notification — DrinksHarbour Platform',
+  });
+
+  return sendEmail({
+    to: adminEmail,
+    subject: `[Admin] New Vendor Application — ${businessName} (${planLabel})`,
+    html,
+  });
+};
+
 module.exports = {
   sendEmail,
   sendOrderConfirmationToCustomer,
@@ -1176,4 +1307,6 @@ module.exports = {
   sendPasswordResetEmail,
   sendPurchaseOrderToVendor,
   sendGiftCardEmail,
+  sendTenantApplicationReceivedEmail,
+  sendTenantApplicationNotificationToAdmin,
 };

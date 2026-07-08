@@ -146,7 +146,7 @@ export default async function RootLayout({
               dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
             />
             {/* Preload LCP hero image */}
-            <link rel="preload" as="image" href="/images/logo.png" fetchpriority="high" />
+            <link rel="preload" as="image" href="/images/logo.png" fetchPriority="high" />
             {/* Preconnect to third-party origins */}
             <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
             {/* Speculation Rules — prerender likely navigations on hover */}

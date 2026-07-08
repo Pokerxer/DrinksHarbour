@@ -653,6 +653,8 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
     return null;
   }, [saleInfo, isFlashSale, isFixedDiscount, data, hasActiveSale]);
 
+  const isOutOfStock = mappedProduct.availability && !mappedProduct.availability.inStock;
+
   // Use the same vendorWithSale from above
   const vendorToUse = vendorWithSale || firstVendor;
   
@@ -910,6 +912,18 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                     {data.badge.name.toUpperCase()}
                   </motion.div>
                 )}
+
+                {/* Out of Stock badge */}
+                {isOutOfStock && (
+                  <motion.div
+                    key="out-of-stock-badge"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="px-1.5 py-0.5 bg-gray-900/90 text-white text-[8px] font-bold rounded shadow"
+                  >
+                    OUT OF STOCK
+                  </motion.div>
+                )}
               </div>
 
               {/* Right Side Actions - Desktop only with staggered animation */}
@@ -1007,6 +1021,15 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
 
                 {/* Cinematic glow ring — appears on hover */}
                 <div className="absolute inset-0 rounded-2xl pointer-events-none z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{ boxShadow: 'inset 0 0 40px rgba(245,176,66,0.18), 0 8px 30px rgba(0,0,0,0.10)' }} />
+
+                {/* Out of Stock overlay */}
+                {isOutOfStock && (
+                  <div className="absolute inset-0 z-30 flex items-center justify-center bg-white/60 backdrop-blur-[1px]">
+                    <span className="px-3 py-1.5 bg-gray-900/85 text-white text-xs font-bold rounded-full shadow-lg tracking-wide">
+                      Out of Stock
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Sale Marquee - Only show when there's an actual sale */}
@@ -1030,6 +1053,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
               )}
 
               {/* Quick Shop Panel - Desktop only with hover */}
+              {!isOutOfStock && (
               <div className="hidden lg:block">
                 {vendors.length > 0 && vendorSizes.length > 0 && (
                   <div
@@ -1153,7 +1177,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                 )}
 
                 {/* Quick Shop Toggle Button (shown on hover) - Desktop only with enhanced animation */}
-                {vendors.length > 0 && vendorSizes.length > 0 && (
+                {!isOutOfStock && vendors.length > 0 && vendorSizes.length > 0 && (
                   <button
                     className="absolute bottom-4 left-4 right-4 py-3 bg-white/95 backdrop-blur-sm text-gray-900 text-sm font-bold rounded-full shadow-xl opacity-0 group-hover:opacity-100 transition-all duration-300 hover:bg-gray-900 hover:text-white hover:shadow-2xl transform translate-y-2 group-hover:translate-y-0 z-20 flex items-center justify-center gap-2"
                     onClick={(e) => {
@@ -1166,9 +1190,11 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                   </button>
                 )}
               </div>
+              )}
 
               {/* Mobile Action Buttons - stacked column on image */}
               <div className="lg:hidden absolute top-2 right-2 flex flex-col gap-2 z-20">
+                {!isOutOfStock && (
                 <button
                   onClick={handleMobileAddToCart}
                   disabled={isAddingToCart}
@@ -1184,6 +1210,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                     <Icon.PiShoppingCart size={18} />
                   )}
                 </button>
+                )}
                 <button
                   onClick={handleAddToWishlist}
                   className={`w-9 h-9 bg-white/95 backdrop-blur-sm rounded-full shadow-lg flex items-center justify-center active:scale-95 transition-all ${
@@ -1212,6 +1239,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
             {/* Product Information for Grid Type - Enhanced with animations */}
             <div className="product-infor mt-3 md:mt-4 flex-grow flex flex-col px-1">
               {/* Sold/Available - Hidden on mobile, show on tablet+ with animation */}
+              {!isOutOfStock && (
               <div className="hidden sm:block product-sold sm:pb-4 pb-2">
                 <div className="progress bg-gray-200 h-1.5 w-full rounded-full overflow-hidden relative">
                   <div
@@ -1245,6 +1273,7 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                   </div>
                 </div>
               </div>
+              )}
 
               <Link href={`/product/${mappedProduct.slug}`} className="block flex-grow">
                 <h3 className="product-name text-sm md:text-base font-medium text-gray-900 transition-colors duration-300 hover:text-emerald-600 line-clamp-2 leading-tight group-hover:text-emerald-600">
@@ -1384,6 +1413,13 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                     {data.badge.name || data.badge.type?.toUpperCase()}
                   </div>
                 )}
+
+                {/* Out of Stock badge */}
+                {isOutOfStock && (
+                  <div className="px-1 py-0.5 bg-gray-900/90 text-white text-[9px] font-bold rounded">
+                    OUT OF STOCK
+                  </div>
+                )}
               </div>
 
               <div className="product-img w-24 sm:w-32 aspect-square rounded-xl sm:rounded-2xl overflow-hidden flex items-center justify-center bg-gray-50 relative group/list-img">
@@ -1404,6 +1440,15 @@ const ProductCard: React.FC<ProductProps> = ({ data, type = 'grid', priority = f
                 )}
                 {/* Cinematic glow ring on hover */}
                 <div className="absolute inset-0 rounded-xl sm:rounded-2xl pointer-events-none opacity-0 group-hover/list-img:opacity-100 transition-opacity duration-500" style={{ boxShadow: 'inset 0 0 24px rgba(245,176,66,0.20), 0 6px 20px rgba(0,0,0,0.10)' }} />
+
+                {/* Out of Stock overlay */}
+                {isOutOfStock && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 backdrop-blur-[1px] rounded-xl sm:rounded-2xl">
+                    <span className="px-2 py-1 bg-gray-900/85 text-white text-[10px] font-bold rounded-full shadow-lg">
+                      Out of Stock
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 

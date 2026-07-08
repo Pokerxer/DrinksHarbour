@@ -252,3 +252,222 @@ exports.getTenantBySlug = asyncHandler(async (req, res) => {
   if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
   res.json({ success: true, data: { tenant } });
 });
+
+// ─── Public: Vendor Application ─────────────────────────────────────────────────
+
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const User = require('../models/User');
+const { generateUniqueSlug } = require('../utils/slugify');
+const { logAudit } = require('../utils/auditLog');
+const emailService = require('../services/email.service');
+const kycService = require('../services/kyc.service');
+
+/**
+ * @route   POST /api/tenants/apply
+ * @access  Public (rate-limited)
+ * @desc    Self-service vendor application — creates a pending Tenant + tenant_owner User.
+ *          Does NOT auto-login. Admin must approve before the tenant goes live.
+ */
+exports.applyTenant = asyncHandler(async (req, res) => {
+  const b = req.body;
+
+  // ── 0. Conditional NAFDAC validation ──────────────────────────────────────
+  if (b.nafdacRequired === true && !b.nafdacNumber?.trim()) {
+    return res.status(400).json({
+      success: false,
+      message: 'NAFDAC registration number is required when you sell regulated beverages',
+      errors: { nafdacNumber: 'NAFDAC registration number is required' },
+    });
+  }
+
+  // ── 1. Validate email uniqueness ──────────────────────────────────────────
+  const existingUser = await User.findOne({ email: b.email.toLowerCase() });
+  if (existingUser) {
+    return res.status(409).json({
+      success: false,
+      message: 'An account with this email already exists. Please log in instead.',
+    });
+  }
+
+  // ── 2. Validate slug uniqueness (or generate a unique one) ─────────────────
+  let slug = (b.slug || '').trim().toLowerCase();
+  if (!slug) {
+    return res.status(400).json({ success: false, message: 'Store URL slug is required' });
+  }
+  slug = await generateUniqueSlug(slug, async (testSlug) =>
+    await Tenant.findOne({ slug: testSlug }).lean()
+  );
+
+  // ── 3. Validate plan ───────────────────────────────────────────────────────
+  const validPlans = ['free_trial', 'starter', 'growth', 'pro', 'enterprise', 'venue'];
+  const plan = validPlans.includes(b.plan) ? b.plan : 'free_trial';
+
+  // ── 4. Create Tenant (status: pending) ─────────────────────────────────────
+  const trialEndsAt = new Date();
+  trialEndsAt.setDate(trialEndsAt.getDate() + 14); // 14-day trial
+
+  const tenant = new Tenant({
+    name: b.businessName,
+    slug,
+    plan,
+    status: 'pending',
+    subscriptionStatus: 'trialing',
+    revenueModel: 'commission',
+    commissionPercentage: 13,
+    defaultCurrency: 'NGN',
+    country: 'Nigeria',
+    enforceAgeVerification: true,
+    contactEmail: b.email.toLowerCase(),
+    contactPhone: b.phone,
+    businessType: b.businessType,
+    cacNumber: b.cacNumber,
+    tin: b.tin,
+    bvn: b.bvn,
+    idType: b.idType,
+    idNumber: b.idNumber,
+    bankName: b.bankName,
+    bankAccountNumber: b.bankAccountNumber,
+    bankAccountName: b.bankAccountName,
+    nafdacNumber: b.nafdacNumber,
+    nafdacRequired: b.nafdacRequired === true,
+    applicationDescription: b.description,
+    trialEndsAt,
+    address: {
+      formatted: b.addressFormatted,
+      city: b.city,
+      state: b.state,
+      zipCode: b.postcode,
+      country: 'Nigeria',
+    },
+    location: (b.addressLat && b.addressLon) ? {
+      type: 'Point',
+      coordinates: [b.addressLon, b.addressLat],
+    } : undefined,
+  });
+
+  await tenant.save();
+
+  // ── 5. Create User (role: tenant_owner) ────────────────────────────────────
+  // Generate a random temporary password — user will set their own on first login
+  const tempPassword = crypto.randomBytes(16).toString('hex');
+  const passwordHash = await bcrypt.hash(tempPassword, 12);
+
+  const [firstName, ...lastNameParts] = (b.contactName || '').trim().split(/\s+/);
+  const lastName = lastNameParts.join(' ') || '';
+
+  const user = await User.create({
+    email: b.email.toLowerCase(),
+    passwordHash,
+    firstName: firstName || 'Vendor',
+    lastName,
+    displayName: b.contactName || b.businessName,
+    phone: b.phone,
+    role: 'tenant_owner',
+    tenant: tenant._id,
+    status: 'active',
+    isEmailVerified: false,
+    isAgeVerified: b.ageConfirmed === true,
+  });
+
+  // ── 6. Link user as tenant admin ────────────────────────────────────────────
+  tenant.admin = user._id;
+  await tenant.save();
+
+  // ── 7. External KYC verification (Paystack APIs) ──────────────────────────
+  // Verifies BVN and bank account belong to this person/business.
+  // Failures are stored as warnings — admin makes the final approval decision.
+  let kycResult = { verified: false, checks: [], warnings: [], errors: [] };
+  try {
+    kycResult = await kycService.verifyVendorKYC({
+      bvn: b.bvn,
+      bankAccountNumber: b.bankAccountNumber,
+      bankName: b.bankName,
+      bankAccountName: b.bankAccountName,
+      contactName: b.contactName,
+      cacNumber: b.cacNumber,
+      businessName: b.businessName,
+      tin: b.tin,
+      idType: b.idType,
+      idNumber: b.idNumber,
+    });
+
+    // Persist KYC results on the tenant for admin review
+    tenant.kycVerified = kycResult.verified;
+    tenant.kycChecks = kycResult.checks;
+    tenant.kycWarnings = kycResult.warnings;
+    tenant.kycNameCrossCheck = kycResult.nameCrossCheck;
+    await tenant.save();
+  } catch (err) {
+    console.error('KYC verification error (non-blocking):', err.message);
+    // Don't fail the application if KYC service is down — admin can verify manually
+  }
+
+  // ── 8. Audit log ────────────────────────────────────────────────────────────
+  await logAudit({
+    action: 'TENANT_APPLY',
+    actionCategory: 'create',
+    actorUserId: user._id,
+    actorRole: 'tenant_owner',
+    actorEmail: user.email,
+    targetType: 'Tenant',
+    targetId: tenant._id,
+    targetTenantId: tenant._id,
+    req,
+    result: 'success',
+    changes: { tenantName: tenant.name, slug: tenant.slug, plan: tenant.plan },
+    fireAndForget: true,
+  });
+
+  // ── 8. Send emails (non-blocking) ──────────────────────────────────────────
+  try {
+    await emailService.sendTenantApplicationReceivedEmail({
+      email: user.email,
+      firstName: user.firstName,
+      businessName: tenant.name,
+      slug: tenant.slug,
+      plan: tenant.plan,
+    });
+  } catch (err) {
+    console.error('Failed to send application confirmation email:', err.message);
+  }
+
+  try {
+    await emailService.sendTenantApplicationNotificationToAdmin({
+      businessName: tenant.name,
+      slug: tenant.slug,
+      contactName: b.contactName,
+      email: user.email,
+      phone: b.phone,
+      businessType: b.businessType,
+      plan: tenant.plan,
+      city: b.city,
+      state: b.state,
+      kycVerified: kycResult.verified,
+      kycChecks: kycResult.checks,
+      kycWarnings: kycResult.warnings,
+      kycNameCrossCheck: kycResult.nameCrossCheck,
+    });
+  } catch (err) {
+    console.error('Failed to send admin notification email:', err.message);
+  }
+
+  // ── 10. Respond ──────────────────────────────────────────────────────────────
+  res.status(201).json({
+    success: true,
+    message: 'Application received! We will review it within 48 hours and email you with next steps.',
+    data: {
+      applicationId: tenant._id,
+      slug: tenant.slug,
+      status: tenant.status,
+      plan: tenant.plan,
+      kyc: {
+        verified: kycResult.verified,
+        checks: kycResult.checks,
+        warnings: kycResult.warnings,
+        errors: kycResult.errors,
+      },
+    },
+  });
+});

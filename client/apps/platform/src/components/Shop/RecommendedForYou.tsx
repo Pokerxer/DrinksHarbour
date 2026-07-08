@@ -245,7 +245,10 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const sectionConfig = SECTION_MAP[currentSection];
-  const displayedProducts = useMemo(() => products.slice(0, maxItems), [products, maxItems]);
+  const displayedProducts = useMemo(
+    () => products.filter(p => (p.stockInfo?.totalStock || 0) > 0).slice(0, maxItems),
+    [products, maxItems]
+  );
 
   const fetchSection = useCallback(
     async (section: SectionKey, auth: boolean) => {
