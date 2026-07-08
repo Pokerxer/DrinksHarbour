@@ -1,6 +1,7 @@
 export type POStatus =
   | 'draft'
   | 'confirmed'
+  | 'partially_received'
   | 'received'
   | 'billed'
   | 'cancel'
@@ -8,7 +9,16 @@ export type POStatus =
   | 'cancelled';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 export type BillStatus = 'draft' | 'posted' | 'paid' | 'cancelled';
-export type ReturnStatus = 'draft' | 'confirmed' | 'requested' | 'shipped' | 'in_transit' | 'received' | 'refunded' | 'rejected' | 'cancelled';
+export type ReturnStatus =
+  | 'draft'
+  | 'confirmed'
+  | 'requested'
+  | 'shipped'
+  | 'in_transit'
+  | 'received'
+  | 'refunded'
+  | 'rejected'
+  | 'cancelled';
 export type AgreementStatus =
   | 'draft'
   | 'active'
@@ -30,6 +40,11 @@ export interface POItem {
   unitPrice: number;
   packPrice: number;
   receivedQty: number;
+  // Receiving progress surfaced by the single-PO endpoint (getPurchaseOrder).
+  orderedQty?: number;
+  postedQty?: number;
+  returnedQty?: number;
+  outstandingQty?: number;
   type: string;
   uom?: string;
   taxRate?: number;
@@ -108,7 +123,9 @@ export interface BillItem {
 export interface VendorReturn {
   _id: string;
   returnNumber: string;
-  vendor?: string | { _id: string; name?: string; email?: string; phone?: string };
+  vendor?:
+    | string
+    | { _id: string; name?: string; email?: string; phone?: string };
   vendorName?: string;
   purchaseOrder?: string | { _id: string; poNumber?: string };
   poNumber?: string;
@@ -320,8 +337,11 @@ export const CURRENCY_SYMBOLS: Record<string, string> = {
   GBP: '£',
 };
 
-export function fmtPrice(n: number | undefined | null, currency = 'NGN'): string {
-  const safe = (typeof n === 'number' && !Number.isNaN(n)) ? n : 0;
+export function fmtPrice(
+  n: number | undefined | null,
+  currency = 'NGN'
+): string {
+  const safe = typeof n === 'number' && !Number.isNaN(n) ? n : 0;
   const symbol = CURRENCY_SYMBOLS[currency] ?? currency;
   return `${symbol}${safe.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -340,6 +360,7 @@ export const STATUS_BADGE: Record<string, string> = {
   rfq: 'bg-gray-200 text-gray-700',
   confirmed: 'bg-blue-200 text-blue-800',
   purchase: 'bg-blue-200 text-blue-800',
+  partially_received: 'bg-amber-200 text-amber-800',
   received: 'bg-emerald-200 text-emerald-800',
   done: 'bg-emerald-200 text-emerald-800',
   billed: 'bg-violet-200 text-violet-800',
@@ -366,6 +387,7 @@ export function statusLabel(status: string): string {
     draft: 'RFQ',
     confirmed: 'Purchase Order',
     purchase: 'Purchase Order',
+    partially_received: 'Partially Received',
     received: 'Received',
     done: 'Done',
     billed: 'Billed',

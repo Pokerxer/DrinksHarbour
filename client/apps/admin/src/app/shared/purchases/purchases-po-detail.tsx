@@ -44,7 +44,9 @@ export default function PurchasesPODetail({ id }: { id: string }) {
     try {
       const [poRes, returnsRes] = await Promise.all([
         purchaseOrderService.getPurchaseOrder(id, token),
-        vendorReturnService.getVendorReturns(token, { purchaseOrder: id, limit: 50 }).catch(() => null),
+        vendorReturnService
+          .getVendorReturns(token, { purchaseOrder: id, limit: 50 })
+          .catch(() => null),
       ]);
       setPO(poRes.data);
       if (returnsRes?.data) setReturns(returnsRes.data);
@@ -102,20 +104,33 @@ export default function PurchasesPODetail({ id }: { id: string }) {
   const canConfirm =
     po.status === 'draft' &&
     (po.type === 'rfq' || po.approvalStatus === 'approved');
+  // Outstanding per line: ordered - received - returned. A PO stays receivable
+  // while any line still has outstanding units (it sits at partially_received).
+  const lineOutstanding = (i: (typeof po.items)[number]) =>
+    i.outstandingQty ??
+    Math.max(0, i.quantity - (i.receivedQty ?? 0) - (i.returnedQty ?? 0));
+  const anyOutstanding = po.items.some((i) => lineOutstanding(i) > 0);
   const canReceive =
-    po.status === 'confirmed' ||
-    (po.status === 'received' &&
-      po.items.some((i) => i.receivedQty < i.quantity));
-  const canValidate = po.status === 'received';
+    (po.status === 'confirmed' ||
+      po.status === 'partially_received' ||
+      po.status === 'received') &&
+    anyOutstanding;
+  // Validate posts the not-yet-posted received units; available while there is
+  // anything received but not fully validated (received / partially_received).
+  const canValidate =
+    po.status === 'received' || po.status === 'partially_received';
   // Confirmed POs can be billed on ordered quantities (policy chosen on the
   // bill-create page); received/validated bill on received quantities.
   const canBill =
     po.status === 'confirmed' ||
+    po.status === 'partially_received' ||
     po.status === 'received' ||
     po.status === 'validated' ||
     po.status === 'done';
   const canReturn =
-    po.status !== 'draft' && po.status !== 'cancel' && po.status !== 'cancelled';
+    po.status !== 'draft' &&
+    po.status !== 'cancel' &&
+    po.status !== 'cancelled';
   const totalCost = po.items.reduce(
     (s, it) =>
       s +
@@ -409,6 +424,9 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                 Received
               </th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                Outstanding
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
                 Unit Price
               </th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
@@ -446,6 +464,22 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                     {item.receivedQty}
                   </span>
                 </td>
+                <td className="px-4 py-3 text-right">
+                  {(() => {
+                    const out = lineOutstanding(item);
+                    return (
+                      <span
+                        className={
+                          out > 0
+                            ? 'font-medium text-amber-600'
+                            : 'text-gray-400'
+                        }
+                      >
+                        {out}
+                      </span>
+                    );
+                  })()}
+                </td>
                 <td className="px-4 py-3 text-right text-gray-700">
                   {po.currency}{' '}
                   {(
@@ -468,7 +502,7 @@ export default function PurchasesPODetail({ id }: { id: string }) {
           <tfoot>
             <tr className="border-t border-gray-200 bg-gray-50">
               <td
-                colSpan={5}
+                colSpan={6}
                 className="px-4 py-3 text-right text-sm font-semibold text-gray-700"
               >
                 Total
@@ -506,12 +540,24 @@ export default function PurchasesPODetail({ id }: { id: string }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Return #</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Date</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Items</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Total</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">Status</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">Refund</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                  Return #
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                  Date
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                  Items
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">
+                  Total
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">
+                  Status
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">
+                  Refund
+                </th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -530,9 +576,13 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                 };
                 return (
                   <tr key={r._id}>
-                    <td className="px-4 py-3 font-medium text-gray-900">{r.returnNumber}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900">
+                      {r.returnNumber}
+                    </td>
                     <td className="px-4 py-3 text-gray-600">
-                      {r.returnDate ? new Date(r.returnDate).toLocaleDateString() : '—'}
+                      {r.returnDate
+                        ? new Date(r.returnDate).toLocaleDateString()
+                        : '—'}
                     </td>
                     <td className="px-4 py-3 text-right text-gray-700">
                       {r.items.reduce((s, i) => s + i.quantity, 0)}
@@ -541,19 +591,30 @@ export default function PurchasesPODetail({ id }: { id: string }) {
                       {r.currency} {r.totalAmount.toFixed(2)}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ${statusColor[r.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ${statusColor[r.status] ?? 'bg-gray-100 text-gray-600'}`}
+                      >
                         {r.status}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center">
                       {r.refundStatus && r.refundStatus !== 'none' ? (
-                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ${
-                          r.refundStatus === 'completed' ? 'bg-green-100 text-green-700' :
-                          r.refundStatus === 'processing' ? 'bg-blue-100 text-blue-700' :
-                          r.refundStatus === 'rejected' ? 'bg-red-100 text-red-700' :
-                          'bg-amber-100 text-amber-700'
-                        }`}>{r.refundStatus}</span>
-                      ) : '—'}
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ${
+                            r.refundStatus === 'completed'
+                              ? 'bg-green-100 text-green-700'
+                              : r.refundStatus === 'processing'
+                                ? 'bg-blue-100 text-blue-700'
+                                : r.refundStatus === 'rejected'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-amber-100 text-amber-700'
+                          }`}
+                        >
+                          {r.refundStatus}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Link
@@ -569,11 +630,15 @@ export default function PurchasesPODetail({ id }: { id: string }) {
             </tbody>
             <tfoot>
               <tr className="border-t border-gray-200 bg-gray-50">
-                <td colSpan={3} className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
+                <td
+                  colSpan={3}
+                  className="px-4 py-3 text-right text-sm font-semibold text-gray-700"
+                >
                   Total Returned
                 </td>
                 <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">
-                  {po.currency} {returns.reduce((s, r) => s + r.totalAmount, 0).toFixed(2)}
+                  {po.currency}{' '}
+                  {returns.reduce((s, r) => s + r.totalAmount, 0).toFixed(2)}
                 </td>
                 <td colSpan={3} />
               </tr>

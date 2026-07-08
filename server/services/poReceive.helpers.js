@@ -158,4 +158,111 @@ async function postReceivedStock({
   return { successCount, failCount, failures };
 }
 
-module.exports = { resolveTargetWarehouse, postReceivedStock };
+// ── Pure receiving math (DB-less) ────────────────────────────────────────────
+
+/** Stable id for a PO line, whether a plain test object or a Mongoose subdoc. */
+function lineId(item) {
+  if (item.itemId != null) return String(item.itemId);
+  if (item._id != null) return String(item._id);
+  return null;
+}
+
+/**
+ * Units still expected on a line: ordered minus what has landed (receivedQty)
+ * minus what was sent back (returnedQty). A returned unit is accounted for, so
+ * it is NOT counted as still outstanding. Never returns below zero.
+ */
+function outstanding(line) {
+  const ordered = line.quantity || 0;
+  const received = line.receivedQty || 0;
+  const returned = line.returnedQty || 0;
+  return Math.max(0, ordered - received - returned);
+}
+
+/**
+ * Accumulate one receipt onto the PO lines WITHOUT mutating them.
+ *
+ * For each receipt line, receivedQty accumulates (previous + this receipt),
+ * clamped so it never exceeds the ordered quantity — unless allowOverReceipt
+ * is set. `delta` is the accepted increment for THIS receipt (what should post
+ * to stock), so re-receiving never double-posts.
+ *
+ * @param {Array} poItems   the PO's items (each with quantity, receivedQty, _id/itemId)
+ * @param {Array} receiptLines  [{ itemId, receivedQty }] — this receipt's quantities
+ * @param {{ allowOverReceipt?: boolean }} [opts]
+ * @returns {{ lines: Array<{ itemId, previousReceivedQty, newReceivedQty, delta }> }}
+ */
+function applyReceipt(poItems, receiptLines, { allowOverReceipt = false } = {}) {
+  const byId = new Map((poItems || []).map((it) => [lineId(it), it]));
+  const lines = [];
+
+  for (const rl of receiptLines || []) {
+    const add = Math.max(0, Number(rl.receivedQty) || 0);
+    if (add <= 0) continue;
+
+    const item = byId.get(String(rl.itemId));
+    if (!item) continue;
+
+    const previousReceivedQty = item.receivedQty || 0;
+    let newReceivedQty = previousReceivedQty + add;
+    if (!allowOverReceipt) {
+      newReceivedQty = Math.min(newReceivedQty, item.quantity || 0);
+    }
+    const delta = newReceivedQty - previousReceivedQty;
+    if (delta <= 0) continue;
+
+    lines.push({
+      itemId: String(rl.itemId),
+      previousReceivedQty,
+      newReceivedQty,
+      delta,
+    });
+  }
+
+  return { lines };
+}
+
+/**
+ * Derived receipt status for a PO from its lines:
+ *  - 'received'           every line receivedQty >= ordered quantity
+ *  - 'partially_received' some (but not all) units received
+ *  - null                 nothing received yet (caller keeps current status)
+ */
+function poReceiptStatus(poItems) {
+  const items = poItems || [];
+  if (items.length === 0) return null;
+
+  const allFull = items.every((it) => (it.receivedQty || 0) >= (it.quantity || 0));
+  if (allFull) return 'received';
+
+  const anyReceived = items.some((it) => (it.receivedQty || 0) > 0);
+  if (anyReceived) return 'partially_received';
+
+  return null;
+}
+
+/**
+ * Project PO lines into the lines that still need to post to inventory, with
+ * receivedQty set to the UNPOSTED delta (receivedQty - postedQty). Feed the
+ * result to postReceivedStock so a validate posts only what has not yet been
+ * posted — making repeated validates across partial receipts idempotent.
+ * @returns {Array} shallow clones (receivedQty = delta); empty when nothing pending
+ */
+function buildPostingLines(poItems) {
+  const out = [];
+  for (const it of poItems || []) {
+    const delta = (it.receivedQty || 0) - (it.postedQty || 0);
+    if (delta <= 0) continue;
+    out.push({ ...it, receivedQty: delta });
+  }
+  return out;
+}
+
+module.exports = {
+  resolveTargetWarehouse,
+  postReceivedStock,
+  applyReceipt,
+  poReceiptStatus,
+  outstanding,
+  buildPostingLines,
+};

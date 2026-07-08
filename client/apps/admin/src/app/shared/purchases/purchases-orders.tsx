@@ -104,12 +104,17 @@ function orderTotal(o: PurchaseOrder) {
   );
 }
 function isToReceive(o: PurchaseOrder) {
+  // A confirmed PO with anything still to receive, or one already in progress
+  // (partially_received) that hasn't been fully received yet.
+  if (o.status === 'partially_received') return true;
   return (
     o.status === 'confirmed' && o.items.some((i) => i.receivedQty < i.quantity)
   );
 }
 function isToBill(o: PurchaseOrder) {
-  return ['received', 'done', 'validated'].includes(o.status);
+  return ['partially_received', 'received', 'done', 'validated'].includes(
+    o.status
+  );
 }
 function fmtCurrency(n: number, cur = 'NGN') {
   if (n >= 1_000_000) return `${cur} ${(n / 1_000_000).toFixed(1)}M`;
@@ -242,7 +247,9 @@ function OrderCard({
   const total = orderTotal(order);
   const canEdit = order.status === 'draft' && !order.isLocked;
   const canDelete = order.status === 'draft';
-  const ageDays = showBillNow ? daysSince(order.arrivalDate ?? order.updatedAt) : 0;
+  const ageDays = showBillNow
+    ? daysSince(order.arrivalDate ?? order.updatedAt)
+    : 0;
   return (
     <div
       onClick={() => router.push(routes.eCommerce.purchaseDetails(order._id))}
@@ -278,8 +285,12 @@ function OrderCard({
       <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400">
         {showBillNow ? (
           <>
-            <span>Received {fmtDate(order.arrivalDate ?? order.updatedAt)}</span>
-            <span className={`rounded-full px-2 py-0.5 font-bold ${ageCls(ageDays)}`}>
+            <span>
+              Received {fmtDate(order.arrivalDate ?? order.updatedAt)}
+            </span>
+            <span
+              className={`rounded-full px-2 py-0.5 font-bold ${ageCls(ageDays)}`}
+            >
               {ageLabel(ageDays)} outstanding
             </span>
           </>
@@ -993,8 +1004,7 @@ export default function PurchasesOrders() {
     [orders]
   );
   const outstandingTotal = useMemo(
-    () =>
-      orders.filter(isToBill).reduce((s, o) => s + orderTotal(o), 0),
+    () => orders.filter(isToBill).reduce((s, o) => s + orderTotal(o), 0),
     [orders]
   );
   const currency = orders[0]?.currency ?? 'NGN';
@@ -1176,7 +1186,7 @@ export default function PurchasesOrders() {
           <div
             key={label}
             onClick={onClick}
-            className={`rounded-xl border border-gray-200 bg-white p-4 ${onClick ? 'cursor-pointer hover:border-violet-300 hover:shadow-sm transition-all' : ''}`}
+            className={`rounded-xl border border-gray-200 bg-white p-4 ${onClick ? 'cursor-pointer transition-all hover:border-violet-300 hover:shadow-sm' : ''}`}
           >
             <div
               className={`mb-2.5 flex h-8 w-8 items-center justify-center rounded-lg ${iconCls}`}
@@ -1232,7 +1242,8 @@ export default function PurchasesOrders() {
               </div>
               <div>
                 <p className="text-sm font-bold text-violet-900">
-                  {filtered.length} order{filtered.length !== 1 ? 's' : ''} awaiting billing
+                  {filtered.length} order{filtered.length !== 1 ? 's' : ''}{' '}
+                  awaiting billing
                 </p>
                 <p className="text-xs text-violet-600">
                   Total outstanding:{' '}
@@ -1240,23 +1251,52 @@ export default function PurchasesOrders() {
                     {currency}{' '}
                     {filtered
                       .reduce((s, o) => s + orderTotal(o), 0)
-                      .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      .toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
                   </span>
                 </p>
               </div>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
               {(() => {
-                const today = filtered.filter((o) => daysSince(o.arrivalDate ?? o.updatedAt) === 0).length;
-                const week = filtered.filter((o) => { const d = daysSince(o.arrivalDate ?? o.updatedAt); return d > 0 && d <= 7; }).length;
-                const month = filtered.filter((o) => { const d = daysSince(o.arrivalDate ?? o.updatedAt); return d > 7 && d <= 30; }).length;
-                const old = filtered.filter((o) => daysSince(o.arrivalDate ?? o.updatedAt) > 30).length;
+                const today = filtered.filter(
+                  (o) => daysSince(o.arrivalDate ?? o.updatedAt) === 0
+                ).length;
+                const week = filtered.filter((o) => {
+                  const d = daysSince(o.arrivalDate ?? o.updatedAt);
+                  return d > 0 && d <= 7;
+                }).length;
+                const month = filtered.filter((o) => {
+                  const d = daysSince(o.arrivalDate ?? o.updatedAt);
+                  return d > 7 && d <= 30;
+                }).length;
+                const old = filtered.filter(
+                  (o) => daysSince(o.arrivalDate ?? o.updatedAt) > 30
+                ).length;
                 return (
                   <>
-                    {today > 0 && <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-semibold text-emerald-700">{today} today</span>}
-                    {week > 0 && <span className="rounded-full bg-blue-100 px-2.5 py-1 font-semibold text-blue-700">{week} &lt;7d</span>}
-                    {month > 0 && <span className="rounded-full bg-amber-100 px-2.5 py-1 font-semibold text-amber-700">{month} &lt;30d</span>}
-                    {old > 0 && <span className="rounded-full bg-red-100 px-2.5 py-1 font-semibold text-red-700">{old} 30d+</span>}
+                    {today > 0 && (
+                      <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-semibold text-emerald-700">
+                        {today} today
+                      </span>
+                    )}
+                    {week > 0 && (
+                      <span className="rounded-full bg-blue-100 px-2.5 py-1 font-semibold text-blue-700">
+                        {week} &lt;7d
+                      </span>
+                    )}
+                    {month > 0 && (
+                      <span className="rounded-full bg-amber-100 px-2.5 py-1 font-semibold text-amber-700">
+                        {month} &lt;30d
+                      </span>
+                    )}
+                    {old > 0 && (
+                      <span className="rounded-full bg-red-100 px-2.5 py-1 font-semibold text-red-700">
+                        {old} 30d+
+                      </span>
+                    )}
                   </>
                 );
               })()}
@@ -1355,7 +1395,9 @@ export default function PurchasesOrders() {
                 {activeTab === 'to_bill' ? (
                   <>
                     <Th col="arrival" label="Received" />
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Age</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">
+                      Age
+                    </th>
                   </>
                 ) : (
                   <>

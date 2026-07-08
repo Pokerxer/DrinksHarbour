@@ -7,6 +7,7 @@ const {
   getPurchaseOrders,
   updatePurchaseOrder,
   updatePurchaseOrderStatus,
+  receivePurchaseOrder,
   deletePurchaseOrder,
   generatePurchaseOrderReceipt,
   approvePO,
@@ -54,6 +55,9 @@ router
 
 // Status update
 router.patch("/:id/status", tenantAdminOrSuperAdmin, updatePurchaseOrderStatus);
+
+// Record a (partial) receipt — accumulates received qty; posting happens at validate
+router.post("/:id/receive", tenantAdminOrSuperAdmin, receivePurchaseOrder);
 
 // Receipt generation
 router.get(
