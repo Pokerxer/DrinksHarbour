@@ -64,6 +64,14 @@ const subProductSchema = new Schema(
       min: 0,
       required: true,
     },
+    // Admin price-override, stored as the effective platform markup % implied
+    // by the admin's chosen final platform price. Survives tenant cost/price
+    // changes: the platform selling price recalculates with this same %.
+    // null = use the product-level platformMarkup.
+    platformMarkupOverridePct: {
+      type: Number,
+      default: null,
+    },
     currency: {
       type: String,
       default: 'NGN',

@@ -11,17 +11,54 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Button, Text, Badge } from 'rizzui';
 import { FormProvider, useForm, SubmitHandler } from 'react-hook-form';
 import cn from '@core/utils/class-names';
-import { 
-  PiSpinner, PiCheck, PiWarning, PiArrowLeft, PiArrowRight, 
-  PiFloppyDisk, PiCaretDown, PiClock, PiGear,
-  PiArchive, PiCopy, PiTrash, PiPlus, PiSignature, PiChartLine,
-  PiTag, PiCurrencyNgn, PiPercent, PiArchive as PiArchiveBox, PiRuler,
-  PiFactory, PiToggleRight, PiGift, PiTrolley, PiSliders,
-  PiWarningCircle, PiWarningDiamond, PiPackage, PiFileText, 
-  PiShoppingCart, PiTrendUp, PiTrendDown, PiDotsThree,
-  PiGlobe, PiArrowLineLeft, PiArrowLineRight, PiList, PiX,
-  PiWine, PiMapPin, PiTextAa, PiImages, PiStar, PiMagnifyingGlass, PiLink,
-  PiMagicWand, PiSparkle,
+import {
+  PiSpinner,
+  PiCheck,
+  PiWarning,
+  PiArrowLeft,
+  PiArrowRight,
+  PiFloppyDisk,
+  PiCaretDown,
+  PiClock,
+  PiGear,
+  PiArchive,
+  PiCopy,
+  PiTrash,
+  PiPlus,
+  PiSignature,
+  PiChartLine,
+  PiTag,
+  PiCurrencyNgn,
+  PiPercent,
+  PiArchive as PiArchiveBox,
+  PiRuler,
+  PiFactory,
+  PiToggleRight,
+  PiGift,
+  PiTrolley,
+  PiSliders,
+  PiWarningCircle,
+  PiWarningDiamond,
+  PiPackage,
+  PiFileText,
+  PiShoppingCart,
+  PiTrendUp,
+  PiTrendDown,
+  PiDotsThree,
+  PiGlobe,
+  PiArrowLineLeft,
+  PiArrowLineRight,
+  PiList,
+  PiX,
+  PiWine,
+  PiMapPin,
+  PiTextAa,
+  PiImages,
+  PiStar,
+  PiMagnifyingGlass,
+  PiLink,
+  PiMagicWand,
+  PiSparkle,
 } from 'react-icons/pi';
 import ProductIdentification from '@/app/shared/ecommerce/product/create-edit/product-identification';
 import ProductBeverageInfo from '@/app/shared/ecommerce/product/create-edit/product-beverage-info';
@@ -47,16 +84,76 @@ import ProductSubProductsPanel from './product-subproducts';
 import { ValidationSummary } from '@/components/validation-summary';
 
 const STEPS = [
-  { key: formParts.identification, label: 'Identification', icon: PiTag, color: 'blue' as const, description: 'Basic details' },
-  { key: formParts.beverageInfo, label: 'Beverage Info', icon: PiWine, color: 'green' as const, description: 'Alcohol & volume' },
-  { key: formParts.origin, label: 'Origin', icon: PiMapPin, color: 'orange' as const, description: 'Location' },
-  { key: formParts.description, label: 'Description', icon: PiTextAa, color: 'purple' as const, description: 'Details & tasting' },
-  { key: formParts.media, label: 'Media', icon: PiImages, color: 'cyan' as const, description: 'Images & videos' },
-  { key: formParts.pricing, label: 'Pricing', icon: PiCurrencyNgn, color: 'yellow' as const, description: 'Price settings' },
-  { key: formParts.sale, label: 'Sale', icon: PiTag, color: 'red' as const, description: 'Sale pricing' },
-  { key: formParts.ratings, label: 'Ratings', icon: PiStar, color: 'pink' as const, description: 'Expert scores' },
-  { key: formParts.seo, label: 'SEO', icon: PiMagnifyingGlass, color: 'rose' as const, description: 'Search optimization' },
-  { key: formParts.externalLinks, label: 'Links', icon: PiLink, color: 'indigo' as const, description: 'External URLs' },
+  {
+    key: formParts.identification,
+    label: 'Identification',
+    icon: PiTag,
+    color: 'blue' as const,
+    description: 'Basic details',
+  },
+  {
+    key: formParts.beverageInfo,
+    label: 'Beverage Info',
+    icon: PiWine,
+    color: 'green' as const,
+    description: 'Alcohol & volume',
+  },
+  {
+    key: formParts.origin,
+    label: 'Origin',
+    icon: PiMapPin,
+    color: 'orange' as const,
+    description: 'Location',
+  },
+  {
+    key: formParts.description,
+    label: 'Description',
+    icon: PiTextAa,
+    color: 'purple' as const,
+    description: 'Details & tasting',
+  },
+  {
+    key: formParts.media,
+    label: 'Media',
+    icon: PiImages,
+    color: 'cyan' as const,
+    description: 'Images & videos',
+  },
+  {
+    key: formParts.pricing,
+    label: 'Pricing',
+    icon: PiCurrencyNgn,
+    color: 'yellow' as const,
+    description: 'Price settings',
+  },
+  {
+    key: formParts.sale,
+    label: 'Sale',
+    icon: PiTag,
+    color: 'red' as const,
+    description: 'Sale pricing',
+  },
+  {
+    key: formParts.ratings,
+    label: 'Ratings',
+    icon: PiStar,
+    color: 'pink' as const,
+    description: 'Expert scores',
+  },
+  {
+    key: formParts.seo,
+    label: 'SEO',
+    icon: PiMagnifyingGlass,
+    color: 'rose' as const,
+    description: 'Search optimization',
+  },
+  {
+    key: formParts.externalLinks,
+    label: 'Links',
+    icon: PiLink,
+    color: 'indigo' as const,
+    description: 'External URLs',
+  },
 ];
 
 const COMPONENTS: Record<string, React.FC> = {
@@ -102,14 +199,14 @@ const sectionVariants = {
 
 const successVariants = {
   hidden: { opacity: 0, scale: 0.8 },
-  visible: { 
-    opacity: 1, 
+  visible: {
+    opacity: 1,
     scale: 1,
     transition: {
       type: 'spring',
       stiffness: 200,
       damping: 20,
-    }
+    },
   },
 };
 
@@ -122,28 +219,45 @@ interface SmartButtonProps {
   title?: string;
 }
 
-const SmartButton = ({ icon, value, label, iconColor = 'text-gray-600', onClick, title }: SmartButtonProps) => (
+const SmartButton = ({
+  icon,
+  value,
+  label,
+  iconColor = 'text-gray-600',
+  onClick,
+  title,
+}: SmartButtonProps) => (
   <button
     type="button"
     onClick={onClick}
     title={title}
-    className="group flex flex-col items-center justify-center min-w-[44px] xs:min-w-[48px] sm:min-w-[56px] px-0.5 xs:px-1 py-1 bg-white border border-gray-200 rounded-md hover:bg-gray-50 hover:border-gray-300 hover:shadow-sm transition-all flex-shrink-0"
+    className="group flex min-w-[44px] flex-shrink-0 flex-col items-center justify-center rounded-md border border-gray-200 bg-white px-0.5 py-1 transition-all hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm xs:min-w-[48px] xs:px-1 sm:min-w-[56px]"
   >
     <div className="flex items-center gap-0.5 text-gray-900">
-      <span className={cn("flex-shrink-0", iconColor)}>{icon}</span>
-      <span className="font-bold text-[10px] xs:text-xs truncate max-w-[40px]">{value}</span>
+      <span className={cn('flex-shrink-0', iconColor)}>{icon}</span>
+      <span className="max-w-[40px] truncate text-[10px] font-bold xs:text-xs">
+        {value}
+      </span>
     </div>
-    <span className="text-[6px] xs:text-[7px] text-gray-500 uppercase tracking-wide mt-0.5 font-medium truncate max-w-[50px]">{label}</span>
+    <span className="mt-0.5 max-w-[50px] truncate text-[6px] font-medium uppercase tracking-wide text-gray-500 xs:text-[7px]">
+      {label}
+    </span>
   </button>
 );
 
 const transformFormData = (data: CreateProductInput) => {
-  const slug = data.slug || data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const slug =
+    data.slug ||
+    data.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
   const proof = data.isAlcoholic && data.abv ? data.abv * 2 : undefined;
-  const requiresAgeVerification = data.isAlcoholic === true ? true : data.requiresAgeVerification;
-  
+  const requiresAgeVerification =
+    data.isAlcoholic === true ? true : data.requiresAgeVerification;
+
   let publishedAtValue: Date | null | undefined = undefined;
-  
+
   if (data.isPublished) {
     if (data.publishedAt) {
       publishedAtValue = new Date(data.publishedAt);
@@ -193,7 +307,9 @@ const transformFormData = (data: CreateProductInput) => {
     shortDescription: data.shortDescription,
     description: data.description,
     tastingNotes: data.tastingNotes,
-    flavorProfile: data.flavorProfile?.map((fp: string) => fp.toLowerCase().replace(/\s+/g, '_')),
+    flavorProfile: data.flavorProfile?.map((fp: string) =>
+      fp.toLowerCase().replace(/\s+/g, '_')
+    ),
     foodPairings: data.foodPairings,
     servingSuggestions: data.servingSuggestions,
     isDietary: data.isDietary,
@@ -202,13 +318,16 @@ const transformFormData = (data: CreateProductInput) => {
     nutritionalInfo: data.nutritionalInfo,
     awards: data.awards,
     certifications: data.certifications,
-    images: data.uploadedImages?.map((img, index) => ({
-      url: img.url,
-      publicId: img.publicId,
-      alt: `${data.name} - Image ${index + 1}`,
-      isPrimary: img.isPrimary || index === 0,
-      order: index,
-    })) || data.images || [],
+    images:
+      data.uploadedImages?.map((img, index) => ({
+        url: img.url,
+        publicId: img.publicId,
+        alt: `${data.name} - Image ${index + 1}`,
+        isPrimary: img.isPrimary || index === 0,
+        order: index,
+      })) ||
+      data.images ||
+      [],
     videos: data.videos,
     metaTitle: data.metaTitle || data.name,
     metaDescription: data.metaDescription || data.shortDescription,
@@ -244,7 +363,9 @@ export default function CreateEditProduct({
   const [isSuccess, setIsSuccess] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [direction, setDirection] = useState(0);
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [saveStatus, setSaveStatus] = useState<
+    'idle' | 'saving' | 'saved' | 'error'
+  >('idle');
   const [windowSize, setWindowSize] = useState({ width: 0, height: 0 });
   const [showStepDropdown, setShowStepDropdown] = useState(false);
   const [showSettingsDropdown, setShowSettingsDropdown] = useState(false);
@@ -252,29 +373,46 @@ export default function CreateEditProduct({
   const [showMoreDropdown, setShowMoreDropdown] = useState(false);
   const settingsDropdownRef = useRef<HTMLDivElement>(null);
   const moreDropdownRef = useRef<HTMLDivElement>(null);
-  
-  const [currentProductIndex, setCurrentProductIndex] = useState(0);
-  const [totalProducts] = useState(10);
-  
+
+  // Record navigation — real product id list so prev/next moves between records
+  const [productIds, setProductIds] = useState<string[]>([]);
+  const [headerMeta, setHeaderMeta] = useState<{
+    status?: string;
+    isPublished?: boolean;
+    onHand: number;
+    sold: number;
+    variants: number;
+    price: number;
+  }>({ onHand: 0, sold: 0, variants: 0, price: 0 });
+
+  const currentProductIndex = id ? productIds.indexOf(id) : -1;
+  const totalProducts = productIds.length;
+
   const handlePrevProduct = () => {
     if (currentProductIndex > 0) {
-      setCurrentProductIndex(prev => prev - 1);
-      console.log('Navigate to previous product');
+      router.push(
+        routes.eCommerce.ediProduct(productIds[currentProductIndex - 1])
+      );
     }
   };
-  
+
   const handleNextProduct = () => {
-    if (currentProductIndex < totalProducts - 1) {
-      setCurrentProductIndex(prev => prev + 1);
-      console.log('Navigate to next product');
+    if (currentProductIndex >= 0 && currentProductIndex < totalProducts - 1) {
+      router.push(
+        routes.eCommerce.ediProduct(productIds[currentProductIndex + 1])
+      );
     }
   };
 
   const handleGenerate = async () => {
     if (!session?.user?.token || !id) return;
     setIsGenerating(true);
+    const toastId = toast.loading('Generating content with AI…');
     try {
-      const res = await productService.generateFromSubProduct(id, session.user.token);
+      const res = await productService.generateFromSubProduct(
+        id,
+        session.user.token
+      );
       const data = res?.data;
       if (!data) throw new Error('No data returned from AI');
 
@@ -295,12 +433,15 @@ export default function CreateEditProduct({
       set('slug', data.slug);
       set('type', data.type);
       set('subType', data.subType);
+      set('style', data.style);
       if (data.category) sv('category', data.category, { shouldDirty: true });
-      if (data.subCategory) sv('subCategory', data.subCategory, { shouldDirty: true });
+      if (data.subCategory)
+        sv('subCategory', data.subCategory, { shouldDirty: true });
       if (data.brand) sv('brand', data.brand, { shouldDirty: true });
 
       // ── Beverage info ───────────────────────────────────────────────────
-      if (data.isAlcoholic !== undefined) sv('isAlcoholic', data.isAlcoholic, { shouldDirty: true });
+      if (data.isAlcoholic !== undefined)
+        sv('isAlcoholic', data.isAlcoholic, { shouldDirty: true });
       set('abv', data.abv);
       set('proof', data.proof);
       set('volumeMl', data.volumeMl);
@@ -372,11 +513,17 @@ export default function CreateEditProduct({
       set('metaDescription', data.metaDescription);
       setArr('metaKeywords', data.keywords || data.metaKeywords);
 
+      const spCount = res.metadata?.subProductCount ?? 0;
       toast.success(
-        `Details generated from ${res.metadata?.subProductCount ?? ''} sub-product${res.metadata?.subProductCount !== 1 ? 's' : ''}`
+        spCount > 0
+          ? `Details generated from ${spCount} sub-product${spCount !== 1 ? 's' : ''}`
+          : 'Details generated with AI',
+        { id: toastId }
       );
     } catch (err: any) {
-      toast.error(err.message || 'Failed to generate product details');
+      toast.error(err.message || 'Failed to generate product details', {
+        id: toastId,
+      });
     } finally {
       setIsGenerating(false);
     }
@@ -578,7 +725,8 @@ export default function CreateEditProduct({
     errors: Record<string, any>,
     currentSection: string
   ): Array<{ field: string; section: string; message: string }> => {
-    const result: Array<{ field: string; section: string; message: string }> = [];
+    const result: Array<{ field: string; section: string; message: string }> =
+      [];
 
     const traverse = (obj: any, path: string[] = []) => {
       for (const key in obj) {
@@ -589,11 +737,14 @@ export default function CreateEditProduct({
           if (value.message) {
             const fullPath = currentPath.join('.');
             let fieldName = currentPath[currentPath.length - 1];
-            const label = fieldToLabel[fullPath] || fieldToLabel[fieldName] || fieldName
-              .replace(/([A-Z])/g, ' $1')
-              .replace(/^./, (str) => str.toUpperCase())
-              .trim();
-            
+            const label =
+              fieldToLabel[fullPath] ||
+              fieldToLabel[fieldName] ||
+              fieldName
+                .replace(/([A-Z])/g, ' $1')
+                .replace(/^./, (str) => str.toUpperCase())
+                .trim();
+
             let actualSection = currentSection;
             for (const p of currentPath) {
               if (fieldToSection[p]) {
@@ -632,17 +783,44 @@ export default function CreateEditProduct({
 
   const productName = watch('name');
   const displayTitle = isEditMode
-    ? (productName || 'Edit Product')
-    : (productName || 'Create Product');
+    ? productName || 'Edit Product'
+    : productName || 'Create Product';
 
   // Fetch and populate the form when editing an existing product
   useEffect(() => {
     if (!id || !session?.user?.token || product) return; // skip if product already passed as prop
     setIsFetching(true);
-    productService.getProductById(id, session.user.token, true)
+    productService
+      .getProductById(id, session.user.token, true)
       .then((res) => {
         const p = res?.data?.product;
         if (!p) return;
+
+        // Header stats — real values from the product + its sub-products
+        const sps = p.subProducts || [];
+        const onHand = sps.reduce(
+          (sum: number, sp: any) =>
+            sum +
+            (sp.totalStock ??
+              (sp.sizes || []).reduce(
+                (s: number, z: any) => s + (z.stock || 0),
+                0
+              )),
+          0
+        );
+        const sold = sps.reduce(
+          (s: number, sp: any) => s + (sp.totalSold || 0),
+          0
+        );
+        setHeaderMeta({
+          status: p.status,
+          isPublished: p.isPublished,
+          onHand,
+          sold,
+          variants: sps.length,
+          price: p.basePrice || sps[0]?.baseSellingPrice || 0,
+        });
+
         // Extract IDs from populated references
         // Convert ISO date → datetime-local format (YYYY-MM-DDTHH:mm)
         const toDatetimeLocal = (v: any): string | null => {
@@ -654,14 +832,16 @@ export default function CreateEditProduct({
 
         // Extract sale data from first SubProduct so the sale form is populated
         const firstSp = p.subProducts?.[0];
-        const spSaleData = firstSp ? {
-          isOnSale: firstSp.isOnSale || false,
-          saleType: firstSp.saleType || 'percentage',
-          saleDiscountValue: firstSp.saleDiscountValue || 0,
-          salePrice: firstSp.salePrice || 0,
-          saleStartDate: toDatetimeLocal(firstSp.saleStartDate),
-          saleEndDate: toDatetimeLocal(firstSp.saleEndDate),
-        } : {};
+        const spSaleData = firstSp
+          ? {
+              isOnSale: firstSp.isOnSale || false,
+              saleType: firstSp.saleType || 'percentage',
+              saleDiscountValue: firstSp.saleDiscountValue || 0,
+              salePrice: firstSp.salePrice || 0,
+              saleStartDate: toDatetimeLocal(firstSp.saleStartDate),
+              saleEndDate: toDatetimeLocal(firstSp.saleEndDate),
+            }
+          : {};
 
         const mapped = {
           ...p,
@@ -679,10 +859,27 @@ export default function CreateEditProduct({
         methods.reset(defaultValues(mapped));
       })
       .catch((err) => {
-        toast.error('Failed to load product: ' + (err.message || 'Unknown error'));
+        toast.error(
+          'Failed to load product: ' + (err.message || 'Unknown error')
+        );
       })
       .finally(() => setIsFetching(false));
   }, [id, session?.user?.token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load the product id list once so prev/next navigates real records
+  useEffect(() => {
+    if (!isEditMode || !session?.user?.token) return;
+    productService
+      .getProducts(session.user.token, { limit: 500 })
+      .then((res) => {
+        const raw = res?.data?.products ?? res?.products ?? [];
+        const list = Array.isArray(raw) ? raw : [];
+        setProductIds(list.map((p: any) => p._id));
+      })
+      .catch(() => {
+        // Navigation stays hidden if the list can't load — not fatal
+      });
+  }, [isEditMode, session?.user?.token]);
 
   useEffect(() => {
     setWindowSize({
@@ -701,13 +898,16 @@ export default function CreateEditProduct({
 
   useEffect(() => {
     if (!isDirty) return;
-    
+
     const interval = setInterval(() => {
       const data = watch();
-      localStorage.setItem('product-draft', JSON.stringify({
-        ...data,
-        _savedAt: new Date().toISOString(),
-      }));
+      localStorage.setItem(
+        'product-draft',
+        JSON.stringify({
+          ...data,
+          _savedAt: new Date().toISOString(),
+        })
+      );
       setSaveStatus('saved');
       setLastSaved(new Date());
       setTimeout(() => setSaveStatus('idle'), 2000);
@@ -732,10 +932,16 @@ export default function CreateEditProduct({
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (settingsDropdownRef.current && !settingsDropdownRef.current.contains(event.target as Node)) {
+      if (
+        settingsDropdownRef.current &&
+        !settingsDropdownRef.current.contains(event.target as Node)
+      ) {
         setShowSettingsDropdown(false);
       }
-      if (moreDropdownRef.current && !moreDropdownRef.current.contains(event.target as Node)) {
+      if (
+        moreDropdownRef.current &&
+        !moreDropdownRef.current.contains(event.target as Node)
+      ) {
         setShowMoreDropdown(false);
       }
     };
@@ -745,17 +951,17 @@ export default function CreateEditProduct({
   }, []);
 
   const handleNext = () => {
-    setCompletedSteps(prev => new Set([...prev, currentStep]));
+    setCompletedSteps((prev) => new Set([...prev, currentStep]));
     if (currentStep < STEPS.length - 1) {
       setDirection(1);
-      setCurrentStep(prev => prev + 1);
+      setCurrentStep((prev) => prev + 1);
     }
   };
 
   const handlePrev = () => {
     if (currentStep > 0) {
       setDirection(-1);
-      setCurrentStep(prev => prev - 1);
+      setCurrentStep((prev) => prev - 1);
     }
   };
 
@@ -777,7 +983,11 @@ export default function CreateEditProduct({
       const transformedData = transformFormData(data);
 
       if (isEditMode && id) {
-        const res = await productService.updateProduct(id, transformedData, session.user.token);
+        const res = await productService.updateProduct(
+          id,
+          transformedData,
+          session.user.token
+        );
         // Sync form with what the server actually saved
         const saved = res?.data?.product;
         if (saved) {
@@ -788,28 +998,40 @@ export default function CreateEditProduct({
             return d.toISOString().slice(0, 16);
           };
           const firstSp = saved.subProducts?.[0];
-          const spSaleData = firstSp ? {
-            isOnSale: firstSp.isOnSale || false,
-            saleType: firstSp.saleType || 'percentage',
-            saleDiscountValue: firstSp.saleDiscountValue || 0,
-            salePrice: firstSp.salePrice || 0,
-            saleStartDate: toDatetimeLocal(firstSp.saleStartDate),
-            saleEndDate: toDatetimeLocal(firstSp.saleEndDate),
-          } : {};
+          const spSaleData = firstSp
+            ? {
+                isOnSale: firstSp.isOnSale || false,
+                saleType: firstSp.saleType || 'percentage',
+                saleDiscountValue: firstSp.saleDiscountValue || 0,
+                salePrice: firstSp.salePrice || 0,
+                saleStartDate: toDatetimeLocal(firstSp.saleStartDate),
+                saleEndDate: toDatetimeLocal(firstSp.saleEndDate),
+              }
+            : {};
           const mapped = {
             ...saved,
             brand: saved.brand?._id?.toString() ?? saved.brand ?? '',
             category: saved.category?._id?.toString() ?? saved.category ?? '',
-            subCategory: saved.subCategory?._id?.toString() ?? saved.subCategory ?? '',
+            subCategory:
+              saved.subCategory?._id?.toString() ?? saved.subCategory ?? '',
             tags: (saved.tags ?? []).map((t: any) => t?._id?.toString() ?? t),
-            flavors: (saved.flavors ?? []).map((f: any) => f?._id?.toString() ?? f),
-            publishedAt: saved.publishedAt ? new Date(saved.publishedAt) : undefined,
+            flavors: (saved.flavors ?? []).map(
+              (f: any) => f?._id?.toString() ?? f
+            ),
+            publishedAt: saved.publishedAt
+              ? new Date(saved.publishedAt)
+              : undefined,
             subProductData: {
               ...saved.subProductData,
               ...spSaleData,
             },
           };
           methods.reset(defaultValues(mapped), { keepDirty: false });
+          setHeaderMeta((prev) => ({
+            ...prev,
+            status: saved.status ?? prev.status,
+            isPublished: saved.isPublished ?? prev.isPublished,
+          }));
         }
         toast.success('Product updated successfully!');
       } else {
@@ -824,8 +1046,13 @@ export default function CreateEditProduct({
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (error: any) {
       setSaveStatus('error');
-      if (error.message?.includes('version') || error.message?.includes('conflict')) {
-        toast.error('This record was modified by another user. Please refresh and try again.');
+      if (
+        error.message?.includes('version') ||
+        error.message?.includes('conflict')
+      ) {
+        toast.error(
+          'This record was modified by another user. Please refresh and try again.'
+        );
       } else {
         toast.error(error.message || 'Failed to save product');
       }
@@ -861,7 +1088,14 @@ export default function CreateEditProduct({
           recycle={false}
           numberOfPieces={200}
           gravity={0.15}
-          colors={['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899']}
+          colors={[
+            '#3B82F6',
+            '#10B981',
+            '#F59E0B',
+            '#EF4444',
+            '#8B5CF6',
+            '#EC4899',
+          ]}
         />
         <motion.div
           initial={{ scale: 0, rotate: -180 }}
@@ -877,7 +1111,9 @@ export default function CreateEditProduct({
           transition={{ delay: 0.3 }}
           className="mb-2 text-2xl font-bold text-gray-900"
         >
-          {isEditMode ? 'Product Updated Successfully!' : 'Product Created Successfully!'}
+          {isEditMode
+            ? 'Product Updated Successfully!'
+            : 'Product Created Successfully!'}
         </motion.h2>
         <motion.p
           initial={{ opacity: 0 }}
@@ -885,10 +1121,15 @@ export default function CreateEditProduct({
           transition={{ delay: 0.4 }}
           className="text-gray-500"
         >
-          {isEditMode ? 'Your changes have been saved.' : 'Your new product has been created.'}
+          {isEditMode
+            ? 'Your changes have been saved.'
+            : 'Your new product has been created.'}
         </motion.p>
         <div className="mt-6 flex gap-3">
-          <Button variant="solid" onClick={() => router.push(routes.eCommerce.products)}>
+          <Button
+            variant="solid"
+            onClick={() => router.push(routes.eCommerce.products)}
+          >
             View Products
           </Button>
           <Button variant="outline" onClick={() => setIsSuccess(false)}>
@@ -911,666 +1152,794 @@ export default function CreateEditProduct({
         }
       `}</style>
       <motion.div
-      initial="hidden"
-      animate="visible"
-      variants={containerVariants}
-      className="min-h-screen w-full"
-    >
-      {/* Header Section */}
-      <div className="sticky top-0 z-50 border-b border-gray-200 bg-white">
-        {/* Progress Bar */}
-        <div className="h-1 w-full bg-gray-100">
-          <motion.div 
-            className="h-full bg-gradient-to-r from-blue-500 via-blue-600 to-indigo-600"
-            initial={{ width: 0 }}
-            animate={{ width: `${progress}%` }}
-            transition={{ duration: 0.3 }}
-          />
-        </div>
+        initial="hidden"
+        animate="visible"
+        variants={containerVariants}
+        className="min-h-screen w-full"
+      >
+        {/* Header Section */}
+        <div className="sticky top-0 z-50 border-b border-gray-200 bg-white">
+          {/* Progress Bar */}
+          <div className="h-1 w-full bg-gray-100">
+            <motion.div
+              className="h-full bg-gradient-to-r from-blue-500 via-blue-600 to-indigo-600"
+              initial={{ width: 0 }}
+              animate={{ width: `${progress}%` }}
+              transition={{ duration: 0.3 }}
+            />
+          </div>
 
-        {/* Main Header Content */}
-        <div className="px-4 py-3 sm:px-6 lg:px-8">
-          {/* Row 1: Back, Title, Actions */}
-          <div className="flex items-center justify-between gap-3">
-            {/* Left: Back + Title + Save + Settings */}
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              <Button 
-                variant="text" 
-                onClick={() => router.push(routes.eCommerce.products)}
-                className="flex-shrink-0"
-              >
-                <PiArrowLeft className="h-5 w-5" />
-              </Button>
-              
-              <div className="min-w-0 flex-1">
-                <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">
-                  {displayTitle}
-                </h1>
-                {lastSaved && (
-                  <Text className="text-gray-400 flex items-center gap-1 text-xs hidden sm:flex">
-                    <PiClock className="h-3 w-3" />
-                    {lastSaved.toLocaleTimeString()}
-                  </Text>
-                )}
-              </div>
-
-              {/* Save & Settings - Close to product name */}
-              <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
-                {/* Generate with AI - only in edit mode */}
-                {isEditMode && id && (
-                  <motion.button
-                    type="button"
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={handleGenerate}
-                    disabled={isGenerating}
-                    className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-purple-300 bg-gradient-to-r from-purple-50 to-indigo-50 text-purple-700 shadow-sm hover:border-purple-400 hover:from-purple-100 hover:to-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-xs font-semibold"
-                    title="Generate missing details with AI using sub-product context"
-                  >
-                    {isGenerating ? (
-                      <PiSpinner className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <PiSparkle className="h-3.5 w-3.5" />
-                    )}
-                    <span className="hidden sm:inline">
-                      {isGenerating ? 'Generating…' : 'Generate'}
-                    </span>
-                  </motion.button>
-                )}
-
-                {/* Save Button */}
-                <button
-                  type="button"
-                  onClick={methods.handleSubmit(onSubmit)}
-                  disabled={isLoading}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                  title="Save"
+          {/* Main Header Content */}
+          <div className="px-4 py-3 sm:px-6 lg:px-8">
+            {/* Row 1: Back, Title, Actions */}
+            <div className="flex items-center justify-between gap-3">
+              {/* Left: Back + Title + Save + Settings */}
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <Button
+                  variant="text"
+                  onClick={() => router.push(routes.eCommerce.products)}
+                  className="flex-shrink-0"
                 >
-                  {isLoading ? (
-                    <PiSpinner className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <PiFloppyDisk className="h-4 w-4" />
-                  )}
-                </button>
+                  <PiArrowLeft className="h-5 w-5" />
+                </Button>
 
-                {/* Settings Dropdown */}
-                <div className="relative" ref={settingsDropdownRef}>
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <h1 className="truncate text-lg font-bold text-gray-900 sm:text-xl">
+                      {displayTitle}
+                    </h1>
+                    {isEditMode && headerMeta.status && (
+                      <Badge
+                        variant="flat"
+                        color={
+                          headerMeta.status === 'approved'
+                            ? 'success'
+                            : headerMeta.status === 'pending'
+                              ? 'warning'
+                              : headerMeta.status === 'rejected'
+                                ? 'danger'
+                                : 'secondary'
+                        }
+                        className="flex-shrink-0 text-xs font-semibold capitalize"
+                      >
+                        {headerMeta.status === 'approved'
+                          ? 'Active'
+                          : headerMeta.status}
+                      </Badge>
+                    )}
+                  </div>
+                  {lastSaved && (
+                    <Text className="flex hidden items-center gap-1 text-xs text-gray-400 sm:flex">
+                      <PiClock className="h-3 w-3" />
+                      {lastSaved.toLocaleTimeString()}
+                    </Text>
+                  )}
+                </div>
+
+                {/* Save & Settings - Close to product name */}
+                <div className="ml-2 flex flex-shrink-0 items-center gap-1.5">
+                  {/* New product */}
                   <button
                     type="button"
-                    onClick={() => setShowSettingsDropdown(!showSettingsDropdown)}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 hover:border-gray-400 transition-all"
-                    title="Settings"
+                    onClick={() => router.push(routes.eCommerce.createProduct)}
+                    className="flex h-8 items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 shadow-sm transition-all hover:border-gray-400 hover:bg-gray-50"
+                    title="Create new product"
                   >
-                    <PiGear className="h-4 w-4" />
+                    <PiPlus className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">New</span>
                   </button>
 
-                <AnimatePresence>
-                  {showSettingsDropdown && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      className="absolute right-0 top-full z-50 mt-2 w-56 rounded-lg border border-gray-200 bg-white py-2 shadow-xl"
+                  {/* Save Button */}
+                  <button
+                    type="button"
+                    onClick={methods.handleSubmit(onSubmit)}
+                    disabled={isLoading}
+                    className="flex h-8 items-center gap-1.5 rounded-lg bg-gray-900 px-3.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    title="Save"
+                  >
+                    {isLoading ? (
+                      <PiSpinner className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <PiFloppyDisk className="h-3.5 w-3.5" />
+                    )}
+                    <span className="hidden sm:inline">Save</span>
+                  </button>
+
+                  {/* Generate with AI - only in edit mode */}
+                  {isEditMode && id && (
+                    <motion.button
+                      type="button"
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={handleGenerate}
+                      disabled={isGenerating}
+                      className="flex h-8 items-center gap-1.5 rounded-lg border border-purple-300 bg-gradient-to-r from-purple-50 to-indigo-50 px-3 text-xs font-semibold text-purple-700 shadow-sm transition-all hover:border-purple-400 hover:from-purple-100 hover:to-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Auto-generate every product field with AI (Claude Haiku)"
                     >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          console.log('Archive clicked');
-                          setShowSettingsDropdown(false);
-                        }}
-                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        <PiArchive className="h-4 w-4 text-gray-500" />
-                        Archive
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          console.log('Duplicate clicked');
-                          setShowSettingsDropdown(false);
-                        }}
-                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        <PiCopy className="h-4 w-4 text-gray-500" />
-                        Duplicate
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          console.log('Delete clicked');
-                          setShowSettingsDropdown(false);
-                        }}
-                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 transition-colors"
-                      >
-                        <PiTrash className="h-4 w-4" />
-                        Delete
-                      </button>
-                      <div className="my-1 border-t border-gray-100" />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          console.log('Add Properties clicked');
-                          setShowSettingsDropdown(false);
-                        }}
-                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        <PiPlus className="h-4 w-4 text-gray-500" />
-                        Add Properties
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          console.log('Request Signature clicked');
-                          setShowSettingsDropdown(false);
-                        }}
-                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        <PiSignature className="h-4 w-4 text-gray-500" />
-                        Request Signature
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          console.log('Pricelist Report clicked');
-                          setShowSettingsDropdown(false);
-                        }}
-                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        <PiChartLine className="h-4 w-4 text-gray-500" />
-                        Pricelist Report
-                      </button>
-                    </motion.div>
+                      {isGenerating ? (
+                        <PiSpinner className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <PiSparkle className="h-3.5 w-3.5" />
+                      )}
+                      <span>{isGenerating ? 'Generating…' : 'AI'}</span>
+                    </motion.button>
                   )}
-                </AnimatePresence>
+
+                  {/* Settings Dropdown */}
+                  <div className="relative" ref={settingsDropdownRef}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowSettingsDropdown(!showSettingsDropdown)
+                      }
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm transition-all hover:border-gray-400 hover:bg-gray-50"
+                      title="Settings"
+                    >
+                      <PiGear className="h-4 w-4" />
+                    </button>
+
+                    <AnimatePresence>
+                      {showSettingsDropdown && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className="absolute right-0 top-full z-50 mt-2 w-56 rounded-lg border border-gray-200 bg-white py-2 shadow-xl"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              console.log('Archive clicked');
+                              setShowSettingsDropdown(false);
+                            }}
+                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                          >
+                            <PiArchive className="h-4 w-4 text-gray-500" />
+                            Archive
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              console.log('Duplicate clicked');
+                              setShowSettingsDropdown(false);
+                            }}
+                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                          >
+                            <PiCopy className="h-4 w-4 text-gray-500" />
+                            Duplicate
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              console.log('Delete clicked');
+                              setShowSettingsDropdown(false);
+                            }}
+                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-red-600 transition-colors hover:bg-red-50"
+                          >
+                            <PiTrash className="h-4 w-4" />
+                            Delete
+                          </button>
+                          <div className="my-1 border-t border-gray-100" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              console.log('Add Properties clicked');
+                              setShowSettingsDropdown(false);
+                            }}
+                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                          >
+                            <PiPlus className="h-4 w-4 text-gray-500" />
+                            Add Properties
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              console.log('Request Signature clicked');
+                              setShowSettingsDropdown(false);
+                            }}
+                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                          >
+                            <PiSignature className="h-4 w-4 text-gray-500" />
+                            Request Signature
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              console.log('Pricelist Report clicked');
+                              setShowSettingsDropdown(false);
+                            }}
+                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                          >
+                            <PiChartLine className="h-4 w-4 text-gray-500" />
+                            Pricelist Report
+                          </button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  {/* Mobile Toggle for Smart Buttons */}
+                  <button
+                    type="button"
+                    onClick={() => setShowSmartButtons(!showSmartButtons)}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm transition-all hover:bg-gray-50 lg:hidden"
+                    title="Toggle Stats"
+                  >
+                    {showSmartButtons ? (
+                      <PiX className="h-4 w-4" />
+                    ) : (
+                      <PiList className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
               </div>
 
-              {/* Mobile Toggle for Smart Buttons */}
-              <button
-                type="button"
-                onClick={() => setShowSmartButtons(!showSmartButtons)}
-                className="lg:hidden flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 transition-all"
-                title="Toggle Stats"
-              >
-                {showSmartButtons ? (
-                  <PiX className="h-4 w-4" />
-                ) : (
-                  <PiList className="h-4 w-4" />
+              {/* Row 2: Smart Buttons Bar - Responsive */}
+              <div
+                className={cn(
+                  'scrollbar-hide mt-3 flex items-center gap-1.5 overflow-x-auto pb-1.5',
+                  showSmartButtons ? 'flex' : 'hidden lg:flex'
                 )}
-              </button>
+              >
+                <SmartButton
+                  icon={<PiGlobe className="h-2.5 w-2.5 xs:h-3 xs:w-3" />}
+                  value={isEditMode ? 'View' : '—'}
+                  label="Website"
+                  iconColor="text-indigo-600"
+                  title="View on Website"
+                  onClick={() => {
+                    const productSlug = slug || id;
+                    if (productSlug) {
+                      window.open(`/products/${productSlug}`, '_blank');
+                    } else {
+                      toast.error('Product not saved yet');
+                    }
+                  }}
+                />
+
+                <SmartButton
+                  icon={<PiPackage className="h-2.5 w-2.5 xs:h-3 xs:w-3" />}
+                  value={String(headerMeta.onHand)}
+                  label="On Hand"
+                  iconColor="text-blue-600"
+                  title="Stock across all sub-product listings"
+                  onClick={() => {
+                    toast.info('Stock details feature coming soon');
+                  }}
+                />
+
+                <SmartButton
+                  icon={<PiCurrencyNgn className="h-2.5 w-2.5 xs:h-3 xs:w-3" />}
+                  value={
+                    headerMeta.price > 0
+                      ? Intl.NumberFormat('en', { notation: 'compact' }).format(
+                          headerMeta.price
+                        )
+                      : '—'
+                  }
+                  label="Price"
+                  iconColor="text-green-600"
+                  title="Base selling price"
+                  onClick={() => {
+                    toast.info('Pricing lives in the Pricing step');
+                  }}
+                />
+
+                <SmartButton
+                  icon={<PiPackage className="h-2.5 w-2.5 xs:h-3 xs:w-3" />}
+                  value={String(headerMeta.variants)}
+                  label="Variants"
+                  iconColor="text-orange-600"
+                  title="Tenant sub-product listings"
+                  onClick={() => {
+                    document
+                      .getElementById('product-subproducts-panel')
+                      ?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                />
+
+                <SmartButton
+                  icon={
+                    <PiShoppingCart className="h-2.5 w-2.5 xs:h-3 xs:w-3" />
+                  }
+                  value="0"
+                  label="Purchased"
+                  iconColor="text-purple-600"
+                  title="Purchase History"
+                  onClick={() => {
+                    toast.info('Purchase history feature coming soon');
+                  }}
+                />
+
+                <SmartButton
+                  icon={<PiTrendDown className="h-2.5 w-2.5 xs:h-3 xs:w-3" />}
+                  value={String(headerMeta.sold)}
+                  label="Sold"
+                  iconColor="text-red-600"
+                  title="Units sold across sub-products"
+                  onClick={() => {
+                    toast.info('Sales history feature coming soon');
+                  }}
+                />
+
+                {/* More Button with Dropdown */}
+                <div className="relative flex-shrink-0" ref={moreDropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => setShowMoreDropdown(!showMoreDropdown)}
+                    className="group flex min-w-[40px] flex-col items-center justify-center rounded-md border border-gray-200 bg-white px-0.5 py-1 transition-all hover:border-gray-300 hover:bg-gray-50 hover:shadow-sm xs:min-w-[44px] xs:px-1 sm:min-w-[48px]"
+                    title="More Actions"
+                  >
+                    <PiDotsThree className="h-3.5 w-3.5 text-gray-400 xs:h-4 xs:w-4" />
+                    <span className="mt-0.5 text-[6px] font-medium uppercase tracking-wide text-gray-500 xs:text-[7px]">
+                      More
+                    </span>
+                  </button>
+
+                  <AnimatePresence>
+                    {showMoreDropdown && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className="absolute left-0 top-full z-50 mt-2 w-52 rounded-lg border border-gray-200 bg-white py-2 shadow-xl"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            console.log('Rules clicked');
+                            setShowMoreDropdown(false);
+                            toast.info('Rules feature coming soon');
+                          }}
+                          className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                        >
+                          <PiList className="h-4 w-4 text-gray-500" />
+                          Rules
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            console.log('Pricelists clicked');
+                            setShowMoreDropdown(false);
+                            toast.info('Pricelists feature coming soon');
+                          }}
+                          className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                        >
+                          <PiCurrencyNgn className="h-4 w-4 text-gray-500" />
+                          Pricelists
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            console.log('Product History clicked');
+                            setShowMoreDropdown(false);
+                            toast.info('History feature coming soon');
+                          }}
+                          className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                        >
+                          <PiClock className="h-4 w-4 text-gray-500" />
+                          History
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            console.log('Inventory Report clicked');
+                            setShowMoreDropdown(false);
+                            toast.info('Inventory report feature coming soon');
+                          }}
+                          className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                        >
+                          <PiChartLine className="h-4 w-4 text-gray-500" />
+                          Inventory Report
+                        </button>
+                        <div className="my-1 border-t border-gray-100" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            console.log('Print Labels clicked');
+                            setShowMoreDropdown(false);
+                            toast.info('Print labels feature coming soon');
+                          }}
+                          className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                        >
+                          <PiPackage className="h-4 w-4 text-gray-500" />
+                          Print Labels
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            console.log('Export clicked');
+                            setShowMoreDropdown(false);
+                            toast.info('Export feature coming soon');
+                          }}
+                          className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                        >
+                          <PiArrowRight className="h-4 w-4 text-gray-500" />
+                          Export Data
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* Right: Navigation Arrows + Save Status */}
+                <div className="flex flex-shrink-0 items-center gap-3">
+                  {/* Save Status Indicators */}
+                  <AnimatePresence mode="wait">
+                    {saveStatus === 'saving' && (
+                      <motion.div
+                        initial={{ opacity: 0, x: 10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -10 }}
+                        className="hidden items-center gap-2 text-sm text-blue-600 sm:flex"
+                      >
+                        <PiSpinner className="h-4 w-4 animate-spin" />
+                        <span className="hidden lg:inline">Saving...</span>
+                      </motion.div>
+                    )}
+                    {saveStatus === 'saved' && (
+                      <motion.div
+                        initial={{ opacity: 0, x: 10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -10 }}
+                        className="hidden items-center gap-2 text-sm text-green-600 sm:flex"
+                      >
+                        <PiCheck className="h-4 w-4" />
+                        <span className="hidden lg:inline">Saved</span>
+                      </motion.div>
+                    )}
+                    {saveStatus === 'error' && (
+                      <motion.div
+                        initial={{ opacity: 0, x: 10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -10 }}
+                        className="hidden items-center gap-2 text-sm text-red-600 sm:flex"
+                      >
+                        <PiWarningCircle className="h-4 w-4" />
+                        <span className="hidden lg:inline">Error</span>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Navigation Arrows — only once the real record list is loaded */}
+                  {isEditMode &&
+                    totalProducts > 0 &&
+                    currentProductIndex >= 0 && (
+                      <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
+                        <button
+                          type="button"
+                          onClick={handlePrevProduct}
+                          disabled={currentProductIndex === 0}
+                          className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-700 shadow-sm transition-all hover:border-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          title="Previous Product"
+                        >
+                          <PiArrowLeft className="h-4 w-4" />
+                        </button>
+                        <Text className="min-w-[50px] px-2 text-center text-sm font-semibold text-gray-700">
+                          {currentProductIndex + 1} / {totalProducts}
+                        </Text>
+                        <button
+                          type="button"
+                          onClick={handleNextProduct}
+                          disabled={currentProductIndex === totalProducts - 1}
+                          className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-700 shadow-sm transition-all hover:border-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          title="Next Product"
+                        >
+                          <PiArrowRight className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Row 2: Smart Buttons Bar - Responsive */}
-          <div className={cn(
-            "mt-3 flex items-center gap-1.5 overflow-x-auto pb-1.5 scrollbar-hide",
-            showSmartButtons ? "flex" : "hidden lg:flex"
-          )}>
-            <SmartButton
-              icon={<PiGlobe className="h-2.5 w-2.5 xs:h-3 xs:w-3" />}
-              value={isEditMode ? "View" : "—"}
-              label="Website"
-              iconColor="text-indigo-600"
-              title="View on Website"
-              onClick={() => {
-                const productSlug = slug || id;
-                if (productSlug) {
-                  window.open(`/products/${productSlug}`, '_blank');
-                } else {
-                  toast.error('Product not saved yet');
-                }
-              }}
-            />
+          {/* Step Navigation - Desktop */}
+          <div className="hidden border-t border-gray-100 px-4 py-2 sm:px-6 lg:block lg:px-8">
+            <div className="flex items-center gap-1 overflow-x-auto pb-2">
+              {STEPS.map((step, index) => (
+                <button
+                  key={step.key}
+                  onClick={() => handleStepClick(index)}
+                  className={cn(
+                    'flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-all',
+                    index === currentStep && 'bg-blue-50 ring-1 ring-blue-200',
+                    completedSteps.has(index) &&
+                      index !== currentStep &&
+                      'text-green-600 hover:bg-green-50',
+                    !completedSteps.has(index) &&
+                      index !== currentStep &&
+                      'text-gray-500 hover:bg-gray-50'
+                  )}
+                >
+                  <motion.span
+                    animate={{ scale: index === currentStep ? 1.1 : 1 }}
+                    className={cn(
+                      'flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium transition-colors',
+                      index < currentStep || completedSteps.has(index)
+                        ? 'bg-green-500 text-white'
+                        : index === currentStep
+                          ? 'text-white'
+                          : 'bg-gray-100 text-gray-600'
+                    )}
+                    style={{
+                      backgroundColor:
+                        index === currentStep
+                          ? step.color === 'blue'
+                            ? '#2563eb'
+                            : step.color === 'green'
+                              ? '#16a34a'
+                              : step.color === 'orange'
+                                ? '#ea580c'
+                                : step.color === 'purple'
+                                  ? '#9333ea'
+                                  : step.color === 'cyan'
+                                    ? '#0891b2'
+                                    : step.color === 'yellow'
+                                      ? '#ca8a04'
+                                      : step.color === 'pink'
+                                        ? '#db2777'
+                                        : step.color === 'rose'
+                                          ? '#e11d48'
+                                          : step.color === 'indigo'
+                                            ? '#4f46e5'
+                                            : '#6b7280'
+                          : index < currentStep || completedSteps.has(index)
+                            ? '#22c55e'
+                            : undefined,
+                    }}
+                  >
+                    {index < currentStep || completedSteps.has(index) ? (
+                      <PiCheck className="h-4 w-4" />
+                    ) : (
+                      index + 1
+                    )}
+                  </motion.span>
+                  <span className="whitespace-nowrap">{step.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
 
-            <SmartButton
-              icon={<PiPackage className="h-2.5 w-2.5 xs:h-3 xs:w-3" />}
-              value={String(watch('quantity') || 0)}
-              label="On Hand"
-              iconColor="text-blue-600"
-              title="Current Stock"
-              onClick={() => {
-                console.log('Open stock details');
-                toast.info('Stock details feature coming soon');
-              }}
-            />
-
-            <SmartButton
-              icon={<PiTrendUp className="h-2.5 w-2.5 xs:h-3 xs:w-3" />}
-              value="—"
-              label="Forecasted"
-              iconColor="text-green-600"
-              title="Forecasted Stock"
-              onClick={() => {
-                console.log('Open forecast modal');
-                toast.info('Forecast feature coming soon');
-              }}
-            />
-
-            <SmartButton
-              icon={<PiFileText className="h-2.5 w-2.5 xs:h-3 xs:w-3" />}
-              value="0"
-              label="Documents"
-              iconColor="text-orange-600"
-              title="View Documents"
-              onClick={() => {
-                console.log('Navigate to documents');
-                toast.info('Documents feature coming soon');
-              }}
-            />
-
-            <SmartButton
-              icon={<PiShoppingCart className="h-2.5 w-2.5 xs:h-3 xs:w-3" />}
-              value="0"
-              label="Purchased"
-              iconColor="text-purple-600"
-              title="Purchase History"
-              onClick={() => {
-                console.log('Open purchase history');
-                toast.info('Purchase history feature coming soon');
-              }}
-            />
-
-            <SmartButton
-              icon={<PiTrendDown className="h-2.5 w-2.5 xs:h-3 xs:w-3" />}
-              value="0"
-              label="Sold"
-              iconColor="text-red-600"
-              title="Sales History"
-              onClick={() => {
-                console.log('Open sales history');
-                toast.info('Sales history feature coming soon');
-              }}
-            />
-
-            {/* More Button with Dropdown */}
-            <div className="relative flex-shrink-0" ref={moreDropdownRef}>
+          {/* Step Navigation - Mobile */}
+          <div className="border-t border-gray-100 px-4 py-2 lg:hidden">
+            <div className="relative">
               <button
-                type="button"
-                onClick={() => setShowMoreDropdown(!showMoreDropdown)}
-                className="group flex flex-col items-center justify-center min-w-[40px] xs:min-w-[44px] sm:min-w-[48px] px-0.5 xs:px-1 py-1 bg-white border border-gray-200 rounded-md hover:bg-gray-50 hover:border-gray-300 hover:shadow-sm transition-all"
-                title="More Actions"
+                onClick={() => setShowStepDropdown(!showStepDropdown)}
+                className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
               >
-                <PiDotsThree className="h-3.5 w-3.5 xs:h-4 xs:w-4 text-gray-400" />
-                <span className="text-[6px] xs:text-[7px] text-gray-500 uppercase tracking-wide mt-0.5 font-medium">More</span>
+                <span className="flex items-center gap-2">
+                  <span
+                    className="flex h-6 w-6 items-center justify-center rounded-full text-xs text-white"
+                    style={{
+                      backgroundColor:
+                        STEPS[currentStep].color === 'blue'
+                          ? '#2563eb'
+                          : STEPS[currentStep].color === 'green'
+                            ? '#16a34a'
+                            : STEPS[currentStep].color === 'orange'
+                              ? '#ea580c'
+                              : STEPS[currentStep].color === 'purple'
+                                ? '#9333ea'
+                                : STEPS[currentStep].color === 'cyan'
+                                  ? '#0891b2'
+                                  : STEPS[currentStep].color === 'yellow'
+                                    ? '#ca8a04'
+                                    : STEPS[currentStep].color === 'pink'
+                                      ? '#db2777'
+                                      : STEPS[currentStep].color === 'rose'
+                                        ? '#e11d48'
+                                        : STEPS[currentStep].color === 'indigo'
+                                          ? '#4f46e5'
+                                          : '#6b7280',
+                    }}
+                  >
+                    {currentStep + 1}
+                  </span>
+                  {STEPS[currentStep].label}
+                </span>
+                <PiCaretDown className="h-4 w-4" />
               </button>
 
               <AnimatePresence>
-                {showMoreDropdown && (
+                {showStepDropdown && (
                   <motion.div
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
-                    className="absolute left-0 top-full z-50 mt-2 w-52 rounded-lg border border-gray-200 bg-white py-2 shadow-xl"
+                    className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg"
                   >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        console.log('Rules clicked');
-                        setShowMoreDropdown(false);
-                        toast.info('Rules feature coming soon');
-                      }}
-                      className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      <PiList className="h-4 w-4 text-gray-500" />
-                      Rules
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        console.log('Pricelists clicked');
-                        setShowMoreDropdown(false);
-                        toast.info('Pricelists feature coming soon');
-                      }}
-                      className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      <PiCurrencyNgn className="h-4 w-4 text-gray-500" />
-                      Pricelists
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        console.log('Product History clicked');
-                        setShowMoreDropdown(false);
-                        toast.info('History feature coming soon');
-                      }}
-                      className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      <PiClock className="h-4 w-4 text-gray-500" />
-                      History
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        console.log('Inventory Report clicked');
-                        setShowMoreDropdown(false);
-                        toast.info('Inventory report feature coming soon');
-                      }}
-                      className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      <PiChartLine className="h-4 w-4 text-gray-500" />
-                      Inventory Report
-                    </button>
-                    <div className="my-1 border-t border-gray-100" />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        console.log('Print Labels clicked');
-                        setShowMoreDropdown(false);
-                        toast.info('Print labels feature coming soon');
-                      }}
-                      className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      <PiPackage className="h-4 w-4 text-gray-500" />
-                      Print Labels
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        console.log('Export clicked');
-                        setShowMoreDropdown(false);
-                        toast.info('Export feature coming soon');
-                      }}
-                      className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      <PiArrowRight className="h-4 w-4 text-gray-500" />
-                      Export Data
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* Right: Navigation Arrows + Save Status */}
-            <div className="flex items-center gap-3 flex-shrink-0">
-              {/* Save Status Indicators */}
-              <AnimatePresence mode="wait">
-                {saveStatus === 'saving' && (
-                  <motion.div
-                    initial={{ opacity: 0, x: 10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -10 }}
-                    className="hidden sm:flex items-center gap-2 text-sm text-blue-600"
-                  >
-                    <PiSpinner className="h-4 w-4 animate-spin" />
-                    <span className="hidden lg:inline">Saving...</span>
-                  </motion.div>
-                )}
-                {saveStatus === 'saved' && (
-                  <motion.div
-                    initial={{ opacity: 0, x: 10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -10 }}
-                    className="hidden sm:flex items-center gap-2 text-sm text-green-600"
-                  >
-                    <PiCheck className="h-4 w-4" />
-                    <span className="hidden lg:inline">Saved</span>
-                  </motion.div>
-                )}
-                {saveStatus === 'error' && (
-                  <motion.div
-                    initial={{ opacity: 0, x: 10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -10 }}
-                    className="hidden sm:flex items-center gap-2 text-sm text-red-600"
-                  >
-                    <PiWarningCircle className="h-4 w-4" />
-                    <span className="hidden lg:inline">Error</span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Navigation Arrows */}
-              <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-                <button
-                  type="button"
-                  onClick={handlePrevProduct}
-                  disabled={currentProductIndex === 0}
-                  className="flex h-8 w-8 items-center justify-center rounded-md bg-white border border-gray-200 text-gray-700 shadow-sm hover:bg-gray-50 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                  title="Previous Product"
-                >
-                  <PiArrowLeft className="h-4 w-4" />
-                </button>
-                <Text className="text-gray-700 font-semibold text-sm px-2 min-w-[50px] text-center">
-                  {currentProductIndex + 1} / {totalProducts}
-                </Text>
-                <button
-                  type="button"
-                  onClick={handleNextProduct}
-                  disabled={currentProductIndex === totalProducts - 1}
-                  className="flex h-8 w-8 items-center justify-center rounded-md bg-white border border-gray-200 text-gray-700 shadow-sm hover:bg-gray-50 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                  title="Next Product"
-                >
-                  <PiArrowRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-        </div>
-
-        {/* Step Navigation - Desktop */}
-        <div className="hidden lg:block border-t border-gray-100 px-4 py-2 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-1 overflow-x-auto pb-2">
-            {STEPS.map((step, index) => (
-              <button
-                key={step.key}
-                onClick={() => handleStepClick(index)}
-                className={cn(
-                  'flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-all',
-                  index === currentStep && 'bg-blue-50 ring-1 ring-blue-200',
-                  completedSteps.has(index) && index !== currentStep && 'text-green-600 hover:bg-green-50',
-                  !completedSteps.has(index) && index !== currentStep && 'text-gray-500 hover:bg-gray-50'
-                )}
-              >
-                <motion.span 
-                  animate={{ scale: index === currentStep ? 1.1 : 1 }}
-                  className={cn(
-                    'flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium transition-colors',
-                    index < currentStep || completedSteps.has(index)
-                      ? 'bg-green-500 text-white'
-                      : index === currentStep
-                      ? 'text-white'
-                      : 'bg-gray-100 text-gray-600'
-                  )}
-                  style={{
-                    backgroundColor: index === currentStep 
-                      ? (step.color === 'blue' ? '#2563eb' : step.color === 'green' ? '#16a34a' : step.color === 'orange' ? '#ea580c' : step.color === 'purple' ? '#9333ea' : step.color === 'cyan' ? '#0891b2' : step.color === 'yellow' ? '#ca8a04' : step.color === 'pink' ? '#db2777' : step.color === 'rose' ? '#e11d48' : step.color === 'indigo' ? '#4f46e5' : '#6b7280')
-                      : index < currentStep || completedSteps.has(index)
-                      ? '#22c55e'
-                      : undefined
-                  }}
-                >
-                  {index < currentStep || completedSteps.has(index) ? (
-                    <PiCheck className="h-4 w-4" />
-                  ) : (
-                    index + 1
-                  )}
-                </motion.span>
-                <span className="whitespace-nowrap">{step.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Step Navigation - Mobile */}
-        <div className="lg:hidden border-t border-gray-100 px-4 py-2">
-          <div className="relative">
-            <button
-              onClick={() => setShowStepDropdown(!showStepDropdown)}
-              className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm"
-            >
-              <span className="flex items-center gap-2">
-                <span 
-                  className="flex h-6 w-6 items-center justify-center rounded-full text-xs text-white"
-                  style={{ backgroundColor: STEPS[currentStep].color === 'blue' ? '#2563eb' : STEPS[currentStep].color === 'green' ? '#16a34a' : STEPS[currentStep].color === 'orange' ? '#ea580c' : STEPS[currentStep].color === 'purple' ? '#9333ea' : STEPS[currentStep].color === 'cyan' ? '#0891b2' : STEPS[currentStep].color === 'yellow' ? '#ca8a04' : STEPS[currentStep].color === 'pink' ? '#db2777' : STEPS[currentStep].color === 'rose' ? '#e11d48' : STEPS[currentStep].color === 'indigo' ? '#4f46e5' : '#6b7280' }}
-                >
-                  {currentStep + 1}
-                </span>
-                {STEPS[currentStep].label}
-              </span>
-              <PiCaretDown className="h-4 w-4" />
-            </button>
-            
-            <AnimatePresence>
-              {showStepDropdown && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg"
-                >
-                  {STEPS.map((step, index) => (
-                    <button
-                      key={step.key}
-                      onClick={() => {
-                        handleStepClick(index);
-                        setShowStepDropdown(false);
-                      }}
-                      className={cn(
-                        'flex w-full items-center gap-3 px-4 py-2 text-left text-sm hover:bg-gray-50',
-                        index === currentStep && 'bg-blue-50'
-                      )}
-                    >
-                      <span 
+                    {STEPS.map((step, index) => (
+                      <button
+                        key={step.key}
+                        onClick={() => {
+                          handleStepClick(index);
+                          setShowStepDropdown(false);
+                        }}
                         className={cn(
-                          'flex h-6 w-6 items-center justify-center rounded-full text-xs text-white',
-                          index < currentStep && 'bg-green-500',
-                          index === currentStep && 'bg-blue-600',
-                          index > currentStep && 'bg-gray-400'
+                          'flex w-full items-center gap-3 px-4 py-2 text-left text-sm hover:bg-gray-50',
+                          index === currentStep && 'bg-blue-50'
                         )}
                       >
-                        {index < currentStep ? <PiCheck className="h-4 w-4" /> : index + 1}
-                      </span>
-                      <span className={index === currentStep ? 'text-blue-700' : ''}>
-                        {step.label}
-                      </span>
-                    </button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
+                        <span
+                          className={cn(
+                            'flex h-6 w-6 items-center justify-center rounded-full text-xs text-white',
+                            index < currentStep && 'bg-green-500',
+                            index === currentStep && 'bg-blue-600',
+                            index > currentStep && 'bg-gray-400'
+                          )}
+                        >
+                          {index < currentStep ? (
+                            <PiCheck className="h-4 w-4" />
+                          ) : (
+                            index + 1
+                          )}
+                        </span>
+                        <span
+                          className={
+                            index === currentStep ? 'text-blue-700' : ''
+                          }
+                        >
+                          {step.label}
+                        </span>
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Main Content */}
-      <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
-        <FormProvider {...methods}>
-          <motion.div
-            key={STEPS[currentStep].key}
-            variants={containerVariants}
-            initial="hidden"
-            animate="visible"
-            className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-6"
-          >
-            {/* Validation Summary */}
-            {errors && Object.keys(errors).length > 0 && (
-              <ValidationSummary
-                errors={formatFormErrorsForSummary(errors, STEPS[currentStep].label)}
-                className="mb-4"
-              />
-            )}
-
-            {/* Step Header */}
-            <div className="mb-6 flex items-center gap-3">
-              <div className={cn(
-                'flex h-10 w-10 items-center justify-center rounded-xl',
-                STEPS[currentStep].color === 'blue' && 'bg-blue-100 text-blue-600',
-                STEPS[currentStep].color === 'green' && 'bg-green-100 text-green-600',
-                STEPS[currentStep].color === 'orange' && 'bg-orange-100 text-orange-600',
-                STEPS[currentStep].color === 'purple' && 'bg-purple-100 text-purple-600',
-                STEPS[currentStep].color === 'cyan' && 'bg-cyan-100 text-cyan-600',
-                STEPS[currentStep].color === 'yellow' && 'bg-yellow-100 text-yellow-600',
-                STEPS[currentStep].color === 'pink' && 'bg-pink-100 text-pink-600',
-                STEPS[currentStep].color === 'rose' && 'bg-rose-100 text-rose-600',
-                STEPS[currentStep].color === 'indigo' && 'bg-indigo-100 text-indigo-600',
-                STEPS[currentStep].color === 'gray' && 'bg-gray-100 text-gray-600'
-              )}>
-                <span className="text-lg font-bold">{currentStep + 1}</span>
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">{STEPS[currentStep].label}</h2>
-                <p className="text-sm text-gray-500">{STEPS[currentStep].description}</p>
-              </div>
-            </div>
-
-            {/* Step Content */}
+        {/* Main Content */}
+        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
+          <FormProvider {...methods}>
             <motion.div
-              variants={sectionVariants}
+              key={STEPS[currentStep].key}
+              variants={containerVariants}
               initial="hidden"
               animate="visible"
+              className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-6"
             >
-              {(() => {
-                const Component = COMPONENTS[STEPS[currentStep].key];
-                return Component ? <Component /> : null;
-              })()}
+              {/* Validation Summary */}
+              {errors && Object.keys(errors).length > 0 && (
+                <ValidationSummary
+                  errors={formatFormErrorsForSummary(
+                    errors,
+                    STEPS[currentStep].label
+                  )}
+                  className="mb-4"
+                />
+              )}
+
+              {/* Step Header */}
+              <div className="mb-6 flex items-center gap-3">
+                <div
+                  className={cn(
+                    'flex h-10 w-10 items-center justify-center rounded-xl',
+                    STEPS[currentStep].color === 'blue' &&
+                      'bg-blue-100 text-blue-600',
+                    STEPS[currentStep].color === 'green' &&
+                      'bg-green-100 text-green-600',
+                    STEPS[currentStep].color === 'orange' &&
+                      'bg-orange-100 text-orange-600',
+                    STEPS[currentStep].color === 'purple' &&
+                      'bg-purple-100 text-purple-600',
+                    STEPS[currentStep].color === 'cyan' &&
+                      'bg-cyan-100 text-cyan-600',
+                    STEPS[currentStep].color === 'yellow' &&
+                      'bg-yellow-100 text-yellow-600',
+                    STEPS[currentStep].color === 'pink' &&
+                      'bg-pink-100 text-pink-600',
+                    STEPS[currentStep].color === 'rose' &&
+                      'bg-rose-100 text-rose-600',
+                    STEPS[currentStep].color === 'indigo' &&
+                      'bg-indigo-100 text-indigo-600',
+                    STEPS[currentStep].color === 'gray' &&
+                      'bg-gray-100 text-gray-600'
+                  )}
+                >
+                  <span className="text-lg font-bold">{currentStep + 1}</span>
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    {STEPS[currentStep].label}
+                  </h2>
+                  <p className="text-sm text-gray-500">
+                    {STEPS[currentStep].description}
+                  </p>
+                </div>
+              </div>
+
+              {/* Step Content */}
+              <motion.div
+                variants={sectionVariants}
+                initial="hidden"
+                animate="visible"
+              >
+                {(() => {
+                  const Component = COMPONENTS[STEPS[currentStep].key];
+                  return Component ? <Component /> : null;
+                })()}
+              </motion.div>
             </motion.div>
-          </motion.div>
-        </FormProvider>
+          </FormProvider>
 
-        {/* Sub-Products Panel — edit mode only */}
-        {isEditMode && id && (
-          <ProductSubProductsPanel productId={id} />
-        )}
-
-        {/* Bottom Navigation */}
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white px-4 py-4 shadow-lg sm:px-6 lg:px-8"
-        >
-          <div className="mx-auto flex max-w-5xl items-center justify-between">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handlePrev}
-              disabled={currentStep === 0}
-            >
-              <PiArrowLeft className="h-4 w-4" />
-              Previous
-            </Button>
-
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              {!isValid && Object.keys(errors).length > 0 && (
-                <>
-                  <PiWarning className="h-4 w-4 text-amber-500" />
-                  <span>Please fix validation errors</span>
-                  <span className="text-xs text-red-500 font-medium">
-                    ({Object.keys(errors).length} error{Object.keys(errors).length !== 1 ? 's' : ''})
-                  </span>
-                </>
-              )}
-              {isValid && (
-                <>
-                  <PiCheck className="h-4 w-4 text-green-500" />
-                  <span className="text-green-600">All fields valid</span>
-                </>
-              )}
+          {/* Sub-Products Panel — edit mode only */}
+          {isEditMode && id && (
+            <div id="product-subproducts-panel">
+              <ProductSubProductsPanel productId={id} />
             </div>
+          )}
 
-            <Button
-              type="button"
-              variant="solid"
-              onClick={currentStep === STEPS.length - 1 ? methods.handleSubmit(onSubmit) : handleNext}
-              disabled={isLoading}
-            >
-              {currentStep === STEPS.length - 1 ? (
-                <>
-                  <PiFloppyDisk className="h-4 w-4" />
-                  {isLoading ? 'Saving...' : isEditMode ? 'Update Product' : 'Create Product'}
-                </>
-              ) : (
-                <>
-                  Next
-                  <PiArrowRight className="h-4 w-4" />
-                </>
-              )}
-            </Button>
-          </div>
-        </motion.div>
+          {/* Bottom Navigation */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white px-4 py-4 shadow-lg sm:px-6 lg:px-8"
+          >
+            <div className="mx-auto flex max-w-5xl items-center justify-between">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handlePrev}
+                disabled={currentStep === 0}
+              >
+                <PiArrowLeft className="h-4 w-4" />
+                Previous
+              </Button>
 
-        <div className="h-24" />
-      </div>
-    </motion.div>
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                {!isValid && Object.keys(errors).length > 0 && (
+                  <>
+                    <PiWarning className="h-4 w-4 text-amber-500" />
+                    <span>Please fix validation errors</span>
+                    <span className="text-xs font-medium text-red-500">
+                      ({Object.keys(errors).length} error
+                      {Object.keys(errors).length !== 1 ? 's' : ''})
+                    </span>
+                  </>
+                )}
+                {isValid && (
+                  <>
+                    <PiCheck className="h-4 w-4 text-green-500" />
+                    <span className="text-green-600">All fields valid</span>
+                  </>
+                )}
+              </div>
+
+              <Button
+                type="button"
+                variant="solid"
+                onClick={
+                  currentStep === STEPS.length - 1
+                    ? methods.handleSubmit(onSubmit)
+                    : handleNext
+                }
+                disabled={isLoading}
+              >
+                {currentStep === STEPS.length - 1 ? (
+                  <>
+                    <PiFloppyDisk className="h-4 w-4" />
+                    {isLoading
+                      ? 'Saving...'
+                      : isEditMode
+                        ? 'Update Product'
+                        : 'Create Product'}
+                  </>
+                ) : (
+                  <>
+                    Next
+                    <PiArrowRight className="h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </div>
+          </motion.div>
+
+          <div className="h-24" />
+        </div>
+      </motion.div>
     </>
   );
 }

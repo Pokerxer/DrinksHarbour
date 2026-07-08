@@ -20,11 +20,11 @@ import {
 import cn from "@core/utils/class-names";
 
 const options = [
-  { value: 5, label: "5" },
   { value: 10, label: "10" },
-  { value: 15, label: "15" },
-  { value: 20, label: "20" },
   { value: 25, label: "25" },
+  { value: 50, label: "50" },
+  { value: 100, label: "100" },
+  { value: 200, label: "200" },
 ];
 
 export default function TablePagination<TData extends Record<string, any>>({
@@ -51,7 +51,7 @@ export default function TablePagination<TData extends Record<string, any>>({
           size="sm"
           variant="flat"
           options={options}
-          className="w-12"
+          className="w-16"
           value={table.getState().pagination.pageSize}
           onChange={(v: SelectOption) => {
             table.setPageSize(Number(v.value));
@@ -70,6 +70,16 @@ export default function TablePagination<TData extends Record<string, any>>({
         </Box>
       )}
       <Flex justify="end" align="center">
+        <Text className="hidden font-normal text-gray-600 @xl:block">
+          {(() => {
+            const { pageIndex, pageSize } = table.getState().pagination;
+            const total = table.getFilteredRowModel().rows.length;
+            if (total === 0) return "0 results";
+            const start = pageIndex * pageSize + 1;
+            const end = Math.min((pageIndex + 1) * pageSize, total);
+            return `${start}–${end} of ${total.toLocaleString()}`;
+          })()}
+        </Text>
         <Text className="hidden font-normal text-gray-600 @3xl:block">
           Page {table.getState().pagination.pageIndex + 1} of{" "}
           {table.getPageCount().toLocaleString()}

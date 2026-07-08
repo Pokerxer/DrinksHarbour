@@ -5,7 +5,23 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useFormContext, Controller } from 'react-hook-form';
 import { Text, Button, Badge } from 'rizzui';
 import { useSession } from 'next-auth/react';
-import { PiCheck, PiPackage, PiArrowLeft, PiTag, PiBarcode, PiHash, PiSpinner, PiUpload, PiX, PiFunnel, PiImages, PiStar, PiTrash, PiCaretRight, PiWarning } from 'react-icons/pi';
+import {
+  PiCheck,
+  PiPackage,
+  PiArrowLeft,
+  PiTag,
+  PiBarcode,
+  PiHash,
+  PiSpinner,
+  PiUpload,
+  PiX,
+  PiFunnel,
+  PiImages,
+  PiStar,
+  PiTrash,
+  PiCaretRight,
+  PiWarning,
+} from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
 import { uploadService } from '@/services/upload.service';
@@ -79,15 +95,18 @@ export default function SubProductBasicInfo({
   const [isLoading, setIsLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [isCreateMode, setIsCreateMode] = useState(false);
-  const [newProductData, setNewProductData] = useState<NewProductFormData | null>(null);
+  const [newProductData, setNewProductData] =
+    useState<NewProductFormData | null>(null);
   const [isSelectingProduct, setIsSelectingProduct] = useState(false);
   const [fetchedProduct, setFetchedProduct] = useState<Product | null>(null);
   const [isLoadingProduct, setIsLoadingProduct] = useState(false);
   const [isCreatingProduct, setIsCreatingProduct] = useState(false);
-  const [selectedTypeFilter, setSelectedTypeFilter] = useState<string | null>(null);
+  const [selectedTypeFilter, setSelectedTypeFilter] = useState<string | null>(
+    null
+  );
   const [showCurrencyDropdown, setShowCurrencyDropdown] = useState(false);
   const [productNotFound, setProductNotFound] = useState(false);
-  
+
   const dropdownRef = useRef<HTMLDivElement>(null);
   const currencyRef = useRef<HTMLDivElement>(null);
   const fieldOnChangeRef = useRef<((value: string) => void) | null>(null);
@@ -109,7 +128,10 @@ export default function SubProductBasicInfo({
   // Close currency dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (currencyRef.current && !currencyRef.current.contains(event.target as Node)) {
+      if (
+        currencyRef.current &&
+        !currencyRef.current.contains(event.target as Node)
+      ) {
         setShowCurrencyDropdown(false);
       }
     };
@@ -122,23 +144,27 @@ export default function SubProductBasicInfo({
     const initFromForm = async () => {
       // Prevent search effect from triggering during init
       setIsSelectingProduct(true);
-      
+
       // Check if there's an existing product selection - use subProductData namespace
       const existingProductId = watch('subProductData.product');
       const existingCreateNew = watch('subProductData.createNewProduct');
       const existingNewProductData = watch('subProductData.newProductData');
-      
+
       if (existingProductId) {
         // Product was selected - fetch product details and set search query to show selected product card
         setIsCreateMode(false);
         setProductNotFound(false);
-        
+
         // Fetch product details if we have a session token
         if (session?.user?.token) {
           setIsLoadingProduct(true);
           try {
             // Pass includePending=true to fetch pending products (created via SubProduct workflow)
-            const response = await productService.getProductById(existingProductId, session.user.token, true);
+            const response = await productService.getProductById(
+              existingProductId,
+              session.user.token,
+              true
+            );
             if (response.success && response.data?.product) {
               const product = response.data.product;
               setFetchedProduct(product);
@@ -147,16 +173,23 @@ export default function SubProductBasicInfo({
             } else {
               setSearchQuery('');
               setProductNotFound(true);
-              console.warn(`Product with ID ${existingProductId} not found - may have been deleted`);
+              console.warn(
+                `Product with ID ${existingProductId} not found - may have been deleted`
+              );
             }
           } catch (error: any) {
-            console.error('Error fetching product:', error);
             // Check if it's a 404 error
-            if (error.message?.includes('not found') || error.message?.includes('404')) {
+            if (
+              error.message?.includes('not found') ||
+              error.message?.includes('404')
+            ) {
+              console.warn(
+                'Linked product not found (may have been deleted or is a stale draft reference) — clearing selection'
+              );
               setProductNotFound(true);
               setSearchQuery('');
-              toast.error('The linked product was not found. Please select a new product.');
             } else {
+              console.error('Error fetching product:', error);
               setSearchQuery('Selected Product');
             }
           } finally {
@@ -174,13 +207,13 @@ export default function SubProductBasicInfo({
           setSearchQuery(existingNewProductData.name);
         }
       }
-      
+
       // Allow search effect to run again after initialization
       setTimeout(() => setIsSelectingProduct(false), 500);
     };
-    
+
     initFromForm();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
   // Keyboard navigation for search results
@@ -195,7 +228,9 @@ export default function SubProductBasicInfo({
           break;
         case 'ArrowUp':
           e.preventDefault();
-          setSelectedIndex((prev) => (prev - 1 + products.length) % products.length);
+          setSelectedIndex(
+            (prev) => (prev - 1 + products.length) % products.length
+          );
           break;
         case 'Enter':
           e.preventDefault();
@@ -216,7 +251,9 @@ export default function SubProductBasicInfo({
   // Scroll selected item into view
   useEffect(() => {
     if (selectedIndex >= 0 && dropdownRef.current) {
-      const selectedElement = dropdownRef.current.querySelector(`[data-index="${selectedIndex}"]`);
+      const selectedElement = dropdownRef.current.querySelector(
+        `[data-index="${selectedIndex}"]`
+      );
       selectedElement?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   }, [selectedIndex]);
@@ -224,7 +261,10 @@ export default function SubProductBasicInfo({
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         setSelectedIndex(-1);
       }
     };
@@ -239,7 +279,7 @@ export default function SubProductBasicInfo({
     // 1. Currently selecting a product
     // 2. A product is already selected (in the form)
     if (isSelectingProduct || selectedProductId) return;
-    
+
     const timer = setTimeout(() => {
       if (searchQuery.length >= 2 && !isCreateMode) {
         searchProducts(searchQuery);
@@ -256,7 +296,8 @@ export default function SubProductBasicInfo({
 
     setIsLoading(true);
     try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+      const API_URL =
+        process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
       // Use search endpoint with text mode (avoids embedding issues) for relevance-scored results
       // This searches across name, brand, type, origin, description, etc. with weighted relevance
       const params = new URLSearchParams({
@@ -270,7 +311,7 @@ export default function SubProductBasicInfo({
       }
       const response = await fetch(`${API_URL}/api/products/search?${params}`, {
         headers: {
-          'Authorization': `Bearer ${session.user.token}`,
+          Authorization: `Bearer ${session.user.token}`,
           'Content-Type': 'application/json',
         },
       });
@@ -296,89 +337,102 @@ export default function SubProductBasicInfo({
     }
   };
 
-  const handleSelectProduct = useCallback((product: Product) => {
-    const productId = product._id || product.id || '';
-    
-    console.log('🔍 handleSelectProduct called:', { productId, productName: product.name });
-    
-    // Prevent search effect from triggering
-    setIsSelectingProduct(true);
-    
-    // Clear create mode and product not found state
-    setIsCreateMode(false);
-    setNewProductData(null);
-    setSelectedIndex(-1);
-    setProducts([]);
-    setProductNotFound(false);
-    
-    // Store selected product for display (persists even after products array is cleared)
-    setFetchedProduct(product);
-    
-    // Set form values using subProductData namespace consistently
-    setValue('subProductData.product', productId, { shouldValidate: true });
-    setValue('subProductData.createNewProduct', false);
-    setValue('subProductData.newProductData', null);
-    setValue('subProductData.tenant', '');
-    
-    // Force update the search query display
-    setSearchQuery(product.name);
-    
-    clearErrors('subProductData.product');
-    clearErrors('subProductData.newProductData');
-    
-    console.log('✅ Form values set:', {
-      product: watch('subProductData.product'),
-      createNewProduct: watch('subProductData.createNewProduct'),
-      newProductData: watch('subProductData.newProductData')
-    });
-    
-    // Allow search effect to run again after a short delay
-    setTimeout(() => setIsSelectingProduct(false), 500);
-    
-    onProductSelect?.(productId, product.name);
-  }, [setValue, clearErrors, onProductSelect, watch]);
+  const handleSelectProduct = useCallback(
+    (product: Product) => {
+      const productId = product._id || product.id || '';
 
-  const handleCreateNewProduct = useCallback((query: string) => {
-    console.log('🔍 handleCreateNewProduct called:', query);
-    
-    // Prevent search effect from triggering
-    setIsSelectingProduct(true);
-    
-    setIsCreateMode(true);
-    setNewProductData(null);
-    setSelectedIndex(-1);
-    setProducts([]);
-    
-    // Set form values using subProductData namespace - order matters!
-    setValue('subProductData.createNewProduct', true);
-    setValue('subProductData.product', '');
-    setValue('subProductData.newProductData', { name: query } as NewProductFormData, { shouldValidate: true });
-    setValue('subProductData.tenant', '');
-    
-    setSearchQuery(query);
-    
-    clearErrors('subProductData.product');
-    clearErrors('subProductData.newProductData');
-    
-    console.log('✅ Create mode set:', {
-      createNewProduct: watch('subProductData.createNewProduct'),
-      product: watch('subProductData.product'),
-      newProductData: watch('subProductData.newProductData')
-    });
-    
-    // Allow search effect to run again after a short delay
-    setTimeout(() => setIsSelectingProduct(false), 500);
-  }, [setValue, clearErrors, watch]);
+      console.log('🔍 handleSelectProduct called:', {
+        productId,
+        productName: product.name,
+      });
+
+      // Prevent search effect from triggering
+      setIsSelectingProduct(true);
+
+      // Clear create mode and product not found state
+      setIsCreateMode(false);
+      setNewProductData(null);
+      setSelectedIndex(-1);
+      setProducts([]);
+      setProductNotFound(false);
+
+      // Store selected product for display (persists even after products array is cleared)
+      setFetchedProduct(product);
+
+      // Set form values using subProductData namespace consistently
+      setValue('subProductData.product', productId, { shouldValidate: true });
+      setValue('subProductData.createNewProduct', false);
+      setValue('subProductData.newProductData', null);
+      setValue('subProductData.tenant', '');
+
+      // Force update the search query display
+      setSearchQuery(product.name);
+
+      clearErrors('subProductData.product');
+      clearErrors('subProductData.newProductData');
+
+      console.log('✅ Form values set:', {
+        product: watch('subProductData.product'),
+        createNewProduct: watch('subProductData.createNewProduct'),
+        newProductData: watch('subProductData.newProductData'),
+      });
+
+      // Allow search effect to run again after a short delay
+      setTimeout(() => setIsSelectingProduct(false), 500);
+
+      onProductSelect?.(productId, product.name);
+    },
+    [setValue, clearErrors, onProductSelect, watch]
+  );
+
+  const handleCreateNewProduct = useCallback(
+    (query: string) => {
+      console.log('🔍 handleCreateNewProduct called:', query);
+
+      // Prevent search effect from triggering
+      setIsSelectingProduct(true);
+
+      setIsCreateMode(true);
+      setNewProductData(null);
+      setSelectedIndex(-1);
+      setProducts([]);
+
+      // Set form values using subProductData namespace - order matters!
+      setValue('subProductData.createNewProduct', true);
+      setValue('subProductData.product', '');
+      setValue(
+        'subProductData.newProductData',
+        { name: query } as NewProductFormData,
+        { shouldValidate: true }
+      );
+      setValue('subProductData.tenant', '');
+
+      setSearchQuery(query);
+
+      clearErrors('subProductData.product');
+      clearErrors('subProductData.newProductData');
+
+      console.log('✅ Create mode set:', {
+        createNewProduct: watch('subProductData.createNewProduct'),
+        product: watch('subProductData.product'),
+        newProductData: watch('subProductData.newProductData'),
+      });
+
+      // Allow search effect to run again after a short delay
+      setTimeout(() => setIsSelectingProduct(false), 500);
+    },
+    [setValue, clearErrors, watch]
+  );
 
   const handleBackToSearch = useCallback(() => {
     // Prevent search effect from triggering
     setIsSelectingProduct(true);
-    
+
     setIsCreateMode(false);
     setNewProductData(null);
     setValue('subProductData.createNewProduct', false);
     setValue('subProductData.newProductData', null);
-    
+
     // Allow search effect to run again after a short delay
     setTimeout(() => setIsSelectingProduct(false), 500);
   }, [setValue]);
@@ -408,7 +462,9 @@ export default function SubProductBasicInfo({
   const getSelectedProduct = (): Product | null => {
     if (!selectedProductId || isCreateMode) return null;
     // First check local products array (from search results)
-    const localProduct = products.find(p => (p._id || p.id) === selectedProductId);
+    const localProduct = products.find(
+      (p) => (p._id || p.id) === selectedProductId
+    );
     if (localProduct) return localProduct;
     // Fallback to fetched product (from form initialization)
     if (fetchedProduct) return fetchedProduct;
@@ -416,45 +472,52 @@ export default function SubProductBasicInfo({
   };
 
   const selectedProduct = getSelectedProduct();
-  
+
   // Image upload functionality — writes to subProductData.imagesOverride
   const subProductImages = watch?.('subProductData.imagesOverride') || [];
   const [isUploading, setIsUploading] = useState(false);
 
-  const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  const handleImageUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files || files.length === 0) return;
 
-    if (!session?.user?.token) {
-      toast.error('Please sign in to upload images');
-      return;
-    }
-
-    setIsUploading(true);
-
-    try {
-      const response = await uploadService.uploadProductGallery(Array.from(files), session.user.token);
-
-      const currentImages: any[] = watch?.('subProductData.imagesOverride') || [];
-      const newImages = response.data.map((file: any, index: number) => ({
-        url: file.url,
-        alt: '',
-        isPrimary: currentImages.length === 0 && index === 0,
-        order: currentImages.length + index,
-      }));
-
-      const updated = [...currentImages, ...newImages];
-      if (!updated.some((img: any) => img.isPrimary) && updated.length > 0) {
-        updated[0].isPrimary = true;
+      if (!session?.user?.token) {
+        toast.error('Please sign in to upload images');
+        return;
       }
-      setValue?.('subProductData.imagesOverride', updated);
-      toast.success('Images uploaded successfully');
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to upload images');
-    } finally {
-      setIsUploading(false);
-    }
-  }, [session, setValue, watch]);
+
+      setIsUploading(true);
+
+      try {
+        const response = await uploadService.uploadProductGallery(
+          Array.from(files),
+          session.user.token
+        );
+
+        const currentImages: any[] =
+          watch?.('subProductData.imagesOverride') || [];
+        const newImages = response.data.map((file: any, index: number) => ({
+          url: file.url,
+          alt: '',
+          isPrimary: currentImages.length === 0 && index === 0,
+          order: currentImages.length + index,
+        }));
+
+        const updated = [...currentImages, ...newImages];
+        if (!updated.some((img: any) => img.isPrimary) && updated.length > 0) {
+          updated[0].isPrimary = true;
+        }
+        setValue?.('subProductData.imagesOverride', updated);
+        toast.success('Images uploaded successfully');
+      } catch (error: any) {
+        toast.error(error.message || 'Failed to upload images');
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [session, setValue, watch]
+  );
 
   const handleRemoveImage = (index: number) => {
     const newImages = [...subProductImages];
@@ -476,17 +539,20 @@ export default function SubProductBasicInfo({
     setValue?.('subProductData.imagesOverride', newImages);
   };
 
-  const getSelectedCurrency = () => currencies.find(c => c.value === selectedCurrency) || currencies[0];
+  const getSelectedCurrency = () =>
+    currencies.find((c) => c.value === selectedCurrency) || currencies[0];
 
   return (
     <div className="space-y-6">
       <div>
-        <div className="flex items-center gap-3 mb-2">
+        <div className="mb-2 flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg">
             <PiTag className="h-5 w-5 text-white" />
           </div>
           <div>
-            <Text className="text-lg font-semibold text-gray-900">Basic Information</Text>
+            <Text className="text-lg font-semibold text-gray-900">
+              Basic Information
+            </Text>
             <Text className="text-sm text-gray-500">
               Search for an existing product or create a new one
             </Text>
@@ -498,7 +564,7 @@ export default function SubProductBasicInfo({
       {!isCreateMode && !selectedProductId && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
               <PiFunnel className="h-4 w-4" />
               Quick Filter by Type
             </label>
@@ -509,7 +575,7 @@ export default function SubProductBasicInfo({
                   setSelectedTypeFilter(null);
                   if (searchQuery.length >= 2) searchProducts(searchQuery);
                 }}
-                className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
               >
                 <PiX className="h-3 w-3" />
                 Clear filter
@@ -525,10 +591,10 @@ export default function SubProductBasicInfo({
                 type="button"
                 onClick={() => handleTypeFilterClick(type.label)}
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200',
+                  'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-all duration-200',
                   selectedTypeFilter === type.label
                     ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'
+                    : 'border border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200'
                 )}
               >
                 <span>{type.icon}</span>
@@ -548,7 +614,7 @@ export default function SubProductBasicInfo({
             exit={{ opacity: 0, y: -10 }}
             type="button"
             onClick={handleBackToSearch}
-            className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
+            className="flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700"
           >
             <PiArrowLeft className="h-4 w-4" />
             Back to search
@@ -585,7 +651,11 @@ export default function SubProductBasicInfo({
                           onChange={setSearchQuery}
                           onClear={handleClearSelection}
                           isLoading={isLoading || isLoadingProduct}
-                          placeholder={isLoadingProduct ? "Loading product..." : "Search by name, brand, or scan barcode..."}
+                          placeholder={
+                            isLoadingProduct
+                              ? 'Loading product...'
+                              : 'Search by name, brand, or scan barcode...'
+                          }
                         />
                         {error && (
                           <Text className="mt-1 text-xs text-red-500">
@@ -639,10 +709,15 @@ export default function SubProductBasicInfo({
                       >
                         <div className="rounded-lg border border-green-200 bg-green-50 p-4">
                           <div className="flex items-center gap-3">
-                            <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-lg bg-white overflow-hidden">
-                              {selectedProduct.primaryImage?.url || selectedProduct.images?.[0]?.url ? (
+                            <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">
+                              {selectedProduct.primaryImage?.url ||
+                              selectedProduct.images?.[0]?.url ? (
                                 <Image
-                                  src={selectedProduct.primaryImage?.url || selectedProduct.images?.[0]?.url || ''}
+                                  src={
+                                    selectedProduct.primaryImage?.url ||
+                                    selectedProduct.images?.[0]?.url ||
+                                    ''
+                                  }
                                   alt={selectedProduct.name}
                                   width={56}
                                   height={56}
@@ -657,10 +732,12 @@ export default function SubProductBasicInfo({
                                 {selectedProduct.name}
                               </Text>
                               <Text className="text-xs text-green-700">
-                                {selectedProduct.type && `${selectedProduct.type}`}
-                                {selectedProduct.brand && ` • ${typeof selectedProduct.brand === 'string' ? selectedProduct.brand : selectedProduct.brand?.name}`}
+                                {selectedProduct.type &&
+                                  `${selectedProduct.type}`}
+                                {selectedProduct.brand &&
+                                  ` • ${typeof selectedProduct.brand === 'string' ? selectedProduct.brand : selectedProduct.brand?.name}`}
                               </Text>
-                              <Text className="text-xs text-green-600 mt-0.5">
+                              <Text className="mt-0.5 text-xs text-green-600">
                                 ID: {selectedProduct._id || selectedProduct.id}
                               </Text>
                             </div>
@@ -691,11 +768,12 @@ export default function SubProductBasicInfo({
                               <Text className="text-sm font-semibold text-amber-900">
                                 Product Not Found
                               </Text>
-                              <Text className="text-xs text-amber-700 mt-1">
-                                The product linked to this SubProduct no longer exists or was deleted. 
-                                Please search and select a new product to continue editing.
+                              <Text className="mt-1 text-xs text-amber-700">
+                                The product linked to this SubProduct no longer
+                                exists or was deleted. Please search and select
+                                a new product to continue editing.
                               </Text>
-                              <Text className="text-xs text-amber-600 mt-2 font-mono">
+                              <Text className="mt-2 font-mono text-xs text-amber-600">
                                 Missing Product ID: {selectedProductId}
                               </Text>
                             </div>
@@ -739,11 +817,14 @@ export default function SubProductBasicInfo({
       {/* SKU - Server-generated */}
       <div>
         <label className="mb-1.5 block text-sm font-medium text-gray-700">
-          SKU <span className="text-xs font-normal text-gray-400">(Auto-generated)</span>
+          SKU{' '}
+          <span className="text-xs font-normal text-gray-400">
+            (Auto-generated)
+          </span>
         </label>
         <div className="rounded-lg border border-gray-200 bg-blue-50 p-3">
           <div className="flex items-center gap-2">
-            <PiCheck className="h-5 w-5 text-blue-500 flex-shrink-0" />
+            <PiCheck className="h-5 w-5 flex-shrink-0 text-blue-500" />
             <Text className="text-sm text-blue-700">
               SKU will be automatically generated by the server upon creation
             </Text>
@@ -763,13 +844,19 @@ export default function SubProductBasicInfo({
             className={cn(
               'flex w-full items-center justify-between rounded-xl border bg-white px-4 py-3 text-left transition-all',
               'hover:border-blue-300 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100',
-              errors.subProductData?.currency ? 'border-red-300' : 'border-gray-200'
+              errors.subProductData?.currency
+                ? 'border-red-300'
+                : 'border-gray-200'
             )}
           >
             <div className="flex items-center gap-3">
               <span className="text-lg">{getSelectedCurrency().flag}</span>
-              <span className="font-medium text-gray-900">{getSelectedCurrency().value}</span>
-              <span className="text-sm text-gray-500">- {getSelectedCurrency().label.split(' - ')[1]}</span>
+              <span className="font-medium text-gray-900">
+                {getSelectedCurrency().value}
+              </span>
+              <span className="text-sm text-gray-500">
+                - {getSelectedCurrency().label.split(' - ')[1]}
+              </span>
             </div>
             <motion.div
               animate={{ rotate: showCurrencyDropdown ? 180 : 0 }}
@@ -778,7 +865,7 @@ export default function SubProductBasicInfo({
               <PiCaretRight className="h-4 w-4 text-gray-400" />
             </motion.div>
           </button>
-          
+
           <AnimatePresence>
             {showCurrencyDropdown && (
               <motion.div
@@ -804,10 +891,14 @@ export default function SubProductBasicInfo({
                     )}
                   >
                     <span className="text-lg">{currency.flag}</span>
-                    <span className={cn(
-                      'font-medium',
-                      selectedCurrency === currency.value ? 'text-blue-700' : 'text-gray-900'
-                    )}>
+                    <span
+                      className={cn(
+                        'font-medium',
+                        selectedCurrency === currency.value
+                          ? 'text-blue-700'
+                          : 'text-gray-900'
+                      )}
+                    >
                       {currency.value}
                     </span>
                     <span className="text-sm text-gray-500">
@@ -823,14 +914,16 @@ export default function SubProductBasicInfo({
           </AnimatePresence>
         </div>
         {errors.subProductData?.currency && (
-          <Text className="mt-1 text-xs text-red-500">{errors.subProductData.currency.message}</Text>
+          <Text className="mt-1 text-xs text-red-500">
+            {errors.subProductData.currency.message}
+          </Text>
         )}
       </div>
 
       {/* Product Images - Enhanced */}
       <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+        <div className="mb-1.5 flex items-center justify-between">
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
             <PiImages className="h-4 w-4" />
             Product Images
             {subProductImages.length > 0 && (
@@ -846,7 +939,7 @@ export default function SubProductBasicInfo({
                 setValue?.('subProductData.imagesOverride', []);
                 toast.success('All images cleared');
               }}
-              className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1"
+              className="flex items-center gap-1 text-xs text-red-500 hover:text-red-600"
             >
               <PiTrash className="h-3 w-3" />
               Clear all
@@ -873,21 +966,27 @@ export default function SubProductBasicInfo({
               htmlFor="image-upload"
               className={cn(
                 'flex cursor-pointer items-center justify-center gap-3 rounded-xl border-2 border-dashed p-6 transition-all',
-                isUploading 
-                  ? 'border-gray-300 bg-gray-50' 
-                  : 'border-blue-300 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 hover:border-blue-400'
+                isUploading
+                  ? 'border-gray-300 bg-gray-50'
+                  : 'border-blue-300 bg-gradient-to-r from-blue-50 to-indigo-50 hover:border-blue-400 hover:from-blue-100 hover:to-indigo-100'
               )}
             >
               {isUploading ? (
                 <>
                   <motion.div
                     animate={{ rotate: 360 }}
-                    transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                    transition={{
+                      repeat: Infinity,
+                      duration: 1,
+                      ease: 'linear',
+                    }}
                   >
                     <PiSpinner className="h-6 w-6 text-blue-600" />
                   </motion.div>
                   <div className="text-center">
-                    <Text className="text-sm font-medium text-gray-600">Uploading...</Text>
+                    <Text className="text-sm font-medium text-gray-600">
+                      Uploading...
+                    </Text>
                     <Text className="text-xs text-gray-500">Please wait</Text>
                   </div>
                 </>
@@ -925,8 +1024,8 @@ export default function SubProductBasicInfo({
                   whileHover={{ scale: 1.03 }}
                   className={cn(
                     'group relative aspect-square overflow-hidden rounded-xl border-2 transition-all',
-                    image.isPrimary 
-                      ? 'border-blue-500 ring-2 ring-blue-200 shadow-lg' 
+                    image.isPrimary
+                      ? 'border-blue-500 shadow-lg ring-2 ring-blue-200'
                       : 'border-gray-200 hover:border-gray-300'
                   )}
                 >
@@ -936,21 +1035,21 @@ export default function SubProductBasicInfo({
                     fill
                     className="object-cover"
                   />
-                  
+
                   {/* Primary Badge */}
                   {image.isPrimary && (
                     <motion.div
                       initial={{ scale: 0 }}
                       animate={{ scale: 1 }}
-                      className="absolute left-2 top-2 rounded-full bg-blue-600 px-2 py-1 text-[10px] font-bold text-white shadow-lg flex items-center gap-1"
+                      className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-blue-600 px-2 py-1 text-[10px] font-bold text-white shadow-lg"
                     >
                       <PiStar className="h-3 w-3" />
                       Primary
                     </motion.div>
                   )}
-                  
+
                   {/* Index Badge */}
-                  <div className="absolute left-2 bottom-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                  <div className="absolute bottom-2 left-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
                     {index + 1}
                   </div>
 
@@ -993,7 +1092,7 @@ export default function SubProductBasicInfo({
               ))}
             </motion.div>
           )}
-          
+
           {errors.subProductData?.images && (
             <motion.div
               initial={{ opacity: 0, y: -5 }}
@@ -1001,7 +1100,9 @@ export default function SubProductBasicInfo({
               className="flex items-center gap-1"
             >
               <PiWarning className="h-4 w-4 text-red-500" />
-              <Text className="text-xs text-red-500">{errors.subProductData.imagesOverride?.message}</Text>
+              <Text className="text-xs text-red-500">
+                {errors.subProductData.imagesOverride?.message}
+              </Text>
             </motion.div>
           )}
         </div>

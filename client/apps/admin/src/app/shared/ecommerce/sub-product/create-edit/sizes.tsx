@@ -540,7 +540,7 @@ export default function SubProductSizes() {
             {fields.length > 0 && (
               <motion.div
                 variants={fieldStaggerVariants}
-                className="flex items-center justify-between rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 p-4"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 p-4"
               >
                 <div className="flex items-center gap-4">
                   <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100">

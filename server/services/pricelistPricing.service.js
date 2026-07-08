@@ -135,7 +135,9 @@ function applyBundleOverride(price, bestBundle, costPrice, originalPrice) {
   if (dt === 'markup_on_cost') {
     const markup = bestBundle.discount || 0;
     if (costPrice > 0) {
-      return { price: Math.round(costPrice * (1 + markup / 100) * 100) / 100, overridden: true };
+      // Platform selling prices always round UP to the nearest ₦100
+      const { roundUpTo100 } = require('../utils/pricing');
+      return { price: roundUpTo100(costPrice * (1 + markup / 100)), overridden: true };
     }
   } else if (dt === 'no_discount') {
     if (originalPrice && originalPrice > price) {

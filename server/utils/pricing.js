@@ -63,18 +63,45 @@ const calcPlatformCostPrice = (costPrice, tenantSellingPrice, revenueModel, mark
 };
 
 /**
+ * Round a price UP to the nearest ₦100 (platform prices are always clean 100s)
+ */
+const roundUpTo100 = (price) => {
+  if (!price || price <= 0) return 0;
+  return Math.ceil(price / 100) * 100;
+};
+
+/**
  * Calculate platform selling price (includes platform markup and product discount)
- * 
+ *
+ * Rules applied after markup + discount:
+ *  - ALWAYS round up to the nearest ₦100.
+ *  - Undercut: when the tenant's own store price is known and the computed
+ *    platform price would match or exceed it, drop to the nearest ₦100 BELOW
+ *    the tenant price (a small, never-large gap) so customers prefer the
+ *    platform. Skipped when an admin override percentage is in effect.
+ *
  * @param {number} platformCostPrice - The platform cost price
  * @param {number} platformMarkupPct - Platform markup percentage from Product
  * @param {object} productDiscount - Product-level discount { value, type, start, end }
+ * @param {object} options - { tenantStorePrice, platformMarkupOverridePct }
  * @returns {number} platformSellingPrice
  */
-const calcPlatformSellingPrice = (platformCostPrice, platformMarkupPct = DEFAULT_PLATFORM_MARKUP, productDiscount = null) => {
+const calcPlatformSellingPrice = (platformCostPrice, platformMarkupPct = DEFAULT_PLATFORM_MARKUP, productDiscount = null, options = {}) => {
   if (!platformCostPrice || platformCostPrice <= 0) return 0;
-  let sellingPrice = parseFloat((platformCostPrice * (1 + platformMarkupPct / 100)).toFixed(2));
+  const { tenantStorePrice = 0, platformMarkupOverridePct = null } = options;
+  const isOverride = platformMarkupOverridePct != null;
+  const pct = isOverride ? platformMarkupOverridePct : platformMarkupPct;
+
+  let sellingPrice = parseFloat((platformCostPrice * (1 + pct / 100)).toFixed(2));
   if (isDiscountActive(productDiscount)) {
     sellingPrice = applyDiscount(sellingPrice, productDiscount);
+  }
+  if (sellingPrice <= 0) return 0;
+
+  sellingPrice = roundUpTo100(sellingPrice);
+
+  if (!isOverride && tenantStorePrice > 100 && sellingPrice >= tenantStorePrice) {
+    sellingPrice = Math.max(100, Math.floor((tenantStorePrice - 1) / 100) * 100);
   }
   return sellingPrice;
 };
@@ -126,15 +153,24 @@ const calculateSubProductPricing = (subProduct, product, tenant) => {
   // Step 1: Platform cost price
   const platformCostPrice = calcPlatformCostPrice(costPrice, tenantSellingPrice, revenueModel, markupPct, commissionPct);
 
-  // Step 2: Platform selling price (includes markup + product discount)
-  const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
+  // Step 2: Platform selling price (markup/override + product discount +
+  // round-up-to-100 + undercut vs the tenant's store price)
+  const overridePct = subProduct?.platformMarkupOverridePct ?? null;
+  const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, {
+    tenantStorePrice: tenantSellingPrice,
+    platformMarkupOverridePct: overridePct,
+  });
 
   // Step 3: Platform margin
   const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
 
-  // Calculate tenant receives (for commission model)
-  const tenantReceives = revenueModel === 'commission' && platformSellingPrice != null && platformMargin != null
-    ? parseFloat((platformSellingPrice - platformMargin).toFixed(2))
+  // What the tenant is paid per unit. Commission: their retail price minus the
+  // platform's cut — computed directly so it stays correct even when the
+  // selling-price chain is incomplete or a product discount is active.
+  const tenantReceives = revenueModel === 'commission'
+    ? (tenantSellingPrice > 0
+        ? parseFloat((tenantSellingPrice * (1 - commissionPct / 100)).toFixed(2))
+        : null)
     : costPrice;
 
   return {
@@ -144,7 +180,8 @@ const calculateSubProductPricing = (subProduct, product, tenant) => {
     revenueModel,
     markupPct,
     commissionPct,
-    platformMarkupPct,
+    platformMarkupPct: overridePct ?? platformMarkupPct,
+    isPlatformMarkupOverridden: overridePct != null,
     tenantDiscount: tenantStorePrice != null && tenantStorePrice < tenantSellingPrice ? {
       active: true,
       originalPrice: tenantSellingPrice,
@@ -188,9 +225,10 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
     ? { value: product.platformDiscount.value, type: product.platformDiscount.type, start: product.platformDiscount.start, end: product.platformDiscount.end }
     : null;
 
-  // Size-level values (fallback to subproduct if not set)
-  const costPrice = size?.costPrice ?? fallbackCostPrice;
-  const tenantSellingPrice = size?.sellingPrice ?? fallbackSellingPrice;
+  // Size-level values — fall back to the sub-product when the size value is
+  // missing OR zero (tenants often leave size costPrice at 0)
+  const costPrice = size?.costPrice > 0 ? size.costPrice : fallbackCostPrice;
+  const tenantSellingPrice = size?.sellingPrice > 0 ? size.sellingPrice : fallbackSellingPrice;
 
   // Tenant discount (for tenant store display only)
   const tenantDiscount = size?.discountValue > 0 && size?.discountType
@@ -203,8 +241,13 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
   // Step 1: Platform cost price
   const platformCostPrice = calcPlatformCostPrice(costPrice, tenantSellingPrice, revenueModel, markupPct, commissionPct);
 
-  // Step 2: Platform selling price (includes markup + product discount)
-  const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
+  // Step 2: Platform selling price (markup/override + product discount +
+  // round-up-to-100 + undercut vs the tenant's store price)
+  const overridePct = size?.platformMarkupOverridePct ?? null;
+  const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, {
+    tenantStorePrice: tenantSellingPrice,
+    platformMarkupOverridePct: overridePct,
+  });
 
   // Step 3: Platform margin
   const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
@@ -216,7 +259,10 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
     costPrice,
     tenantSellingPrice,
     revenueModel,
-    platformMarkupPct,
+    markupPct,
+    commissionPct,
+    platformMarkupPct: overridePct ?? platformMarkupPct,
+    isPlatformMarkupOverridden: overridePct != null,
     tenantDiscount: tenantStorePrice != null && tenantStorePrice < tenantSellingPrice ? {
       active: true,
       originalPrice: tenantSellingPrice,
@@ -238,13 +284,57 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
   };
 };
 
+/**
+ * Invert the full forward pricing chain: given the admin's desired FINAL
+ * platform price (what the customer pays), return the value to store.
+ *   markup     → supplier costPrice
+ *   commission → tenant sellingPrice
+ *
+ * Inversion order mirrors the forward chain in reverse:
+ *   1. undo the active product-level discount (percentage or fixed)
+ *   2. undo the platform markup
+ *   3. undo the tenant revenue model
+ */
+const backCalcStoredPrice = (
+  adminPrice,
+  {
+    revenueModel = 'markup',
+    markupPct = 25,
+    commissionPct = 12,
+    platformMarkupPct = DEFAULT_PLATFORM_MARKUP,
+    productDiscount = null,
+  } = {}
+) => {
+  let preDiscount = adminPrice;
+  if (isDiscountActive(productDiscount)) {
+    if (productDiscount.type === 'percentage') {
+      const factor = 1 - productDiscount.value / 100;
+      if (factor > 0) preDiscount = adminPrice / factor;
+    } else if (productDiscount.type === 'fixed') {
+      preDiscount = adminPrice + productDiscount.value;
+    }
+  }
+
+  const platformCostPrice = preDiscount / (1 + platformMarkupPct / 100);
+
+  const normalized = revenueModel === 'platform_markup' ? 'markup' : revenueModel;
+  if (normalized === 'markup') {
+    return parseFloat((platformCostPrice / (1 + markupPct / 100)).toFixed(2));
+  }
+  const divisor = 1 - commissionPct / 100;
+  if (divisor <= 0) return parseFloat(adminPrice.toFixed(2));
+  return parseFloat((platformCostPrice / divisor).toFixed(2));
+};
+
 module.exports = {
   DEFAULT_PLATFORM_MARKUP,
   isDiscountActive,
   applyDiscount,
+  roundUpTo100,
   calcPlatformCostPrice,
   calcPlatformSellingPrice,
   calcPlatformMargin,
   calculateSubProductPricing,
-  calculateSizePricing
+  calculateSizePricing,
+  backCalcStoredPrice
 };

@@ -173,6 +173,9 @@ function ReviewDrawer({
   const [showDeclineConfirm, setShowDeclineConfirm] = useState(false);
   const [sizeWebsitePrices, setSizeWebsitePrices] = useState<Record<string, string>>({});
   const [baseWebsitePrice, setBaseWebsitePrice] = useState<string>('');
+  // Server-computed platform prices — used to detect which inputs the admin
+  // actually changed, so unchanged values are never sent as overrides
+  const [serverDefaults, setServerDefaults] = useState<{ base: number; sizes: Record<string, number> }>({ base: 0, sizes: {} });
   const [showSuccess, setShowSuccess] = useState<string | null>(null);
   const [currentSection, setCurrentSection] = useState(0);
 
@@ -217,17 +220,22 @@ function ReviewDrawer({
         setSp(data);
         if (!data) return;
 
+        const defaults: { base: number; sizes: Record<string, number> } = { base: 0, sizes: {} };
+
         if (data.pricing?.platformSellingPrice > 0) {
+          defaults.base = data.pricing.platformSellingPrice;
           setBaseWebsitePrice(String(data.pricing.platformSellingPrice));
         }
 
         const initSizes: Record<string, string> = {};
         for (const s of (data.sizes ?? [])) {
           if (s.pricing?.platformSellingPrice > 0) {
+            defaults.sizes[s._id] = s.pricing.platformSellingPrice;
             initSizes[s._id] = String(s.pricing.platformSellingPrice);
           }
         }
         setSizeWebsitePrices(initSizes);
+        setServerDefaults(defaults);
       })
       .catch(() => setSp(null))
       .finally(() => setLoading(false));
@@ -236,12 +244,16 @@ function ReviewDrawer({
   const handleApprove = async () => {
     if (!sp) return;
     setActioning('approving');
+    // Only send prices the admin actually changed (±₦1 vs the server-computed
+    // default) — unchanged inputs must not become back-calculated overrides
+    const changed = (entered: number, def: number) =>
+      !isNaN(entered) && entered > 0 && Math.abs(entered - (def || 0)) >= 1;
     const overrides: PriceOverrides = {};
     const bp = parseFloat(baseWebsitePrice);
-    if (!isNaN(bp) && bp > 0) overrides.baseWebsitePrice = bp;
+    if (changed(bp, serverDefaults.base)) overrides.baseWebsitePrice = bp;
     const sizeEntries = Object.entries(sizeWebsitePrices)
       .map(([id, v]) => ({ id, websitePrice: parseFloat(v) }))
-      .filter(e => !isNaN(e.websitePrice) && e.websitePrice > 0);
+      .filter(e => changed(e.websitePrice, serverDefaults.sizes[e.id]));
     if (sizeEntries.length) overrides.sizes = sizeEntries;
     try {
       await onApprove(sp._id, overrides);
@@ -454,8 +466,13 @@ function ReviewDrawer({
                         </div>
                       </div>
 
-                      {/* Summary strip - Platform Margin */}
+                      {/* Summary strip - Platform Margin (live: follows the editable price) */}
                       {(() => {
+                        const entered = parseFloat(currentBaseVal);
+                        const liveMargin =
+                          !isNaN(entered) && entered > 0 && platformCostBase > 0
+                            ? parseFloat((entered - platformCostBase).toFixed(2))
+                            : platformMargin;
                         return (
                           <div className="mt-3 space-y-2">
                             <div className="grid grid-cols-3 gap-2 text-[10px]">
@@ -469,8 +486,8 @@ function ReviewDrawer({
                               </div>
                               <div className="bg-blue-50 rounded-lg px-3 py-2 text-center border border-blue-100">
                                 <div className="text-blue-500 mb-0.5">Platform Margin</div>
-                                <div className={cn('font-bold', platformMargin != null && platformMargin > 0 ? 'text-blue-700' : 'text-red-500')}>
-                                  {platformMargin != null ? fmt(platformMargin) : '—'}
+                                <div className={cn('font-bold', liveMargin != null && liveMargin > 0 ? 'text-blue-700' : 'text-red-500')}>
+                                  {liveMargin != null ? fmt(liveMargin) : '—'}
                                 </div>
                               </div>
                             </div>
@@ -549,6 +566,12 @@ function ReviewDrawer({
 
                           const defaultWebsite = sizePlatformSelling;
                           const currentVal = sizeWebsitePrices[sizeId] ?? '';
+                          // Margin follows the editable price live
+                          const enteredSize = parseFloat(currentVal);
+                          const liveSizeMargin =
+                            !isNaN(enteredSize) && enteredSize > 0 && sizePlatformCost > 0
+                              ? parseFloat((enteredSize - sizePlatformCost).toFixed(2))
+                              : sizePlatformMargin;
 
                           return (
                             <div key={sizeId} className="rounded-xl border border-gray-100 bg-gray-50/50 p-3">
@@ -635,12 +658,12 @@ function ReviewDrawer({
                                   <input type="number" min="0" step="50" value={currentVal}
                                     onChange={e => setSizeWebsitePrices(prev => ({ ...prev, [sizeId]: e.target.value }))}
                                     className="flex-1 text-sm font-bold text-green-900 bg-white border border-green-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-300" />
-                                  {sizePlatformMargin != null && (
+                                  {liveSizeMargin != null && (
                                     <span className={cn(
                                       'text-[10px] whitespace-nowrap font-medium',
-                                      sizePlatformMargin > 0 ? 'text-blue-600' : 'text-red-500'
+                                      liveSizeMargin > 0 ? 'text-blue-600' : 'text-red-500'
                                     )}>
-                                      Margin: {sizePlatformMargin > 0 ? '+' : ''}₦{sizePlatformMargin.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                      Margin: {liveSizeMargin > 0 ? '+' : ''}₦{liveSizeMargin.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                     </span>
                                   )}
                                 </div>

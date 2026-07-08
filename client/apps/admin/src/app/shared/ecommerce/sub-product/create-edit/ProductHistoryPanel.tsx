@@ -325,7 +325,7 @@ function SoldDetail({ order, productId, onClose }: { order: any; productId: stri
 
       {/* Details tab */}
       {tab === 'details' && (
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-auto">
           {/* 3-stat row */}
           <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
             {[
@@ -368,7 +368,7 @@ function SoldDetail({ order, productId, onClose }: { order: any; productId: stri
               <div className="border-b border-gray-50 bg-gray-50 px-5 py-2">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Items ({(order.items||[]).length})</p>
               </div>
-              <table className="w-full text-xs">
+              <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-xs">
                 <thead className="bg-gray-50 text-[10px] font-bold uppercase tracking-wider text-gray-400">
                   <tr>
                     <th className="px-5 py-2 text-left">Product</th>
@@ -394,7 +394,7 @@ function SoldDetail({ order, productId, onClose }: { order: any; productId: stri
                     );
                   })}
                 </tbody>
-              </table>
+              </table></div>
               <div className="border-t border-gray-100 px-5 py-3 space-y-1 text-xs">
                 {discount>0 && <div className="flex justify-between" style={{color:'#b20202'}}><span>Discount</span><span className="font-semibold tabular-nums">−{ng(discount)}</span></div>}
                 <div className="flex justify-between text-sm font-bold text-gray-900">
@@ -413,7 +413,7 @@ function SoldDetail({ order, productId, onClose }: { order: any; productId: stri
 
       {/* Returns tab */}
       {tab === 'returns' && (
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-auto">
           {(order.refunds||[]).length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-center">
               <PiArrowCounterClockwise className="h-8 w-8 text-gray-200"/>
@@ -785,7 +785,7 @@ function SoldPanel({ subProductId, productName, token, onClose }: {
               {(search||hasOptions||statusPill!=='all') && <button type="button" onClick={()=>{setSearch('');setActiveFilters(new Set());setGroupBy(null);setStatusPill('all');}} className="text-xs hover:underline" style={{color:'#b20202'}}>Clear filters</button>}
             </div>
           ) : (
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-auto">
               <table className="w-full border-collapse text-xs">
                 <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_#e5e7eb]">
                   <tr className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
@@ -936,7 +936,7 @@ function PODetail({ po, productId, onClose }: { po: any; productId: string; onCl
 
       {/* Details tab */}
       {tab === 'details' && (
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-auto">
           {/* 3-stat row */}
           <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
             {[
@@ -993,7 +993,7 @@ function PODetail({ po, productId, onClose }: { po: any; productId: string; onCl
 
       {/* Items tab */}
       {tab === 'items' && (
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-auto">
           {(po.items||[]).length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-center">
               <PiPackage className="h-8 w-8 text-gray-200"/>
@@ -1001,7 +1001,7 @@ function PODetail({ po, productId, onClose }: { po: any; productId: string; onCl
             </div>
           ) : (
             <>
-              <table className="w-full text-xs">
+              <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-xs">
                 <thead className="sticky top-0 bg-gray-50 text-[10px] font-bold uppercase tracking-wider text-gray-400 shadow-[0_1px_0_#e5e7eb]">
                   <tr>
                     <th className="px-5 py-2.5 text-left">Product</th>
@@ -1028,7 +1028,7 @@ function PODetail({ po, productId, onClose }: { po: any; productId: string; onCl
                     );
                   })}
                 </tbody>
-              </table>
+              </table></div>
               <div className="border-t border-gray-100 px-5 py-3 text-xs">
                 <div className="flex justify-between text-sm font-bold text-gray-900">
                   <span>PO Total</span>
@@ -1362,7 +1362,7 @@ function PurchasedPanel({ subProductId, productName, token, onClose }: {
               {(search||hasOptions||statusPill!=='all')&&<button type="button" onClick={()=>{setSearch('');setActiveFilters(new Set());setGroupBy(null);setStatusPill('all');}} className="text-xs hover:underline" style={{color:'#b20202'}}>Clear filters</button>}
             </div>
           ) : (
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-auto">
               <table className="w-full border-collapse text-xs">
                 <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_#e5e7eb]">
                   <tr className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
@@ -1487,7 +1487,7 @@ function VendorReturnsPanel({ subProductId, productName, token, onClose }: {
           ) : rows.length === 0 ? (
             <div className="flex items-center justify-center py-20 text-sm text-gray-400">No returns found</div>
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50 sticky top-0">
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Return #</th>
@@ -1545,7 +1545,7 @@ function VendorReturnsPanel({ subProductId, productName, token, onClose }: {
                     );
                   })}
               </tbody>
-            </table>
+            </table></div>
           )}
         </div>
         {rows.length > PAGE_SIZE && (

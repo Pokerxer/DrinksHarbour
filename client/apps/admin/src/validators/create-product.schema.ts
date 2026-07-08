@@ -1,6 +1,18 @@
 import { z } from 'zod';
 import { fileSchema } from './common-rules';
 
+// Numeric form inputs emit NaN when cleared (valueAsNumber on '') — treat
+// NaN/''/null as "unset" so the field's default applies instead of failing
+// with "Expected number, received nan".
+const numberWithDefault = (schema: z.ZodNumber, def: number) =>
+  z.preprocess(
+    (v) =>
+      v === '' || v == null || (typeof v === 'number' && Number.isNaN(v))
+        ? undefined
+        : v,
+    schema.default(def)
+  );
+
 // Media item schema
 const mediaItemSchema = z.object({
   url: z.string().optional(),
@@ -37,9 +49,9 @@ const sizeOptionSchema = z.object({
   stock: z.number().min(0).default(0),
   reservedStock: z.number().min(0).default(0),
   availableStock: z.number().min(0).default(0),
-  lowStockThreshold: z.number().min(0).default(10),
-  reorderPoint: z.number().min(0).default(5),
-  reorderQuantity: z.number().min(1).default(50),
+  lowStockThreshold: numberWithDefault(z.number().min(0), 10),
+  reorderPoint: numberWithDefault(z.number().min(0), 5),
+  reorderQuantity: numberWithDefault(z.number().min(1), 50),
   availability: z.string().optional(),
 
   // Identification
@@ -376,7 +388,7 @@ export const productFormSchema = z.object({
       baseSellingPrice: z.number().min(0).nullable().optional(),
       costPrice: z.number().min(0).nullable().optional(),
       currency: z.string().default('NGN'),
-      taxRate: z.number().min(0).max(100).default(0),
+      taxRate: numberWithDefault(z.number().min(0).max(100), 0),
       marginPercentage: z.number().min(0).nullable().optional(),
       markupPercentage: z.number().min(0).max(500).default(25),
       roundUp: z.enum(['none', '100', '1000']).default('none'),
@@ -431,9 +443,9 @@ export const productFormSchema = z.object({
       totalStock: z.number().min(0).default(0),
       reservedStock: z.number().min(0).default(0),
       availableStock: z.number().min(0).default(0),
-      lowStockThreshold: z.number().min(0).default(10),
-      reorderPoint: z.number().min(0).default(5),
-      reorderQuantity: z.number().min(1).default(50),
+      lowStockThreshold: numberWithDefault(z.number().min(0), 10),
+      reorderPoint: numberWithDefault(z.number().min(0), 5),
+      reorderQuantity: numberWithDefault(z.number().min(1), 50),
       lastRestockDate: z.date().nullable().optional(),
       nextRestockDate: z.date().nullable().optional(),
 

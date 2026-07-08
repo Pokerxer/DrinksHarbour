@@ -82,9 +82,10 @@ test('POST /price-lines is registered on the sales-orders router before /:id', (
 // Carlo Rossi Sweet Red 75cl — size sellingPrice ₦9,300, size costPrice
 // ₦7,437.97, tenant markup-model 0%, product platformMarkup 15%, "Website
 // Price" pricelist whose rules all carry minQuantity 6 (so none apply at
-// qty 1). The engine's answer is cost × 1.15 = ₦8,553.67 — NOT the raw
-// catalog ₦9,300. This pins the server-side authority the endpoint exposes.
-test('computeLineUnitPrice re-bases on the platform pipeline (Carlo Rossi ₦8,553.67 repro)', async (t) => {
+// qty 1). The engine's answer is cost × 1.15 = ₦8,553.67, rounded UP to the
+// nearest ₦100 → ₦8,600 — NOT the raw catalog ₦9,300. This pins the
+// server-side authority the endpoint exposes.
+test('computeLineUnitPrice re-bases on the platform pipeline (Carlo Rossi ₦8,600 repro)', async (t) => {
   const SubProduct = require('../models/SubProduct');
   const Size = require('../models/Size');
   const { computeLineUnitPrice } = require('../services/salesPricing.service');
@@ -121,10 +122,10 @@ test('computeLineUnitPrice re-bases on the platform pipeline (Carlo Rossi ₦8,5
     pricelist: websitePricelist,
     tenant: { revenueModel: 'markup', markupPercentage: 0, commissionPercentage: 0 },
   });
-  assert.strictEqual(price, 8553.67);
+  assert.strictEqual(price, 8600);
 
   // At qty 6 the formula rule (cost × 1.20) and the markup_on_cost bundle
-  // (cost × 1.15) both qualify; the bundle override wins → still 8,553.67.
+  // (cost × 1.15) both qualify; the bundle override wins → still 8,600.
   const price6 = await computeLineUnitPrice({
     subProductId,
     sizeId,
@@ -132,5 +133,5 @@ test('computeLineUnitPrice re-bases on the platform pipeline (Carlo Rossi ₦8,5
     pricelist: websitePricelist,
     tenant: { revenueModel: 'markup', markupPercentage: 0, commissionPercentage: 0 },
   });
-  assert.strictEqual(price6, 8553.67);
+  assert.strictEqual(price6, 8600);
 });

@@ -253,7 +253,7 @@ export default function EcommerceNavHeader() {
       {/* Brand */}
       <Link
         href={routes.eCommerce.dashboard}
-        className="flex shrink-0 items-center gap-2.5 border-r border-gray-200 py-2 pr-5"
+        className="flex shrink-0 items-center gap-2.5 border-r border-gray-200 py-2 pr-3 sm:pr-5"
       >
         <Image
           src="/logo-short.svg"
@@ -262,13 +262,13 @@ export default function EcommerceNavHeader() {
           height={30}
           className="rounded-full"
         />
-        <span className="text-sm font-semibold text-gray-900">
+        <span className="hidden text-sm font-semibold text-gray-900 sm:inline">
           {brandLabel}
         </span>
       </Link>
 
-      {/* Nav links */}
-      <div className="flex items-center pl-2">
+      {/* Nav links — horizontally scrollable on mobile */}
+      <div className="flex min-w-0 flex-1 items-center overflow-x-auto pl-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {navItems.map((item) => {
           const isDirectActive = 'href' in item && item.href === pathname;
           const isDropdownActive =
@@ -288,7 +288,7 @@ export default function EcommerceNavHeader() {
               <Link
                 key={item.label}
                 href={item.href}
-                className={`relative flex items-center gap-1.5 px-4 py-3 text-sm transition-colors ${
+                className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-3 text-sm transition-colors sm:px-4 ${
                   isActive
                     ? `${activeCls} text-[#b20202]`
                     : 'font-normal text-gray-600 hover:text-gray-900'
@@ -305,11 +305,11 @@ export default function EcommerceNavHeader() {
           const columns = (item.items?.length ?? 0) > 4 ? 2 : 1;
 
           return (
-            <div key={item.label} className="relative">
+            <div key={item.label} className="lg:relative">
               <button
                 type="button"
                 onClick={() => setOpenMenu(isOpen ? null : item.label)}
-                className={`relative flex items-center gap-1.5 px-4 py-3 text-sm transition-colors ${
+                className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-3 text-sm transition-colors sm:px-4 ${
                   isActive || isOpen
                     ? `${activeCls} text-[#b20202]`
                     : 'font-normal text-gray-600 hover:text-gray-900'

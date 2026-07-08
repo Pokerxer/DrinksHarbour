@@ -394,7 +394,7 @@ function InlineRuleForm({
       {/* Type selector */}
       <div>
         <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">Rule Type</p>
-        <div className="grid grid-cols-5 gap-1.5">
+        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-5">
           {Object.entries(RULE_TYPE_META).map(([v, meta]) => {
             const active = value.priceType === v;
             return (
@@ -543,7 +543,7 @@ function InlineRuleForm({
       </div>
 
       {/* Shared: Min Qty + dates */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div>
           <Label>Min Order Qty</Label>
           <TextInput type="number" min="0" step="1" placeholder="0" value={value.minQuantity} onChange={f('minQuantity')} />

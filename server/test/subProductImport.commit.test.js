@@ -4,7 +4,7 @@ const assert = require('node:assert');
 const svc = require('../services/subProductImport.service');
 
 function makeDeps(overrides = {}) {
-  const calls = { createSubProduct: [], adjustStock: [], enrich: [] };
+  const calls = { createSubProduct: [], adjustStock: [], recordReceiptMovement: [], enrich: [] };
   const deps = {
     Product: { findOne: () => ({ select: () => ({ lean: async () => overrides.product ?? null }) }) },
     SubProduct: { findOne: () => ({ select: () => ({ lean: async () => overrides.sub ?? null }) }) },
@@ -16,7 +16,7 @@ function makeDeps(overrides = {}) {
     },
     addSize: async () => ({ _id: 'newsize' }),
     adjustStock: async (args) => { calls.adjustStock.push(args); return { ok: true }; },
-    // Haiku enrichment stub — never hits the network in tests.
+    recordReceiptMovement: async (args) => { calls.recordReceiptMovement.push(args); return {}; },
     enrich: async (name) => { calls.enrich.push(name); return overrides.ai ?? {}; },
     getCategoryOptions: async () => ({
       categories: overrides.categories ?? [],

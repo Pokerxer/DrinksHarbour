@@ -6,6 +6,35 @@ const RealCategory = require('../models/Category');
 const SIZE_ENUM = new Set(RealSize.schema.path('size').enumValues);
 const PRODUCT_TYPES = new Set(RealProduct.schema.path('type').enumValues);
 
+// Keyword-based type fallback for when AI enrichment is unavailable or returns
+// nothing useful. Checked against the product name before giving up.
+const TYPE_KEYWORDS = [
+  ['bourbon',   /\bbourbons?\b/i],
+  ['scotch',    /\bscotch\b/i],
+  ['whiskey',   /\bwhiskeys?\b|\bwhisky\b|\birish\s+whiskey\b|\brye\b/i],
+  ['gin',       /\bgins?\b/i],
+  ['vodka',     /\bvodkas?\b/i],
+  ['rum',       /\brums?\b/i],
+  ['tequila',   /\btequilas?\b|\bmezcal\b/i],
+  ['champagne', /\bchampagne\b/i],
+  ['prosecco',  /\bprosecco\b/i],
+  ['wine',      /\bwines?\b/i],
+  ['beer',      /\bbeers?\b|\blager\b|\bales?\b|\bstout\b|\bipa\b|\bpilsner\b/i],
+  ['cognac',    /\bcognac\b|\barmagnac\b/i],
+  ['brandy',    /\bbrandy\b|\bbrandies\b/i],
+  ['liqueur',   /\bliqu[ei]urs?\b/i],
+  ['cider',     /\bciders?\b/i],
+  ['sake',      /\bsake\b/i],
+];
+
+function guessTypeFromName(name) {
+  const n = String(name || '');
+  for (const [type, re] of TYPE_KEYWORDS) {
+    if (re.test(n) && PRODUCT_TYPES.has(type)) return type;
+  }
+  return 'spirit'; // safe default for a drinks-only marketplace
+}
+
 function toNum(v) {
   if (v === undefined || v === null || String(v).trim() === '') return null;
   const n = Number(String(v).replace(/,/g, '').trim());
@@ -200,13 +229,14 @@ function defaultServiceDeps(deps = {}) {
   const base = defaultDeps(deps);
   const sp = require('./subproduct.service');
   const wh = require('./warehouse.service');
+  const invSvc = require('./inventory.service');
   const enrichSvc = require('./productEnrich.service');
   return {
     ...base,
     createSubProduct: deps.createSubProduct || sp.createSubProduct,
     addSize: deps.addSize || sp.addSize,
     adjustStock: deps.adjustStock || wh.adjustStock,
-    // Haiku enrichment for brand-new products (name -> type/brand/category/desc).
+    recordReceiptMovement: deps.recordReceiptMovement || invSvc.recordReceiptMovement,
     enrich: deps.enrich || enrichSvc.enrichProductFromName,
     getCategoryOptions: deps.getCategoryOptions || enrichSvc.getCategoryOptions,
   };
@@ -219,7 +249,7 @@ function sizePayload(r) {
     barcode: r.barcode || undefined,
     basePrice: r.sizePrice ?? undefined,
     costPrice: r.sizeCostPrice ?? undefined,
-    stock: 0, // opening stock is applied via adjustStock, not Size.stock
+    stock: 0,
   };
 }
 
@@ -293,19 +323,24 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
           data.product = existingProduct._id;
         } else {
           // Brand-new product. Preview already enriched and the admin approved
-          // those values — use them verbatim when supplied (keyed by group key);
-          // only fall back to a live Haiku call for groups preview never saw.
-          // Display name uses the AI-cleaned name; matching/grouping above still
-          // key on the raw row name (a later re-import of the raw name matches
-          // by subProductSku, or creates a fresh listing if no SKU is given).
+          // those values — use them verbatim when supplied (keyed by group key).
+          // IMPORTANT: undefined values are stripped by JSON.stringify, so a
+          // preview enrichment that only has 'name' (type/brand/category were
+          // undefined) arrives here as { name: '...' } — that object check is
+          // insufficient. Re-run live Haiku whenever 'type' is absent.
           let ai = enrichments[g.key];
-          if (!ai || typeof ai !== 'object') {
+          if (!ai || typeof ai !== 'object' || !ai.type) {
             try {
               ai = (await d.enrich(base.productName, catalog)) || {};
             } catch { ai = {}; }
           }
           data.createNewProduct = true;
           data.newProductData = resolveNewProductFields(base, ai);
+          // Last-resort: if Haiku is unavailable, infer type from keywords so
+          // createSubProductCore doesn't throw and the import doesn't silently skip.
+          if (!data.newProductData.type) {
+            data.newProductData.type = guessTypeFromName(base.productName);
+          }
         }
         const sub = await d.createSubProduct(data, tenantId, user);
         subProductId = sub._id;
@@ -323,13 +358,34 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
       // Apply opening stock for created sizes with qty > 0.
       for (const s of createdSizeDocs) {
         const qty = s._row.openingQty;
-        if (qty > 0 && warehouseId) {
+        if (!(qty > 0)) continue;
+
+        // WarehouseStock ledger — only when a warehouse was selected.
+        if (warehouseId) {
           await d.adjustStock(
             { warehouseId, subProduct: subProductId, size: s._id, quantity: qty, type: 'received', notes: 'Bulk import opening stock' },
             user?._id, tenantId
           );
-          out.stockApplied += 1;
         }
+
+        // Size.stock + InventoryMovement (visible in the sub-product history tab).
+        // recordReceiptMovement increments Size.stock/$availableStock and writes
+        // the InventoryMovement row regardless of whether a warehouse is set.
+        await d.recordReceiptMovement({
+          subProduct: subProductId,
+          tenant: tenantId,
+          size: s._id,
+          warehouse: warehouseId || undefined,
+          quantity: qty,
+          balanceBefore: 0,
+          balanceAfter: qty,
+          unitCost: s._row.sizeCostPrice ?? s._row.costPrice ?? undefined,
+          notes: 'Bulk import opening stock',
+          reference: 'bulk-import',
+          performedBy: user?._id,
+        });
+
+        out.stockApplied += 1;
       }
     } catch (err) {
       // Surface duplicate-key failures (e.g. a barcode/sku already used by this

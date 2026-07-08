@@ -196,6 +196,12 @@ const sizeSchema = new Schema(
       default: 0,
       // Can be derived from supplierPrice if not set
     },
+    // Admin price-override as the effective platform markup % for this size —
+    // survives tenant cost/price changes (see SubProduct.platformMarkupOverridePct)
+    platformMarkupOverridePct: {
+      type: Number,
+      default: null,
+    },
     compareAtPrice: {
       type: Number,
       min: 0,

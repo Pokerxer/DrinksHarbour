@@ -3,7 +3,7 @@
 const Brand = require('../models/Brand');
 const mongoose = require('mongoose');
 const { searchProducts: searchProductsNew } = require('./search.service');
-const { calcPlatformCostPrice, calcPlatformSellingPrice, calcPlatformMargin, isDiscountActive, applyDiscount, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
+const { calcPlatformCostPrice, calcPlatformSellingPrice, calcPlatformMargin, isDiscountActive, applyDiscount, roundUpTo100, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
 const { ValidationError, ConflictError, NotFoundError, ForbiddenError } = require('../utils/errors');
 const resolveTagReferences = require('../helpers/resolveTagReferences.helper');
 const resolveFlavorReferences = require('../helpers/resolveFlavorReference.helper');
@@ -1004,7 +1004,7 @@ const createProduct = async (inputData, user, tenant = null) => {
       .populate('tenant', 'name slug logo city state country')
       .populate({
         path: 'sizes',
-        select: 'size displayName volumeMl sellingPrice costPrice stock availableStock availability currency sku isDefault',
+        select: 'size displayName volumeMl sellingPrice costPrice platformMarkupOverridePct stock availableStock availability currency sku isDefault',
       })
       .lean();
 
@@ -2237,7 +2237,7 @@ const exportTenantProducts = async (tenantId, format = 'csv') => {
     })
     .populate({
       path: 'sizes',
-      select: 'size displayName sellingPrice costPrice stock availability',
+      select: 'size displayName sellingPrice costPrice platformMarkupOverridePct stock availability',
     })
     .lean();
 
@@ -4454,7 +4454,7 @@ const searchProducts = async (searchParams = {}) => {
         const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
 
         // Calculate platform selling price with product discount first
-        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
+        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
 
         // Store original price before sale discount for display
         const priceBeforeSale = platformSellingPrice;
@@ -4462,9 +4462,9 @@ const searchProducts = async (searchParams = {}) => {
         if (saleActive && subProduct.saleDiscountValue > 0) {
           const discountType = subProduct.saleType || 'percentage';
           if (discountType === 'percentage' || discountType === 'flash_sale') {
-            platformSellingPrice = parseFloat((platformSellingPrice * (1 - subProduct.saleDiscountValue / 100)).toFixed(2));
+            platformSellingPrice = roundUpTo100(platformSellingPrice * (1 - subProduct.saleDiscountValue / 100));
           } else if (discountType === 'fixed') {
-            platformSellingPrice = Math.max(0, parseFloat((platformSellingPrice - subProduct.saleDiscountValue).toFixed(2)));
+            platformSellingPrice = roundUpTo100(Math.max(0, platformSellingPrice - subProduct.saleDiscountValue));
           }
         }
 
@@ -5403,7 +5403,7 @@ const getTrendingProducts = async (limit = 10, dateRange = 7) => {
       status: 'active',
     })
       .populate('tenant', 'name slug logo city state country revenueModel markupPercentage commissionPercentage defaultCurrency primaryColor')
-      .populate('sizes', 'volume unit displayName sellingPrice costPrice availableStock compareAtPrice discount discountType discountStart discountEnd currency sku isDefault status availability')
+      .populate('sizes', 'volume unit displayName sellingPrice costPrice platformMarkupOverridePct availableStock compareAtPrice discount discountType discountStart discountEnd currency sku isDefault status availability')
       .select(
         'tenant baseSellingPrice costPrice discountPercentage finalPrice currency sizes stockQuantity availability minOrderQuantity maxOrderQuantity revenueModel isFeaturedByTenant isOnSale salePrice saleStartDate saleEndDate saleType saleDiscountValue'
       )
@@ -5435,7 +5435,7 @@ const getTrendingProducts = async (limit = 10, dateRange = 7) => {
         const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
         
         // Calculate platform selling price with product discount first
-        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
+        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
         
         // Store original price before sale discount for display
         const priceBeforeSale = platformSellingPrice;
@@ -5453,9 +5453,9 @@ const getTrendingProducts = async (limit = 10, dateRange = 7) => {
         if (saleActive && subProduct.saleDiscountValue > 0) {
           const discountType = subProduct.saleType || 'percentage';
           if (discountType === 'percentage' || discountType === 'flash_sale') {
-            platformSellingPrice = parseFloat((platformSellingPrice * (1 - subProduct.saleDiscountValue / 100)).toFixed(2));
+            platformSellingPrice = roundUpTo100(platformSellingPrice * (1 - subProduct.saleDiscountValue / 100));
           } else if (discountType === 'fixed') {
-            platformSellingPrice = Math.max(0, parseFloat((platformSellingPrice - subProduct.saleDiscountValue).toFixed(2)));
+            platformSellingPrice = roundUpTo100(Math.max(0, platformSellingPrice - subProduct.saleDiscountValue));
           }
         }
 
@@ -7675,7 +7675,7 @@ const getAllProducts = async (queryParams) => {
 
         // ── Platform Pricing Pipeline ────────────────────────────────────────
         const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
-        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
+        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
 
         // Store original price before sale discount
         const priceBeforeSale = platformSellingPrice;
@@ -7691,9 +7691,9 @@ const getAllProducts = async (queryParams) => {
         if (saleActive && subProduct.saleDiscountValue > 0) {
           const discountType = subProduct.saleType || 'percentage';
           if (discountType === 'percentage' || discountType === 'flash_sale') {
-            platformSellingPrice = parseFloat((platformSellingPrice * (1 - subProduct.saleDiscountValue / 100)).toFixed(2));
+            platformSellingPrice = roundUpTo100(platformSellingPrice * (1 - subProduct.saleDiscountValue / 100));
           } else if (discountType === 'fixed') {
-            platformSellingPrice = Math.max(0, parseFloat((platformSellingPrice - subProduct.saleDiscountValue).toFixed(2)));
+            platformSellingPrice = roundUpTo100(Math.max(0, platformSellingPrice - subProduct.saleDiscountValue));
           }
         }
 
@@ -8640,7 +8640,7 @@ const getNewArrivals = async (page = 1, limit = 12, days = 30) => {
 
         // Full pricing pipeline (same as getAllProducts)
         const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
-        const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
+        const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
         const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
         const websitePriceVal = platformSellingPrice;
 
@@ -9066,7 +9066,7 @@ const getBestsellers = async (page = 1, limit = 12) => {
         const currency = size.currency || subProduct.currency || tenant.defaultCurrency || 'NGN';
 
         const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
-        const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
+        const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
         const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
         const websitePrice = platformSellingPrice;
 
@@ -9391,7 +9391,7 @@ const getProductBySlug = async (slug) => {
         availability: { $in: ['available', 'in_stock', 'low_stock', 'pre_order', 'limited_stock'] },
       },
       select:
-        'size displayName sellingPrice costPrice discountedPrice compareAtPrice stock availableStock availability currency discount sku isDefault volumeMl',
+        'size displayName sellingPrice costPrice platformMarkupOverridePct discountedPrice compareAtPrice stock availableStock availability currency discount sku isDefault volumeMl',
     })
     .select(
       'tenant sku costPrice baseSellingPrice currency discount discountType discountedPrice discountStart discountEnd sizes status totalSold totalRevenue isFeaturedByTenant isOnSale salePrice saleStartDate saleEndDate saleType saleDiscountValue'
@@ -9471,7 +9471,7 @@ const getProductBySlug = async (slug) => {
       // SubProduct sale discount applied after platform selling price is computed.
       // ─────────────────────────────────────────────────────────────────────
       const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
-      let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
+      let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
 
       // Store original price before sale discount for display
       const priceBeforeSale = platformSellingPrice;
@@ -9487,9 +9487,9 @@ const getProductBySlug = async (slug) => {
       if (saleActive && subProduct.saleDiscountValue > 0) {
         const discountType = subProduct.saleType || 'percentage';
         if (discountType === 'percentage' || discountType === 'flash_sale') {
-          platformSellingPrice = parseFloat((platformSellingPrice * (1 - subProduct.saleDiscountValue / 100)).toFixed(2));
+          platformSellingPrice = roundUpTo100(platformSellingPrice * (1 - subProduct.saleDiscountValue / 100));
         } else if (discountType === 'fixed') {
-          platformSellingPrice = Math.max(0, parseFloat((platformSellingPrice - subProduct.saleDiscountValue).toFixed(2)));
+          platformSellingPrice = roundUpTo100(Math.max(0, platformSellingPrice - subProduct.saleDiscountValue));
         }
       }
 
@@ -9996,7 +9996,7 @@ const getProductById = async (id, includePending = false) => {
             availability: { $in: ['available', 'low_stock', 'pre_order'] },
           },
       select:
-        'size displayName sellingPrice costPrice stock availability currency discountValue discountType discountStart discountEnd lowStockThreshold sku barcode weightGrams volumeMl minOrderQuantity maxOrderQuantity',
+        'size displayName sellingPrice costPrice platformMarkupOverridePct stock availability currency discountValue discountType discountStart discountEnd lowStockThreshold sku barcode weightGrams volumeMl minOrderQuantity maxOrderQuantity',
     })
     .select(
       'tenant sku baseSellingPrice costPrice currency discount discountType discountStart discountEnd sizes shortDescriptionOverride imagesOverride status totalSold totalRevenue isOnSale saleType saleDiscountValue salePrice saleStartDate saleEndDate'
@@ -11005,7 +11005,7 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
 
         // ── Platform Pricing Pipeline ────────────────────────────────────────
         const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
-        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount);
+        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
 
         // Store original price before sale discount
         const priceBeforeSale = platformSellingPrice;
@@ -11021,9 +11021,9 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
         if (saleActive && subProduct.saleDiscountValue > 0) {
           const discountType = subProduct.saleType || 'percentage';
           if (discountType === 'percentage' || discountType === 'flash_sale') {
-            platformSellingPrice = parseFloat((platformSellingPrice * (1 - subProduct.saleDiscountValue / 100)).toFixed(2));
+            platformSellingPrice = roundUpTo100(platformSellingPrice * (1 - subProduct.saleDiscountValue / 100));
           } else if (discountType === 'fixed') {
-            platformSellingPrice = Math.max(0, parseFloat((platformSellingPrice - subProduct.saleDiscountValue).toFixed(2)));
+            platformSellingPrice = roundUpTo100(Math.max(0, platformSellingPrice - subProduct.saleDiscountValue));
           }
         }
 

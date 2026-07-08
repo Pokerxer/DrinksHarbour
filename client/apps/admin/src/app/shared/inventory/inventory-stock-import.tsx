@@ -10,6 +10,7 @@ import {
   PiDownloadSimple,
   PiCheckCircle,
   PiWarningCircle,
+  PiSpinner,
 } from 'react-icons/pi';
 import {
   subProductImportService,
@@ -22,6 +23,95 @@ import {
 import { warehouseService } from '@/services/warehouse.service';
 
 type Warehouse = { id: string; name: string };
+
+interface ProgressStep {
+  label: string;
+  detail?: string;
+}
+
+function ImportProgress({
+  steps,
+  activeStep,
+}: {
+  steps: ProgressStep[];
+  activeStep: number;
+}) {
+  const pct =
+    steps.length > 1 ? Math.round((activeStep / (steps.length - 1)) * 100) : 0;
+  return (
+    <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-4">
+      {/* Bar */}
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+        <div
+          className="h-full rounded-full bg-[#b20202] transition-all duration-700 ease-in-out"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+
+      {/* Steps */}
+      <div className="flex items-start justify-between gap-1">
+        {steps.map((s, i) => {
+          const done = i < activeStep;
+          const current = i === activeStep;
+          return (
+            <div
+              key={s.label}
+              className="flex flex-1 flex-col items-center gap-1"
+            >
+              <div
+                className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold transition-all duration-300 ${
+                  done
+                    ? 'bg-emerald-500 text-white'
+                    : current
+                      ? 'bg-[#b20202] text-white'
+                      : 'bg-gray-200 text-gray-400'
+                }`}
+              >
+                {done ? (
+                  <PiCheckCircle className="h-3.5 w-3.5" />
+                ) : current ? (
+                  <PiSpinner className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  i + 1
+                )}
+              </div>
+              <span
+                className={`text-center text-[9px] font-semibold leading-tight transition-colors ${
+                  done
+                    ? 'text-emerald-600'
+                    : current
+                      ? 'text-[#b20202]'
+                      : 'text-gray-400'
+                }`}
+              >
+                {s.label}
+              </span>
+              {current && s.detail && (
+                <span className="text-center text-[8px] text-gray-400">
+                  {s.detail}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const PREVIEW_STEPS: ProgressStep[] = [
+  { label: 'Reading rows' },
+  { label: 'Validating fields' },
+  { label: 'AI enrichment', detail: 'This may take a moment…' },
+  { label: 'Done' },
+];
+
+const COMMIT_STEPS: ProgressStep[] = [
+  { label: 'Creating products' },
+  { label: 'Saving sizes' },
+  { label: 'Applying stock' },
+  { label: 'Done' },
+];
 
 function downloadTemplate() {
   const blob = new Blob([buildTemplateCsv()], { type: 'text/csv' });
@@ -74,6 +164,34 @@ export default function InventoryStockImport({
   const [busy, setBusy] = useState(false);
   const [whList, setWhList] = useState<Warehouse[]>(warehouses);
 
+  // Progress tracking
+  const [progressMode, setProgressMode] = useState<'preview' | 'commit' | null>(
+    null
+  );
+  const [progressStep, setProgressStep] = useState(0);
+
+  const startProgress = useCallback((mode: 'preview' | 'commit') => {
+    setProgressMode(mode);
+    setProgressStep(0);
+    const steps = mode === 'preview' ? PREVIEW_STEPS : COMMIT_STEPS;
+    // Advance through intermediate steps, stopping one before "Done"
+    const delays = [800, 1800, 3500];
+    delays.forEach((delay, i) => {
+      setTimeout(() => {
+        if (i + 1 < steps.length - 1) setProgressStep(i + 1);
+      }, delay);
+    });
+  }, []);
+
+  const finishProgress = useCallback(() => {
+    const steps = progressMode === 'preview' ? PREVIEW_STEPS : COMMIT_STEPS;
+    setProgressStep(steps.length - 1);
+    setTimeout(() => {
+      setProgressMode(null);
+      setProgressStep(0);
+    }, 600);
+  }, [progressMode]);
+
   useEffect(() => {
     if (!open || !token) return;
     let active = true;
@@ -101,6 +219,8 @@ export default function InventoryStockImport({
     setWarehouseId('');
     setPreview(null);
     setBusy(false);
+    setProgressMode(null);
+    setProgressStep(0);
   }, []);
 
   const onDrop = useCallback(async (accepted: File[]) => {
@@ -133,25 +253,27 @@ export default function InventoryStockImport({
 
   const runPreview = useCallback(async () => {
     setBusy(true);
+    startProgress('preview');
     try {
       const res = await subProductImportService.preview(
         rows,
         warehouseId || null,
         token
       );
+      finishProgress();
       setPreview(res.data);
     } catch (e) {
+      setProgressMode(null);
       toast.error(e instanceof Error ? e.message : 'Preview failed');
     } finally {
       setBusy(false);
     }
-  }, [rows, warehouseId, token]);
+  }, [rows, warehouseId, token, startProgress, finishProgress]);
 
   const runCommit = useCallback(async () => {
     setBusy(true);
+    startProgress('commit');
     try {
-      // Send the previewed enrichments back so commit saves exactly what the
-      // admin reviewed instead of re-running the AI.
       const enrichments = Object.fromEntries(
         (preview?.groups || [])
           .filter((g) => g.action === 'createProduct' && g.enrichment)
@@ -164,6 +286,7 @@ export default function InventoryStockImport({
         enrichments
       );
       const d: CommitResult = res.data;
+      finishProgress();
       toast.success(
         `Imported ${d.createdSubProducts} products · ${d.createdSizes} sizes · ${d.stockApplied} stock lines`
       );
@@ -172,11 +295,21 @@ export default function InventoryStockImport({
       reset();
       onDone();
     } catch (e) {
+      setProgressMode(null);
       toast.error(e instanceof Error ? e.message : 'Import failed');
     } finally {
       setBusy(false);
     }
-  }, [rows, warehouseId, token, preview, reset, onDone]);
+  }, [
+    rows,
+    warehouseId,
+    token,
+    preview,
+    reset,
+    onDone,
+    startProgress,
+    finishProgress,
+  ]);
 
   const errorRows = preview?.totals.errorRows ?? 0;
   const canCommit = !!preview && preview.ok && !busy;
@@ -265,14 +398,22 @@ export default function InventoryStockImport({
           </div>
 
           {rows.length > 0 && !preview && (
-            <button
-              type="button"
-              onClick={runPreview}
-              disabled={busy}
-              className="w-full rounded-lg bg-gray-900 py-2.5 text-xs font-bold text-white hover:bg-black disabled:opacity-40"
-            >
-              {busy ? 'Validating & enriching…' : 'Validate & preview'}
-            </button>
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={runPreview}
+                disabled={busy}
+                className="w-full rounded-lg bg-gray-900 py-2.5 text-xs font-bold text-white hover:bg-black disabled:opacity-40"
+              >
+                {busy ? 'Working…' : 'Validate & preview'}
+              </button>
+              {progressMode === 'preview' && (
+                <ImportProgress
+                  steps={PREVIEW_STEPS}
+                  activeStep={progressStep}
+                />
+              )}
+            </div>
           )}
 
           {preview && (
@@ -371,11 +512,19 @@ export default function InventoryStockImport({
                 ))}
               </div>
 
+              {progressMode === 'commit' && (
+                <ImportProgress
+                  steps={COMMIT_STEPS}
+                  activeStep={progressStep}
+                />
+              )}
+
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setPreview(null)}
-                  className="flex-1 rounded-lg border border-gray-200 py-2.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                  disabled={busy}
+                  className="flex-1 rounded-lg border border-gray-200 py-2.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-40"
                 >
                   Back
                 </button>

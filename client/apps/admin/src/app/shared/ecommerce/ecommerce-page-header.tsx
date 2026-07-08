@@ -20,7 +20,11 @@ import EcommerceHero from '@/app/shared/ecommerce/ecommerce-hero';
  */
 const DASHBOARD_PATHS = [routes.eCommerce.dashboard, '/'];
 
-export default function EcommercePageHeader() {
+export default function EcommercePageHeader({
+  hideHero = false,
+}: {
+  hideHero?: boolean;
+}) {
   const pathname = usePathname();
   const isDashboard = DASHBOARD_PATHS.includes(pathname);
 
@@ -29,7 +33,7 @@ export default function EcommercePageHeader() {
       <div className="px-4 md:px-5 lg:px-6 3xl:px-8 4xl:px-10">
         <EcommerceNavHeader />
       </div>
-      {isDashboard ? null : <EcommerceHero />}
+      {isDashboard || hideHero ? null : <EcommerceHero />}
     </div>
   );
 }

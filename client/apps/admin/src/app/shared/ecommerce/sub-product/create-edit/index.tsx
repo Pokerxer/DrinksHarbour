@@ -216,7 +216,7 @@ function ProductStep({
   }, []);
 
   return (
-    <div className="flex gap-6">
+    <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
       {/* Sticky side nav */}
       <aside className="sticky top-24 hidden w-48 shrink-0 flex-col gap-1 self-start lg:flex">
         <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-wider text-gray-400">
@@ -418,9 +418,9 @@ export default function CreateEditSubProduct({
   const [statSold, setStatSold] = useState<number | null>(null);
   const [statPurchased, setStatPurchased] = useState<number | null>(null);
   // Which history panel is open
-  const [historyPanel, setHistoryPanel] = useState<'purchased' | 'sold' | 'returns' | null>(
-    null
-  );
+  const [historyPanel, setHistoryPanel] = useState<
+    'purchased' | 'sold' | 'returns' | null
+  >(null);
 
   // Keep refs in sync so closures (event listeners) always see current values
   useEffect(() => {
@@ -1155,9 +1155,7 @@ export default function CreateEditSubProduct({
             <Button
               variant="solid"
               onClick={() =>
-                router.push(
-                  `/sub-products/${createdSubProductId}/edit`
-                )
+                router.push(`/sub-products/${createdSubProductId}/edit`)
               }
             >
               Edit Created Product

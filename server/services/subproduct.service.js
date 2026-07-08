@@ -15,7 +15,7 @@ const {
   ConflictError 
 } = require('../utils/errors');
 const { generateSKU } = require('../utils/skuGenerator');
-const { calculateSubProductPricing, calculateSizePricing } = require('../utils/pricing');
+const { calculateSubProductPricing, calculateSizePricing, isDiscountActive } = require('../utils/pricing');
 
 // Tenant-sensitive fields that must NEVER be exposed via public endpoints
 const PRIVATE_SUBPRODUCT_FIELDS = '-costPrice -supplierPrice -vendorNotes -vendorContactName -vendorPhone -vendorEmail -vendorWebsite -vendorAddress -tenantNotes -marginPercentage -markupPercentage -reservedStock -reorderPoint -reorderQuantity -lowStockThreshold -embeddingOverride';
@@ -162,7 +162,7 @@ const getMySubProducts = async (tenantId, options) => {
 
   // Validate pagination
   const pageNum = Math.max(1, page);
-  const limitNum = Math.min(Math.max(1, limit), 100);
+  const limitNum = Math.min(Math.max(1, limit), 1000);
   const skip = (pageNum - 1) * limitNum;
 
   // Build query - only filter by tenant if tenantId is provided
@@ -1101,7 +1101,7 @@ const createSubProduct = async (data, tenantId, user) => {
       })
       .populate({
         path: 'sizes',
-        select: 'size displayName unitType sellingPrice costPrice stock availability markupPercentage roundUp saleDiscountPercentage salePrice compareAtPrice wholesalePrice sku barcode volumeMl weightGrams lowStockThreshold reorderPoint reorderQuantity isDefault isOnSale rank',
+        select: 'size displayName unitType sellingPrice costPrice platformMarkupOverridePct stock availability markupPercentage roundUp saleDiscountPercentage salePrice compareAtPrice wholesalePrice sku barcode volumeMl weightGrams lowStockThreshold reorderPoint reorderQuantity isDefault isOnSale rank',
       })
       .populate({
         path: 'vendor',
@@ -1190,7 +1190,7 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
     },
     {
       path: 'sizes',
-      select: 'size displayName unitType sellingPrice costPrice compareAtPrice stock lowStockThreshold availability sku barcode weightGrams volumeMl discountValue discountType discountStart discountEnd totalSold',
+      select: 'size displayName unitType sellingPrice costPrice platformMarkupOverridePct compareAtPrice stock lowStockThreshold availability sku barcode weightGrams volumeMl discountValue discountType discountStart discountEnd totalSold',
     },
     {
       path: 'vendor',
@@ -4797,7 +4797,7 @@ const adminSetSubProductStatus = async (subProductId, status, priceOverrides = {
 
   const subProduct = await SubProduct.findById(subProductId)
     .populate('tenant', 'revenueModel markupPercentage commissionPercentage')
-    .populate('product', 'platformMarkup');
+    .populate('product', 'platformMarkup platformDiscount');
   if (!subProduct) {
     throw new NotFoundError('Sub-product not found');
   }
@@ -4807,38 +4807,58 @@ const adminSetSubProductStatus = async (subProductId, status, priceOverrides = {
 
   // ── Apply price overrides on approval ──────────────────────────────────────
   if (status === 'active' && priceOverrides && (priceOverrides.baseWebsitePrice || priceOverrides.sizes?.length)) {
-    const revenueModel      = subProduct.tenant?.revenueModel ?? 'markup';
-    const markupPct         = subProduct.tenant?.markupPercentage ?? 25;
-    const commissionPct     = subProduct.tenant?.commissionPercentage ?? 12;
-    const platformMarkupPct = subProduct.product?.platformMarkup ?? 15;
+    const tenant  = subProduct.tenant;
+    const product = subProduct.product;
+    const revenueModel = tenant?.revenueModel ?? 'markup';
+
+    const productDiscount = product?.platformDiscount?.value > 0 && product?.platformDiscount?.type
+      ? {
+          value: product.platformDiscount.value,
+          type: product.platformDiscount.type,
+          start: product.platformDiscount.start,
+          end: product.platformDiscount.end,
+        }
+      : null;
+
+    // The review drawer pre-fills its inputs with the computed platform price
+    // and sends them back verbatim, so treat a value matching the current
+    // computed price (±₦1) as "no change" — otherwise every approval would
+    // store a spurious override.
+    const isRealOverride = (adminPrice, currentPlatformSelling) =>
+      adminPrice > 0 && Math.abs(adminPrice - (currentPlatformSelling || 0)) >= 1;
 
     /**
-     * Back-calculate the stored field from admin's desired platformSellingPrice.
-     * Markup:     costPrice    = (adminPrice / (1+platformMarkup/100)) / (1+markup/100)
-     * Commission: sellingPrice = (adminPrice / (1+platformMarkup/100)) / (1−commission/100)
+     * Convert the admin's desired FINAL platform price into an effective
+     * platform-markup % over the CURRENT platform cost price. Storing the %
+     * (not a back-calculated price) means tenant cost/price changes
+     * automatically recalculate the platform selling price while preserving
+     * the admin's last margin relationship. Inverts an active product
+     * discount first, since the admin edits the post-discount price.
      */
-    const backCalc = (adminPrice) => {
-      const platformCostPrice = adminPrice / (1 + platformMarkupPct / 100);
-      if (revenueModel === 'markup') {
-        return parseFloat((platformCostPrice / (1 + markupPct / 100)).toFixed(2));
-      } else {
-        const divisor = 1 - commissionPct / 100;
-        if (divisor <= 0) return parseFloat(adminPrice.toFixed(2));
-        return parseFloat((platformCostPrice / divisor).toFixed(2));
+    const toEffectivePct = (adminPrice, platformCostPrice) => {
+      if (!(platformCostPrice > 0)) return null;
+      let preDiscount = adminPrice;
+      if (isDiscountActive(productDiscount)) {
+        if (productDiscount.type === 'percentage') {
+          const factor = 1 - productDiscount.value / 100;
+          if (factor > 0) preDiscount = adminPrice / factor;
+        } else if (productDiscount.type === 'fixed') {
+          preDiscount = adminPrice + productDiscount.value;
+        }
       }
+      return parseFloat(((preDiscount / platformCostPrice - 1) * 100).toFixed(4));
     };
 
-    // Override base price
+    // Override base price → store effective platform markup %
     if (priceOverrides.baseWebsitePrice > 0) {
-      const storedValue = backCalc(priceOverrides.baseWebsitePrice);
-      if (revenueModel === 'markup') {
-        subProduct.costPrice = storedValue;
-      } else {
-        subProduct.baseSellingPrice = storedValue;
+      const currentBase = calculateSubProductPricing(subProduct, product, tenant);
+      if (isRealOverride(priceOverrides.baseWebsitePrice, currentBase.platformSellingPrice)) {
+        const pct = toEffectivePct(priceOverrides.baseWebsitePrice, currentBase.platformCostPrice);
+        if (pct != null) subProduct.platformMarkupOverridePct = pct;
       }
     }
 
-    // Override per-size prices
+    // Override per-size prices → store effective platform markup % per size
     if (priceOverrides.sizes?.length) {
       const sizes = await Size.find({ _id: { $in: priceOverrides.sizes.map(s => s.id) } });
       const sizeMap = new Map(sizes.map(s => [s._id.toString(), s]));
@@ -4847,12 +4867,17 @@ const adminSetSubProductStatus = async (subProductId, status, priceOverrides = {
         if (!websitePrice || websitePrice <= 0) continue;
         const sizeDoc = sizeMap.get(id);
         if (!sizeDoc) continue;
-        const storedValue = backCalc(websitePrice);
-        if (revenueModel === 'markup') {
-          sizeDoc.costPrice = storedValue;
-        } else {
-          sizeDoc.sellingPrice = storedValue;
-        }
+        const currentSize = calculateSizePricing(
+          sizeDoc,
+          product,
+          tenant,
+          subProduct.costPrice,
+          subProduct.baseSellingPrice
+        );
+        if (!isRealOverride(websitePrice, currentSize.platformSellingPrice)) continue;
+        const pct = toEffectivePct(websitePrice, currentSize.platformCostPrice);
+        if (pct == null) continue;
+        sizeDoc.platformMarkupOverridePct = pct;
         await sizeDoc.save();
       }
     }

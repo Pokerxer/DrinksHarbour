@@ -9,6 +9,9 @@ const Brand = require('../models/Brand');
 
 // AI provider: Claude (Anthropic). Requires ANTHROPIC_API_KEY in server/.env.
 const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8';
+// Fast/cheap model for bulk structured generation (same as import enrichment,
+// chatbot and scan-match services).
+const HAIKU_MODEL = process.env.ANTHROPIC_FAST_MODEL || 'claude-haiku-4-5';
 const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   : null;
@@ -17,7 +20,13 @@ const anthropic = process.env.ANTHROPIC_API_KEY
 // All handlers call genAI.getGenerativeModel() + model.generateContent() + result.response.text()
 // unchanged — only this shim selects the underlying AI provider.
 const genAI = {
-  getGenerativeModel: ({ generationConfig = {} } = {}) => {
+  getGenerativeModel: ({ model: modelOverride, generationConfig = {} } = {}) => {
+    // Honor an explicit Claude model per call (e.g. Haiku for bulk generation);
+    // anything else falls back to the default CLAUDE_MODEL.
+    const activeModel =
+      typeof modelOverride === 'string' && modelOverride.startsWith('claude')
+        ? modelOverride
+        : CLAUDE_MODEL;
     const maxTokens = generationConfig.maxOutputTokens ?? 2048;
     // Honor responseMimeType by enabling each provider's native JSON mode, which
     // guarantees syntactically valid JSON and avoids prose/markdown wrappers.
@@ -42,7 +51,7 @@ const genAI = {
         ? 'You are an expert beverage industry data assistant. Respond with ONLY valid JSON — no markdown code fences, no explanation, no preamble.'
         : 'You are an expert beverage industry data assistant. Respond with only the requested content, no preamble.';
       const message = await anthropic.messages.create({
-        model: CLAUDE_MODEL,
+        model: activeModel,
         max_tokens: maxTokens,
         system,
         messages: [{ role: 'user', content }],
@@ -524,7 +533,17 @@ const sanitizeProductData = (data) => {
 
     metaTitle: data.metaTitle || '',
     metaDescription: data.metaDescription || '',
-    metaKeywords: Array.isArray(data.metaKeywords) ? data.metaKeywords : [],
+    // Prompts ask for "keywords" — keep both spellings so they survive sanitising
+    metaKeywords: Array.isArray(data.metaKeywords)
+      ? data.metaKeywords
+      : Array.isArray(data.keywords)
+        ? data.keywords
+        : [],
+    keywords: Array.isArray(data.keywords)
+      ? data.keywords
+      : Array.isArray(data.metaKeywords)
+        ? data.metaKeywords
+        : [],
     status: 'draft',
   };
 
@@ -2451,12 +2470,7 @@ const generateProductFromSubProducts = asyncHandler(async (req, res) => {
     .select('sku baseSellingPrice currency shortDescriptionOverride descriptionOverride customKeywords sizes status tenant')
     .lean();
 
-  if (!subProducts || subProducts.length === 0) {
-    res.status(400);
-    throw new Error('No sub-products found for this product. Add at least one sub-product before generating details.');
-  }
-
-  // ── Build sub-product context ─────────────────────────────────────────────
+  // ── Build sub-product context (optional — the product's own data is enough) ─
   const subProductContext = subProducts.map((sp, i) => {
     const lines = [`Sub-product ${i + 1}:`];
     if (sp.tenant?.name) lines.push(`  Tenant: ${sp.tenant.name}`);
@@ -2475,29 +2489,57 @@ const generateProductFromSubProducts = asyncHandler(async (req, res) => {
   // ── Build prompt ──────────────────────────────────────────────────────────
   const catList = categories.map(c => c.name).join(', ');
   const subCatList = subCategories.map(s => s.name).join(', ');
-  const prompt = `You are a beverage expert. Generate product details for "${product.name}" as compact JSON. Return ONLY valid JSON, no markdown.
+  const existingBits = [
+    product.subType ? `subType=${product.subType}` : '',
+    product.region ? `region=${product.region}` : '',
+    product.producer ? `producer=${product.producer}` : '',
+    product.vintage ? `vintage=${product.vintage}` : '',
+    product.ageStatement ? `age=${product.ageStatement}` : '',
+    product.shortDescription ? `shortDesc="${String(product.shortDescription).substring(0, 200)}"` : '',
+  ].filter(Boolean).join(', ');
 
-PRODUCT INFO: type=${product.type || '?'}, brand=${product.brand?.name || '?'}, category=${product.category?.name || '?'}, origin=${product.originCountry || '?'}, abv=${product.abv || '?'}%, volume=${product.volumeMl || '?'}ml
-CONTEXT: ${subProductContext.substring(0, 500)}
+  const prompt = `You are a beverage expert. Generate COMPLETE product details for "${product.name}" as compact JSON. Fill EVERY field you can determine or reasonably infer from the product name and context; use null/""/[] ONLY when a value truly cannot be known. Return ONLY valid JSON, no markdown.
+
+PRODUCT INFO: type=${product.type || '?'}, brand=${product.brand?.name || '?'}, category=${product.category?.name || '?'}, origin=${product.originCountry || '?'}, abv=${product.abv || '?'}%, volume=${product.volumeMl || '?'}ml${existingBits ? `, ${existingBits}` : ''}
+CONTEXT: ${subProductContext ? subProductContext.substring(0, 500) : 'No tenant listings yet — rely on the product name and your beverage knowledge.'}
 
 CATEGORIES: ${catList}
 SUBCATEGORIES: ${subCatList}
 TYPES: ${PRODUCT_ENUMS.type.slice(0, 25).join(', ')}
 SIZES: ${PRODUCT_ENUMS.standardSizes.slice(0, 12).join(', ')}
-FLAVORS: ${PRODUCT_ENUMS.flavorProfile.slice(0, 20).join(', ')}
-METHODS: ${PRODUCT_ENUMS.productionMethod.slice(0, 15).join(', ')}
+FLAVORS: ${PRODUCT_ENUMS.flavorProfile.slice(0, 20).join(', ')} (pick only from this list)
+METHODS: ${PRODUCT_ENUMS.productionMethod.slice(0, 15).join(', ')} (pick only from this list)
+STYLES: ${GENERATED_STYLES.join(', ')} (pick the single closest "style" value, or "" if none clearly fit)
+
+FIELD GUIDANCE:
+- shortDescription: one punchy retail sentence, max 160 chars. description: 2-3 paragraphs separated by \\n\\n.
+- tastingNotes: 3-5 descriptors per array where the drink type warrants it; appearance/color as short phrases.
+- servingSuggestions: temperature like "Chilled, 6-8°C", real glassware, sensible garnish/mixers.
+- metaTitle max 60 chars, metaDescription max 160 chars, keywords: 5-8 lowercase search phrases.
+- isDietary: most spirits/wines are vegan+glutenFree unless known otherwise; be sensible, not fabricated.
 
 Return this JSON (fill all fields accurately):
-{"name":"${product.name}","slug":"","type":"","subType":"","categoryName":"","subCategoryName":"","isAlcoholic":true,"abv":0,"proof":0,"volumeMl":750,"standardSizes":[],"servingSize":"","servingsPerContainer":0,"originCountry":"","region":"","appellation":null,"producer":"","brand":"","vintage":null,"age":null,"ageStatement":null,"distilleryName":null,"breweryName":null,"wineryName":null,"productionMethod":null,"caskType":null,"finish":null,"shortDescription":"","description":"","tastingNotes":{"nose":[],"aroma":[],"palate":[],"taste":[],"finish":[],"mouthfeel":[],"appearance":"","color":""},"flavorProfile":[],"foodPairings":[],"servingSuggestions":{"temperature":"","glassware":"","garnish":[],"mixers":[]},"isDietary":{"vegan":false,"vegetarian":false,"glutenFree":false,"dairyFree":false,"organic":false,"kosher":false,"halal":false,"sugarFree":false,"lowCalorie":false,"lowCarb":false},"allergens":[],"ingredients":[],"nutritionalInfo":{"calories":null,"carbohydrates":null,"sugar":null,"protein":null,"fat":null,"sodium":null,"caffeine":null},"metaTitle":"","metaDescription":"","keywords":[]}`;
+{"name":"${product.name}","slug":"","type":"","subType":"","style":"","categoryName":"","subCategoryName":"","isAlcoholic":true,"abv":0,"proof":0,"volumeMl":750,"standardSizes":[],"servingSize":"","servingsPerContainer":0,"originCountry":"","region":"","appellation":null,"producer":"","brand":"","vintage":null,"age":null,"ageStatement":null,"distilleryName":null,"breweryName":null,"wineryName":null,"productionMethod":null,"caskType":null,"finish":null,"shortDescription":"","description":"","tastingNotes":{"nose":[],"aroma":[],"palate":[],"taste":[],"finish":[],"mouthfeel":[],"appearance":"","color":""},"flavorProfile":[],"foodPairings":[],"servingSuggestions":{"temperature":"","glassware":"","garnish":[],"mixers":[]},"isDietary":{"vegan":false,"vegetarian":false,"glutenFree":false,"dairyFree":false,"organic":false,"kosher":false,"halal":false,"sugarFree":false,"lowCalorie":false,"lowCarb":false},"allergens":[],"ingredients":[],"nutritionalInfo":{"calories":null,"carbohydrates":null,"sugar":null,"protein":null,"fat":null,"sodium":null,"caffeine":null},"metaTitle":"","metaDescription":"","keywords":[]}`;
 
-  // ── Call Ollama ───────────────────────────────────────────────────────────
+  // ── Call Claude Haiku (primary), Ollama (fallback) ────────────────────────
   let productData;
   try {
-    productData = await callOllama(prompt);
-  } catch (error) {
-    console.error('Ollama call failed:', error.message);
-    res.status(500);
-    throw new Error(`Failed to generate product details: ${error.message}`);
+    const model = genAI.getGenerativeModel({
+      model: HAIKU_MODEL,
+      generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 4096 },
+    });
+    const result = await model.generateContent(prompt);
+    productData = parseJSONResponse(result?.response?.text() || '', null);
+    if (!productData) throw new Error('Claude returned unparseable JSON');
+  } catch (claudeErr) {
+    console.warn('Claude Haiku unavailable, falling back to Ollama:', claudeErr.message);
+    try {
+      productData = await callOllama(prompt);
+    } catch (error) {
+      console.error('Ollama call failed:', error.message);
+      res.status(500);
+      throw new Error(`Failed to generate product details: ${error.message}`);
+    }
   }
 
   if (!productData || typeof productData !== 'object') {
@@ -2563,7 +2605,7 @@ Return this JSON (fill all fields accurately):
     metadata: {
       productName: product.name,
       subProductCount: subProducts.length,
-      model: process.env.OLLAMA_MODEL || 'deepseek-v3.1:671b-cloud',
+      model: HAIKU_MODEL,
       matchedCategory: matchedCategory?.name || null,
       generatedAt: new Date().toISOString(),
     },
