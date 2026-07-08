@@ -430,6 +430,7 @@ async function recordReceiptMovement({
   if (size) {
     await Size.findByIdAndUpdate(size, {
       $inc: { stock: quantity, availableStock: quantity },
+      $set: { availability: 'in_stock', status: 'active' },
     }).catch(() => {});
   }
   await SubProduct.findByIdAndUpdate(subProduct, {
