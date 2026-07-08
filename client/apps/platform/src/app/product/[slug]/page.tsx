@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import ProductClient from "./ProductClient";
 
 const API_URL  = process.env.NEXT_PUBLIC_API_URL  || "";
@@ -206,7 +207,9 @@ export default async function ProductPage({
   const { slug } = await params;
   const p = await fetchProduct(slug);
 
-  const schemas = p ? buildSchemas(p, slug) : [];
+  if (!p) notFound();
+
+  const schemas = buildSchemas(p, slug);
 
   return (
     <>
