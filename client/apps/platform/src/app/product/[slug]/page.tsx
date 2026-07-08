@@ -21,21 +21,10 @@ async function fetchProduct(slug: string) {
   }
 }
 
-// ─── Static params (ISR) ──────────────────────────────────────────────────────
-
-export async function generateStaticParams() {
-  try {
-    const res = await fetch(`${API_URL}/api/products/slugs`, {
-      next: { revalidate: 86400 },
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    const slugs: string[] = data?.data?.slugs ?? [];
-    return slugs.map((slug) => ({ slug }));
-  } catch {
-    return [];
-  }
-}
+// Force dynamic rendering — root layout uses headers() for tenant resolution,
+// which makes static pre-generation incompatible. Data is still cached via
+// Next.js fetch cache (revalidate: 3600 per fetch call).
+export const dynamic = 'force-dynamic';
 
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 
