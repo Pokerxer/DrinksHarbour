@@ -1,27 +1,27 @@
 // add-tequila-subcategories.js - Add more subcategories under the Tequila category
-// Follows the same document shape as seed-all-subcategories.js (Category docs,
-// level 1, slug prefixed with the parent slug, parent.subCategories updated).
+// Subcategories live in the `subcategories` collection (SubCategory model) with
+// parent = tequila Category id — matching the existing docs (Blanco Tequila,
+// Reposado Tequila, ...). Also cleans up an earlier bad run that inserted these
+// as level-1 Category docs (slugs tequila-*).
 require("dotenv").config({ path: require("path").join(__dirname, "../.env") });
 const mongoose = require("mongoose");
 const Category = require("../models/Category");
+const SubCategory = require("../models/SubCategory");
 
+// name / slug / type follow the existing style: "Blanco Tequila" / blanco-tequila / blanco_tequila
 const NEW_SUBCATEGORIES = [
-  "Joven",
   "Gold Tequila",
-  "Cristalino",
+  "Cristalino Tequila",
   "Flavored Tequila",
-  "100% Agave",
+  "100% Agave Tequila",
   "Sipping Tequila",
   "Tequila Liqueur",
   "Small Batch Tequila",
+  "Mezcal",
 ];
 
-function generateSlug(name) {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-}
+const generateSlug = (name) =>
+  name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 async function run() {
   try {
@@ -36,44 +36,42 @@ async function run() {
       process.exit(1);
     }
 
-    const existingCount = (tequila.subCategories || []).length;
-    console.log(`📁 Tequila (${tequila._id}) — ${existingCount} existing subcategories\n`);
+    // ── Cleanup: remove the wrongly created level-1 Category docs ────────────
+    const badCats = await Category.find({ parent: tequila._id, slug: /^tequila-/ });
+    if (badCats.length > 0) {
+      const badIds = badCats.map((c) => c._id);
+      await Category.deleteMany({ _id: { $in: badIds } });
+      await Category.findByIdAndUpdate(tequila._id, {
+        $pull: { subCategories: { $in: badIds } },
+      });
+      console.log(`🧹 Removed ${badCats.length} wrongly-created Category docs: ${badCats.map((c) => c.name).join(", ")}\n`);
+    }
+
+    const existing = await SubCategory.find({ parent: tequila._id }).select("name slug");
+    console.log(`📁 Tequila (${tequila._id}) — ${existing.length} existing subcategories: ${existing.map((s) => s.name).join(", ")}\n`);
 
     let created = 0;
     let skipped = 0;
     const newIds = [];
 
-    for (let i = 0; i < NEW_SUBCATEGORIES.length; i++) {
-      const name = NEW_SUBCATEGORIES[i];
-      const slug = `tequila-${generateSlug(name)}`;
-
-      const existing = await Category.findOne({ slug });
-      if (existing) {
+    for (const name of NEW_SUBCATEGORIES) {
+      const slug = generateSlug(name);
+      const found = await SubCategory.findOne({ slug });
+      if (found) {
         console.log(`  ⏭️  ${name} (exists)`);
-        newIds.push(existing._id);
+        newIds.push(found._id);
         skipped++;
         continue;
       }
 
-      const subcategory = new Category({
-        _id: new mongoose.Types.ObjectId(),
+      const sub = await SubCategory.create({
         name,
         slug,
-        type: tequila.type || "tequila",
-        icon: tequila.icon || "🥃",
-        color: tequila.color || "#F59E0B",
         parent: tequila._id,
-        level: 1,
+        type: slug.replace(/-/g, "_"),
         status: "published",
-        alcoholCategory: tequila.alcoholCategory || "alcoholic",
-        shortDescription: `${name} - Premium ${name.toLowerCase()} selection`,
-        tagline: `Explore ${name}`,
-        displayOrder: existingCount + i,
-        showInMenu: true,
       });
-
-      await subcategory.save();
-      newIds.push(subcategory._id);
+      newIds.push(sub._id);
       console.log(`  ✅ ${name} (${slug})`);
       created++;
     }
@@ -84,9 +82,9 @@ async function run() {
       });
     }
 
-    const updated = await Category.findById(tequila._id).select("subCategories");
+    const total = await SubCategory.countDocuments({ parent: tequila._id });
     console.log(`\nDone! Created ${created}, skipped ${skipped} existing.`);
-    console.log(`Tequila now has ${updated.subCategories.length} subcategories.`);
+    console.log(`Tequila now has ${total} subcategories.`);
 
     await mongoose.disconnect();
     process.exit(0);
