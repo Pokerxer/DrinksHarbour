@@ -138,7 +138,8 @@ function buildDescription(p: any): string {
   if (p.style)          parts.push(`– ${p.style}`);
   if (p.priceRange?.min)
     parts.push(`from ₦${Math.round(p.priceRange.min).toLocaleString()}`);
-  parts.push("with fast delivery across Nigeria on DrinksHarbour.");
+  const isSpirit = /whisky|whiskey|rum|gin|vodka|tequila|brandy|cognac|bourbon|mezcal|liqueur|spirit/i.test(p.type ?? "");
+  parts.push(isSpirit ? "Order online — delivered to Abuja, Lagos & across Nigeria." : "Fast delivery across Nigeria on DrinksHarbour.");
 
   return parts.join(" ").slice(0, 160);
 }
@@ -173,6 +174,17 @@ function buildKeywords(p: any): string[] {
     "buy alcohol online Nigeria",
     "online liquor store Nigeria",
     "drinks delivery Nigeria",
+    "alcohol delivery Nigeria",
+    typeLabel         ? `buy ${typeLabel} Lagos`       : null,
+    typeLabel         ? `buy ${typeLabel} Abuja`       : null,
+    p.abv             ? "premium spirits Nigeria"      : null,
+    p.abv             ? "buy alcohol online Lagos"     : null,
+    p.abv             ? "buy alcohol online Abuja"     : null,
+    country.toLowerCase().includes("scotland") ? "scotch whisky Nigeria" : null,
+    country.toLowerCase().includes("scotland") ? "import scotch Nigeria" : null,
+    /wine/i.test(p.type ?? "")                 ? "buy wine Nigeria"      : null,
+    /wine/i.test(p.type ?? "")                 ? "wine delivery Lagos"   : null,
+    /beer/i.test(p.type ?? "")                 ? "buy beer Nigeria"      : null,
     SITE_NAME,
   ].filter(Boolean) as string[];
 }
@@ -289,6 +301,7 @@ function buildProductSchema(p: any, slug: string): object {
         availability,
         url:            productUrl,
         seller:         { "@type": "Organization", name: SITE_NAME, url: BASE_URL },
+        areaServed:     { "@type": "Country", name: "Nigeria" },
       };
     } else {
       schema.offers = {
@@ -299,6 +312,7 @@ function buildProductSchema(p: any, slug: string): object {
         url:             productUrl,
         itemCondition:   "https://schema.org/NewCondition",
         seller:          { "@type": "Organization", name: SITE_NAME, url: BASE_URL },
+        areaServed:      { "@type": "Country", name: "Nigeria" },
         shippingDetails: {
           "@type":             "OfferShippingDetails",
           shippingDestination: {
