@@ -930,19 +930,27 @@ const generateSeo = asyncHandler(async (req, res) => {
       }
     });
 
-    const prompt = `Generate SEO content for "${name}"${brand ? ` by ${brand}` : ''}${type ? `, a ${type}` : ''}.
+    const prompt = `You are an SEO expert for DrinksHarbour, a premium beverages e-commerce platform based in Abuja, Nigeria that delivers nationwide across Nigeria (Lagos, Abuja, Port Harcourt, etc.).
+
+Generate SEO content for "${name}"${brand ? ` by ${brand}` : ''}${type ? `, a ${type}` : ''}.
 ${shortDescription ? `Product description: ${shortDescription}` : ''}
 
 Requirements:
-- metaTitle: max 60 characters
-- metaDescription: max 160 characters
-- metaKeywords: 5-8 relevant keywords (lowercase, no duplicates)
+- metaTitle: max 60 characters — include product name and type; do NOT add "Nigeria" (wastes chars)
+- metaDescription: max 160 characters — must end with a local hook, e.g. "Available for delivery across Nigeria on DrinksHarbour." or "Order online — delivered to Lagos, Abuja & across Nigeria."
+- metaKeywords: 10-12 relevant keywords (lowercase, no duplicates) — MUST include at least 3 Nigeria/city-specific purchase-intent terms such as:
+  • "{type} Nigeria", "buy {type} Nigeria", "buy {type} Lagos", "buy {type} Abuja"
+  • "{brand} Nigeria", "{brand} price Nigeria"
+  • "online liquor store Nigeria", "alcohol delivery Nigeria"
+  • For Scotch/Scottish origin: "scotch whisky Nigeria", "import scotch Nigeria"
+  • For wine: "buy wine Nigeria", "wine delivery Lagos"
+  • For beer: "buy beer Nigeria", "beer delivery Nigeria"
 ${COPY_GUARDRAILS}
 Return as JSON:
 {
   "metaTitle": "SEO title (max 60 chars)",
-  "metaDescription": "SEO description (max 160 chars)",
-  "metaKeywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"]
+  "metaDescription": "SEO description (max 160 chars, ends with Nigeria delivery hook)",
+  "metaKeywords": ["keyword1", "keyword2", ..., "buy {type} nigeria", "buy {type} lagos"]
 }`;
 
     const result = await model.generateContent(prompt);
@@ -954,7 +962,7 @@ Return as JSON:
     const data = parseJSONResponse(text);
 
     // Accept either "keywords" or "metaKeywords" from the model, normalize to metaKeywords.
-    data.metaKeywords = normalizeKeywords(data.metaKeywords || data.keywords, 8);
+    data.metaKeywords = normalizeKeywords(data.metaKeywords || data.keywords, 12);
     delete data.keywords;
     if (data.metaTitle) data.metaTitle = normalizeCopy(data.metaTitle).slice(0, 60);
     if (data.metaDescription) data.metaDescription = normalizeCopy(data.metaDescription).slice(0, 160);
@@ -971,8 +979,8 @@ Return as JSON:
         success: true,
         data: {
           metaTitle: `${name} - Premium Quality ${type || 'Beverage'}`,
-          metaDescription: `Discover ${name}${brand ? ` by ${brand}` : ''}, a premium ${type || 'beverage'} with exceptional quality. Perfect for special occasions.`,
-          metaKeywords: [name.toLowerCase(), type?.toLowerCase() || 'beverage', brand?.toLowerCase() || 'premium', 'quality', 'spirits']
+          metaDescription: `Discover ${name}${brand ? ` by ${brand}` : ''}, a premium ${type || 'beverage'} with exceptional quality. Order online — delivered to Lagos, Abuja & across Nigeria.`,
+          metaKeywords: [name.toLowerCase(), type?.toLowerCase() || 'beverage', brand?.toLowerCase() || 'premium', `buy ${(type || 'beverage').toLowerCase()} nigeria`, `${(type || 'beverage').toLowerCase()} nigeria`, 'online liquor store nigeria', 'alcohol delivery nigeria', 'drinks delivery nigeria']
         },
         note: 'Using demo data - API quota exceeded'
       });
@@ -1807,7 +1815,7 @@ const generateMetaTitle = asyncHandler(async (req, res) => {
       region ? `Region: ${region}` : null,
     ].filter(Boolean).join(', ');
 
-    const prompt = `You are an SEO expert for a premium beverages e-commerce platform (DrinksHarbour).
+    const prompt = `You are an SEO expert for DrinksHarbour, a premium beverages e-commerce platform based in Nigeria (Abuja, Lagos, nationwide delivery).
 
 Create a meta title for this product:
 ${context}
@@ -1818,7 +1826,8 @@ STRICT REQUIREMENTS:
 ${brand ? `- Must include the brand name "${brand}"` : '- Include a quality descriptor (Premium, Authentic, etc.)'}
 - Should include the product type or key attribute
 - Use a separator like " | " or " - " between product and brand/category
-- Make it compelling for click-through rate
+- Make it compelling for click-through rate in the Nigerian market
+- Do NOT add "Nigeria" to the title (wastes characters; use description/keywords for geo)
 - Do not fabricate awards, ages, or origin claims not given in the context
 
 GOOD EXAMPLES (count chars):
