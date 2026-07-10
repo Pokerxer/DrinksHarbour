@@ -98,25 +98,12 @@ export const metadata: Metadata = {
 
 const localBusinessJsonLd = {
   "@context": "https://schema.org",
-  "@type": "LiquorStore",
+  "@type": "OnlineStore",
   name: "DrinksHarbour",
   url: BASE_URL,
   logo: `${BASE_URL}/images/logo.png`,
   image: `${BASE_URL}/images/logo.png`,
   description: "Nigeria's premier online premium beverages store — whisky, wine, spirits, beer and non-alcoholic drinks delivered to Lagos, Abuja, Port Harcourt and nationwide.",
-  address: {
-    "@type": "PostalAddress",
-    streetAddress: "39 Gana Street, Wyn City",
-    addressLocality: "Maitama",
-    addressRegion: "Abuja",
-    addressCountry: "NG",
-  },
-  geo: {
-    "@type": "GeoCoordinates",
-    latitude: 9.0782726,
-    longitude: 7.5005914,
-  },
-  telephone: "+234-1-234-5678",
   email: "hello@drinksharbour.com",
   currenciesAccepted: "NGN",
   paymentAccepted: "Cash, Credit Card, Bank Transfer",
@@ -132,7 +119,6 @@ const localBusinessJsonLd = {
     "https://www.instagram.com/drinksharbour",
     "https://www.facebook.com/drinksharbour",
   ],
-  hasMap: `https://www.google.com/maps?q=9.0782726,7.5005914`,
 };
 
 const orgJsonLd = {
