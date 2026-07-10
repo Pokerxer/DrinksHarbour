@@ -128,6 +128,61 @@ KNOWLEDGE RULES:
 7. ✅ You may reference general beverage knowledge (e.g. "Chardonnay grapes originated in Burgundy, France") even if not explicitly in the catalog.
 8. For event planning: ask for guest count + budget first, then recommend from catalog only.`;
 
+// Instructs the model to offer adding discussed products to the cart and to emit
+// a machine-readable last line (same pattern as IDENTIFIED_JSON for vision).
+const CART_OFFER_INSTRUCTIONS = `
+ADD-TO-CART OFFER:
+- When your reply recommends or discusses SPECIFIC purchasable products from the CATALOG DATA (a recommendation, an event shopping list, a gift idea, a deal, or a confirmed in-stock item), end your reply by asking the customer if they'd like you to add them to their cart (e.g. "Want me to add these to your cart? 🛒").
+- Then output on the very last line (nothing after it) exactly:
+CART_JSON: [{"name":"<product name EXACTLY as written in CATALOG DATA>","size":"<size label from the catalog e.g. 75cl, or null>","qty":<integer quantity discussed, default 1>}]
+- Include one object per product, with the quantities you recommended (e.g. event plans list each product with its bottle count).
+- ONLY include products that appear in the CATALOG DATA. Maximum 10 items.
+- If your reply doesn't recommend specific purchasable products (greetings, cocktail recipes without catalog spirits, support issues, questions back to the customer), do NOT ask about the cart and do NOT output a CART_JSON line.
+- Never mention CART_JSON or JSON to the customer.
+- CRITICAL: You CANNOT add items to the cart yourself — the app adds them only after the customer taps the confirm button. NEVER say or imply that you have already added anything to the cart.
+- If the customer agrees to your cart offer (says yes/okay/go ahead), briefly restate the item(s) and quantities, tell them to tap the "Yes, add to cart" button below to confirm, and output the CART_JSON line again with the final agreed items.`;
+
+// Parse + strip the CART_JSON line and resolve item names against the products
+// found for this query. Returns { text, proposal } — proposal only contains
+// items that matched a real product (with slug) so the client can add them.
+const extractCartProposal = (responseText, validProducts = []) => {
+  if (!responseText) return { text: responseText, proposal: [] };
+  // Tolerate code fences and trailing text after the JSON block
+  const match = responseText.match(/CART_JSON:\s*(\[[\s\S]*?\])/);
+  const text = match
+    ? (responseText.slice(0, match.index) + responseText.slice(match.index + match[0].length))
+        .replace(/```(json)?\s*```/g, '')
+        .replace(/```(json)?\s*$/g, '')
+        .trim()
+    : responseText.trim();
+  if (!match) return { text, proposal: [] };
+
+  let items = [];
+  try { items = JSON.parse(match[1]); } catch { return { text, proposal: [] }; }
+  if (!Array.isArray(items)) return { text, proposal: [] };
+
+  const proposal = [];
+  for (const item of items.slice(0, 10)) {
+    const name = (item?.name || '').trim();
+    if (!name) continue;
+    const lower = name.toLowerCase();
+    const product = validProducts.find(p => (p.name || '').toLowerCase() === lower)
+      || validProducts.find(p => (p.name || '').toLowerCase().includes(lower) || lower.includes((p.name || '').toLowerCase()));
+    if (!product || !product.slug) continue;
+    const qty = Math.max(1, Math.min(99, parseInt(item.qty, 10) || 1));
+    proposal.push({
+      id: product._id?.toString?.() || product._id || product.id,
+      slug: product.slug,
+      name: product.name,
+      size: typeof item.size === 'string' && item.size.trim() ? item.size.trim() : null,
+      qty,
+      price: product.minPrice || 0,
+      image: product.image || (product.images?.[0]?.url || product.images?.[0]) || null,
+    });
+  }
+  return { text, proposal };
+};
+
 // Analyze image using Claude Haiku vision
 const analyzeImage = async (imageUrl, userContext = '') => {
   if (!imageUrl) return null;
@@ -1072,8 +1127,11 @@ const handleChatbotQuery = async (options) => {
       || (intent.type === 'product_info' ? query : null)
       || (intent.type === 'general' ? query : null);
 
-    // Load the full catalog (cached, mirrors /shop visibility rules)
-    const fullCatalog = await buildFullCatalogContext(tenantId);
+    // Load the full catalog (cached, mirrors /shop visibility rules) — keep the
+    // structured entries too so CART_JSON names resolve on any turn
+    const catalogData = await loadCatalog(tenantId);
+    const fullCatalog = catalogData?.text || null;
+    const catalogEntries = catalogData?.entries || [];
 
     let products = await queryProducts(intent.filters, searchTerm, 10, intent.brand, tenantId);
 
@@ -1161,7 +1219,9 @@ ${intent.type === 'product_info' ? `- Give a RICH, EXPERT-LEVEL breakdown. Use y
   **Food Pairings**: 3-4 specific dishes that complement this drink
   **Serving Tips**: Temperature, glassware, whether to decant, ice or neat
   **Fun Fact**: One surprising or memorable detail about this product
-  End with the catalog price and availability.` : ''}`.trim();
+  End with the catalog price and availability.` : ''}
+
+${catalogContext ? CART_OFFER_INSTRUCTIONS : ''}`.trim();
 
     let response = await callClaude(query, systemPrompt, conversationHistory);
 
@@ -1179,8 +1239,16 @@ ${intent.type === 'product_info' ? `- Give a RICH, EXPERT-LEVEL breakdown. Use y
       response = "I'm having trouble answering right now — please try again in a moment, or browse /shop.";
     }
 
+    // Pull out the structured add-to-cart offer (and strip it from the display text).
+    // Match against this query's products first, then the whole catalog — on a
+    // confirmation turn ("yes please") the product search finds nothing, but the
+    // re-emitted CART_JSON names still resolve via catalog entries.
+    const { text: cleanResponse, proposal: cartProposal } = extractCartProposal(response, [...validProducts, ...catalogEntries]);
+    response = cleanResponse;
+
     return {
       response,
+      cartProposal,
       products: shouldShowProducts(intent, validProducts.length, validProducts, query) ? validProducts.slice(0, 4).map(p => ({
         id: p._id, 
         name: p.name, 
@@ -1694,5 +1762,6 @@ module.exports = {
   loadCatalog,
   findSubstitutes,
   getGreetingResponse,
+  extractCartProposal,
   anthropic
 };

@@ -150,3 +150,40 @@ test('file upload: falls back to the literal computed summary when Claude fails'
 
   assert.match(result.response, /Not in catalog: Heineken/);
 });
+
+// ── extractCartProposal ───────────────────────────────────────────────────────
+test('extractCartProposal parses and strips CART_JSON, matching products by name', () => {
+  const { extractCartProposal } = chatbotService;
+  const products = [
+    { _id: 'p1', name: 'Moët & Chandon Imperial', slug: 'moet-chandon-imperial', minPrice: 85000, image: 'moet.jpg' },
+    { _id: 'p2', name: 'Jameson Irish Whiskey', slug: 'jameson-irish-whiskey', minPrice: 22000, image: null },
+  ];
+  const raw = 'Here is your event plan! Want me to add these to your cart? 🛒\nCART_JSON: [{"name":"Moët & Chandon Imperial","size":"75cl","qty":3},{"name":"jameson irish whiskey","size":null,"qty":2}]';
+  const { text, proposal } = extractCartProposal(raw, products);
+
+  assert.ok(!text.includes('CART_JSON'), 'CART_JSON line must be stripped from display text');
+  assert.ok(text.includes('Want me to add these'), 'conversational text preserved');
+  assert.strictEqual(proposal.length, 2);
+  assert.deepStrictEqual(proposal[0], {
+    id: 'p1', slug: 'moet-chandon-imperial', name: 'Moët & Chandon Imperial',
+    size: '75cl', qty: 3, price: 85000, image: 'moet.jpg',
+  });
+  assert.strictEqual(proposal[1].qty, 2, 'case-insensitive name match keeps qty');
+  assert.strictEqual(proposal[1].size, null);
+});
+
+test('extractCartProposal drops unknown products, clamps qty, tolerates bad JSON', () => {
+  const { extractCartProposal } = chatbotService;
+  const products = [{ _id: 'p1', name: 'Star Lager', slug: 'star-lager', minPrice: 800 }];
+
+  const mixed = extractCartProposal('Text.\nCART_JSON: [{"name":"Star Lager","qty":500},{"name":"Not In Catalog","qty":1}]', products);
+  assert.strictEqual(mixed.proposal.length, 1, 'unmatched names are dropped');
+  assert.strictEqual(mixed.proposal[0].qty, 99, 'qty clamped to 99');
+
+  const bad = extractCartProposal('Text.\nCART_JSON: [{"name": broken', products);
+  assert.strictEqual(bad.proposal.length, 0);
+
+  const none = extractCartProposal('Just a normal reply with no offer.', products);
+  assert.strictEqual(none.proposal.length, 0);
+  assert.strictEqual(none.text, 'Just a normal reply with no offer.');
+});

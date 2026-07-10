@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useCart } from '@/context/CartContext';
 
 // ── Markdown-lite renderer ────────────────────────────────────────────────────
 // Supports: **bold**, [links](/path), bullet lists, **Section** headers.
@@ -70,15 +71,15 @@ function formatTime(ts: number) {
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-interface ProductCard {
+// Structured cart offer parsed by the server from the AI's CART_JSON line
+interface CartProposalItem {
   id: string;
-  name: string;
   slug: string;
-  type: string;
-  minPrice: number;
-  hasDiscount: boolean;
+  name: string;
+  size: string | null;
+  qty: number;
+  price: number;
   image: string | null;
-  isSubstitute?: boolean;
 }
 
 interface Message {
@@ -87,7 +88,6 @@ interface Message {
   timestamp: number;
   images?: string[];
   docName?: string;
-  products?: ProductCard[];
 }
 
 type QuickReply = { label: string; query: string } | string;
@@ -136,6 +136,12 @@ const ChevronDownIcon = () => (
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
   </svg>
 );
+const CartIcon = () => (
+  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
+      d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+  </svg>
+);
 const BotAvatar = () => (
   <div className="w-6 h-6 rounded-full bg-gradient-to-br from-red-700 to-red-900 flex items-center justify-center flex-shrink-0 shadow-sm ring-1 ring-white/20">
     <span className="text-white font-black text-[9px] tracking-tight leading-none">DH</span>
@@ -150,37 +156,33 @@ const CAPABILITIES = [
   { icon: '🍷', title: 'Get a recommendation', desc: 'Tell me your taste & budget', query: 'Recommend a drink for me', action: null },
 ];
 
-// ── Product card component ────────────────────────────────────────────────────
-function ProductCardItem({ p }: { p: ProductCard }) {
-  return (
-    <Link
-      href={`/product/${p.slug}`}
-      className="flex-shrink-0 w-28 rounded-xl border border-slate-100 bg-white overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all group snap-start"
-    >
-      <div className="h-20 bg-slate-50 overflow-hidden relative">
-        {p.image ? (
-          <img src={p.image} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-2xl">🍷</div>
-        )}
-        {p.isSubstitute && (
-          <span className="absolute top-1 left-1 text-[8px] bg-amber-100 text-amber-800 px-1 py-0.5 rounded-full font-semibold shadow-sm">
-            CLOSE
-          </span>
-        )}
-      </div>
-      <div className="p-1.5">
-        <p className="text-[11px] font-semibold text-slate-700 truncate leading-tight">{p.name}</p>
-        <div className="flex items-center justify-between mt-0.5">
-          <p className="text-[11px] font-bold text-red-700">₦{p.minPrice.toLocaleString()}</p>
-          {p.hasDiscount && (
-            <span className="text-[9px] bg-red-100 text-red-700 px-1 rounded-full font-medium">SALE</span>
-          )}
-        </div>
-      </div>
-    </Link>
-  );
+// ── Add-to-cart helpers ───────────────────────────────────────────────────────
+// Full products fetched by slug, cached for the session
+const _productCache = new Map<string, any>();
+
+async function fetchFullProduct(slug: string): Promise<any | null> {
+  if (_productCache.has(slug)) return _productCache.get(slug);
+  try {
+    const res = await fetch(`${API_URL}/api/products/slug/${slug}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const full = json.data?.product || json.data;
+    if (!full?.availableAt?.length) return null;
+    _productCache.set(slug, full);
+    return full;
+  } catch {
+    return null;
+  }
 }
+
+// Strict short-affirmative / negative matchers for replies to the cart offer.
+// Emojis/punctuation are stripped first so "Yes please! 🙏" still matches.
+const normalizeReply = (t: string) =>
+  t.replace(/[^a-zA-Z0-9\s']/g, ' ').replace(/\s+/g, ' ').trim();
+const AFFIRMATIVE_RE = /^(yes( please)?|yeah|yep|yup|sure|ok(ay)?|oya|go ahead|do it|add (them|it|all|everything)( to (my |the )?cart)?|please( do)?|add to cart|yes add (them|it|all)( to (my |the )?cart)?)$/i;
+const NEGATIVE_RE = /^(no( thanks?| thank you)?|nope|nah|not now|don'?t|later|maybe later)$/i;
+const isAffirmative = (t: string) => AFFIRMATIVE_RE.test(normalizeReply(t));
+const isNegative = (t: string) => NEGATIVE_RE.test(normalizeReply(t));
 
 // ── Main widget ───────────────────────────────────────────────────────────────
 export default function ChatbotWidget() {
@@ -197,10 +199,16 @@ export default function ChatbotWidget() {
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
   const [unread, setUnread]     = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  const [viewportOffsetTop, setViewportOffsetTop] = useState(0);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [pendingCart, setPendingCart] = useState<CartProposalItem[] | null>(null);
+  const [addingToCart, setAddingToCart] = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { addToCart, cartCount } = useCart();
+
   const messagesBoxRef = useRef<HTMLDivElement>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
   const imageInputRef  = useRef<HTMLInputElement>(null);
@@ -226,6 +234,7 @@ export default function ChatbotWidget() {
         if (Array.isArray(saved.messages) && saved.messages.length > 0) {
           setMessages(saved.messages);
           setQuickReplies(saved.quickReplies || []);
+          setPendingCart(Array.isArray(saved.pendingCart) && saved.pendingCart.length > 0 ? saved.pendingCart : null);
           restoredRef.current = true;
         }
       }
@@ -237,15 +246,30 @@ export default function ChatbotWidget() {
     try {
       // Blob preview URLs don't survive reloads — persist messages without them
       const persistable = messages.map(({ images, ...m }) => m);
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ messages: persistable, quickReplies }));
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ messages: persistable, quickReplies, pendingCart }));
     } catch { /* storage full/unavailable — non-fatal */ }
-  }, [messages, quickReplies]);
+  }, [messages, quickReplies, pendingCart]);
 
-  // ── Visual Viewport: keeps panel above keyboard on mobile ───────────────────
+  // ── Mobile detection (kept in sync with Tailwind's sm breakpoint) ──────────
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)');
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+
+  // ── Visual Viewport: keeps panel glued to the visible area on mobile ────────
+  // When the keyboard opens, iOS/Android shrink (and iOS also offsets) the
+  // visual viewport — track both so the panel never slides under the keyboard.
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
-    const update = () => setViewportHeight(vv.height);
+    const update = () => {
+      setViewportHeight(vv.height);
+      setViewportOffsetTop(vv.offsetTop);
+      setIsKeyboardOpen(window.innerHeight - vv.height > 120);
+    };
     update();
     vv.addEventListener('resize', update);
     vv.addEventListener('scroll', update);
@@ -255,6 +279,35 @@ export default function ChatbotWidget() {
     };
   }, []);
 
+  // ── Lock background scroll while the chat is open on mobile ────────────────
+  // Without this the page scrolls behind the panel and the keyboard causes
+  // the whole document to jump around.
+  useEffect(() => {
+    if (!isOpen || !isMobile) return;
+    const scrollY = window.scrollY;
+    const body = document.body;
+    const prev = {
+      position: body.style.position,
+      top: body.style.top,
+      left: body.style.left,
+      right: body.style.right,
+      width: body.style.width,
+    };
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.left = '0';
+    body.style.right = '0';
+    body.style.width = '100%';
+    return () => {
+      body.style.position = prev.position;
+      body.style.top = prev.top;
+      body.style.left = prev.left;
+      body.style.right = prev.right;
+      body.style.width = prev.width;
+      window.scrollTo(0, scrollY);
+    };
+  }, [isOpen, isMobile]);
+
   // ── Listen for toggle event dispatched by MobileBottomNav ───────────────────
   useEffect(() => {
     const handler = () => setIsOpen(o => !o);
@@ -262,10 +315,22 @@ export default function ChatbotWidget() {
     return () => document.removeEventListener('toggle-chatbot', handler);
   }, []);
 
+  // Scroll the messages container (never the page — scrollIntoView can drag the
+  // whole document on mobile, especially with the keyboard open)
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    const el = messagesBoxRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior });
+  }, []);
+
   // Scroll to bottom on new messages
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading]);
+    scrollToBottom();
+  }, [messages, isLoading, scrollToBottom]);
+
+  // Keep the latest message visible when the keyboard opens/closes
+  useEffect(() => {
+    if (isOpen) scrollToBottom('auto');
+  }, [viewportHeight, isOpen, scrollToBottom]);
 
   // Track unread when closed
   useEffect(() => {
@@ -395,10 +460,10 @@ export default function ChatbotWidget() {
           role: 'assistant',
           content: data.data.response,
           timestamp: Date.now(),
-          products: data.data.products?.length ? data.data.products : undefined,
         };
         setMessages(prev => [...prev, assistantMsg]);
         setQuickReplies(data.data.quickReplies || []);
+        setPendingCart(data.data.cartProposal?.length ? data.data.cartProposal : null);
         setUnread(n => n + 1);
       } else {
         throw new Error(data.message || 'No response');
@@ -415,6 +480,25 @@ export default function ChatbotWidget() {
     const queryText = input.trim();
     const hasContent = queryText || selectedImages.length > 0 || selectedDoc;
     if (!hasContent || isLoading) return;
+
+    // Typed replies to a pending cart offer are handled locally — a plain
+    // "yes" adds the proposed items, a plain "no" declines. Anything longer
+    // moves the conversation on and drops the stale offer.
+    if (pendingCart?.length && queryText && selectedImages.length === 0 && !selectedDoc) {
+      if (isAffirmative(queryText)) {
+        setInput('');
+        if (inputRef.current) inputRef.current.style.height = 'auto';
+        confirmAddToCart(queryText);
+        return;
+      }
+      if (isNegative(queryText)) {
+        setInput('');
+        if (inputRef.current) inputRef.current.style.height = 'auto';
+        declineCart(queryText);
+        return;
+      }
+      setPendingCart(null);
+    }
 
     const userMsg: Message = {
       role: 'user',
@@ -443,6 +527,12 @@ export default function ChatbotWidget() {
   const handleQuickReply = async (qr: QuickReply) => {
     const text = typeof qr === 'string' ? qr : qr.query;
     setQuickReplies([]);
+    // A quick reply can be an answer to the cart offer too (e.g. "Yes please 🙏")
+    if (pendingCart?.length) {
+      if (isAffirmative(text)) { confirmAddToCart(text); return; }
+      if (isNegative(text)) { declineCart(text); return; }
+    }
+    setPendingCart(null);
 
     const userMsg: Message = { role: 'user', content: text, timestamp: Date.now() };
     const history = messages.slice(-10).map(m => ({ role: m.role, content: m.content }));
@@ -459,7 +549,69 @@ export default function ChatbotWidget() {
     if (cap.query) handleQuickReply(cap.query);
   };
 
+  // ── Cart offer: add the AI's proposed items once the customer says yes ─────
+  const confirmAddToCart = useCallback(async (userText?: string) => {
+    const items = pendingCart;
+    if (!items?.length || addingToCart) return;
+    setAddingToCart(true);
+    setPendingCart(null);
+    setQuickReplies([]);
+    setMessages(prev => [...prev, { role: 'user', content: userText || 'Yes, add to cart', timestamp: Date.now() }]);
+    setIsLoading(true);
+    setLoadingStatus('Adding to your cart… 🛒');
+
+    const added: string[] = [];
+    const failed: string[] = [];
+    try {
+      for (const item of items) {
+        const full = await fetchFullProduct(item.slug);
+        const vendor = full?.availableAt?.[0];
+        if (!full || !vendor) { failed.push(item.name); continue; }
+        const sizes = (vendor.sizes || []).filter((s: any) => (s.pricing?.websitePrice || 0) > 0);
+        const wanted = item.size?.toLowerCase() || null;
+        const match = wanted
+          ? sizes.find((s: any) =>
+              (s.size || '').toLowerCase() === wanted || (s.displayName || '').toLowerCase() === wanted)
+          : null;
+        const size = match || sizes.find((s: any) => (s.stock ?? 0) > 0) || sizes[0];
+        if (!size || (size.stock ?? 0) <= 0) { failed.push(item.name); continue; }
+        const qty = Math.min(Math.max(item.qty || 1, size.minOrderQuantity || 1), size.maxOrderQuantity || size.stock || 99);
+        try {
+          await addToCart(full, size.size, '', vendor.tenant?.name || '', vendor.tenant?._id || '', qty, size._id, vendor._id);
+          added.push(`${qty} × **${item.name}**${sizes.length > 1 && size.size ? ` (${size.size})` : ''}`);
+        } catch {
+          failed.push(item.name);
+        }
+      }
+    } finally {
+      setIsLoading(false);
+      setAddingToCart(false);
+    }
+
+    let content: string;
+    if (added.length > 0) {
+      content = `✅ Done! Added to your cart:\n${added.map(a => `• ${a}`).join('\n')}\n\n[View cart](/cart) when you're ready to checkout, or keep chatting — happy to suggest a pairing! 🍷`;
+      if (failed.length > 0) {
+        content += `\n\n⚠️ I couldn't add ${failed.map(f => `**${f}**`).join(', ')} — currently unavailable.`;
+      }
+    } else {
+      content = `⚠️ Sorry — I couldn't add ${failed.map(f => `**${f}**`).join(', ')} to your cart right now. You can try from the product page via [/shop](/shop).`;
+    }
+    setMessages(prev => [...prev, { role: 'assistant', content, timestamp: Date.now() }]);
+    refocusInput(100);
+  }, [pendingCart, addingToCart, addToCart, refocusInput]);
+
+  const declineCart = useCallback((userText?: string) => {
+    setPendingCart(null);
+    setMessages(prev => [...prev,
+      { role: 'user', content: userText || 'No thanks', timestamp: Date.now() },
+      { role: 'assistant', content: 'No problem! 👍 Anything else I can help you find?', timestamp: Date.now() },
+    ]);
+    refocusInput();
+  }, [refocusInput]);
+
   const clearChat = () => {
+    setPendingCart(null);
     setMessages([]);
     setQuickReplies([]);
     setError(null);
@@ -473,10 +625,6 @@ export default function ChatbotWidget() {
     const el = messagesBoxRef.current;
     if (!el) return;
     setShowScrollDown(el.scrollHeight - el.scrollTop - el.clientHeight > 200);
-  };
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   // Auto-grow textarea up to ~4 lines
@@ -518,8 +666,8 @@ export default function ChatbotWidget() {
       {/* ── Chat panel ───────────────────────────────────────────────────── */}
       <div
         className={`
-          fixed z-[9998] transition-all duration-300 ease-out
-          left-0 right-0 top-0 sm:inset-auto sm:bottom-24 sm:right-5
+          fixed z-[9998] transition-[opacity,transform] duration-300 ease-out
+          left-0 right-0 top-0 h-[100dvh] sm:inset-auto sm:bottom-24 sm:right-5
           sm:w-[340px] sm:h-[540px] sm:max-h-[calc(100vh-120px)]
           ${isOpen
             ? 'opacity-100 pointer-events-auto sm:translate-y-0 sm:scale-100'
@@ -527,10 +675,13 @@ export default function ChatbotWidget() {
         `}
         style={{
           transformOrigin: 'bottom right',
-          // On mobile: track visual viewport so panel shrinks above keyboard
-          height: viewportHeight && typeof window !== 'undefined' && window.innerWidth < 640
-            ? `${viewportHeight}px`
-            : undefined,
+          // On mobile: pin to the visual viewport so the panel sits exactly in
+          // the visible area above the keyboard (height + iOS offsetTop).
+          // Height is applied instantly (not in the transition list) so keyboard
+          // open/close feels immediate rather than animating over 300ms.
+          ...(isMobile && viewportHeight
+            ? { top: `${viewportOffsetTop}px`, height: `${viewportHeight}px` }
+            : {}),
         }}
         onDragEnter={handleDragEnter}
         onDragOver={e => e.preventDefault()}
@@ -557,6 +708,18 @@ export default function ChatbotWidget() {
                 <p className="text-[10px] text-red-200">Online · beverage expert</p>
               </div>
             </div>
+            <Link
+              href="/cart"
+              aria-label={`View cart${cartCount > 0 ? ` (${cartCount} items)` : ''}`}
+              className="relative p-1.5 rounded-lg hover:bg-white/10 transition-colors text-red-300 hover:text-white touch-manipulation"
+            >
+              <CartIcon />
+              {cartCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-0.5 bg-white text-red-700 rounded-full text-[8px] font-bold flex items-center justify-center shadow">
+                  {cartCount > 99 ? '99+' : cartCount}
+                </span>
+              )}
+            </Link>
             <button
               onClick={clearChat}
               title="Clear chat"
@@ -580,7 +743,7 @@ export default function ChatbotWidget() {
             onScroll={handleMessagesScroll}
             role="log"
             aria-live="polite"
-            className="flex-1 overflow-y-auto px-3 py-3 space-y-3 bg-slate-50/40 scroll-smooth"
+            className="flex-1 overflow-y-auto overscroll-contain px-3 py-3 space-y-3 bg-slate-50/40"
           >
             {messages.map((msg, i) => (
               <div key={i} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -627,15 +790,6 @@ export default function ChatbotWidget() {
                       </div>
                     )}
                   </div>
-
-                  {/* Product cards */}
-                  {msg.products && msg.products.length > 0 && (
-                    <div className="flex gap-2.5 overflow-x-auto pb-1 snap-x w-full mt-1 scrollbar-none">
-                      {msg.products.slice(0, 6).map((p, idx) => (
-                        <ProductCardItem key={`${p.id}-${idx}`} p={p} />
-                      ))}
-                    </div>
-                  )}
 
                   {/* Timestamp */}
                   <p className={`text-[9px] text-slate-400 px-0.5 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
@@ -700,13 +854,12 @@ export default function ChatbotWidget() {
               </div>
             )}
 
-            <div ref={messagesEndRef} />
           </div>
 
           {/* ── Scroll-to-bottom button ─────────────────────────────────── */}
           {showScrollDown && (
             <button
-              onClick={scrollToBottom}
+              onClick={() => scrollToBottom()}
               aria-label="Scroll to latest message"
               className="absolute bottom-32 right-4 z-10 w-8 h-8 rounded-full bg-white text-red-700 shadow-lg ring-1 ring-red-100 flex items-center justify-center hover:bg-red-50 active:scale-90 transition-all"
             >
@@ -714,14 +867,46 @@ export default function ChatbotWidget() {
             </button>
           )}
 
+          {/* ── Add-to-cart offer confirm bar ───────────────────────────── */}
+          {pendingCart && pendingCart.length > 0 && !isLoading && (
+            <div className="px-3 py-2.5 bg-red-50/80 border-t border-red-100 flex-shrink-0">
+              <p className="text-[11px] text-slate-700 font-medium mb-2 truncate">
+                🛒 Add {pendingCart.reduce((s, i) => s + (i.qty || 1), 0)} item{pendingCart.reduce((s, i) => s + (i.qty || 1), 0) > 1 ? 's' : ''} to your cart
+                {pendingCart.every(i => i.price > 0) && (
+                  <> · ≈₦{pendingCart.reduce((s, i) => s + i.price * (i.qty || 1), 0).toLocaleString()}</>
+                )}
+                ?
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => confirmAddToCart()}
+                  onPointerDown={e => e.preventDefault()}
+                  disabled={addingToCart}
+                  className="flex-1 h-8 rounded-xl bg-red-700 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 hover:bg-red-800 active:scale-[0.98] disabled:opacity-50 transition-all touch-manipulation"
+                >
+                  <CartIcon /> Yes, add to cart
+                </button>
+                <button
+                  onClick={() => declineCart()}
+                  onPointerDown={e => e.preventDefault()}
+                  disabled={addingToCart}
+                  className="px-4 h-8 rounded-xl border border-slate-200 bg-white text-slate-600 text-[11px] font-semibold hover:bg-slate-50 active:scale-[0.98] disabled:opacity-50 transition-all touch-manipulation"
+                >
+                  No thanks
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* ── Quick replies ───────────────────────────────────────────── */}
           {quickReplies.length > 0 && !isLoading && (
-            <div className="flex gap-2 overflow-x-auto px-3 py-2 bg-white border-t border-slate-100 flex-shrink-0 scrollbar-none snap-x">
+            <div className="flex gap-2 overflow-x-auto overscroll-x-contain px-3 py-2 bg-white border-t border-slate-100 flex-shrink-0 scrollbar-none snap-x">
               {quickReplies.slice(0, 6).map((qr, i) => (
                 <button
                   key={i}
                   onClick={() => handleQuickReply(qr)}
-                  className="flex-shrink-0 text-[11px] px-2.5 py-1 rounded-full border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 active:scale-95 transition-all whitespace-nowrap snap-start font-medium"
+                  onPointerDown={e => e.preventDefault()}
+                  className="flex-shrink-0 text-[11px] px-2.5 py-1.5 rounded-full border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 active:scale-95 transition-all whitespace-nowrap snap-start font-medium touch-manipulation"
                 >
                   {typeof qr === 'string' ? qr : qr.label}
                 </button>
@@ -761,7 +946,10 @@ export default function ChatbotWidget() {
           )}
 
           {/* ── Input bar ──────────────────────────────────────────────── */}
-          <div className="px-3 py-2.5 bg-white border-t border-slate-100 flex-shrink-0">
+          <div
+            className="px-3 pt-2.5 bg-white border-t border-slate-100 flex-shrink-0"
+            style={{ paddingBottom: 'max(0.625rem, env(safe-area-inset-bottom))' }}
+          >
             <input ref={imageInputRef} type="file" onChange={handleImageSelect} className="hidden" accept="image/*" multiple aria-label="Upload photos" />
             <input ref={docInputRef}   type="file" onChange={handleDocSelect}   className="hidden" accept=".pdf,.doc,.docx,.txt,.csv,.xlsx,.xls" aria-label="Upload document" />
 
@@ -769,19 +957,21 @@ export default function ChatbotWidget() {
               {/* Attach buttons */}
               <button
                 onClick={() => imageInputRef.current?.click()}
+                onPointerDown={e => e.preventDefault()}
                 title="Attach photo"
                 aria-label="Attach photo"
                 disabled={selectedImages.length >= 5}
-                className="p-1 mb-1 text-red-400 hover:text-red-700 transition-colors flex-shrink-0 disabled:opacity-30"
+                className="p-1.5 mb-0.5 text-red-400 hover:text-red-700 transition-colors flex-shrink-0 disabled:opacity-30 touch-manipulation"
               >
                 <ImageIcon />
               </button>
               <button
                 onClick={() => docInputRef.current?.click()}
+                onPointerDown={e => e.preventDefault()}
                 title="Attach document"
                 aria-label="Attach document"
                 disabled={!!selectedDoc}
-                className="p-1 mb-1 text-red-400 hover:text-red-700 transition-colors flex-shrink-0 disabled:opacity-30"
+                className="p-1.5 mb-0.5 text-red-400 hover:text-red-700 transition-colors flex-shrink-0 disabled:opacity-30 touch-manipulation"
               >
                 <DocIcon />
               </button>
@@ -797,6 +987,7 @@ export default function ChatbotWidget() {
                 value={input}
                 onChange={handleInputChange}
                 onPaste={handlePaste}
+                onFocus={() => setTimeout(() => scrollToBottom('auto'), 300)}
                 onKeyDown={e => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -810,17 +1001,21 @@ export default function ChatbotWidget() {
 
               <button
                 onClick={sendMessage}
+                onPointerDown={e => e.preventDefault()}
                 disabled={!canSend}
                 aria-label="Send message"
-                className="w-8 h-8 mb-0.5 rounded-xl bg-red-700 text-white flex items-center justify-center disabled:opacity-30 hover:bg-red-800 active:scale-90 transition-all flex-shrink-0 shadow-sm"
+                className="w-9 h-9 mb-0.5 rounded-xl bg-red-700 text-white flex items-center justify-center disabled:opacity-30 hover:bg-red-800 active:scale-90 transition-all flex-shrink-0 shadow-sm touch-manipulation"
               >
                 <SendIcon />
               </button>
             </div>
 
-            <p className="text-center text-[10px] text-red-300 mt-2">
-              Powered by DrinksHarbour AI · I can read photos & drink lists
-            </p>
+            {/* Hide the tagline while typing on mobile — every pixel above the keyboard counts */}
+            {!isKeyboardOpen && (
+              <p className="text-center text-[10px] text-red-300 mt-2">
+                Powered by DrinksHarbour AI · I can read photos & drink lists
+              </p>
+            )}
           </div>
 
         </div>
