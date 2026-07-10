@@ -264,7 +264,7 @@ export const Footer: React.FC = () => {
               { label: "Visa",       bg: "#1a1f71", text: "VISA",       textColor: "#fff",  bold: true },
               { label: "Mastercard", bg: "#eb001b", text: "MC",         textColor: "#fff",  bold: true },
               { label: "Verve",      bg: "#016f39", text: "VERVE",      textColor: "#fff",  bold: true },
-              { label: "Paystack",   bg: "#00c3f7", text: "Paystack",   textColor: "#fff",  bold: false },
+              { label: "Korapay",   bg: "#00c3f7", text: "Korapay",   textColor: "#fff",  bold: false },
               { label: "Bank",       bg: "#374151", text: "Bank",       textColor: "#d1d5db", bold: false },
               { label: "USSD",       bg: "#374151", text: "USSD",       textColor: "#d1d5db", bold: false },
             ].map(({ label, bg, text, textColor, bold }) => (

@@ -153,7 +153,7 @@ const purchaseGiftCard = asyncHandler(async (req, res) => {
   const reference = `DHGC-${card._id}-${Date.now()}`;
   const frontendUrl =
     process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3002';
-  const payment = await paymentService.createPaystackTransaction(
+  const payment = await paymentService.createGatewayTransaction(
     initialAmount,
     req.user.email,
     {
@@ -163,7 +163,7 @@ const purchaseGiftCard = asyncHandler(async (req, res) => {
       reference,
     },
     {
-      // Reuse our reference and embed gc_id in the callback URL so Paystack echoes
+      // Reuse our reference and embed gc_id in the callback URL so the gateway echoes
       // it back on redirect — the frontend reads it from searchParams without needing
       // sessionStorage (which can silently fail in certain browsers/modes).
       reference,
@@ -203,7 +203,7 @@ const verifyPurchaseGiftCard = asyncHandler(async (req, res) => {
     return successResponse(res, { alreadyIssued: true, giftCardId }, 'Gift card already issued');
   }
 
-  const result = await paymentService.verifyPaystackTransaction(reference);
+  const result = await paymentService.verifyGatewayTransaction(reference);
   if (!result.success) {
     return res.status(400).json({ success: false, message: result.message || 'Payment verification failed' });
   }
@@ -236,7 +236,7 @@ const verifyPurchaseGiftCard = asyncHandler(async (req, res) => {
 
 /**
  * @desc    Manually complete payment for a pending_payment gift card by re-checking
- *          its stored Paystack reference. Called when the automatic post-redirect
+ *          its stored gateway payment reference. Called when the automatic post-redirect
  *          verification fails (e.g. network drop, browser crash, popup blocker).
  * @route   POST /api/gift-cards/:id/complete-payment
  * @access  Private (customer)
@@ -254,9 +254,9 @@ const completeGiftCardPayment = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'No payment reference on file — please contact support' });
   }
 
-  const result = await paymentService.verifyPaystackTransaction(card.paymentRef);
+  const result = await paymentService.verifyGatewayTransaction(card.paymentRef);
   if (!result.success) {
-    return res.status(400).json({ success: false, message: result.message || 'Payment not confirmed by Paystack yet — please wait and try again' });
+    return res.status(400).json({ success: false, message: result.message || 'Payment not confirmed by the payment gateway yet — please wait and try again' });
   }
 
   const issued = await issueGiftCard({ giftCardId: card._id, paymentRef: result.data.reference, createdBy: req.user._id });

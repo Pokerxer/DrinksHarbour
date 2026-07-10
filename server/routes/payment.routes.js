@@ -9,7 +9,11 @@ const { protect } = require('../middleware/auth.middleware');
 router.post('/stripe/initialize', protect, paymentController.initializeStripePayment);
 router.post('/stripe/confirm', protect, paymentController.confirmStripePayment);
 
-// Paystack routes
+// Korapay routes (active gateway)
+router.post('/korapay/initialize', protect, paymentController.initializeKorapayPayment);
+router.get('/korapay/verify/:reference', paymentController.verifyKorapayPayment);
+
+// Paystack routes (kept for re-enable — UI currently shows "Coming soon")
 router.post('/paystack/initialize', protect, paymentController.initializePaystackPayment);
 router.get('/paystack/verify/:reference', paymentController.verifyPaystackPayment);
 
@@ -29,6 +33,12 @@ router.post(
   '/webhooks/paystack',
   express.json(),
   paymentController.handlePaystackWebhook
+);
+
+router.post(
+  '/webhooks/korapay',
+  express.json(),
+  paymentController.handleKorapayWebhook
 );
 
 module.exports = router;

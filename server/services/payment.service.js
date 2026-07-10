@@ -9,10 +9,16 @@ try {
 }
 
 const axios = require('axios');
+const crypto = require('crypto');
 const Order = require('../models/Order');
 const { ValidationError, NotFoundError } = require('../utils/errors');
 
 const PAYSTACK_BASE_URL = 'https://api.paystack.co';
+const KORAPAY_BASE_URL = 'https://api.korapay.com/merchant/api/v1';
+
+// Which gateway customer-facing payments (checkout, wallet fund, gift cards) go
+// through. Paystack stays available behind this flag for when it's re-enabled.
+const ACTIVE_GATEWAY = (process.env.PAYMENT_GATEWAY || 'korapay').toLowerCase();
 
 /**
  * Initialize Stripe payment intent (without order)
@@ -216,6 +222,130 @@ const verifyPaystackTransaction = async (reference) => {
 };
 
 /**
+ * Initialize Korapay charge (without order).
+ *
+ * Same call signature and return shape as createPaystackTransaction so callers
+ * (checkout, wallet funding, gift cards) can switch gateways transparently.
+ *
+ * @param {number} amount   Amount in major units (NGN) — Korapay takes naira, not kobo.
+ * @param {string} email    Customer email.
+ * @param {object} metadata Arbitrary metadata stored on the charge.
+ * @param {object} [options]
+ * @param {string} [options.reference]   Merchant reference. Korapay REQUIRES one at
+ *   init time (unlike Paystack where it's optional), so we generate one if absent.
+ * @param {string} [options.callbackUrl] Where Korapay redirects after payment
+ *   (?reference=<ref> is appended). Defaults to the cart flow's /payment/verify page.
+ */
+const createKorapayCharge = async (amount, email, metadata = {}, options = {}) => {
+  try {
+    const reference =
+      options.reference || `DH-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+
+    const payload = {
+      amount: Math.round(amount),
+      currency: 'NGN',
+      reference,
+      narration: metadata.kind === 'wallet_fund'
+        ? 'DrinksHarbour wallet funding'
+        : metadata.kind === 'gift_card_purchase'
+          ? 'DrinksHarbour gift card'
+          : 'DrinksHarbour order payment',
+      customer: {
+        email,
+        ...(metadata.customerName ? { name: metadata.customerName } : {}),
+      },
+      metadata: {
+        ...metadata,
+        createdAt: new Date().toISOString(),
+      },
+      redirect_url:
+        options.callbackUrl ||
+        `${process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3002'}/payment/verify`,
+    };
+
+    const response = await axios.post(`${KORAPAY_BASE_URL}/charges/initialize`, payload, {
+      headers: {
+        Authorization: `Bearer ${process.env.KORAPAY_SECRET_KEY}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (response.data.status) {
+      return {
+        authorizationUrl: response.data.data.checkout_url,
+        accessCode: null, // Korapay has no access-code concept; kept for shape parity
+        reference: response.data.data.reference || reference,
+        amount: amount,
+      };
+    } else {
+      throw new ValidationError(response.data.message || 'Failed to initialize payment');
+    }
+  } catch (error) {
+    console.error('Korapay initialize error:', error.response?.data || error.message);
+    throw new ValidationError(error.response?.data?.message || error.message || 'Failed to initialize Korapay payment');
+  }
+};
+
+/**
+ * Verify Korapay charge. Same return shape as verifyPaystackTransaction.
+ */
+const verifyKorapayCharge = async (reference) => {
+  try {
+    const response = await axios.get(`${KORAPAY_BASE_URL}/charges/${reference}`, {
+      headers: {
+        Authorization: `Bearer ${process.env.KORAPAY_SECRET_KEY}`,
+      },
+    });
+
+    if (response.data.status) {
+      const { data } = response.data;
+
+      if (data.status === 'success') {
+        return {
+          success: true,
+          status: 'paid',
+          data: {
+            reference: data.reference,
+            transactionId: data.payment_reference || data.reference,
+            // Korapay amounts are already in major units (naira)
+            amount: Number(data.amount_paid ?? data.amount),
+            currency: data.currency,
+            paidAt: data.transaction_date || data.completed_at || new Date().toISOString(),
+            channel: data.payment_method || data.channel,
+            metadata: data.metadata,
+          },
+        };
+      } else {
+        return {
+          success: false,
+          status: 'failed',
+          message: `Payment ${data.status}`,
+        };
+      }
+    } else {
+      throw new ValidationError(response.data.message || 'Verification failed');
+    }
+  } catch (error) {
+    console.error('Korapay verify error:', error.response?.data || error.message);
+    throw new ValidationError(error.response?.data?.message || error.message || 'Failed to verify payment');
+  }
+};
+
+/**
+ * Gateway-generic entry points. Wallet funding, gift cards, and checkout call
+ * these so the active gateway is a single-env-var switch (PAYMENT_GATEWAY).
+ */
+const createGatewayTransaction = (amount, email, metadata, options) =>
+  ACTIVE_GATEWAY === 'paystack'
+    ? createPaystackTransaction(amount, email, metadata, options)
+    : createKorapayCharge(amount, email, metadata, options);
+
+const verifyGatewayTransaction = (reference) =>
+  ACTIVE_GATEWAY === 'paystack'
+    ? verifyPaystackTransaction(reference)
+    : verifyKorapayCharge(reference);
+
+/**
  * Process refund (Stripe only)
  */
 const createStripeRefund = async (orderId, amount = null) => {
@@ -292,6 +422,11 @@ module.exports = {
   attachPaymentToOrder,
   createPaystackTransaction,
   verifyPaystackTransaction,
+  createKorapayCharge,
+  verifyKorapayCharge,
+  createGatewayTransaction,
+  verifyGatewayTransaction,
+  ACTIVE_GATEWAY,
   createStripeRefund,
   getPaymentStatus,
 };

@@ -76,7 +76,7 @@ export default function FundModal({ open, onClose, onFund, currentBalance }: Fun
           {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2">
             <Icon.PiLockBold size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
-            <p className="text-xs text-amber-700">You'll be redirected to Paystack to complete payment securely. Your wallet is credited instantly after verification.</p>
+            <p className="text-xs text-amber-700">You'll be redirected to Korapay to complete payment securely. Your wallet is credited instantly after verification.</p>
           </div>
           <button onClick={handleFund} disabled={submitting}
             className="w-full flex items-center justify-center gap-2 bg-gradient-to-br from-red-700 to-red-900 text-white py-3 rounded-xl font-bold text-sm hover:from-red-800 hover:to-red-950 transition-all disabled:opacity-60">

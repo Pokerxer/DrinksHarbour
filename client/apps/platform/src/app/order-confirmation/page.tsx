@@ -65,7 +65,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   card: 'Credit / Debit Card',
-  bank_transfer: 'Bank Transfer (Paystack)',
+  bank_transfer: 'Bank Transfer (Korapay)',
   cash_on_delivery: 'Cash on Delivery',
   mobile_money: 'Mobile Money',
   wallet: 'Wallet',

@@ -2,7 +2,8 @@
 //
 // Platform-wide customer wallet (the "Wallet" account page) — an NGN stored-value
 // balance held on User.platformWalletBalance, distinct from the tenant store-credit
-// wallet (WalletTransaction / wallet.service). Customers fund it via Paystack; the
+// wallet (WalletTransaction / wallet.service). Customers fund it via the active
+// payment gateway (Korapay); the
 // credit is applied only after a verified successful transaction, using the atomic
 // mutatePlatformWallet service so the balance + append-only ledger stay consistent.
 // All endpoints are self-scoped to req.user._id (JWT authority) — no cross-user access.
@@ -107,7 +108,7 @@ const getWalletTransactions = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Initialize a Paystack funding transaction for the wallet.
+ * @desc    Initialize a gateway (Korapay) funding transaction for the wallet.
  * @route   POST /api/wallet/fund
  * @access  Private (customer)
  */
@@ -127,7 +128,7 @@ const fundWallet = asyncHandler(async (req, res) => {
   const reference = `DHW-${user._id}-${Date.now()}`;
   const frontendUrl =
     process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3002';
-  const payment = await paymentService.createPaystackTransaction(
+  const payment = await paymentService.createGatewayTransaction(
     n,
     user.email,
     {
@@ -137,7 +138,7 @@ const fundWallet = asyncHandler(async (req, res) => {
     },
     {
       // Reuse our reference and return to the wallet page (not the cart callback),
-      // so the ?reference Paystack echoes back is the one we verify + credit.
+      // so the ?reference the gateway echoes back is the one we verify + credit.
       reference,
       callbackUrl: `${frontendUrl}/my-account/wallet`,
     },
@@ -153,7 +154,7 @@ const fundWallet = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Verify a Paystack funding transaction and credit the wallet.
+ * @desc    Verify a gateway (Korapay) funding transaction and credit the wallet.
  * @route   POST /api/wallet/fund/verify
  * @access  Private (customer)
  */
@@ -161,7 +162,7 @@ const verifyFundWallet = asyncHandler(async (req, res) => {
   const { reference } = req.body;
   if (!reference) return res.status(400).json({ success: false, message: 'Reference is required' });
 
-  const result = await paymentService.verifyPaystackTransaction(reference);
+  const result = await paymentService.verifyGatewayTransaction(reference);
   if (!result.success) {
     return res.status(400).json({ success: false, message: result.message || 'Payment verification failed' });
   }
@@ -174,7 +175,7 @@ const verifyFundWallet = asyncHandler(async (req, res) => {
     return successResponse(res, { balance: user.platformWalletBalance, alreadyCredited: true }, 'Wallet already credited');
   }
 
-  // Paystack returns the amount in major units (NGN) from our service. The wallet
+  // The gateway service returns the amount in major units (NGN). The wallet
   // ledger stores whole NGN. Apply an atomic, guarded credit via the service.
   const credit = await mutatePlatformWallet({
     owner: { userId: req.user._id },

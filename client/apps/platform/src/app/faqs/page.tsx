@@ -84,12 +84,12 @@ const FAQS: FAQ[] = [
   {
     category: 'payments',
     q: 'What payment methods do you accept?',
-    a: 'We accept debit and credit cards (Visa, Mastercard, Verve), bank transfers, USSD, and mobile money via Paystack. International cards are accepted via Stripe. All prices are displayed and charged in Nigerian Naira (₦).',
+    a: 'We accept debit and credit cards (Visa, Mastercard, Verve), bank transfers, USSD, and mobile money via Korapay. International cards are accepted via Stripe. All prices are displayed and charged in Nigerian Naira (₦).',
   },
   {
     category: 'payments',
     q: 'Is it safe to save my card details?',
-    a: 'Yes. Card details are tokenised by Paystack and Stripe — we never store your raw card numbers on our servers. Saved cards can be managed or deleted at any time from your account settings.',
+    a: 'Yes. Card details are tokenised by Korapay and Stripe — we never store your raw card numbers on our servers. Saved cards can be managed or deleted at any time from your account settings.',
   },
   {
     category: 'payments',

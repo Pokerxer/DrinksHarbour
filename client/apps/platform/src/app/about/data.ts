@@ -52,7 +52,7 @@ export const WHY_ITEMS: Omit<ValueData, 'color'>[] = [
   { icon: Icon.PiHeadset,      title: '24 / 7 Support',     body: 'AI chatbot + human agents available via WhatsApp, email, and live chat.' },
   { icon: Icon.PiStar,         title: 'Curated Selection',  body: 'Hand-picked catalogue covering wines, whiskies, gins, beers, and mocktails.' },
   { icon: Icon.PiPercent,      title: 'Best Prices',        body: 'We monitor the market so our prices stay competitive — and flash sales run weekly.' },
-  { icon: Icon.PiLock,         title: 'Safe Payments',      body: 'Paystack and Stripe integrations with 3-D Secure and instant payment confirmation.' },
+  { icon: Icon.PiLock,         title: 'Safe Payments',      body: 'Korapay and Stripe integrations with 3-D Secure and instant payment confirmation.' },
 ];
 
 export const FAQ_SCHEMA = {
@@ -80,7 +80,7 @@ export const FAQ_SCHEMA = {
       name: "What payment methods do you accept?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "We accept payments via Paystack and Stripe with 3-D Secure authentication. All prices are in Nigerian Naira with no hidden fees or foreign exchange charges.",
+        text: "We accept payments via Korapay and Stripe with 3-D Secure authentication. All prices are in Nigerian Naira with no hidden fees or foreign exchange charges.",
       },
     },
     {

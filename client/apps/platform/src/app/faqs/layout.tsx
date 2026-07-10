@@ -39,7 +39,7 @@ const FAQ_SCHEMA = {
       name: "What payment methods do you accept?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "We accept debit and credit cards (Visa, Mastercard, Verve), bank transfers, USSD, and mobile money via Paystack. International cards are accepted via Stripe. All prices are displayed and charged in Nigerian Naira (₦).",
+        text: "We accept debit and credit cards (Visa, Mastercard, Verve), bank transfers, USSD, and mobile money via Korapay. International cards are accepted via Stripe. All prices are displayed and charged in Nigerian Naira (₦).",
       },
     },
     {

@@ -20,7 +20,7 @@ function VerifyContent() {
   const router = useRouter();
   const { clearCart } = useCart();
 
-  // Paystack sends both `reference` and `trxref` — use either
+  // Korapay appends `reference`; Paystack (legacy) sent `reference`/`trxref` — accept either
   const reference = searchParams.get('reference') || searchParams.get('trxref');
 
   const [stage, setStage] = useState<Stage>('verifying');
@@ -56,7 +56,7 @@ function VerifyContent() {
       // ── Step 1: Verify the payment with the server ───────────────────────
       setStage('verifying');
       const verifyRes = await fetch(
-        `${API_URL}/api/payments/paystack/verify/${ref}`,
+        `${API_URL}/api/payments/korapay/verify/${ref}`,
         {
           headers: {
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -128,9 +128,9 @@ function VerifyContent() {
         },
         paymentMethod: 'bank_transfer',
         paymentDetails: {
-          method: 'paystack',
+          method: 'korapay',
           transactionId: paymentInfo.reference || ref,
-          paystackTransactionId: paymentInfo.transactionId,
+          gatewayTransactionId: paymentInfo.transactionId,
           status: 'paid',
           paidAt: paymentInfo.paidAt || new Date().toISOString(),
           channel: paymentInfo.channel,
@@ -212,7 +212,7 @@ function VerifyContent() {
             {stage === 'success' && 'Payment Successful!'}
           </h1>
           <p className="text-gray-500 text-sm">
-            {stage === 'verifying' && 'Confirming your payment with Paystack. Please wait.'}
+            {stage === 'verifying' && 'Confirming your payment with Korapay. Please wait.'}
             {stage === 'creating' && 'Creating your order. Please do not close this page.'}
             {stage === 'success' && 'Redirecting to your order confirmation…'}
           </p>

@@ -42,7 +42,7 @@ export default function PaymentMethodsPage() {
         <div className="p-6 space-y-4">
           {[
             { icon: Icon.PiLockBold,          label: 'End-to-end encryption',    text: 'All payment data is encrypted with 256-bit SSL. Your card details are never stored on our servers.' },
-            { icon: Icon.PiShieldCheckBold,    label: 'Paystack certified',       text: 'Payments are processed by Paystack, a PCI DSS compliant payment gateway trusted by thousands of Nigerian businesses.' },
+            { icon: Icon.PiShieldCheckBold,    label: 'Korapay certified',        text: 'Payments are processed by Korapay, a PCI DSS compliant payment gateway trusted by thousands of Nigerian businesses.' },
             { icon: Icon.PiArrowCounterClockwiseBold, label: 'Instant refunds',   text: 'Approved refunds are processed back to your original payment method within 3–5 business days.' },
           ].map(({ icon: Ic, label, text }) => (
             <div key={label} className="flex items-start gap-3">
@@ -63,7 +63,7 @@ export default function PaymentMethodsPage() {
         <div>
           <p className="text-sm font-bold text-amber-900">Payment at checkout</p>
           <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
-            You can choose your preferred payment method when you place an order. We do not save card details — all payments are processed in real time through Paystack.
+            You can choose your preferred payment method when you place an order. We do not save card details — all payments are processed in real time through Korapay.
           </p>
         </div>
       </div>

@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import Script from 'next/script';
 import { useRouter } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -16,10 +15,6 @@ import AddressAutocomplete, { type AddressDetails } from '@/components/AddressAu
 import LocationPickerMap from '@/components/LocationPickerMap/LocationPickerMap';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-declare global {
-  interface Window { PaystackPop?: any; }
-}
 
 const FREE_DELIVERY_THRESHOLD = 2_000_000;
 
@@ -55,11 +50,12 @@ function toApiState(state: string): string {
 }
 
 const PAYMENT_METHODS = [
-  { id: 'wallet',           name: 'DH Wallet',            description: 'Pay instantly from your DrinksHarbour balance', icon: Icon.PiWalletBold,      badge: 'Instant' },
-  { id: 'gift_card',        name: 'Gift Card',             description: 'Redeem a DrinksHarbour gift card code',         icon: Icon.PiGiftBold,        badge: null },
-  { id: 'card',             name: 'Card Payment',          description: 'Visa, Mastercard — powered by Stripe',          icon: Icon.PiCreditCardBold,  badge: null },
-  { id: 'bank_transfer',    name: 'Bank Transfer / USSD',  description: 'Pay via Paystack — card, bank, USSD',           icon: Icon.PiBankBold,        badge: null },
-  { id: 'cash_on_delivery', name: 'Cash on Delivery',      description: 'Pay cash when your order arrives',              icon: Icon.PiMoneyBold,       badge: null },
+  { id: 'wallet',           name: 'DH Wallet',            description: 'Pay instantly from your DrinksHarbour balance', icon: Icon.PiWalletBold,      badge: 'Instant',     comingSoon: false },
+  { id: 'gift_card',        name: 'Gift Card',             description: 'Redeem a DrinksHarbour gift card code',         icon: Icon.PiGiftBold,        badge: null,          comingSoon: false },
+  { id: 'card',             name: 'Card Payment',          description: 'Visa, Mastercard — powered by Stripe',          icon: Icon.PiCreditCardBold,  badge: null,          comingSoon: false },
+  { id: 'bank_transfer',    name: 'Card / Bank Transfer / USSD', description: 'Pay via Korapay — card, bank transfer, USSD',   icon: Icon.PiBankBold,        badge: null,          comingSoon: false },
+  { id: 'paystack',         name: 'Paystack',              description: 'Pay via Paystack — card, bank, USSD',           icon: Icon.PiShieldCheckBold, badge: 'Coming soon', comingSoon: true },
+  { id: 'cash_on_delivery', name: 'Cash on Delivery',      description: 'Pay cash when your order arrives',              icon: Icon.PiMoneyBold,       badge: null,          comingSoon: false },
 ] as const;
 
 // ─── Input field ─────────────────────────────────────────────────────────────
@@ -116,7 +112,6 @@ export default function CheckoutPage() {
   const [appliedCoupon,   setAppliedCoupon]   = useState('');
   const [showStripeForm,  setShowStripeForm]  = useState(false);
   const [stripeData,      setStripeData]      = useState<{ clientSecret: string; paymentIntentId: string } | null>(null);
-  const [paystackReady,   setPaystackReady]   = useState(false);
   const [addressDetails,  setAddressDetails]  = useState<AddressDetails | null>(null);
   const [savedAddresses,  setSavedAddresses]  = useState<any[]>([]);
   const [selectedAddrId,  setSelectedAddrId]  = useState<string | null>(null);
@@ -448,64 +443,15 @@ export default function CheckoutPage() {
     }
   };
 
-  // ── Paystack ──────────────────────────────────────────────────────────────
-  const initPaystack = async () => {
+  // ── Korapay ───────────────────────────────────────────────────────────────
+  const initKorapay = async () => {
     setIsLoading(true);
     setError('');
     try {
-      const PAYSTACK_PUBLIC_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || '';
-
-      // If inline JS is loaded, use the popup for better UX
-      if (paystackReady && window.PaystackPop && PAYSTACK_PUBLIC_KEY) {
-        const handler = window.PaystackPop.setup({
-          key:      PAYSTACK_PUBLIC_KEY,
-          email:    form.email,
-          amount:   Math.round(total * 100), // kobo
-          currency: 'NGN',
-          ref:      `DH-${Date.now()}`,
-          metadata: {
-            custom_fields: [
-              { display_name: 'Customer Name',  variable_name: 'customer_name',  value: `${form.firstName} ${form.lastName}` },
-              { display_name: 'Customer Phone', variable_name: 'customer_phone', value: form.phone },
-            ],
-          },
-          callback: async (response: any) => {
-            // Verify with our server, then create order
-            try {
-              setIsLoading(true);
-              const verifyRes  = await fetchWithAuth(`${API_URL}/api/payments/paystack/verify/${response.reference}`);
-              const verifyData = await verifyRes.json();
-              if (!verifyRes.ok || !verifyData.success) throw new Error(verifyData.message || 'Verification failed');
-
-              const pInfo   = verifyData.data;
-              const orderId = await createOrderAfterPayment({
-                method: 'paystack',
-                transactionId: pInfo.reference || response.reference,
-                paystackTransactionId: pInfo.transactionId,
-                status: 'paid',
-                paidAt: pInfo.paidAt || new Date().toISOString(),
-                channel: pInfo.channel,
-                amount: pInfo.amount,
-              });
-              clearCart();
-              localStorage.setItem('customerEmail', form.email);
-              router.push(`/order-confirmation?orderId=${orderId}`);
-            } catch (e: any) {
-              setError(e.message || 'Payment received but order creation failed. Contact support.');
-            } finally {
-              setIsLoading(false);
-            }
-          },
-          onClose: () => {
-            setIsLoading(false);
-          },
-        });
-        handler.openIframe();
-        return; // popup handles the rest
-      }
-
-      // Fallback: redirect to Paystack
-      const res  = await fetchWithAuth(`${API_URL}/api/payments/paystack/initialize`, {
+      // Redirect flow: initialize the charge server-side, stash the pending order
+      // data, and send the customer to Korapay's hosted checkout. Korapay redirects
+      // back to /payment/verify?reference=… where the order is created.
+      const res  = await fetchWithAuth(`${API_URL}/api/payments/korapay/initialize`, {
         method: 'POST',
         body: JSON.stringify({
           amount: total, email: form.email,
@@ -725,7 +671,7 @@ export default function CheckoutPage() {
     if (activePayment === 'wallet') { await validateBeforeCheckout(submitWalletPay); return; }
     if (activePayment === 'gift_card') { await validateBeforeCheckout(submitGiftCardPay); return; }
     if (activePayment === 'card') { await validateBeforeCheckout(initStripe); return; }
-    if (activePayment === 'bank_transfer') { await validateBeforeCheckout(initPaystack); return; }
+    if (activePayment === 'bank_transfer') { await validateBeforeCheckout(initKorapay); return; }
     await validateBeforeCheckout(submitCOD);
   };
 
@@ -751,13 +697,6 @@ export default function CheckoutPage() {
 
   return (
     <>
-      {/* Paystack inline script */}
-      <Script
-        src="https://js.paystack.co/v1/inline.js"
-        strategy="afterInteractive"
-        onLoad={() => setPaystackReady(true)}
-      />
-
       {/* Progress bar */}
       <div className="bg-white border-b border-gray-100 sticky top-0 z-20">
         <div className="container mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
@@ -1093,20 +1032,21 @@ export default function CheckoutPage() {
 
                     {!showStripeForm && (
                       <div className="space-y-2.5">
-                        {PAYMENT_METHODS.map(({ id, name, description, icon: Ic, badge }) => {
+                        {PAYMENT_METHODS.map(({ id, name, description, icon: Ic, badge, comingSoon }) => {
                           const active = activePayment === id;
                           const walletInsufficient = id === 'wallet' && walletBalance !== null && walletBalance < total;
+                          const disabled = walletInsufficient || comingSoon;
                           return (
                             <div key={id}>
                               <label
                                 onClick={() => {
-                                  if (walletInsufficient) return;
+                                  if (disabled) return;
                                   setActivePayment(id);
                                   setForm(f => ({ ...f, paymentMethod: id as any }));
                                   setGiftCardError('');
                                 }}
                                 className={`flex items-center gap-3.5 p-3.5 rounded-xl border transition-all ${
-                                  walletInsufficient
+                                  disabled
                                     ? 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed'
                                     : active
                                       ? 'border-red-200 bg-red-50 cursor-pointer'
@@ -1123,7 +1063,9 @@ export default function CheckoutPage() {
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <p className={`font-bold text-sm ${active ? 'text-red-800' : 'text-gray-800'}`}>{name}</p>
                                     {badge && !walletInsufficient && (
-                                      <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{badge}</span>
+                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                        comingSoon ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
+                                      }`}>{badge}</span>
                                     )}
                                     {id === 'wallet' && walletBalance !== null && (
                                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${

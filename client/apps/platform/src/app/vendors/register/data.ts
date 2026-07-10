@@ -155,7 +155,7 @@ export const BENEFITS: Benefit[] = [
   {
     icon: Icon.PiCreditCardBold,
     title: 'Secure Payments',
-    body: 'Paystack and Stripe integrations with instant payment confirmation. Get paid in Naira, on time, every time.',
+    body: 'Korapay and Stripe integrations with instant payment confirmation. Get paid in Naira, on time, every time.',
     color: 'bg-emerald-50 text-emerald-700',
   },
   {
@@ -239,7 +239,7 @@ export const FAQ_SCHEMA = {
       name: 'How do I get paid for my sales?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'All payments are processed through Paystack or Stripe in Nigerian Naira. Your earnings are settled to your bank account on a rolling basis, typically within 2 to 5 business days.',
+        text: 'All payments are processed through Korapay or Stripe in Nigerian Naira. Your earnings are settled to your bank account on a rolling basis, typically within 2 to 5 business days.',
       },
     },
   ],
@@ -305,7 +305,7 @@ export const TRUST_BADGES: TrustBadge[] = [
   {
     icon: Icon.PiLockBold,
     label: 'Secure Payments',
-    description: 'Paystack and Stripe power every transaction with 3-D Secure authentication.',
+    description: 'Korapay and Stripe power every transaction with 3-D Secure authentication.',
   },
   {
     icon: Icon.PiHeadsetBold,

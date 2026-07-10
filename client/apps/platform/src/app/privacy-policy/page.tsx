@@ -222,7 +222,7 @@ export default function PrivacyPolicyPage() {
                   <p className="font-semibold text-gray-800 mb-2">Information you provide:</p>
                   <Ul items={[
                     'Name, email address, phone number, and delivery address when you register or checkout',
-                    'Payment details processed securely via Paystack and Stripe (we never store raw card numbers)',
+                    'Payment details processed securely via Korapay and Stripe (we never store raw card numbers)',
                     'Messages and attachments you send via our contact form or WhatsApp support',
                     'Profile preferences, wishlist items, and order history',
                     'Vendor registration details including business name, CAC number, and bank details',
@@ -241,7 +241,7 @@ export default function PrivacyPolicyPage() {
                   <p className="font-semibold text-gray-800 mb-2">Information from third parties:</p>
                   <Ul items={[
                     'Authentication data when you sign in with Google',
-                    'Payment confirmation and fraud signals from Paystack and Stripe',
+                    'Payment confirmation and fraud signals from Korapay and Stripe',
                     'Delivery status updates from our logistics partners',
                   ]} />
                 </div>
@@ -273,7 +273,7 @@ export default function PrivacyPolicyPage() {
                 <Ul items={[
                   'Vendors — your name, delivery address, and order details are shared with the relevant vendor to fulfil your order',
                   'Logistics partners — name, phone, and delivery address are shared with our courier partners',
-                  'Payment processors — Paystack and Stripe receive transaction data to process payments securely',
+                  'Payment processors — Korapay and Stripe receive transaction data to process payments securely',
                   'Cloud & infrastructure providers — we use AWS and Cloudinary to store data and images',
                   'Analytics services — anonymised, aggregated data may be shared with analytics tools',
                   'Law enforcement — we may disclose information when required by Nigerian law or court order',
@@ -324,7 +324,7 @@ export default function PrivacyPolicyPage() {
                 <Ul items={[
                   'All data in transit is encrypted using TLS 1.2 or higher (HTTPS)',
                   'Passwords are hashed using bcrypt — we never store plain-text passwords',
-                  'Payment card data is tokenised by Paystack and Stripe and never touches our servers',
+                  'Payment card data is tokenised by Korapay and Stripe and never touches our servers',
                   'Access to production databases is restricted to authorised personnel with multi-factor authentication',
                   'Regular security audits and dependency vulnerability scans',
                   'Automated backups with encrypted off-site storage',

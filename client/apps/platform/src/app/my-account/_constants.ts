@@ -39,7 +39,7 @@ export const PAYMENT_METHODS = [
     id: 'card',
     icon: Icon.PiCreditCardBold,
     label: 'Debit / Credit Card',
-    description: 'Visa, Mastercard, and Verve cards accepted. Payments are processed securely via Paystack.',
+    description: 'Visa, Mastercard, and Verve cards accepted. Payments are processed securely via Korapay.',
     badge: 'Recommended' as string | null,
     badgeColor: 'bg-red-700 text-white',
     color: 'bg-blue-50 text-blue-700',
@@ -61,12 +61,21 @@ export const PAYMENT_METHODS = [
     color: 'bg-purple-50 text-purple-700',
   },
   {
+    id: 'korapay',
+    icon: Icon.PiShieldCheckBold,
+    label: 'Korapay Checkout',
+    description: 'Use the Korapay secure checkout for a one-click payment experience.',
+    badge: null,
+    color: 'bg-amber-50 text-amber-700',
+  },
+  {
     id: 'paystack',
     icon: Icon.PiShieldCheckBold,
     label: 'Paystack Checkout',
-    description: 'Use the Paystack secure checkout for a one-click payment experience.',
-    badge: null,
-    color: 'bg-amber-50 text-amber-700',
+    description: 'Paystack checkout is not available yet.',
+    badge: 'Coming soon' as string | null,
+    badgeColor: 'bg-amber-100 text-amber-700',
+    color: 'bg-stone-100 text-stone-500',
   },
 ];
 
