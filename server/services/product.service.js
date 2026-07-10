@@ -4090,6 +4090,7 @@ const searchProducts = async (searchParams = {}) => {
                     discount: 1,
                     sku: 1,
                     isDefault: 1,
+                    platformMarkupOverridePct: 1,
                   },
                 },
               ],
