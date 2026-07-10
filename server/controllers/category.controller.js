@@ -422,7 +422,39 @@ const deleteCategory = asyncHandler(async (req, res) => {
   });
 });
 
-const Groq = require('groq-sdk');
+const Anthropic = require('@anthropic-ai/sdk');
+
+// Same model the product enrichment / chatbot / brand ai-fill already use.
+const AI_FILL_MODEL = 'claude-haiku-4-5';
+
+const CATEGORY_TYPES = [
+  'beer', 'cider', 'wine', 'red_wine', 'white_wine', 'rose_wine',
+  'sparkling_wine', 'champagne', 'fortified_wine', 'dessert_wine',
+  'whiskey', 'scotch', 'bourbon', 'rye_whiskey', 'vodka', 'gin', 'rum',
+  'tequila', 'brandy', 'cognac', 'soju', 'baijiu', 'shochu', 'mezcal',
+  'liqueur', 'aperitif', 'digestif', 'cocktail',
+  'coffee', 'tea', 'juice', 'soda', 'water', 'milk', 'yogurt_drink',
+  'soft_drink', 'dairy_alternatives', 'functional_drink', 'syrup', 'bitters',
+  'glassware', 'bar_tools', 'accessories', 'gift_set', 'subscription', 'other',
+];
+
+const ALCOHOL_CATEGORIES = ['alcoholic', 'non_alcoholic', 'low_alcohol', 'alcohol_free', 'mixed'];
+
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+
+function aiStr(v, max) {
+  if (v === undefined || v === null) return '';
+  return String(v).trim().slice(0, max);
+}
+
+function slugifyName(str) {
+  return String(str)
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+}
 
 const fillWithAI = asyncHandler(async (req, res) => {
   const { name, type, alcoholCategory } = req.body;
@@ -430,43 +462,74 @@ const fillWithAI = asyncHandler(async (req, res) => {
   if (!name) {
     return res.status(400).json({ success: false, message: 'name is required' });
   }
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(500).json({ success: false, message: 'ANTHROPIC_API_KEY is not configured' });
+  }
 
-  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-  const prompt = `You are a content assistant for DrinksHarbour, Nigeria's premier online premium beverages store.
+  const system =
+    'You are a content assistant for DrinksHarbour, Nigeria\'s premier online premium beverages store. ' +
+    'Respond with ONLY a single valid JSON object — no prose, no markdown fences.';
 
-Generate category content for:
-- Name: "${name}"${type ? `\n- Type: ${type.replace(/_/g, ' ')}` : ''}${alcoholCategory ? `\n- Alcohol Category: ${alcoholCategory.replace(/_/g, ' ')}` : ''}
+  const prompt = `Generate complete category content for:
+- Name: "${name}"${type ? `\n- Type: ${String(type).replace(/_/g, ' ')}` : ''}${alcoholCategory ? `\n- Alcohol Category: ${String(alcoholCategory).replace(/_/g, ' ')}` : ''}
 
-Return ONLY a valid JSON object with these fields (no markdown, no explanation):
+Fill EVERY field below with compelling, professional content.
+
+Return a JSON object with exactly these keys:
 {
   "displayName": "display-friendly name, plural if appropriate (max 120 chars)",
   "tagline": "short punchy tagline that sells the category (max 150 chars)",
   "shortDescription": "2 sentences for listings and cards (max 280 chars)",
-  "description": "3-4 paragraphs as plain text, compelling and informative (max 2000 chars)",
-  "metaTitle": "SEO page title with brand context for Nigeria market (max 100 chars)",
+  "description": "3-4 compelling, informative paragraphs formatted as HTML using <p> tags only (max 1800 chars including tags)",
+  "type": "single best value from: ${CATEGORY_TYPES.join(', ')}",
+  "subType": "a more specific sub-type label, e.g. Single Malt, or '' (max 80 chars)",
+  "alcoholCategory": "single best value from: ${ALCOHOL_CATEGORIES.join(', ')}",
+  "metaTitle": "SEO page title with brand context for the Nigeria market (max 100 chars)",
   "metaDescription": "SEO meta description (max 320 chars)",
-  "metaKeywords": "8-12 comma-separated search keywords",
-  "color": "hex color that fits the category mood (e.g. #C0812A for whiskey, #722F37 for wine)",
+  "metaKeywords": "8-12 comma-separated search keywords relevant in Nigeria",
+  "color": "6-digit hex color that fits the category mood, e.g. #C0812A for whiskey, #722F37 for wine",
   "icon": "single most relevant emoji"
 }`;
 
-  const completion = await groq.chat.completions.create({
-    model: process.env.GROQ_MODEL || 'llama-3.1-8b-instant',
+  const response = await anthropic.messages.create({
+    model: AI_FILL_MODEL,
+    max_tokens: 2048,
+    system,
     messages: [{ role: 'user', content: prompt }],
-    temperature: 0.7,
-    max_tokens: 1024,
   });
 
-  const raw = completion.choices[0]?.message?.content || '{}';
-  const clean = raw.replace(/```json\n?|\n?```/g, '').trim();
+  const raw = (response.content || []).map((c) => c.text || '').join('');
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start === -1 || end === -1) {
+    return res.status(500).json({ success: false, message: 'AI returned invalid JSON' });
+  }
 
-  let data;
+  let json;
   try {
-    data = JSON.parse(clean);
+    json = JSON.parse(raw.slice(start, end + 1));
   } catch {
     return res.status(500).json({ success: false, message: 'AI returned invalid JSON' });
   }
+
+  // Snap enums / validate formats so the form only ever receives usable values.
+  const data = {
+    displayName: aiStr(json.displayName, 120),
+    tagline: aiStr(json.tagline, 150),
+    shortDescription: aiStr(json.shortDescription, 280),
+    description: aiStr(json.description, 2000),
+    type: CATEGORY_TYPES.includes(json.type) ? json.type : '',
+    subType: aiStr(json.subType, 80),
+    alcoholCategory: ALCOHOL_CATEGORIES.includes(json.alcoholCategory) ? json.alcoholCategory : '',
+    metaTitle: aiStr(json.metaTitle, 100),
+    metaDescription: aiStr(json.metaDescription, 320),
+    metaKeywords: aiStr(json.metaKeywords, 500),
+    canonicalUrl: `https://drinksharbour.com/shop/${slugifyName(name)}`,
+    color: HEX_RE.test(aiStr(json.color, 7)) ? aiStr(json.color, 7) : '',
+    icon: aiStr(json.icon, 20),
+  };
 
   res.json({ success: true, data });
 });

@@ -255,7 +255,8 @@ export default function CreateCategory({
       const json = await res.json();
       if (!json.success) throw new Error(json.message);
       setAiSuggestions(json.data);
-      toast.success('Fields filled with AI suggestions');
+      const filled = Object.values(json.data || {}).filter(Boolean).length;
+      toast.success(`${filled} fields filled with AI suggestions`);
     } catch (err: any) {
       toast.error(err.message || 'AI fill failed');
     } finally {
@@ -368,12 +369,14 @@ export default function CreateCategory({
           }
         }, [nameValue]);
 
-        // Apply AI suggestions when available
+        // Apply AI suggestions when available (never touch name/slug/parent)
         // eslint-disable-next-line react-hooks/rules-of-hooks
         useEffect(() => {
           if (!aiSuggestions) return;
           Object.entries(aiSuggestions).forEach(([k, v]) => {
-            if (v) setValue(k as any, v);
+            if (k === 'name' || k === 'slug' || k === 'parentCategory') return;
+            if (v === '' || v === null || v === undefined) return;
+            setValue(k as any, v, { shouldValidate: true, shouldDirty: true });
           });
           setAiSuggestions(null);
         }, [aiSuggestions]);

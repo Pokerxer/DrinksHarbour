@@ -459,7 +459,46 @@ exports.deleteAdminBrand = asyncHandler(async (req, res) => {
  * @route POST /api/brands/admin/ai-fill
  * @access Private (admin)
  */
-const Groq = require('groq-sdk');
+const Anthropic = require('@anthropic-ai/sdk');
+
+// Same model the product enrichment / chatbot / scan matcher already use.
+const AI_FILL_MODEL = 'claude-haiku-4-5';
+
+const BRAND_TYPES = [
+  'brewery', 'microbrewery', 'craft_brewery', 'brewpub',
+  'winery', 'vineyard', 'wine_estate',
+  'distillery', 'craft_distillery', 'spirits_producer',
+  'beverage_company', 'drinks_manufacturer',
+  'coffee_roaster', 'tea_company',
+  'soft_drink_manufacturer', 'water_brand',
+  'importer', 'distributor',
+  'private_label', 'house_brand',
+  'luxury', 'premium', 'mass_market',
+  'other', 'champagne_house', 'coffee_company', 'juice_company',
+];
+
+const PRIMARY_CATEGORIES = [
+  'beer', 'wine', 'spirits', 'liqueurs', 'cocktails',
+  'coffee', 'tea', 'soft_drinks', 'water', 'juice',
+  'energy_drinks', 'sports_drinks', 'mixers',
+  'accessories', 'multi_category', 'other', 'champagne',
+];
+
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+
+function aiStr(v, max) {
+  if (v === undefined || v === null) return '';
+  return String(v).trim().slice(0, max);
+}
+
+function slugifyBrand(str) {
+  return String(str)
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+}
 
 exports.fillWithAI = asyncHandler(async (req, res) => {
   const { name, brandType, primaryCategory, countryOfOrigin } = req.body;
@@ -467,42 +506,113 @@ exports.fillWithAI = asyncHandler(async (req, res) => {
   if (!name) {
     return res.status(400).json({ success: false, message: 'name is required' });
   }
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(500).json({ success: false, message: 'ANTHROPIC_API_KEY is not configured' });
+  }
 
-  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-  const prompt = `You are a content assistant for DrinksHarbour, Nigeria's premier online premium beverages store.
+  const system =
+    'You are a content assistant for DrinksHarbour, Nigeria\'s premier online premium beverages store. ' +
+    'You know the world\'s drinks brands well. Respond with ONLY a single valid JSON object — no prose, no markdown fences.';
 
-Generate brand content for:
+  const prompt = `Generate complete brand profile content for:
 - Name: "${name}"${brandType ? `\n- Brand Type: ${brandType.replace(/_/g, ' ')}` : ''}${primaryCategory ? `\n- Primary Category: ${primaryCategory.replace(/_/g, ' ')}` : ''}${countryOfOrigin ? `\n- Country of Origin: ${countryOfOrigin}` : ''}
 
-Return ONLY a valid JSON object with these fields (no markdown, no explanation):
+Fill EVERY field below. Use your real knowledge of this brand; where a fact is genuinely unknown, give a plausible, professional value rather than leaving it empty — EXCEPT website, email, phone and social URLs, which must be the real official ones or "" (never invent URLs or contact details).
+
+Return a JSON object with exactly these keys:
 {
-  "shortDescription": "2 compelling sentences for brand listings and cards (max 280 chars)",
-  "description": "3-4 paragraphs as plain text about the brand history, quality and positioning (max 2000 chars)",
+  "legalName": "registered legal/company name of the brand owner",
+  "tradingAs": "comma-separated trading names the brand is known by",
   "tagline": "short punchy brand tagline (max 150 chars)",
-  "story": "2-3 paragraphs narrating the brand heritage, founding story and mission (max 1000 chars)",
-  "metaTitle": "SEO page title with brand context for Nigeria market (max 100 chars)",
+  "shortDescription": "2 compelling sentences for brand listings and cards (max 280 chars)",
+  "description": "3-4 paragraphs about the brand history, quality and positioning, formatted as HTML using <p> tags only (max 3000 chars)",
+  "story": "2-3 plain-text paragraphs narrating the brand heritage, founding story and mission, separated by blank lines (max 3000 chars)",
+  "founded": 1887,
+  "founderName": "name of the founder(s), or '' if truly unknown",
+  "brandType": "single best value from: ${BRAND_TYPES.join(', ')}",
+  "primaryCategory": "single best value from: ${PRIMARY_CATEGORIES.join(', ')}",
+  "specializations": "2-4 comma-separated specializations, e.g. Single Malt Whisky, Aged Spirits",
+  "countryOfOrigin": "country the brand originates from",
+  "region": "production region if applicable, e.g. Speyside, Champagne, or ''",
+  "hqCity": "headquarters city",
+  "hqCountry": "headquarters country",
+  "website": "official website URL or ''",
+  "email": "official public contact email or ''",
+  "phone": "official public phone number or ''",
+  "socialFacebook": "official Facebook page URL or ''",
+  "socialInstagram": "official Instagram URL or ''",
+  "socialTwitter": "official Twitter/X URL or ''",
+  "socialYoutube": "official YouTube channel URL or ''",
+  "socialLinkedin": "official LinkedIn URL or ''",
+  "socialTiktok": "official TikTok URL or ''",
+  "metaTitle": "SEO page title with brand context for the Nigeria market (max 100 chars)",
   "metaDescription": "SEO meta description for the brand page (max 320 chars)",
-  "metaKeywords": "8-12 comma-separated search keywords relevant to this brand",
-  "brandColorPrimary": "hex color that represents the brand identity (e.g. #C0812A for whiskey brand)"
+  "metaKeywords": "8-12 comma-separated search keywords relevant to this brand in Nigeria",
+  "brandColorPrimary": "6-digit hex color representing the brand identity, e.g. #C0812A",
+  "brandColorSecondary": "6-digit hex complementary secondary color",
+  "brandColorAccent": "6-digit hex accent color"
 }`;
 
-  const completion = await groq.chat.completions.create({
-    model: process.env.GROQ_MODEL || 'llama-3.1-8b-instant',
+  const response = await anthropic.messages.create({
+    model: AI_FILL_MODEL,
+    max_tokens: 4096,
+    system,
     messages: [{ role: 'user', content: prompt }],
-    temperature: 0.7,
-    max_tokens: 2048,
   });
 
-  const raw = completion.choices[0]?.message?.content || '{}';
-  const clean = raw.replace(/```json\n?|\n?```/g, '').trim();
+  const raw = (response.content || []).map((c) => c.text || '').join('');
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start === -1 || end === -1) {
+    return res.status(500).json({ success: false, message: 'AI returned invalid JSON' });
+  }
 
-  let data;
+  let json;
   try {
-    data = JSON.parse(clean);
+    json = JSON.parse(raw.slice(start, end + 1));
   } catch {
     return res.status(500).json({ success: false, message: 'AI returned invalid JSON' });
   }
+
+  // Snap enums / validate formats so the form only ever receives usable values.
+  const foundedNum = Number(json.founded);
+  const currentYear = new Date().getFullYear();
+
+  const data = {
+    legalName: aiStr(json.legalName, 200),
+    tradingAs: aiStr(json.tradingAs, 300),
+    tagline: aiStr(json.tagline, 150),
+    shortDescription: aiStr(json.shortDescription, 280),
+    description: aiStr(json.description, 5000),
+    story: aiStr(json.story, 5000),
+    founded: Number.isFinite(foundedNum) && foundedNum >= 1000 && foundedNum <= currentYear ? foundedNum : '',
+    founderName: aiStr(json.founderName, 150),
+    brandType: BRAND_TYPES.includes(json.brandType) ? json.brandType : '',
+    primaryCategory: PRIMARY_CATEGORIES.includes(json.primaryCategory) ? json.primaryCategory : '',
+    specializations: aiStr(json.specializations, 300),
+    countryOfOrigin: aiStr(json.countryOfOrigin, 100),
+    region: aiStr(json.region, 100),
+    hqCity: aiStr(json.hqCity, 100),
+    hqCountry: aiStr(json.hqCountry, 100),
+    website: aiStr(json.website, 300),
+    email: aiStr(json.email, 200),
+    phone: aiStr(json.phone, 30),
+    socialFacebook: aiStr(json.socialFacebook, 300),
+    socialInstagram: aiStr(json.socialInstagram, 300),
+    socialTwitter: aiStr(json.socialTwitter, 300),
+    socialYoutube: aiStr(json.socialYoutube, 300),
+    socialLinkedin: aiStr(json.socialLinkedin, 300),
+    socialTiktok: aiStr(json.socialTiktok, 300),
+    metaTitle: aiStr(json.metaTitle, 100),
+    metaDescription: aiStr(json.metaDescription, 320),
+    metaKeywords: aiStr(json.metaKeywords, 500),
+    canonicalUrl: `https://drinksharbour.com/brands/${slugifyBrand(name)}`,
+    brandColorPrimary: HEX_RE.test(aiStr(json.brandColorPrimary, 7)) ? aiStr(json.brandColorPrimary, 7) : '',
+    brandColorSecondary: HEX_RE.test(aiStr(json.brandColorSecondary, 7)) ? aiStr(json.brandColorSecondary, 7) : '',
+    brandColorAccent: HEX_RE.test(aiStr(json.brandColorAccent, 7)) ? aiStr(json.brandColorAccent, 7) : '',
+  };
 
   res.json({ success: true, data });
 });

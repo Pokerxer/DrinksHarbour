@@ -80,8 +80,9 @@ const genAI = {
   },
 };
 
-// MODEL_NAME kept for log messages only — actual model is the active provider's
-const MODEL_NAME = CLAUDE_MODEL;
+// Model used by all product generation handlers (SEO, descriptions, tasting
+// notes, etc.) — Haiku, same as the brand/category/subcategory ai-fill.
+const MODEL_NAME = HAIKU_MODEL;
 
 // Helper function for robust JSON parsing
 function parseJSONResponse(text, defaultValue = {}) {

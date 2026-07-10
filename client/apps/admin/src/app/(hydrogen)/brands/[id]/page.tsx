@@ -291,6 +291,26 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
         </div>
       )}
 
+      {/* ── About ── */}
+      {brand && (brand.tagline || brand.shortDescription) && (
+        <div
+          className={cn(
+            'rounded-xl border border-gray-200 bg-white p-5',
+            brand.brandColors?.primary && 'border-l-4'
+          )}
+          style={brand.brandColors?.primary ? { borderLeftColor: brand.brandColors.primary } : undefined}
+        >
+          {brand.tagline && (
+            <Text className="mb-1 text-sm font-semibold italic text-gray-800">
+              “{brand.tagline}”
+            </Text>
+          )}
+          {brand.shortDescription && (
+            <Text className="text-sm text-gray-600">{brand.shortDescription}</Text>
+          )}
+        </div>
+      )}
+
       {/* ── Admin Notes ── */}
       {brand?.notes && (
         <div className="rounded-xl border border-gray-200 bg-white p-5">
