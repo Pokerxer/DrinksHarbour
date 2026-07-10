@@ -575,6 +575,9 @@ export default function ChatbotWidget() {
           : null;
         const size = match || sizes.find((s: any) => (s.stock ?? 0) > 0) || sizes[0];
         if (!size || (size.stock ?? 0) <= 0) { failed.push(item.name); continue; }
+        // Size label may live in size/displayName/name depending on how the
+        // product was imported — the cart displays selectedSize verbatim.
+        const sizeLabel = size.size || size.displayName || size.name || item.size || '';
         const qty = Math.min(Math.max(item.qty || 1, size.minOrderQuantity || 1), size.maxOrderQuantity || size.stock || 99);
         // The raw product doc may carry images as plain URL strings; the cart UI
         // only reads primaryImage.url / thumbImage[0] / images[0].url — normalize
@@ -589,8 +592,8 @@ export default function ChatbotWidget() {
           ? { ...full, primaryImage: { url: imgUrl, alt: full.name }, thumbImage: [imgUrl] }
           : full;
         try {
-          await addToCart(productForCart, size.size, '', vendor.tenant?.name || '', vendor.tenant?._id || '', qty, size._id, vendor._id);
-          added.push(`${qty} × **${item.name}**${sizes.length > 1 && size.size ? ` (${size.size})` : ''}`);
+          await addToCart(productForCart, sizeLabel, '', vendor.tenant?.name || '', vendor.tenant?._id || '', qty, size._id, vendor._id);
+          added.push(`${qty} × **${item.name}**${sizeLabel ? ` (${sizeLabel})` : ''}`);
         } catch {
           failed.push(item.name);
         }
