@@ -32,38 +32,102 @@ function renderInline(text: string, keyPrefix: string) {
   });
 }
 
-function renderMessage(text: string) {
-  return text.split('\n').map((line, i) => {
-    if (!line.trim()) return <span key={i} className="block h-2" />;
+const isTableLine = (l: string) => /^\s*\|.*\|\s*$/.test(l);
+const isTableSeparator = (l: string) => /^\s*\|[\s:|-]+\|\s*$/.test(l);
 
-    // Section headers: **About**, **Tasting Notes** etc.
+function renderTable(tableLines: string[], key: string) {
+  const rows = tableLines
+    .filter(l => !isTableSeparator(l))
+    .map(l => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim()));
+  if (rows.length === 0) return null;
+  const [header, ...body] = rows;
+  return (
+    <div key={key} className="overflow-x-auto overscroll-x-contain my-1.5 -mx-1 rounded-lg border border-slate-100">
+      <table className="w-full text-[10px] border-collapse">
+        <thead>
+          <tr className="bg-slate-50">
+            {header.map((c, j) => (
+              <th key={j} className="text-left font-semibold text-slate-800 px-1.5 py-1 whitespace-nowrap border-b border-slate-200">
+                {renderInline(c, `${key}-h${j}`)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {body.map((r, ri) => (
+            <tr key={ri} className={ri % 2 ? 'bg-slate-50/50' : ''}>
+              {r.map((c, j) => (
+                <td key={j} className="px-1.5 py-1 border-b border-slate-100 align-top whitespace-nowrap">
+                  {renderInline(c, `${key}-r${ri}c${j}`)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function renderMessage(text: string) {
+  const lines = text.split('\n');
+  const out: React.ReactNode[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Markdown table: consecutive |…| lines
+    if (isTableLine(line)) {
+      const tableLines: string[] = [];
+      while (i < lines.length && isTableLine(lines[i])) {
+        tableLines.push(lines[i]);
+        i++;
+      }
+      out.push(renderTable(tableLines, `tbl${i}`));
+      continue;
+    }
+
+    if (!line.trim()) { out.push(<span key={i} className="block h-2" />); i++; continue; }
+
+    // Divider
+    if (/^\s*[-—]{3,}\s*$/.test(line)) {
+      out.push(<hr key={i} className="my-2 border-slate-100" />);
+      i++; continue;
+    }
+
+    // Section headers: **About**, **Grand Total: ₦…** etc.
     const headerMatch = line.match(/^\*\*([^*]+)\*\*:?\s*$/);
     if (headerMatch) {
-      return (
+      out.push(
         <p key={i} className="font-semibold text-slate-800 mt-3 mb-0.5 first:mt-0">
           {headerMatch[1]}
         </p>
       );
+      i++; continue;
     }
 
-    const isBullet = /^[•\-\*]\s/.test(line);
-    const numMatch = line.match(/^(\d+)[.)]\s+(.*)/);
-    const content = isBullet ? line.replace(/^[•\-\*]\s/, '') : numMatch ? numMatch[2] : line;
-
-    if (isBullet || numMatch) {
-      return (
-        <div key={i} className="flex gap-2 my-0.5 ml-1">
+    const bulletMatch = line.match(/^(\s*)[•\-\*]\s+(.*)/);
+    const numMatch = line.match(/^\s*(\d+)[.)]\s+(.*)/);
+    if (bulletMatch || numMatch) {
+      const content = bulletMatch ? bulletMatch[2] : numMatch![2];
+      const nested = bulletMatch ? bulletMatch[1].length >= 2 : false;
+      out.push(
+        <div key={i} className={`flex gap-2 my-0.5 ${nested ? 'ml-4' : 'ml-1'}`}>
           {numMatch ? (
             <span className="text-red-700 font-semibold text-xs mt-0.5 flex-shrink-0">{numMatch[1]}.</span>
           ) : (
-            <span className="mt-1.5 w-1 h-1 rounded-full bg-red-700 flex-shrink-0" />
+            <span className={`mt-1.5 rounded-full flex-shrink-0 ${nested ? 'w-1 h-1 bg-red-300' : 'w-1 h-1 bg-red-700'}`} />
           )}
           <span className="leading-snug">{renderInline(content, `l${i}`)}</span>
         </div>
       );
+      i++; continue;
     }
-    return <p key={i} className="leading-snug my-0.5">{renderInline(content, `l${i}`)}</p>;
-  });
+
+    out.push(<p key={i} className="leading-snug my-0.5">{renderInline(line, `l${i}`)}</p>);
+    i++;
+  }
+  return out;
 }
 
 function formatTime(ts: number) {

@@ -86,7 +86,7 @@ const callClaude = async (prompt, systemPrompt = null, conversationHistory = [])
 
     const response = await anthropic.messages.create({
       model: CLAUDE_MODEL,
-      max_tokens: 1024,
+      max_tokens: 2048,
       temperature: 0.65,
       system: finalSystemPrompt,
       messages,
@@ -112,8 +112,14 @@ PERSONA:
 
 FORMAT RULES:
 - Use **bold** for product names and prices.
-- Use bullet points (•) when listing 3+ items.
+- Use bullet points (•) when listing 3+ items — one item per line, keep each line short.
+- Use numbered lists (1. 2. 3.) for step-by-step instructions or ranked picks.
 - Always show prices in ₦ with commas e.g. ₦12,500.
+- For shopping lists, price breakdowns, and side-by-side comparisons, use a markdown table:
+| Product | Size | Qty | Price | Total |
+|---|---|---|---|---|
+| **Product Name** | 75cl | 2 | ₦12,500 | ₦25,000 |
+Then a **Grand Total: ₦…** line right after the table.
 - For product deep-dives: use sections like **About**, **Tasting Notes**, **Food Pairings**, **Serving Tips**.
 
 STRICT PRICING RULES (ALWAYS ENFORCED):
@@ -1208,7 +1214,20 @@ ${intent.type === 'price' ? '- Lead with the price clearly from the catalog. Lis
 ${intent.type === 'price_complaint' ? '- Acknowledge the price empathetically (1 short sentence). Then list ONLY cheaper products from the CATALOG DATA. Show exact catalog prices. If none cheaper, say so and suggest browsing /shop.' : ''}
 ${intent.type === 'recommendation' ? '- Give a confident recommendation from the catalog. Briefly explain why it suits them using your expert knowledge.' : ''}
 ${intent.type === 'comparison' ? '- Compare key differences using your expert knowledge: taste, ABV, origin, style. For prices, use catalog only.' : ''}
-${intent.type === 'event_planning' ? `- You are now an event drinks planner. If guest count or budget is missing, ask for both in ONE friendly question. Once known, build a complete plan using standard consumption rates: wine 1 bottle per 2 guests, champagne 1 bottle per 8 guests (toast), beer 2-3 bottles per beer drinker, spirits 1 x 75cl bottle per 8-10 guests, non-alcoholic 1 option per 3 guests (always include some). Recommend SPECIFIC catalog products with quantities and line totals in ₦, then a grand total that respects their budget. Format as a clear shopping list.` : ''}
+${intent.type === 'event_planning' ? `- You are now a sommelier-level EVENT DRINKS PLANNER. Follow this process:
+  1. GATHER: You need guest count and budget; occasion (wedding, birthday, corporate, house party…) and duration also help. If guest count or budget is missing, ask for what's missing in ONE friendly question (bundle occasion/duration into the same question). If they gave enough, don't re-ask — plan.
+  2. QUANTITY MATH (adjust up for events over 4 hours):
+     • Wine: 1 bottle per 2 guests • Champagne/sparkling: 1 bottle per 8 guests for a toast (per 4 if it's the main drink)
+     • Beer: 2–3 bottles per beer drinker • Spirits: one 75cl bottle serves 12–15 mixed drinks (1 bottle per 8–10 guests)
+     • Non-alcoholic: ALWAYS include — at least 25% of guests (juices, soft drinks, water, malt, alcohol-free options)
+     • Remind them about ice (1kg per 2 guests), mixers (2–3 bottles per spirit bottle), and cups if relevant.
+  3. MIX: Balance the selection for the occasion and Nigerian tastes — e.g. weddings lean champagne + wine + one premium spirit; house parties lean beer + spirits + mixers. Spread the budget: don't blow it all on one premium bottle; include mid-range crowd-pleasers from the catalog.
+  4. PRESENT the plan with these sections:
+     **Your Event Plan** — one warm sentence summarising occasion, guests, budget.
+     A markdown table shopping list: | Product | Size | Qty | Price | Total | using ONLY catalog products and prices.
+     **Grand Total: ₦…** — must come in AT or UNDER their budget; say how much headroom is left. If the budget is too small, give the best plan the budget allows and say what was trimmed.
+     **Sommelier Tips** — 2-3 bullets: serving order, what to chill and for how long, signature-cocktail or pairing idea.
+  5. Finish with the add-to-cart offer and CART_JSON listing every product with its planned quantity.` : ''}
 ${intent.type === 'discount' ? '- Highlight on-sale items from the catalog first. Show original vs sale price.' : ''}
 ${intent.type === 'cocktail' ? '- Give a full cocktail recipe using your expert knowledge. Mention if the base spirit is in our catalog.' : ''}
 ${intent.type === 'gift' ? '- Recommend premium gifting options from the catalog. Suggest presentation ideas.' : ''}
