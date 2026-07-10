@@ -3769,6 +3769,7 @@ const searchProducts = async (searchParams = {}) => {
   // ==============================================1==============
   const baseQuery = {
     status: 'approved',
+    isPublished: true,
   };
 
   // Resolve and build category filter
@@ -8339,10 +8340,10 @@ const getFeaturedProducts = async (page = 1, limit = 12) => {
 
   // Query for featured products (you can define "featured" logic)
   // For now, using recent bestsellers
-  const totalPromise = Product.countDocuments({ status: 'approved' });
+  const totalPromise = Product.countDocuments({ status: 'approved', isPublished: true });
 
   const products = await Product.aggregate([
-    { $match: { status: 'approved' } },
+    { $match: { status: 'approved', isPublished: true } },
 
     // Lookup active SubProducts
     {
@@ -8507,6 +8508,7 @@ const getNewArrivals = async (page = 1, limit = 12, days = 30) => {
 
   const query = {
     status: 'approved',
+    isPublished: true,
     publishedAt: { $gte: cutoffDate },
   };
 
@@ -8947,6 +8949,7 @@ const getBestsellers = async (page = 1, limit = 12) => {
       $match: {
         _id: { $in: productIds },
         status: 'approved',
+        isPublished: true,
       },
     },
 
@@ -9356,7 +9359,7 @@ const getProductBySlug = async (slug) => {
   // ══════════════════════════════════════════════════════════════════════════
   // 1. FETCH BASE PRODUCT
   // ══════════════════════════════════════════════════════════════════════════
-  const product = await Product.findOne({ slug, status: 'approved' })
+  const product = await Product.findOne({ slug, status: 'approved', isPublished: true })
     .populate('brand', 'name slug logo description website countryOfOrigin verified')
     .populate('category', 'name slug type description icon')
     .populate('subCategory', 'name slug subType description')
@@ -10333,6 +10336,7 @@ const getRelatedProducts = async (productId, options = {}) => {
   const baseQuery = {
     _id: { $ne: productId },
     status: 'approved',
+    isPublished: true,
   };
 
   // ============================================================
