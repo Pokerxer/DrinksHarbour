@@ -15,7 +15,16 @@ async function fetchProduct(slug: string) {
     });
     if (!res.ok) return null;
     const data = await res.json();
-    return data?.data?.product ?? data?.data ?? null;
+    const p = data?.data?.product ?? data?.data ?? null;
+    if (!p) return null;
+    // Server nests SEO fields under p.seo — hoist them so builders can use them directly
+    if (p.seo) {
+      p.metaTitle       = p.seo.metaTitle       || p.metaTitle;
+      p.metaDescription = p.seo.metaDescription || p.metaDescription;
+      p.metaKeywords    = p.seo.metaKeywords?.length ? p.seo.metaKeywords : p.metaKeywords;
+      p.canonicalUrl    = p.seo.canonicalUrl    || p.canonicalUrl;
+    }
+    return p;
   } catch {
     return null;
   }
