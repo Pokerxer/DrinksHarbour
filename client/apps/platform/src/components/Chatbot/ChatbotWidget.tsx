@@ -576,8 +576,20 @@ export default function ChatbotWidget() {
         const size = match || sizes.find((s: any) => (s.stock ?? 0) > 0) || sizes[0];
         if (!size || (size.stock ?? 0) <= 0) { failed.push(item.name); continue; }
         const qty = Math.min(Math.max(item.qty || 1, size.minOrderQuantity || 1), size.maxOrderQuantity || size.stock || 99);
+        // The raw product doc may carry images as plain URL strings; the cart UI
+        // only reads primaryImage.url / thumbImage[0] / images[0].url — normalize
+        // so the item renders with its picture.
+        const imgUrl = full.primaryImage?.url
+          || (typeof full.primaryImage === 'string' ? full.primaryImage : null)
+          || full.images?.[0]?.url
+          || (typeof full.images?.[0] === 'string' ? full.images[0] : null)
+          || item.image
+          || null;
+        const productForCart = imgUrl
+          ? { ...full, primaryImage: { url: imgUrl, alt: full.name }, thumbImage: [imgUrl] }
+          : full;
         try {
-          await addToCart(full, size.size, '', vendor.tenant?.name || '', vendor.tenant?._id || '', qty, size._id, vendor._id);
+          await addToCart(productForCart, size.size, '', vendor.tenant?.name || '', vendor.tenant?._id || '', qty, size._id, vendor._id);
           added.push(`${qty} × **${item.name}**${sizes.length > 1 && size.size ? ` (${size.size})` : ''}`);
         } catch {
           failed.push(item.name);
