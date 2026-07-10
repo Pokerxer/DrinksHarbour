@@ -133,8 +133,11 @@ function buildTitle(p: any): string {
 // ─── Description builder ──────────────────────────────────────────────────────
 
 function buildDescription(p: any): string {
-  if (p.metaDescription)  return p.metaDescription;
+  // Stored metadata first (admin-entered or AI-generated at import), each capped
+  // at 160 chars — stored descriptions can run long and search engines truncate.
+  if (p.metaDescription)  return p.metaDescription.slice(0, 160);
   if (p.shortDescription) return p.shortDescription.slice(0, 160);
+  if (p.description)      return p.description.slice(0, 160);
 
   const parts: string[] = [`Buy ${p.name}`];
   if (p.brand?.name)    parts.push(`by ${p.brand.name}`);
@@ -160,9 +163,12 @@ function buildKeywords(p: any): string[] {
   const brand     = p.brand?.name ?? "";
   const country   = p.originCountry ?? "";
 
-  return [
-    // Stored keywords first
+  const keywords = [
+    // Stored keywords first (admin-entered or AI-generated at import)
     ...(p.metaKeywords ?? []),
+    // Tag & flavor names attached to the product
+    ...(p.tags ?? []).map((t: any) => t?.name).filter(Boolean),
+    ...(p.flavors ?? []).map((f: any) => f?.name).filter(Boolean),
     // Core identifiers
     p.name,
     brand,
@@ -196,6 +202,15 @@ function buildKeywords(p: any): string[] {
     /beer/i.test(p.type ?? "")                 ? "buy beer Nigeria"      : null,
     SITE_NAME,
   ].filter(Boolean) as string[];
+
+  // Dedupe (case-insensitive) — stored and generated keywords often overlap
+  const seen = new Set<string>();
+  return keywords.filter((k) => {
+    const key = k.toLowerCase().trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

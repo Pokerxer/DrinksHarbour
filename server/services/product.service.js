@@ -9913,11 +9913,13 @@ const getProductBySlug = async (slug) => {
 
     // ─── SEO & Meta ────────────────────────────────────────────────────────
     seo: {
-      metaTitle: product.metaTitle || product.name,
-      metaDescription:
-        product.metaDescription || product.shortDescription || product.description,
+      // Raw stored values only — no fallbacks. The platform's generateMetadata
+      // has richer generators (purchase-intent titles, 160-char descriptions)
+      // that must be able to tell "admin/AI wrote this" apart from "absent".
+      metaTitle: product.metaTitle || null,
+      metaDescription: product.metaDescription || null,
       metaKeywords: product.metaKeywords || [],
-      canonicalUrl: product.canonicalUrl,
+      canonicalUrl: product.canonicalUrl || null,
     },
 
     // ─── External Links ────────────────────────────────────────────────────
