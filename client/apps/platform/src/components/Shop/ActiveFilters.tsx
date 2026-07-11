@@ -13,6 +13,8 @@ interface ActiveFiltersProps {
   isLoading?: boolean;
   searchQuery?: string | null;
   onClearSearch?: () => void;
+  /** Catalog price bounds — a priceRange equal to these is "no price filter". */
+  defaultPriceRange?: { min: number; max: number };
 }
 
 interface FilterChip {
@@ -114,7 +116,9 @@ const ActiveFilters: React.FC<ActiveFiltersProps> = ({
   isLoading = false,
   searchQuery,
   onClearSearch,
+  defaultPriceRange,
 }) => {
+  const priceDefaults = defaultPriceRange ?? DEFAULT_PRICE;
   const [expanded, setExpanded] = useState(false);
 
   const chips = useMemo(() => {
@@ -187,7 +191,7 @@ const ActiveFilters: React.FC<ActiveFiltersProps> = ({
 
     // ── Price range ────────────────────────────────────────────────────────
     const pr = filters.priceRange;
-    if (pr && (pr.min !== DEFAULT_PRICE.min || pr.max !== DEFAULT_PRICE.max)) {
+    if (pr && (pr.min !== priceDefaults.min || pr.max !== priceDefaults.max)) {
       addChip('priceRange', `${pr.min}-${pr.max}`, `₦${pr.min.toLocaleString()} – ₦${pr.max.toLocaleString()}`, 'price');
     }
 
@@ -199,7 +203,7 @@ const ActiveFilters: React.FC<ActiveFiltersProps> = ({
     }
 
     return result;
-  }, [filters, searchQuery]);
+  }, [filters, searchQuery, priceDefaults]);
 
   const removeChip = useCallback((chip: FilterChip) => {
     switch (chip.key) {
@@ -216,7 +220,7 @@ const ActiveFilters: React.FC<ActiveFiltersProps> = ({
         updateFilter('minRating', null);
         break;
       case 'priceRange':
-        updateFilter('priceRange', DEFAULT_PRICE);
+        updateFilter('priceRange', priceDefaults);
         break;
       case 'abvRange':
       case 'volumeRange':
@@ -234,7 +238,7 @@ const ActiveFilters: React.FC<ActiveFiltersProps> = ({
         }
       }
     }
-  }, [filters, updateFilter, onClearSearch]);
+  }, [filters, updateFilter, onClearSearch, priceDefaults]);
 
   if (chips.length === 0) return null;
 

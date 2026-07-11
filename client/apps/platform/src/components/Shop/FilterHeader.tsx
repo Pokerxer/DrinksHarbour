@@ -18,6 +18,8 @@ interface FilterHeaderProps {
   onClearAllFilters?: () => void;
   searchQuery?: string | null;
   onClearSearch?: () => void;
+  /** Catalog price bounds — a priceRange equal to these is "no price filter". */
+  defaultPriceRange?: { min: number; max: number };
 }
 
 const LAYOUT_OPTIONS = [
@@ -39,6 +41,7 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
   onClearAllFilters,
   searchQuery,
   onClearSearch,
+  defaultPriceRange,
 }) => {
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [isFilterTooltipVisible, setIsFilterTooltipVisible] = useState(false);
@@ -69,11 +72,13 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
     if (filters.flavorCategory) count += Array.isArray(filters.flavorCategory) ? filters.flavorCategory.length : 1;
     if (filters.minRating) count++;
     if (filters.showOnlySale) count++;
-    if (filters.priceRange?.min !== 0 || filters.priceRange?.max !== 100000) count++;
+    const defMin = defaultPriceRange?.min ?? 0;
+    const defMax = defaultPriceRange?.max ?? 100000;
+    if (filters.priceRange && (filters.priceRange.min !== defMin || filters.priceRange.max !== defMax)) count++;
     if (filters.abvRange) count++;
     if (filters.volumeRange) count++;
     return count;
-  }, [filters, searchQuery]);
+  }, [filters, searchQuery, defaultPriceRange]);
 
   const hasActiveFilters = activeFiltersCount > 0;
 
@@ -90,11 +95,11 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
       updateFilter('flavorCategory', null);
       updateFilter('minRating', null);
       updateFilter('showOnlySale', false);
-      updateFilter('priceRange', { min: 0, max: 100000 });
+      updateFilter('priceRange', defaultPriceRange ?? { min: 0, max: 100000 });
       updateFilter('abvRange', null);
       updateFilter('volumeRange', null);
     }
-  }, [onClearAllFilters, updateFilter]);
+  }, [onClearAllFilters, updateFilter, defaultPriceRange]);
 
   return (
     <div className="bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-100 p-3 sm:p-4 mb-4 sm:mb-6">
@@ -290,6 +295,7 @@ const FilterHeader: React.FC<FilterHeaderProps> = ({
                 isLoading={isLoading}
                 searchQuery={searchQuery}
                 onClearSearch={onClearSearch}
+                defaultPriceRange={defaultPriceRange}
               />
             </div>
           </motion.div>

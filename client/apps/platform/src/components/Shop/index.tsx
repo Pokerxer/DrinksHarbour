@@ -587,73 +587,65 @@ const Shop: React.FC<Props> = ({
   // doesn't need [filters] as a dependency (stabilizes the callback ref)
   const urlStateRef = useRef(filters);
 
+  // filter-state key → URL param name for everything the server understands
+  const FILTER_URL_KEYS: Partial<Record<keyof FilterState, string>> = {
+    categoryType: 'category',
+    subCategoryType: 'subcategory',
+    brand: 'brand',
+    originCountry: 'origin',
+    flavorCategory: 'flavor',
+    sortOption: 'sort',
+    minRating: 'minRating',
+  };
+
   const updateFilter = useCallback(<K extends keyof FilterState>(key: K, value: FilterState[K]) => {
     urlStateRef.current = { ...urlStateRef.current, [key]: value };
 
     setFilters(prev => ({ ...prev, [key]: value }));
 
-    const params = new URLSearchParams();
-    const currentFilters = urlStateRef.current;
-    const isArrayValue = Array.isArray(value);
+    // Start from the current URL so unrelated params (search, minPrice,
+    // origin, ABV, …) survive a single-filter change — rebuilding from
+    // scratch silently dropped every param this function didn't know about.
+    const params = new URLSearchParams(searchParams.toString());
 
-    if (key === 'categoryType') {
-      if (isArrayValue && (value as string[]).length > 0) {
-        params.set('category', (value as string[]).join(','));
-      } else if (!isArrayValue && value) {
-        params.set('category', value as string);
+    const urlKey = FILTER_URL_KEYS[key];
+    if (urlKey) {
+      const joined = Array.isArray(value)
+        ? (value as string[]).filter(Boolean).join(',')
+        : value
+          ? String(value)
+          : '';
+      if (joined) params.set(urlKey, joined);
+      else params.delete(urlKey);
+    } else if (key === 'showOnlySale') {
+      if (value) params.set('sale', 'true');
+      else {
+        params.delete('sale');
+        params.delete('saleType');
       }
-    } else if (currentFilters.categoryType) {
-      if (Array.isArray(currentFilters.categoryType)) {
-        params.set('category', currentFilters.categoryType.join(','));
-      } else {
-        params.set('category', currentFilters.categoryType);
-      }
+    } else if (key === 'priceRange') {
+      // Chip removal resets the range to the defaults — clear any URL pin.
+      params.delete('minPrice');
+      params.delete('maxPrice');
     }
+    // Other keys (size, abvRange, volumeRange, color) are client-side only.
 
-    if (key === 'subCategoryType') {
-      if (isArrayValue && (value as string[]).length > 0) {
-        params.set('subcategory', (value as string[]).join(','));
-      } else if (!isArrayValue && value) {
-        params.set('subcategory', value as string);
-      }
-    } else if (currentFilters.subCategoryType) {
-      if (Array.isArray(currentFilters.subCategoryType)) {
-        params.set('subcategory', currentFilters.subCategoryType.join(','));
-      } else {
-        params.set('subcategory', currentFilters.subCategoryType);
-      }
-    }
-
-    if (key === 'brand') {
-      if (isArrayValue && (value as string[]).length > 0) {
-        params.set('brand', (value as string[]).join(','));
-      } else if (!isArrayValue && value) {
-        params.set('brand', value as string);
-      }
-    } else if (currentFilters.brand) {
-      if (Array.isArray(currentFilters.brand)) {
-        params.set('brand', currentFilters.brand.join(','));
-      } else {
-        params.set('brand', currentFilters.brand);
-      }
-    }
-
-    if (currentFilters.sortOption) {
-      params.set('sort', currentFilters.sortOption);
-    }
-
-    if (currentFilters.showOnlySale) {
-      params.set('sale', 'true');
-    }
-
-    const newUrl = `${pathname}?${params.toString()}`;
-    router.replace(newUrl, { scroll: false });
-  }, [pathname, router]);
+    const qs = params.toString();
+    router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
+  }, [pathname, router, searchParams]);
 
   const handleClearAll = useCallback(() => {
     setFilters(createDefaultFilters(filterOptions.priceRange));
     router.replace(pathname, { scroll: false });
   }, [filterOptions.priceRange, pathname, router]);
+
+  // Remove only the search param — used by the "Search" chip in ActiveFilters.
+  const handleClearSearch = useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('search');
+    const qs = params.toString();
+    router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
+  }, [pathname, router, searchParams]);
 
   const handlePageChange = useCallback((selected: number) => {
     setCurrentPage(selected);
@@ -702,6 +694,9 @@ const Shop: React.FC<Props> = ({
                 sortOptions={SORT_OPTIONS}
                 totalProducts={0}
                 onClearAllFilters={handleClearAll}
+                defaultPriceRange={filterOptions.priceRange}
+                searchQuery={searchQuery}
+                onClearSearch={handleClearSearch}
               />
               <ProductGrid
                 products={[]}
@@ -721,6 +716,9 @@ const Shop: React.FC<Props> = ({
                 sortOptions={SORT_OPTIONS}
                 totalProducts={sortedProducts.length}
                 onClearAllFilters={handleClearAll}
+                defaultPriceRange={filterOptions.priceRange}
+                searchQuery={searchQuery}
+                onClearSearch={handleClearSearch}
               />
               {hasFilteredResults ? (
                 <>
