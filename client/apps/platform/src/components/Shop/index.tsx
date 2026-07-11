@@ -341,6 +341,45 @@ const Shop: React.FC<Props> = ({
     filterOptionsInitialized.current = true;
   }, [data, allProducts]);
 
+  // Catalog-wide facets — the page-derived options above only see the loaded
+  // (already filtered, first-page) products, so brands/origins/categories not
+  // on that page would be invisible. Fetch the full catalog facets once and
+  // override those option lists.
+  useEffect(() => {
+    let alive = true;
+    const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+    fetch(`${base}/api/products/filter-options`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (!alive || !json?.success) return;
+        const d = json.data || {};
+        setFilterOptions((prev: any) => ({
+          ...prev,
+          ...(d.brands?.length ? { brand: d.brands.map((b: any) => b.name) } : {}),
+          ...(d.origins?.length ? { originCountry: d.origins } : {}),
+          ...(d.categories?.length ? { categoryType: d.categories.map((c: any) => c.slug) } : {}),
+          ...(d.subCategories?.length ? { subCategoryType: d.subCategories.map((s: any) => s.slug) } : {}),
+          ...(d.priceRange?.max > 0 ? { priceRange: d.priceRange } : {}),
+        }));
+        // Widen the active price filter to the catalog bounds so client-side
+        // filtering never hides products the server returned. Skip when the
+        // URL already pins an explicit price range.
+        const hasUrlPrice = searchParams.get('minPrice') || searchParams.get('maxPrice');
+        if (d.priceRange?.max > 0 && !hasUrlPrice) {
+          setFilters((prev: any) => ({
+            ...prev,
+            priceRange: {
+              min: Math.min(prev.priceRange?.min ?? d.priceRange.min, d.priceRange.min),
+              max: Math.max(prev.priceRange?.max ?? d.priceRange.max, d.priceRange.max),
+            },
+          }));
+        }
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Filter products
   const filteredProducts = useMemo(() => {
     if (!data || data.length === 0) return [];

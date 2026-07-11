@@ -115,6 +115,16 @@ router.get(
 );
 
 /**
+ * Catalog-wide filter facets (brands, origins, categories, price bounds)
+ * @route GET /api/products/filter-options
+ * @access Public
+ */
+router.get(
+  '/filter-options',
+  productController.getProductFilterOptions
+);
+
+/**
  * Get search suggestions
  * @route GET /api/products/suggestions
  * @access Public

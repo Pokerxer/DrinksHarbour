@@ -1215,6 +1215,72 @@ const searchProductsPublic = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Catalog-wide filter facets for the public shop (brands, origins,
+ *          categories, subcategories, price bounds) — computed over the whole
+ *          visible catalog so filter options are never limited to one page.
+ * @route   GET /api/products/filter-options
+ * @access  Public
+ */
+const getProductFilterOptions = asyncHandler(async (req, res) => {
+  const Product = require('../models/Product');
+
+  const [facets] = await Product.aggregate([
+    { $match: { status: 'approved', isPublished: true } },
+    {
+      $facet: {
+        brands: [
+          { $match: { brand: { $ne: null } } },
+          { $group: { _id: '$brand' } },
+          { $lookup: { from: 'brands', localField: '_id', foreignField: '_id', as: 'b' } },
+          { $unwind: '$b' },
+          { $project: { _id: 0, name: '$b.name', slug: '$b.slug' } },
+          { $sort: { name: 1 } },
+        ],
+        origins: [
+          { $match: { originCountry: { $nin: [null, ''] } } },
+          { $group: { _id: '$originCountry' } },
+          { $sort: { _id: 1 } },
+        ],
+        categories: [
+          { $match: { category: { $ne: null } } },
+          { $group: { _id: '$category' } },
+          { $lookup: { from: 'categories', localField: '_id', foreignField: '_id', as: 'c' } },
+          { $unwind: '$c' },
+          { $project: { _id: 0, name: '$c.name', slug: '$c.slug' } },
+          { $sort: { name: 1 } },
+        ],
+        subCategories: [
+          { $match: { subCategory: { $ne: null } } },
+          { $group: { _id: '$subCategory' } },
+          { $lookup: { from: 'subcategories', localField: '_id', foreignField: '_id', as: 's' } },
+          { $unwind: '$s' },
+          { $project: { _id: 0, name: '$s.name', slug: '$s.slug' } },
+          { $sort: { name: 1 } },
+        ],
+        price: [
+          { $match: { basePrice: { $gt: 0 } } },
+          { $group: { _id: null, min: { $min: '$basePrice' }, max: { $max: '$basePrice' } } },
+        ],
+      },
+    },
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      brands: facets.brands,
+      origins: facets.origins.map((o) => o._id),
+      categories: facets.categories,
+      subCategories: facets.subCategories,
+      priceRange: {
+        min: facets.price[0]?.min ?? 0,
+        max: facets.price[0]?.max ?? 0,
+      },
+    },
+  });
+});
+
+/**
  * @desc    Get featured products
  * @route   GET /api/products/featured
  * @access  Public
@@ -1774,6 +1840,7 @@ module.exports = {
     exportAllProducts,
     getAllProducts,
     searchProductsPublic,
+    getProductFilterOptions,
     getFeaturedProducts,
     getNewArrivals,
     getBestsellers,
