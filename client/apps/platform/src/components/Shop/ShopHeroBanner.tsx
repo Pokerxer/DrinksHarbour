@@ -403,6 +403,53 @@ function themeFromColor(color: string) {
   return { dark: darken(color, 0.9), mid: darken(color, 0.8), glow: color, accent: color };
 }
 
+// Strip HTML tags (brand/category descriptions may be rich text).
+function stripHtml(html?: string): string {
+  return String(html || '').replace(/<[^>]*>/g, ' ').replace(/\s{2,}/g, ' ').trim();
+}
+
+// ─── Brand details (fetched when a single brand filter is active) ────────────
+
+interface BrandDetails {
+  _id: string;
+  name: string;
+  slug: string;
+  tagline?: string;
+  shortDescription?: string;
+  description?: string;
+  brandType?: string;
+  primaryCategory?: string;
+  countryOfOrigin?: string;
+  brandColors?: { primary?: string; secondary?: string; accent?: string };
+  logo?: { url?: string };
+  featuredImage?: { url?: string };
+  bannerImage?: { url?: string };
+}
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+const _brandCache = new Map<string, BrandDetails | null>();
+
+// The shop `brand` URL param carries the brand *name* — look it up via search
+// and prefer an exact (case-insensitive) name match.
+async function fetchBrandByName(name: string): Promise<BrandDetails | null> {
+  const key = name.toLowerCase();
+  if (_brandCache.has(key)) return _brandCache.get(key)!;
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/brands?search=${encodeURIComponent(name)}&limit=5&status=active`
+    );
+    const json = await res.json();
+    const brands: BrandDetails[] = json?.data?.brands || json?.brands || [];
+    const brand =
+      brands.find((b) => b.name?.toLowerCase() === key) ?? brands[0] ?? null;
+    _brandCache.set(key, brand);
+    return brand;
+  } catch {
+    _brandCache.set(key, null);
+    return null;
+  }
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ShopHeroBanner({
@@ -432,6 +479,21 @@ export default function ShopHeroBanner({
   const activeSubs = useMemo(() => new Set(toList(subcategory)), [subcategory]);
   const catList = useMemo(() => [...activeCats], [activeCats]);
   const subList = useMemo(() => [...activeSubs], [activeSubs]);
+  const brandList = useMemo(() => toList(brand), [brand]);
+
+  // ── Brand details — fetched when exactly one brand is selected ──
+  const [dbBrand, setDbBrand] = useState<BrandDetails | null>(null);
+  useEffect(() => {
+    let alive = true;
+    if (brandList.length !== 1) {
+      setDbBrand(null);
+      return;
+    }
+    fetchBrandByName(brandList[0]).then((b) => {
+      if (alive) setDbBrand(b);
+    });
+    return () => { alive = false; };
+  }, [brandList]);
 
   // Resolve the active DB category: first selected category, else parent of first subcategory.
   const dbCat = useMemo<Category | null>(() => {
@@ -458,40 +520,62 @@ export default function ShopHeroBanner({
 
   const isDefault = catList.length === 0 && subList.length === 0;
 
-  // ── Visual theme: curated look matched by slug, else derived from the DB colour ──
+  // Brand takes over the hero when it is the only active filter.
+  const brandOnly = brandList.length > 0 && isDefault;
+
+  // ── Visual theme: brand colour first, then curated look, then DB category colour ──
   const themeKey = dbCat?.slug ?? catList[0] ?? (subList[0] ? SUBCAT_PARENT[subList[0]] : undefined);
   const curated = (themeKey && CONFIGS[themeKey]) || null;
   const curatedSub = subList.length === 1 ? SUBCAT_LABELS[subList[0]] : null;
 
-  const theme = curated
-    ? { dark: curated.dark, mid: curated.mid, glow: curated.glow, accent: curated.accent }
-    : dbCat?.color
-      ? themeFromColor(dbCat.color)
-      : { dark: DEFAULT_CONFIG.dark, mid: DEFAULT_CONFIG.mid, glow: DEFAULT_CONFIG.glow, accent: DEFAULT_CONFIG.accent };
+  const brandColor = brandOnly ? dbBrand?.brandColors?.primary : undefined;
+  const theme = brandColor
+    ? themeFromColor(brandColor)
+    : curated
+      ? { dark: curated.dark, mid: curated.mid, glow: curated.glow, accent: curated.accent }
+      : dbCat?.color
+        ? themeFromColor(dbCat.color)
+        : { dark: DEFAULT_CONFIG.dark, mid: DEFAULT_CONFIG.mid, glow: DEFAULT_CONFIG.glow, accent: DEFAULT_CONFIG.accent };
 
   // ── Count subtitle for multi-select ──
   const countSubtitle =
     catList.length > 1 ? `${catList.length} categories selected`
     : subList.length > 1 ? `${subList.length} styles selected`
+    : brandOnly && brandList.length > 1 ? `${brandList.length} brands selected`
     : null;
 
-  // ── Display copy: DB first, curated fallback, generic last ──
-  const displayLabel       = dbSub?.name ?? curatedSub?.label ?? dbCat?.name ?? curated?.label ?? DEFAULT_CONFIG.label;
-  const displaySubtitle    = countSubtitle ?? dbSub?.tagline ?? curatedSub?.subtitle ?? dbCat?.tagline ?? curated?.subtitle ?? DEFAULT_CONFIG.subtitle;
-  const displayDescription = dbSub?.description ?? curatedSub?.description ?? dbCat?.description ?? curated?.description ?? DEFAULT_CONFIG.description;
+  // ── Brand copy — DB brand details, slug-derived name as fallback ──
+  const brandLabel = brandOnly && brandList.length === 1
+    ? dbBrand?.name ?? brandList[0].replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+    : null;
+  const prettify = (s?: string) => (s ? s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '');
+  const brandSubtitle = brandLabel
+    ? dbBrand?.tagline ||
+      [prettify(dbBrand?.brandType), dbBrand?.countryOfOrigin].filter(Boolean).join(' · ') ||
+      null
+    : null;
+  const brandDescription = brandLabel
+    ? dbBrand?.shortDescription ||
+      (dbBrand?.description ? stripHtml(dbBrand.description).slice(0, 320) : null)
+    : null;
 
-  const ctaText = curated?.ctaText ?? (dbCat ? `Explore ${dbCat.name}` : DEFAULT_CONFIG.ctaText);
+  // ── Display copy: brand first, then DB category/subcategory, curated fallback, generic last ──
+  const displayLabel       = brandLabel ?? dbSub?.name ?? curatedSub?.label ?? dbCat?.name ?? curated?.label ?? DEFAULT_CONFIG.label;
+  const displaySubtitle    = countSubtitle ?? brandSubtitle ?? dbSub?.tagline ?? curatedSub?.subtitle ?? dbCat?.tagline ?? curated?.subtitle ?? DEFAULT_CONFIG.subtitle;
+  const displayDescription = stripHtml(
+    brandDescription ?? dbSub?.description ?? curatedSub?.description ?? dbCat?.description ?? curated?.description ?? DEFAULT_CONFIG.description
+  );
 
-  // Featured image background — a single active subcategory's image wins, else the category's.
+  const ctaText = brandLabel
+    ? `Explore ${brandLabel}`
+    : curated?.ctaText ?? (dbCat ? `Explore ${dbCat.name}` : DEFAULT_CONFIG.ctaText);
+
+  // Featured image background — brand image first, then a single active
+  // subcategory's image, else the category's.
   const heroImage =
+    (brandOnly ? dbBrand?.bannerImage?.url ?? dbBrand?.featuredImage?.url : null) ??
     (subList.length === 1 ? dbSub?.featuredImage?.url ?? dbSub?.bannerImage?.url : null) ??
     dbCat?.featuredImage?.url ?? dbCat?.bannerImage?.url ?? null;
-
-  // Brand override — when only brand is active
-  const brandList = toList(brand);
-  const brandLabel = brandList.length === 1 && activeCats.size === 0 && activeSubs.size === 0
-    ? brandList[0].replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-    : null;
 
   // Build CTA URL (just clears subcategory, keeps category)
   const ctaUrl = useMemo(() => {
@@ -588,21 +672,29 @@ export default function ShopHeroBanner({
                 }}
               >
                 <Icon.PiSparkleFill size={12} />
-                {brandLabel ? `${brandLabel} · ${displaySubtitle}` : displaySubtitle}
+                {displaySubtitle}
               </span>
             </motion.div>
 
-            {/* Headline */}
-            <motion.h1
-              variants={textVariants}
-              className="font-black text-white leading-[1.02] tracking-tight mb-4"
-              style={{
-                fontSize: 'clamp(36px, 6vw, 72px)',
-                textShadow: '0 2px 24px rgba(0,0,0,0.5)',
-              }}
-            >
-              {brandLabel ?? displayLabel}
-            </motion.h1>
+            {/* Headline — with brand logo when a single brand is active */}
+            <motion.div variants={textVariants} className="flex items-center gap-4 mb-4">
+              {brandLabel && dbBrand?.logo?.url && (
+                <img
+                  src={dbBrand.logo.url}
+                  alt={brandLabel}
+                  className="h-14 w-14 sm:h-20 sm:w-20 flex-shrink-0 rounded-2xl bg-white/90 object-contain p-1.5 shadow-lg"
+                />
+              )}
+              <h1
+                className="font-black text-white leading-[1.02] tracking-tight"
+                style={{
+                  fontSize: 'clamp(36px, 6vw, 72px)',
+                  textShadow: '0 2px 24px rgba(0,0,0,0.5)',
+                }}
+              >
+                {displayLabel}
+              </h1>
+            </motion.div>
 
             {/* Description */}
             <motion.p
