@@ -1,52 +1,137 @@
 'use client';
 
-import React from "react";
-import { motion } from "framer-motion";
+import React, { useEffect, useState } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
+
+type Size = 'sm' | 'md' | 'lg' | 'xl';
+type Variant = 'spinner' | 'dots' | 'pulse' | 'bounce' | 'ring' | 'glass';
+type Color = 'brand' | 'emerald' | 'amber' | 'rose' | 'blue' | 'purple';
 
 interface LoadingSpinnerProps {
-  size?: "sm" | "md" | "lg" | "xl";
-  variant?: "spinner" | "dots" | "pulse" | "bounce" | "ring";
+  size?: Size;
+  variant?: Variant;
   text?: string;
   className?: string;
   fullScreen?: boolean;
-  color?: "emerald" | "amber" | "rose" | "blue" | "purple";
+  color?: Color;
+  /** Milliseconds to wait before showing — prevents a flash on fast loads. */
+  delay?: number;
 }
 
+// Concrete hex values — the previous template-literal Tailwind classes
+// (border-t-${color}-500 etc.) were never compiled, so pulse/ring rendered
+// colorless. "rose" maps to the site red: that's what existing callers meant.
+const COLORS: Record<Color, string> = {
+  brand: '#b20202',
+  rose: '#b20202',
+  emerald: '#10b981',
+  amber: '#f59e0b',
+  blue: '#3b82f6',
+  purple: '#8b5cf6',
+};
+
+const PX: Record<Size, number> = { sm: 20, md: 32, lg: 48, xl: 64 };
+const BORDER: Record<Size, number> = { sm: 2, md: 3, lg: 4, xl: 5 };
+
+// ─── Wine glass (signature) ───────────────────────────────────────────────────
+// A stemmed glass whose pour rises and settles, with one bubble drifting up.
+
+function GlassLoader({ px, hex, still }: { px: number; hex: string; still: boolean }) {
+  const w = px * 1.1;
+  const h = px * 1.5;
+  const clipId = React.useId();
+  return (
+    <svg width={w} height={h} viewBox="0 0 32 44" fill="none" aria-hidden="true">
+      <defs>
+        {/* bowl interior — the liquid is clipped to this */}
+        <clipPath id={clipId}>
+          <path d="M7 3 H25 C25 12 22 19 16 20 C10 19 7 12 7 3 Z" />
+        </clipPath>
+      </defs>
+
+      {/* liquid */}
+      <g clipPath={`url(#${clipId})`}>
+        {still ? (
+          <rect x="0" y="9" width="32" height="14" fill={hex} opacity="0.85" />
+        ) : (
+          <>
+            <motion.rect
+              x="-8"
+              width="48"
+              height="26"
+              fill={hex}
+              opacity="0.85"
+              initial={{ y: 22 }}
+              animate={{ y: [22, 7, 9, 7.5, 22] }}
+              transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut', times: [0, 0.35, 0.55, 0.75, 1] }}
+            />
+            <motion.circle
+              r="1.1"
+              cx="14"
+              fill="#fff"
+              opacity="0.6"
+              initial={{ cy: 19 }}
+              animate={{ cy: [19, 8], opacity: [0, 0.6, 0] }}
+              transition={{ duration: 1.4, repeat: Infinity, ease: 'easeOut', delay: 0.6 }}
+            />
+          </>
+        )}
+      </g>
+
+      {/* glass outline */}
+      <path
+        d="M7 3 H25 C25 12 22 19 16 20 C10 19 7 12 7 3 Z M16 20 V38 M9 40 H23"
+        stroke={hex}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
-  size = "md",
-  variant = "spinner",
-  text = "Loading...",
-  className = "",
+  size = 'md',
+  variant = 'spinner',
+  text = 'Loading...',
+  className = '',
   fullScreen = false,
-  color = "emerald",
+  color = 'brand',
+  delay = 0,
 }) => {
-  const colorClasses = {
-    emerald: "border-t-emerald-500 bg-emerald-500",
-    amber: "border-t-amber-500 bg-amber-500",
-    rose: "border-t-rose-500 bg-rose-500",
-    blue: "border-t-blue-500 bg-blue-500",
-    purple: "border-t-purple-500 bg-purple-500",
-  };
+  const prefersReduced = useReducedMotion();
+  const still = !!prefersReduced;
+  const hex = COLORS[color] ?? COLORS.brand;
+  const px = PX[size];
+  const border = BORDER[size];
 
-  const sizeClasses = {
-    sm: "w-5 h-5 border-2",
-    md: "w-8 h-8 border-[3px]",
-    lg: "w-12 h-12 border-4",
-    xl: "w-16 h-16 border-[5px]",
-  };
+  // Anti-flash: stay invisible until `delay` has elapsed.
+  const [visible, setVisible] = useState(delay <= 0);
+  useEffect(() => {
+    if (delay <= 0) return;
+    const t = setTimeout(() => setVisible(true), delay);
+    return () => clearTimeout(t);
+  }, [delay]);
+  if (!visible) return null;
 
-  const ringSizes = {
-    sm: "w-6 h-6",
-    md: "w-10 h-10",
-    lg: "w-16 h-16",
-    xl: "w-24 h-24",
-  };
+  const spin = still ? {} : { rotate: 360 };
+  const spinTransition = { duration: 1, repeat: Infinity, ease: 'linear' as const };
 
   const renderSpinner = () => (
     <motion.div
-      animate={{ rotate: 360 }}
-      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-      className={`${sizeClasses[size]} border-gray-200 ${colorClasses[color]} rounded-full`}
+      animate={spin}
+      transition={spinTransition}
+      style={{
+        width: px,
+        height: px,
+        borderWidth: border,
+        borderStyle: 'solid',
+        borderColor: `${hex}26`,
+        borderTopColor: hex,
+      }}
+      className="rounded-full"
     />
   );
 
@@ -55,80 +140,74 @@ const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
       {[0, 1, 2].map((i) => (
         <motion.div
           key={i}
-          animate={{
-            scale: [0.8, 1.2, 0.8],
-            opacity: [0.5, 1, 0.5],
-          }}
-          transition={{
-            duration: 0.8,
-            repeat: Infinity,
-            delay: i * 0.12,
-            ease: "easeInOut",
-          }}
-          className={`${size === "sm" ? "w-1.5 h-1.5" : size === "lg" ? "w-3 h-3" : "w-2 h-2"} ${colorClasses[color].split(" ")[1]} rounded-full`}
+          animate={still ? {} : { scale: [0.7, 1.15, 0.7], opacity: [0.4, 1, 0.4] }}
+          transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.14, ease: 'easeInOut' }}
+          style={{ width: px / 3.6, height: px / 3.6, backgroundColor: hex }}
+          className="rounded-full"
         />
       ))}
     </div>
   );
 
   const renderPulse = () => (
-    <motion.div
-      animate={{
-        scale: [1, 1.4, 1],
-        opacity: [1, 0.5, 1],
-      }}
-      transition={{
-        duration: 1.2,
-        repeat: Infinity,
-        ease: "easeInOut",
-      }}
-      className={`${sizeClasses[size]} rounded-full bg-gradient-to-br from-${color}-400 to-${color}-600`}
-    />
+    <div className="relative" style={{ width: px, height: px }}>
+      {/* expanding ripple */}
+      {!still && (
+        <motion.div
+          className="absolute inset-0 rounded-full"
+          style={{ border: `2px solid ${hex}` }}
+          animate={{ scale: [1, 1.9], opacity: [0.55, 0] }}
+          transition={{ duration: 1.4, repeat: Infinity, ease: 'easeOut' }}
+        />
+      )}
+      {/* core */}
+      <motion.div
+        className="absolute rounded-full"
+        style={{ inset: px / 5, backgroundColor: hex }}
+        animate={still ? {} : { scale: [1, 0.82, 1] }}
+        transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+      />
+    </div>
   );
 
   const renderBounce = () => (
-    <div className="flex items-end gap-1">
+    <div className="flex items-end gap-1" style={{ height: px }}>
       {[0, 1, 2].map((i) => (
         <motion.div
           key={i}
-          animate={{
-            height: ["30%", "100%", "30%"],
-            opacity: [0.5, 1, 0.5],
-          }}
-          transition={{
-            duration: 0.8,
-            repeat: Infinity,
-            delay: i * 0.1,
-            ease: "easeInOut",
-          }}
-          className={`${size === "sm" ? "w-1" : size === "lg" ? "w-3" : "w-2"} ${colorClasses[color].split(" ")[1]} rounded-full`}
+          animate={still ? {} : { height: ['30%', '100%', '30%'], opacity: [0.45, 1, 0.45] }}
+          transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.12, ease: 'easeInOut' }}
+          style={{ width: px / 4, height: '60%', backgroundColor: hex }}
+          className="rounded-full"
         />
       ))}
     </div>
   );
 
   const renderRing = () => (
-    <div className="relative">
+    <div className="relative" style={{ width: px * 1.25, height: px * 1.25 }}>
       <motion.div
-        animate={{ rotate: 360 }}
-        transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-        className={`${ringSizes[size]} rounded-full border-4 border-gray-200 border-t-${color}-500`}
+        className="absolute inset-0 rounded-full"
+        style={{ border: `${border}px solid ${hex}22`, borderTopColor: hex }}
+        animate={spin}
+        transition={{ duration: 1.4, repeat: Infinity, ease: 'linear' }}
       />
       <motion.div
-        animate={{ rotate: -360 }}
-        transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-        className={`absolute inset-1 ${ringSizes[size].replace("w-", "w-[calc(").replace(" h-", "-h-")}] rounded-full border-2 border-transparent border-b-${color}-300`}
-        style={{ transform: "scale(0.85)" }}
+        className="absolute rounded-full"
+        style={{ inset: px / 5, border: `2px solid transparent`, borderBottomColor: `${hex}88` }}
+        animate={still ? {} : { rotate: -360 }}
+        transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
       />
     </div>
   );
 
   const renderLoader = () => {
     switch (variant) {
-      case "dots": return renderDots();
-      case "pulse": return renderPulse();
-      case "bounce": return renderBounce();
-      case "ring": return renderRing();
+      case 'dots': return renderDots();
+      case 'pulse': return renderPulse();
+      case 'bounce': return renderBounce();
+      case 'ring': return renderRing();
+      case 'glass': return <GlassLoader px={px} hex={hex} still={still} />;
       default: return renderSpinner();
     }
   };
@@ -136,46 +215,61 @@ const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
   if (fullScreen) {
     return (
       <motion.div
+        role="status"
+        aria-live="polite"
+        aria-label={text || 'Loading'}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className={`fixed inset-0 bg-white/95 backdrop-blur-md z-50 flex flex-col items-center justify-center ${className}`}
       >
         <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
+          initial={still ? false : { scale: 0.85, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 0.3 }}
         >
           {renderLoader()}
         </motion.div>
-        
+
         {text && (
           <motion.p
-            initial={{ opacity: 0, y: 10 }}
+            initial={still ? false : { opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
+            transition={{ delay: 0.15 }}
             className="mt-6 text-gray-600 font-medium"
           >
             {text}
           </motion.p>
         )}
-        
-        <motion.div
-          initial={{ width: 0 }}
-          animate={{ width: 120 }}
-          transition={{ delay: 0.3, duration: 0.8, ease: "easeInOut" }}
-          className="h-0.5 bg-gradient-to-r from-emerald-400 to-teal-500 rounded-full mt-4"
-        />
+
+        {!still && (
+          <motion.div
+            className="mt-4 h-0.5 w-[120px] overflow-hidden rounded-full"
+            style={{ backgroundColor: `${hex}1f` }}
+          >
+            <motion.div
+              className="h-full w-1/3 rounded-full"
+              style={{ backgroundColor: hex }}
+              animate={{ x: ['-100%', '300%'] }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          </motion.div>
+        )}
       </motion.div>
     );
   }
 
   return (
-    <div className={`flex flex-col items-center justify-center ${className}`}>
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label={text || 'Loading'}
+      className={`flex flex-col items-center justify-center ${className}`}
+    >
       {renderLoader()}
       {text && (
         <motion.p
-          initial={{ opacity: 0 }}
+          initial={still ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
           className="mt-3 text-gray-500 text-sm font-medium"
         >

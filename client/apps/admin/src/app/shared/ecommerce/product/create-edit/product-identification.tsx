@@ -126,8 +126,9 @@ export default function ProductIdentification({ className }: ProductIdentificati
     if (!token) return;
     setIsLoadingBrands(true);
     try {
-      const fetched = await brandService.getBrands(token, { limit: 100 });
-      setBrands(fetched);
+      // limit 100 silently hid every brand past the 100th (catalog is 150+)
+      const fetched = await brandService.getBrands(token, { limit: 500 });
+      setBrands(fetched.sort((a, b) => a.name.localeCompare(b.name)));
     } catch {
       setBrands([]);
     } finally {
