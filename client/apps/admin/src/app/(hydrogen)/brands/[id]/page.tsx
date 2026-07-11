@@ -56,16 +56,62 @@ interface Product {
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
-function StatusBadge({ status, isPublished }: { status: string; isPublished: boolean }) {
+function StatusBadge({
+  status,
+  isPublished,
+}: {
+  status: string;
+  isPublished: boolean;
+}) {
   if (status === 'approved' && isPublished)
-    return <Badge color="success" variant="flat" className="capitalize text-xs font-semibold">Published</Badge>;
+    return (
+      <Badge
+        color="success"
+        variant="flat"
+        className="text-xs font-semibold capitalize"
+      >
+        Published
+      </Badge>
+    );
   if (status === 'pending')
-    return <Badge color="warning" variant="flat" className="capitalize text-xs font-semibold">Pending</Badge>;
+    return (
+      <Badge
+        color="warning"
+        variant="flat"
+        className="text-xs font-semibold capitalize"
+      >
+        Pending
+      </Badge>
+    );
   if (status === 'rejected')
-    return <Badge color="danger" variant="flat" className="capitalize text-xs font-semibold">Rejected</Badge>;
+    return (
+      <Badge
+        color="danger"
+        variant="flat"
+        className="text-xs font-semibold capitalize"
+      >
+        Rejected
+      </Badge>
+    );
   if (status === 'discontinued')
-    return <Badge color="secondary" variant="flat" className="capitalize text-xs font-semibold">Discontinued</Badge>;
-  return <Badge color="secondary" variant="flat" className="capitalize text-xs font-semibold">Draft</Badge>;
+    return (
+      <Badge
+        color="secondary"
+        variant="flat"
+        className="text-xs font-semibold capitalize"
+      >
+        Discontinued
+      </Badge>
+    );
+  return (
+    <Badge
+      color="secondary"
+      variant="flat"
+      className="text-xs font-semibold capitalize"
+    >
+      Draft
+    </Badge>
+  );
 }
 
 // ─── Product Image ─────────────────────────────────────────────────────────────
@@ -73,18 +119,20 @@ function StatusBadge({ status, isPublished }: { status: string; isPublished: boo
 function ProductImage({ src, name }: { src?: string; name: string }) {
   if (!src) {
     return (
-      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center flex-shrink-0">
-        <PiPackageBold className="w-4 h-4 text-gray-400" />
+      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-gray-100 to-gray-200">
+        <PiPackageBold className="h-4 w-4 text-gray-400" />
       </div>
     );
   }
   return (
-    <div className="w-10 h-10 rounded-lg overflow-hidden border border-gray-100 flex-shrink-0 bg-gray-50">
+    <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-lg border border-gray-100 bg-gray-50">
       <img
         src={src}
         alt={name}
-        className="w-full h-full object-cover"
-        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+        className="h-full w-full object-cover"
+        onError={(e) => {
+          (e.currentTarget as HTMLImageElement).style.display = 'none';
+        }}
       />
     </div>
   );
@@ -99,19 +147,31 @@ function LoadingRows() {
         <tr key={i} className="border-b border-gray-100">
           <td className="px-4 py-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gray-200 animate-pulse flex-shrink-0" />
-              <div className="space-y-1.5 flex-1">
-                <div className="h-3.5 bg-gray-200 rounded w-40 animate-pulse" />
-                <div className="h-3 bg-gray-100 rounded w-24 animate-pulse" />
+              <div className="h-10 w-10 flex-shrink-0 animate-pulse rounded-lg bg-gray-200" />
+              <div className="flex-1 space-y-1.5">
+                <div className="h-3.5 w-40 animate-pulse rounded bg-gray-200" />
+                <div className="h-3 w-24 animate-pulse rounded bg-gray-100" />
               </div>
             </div>
           </td>
-          <td className="px-4 py-3"><div className="h-5 bg-gray-200 rounded-full w-20 animate-pulse" /></td>
-          <td className="px-4 py-3"><div className="h-4 bg-gray-100 rounded w-16 animate-pulse" /></td>
-          <td className="px-4 py-3"><div className="h-4 bg-gray-100 rounded w-12 animate-pulse" /></td>
-          <td className="px-4 py-3"><div className="h-4 bg-gray-100 rounded w-10 animate-pulse" /></td>
-          <td className="px-4 py-3"><div className="h-4 bg-gray-100 rounded w-24 animate-pulse" /></td>
-          <td className="px-4 py-3"><div className="h-8 w-8 bg-gray-100 rounded-lg animate-pulse" /></td>
+          <td className="px-4 py-3">
+            <div className="h-5 w-20 animate-pulse rounded-full bg-gray-200" />
+          </td>
+          <td className="px-4 py-3">
+            <div className="h-4 w-16 animate-pulse rounded bg-gray-100" />
+          </td>
+          <td className="px-4 py-3">
+            <div className="h-4 w-12 animate-pulse rounded bg-gray-100" />
+          </td>
+          <td className="px-4 py-3">
+            <div className="h-4 w-10 animate-pulse rounded bg-gray-100" />
+          </td>
+          <td className="px-4 py-3">
+            <div className="h-4 w-24 animate-pulse rounded bg-gray-100" />
+          </td>
+          <td className="px-4 py-3">
+            <div className="h-8 w-8 animate-pulse rounded-lg bg-gray-100" />
+          </td>
         </tr>
       ))}
     </>
@@ -120,7 +180,11 @@ function LoadingRows() {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function BrandProductsPage({ params }: { params: Promise<{ id: string }> }) {
+export default function BrandProductsPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = use(params);
   const { data: session } = useSession();
   const token = (session?.user as any)?.token as string;
@@ -156,7 +220,8 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
       if (brandJson.success) setBrand(brandJson.data.brand);
 
       const prodsJson = await prodsRes.json();
-      if (!prodsRes.ok) throw new Error(prodsJson.message || `Server error ${prodsRes.status}`);
+      if (!prodsRes.ok)
+        throw new Error(prodsJson.message || `Server error ${prodsRes.status}`);
       const items: Product[] = prodsJson.data?.products || [];
       const pagination = prodsJson.data?.pagination;
       setProducts(items);
@@ -179,7 +244,9 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(
-        (p) => p.name.toLowerCase().includes(q) || p.category?.name?.toLowerCase().includes(q)
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.category?.name?.toLowerCase().includes(q)
       );
     }
     if (statusFilter !== 'all') {
@@ -192,7 +259,11 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
     price != null ? `₦${price.toLocaleString('en-NG')}` : '—';
 
   const formatDate = (d: string) =>
-    new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
+    new Date(d).toLocaleDateString('en-NG', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
 
   return (
     <div className="space-y-5">
@@ -210,7 +281,7 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
                 <img
                   src={brand.logo.url}
                   alt={brand.name}
-                  className="h-8 w-8 rounded-lg object-contain border border-gray-100 bg-gray-50 p-0.5"
+                  className="h-8 w-8 rounded-lg border border-gray-100 bg-gray-50 object-contain p-0.5"
                 />
               ) : (
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100">
@@ -221,16 +292,31 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
                 {brand?.name ?? 'Brand'}
               </Title>
               {brand?.verified && (
-                <PiSealCheckFill className="h-5 w-5 flex-shrink-0 text-blue-500" title="Verified brand" />
+                <PiSealCheckFill
+                  className="h-5 w-5 flex-shrink-0 text-blue-500"
+                  title="Verified brand"
+                />
               )}
               {brand?.countryOfOrigin && (
-                <span className="text-sm text-gray-400">· {brand.countryOfOrigin}</span>
+                <span className="text-sm text-gray-400">
+                  · {brand.countryOfOrigin}
+                </span>
               )}
             </div>
             <nav className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
-              <Link href={routes.eCommerce.dashboard} className="hover:text-gray-600">E-Commerce</Link>
+              <Link
+                href={routes.eCommerce.dashboard}
+                className="hover:text-gray-600"
+              >
+                E-Commerce
+              </Link>
               <span>/</span>
-              <Link href={routes.eCommerce.brands} className="hover:text-gray-600">Brands</Link>
+              <Link
+                href={routes.eCommerce.brands}
+                className="hover:text-gray-600"
+              >
+                Brands
+              </Link>
               <span>/</span>
               <span className="text-gray-600">{brand?.name ?? 'Loading…'}</span>
             </nav>
@@ -268,24 +354,34 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
           <div className="rounded-lg border border-gray-200 bg-white px-4 py-2.5">
             <Text className="text-xs text-gray-400">Draft / Pending</Text>
             <Text className="text-lg font-bold text-amber-500">
-              {products.filter((p) => p.status === 'pending' || p.status === 'draft').length}
+              {
+                products.filter(
+                  (p) => p.status === 'pending' || p.status === 'draft'
+                ).length
+              }
             </Text>
           </div>
           <div className="rounded-lg border border-gray-200 bg-white px-4 py-2.5">
             <Text className="text-xs text-gray-400">Brand Status</Text>
-            <span className={cn(
-              'inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize',
-              brand.status === 'active' ? 'bg-green-100 text-green-700' :
-              brand.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-              'bg-gray-100 text-gray-600'
-            )}>
+            <span
+              className={cn(
+                'inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize',
+                brand.status === 'active'
+                  ? 'bg-green-100 text-green-700'
+                  : brand.status === 'pending'
+                    ? 'bg-amber-100 text-amber-700'
+                    : 'bg-gray-100 text-gray-600'
+              )}
+            >
               {brand.status}
             </span>
           </div>
           {brand.brandType && (
             <div className="rounded-lg border border-gray-200 bg-white px-4 py-2.5">
               <Text className="text-xs text-gray-400">Type</Text>
-              <Text className="text-sm font-semibold text-gray-700 capitalize">{brand.brandType.replace(/_/g, ' ')}</Text>
+              <Text className="text-sm font-semibold capitalize text-gray-700">
+                {brand.brandType.replace(/_/g, ' ')}
+              </Text>
             </div>
           )}
         </div>
@@ -298,7 +394,11 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
             'rounded-xl border border-gray-200 bg-white p-5',
             brand.brandColors?.primary && 'border-l-4'
           )}
-          style={brand.brandColors?.primary ? { borderLeftColor: brand.brandColors.primary } : undefined}
+          style={
+            brand.brandColors?.primary
+              ? { borderLeftColor: brand.brandColors.primary }
+              : undefined
+          }
         >
           {brand.tagline && (
             <Text className="mb-1 text-sm font-semibold italic text-gray-800">
@@ -306,7 +406,9 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
             </Text>
           )}
           {brand.shortDescription && (
-            <Text className="text-sm text-gray-600">{brand.shortDescription}</Text>
+            <Text className="text-sm text-gray-600">
+              {brand.shortDescription}
+            </Text>
           )}
         </div>
       )}
@@ -314,9 +416,15 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
       {/* ── Admin Notes ── */}
       {brand?.notes && (
         <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <Title as="h6" className="mb-1 font-semibold text-gray-800">Admin Notes</Title>
-          <Text className="mb-3 text-xs text-gray-400">Internal notes — not shown to customers.</Text>
-          <p className="whitespace-pre-wrap text-sm text-gray-700">{brand.notes}</p>
+          <Title as="h6" className="mb-1 font-semibold text-gray-800">
+            Admin Notes
+          </Title>
+          <Text className="mb-3 text-xs text-gray-400">
+            Internal notes — not shown to customers.
+          </Text>
+          <p className="whitespace-pre-wrap text-sm text-gray-700">
+            {brand.notes}
+          </p>
         </div>
       )}
 
@@ -361,13 +469,27 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50/60">
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Product</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Category</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Price</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Stock</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Added</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  Product
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  Status
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  Category
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  Price
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  Stock
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  Added
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -381,7 +503,10 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
                         <PiPackageBold className="h-7 w-7 text-red-400" />
                       </div>
                       <Text className="font-medium text-gray-700">{error}</Text>
-                      <button onClick={() => fetchData(page)} className="text-sm text-primary hover:underline">
+                      <button
+                        onClick={() => fetchData(page)}
+                        className="text-sm text-primary hover:underline"
+                      >
                         Try again
                       </button>
                     </div>
@@ -400,7 +525,9 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
                           : 'No products under this brand yet'}
                       </Text>
                       {!search && statusFilter === 'all' && (
-                        <Link href={`${routes.eCommerce.createProduct}?brand=${id}`}>
+                        <Link
+                          href={`${routes.eCommerce.createProduct}?brand=${id}`}
+                        >
                           <button className="text-sm text-primary hover:underline">
                             Add the first product
                           </button>
@@ -415,18 +542,25 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
                     product.images?.find((i) => i.isPrimary)?.url ||
                     product.images?.[0]?.url;
                   return (
-                    <tr key={product._id} className="group hover:bg-gray-50/60 transition-colors">
+                    <tr
+                      key={product._id}
+                      className="group transition-colors hover:bg-gray-50/60"
+                    >
                       {/* Product */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <ProductImage src={imageUrl} name={product.name} />
                           <div className="min-w-0">
-                            <Link href={routes.eCommerce.productDetails(product._id)}>
-                              <Text className="font-semibold text-gray-900 truncate max-w-[200px] hover:text-primary transition-colors">
+                            <Link
+                              href={routes.eCommerce.productDetails(
+                                product._id
+                              )}
+                            >
+                              <Text className="max-w-[200px] truncate font-semibold text-gray-900 transition-colors hover:text-primary">
                                 {product.name}
                               </Text>
                             </Link>
-                            <Text className="text-xs text-gray-400 truncate max-w-[200px]">
+                            <Text className="max-w-[200px] truncate text-xs text-gray-400">
                               /{product.slug}
                             </Text>
                           </div>
@@ -434,35 +568,43 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
                       </td>
                       {/* Status */}
                       <td className="px-4 py-3">
-                        <StatusBadge status={product.status} isPublished={product.isPublished} />
+                        <StatusBadge
+                          status={product.status}
+                          isPublished={product.isPublished}
+                        />
                       </td>
                       {/* Category */}
                       <td className="px-4 py-3">
-                        <Text className="text-gray-600 text-xs">
-                          {product.category?.name || <span className="text-gray-300">—</span>}
+                        <Text className="text-xs text-gray-600">
+                          {product.category?.name || (
+                            <span className="text-gray-300">—</span>
+                          )}
                         </Text>
                       </td>
                       {/* Price */}
                       <td className="px-4 py-3 text-right">
-                        <Text className="font-medium text-gray-800 tabular-nums">
+                        <Text className="font-medium tabular-nums text-gray-800">
                           {formatPrice(product.basePrice)}
                         </Text>
                       </td>
                       {/* Stock */}
                       <td className="px-4 py-3 text-right">
                         {(() => {
-                          const stock = product.totalStockAvailable ?? product.totalStock;
+                          const stock =
+                            product.totalStockAvailable ?? product.totalStock;
                           return (
-                            <span className={cn(
-                              'inline-block rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums',
-                              stock == null
-                                ? 'bg-gray-100 text-gray-400'
-                                : stock === 0
-                                ? 'bg-red-100 text-red-600'
-                                : stock <= 5
-                                ? 'bg-amber-100 text-amber-700'
-                                : 'bg-green-100 text-green-700'
-                            )}>
+                            <span
+                              className={cn(
+                                'inline-block rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums',
+                                stock == null
+                                  ? 'bg-gray-100 text-gray-400'
+                                  : stock === 0
+                                    ? 'bg-red-100 text-red-600'
+                                    : stock <= 5
+                                      ? 'bg-amber-100 text-amber-700'
+                                      : 'bg-green-100 text-green-700'
+                              )}
+                            >
                               {stock != null ? stock : '—'}
                             </span>
                           );
@@ -470,14 +612,14 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
                       </td>
                       {/* Added */}
                       <td className="px-4 py-3">
-                        <Text className="text-xs text-gray-400 whitespace-nowrap">
+                        <Text className="whitespace-nowrap text-xs text-gray-400">
                           {formatDate(product.createdAt)}
                         </Text>
                       </td>
                       {/* Actions */}
                       <td className="px-4 py-3 text-right">
                         <Link href={routes.eCommerce.ediProduct(product._id)}>
-                          <button className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 opacity-0 group-hover:opacity-100 transition hover:bg-gray-50 hover:text-primary">
+                          <button className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 opacity-0 transition hover:bg-gray-50 hover:text-primary group-hover:opacity-100">
                             <PiPencilLineBold className="h-3.5 w-3.5" />
                           </button>
                         </Link>
@@ -500,14 +642,24 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-sm text-gray-600 disabled:opacity-40 hover:bg-gray-50 transition"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-sm text-gray-600 transition hover:bg-gray-50 disabled:opacity-40"
               >
                 ‹
               </button>
               {[...Array(totalPages)].map((_, i) => {
                 const pg = i + 1;
-                if (totalPages > 7 && Math.abs(pg - page) > 2 && pg !== 1 && pg !== totalPages) {
-                  if (pg === 2 || pg === totalPages - 1) return <span key={pg} className="px-1 text-gray-400 text-xs">…</span>;
+                if (
+                  totalPages > 7 &&
+                  Math.abs(pg - page) > 2 &&
+                  pg !== 1 &&
+                  pg !== totalPages
+                ) {
+                  if (pg === 2 || pg === totalPages - 1)
+                    return (
+                      <span key={pg} className="px-1 text-xs text-gray-400">
+                        …
+                      </span>
+                    );
                   return null;
                 }
                 return (
@@ -528,7 +680,7 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-sm text-gray-600 disabled:opacity-40 hover:bg-gray-50 transition"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-sm text-gray-600 transition hover:bg-gray-50 disabled:opacity-40"
               >
                 ›
               </button>
@@ -537,7 +689,9 @@ export default function BrandProductsPage({ params }: { params: Promise<{ id: st
         )}
         {!loading && total > 0 && totalPages === 1 && (
           <div className="border-t border-gray-100 px-4 py-2.5">
-            <Text className="text-xs text-gray-400">{filteredProducts.length} of {total} products</Text>
+            <Text className="text-xs text-gray-400">
+              {filteredProducts.length} of {total} products
+            </Text>
           </div>
         )}
       </div>

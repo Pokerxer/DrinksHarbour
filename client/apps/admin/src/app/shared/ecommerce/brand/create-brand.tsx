@@ -5,7 +5,16 @@ import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Controller, type SubmitHandler } from 'react-hook-form';
 import QuillLoader from '@core/components/loader/quill-loader';
-import { Button, Input, Select, Switch, Text, Title, Textarea, type SelectOption } from 'rizzui';
+import {
+  Button,
+  Input,
+  Select,
+  Switch,
+  Text,
+  Title,
+  Textarea,
+  type SelectOption,
+} from 'rizzui';
 import { Form } from '@core/ui/form';
 import {
   BrandFormInput,
@@ -125,7 +134,9 @@ function ImagePicker({
 
   return (
     <div className="space-y-2">
-      {label && <Text className="text-sm font-medium text-gray-700">{label}</Text>}
+      {label && (
+        <Text className="text-sm font-medium text-gray-700">{label}</Text>
+      )}
       {preview ? (
         <div className="relative w-full overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
           <div className="relative aspect-video w-full">
@@ -153,7 +164,9 @@ function ImagePicker({
             <PiUploadSimpleBold className="h-4 w-4 text-gray-400" />
           </div>
           <div className="text-center">
-            <Text className="text-xs font-medium text-gray-600">Click to upload</Text>
+            <Text className="text-xs font-medium text-gray-600">
+              Click to upload
+            </Text>
             <Text className="text-xs text-gray-400">PNG, JPG or WEBP</Text>
           </div>
         </button>
@@ -186,7 +199,9 @@ function VisibilityToggle({
     <div className="flex items-center justify-between py-2.5">
       <div className="min-w-0 flex-1 pr-4">
         <Text className="text-sm font-medium text-gray-700">{label}</Text>
-        {description && <Text className="text-xs text-gray-400">{description}</Text>}
+        {description && (
+          <Text className="text-xs text-gray-400">{description}</Text>
+        )}
       </div>
       <Switch
         checked={!!checked}
@@ -212,7 +227,9 @@ function ColorInput({
   const safe = value || '#6B7280';
   return (
     <div>
-      <Text className="mb-1.5 block text-sm font-medium text-gray-700">{label}</Text>
+      <Text className="mb-1.5 block text-sm font-medium text-gray-700">
+        {label}
+      </Text>
       <div className="flex items-center gap-3">
         <input
           type="color"
@@ -225,7 +242,7 @@ function ColorInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="#6B7280"
-          className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono text-gray-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          className="flex-1 rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm text-gray-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           maxLength={7}
         />
       </div>
@@ -259,17 +276,39 @@ export default function CreateBrand({
   const [bannerImageFile, setBannerImageFile] = useState<File | null>(null);
   const slugManuallyEdited = useRef(false);
   const [aiLoading, setAiLoading] = useState(false);
-  const [aiSuggestions, setAiSuggestions] = useState<Record<string, string> | null>(null);
+  const [aiSuggestions, setAiSuggestions] = useState<Record<
+    string,
+    string
+  > | null>(null);
 
-  async function triggerAiFill(name: string, brandType: string, primaryCategory: string, countryOfOrigin: string) {
-    if (!name.trim()) { toast.error('Enter a brand name first'); return; }
+  async function triggerAiFill(
+    name: string,
+    brandType: string,
+    primaryCategory: string,
+    countryOfOrigin: string
+  ) {
+    if (!name.trim()) {
+      toast.error('Enter a brand name first');
+      return;
+    }
     setAiLoading(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/brands/admin/ai-fill`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name, brandType, primaryCategory, countryOfOrigin }),
-      });
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/brands/admin/ai-fill`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            name,
+            brandType,
+            primaryCategory,
+            countryOfOrigin,
+          }),
+        }
+      );
       const json = await res.json();
       if (!json.success) throw new Error(json.message);
       setAiSuggestions(json.data);
@@ -422,7 +461,9 @@ export default function CreateBrand({
                   placeholder="e.g. glenfiddich"
                   {...register('slug')}
                   error={errors.slug?.message}
-                  onFocus={() => { slugManuallyEdited.current = true; }}
+                  onFocus={() => {
+                    slugManuallyEdited.current = true;
+                  }}
                 />
                 <Controller
                   name="brandType"
@@ -430,8 +471,12 @@ export default function CreateBrand({
                   render={({ field: { onChange, value } }) => (
                     <Select
                       options={BRAND_TYPE_OPTIONS}
-                      value={BRAND_TYPE_OPTIONS.find((o) => o.value === value) ?? ''}
-                      onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                      value={
+                        BRAND_TYPE_OPTIONS.find((o) => o.value === value) ?? ''
+                      }
+                      onChange={(opt: SelectOption) =>
+                        onChange((opt as any).value)
+                      }
                       label="Brand Type"
                       placeholder="Select brand type"
                     />
@@ -443,8 +488,14 @@ export default function CreateBrand({
                   render={({ field: { onChange, value } }) => (
                     <Select
                       options={PRIMARY_CATEGORY_OPTIONS}
-                      value={PRIMARY_CATEGORY_OPTIONS.find((o) => o.value === value) ?? ''}
-                      onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                      value={
+                        PRIMARY_CATEGORY_OPTIONS.find(
+                          (o) => o.value === value
+                        ) ?? ''
+                      }
+                      onChange={(opt: SelectOption) =>
+                        onChange((opt as any).value)
+                      }
                       label="Primary Category"
                       placeholder="Select category"
                     />
@@ -456,8 +507,13 @@ export default function CreateBrand({
                   render={({ field: { onChange, value } }) => (
                     <Select
                       options={STATUS_OPTIONS}
-                      value={STATUS_OPTIONS.find((o) => o.value === value) ?? STATUS_OPTIONS[0]}
-                      onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                      value={
+                        STATUS_OPTIONS.find((o) => o.value === value) ??
+                        STATUS_OPTIONS[0]
+                      }
+                      onChange={(opt: SelectOption) =>
+                        onChange((opt as any).value)
+                      }
                       label="Status"
                       placeholder="Select status"
                     />
@@ -466,7 +522,9 @@ export default function CreateBrand({
                 <div className="col-span-2">
                   <Text className="mb-1 block text-sm font-medium text-gray-700">
                     Short Description{' '}
-                    <span className="text-gray-400 font-normal">({shortDescValue.length}/280)</span>
+                    <span className="font-normal text-gray-400">
+                      ({shortDescValue.length}/280)
+                    </span>
                   </Text>
                   <textarea
                     {...register('shortDescription')}
@@ -477,7 +535,9 @@ export default function CreateBrand({
                   />
                 </div>
                 <div className="col-span-2">
-                  <Text className="mb-2 block text-sm font-medium text-gray-700">Logo</Text>
+                  <Text className="mb-2 block text-sm font-medium text-gray-700">
+                    Logo
+                  </Text>
                   <ImagePicker
                     currentUrl={currentImages?.logo}
                     onFile={(f) => setLogoFile(f)}
@@ -500,18 +560,26 @@ export default function CreateBrand({
           <div className="flex gap-6 @5xl:gap-7">
             {/* ── Left column ── */}
             <div className="min-w-0 flex-1 space-y-6">
-
               {/* Brand Identity */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
                 <div className="mb-5 flex items-center justify-between">
-                  <Title as="h5" className="font-semibold text-gray-800">Brand Identity</Title>
+                  <Title as="h5" className="font-semibold text-gray-800">
+                    Brand Identity
+                  </Title>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     isLoading={aiLoading}
                     disabled={aiLoading}
-                    onClick={() => triggerAiFill(watch('name'), watch('brandType') || '', watch('primaryCategory') || '', watch('countryOfOrigin') || '')}
+                    onClick={() =>
+                      triggerAiFill(
+                        watch('name'),
+                        watch('brandType') || '',
+                        watch('primaryCategory') || '',
+                        watch('countryOfOrigin') || ''
+                      )
+                    }
                     className="gap-1.5 border-violet-200 text-violet-600 hover:bg-violet-50"
                   >
                     {!aiLoading && <span>✨</span>}
@@ -539,11 +607,14 @@ export default function CreateBrand({
                       placeholder="e.g. glenfiddich"
                       {...register('slug')}
                       error={errors.slug?.message}
-                      prefix={<span className="text-gray-400 text-sm">/</span>}
-                      onFocus={() => { slugManuallyEdited.current = true; }}
+                      prefix={<span className="text-sm text-gray-400">/</span>}
+                      onFocus={() => {
+                        slugManuallyEdited.current = true;
+                      }}
                     />
                     <Text className="mt-1.5 text-xs text-gray-400">
-                      Auto-generated from name. Lowercase letters, numbers and hyphens only.
+                      Auto-generated from name. Lowercase letters, numbers and
+                      hyphens only.
                     </Text>
                   </div>
                   <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
@@ -560,7 +631,9 @@ export default function CreateBrand({
                         {...register('tradingAs')}
                         error={errors.tradingAs?.message}
                       />
-                      <Text className="mt-1 text-xs text-gray-400">Separate multiple names with commas.</Text>
+                      <Text className="mt-1 text-xs text-gray-400">
+                        Separate multiple names with commas.
+                      </Text>
                     </div>
                   </div>
                   <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
@@ -569,7 +642,8 @@ export default function CreateBrand({
                       type="number"
                       placeholder="e.g. 1887"
                       {...register('founded', {
-                        setValueAs: (v) => (v === '' || v === null ? undefined : Number(v)),
+                        setValueAs: (v) =>
+                          v === '' || v === null ? undefined : Number(v),
                       })}
                       error={errors.founded?.message}
                     />
@@ -585,7 +659,9 @@ export default function CreateBrand({
 
               {/* Classification */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-5 font-semibold text-gray-800">Classification</Title>
+                <Title as="h5" className="mb-5 font-semibold text-gray-800">
+                  Classification
+                </Title>
                 <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
                   <Controller
                     name="brandType"
@@ -593,8 +669,13 @@ export default function CreateBrand({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={BRAND_TYPE_OPTIONS}
-                        value={BRAND_TYPE_OPTIONS.find((o) => o.value === value) ?? ''}
-                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                        value={
+                          BRAND_TYPE_OPTIONS.find((o) => o.value === value) ??
+                          ''
+                        }
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value)
+                        }
                         label="Brand Type"
                         placeholder="Select brand type"
                       />
@@ -606,8 +687,14 @@ export default function CreateBrand({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={PRIMARY_CATEGORY_OPTIONS}
-                        value={PRIMARY_CATEGORY_OPTIONS.find((o) => o.value === value) ?? ''}
-                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                        value={
+                          PRIMARY_CATEGORY_OPTIONS.find(
+                            (o) => o.value === value
+                          ) ?? ''
+                        }
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value)
+                        }
                         label="Primary Category"
                         placeholder="Select category"
                       />
@@ -619,7 +706,9 @@ export default function CreateBrand({
                       placeholder="e.g. Single Malt Whisky, Aged Spirits"
                       {...register('specializations')}
                     />
-                    <Text className="mt-1 text-xs text-gray-400">Separate with commas.</Text>
+                    <Text className="mt-1 text-xs text-gray-400">
+                      Separate with commas.
+                    </Text>
                   </div>
                   <Input
                     label="Country of Origin"
@@ -638,7 +727,10 @@ export default function CreateBrand({
                     type="number"
                     placeholder="999"
                     {...register('displayOrder', {
-                      setValueAs: (v) => (v === '' || v === null || isNaN(Number(v)) ? 999 : Number(v)),
+                      setValueAs: (v) =>
+                        v === '' || v === null || isNaN(Number(v))
+                          ? 999
+                          : Number(v),
                     })}
                     error={errors.displayOrder?.message}
                   />
@@ -657,12 +749,16 @@ export default function CreateBrand({
 
               {/* About */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-5 font-semibold text-gray-800">About</Title>
+                <Title as="h5" className="mb-5 font-semibold text-gray-800">
+                  About
+                </Title>
                 <div className="space-y-4">
                   <div>
                     <Text className="mb-1.5 block text-sm font-medium text-gray-700">
                       Short Description{' '}
-                      <span className="font-normal text-gray-400">({shortDescValue.length}/280)</span>
+                      <span className="font-normal text-gray-400">
+                        ({shortDescValue.length}/280)
+                      </span>
                     </Text>
                     <textarea
                       {...register('shortDescription')}
@@ -672,11 +768,15 @@ export default function CreateBrand({
                       className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                     {errors.shortDescription?.message && (
-                      <Text className="mt-1 text-xs text-red-500">{errors.shortDescription.message}</Text>
+                      <Text className="mt-1 text-xs text-red-500">
+                        {errors.shortDescription.message}
+                      </Text>
                     )}
                   </div>
                   <div>
-                    <Text className="mb-1.5 block text-sm font-medium text-gray-700">Full Description</Text>
+                    <Text className="mb-1.5 block text-sm font-medium text-gray-700">
+                      Full Description
+                    </Text>
                     <Controller
                       control={control}
                       name="description"
@@ -690,7 +790,9 @@ export default function CreateBrand({
                     />
                   </div>
                   <div>
-                    <Text className="mb-1.5 block text-sm font-medium text-gray-700">Brand Story</Text>
+                    <Text className="mb-1.5 block text-sm font-medium text-gray-700">
+                      Brand Story
+                    </Text>
                     <textarea
                       {...register('story')}
                       placeholder="The brand's heritage, history and mission…"
@@ -699,7 +801,9 @@ export default function CreateBrand({
                       className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                     {errors.story?.message && (
-                      <Text className="mt-1 text-xs text-red-500">{errors.story.message}</Text>
+                      <Text className="mt-1 text-xs text-red-500">
+                        {errors.story.message}
+                      </Text>
                     )}
                   </div>
                 </div>
@@ -707,7 +811,9 @@ export default function CreateBrand({
 
               {/* Contact & Social */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-5 font-semibold text-gray-800">Contact & Social Media</Title>
+                <Title as="h5" className="mb-5 font-semibold text-gray-800">
+                  Contact & Social Media
+                </Title>
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 gap-4 @xl:grid-cols-3">
                     <Input
@@ -766,7 +872,9 @@ export default function CreateBrand({
 
               {/* SEO */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-1 font-semibold text-gray-800">SEO</Title>
+                <Title as="h5" className="mb-1 font-semibold text-gray-800">
+                  SEO
+                </Title>
                 <Text className="mb-5 text-sm text-gray-400">
                   Optimise how this brand appears in search engines.
                 </Text>
@@ -778,7 +886,9 @@ export default function CreateBrand({
                     error={errors.metaTitle?.message}
                   />
                   <div>
-                    <Text className="mb-1.5 block text-sm font-medium text-gray-700">Meta Description</Text>
+                    <Text className="mb-1.5 block text-sm font-medium text-gray-700">
+                      Meta Description
+                    </Text>
                     <textarea
                       {...register('metaDescription')}
                       placeholder="A short description for search engines (up to 320 characters)…"
@@ -793,7 +903,9 @@ export default function CreateBrand({
                       placeholder="e.g. glenfiddich, single malt whisky, scotch whisky"
                       {...register('metaKeywords')}
                     />
-                    <Text className="mt-1 text-xs text-gray-400">Separate keywords with commas.</Text>
+                    <Text className="mt-1 text-xs text-gray-400">
+                      Separate keywords with commas.
+                    </Text>
                   </div>
                   <Input
                     label="Canonical URL"
@@ -806,8 +918,12 @@ export default function CreateBrand({
 
               {/* Admin Notes */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-1 font-semibold text-gray-800">Admin Notes</Title>
-                <Text className="mb-4 text-sm text-gray-400">Internal notes — not shown to customers.</Text>
+                <Title as="h5" className="mb-1 font-semibold text-gray-800">
+                  Admin Notes
+                </Title>
+                <Text className="mb-4 text-sm text-gray-400">
+                  Internal notes — not shown to customers.
+                </Text>
                 <textarea
                   {...register('notes')}
                   placeholder="Any internal notes about this brand…"
@@ -820,10 +936,11 @@ export default function CreateBrand({
 
             {/* ── Right sidebar ── */}
             <div className="w-72 flex-shrink-0 space-y-6 @5xl:w-80">
-
               {/* Publish panel */}
               <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <Title as="h6" className="mb-4 font-semibold text-gray-800">Publish</Title>
+                <Title as="h6" className="mb-4 font-semibold text-gray-800">
+                  Publish
+                </Title>
                 <div className="mb-4">
                   <Controller
                     name="status"
@@ -831,8 +948,13 @@ export default function CreateBrand({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={STATUS_OPTIONS}
-                        value={STATUS_OPTIONS.find((o) => o.value === value) ?? STATUS_OPTIONS[0]}
-                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                        value={
+                          STATUS_OPTIONS.find((o) => o.value === value) ??
+                          STATUS_OPTIONS[0]
+                        }
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value)
+                        }
                         label="Status"
                         placeholder="Select status"
                       />
@@ -840,7 +962,11 @@ export default function CreateBrand({
                   />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Button type="submit" isLoading={isLoading} className="w-full">
+                  <Button
+                    type="submit"
+                    isLoading={isLoading}
+                    className="w-full"
+                  >
                     {id ? 'Update Brand' : 'Save Brand'}
                   </Button>
                   <Button
@@ -856,7 +982,9 @@ export default function CreateBrand({
 
               {/* Images panel */}
               <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <Title as="h6" className="mb-4 font-semibold text-gray-800">Images</Title>
+                <Title as="h6" className="mb-4 font-semibold text-gray-800">
+                  Images
+                </Title>
                 <div className="space-y-5">
                   <ImagePicker
                     label="Logo"
@@ -881,55 +1009,92 @@ export default function CreateBrand({
 
               {/* Brand Flags */}
               <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <Title as="h6" className="mb-2 font-semibold text-gray-800">Brand Flags</Title>
+                <Title as="h6" className="mb-2 font-semibold text-gray-800">
+                  Brand Flags
+                </Title>
                 <div className="divide-y divide-gray-100">
                   <Controller
                     name="isFeatured"
                     control={control}
                     render={({ field: { onChange, value } }) => (
-                      <VisibilityToggle label="Featured" description="Highlight in featured sections" checked={!!value} onChange={onChange} />
+                      <VisibilityToggle
+                        label="Featured"
+                        description="Highlight in featured sections"
+                        checked={!!value}
+                        onChange={onChange}
+                      />
                     )}
                   />
                   <Controller
                     name="isPopular"
                     control={control}
                     render={({ field: { onChange, value } }) => (
-                      <VisibilityToggle label="Popular" description="Mark as a popular brand" checked={!!value} onChange={onChange} />
+                      <VisibilityToggle
+                        label="Popular"
+                        description="Mark as a popular brand"
+                        checked={!!value}
+                        onChange={onChange}
+                      />
                     )}
                   />
                   <Controller
                     name="isTrending"
                     control={control}
                     render={({ field: { onChange, value } }) => (
-                      <VisibilityToggle label="Trending" description="Show in trending lists" checked={!!value} onChange={onChange} />
+                      <VisibilityToggle
+                        label="Trending"
+                        description="Show in trending lists"
+                        checked={!!value}
+                        onChange={onChange}
+                      />
                     )}
                   />
                   <Controller
                     name="isPremium"
                     control={control}
                     render={({ field: { onChange, value } }) => (
-                      <VisibilityToggle label="Premium" description="Mark as a premium brand" checked={!!value} onChange={onChange} />
+                      <VisibilityToggle
+                        label="Premium"
+                        description="Mark as a premium brand"
+                        checked={!!value}
+                        onChange={onChange}
+                      />
                     )}
                   />
                   <Controller
                     name="isCraft"
                     control={control}
                     render={({ field: { onChange, value } }) => (
-                      <VisibilityToggle label="Craft" description="Mark as a craft producer" checked={!!value} onChange={onChange} />
+                      <VisibilityToggle
+                        label="Craft"
+                        description="Mark as a craft producer"
+                        checked={!!value}
+                        onChange={onChange}
+                      />
                     )}
                   />
                   <Controller
                     name="isLocal"
                     control={control}
                     render={({ field: { onChange, value } }) => (
-                      <VisibilityToggle label="Local" description="Local / Nigerian brand" checked={!!value} onChange={onChange} />
+                      <VisibilityToggle
+                        label="Local"
+                        description="Local / Nigerian brand"
+                        checked={!!value}
+                        onChange={onChange}
+                      />
                     )}
                   />
                   <Controller
                     name="verified"
                     control={control}
                     render={({ field: { onChange, value } }) => (
-                      <VisibilityToggle label="Verified" description="Brand identity verified" checked={!!value} onChange={onChange} />
+                      <VisibilityToggle
+                        label="Verified"
+                        description="Brand identity verified"
+                        checked={!!value}
+                        onChange={onChange}
+                      />
                     )}
                   />
                 </div>
@@ -937,7 +1102,9 @@ export default function CreateBrand({
 
               {/* Brand Colours */}
               <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <Title as="h6" className="mb-4 font-semibold text-gray-800">Brand Colours</Title>
+                <Title as="h6" className="mb-4 font-semibold text-gray-800">
+                  Brand Colours
+                </Title>
                 <div className="space-y-4">
                   <ColorInput
                     label="Primary Colour"
