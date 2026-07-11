@@ -92,14 +92,22 @@ const useDebounce = (value: string, delay: number) => {
     );
   };
 
-// Quick price presets
-const PRICE_PRESETS = [
-  { label: 'Under ₦5k', min: 0, max: 5000 },
-  { label: '₦5k - ₦10k', min: 5000, max: 10000 },
-  { label: '₦10k - ₦20k', min: 10000, max: 20000 },
-  { label: '₦20k - ₦50k', min: 20000, max: 50000 },
-  { label: '₦50k+', min: 50000, max: 100000 },
-];
+// Quick price presets — the open-ended one must reach the real catalog max,
+// otherwise "₦50k+" silently excludes everything above a hardcoded ceiling.
+function buildPricePresets(catalogMin: number, catalogMax: number) {
+  const fixed = [
+    { label: 'Under ₦5k', min: 0, max: 5000 },
+    { label: '₦5k - ₦10k', min: 5000, max: 10000 },
+    { label: '₦10k - ₦20k', min: 10000, max: 20000 },
+    { label: '₦20k - ₦50k', min: 20000, max: 50000 },
+    { label: '₦50k - ₦200k', min: 50000, max: 200000 },
+    { label: '₦200k+', min: 200000, max: catalogMax },
+  ];
+  // Drop presets entirely outside the catalog range; clamp the rest.
+  return fixed
+    .filter((p) => p.min < catalogMax && p.max > catalogMin)
+    .map((p) => ({ ...p, min: Math.max(p.min, catalogMin), max: Math.min(p.max, catalogMax) }));
+}
 
 const FilterSidebar: React.FC<FilterSidebarProps> = ({
   open,
@@ -299,7 +307,12 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
     }
   };
 
-  const handlePricePresetClick = (preset: typeof PRICE_PRESETS[0]) => {
+  const pricePresets = useMemo(
+    () => buildPricePresets(filterOptions.priceRange?.min ?? 0, filterOptions.priceRange?.max ?? 100000),
+    [filterOptions.priceRange?.min, filterOptions.priceRange?.max]
+  );
+
+  const handlePricePresetClick = (preset: { label: string; min: number; max: number }) => {
     setPriceRange([preset.min, preset.max]);
     setPendingFilters(prev => ({ ...prev, priceRange: { min: preset.min, max: preset.max } }));
   };
@@ -900,7 +913,7 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({
                   <div className="space-y-4">
                     {/* Quick Presets */}
                     <div className="flex flex-wrap gap-2">
-                      {PRICE_PRESETS.map((preset) => {
+                      {pricePresets.map((preset) => {
                         const isActive = priceRange[0] === preset.min && priceRange[1] === preset.max;
                         
                         return (

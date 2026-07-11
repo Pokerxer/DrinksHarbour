@@ -663,10 +663,13 @@ const Shop: React.FC<Props> = ({
 
     setFilters(validatedFilters);
 
-    const urlParams = buildFilterUrlParams(validatedFilters, filterOptions);
-    const newUrl = `${pathname}${urlParams ? `?${urlParams}` : ''}`;
-    router.replace(newUrl, { scroll: false });
-  }, [filterOptions, pathname, router]);
+    const params = new URLSearchParams(buildFilterUrlParams(validatedFilters, filterOptions));
+    // Filters replace the whole query string — keep an active search alive.
+    const search = searchParams.get('search');
+    if (search) params.set('search', search);
+    const qs = params.toString();
+    router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
+  }, [filterOptions, pathname, router, searchParams]);
 
   return (
     <>
