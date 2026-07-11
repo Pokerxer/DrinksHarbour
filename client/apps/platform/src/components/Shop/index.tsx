@@ -264,23 +264,30 @@ const Shop: React.FC<Props> = ({
     }
   }, [initialFilters, filterOptions.priceRange]);
 
-  // Sync category + subcategory filter state from URL when navigation happens
+  // Sync URL-driven filter state on navigation. Without this, a stale
+  // selection (e.g. brand "The Macallan") survives a navigation to
+  // ?brand=Ardbeg and client-side filtering zeroes out the results.
   useEffect(() => {
-    const catParam = searchParams.get('category');
-    const subParam = searchParams.get('subcategory');
+    const parse = (param: string | null) =>
+      param ? (param.includes(',') ? param.split(',') : param) : null;
 
-    const newCat = catParam
-      ? (catParam.includes(',') ? catParam.split(',') : catParam)
-      : null;
-    const newSub = subParam
-      ? (subParam.includes(',') ? subParam.split(',') : subParam)
-      : null;
+    const fromUrl: Partial<FilterState> = {
+      categoryType: parse(searchParams.get('category')),
+      subCategoryType: parse(searchParams.get('subcategory')),
+      brand: parse(searchParams.get('brand')),
+      originCountry: parse(searchParams.get('origin')),
+      flavorCategory: parse(searchParams.get('flavor')),
+      sortOption: searchParams.get('sort') || '',
+      showOnlySale: searchParams.get('sale') === 'true',
+    };
 
     setFilters(prev => {
-      const catChanged = JSON.stringify(prev.categoryType) !== JSON.stringify(newCat);
-      const subChanged = JSON.stringify(prev.subCategoryType) !== JSON.stringify(newSub);
-      if (!catChanged && !subChanged) return prev;
-      return { ...prev, categoryType: newCat, subCategoryType: newSub };
+      const changed = (Object.keys(fromUrl) as (keyof FilterState)[]).some(
+        (k) => JSON.stringify(prev[k] ?? null) !== JSON.stringify(fromUrl[k] ?? null)
+      );
+      if (!changed) return prev;
+      urlStateRef.current = { ...urlStateRef.current, ...fromUrl };
+      return { ...prev, ...fromUrl };
     });
   }, [searchParams]);
 
