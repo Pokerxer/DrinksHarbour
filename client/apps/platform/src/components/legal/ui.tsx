@@ -154,7 +154,7 @@ export function DataTable({
 
 export function SectionCard({ children }: { children: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-6">
       {children}
     </div>
   );

@@ -23,6 +23,7 @@ const MobileBottomNav = dynamic(() => import("@/components/Navigation").then(mod
 const ChatbotWidget   = dynamic(() => import("@/components/Chatbot/ChatbotWidget"));
 const WhatsAppButton  = dynamic(() => import("@/components/WhatsApp/WhatsAppButton"));
 const PopupBanner     = dynamic(() => import("@/components/Banner/PopupBanner"));
+const CookieConsent   = dynamic(() => import("@/components/legal/CookieConsent"));
 
 const unkempt = Unkempt({ subsets: ["latin"], weight: ["400", "700"], variable: "--font-unkempt", display: "swap" });
 const kavoon = Kavoon({ subsets: ["latin"], weight: ["400"], variable: "--font-kavoon", display: "swap" });
@@ -211,6 +212,7 @@ export default async function RootLayout({
             <WhatsAppButton />
             <ChatbotWidget />
             <PopupBanner />
+            <CookieConsent />
           </body>
         </html>
       </TenantProvider>

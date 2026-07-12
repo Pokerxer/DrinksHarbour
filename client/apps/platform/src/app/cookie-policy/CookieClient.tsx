@@ -50,7 +50,7 @@ export default function CookieClient() {
           <div className="absolute top-0 right-0 w-96 h-96 bg-red-700 opacity-10 rounded-full blur-3xl -translate-y-1/3 translate-x-1/4" />
           <div className="absolute bottom-0 left-0 w-64 h-64 bg-red-500 opacity-10 rounded-full blur-3xl translate-y-1/3 -translate-x-1/4" />
         </div>
-        <div className="container mx-auto max-w-5xl px-4 py-16 relative">
+        <div className="container mx-auto max-w-5xl px-4 py-12 sm:py-16 relative">
           <div className="max-w-2xl">
             <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-full px-4 py-1.5 text-xs font-medium text-red-300 mb-5">
               <Icon.PiCookie size={13} />
