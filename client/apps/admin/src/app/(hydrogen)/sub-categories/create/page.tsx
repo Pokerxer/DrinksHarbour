@@ -1,6 +1,7 @@
 // @ts-nocheck
 import CreateSubCategory from '@/app/shared/ecommerce/subcategory/create-subcategory';
 import PageHeader from '@/app/shared/page-header';
+import EcommercePageHeader from '@/app/shared/ecommerce/ecommerce-page-header';
 import { routes } from '@/config/routes';
 import { metaObject } from '@/config/site.config';
 
@@ -20,8 +21,14 @@ const pageHeader = {
 export default function CreateSubCategoryPage() {
   return (
     <>
-      <PageHeader title={pageHeader.title} breadcrumb={pageHeader.breadcrumb} />
-      <CreateSubCategory isModalView={false} />
+      <EcommercePageHeader hideHero />
+      <div className="mt-4">
+        <PageHeader
+          title={pageHeader.title}
+          breadcrumb={pageHeader.breadcrumb}
+        />
+        <CreateSubCategory isModalView={false} />
+      </div>
     </>
   );
 }

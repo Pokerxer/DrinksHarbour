@@ -2,6 +2,7 @@
 import { routes } from '@/config/routes';
 import PageHeader from '@/app/shared/page-header';
 import CreateSubCategory from '@/app/shared/ecommerce/subcategory/create-subcategory';
+import EcommercePageHeader from '@/app/shared/ecommerce/ecommerce-page-header';
 import { metaObject } from '@/config/site.config';
 import { Metadata } from 'next';
 
@@ -27,7 +28,11 @@ export default async function EditSubCategoryPage({ params }: Props) {
   const { id } = await params;
 
   let subcategory = null;
-  let currentImages: { thumbnail?: string; featured?: string; banner?: string } = {};
+  let currentImages: {
+    thumbnail?: string;
+    featured?: string;
+    banner?: string;
+  } = {};
 
   try {
     const res = await fetch(
@@ -39,7 +44,9 @@ export default async function EditSubCategoryPage({ params }: Props) {
       const c = json.data;
       // parent may be a populated object or an ObjectId string
       const parentId = c.parent
-        ? (typeof c.parent === 'object' ? c.parent._id : String(c.parent))
+        ? typeof c.parent === 'object'
+          ? c.parent._id
+          : String(c.parent)
         : '';
 
       subcategory = {
@@ -66,14 +73,14 @@ export default async function EditSubCategoryPage({ params }: Props) {
         metaDescription: c.metaDescription || '',
         metaKeywords: Array.isArray(c.metaKeywords)
           ? c.metaKeywords.join(', ')
-          : (c.metaKeywords || ''),
+          : c.metaKeywords || '',
         canonicalUrl: c.canonicalUrl || '',
         typicalFlavors: Array.isArray(c.typicalFlavors)
           ? c.typicalFlavors.join(', ')
-          : (c.typicalFlavors || ''),
+          : c.typicalFlavors || '',
         commonPairings: Array.isArray(c.commonPairings)
           ? c.commonPairings.join(', ')
-          : (c.commonPairings || ''),
+          : c.commonPairings || '',
         seasonalSpring: c.seasonal?.spring ?? false,
         seasonalSummer: c.seasonal?.summer ?? false,
         seasonalFall: c.seasonal?.fall ?? false,
@@ -99,13 +106,19 @@ export default async function EditSubCategoryPage({ params }: Props) {
 
   return (
     <>
-      <PageHeader title={`Edit: ${subCategoryName}`} breadcrumb={breadcrumb} />
-      <CreateSubCategory
-        id={id}
-        subcategory={subcategory}
-        currentImages={currentImages}
-        isModalView={false}
-      />
+      <EcommercePageHeader hideHero />
+      <div className="mt-4">
+        <PageHeader
+          title={`Edit: ${subCategoryName}`}
+          breadcrumb={breadcrumb}
+        />
+        <CreateSubCategory
+          id={id}
+          subcategory={subcategory}
+          currentImages={currentImages}
+          isModalView={false}
+        />
+      </div>
     </>
   );
 }

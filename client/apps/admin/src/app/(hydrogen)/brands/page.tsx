@@ -2,6 +2,7 @@
 import { routes } from '@/config/routes';
 import BrandTable from '@/app/shared/ecommerce/brand/brand-list/table';
 import BrandPageHeader from './brand-page-header';
+import EcommercePageHeader from '@/app/shared/ecommerce/ecommerce-page-header';
 import { metaObject } from '@/config/site.config';
 
 export const metadata = {
@@ -28,11 +29,14 @@ const pageHeader = {
 export default function BrandsPage() {
   return (
     <>
-      <BrandPageHeader
-        title={pageHeader.title}
-        breadcrumb={pageHeader.breadcrumb}
-      />
-      <BrandTable />
+      <EcommercePageHeader hideHero />
+      <div className="mt-4">
+        <BrandPageHeader
+          title={pageHeader.title}
+          breadcrumb={pageHeader.breadcrumb}
+        />
+        <BrandTable />
+      </div>
     </>
   );
 }

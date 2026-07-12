@@ -2,6 +2,7 @@
 import { routes } from '@/config/routes';
 import PageHeader from '@/app/shared/page-header';
 import CreateBrand from '@/app/shared/ecommerce/brand/create-brand';
+import EcommercePageHeader from '@/app/shared/ecommerce/ecommerce-page-header';
 import { metaObject } from '@/config/site.config';
 import { Metadata } from 'next';
 
@@ -41,7 +42,9 @@ export default async function EditBrandPage({ params }: Props) {
         name: c.name || '',
         slug: c.slug || '',
         legalName: c.legalName || '',
-        tradingAs: Array.isArray(c.tradingAs) ? c.tradingAs.join(', ') : (c.tradingAs || ''),
+        tradingAs: Array.isArray(c.tradingAs)
+          ? c.tradingAs.join(', ')
+          : c.tradingAs || '',
         description: c.description || '',
         shortDescription: c.shortDescription || '',
         tagline: c.tagline || '',
@@ -50,7 +53,9 @@ export default async function EditBrandPage({ params }: Props) {
         founderName: c.founderName || '',
         brandType: c.brandType || '',
         primaryCategory: c.primaryCategory || '',
-        specializations: Array.isArray(c.specializations) ? c.specializations.join(', ') : (c.specializations || ''),
+        specializations: Array.isArray(c.specializations)
+          ? c.specializations.join(', ')
+          : c.specializations || '',
         countryOfOrigin: c.countryOfOrigin || '',
         region: c.region || '',
         hqCity: c.headquarters?.city || '',
@@ -78,7 +83,9 @@ export default async function EditBrandPage({ params }: Props) {
         displayOrder: c.displayOrder ?? 999,
         metaTitle: c.metaTitle || '',
         metaDescription: c.metaDescription || '',
-        metaKeywords: Array.isArray(c.metaKeywords) ? c.metaKeywords.join(', ') : (c.metaKeywords || ''),
+        metaKeywords: Array.isArray(c.metaKeywords)
+          ? c.metaKeywords.join(', ')
+          : c.metaKeywords || '',
         canonicalUrl: c.canonicalUrl || '',
         notes: c.notes || '',
       };
@@ -102,13 +109,16 @@ export default async function EditBrandPage({ params }: Props) {
 
   return (
     <>
-      <PageHeader title={`Edit: ${brandName}`} breadcrumb={breadcrumb} />
-      <CreateBrand
-        id={id}
-        brand={brand}
-        currentImages={currentImages}
-        isModalView={false}
-      />
+      <EcommercePageHeader hideHero />
+      <div className="mt-4">
+        <PageHeader title={`Edit: ${brandName}`} breadcrumb={breadcrumb} />
+        <CreateBrand
+          id={id}
+          brand={brand}
+          currentImages={currentImages}
+          isModalView={false}
+        />
+      </div>
     </>
   );
 }

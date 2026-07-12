@@ -2,6 +2,7 @@
 import { routes } from '@/config/routes';
 import CategoryTable from '@/app/shared/ecommerce/category/category-list/table';
 import CategoryPageHeader from './category-page-header';
+import EcommercePageHeader from '@/app/shared/ecommerce/ecommerce-page-header';
 import { metaObject } from '@/config/site.config';
 
 export const metadata = {
@@ -28,11 +29,14 @@ const pageHeader = {
 export default function CategoriesPage() {
   return (
     <>
-      <CategoryPageHeader
-        title={pageHeader.title}
-        breadcrumb={pageHeader.breadcrumb}
-      />
-      <CategoryTable />
+      <EcommercePageHeader hideHero />
+      <div className="mt-4">
+        <CategoryPageHeader
+          title={pageHeader.title}
+          breadcrumb={pageHeader.breadcrumb}
+        />
+        <CategoryTable />
+      </div>
     </>
   );
 }

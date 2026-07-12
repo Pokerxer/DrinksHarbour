@@ -2,6 +2,7 @@
 import { routes } from '@/config/routes';
 import PageHeader from '@/app/shared/page-header';
 import CreateCategory from '@/app/shared/ecommerce/category/create-category';
+import EcommercePageHeader from '@/app/shared/ecommerce/ecommerce-page-header';
 import { metaObject } from '@/config/site.config';
 import { Metadata } from 'next';
 
@@ -27,7 +28,11 @@ export default async function EditCategoryPage({ params }: Props) {
   const { id } = await params;
 
   let category = null;
-  let currentImages: { thumbnail?: string; featured?: string; banner?: string } = {};
+  let currentImages: {
+    thumbnail?: string;
+    featured?: string;
+    banner?: string;
+  } = {};
 
   try {
     const res = await fetch(
@@ -64,7 +69,7 @@ export default async function EditCategoryPage({ params }: Props) {
         metaDescription: c.metaDescription || '',
         metaKeywords: Array.isArray(c.metaKeywords)
           ? c.metaKeywords.join(', ')
-          : (c.metaKeywords || ''),
+          : c.metaKeywords || '',
         canonicalUrl: c.canonicalUrl || '',
       };
       currentImages = {
@@ -87,13 +92,16 @@ export default async function EditCategoryPage({ params }: Props) {
 
   return (
     <>
-      <PageHeader title={`Edit: ${categoryName}`} breadcrumb={breadcrumb} />
-      <CreateCategory
-        id={id}
-        category={category}
-        currentImages={currentImages}
-        isModalView={false}
-      />
+      <EcommercePageHeader hideHero />
+      <div className="mt-4">
+        <PageHeader title={`Edit: ${categoryName}`} breadcrumb={breadcrumb} />
+        <CreateCategory
+          id={id}
+          category={category}
+          currentImages={currentImages}
+          isModalView={false}
+        />
+      </div>
     </>
   );
 }

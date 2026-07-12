@@ -5,6 +5,7 @@ import { useState, useEffect, use } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { routes } from '@/config/routes';
+import EcommercePageHeader from '@/app/shared/ecommerce/ecommerce-page-header';
 import { Badge, Text, Title, Button, Input } from 'rizzui';
 import {
   PiArrowLeftBold,
@@ -265,6 +266,7 @@ export default function CategoryProductsPage({
 
   return (
     <div className="space-y-5">
+      <EcommercePageHeader hideHero />
       {/* ── Page header ── */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-3">
