@@ -258,6 +258,10 @@ const createKorapayCharge = async (amount, email, metadata = {}, options = {}) =
         ...metadata,
         createdAt: new Date().toISOString(),
       },
+      // Without an explicit list Korapay only offers the card channel, whose
+      // per-transaction limit is too low for premium-liquor carts (error AA021).
+      // bank_transfer carries a much higher limit.
+      channels: ['card', 'bank_transfer'],
       redirect_url:
         options.callbackUrl ||
         `${process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3002'}/payment/verify`,

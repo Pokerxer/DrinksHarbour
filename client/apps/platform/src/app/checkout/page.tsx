@@ -190,6 +190,12 @@ export default function CheckoutPage() {
       .catch(() => setWalletBalance(0));
   }, [router, loadServerCart]);
 
+  // The error banner renders above the form; when payment init fails the user
+  // is usually scrolled down at the pay button and sees nothing happen.
+  useEffect(() => {
+    if (error) window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [error]);
+
   // Pre-fill from localStorage
   useEffect(() => {
     const stored = localStorage.getItem('dh_user') || sessionStorage.getItem('dh_user');
