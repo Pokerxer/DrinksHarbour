@@ -509,14 +509,11 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                               {vendor.tenant.city}, {vendor.tenant.country}
                             </div>
                             <div className="flex items-center gap-2 mt-1">
-                              <span className={`text-xs font-medium ${totalStock >= 10 ? 'text-green-600' : totalStock > 0 ? 'text-orange-500' : 'text-red-500'}`}>
-                                {totalStock > 0 ? `${totalStock} in stock` : 'Out of stock'}
-                              </span>
-                              {vendor.tenant.revenueModel && (
-                                <span className="text-xs text-gray-400 capitalize">
-                                  • {vendor.tenant.revenueModel}
-                                </span>
-                              )}
+                              {totalStock === 0 ? (
+                                <span className="text-xs font-medium text-red-500">Out of stock</span>
+                              ) : totalStock < 10 ? (
+                                <span className="text-xs font-medium text-orange-500">{totalStock} in stock</span>
+                              ) : null}
                             </div>
                           </div>
                           {isActive && (

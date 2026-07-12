@@ -217,7 +217,7 @@ function BrandCard({ brand }: { brand: Brand }) {
   const color = getBrandColor(brand);
 
   return (
-    <Link href={`/shop?brand=${encodeURIComponent(brand.name)}`} className="block h-full">
+    <Link href={`/brands/${brand.slug}`} className="block h-full">
       <motion.div
         whileHover={{ y: -6 }}
         transition={{ duration: 0.3 }}
@@ -324,12 +324,6 @@ function BrandCard({ brand }: { brand: Brand }) {
                 ? `${brand.productCount} product${brand.productCount !== 1 ? 's' : ''}`
                 : 'Coming soon'}
             </span>
-            {brand.popularityScore && brand.popularityScore > 0 && (
-              <span className="flex items-center gap-1 text-[11px] text-amber-600">
-                <Icon.PiStarFill size={11} />
-                {brand.popularityScore}
-              </span>
-            )}
           </div>
         </div>
       </motion.div>
@@ -398,6 +392,7 @@ export default function BrandPage() {
 
       let list: Brand[] = data.data?.brands ?? data.data ?? [];
       if (!Array.isArray(list)) list = [];
+      list = list.filter(b => (b.productCount ?? 0) > 0);
 
       // Client-side sort
       if (sortKey === 'name_asc') list.sort((a, b) => a.name.localeCompare(b.name));
