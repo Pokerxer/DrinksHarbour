@@ -1,25 +1,54 @@
 import type { Metadata } from "next";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
+const BASE_URL  = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
+const SITE_NAME = "DrinksHarbour";
+const LAST_UPDATED_ISO = "2026-07-12";
+
+const description =
+  "How DrinksHarbour collects, uses, shares, and protects your personal data across our multi-tenant beverage marketplace. NDPA & NDPR compliant, with your rights, cookies, AI processing, and data-security practices explained.";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
-  description:
-    "Learn how DrinksHarbour collects, uses, and protects your personal information. Your privacy matters to us.",
-  openGraph: {
-    url: `${BASE_URL}/privacy-policy`,
-    title: "Privacy Policy | DrinksHarbour",
-    description: "How DrinksHarbour collects, uses, and protects your personal data.",
-  },
+  description,
+  keywords: [
+    "DrinksHarbour privacy policy",
+    "NDPR privacy Nigeria",
+    "NDPA data protection",
+    "beverage marketplace privacy",
+    "how DrinksHarbour uses my data",
+    "data protection Nigeria",
+  ],
+  robots: { index: true, follow: true, "max-image-preview": "large" },
   alternates: { canonical: `${BASE_URL}/privacy-policy` },
+  openGraph: {
+    type: "website",
+    url: `${BASE_URL}/privacy-policy`,
+    siteName: SITE_NAME,
+    title: "Privacy Policy | DrinksHarbour",
+    description,
+    locale: "en_NG",
+  },
+  twitter: {
+    card: "summary_large_image",
+    site: "@DrinkHarbour",
+    title: "Privacy Policy | DrinksHarbour",
+    description,
+  },
 };
 
 const jsonLd = {
   "@context": "https://schema.org",
-  "@type": "WebPage",
-  name: "Privacy Policy",
-  description: "How DrinksHarbour collects, uses, and protects your personal information.",
+  "@type": "PrivacyPolicy",
+  name: "DrinksHarbour Privacy Policy",
+  description,
   url: `${BASE_URL}/privacy-policy`,
+  dateModified: LAST_UPDATED_ISO,
+  inLanguage: "en-NG",
+  publisher: {
+    "@type": "Organization",
+    name: "DrinksHarbour Technologies Ltd",
+    url: BASE_URL,
+  },
   breadcrumb: {
     "@type": "BreadcrumbList",
     itemListElement: [
