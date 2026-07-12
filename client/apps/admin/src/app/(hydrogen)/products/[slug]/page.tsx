@@ -2,6 +2,7 @@
 import { routes } from '@/config/routes';
 import PageHeader from '@/app/shared/page-header';
 import ProductDetails from '@/app/shared/ecommerce/product/product-details';
+import EcommercePageHeader from '@/app/shared/ecommerce/ecommerce-page-header';
 import { metaObject } from '@/config/site.config';
 
 export const metadata = {
@@ -30,8 +31,14 @@ export default async function ProductDetailsPage({ params }: any) {
 
   return (
     <>
-      <PageHeader title={pageHeader.title} breadcrumb={pageHeader.breadcrumb} />
-      <ProductDetails />
+      <EcommercePageHeader hideHero />
+      <div className="mt-4">
+        <PageHeader
+          title={pageHeader.title}
+          breadcrumb={pageHeader.breadcrumb}
+        />
+        <ProductDetails />
+      </div>
     </>
   );
 }
