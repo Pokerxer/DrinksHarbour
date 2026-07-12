@@ -1,8 +1,33 @@
 import type { Metadata } from 'next';
 import ShopClient from './ShopClient';
+import { buildShopSearchParams, parseProductsResponse } from './searchQuery';
+import { fetchInitialRecommendations } from '@/components/Shop/recommendations';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
 const SITE_NAME = 'DrinksHarbour';
+
+// Fetch the initial product page on the server so the grid — product names,
+// prices and crawlable /product/<slug> links — is present in the raw HTML for
+// search engines. ShopClient hydrates from this and takes over filtering.
+async function fetchInitialProducts(
+  params: Record<string, string>,
+): Promise<{ products: any[]; total: number }> {
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+  if (!API_URL) return { products: [], total: 0 };
+  try {
+    const sp = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => typeof v === 'string') as [string, string][],
+    );
+    const query = buildShopSearchParams(sp).toString();
+    const res = await fetch(`${API_URL}/api/products/search?${query}`, {
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) return { products: [], total: 0 };
+    return parseProductsResponse(await res.json());
+  } catch {
+    return { products: [], total: 0 };
+  }
+}
 
 // ─── Label maps ───────────────────────────────────────────────────────────────
 
@@ -1374,7 +1399,11 @@ export default async function ShopPage({
   searchParams: Promise<Record<string, string>>;
 }) {
   const params  = await searchParams;
-  const schemas = await buildJsonLd(params);
+  const [schemas, initial, initialRecommended] = await Promise.all([
+    buildJsonLd(params),
+    fetchInitialProducts(params),
+    fetchInitialRecommendations(12),
+  ]);
 
   return (
     <>
@@ -1385,7 +1414,11 @@ export default async function ShopPage({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
         />
       ))}
-      <ShopClient />
+      <ShopClient
+        initialProducts={initial.products}
+        initialTotal={initial.total}
+        initialRecommended={initialRecommended}
+      />
     </>
   );
 }

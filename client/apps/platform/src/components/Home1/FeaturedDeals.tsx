@@ -55,6 +55,9 @@ interface FeaturedDealsProps {
   title?: string;
   subtitle?: string;
   limit?: number;
+  // Products fetched on the server so the deal cards + /product links are in the
+  // raw HTML (crawlable). Seeds state and skips the initial client fetch.
+  initialProducts?: DealProduct[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -208,12 +211,16 @@ const FeaturedDeals: React.FC<FeaturedDealsProps> = ({
   title = "Just For You",
   subtitle = "",
   limit = 12,
+  initialProducts,
 }) => {
+  const seeded = (initialProducts?.length ?? 0) > 0;
   const [products, setProducts] = useState<DealProduct[]>(() => {
+    if (seeded) return initialProducts!;
     const cached = _dealsCache.get(limit);
     return cached && Date.now() - cached.ts < DEALS_CACHE_TTL ? cached.data : [];
   });
   const [loading, setLoading] = useState(() => {
+    if (seeded) return false;
     const cached = _dealsCache.get(limit);
     return !(cached && Date.now() - cached.ts < DEALS_CACHE_TTL);
   });
@@ -221,6 +228,8 @@ const FeaturedDeals: React.FC<FeaturedDealsProps> = ({
   const { openQuickview } = useModalQuickviewContext() || {};
 
   useEffect(() => {
+    // Server already seeded the deals into the HTML — don't refetch.
+    if (seeded) return;
     const cached = _dealsCache.get(limit);
     if (cached && Date.now() - cached.ts < DEALS_CACHE_TTL) return;
 
@@ -251,7 +260,7 @@ const FeaturedDeals: React.FC<FeaturedDealsProps> = ({
       }
     };
     fetchProducts();
-  }, [limit]);
+  }, [limit, seeded]);
 
   const handleQuickView = useCallback(
     (product: DealProduct) => {

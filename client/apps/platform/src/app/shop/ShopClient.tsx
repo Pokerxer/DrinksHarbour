@@ -11,9 +11,18 @@ import ShopHeroBanner from '@/components/Shop/ShopHeroBanner';
 import LoadingSpinner from '@/components/loader/LoadingSpinner';
 import * as Icon from 'react-icons/pi';
 import RecommendedForYou from '@/components/Shop/RecommendedForYou';
+import { buildShopSearchParams } from './searchQuery';
 
 interface PageProps {
   params?: { slug?: string };
+  // Products fetched on the server so the grid is present in the raw HTML
+  // (crawlable by search engines). ShopClient seeds its state from these and
+  // skips the initial client fetch when present.
+  initialProducts?: any[];
+  initialTotal?: number;
+  // Server-fetched trending products for the "Recommended For You" section,
+  // so its cards + /product links are present in the raw HTML too.
+  initialRecommended?: any[];
 }
 
 interface FilterState {
@@ -133,7 +142,7 @@ function hasRealPriceDrop(product: any): boolean {
 }
 
 // ─── Page ────────────────────────────────────────────────────────────────────
-function ShopPageContent({ params }: PageProps) {
+function ShopPageContent({ params, initialProducts, initialTotal, initialRecommended }: PageProps) {
   const searchParams = useSearchParams();
   const router  = useRouter();
   const pathname = usePathname();
@@ -194,63 +203,27 @@ function ShopPageContent({ params }: PageProps) {
   }, [category, subcategory, brand, origin, flavor, sort, sale, sizeParam, volumeParam,
       minPriceParam, maxPriceParam, minABVParam, maxABVParam, minRatingParam]);
 
+  const hasSeed = (initialProducts?.length ?? 0) > 0;
   const [initialFilters] = useState<Partial<FilterState>>(buildInitialFilters);
-  const [products,       setProducts]       = useState<any[]>([]);
-  const [loading,        setLoading]        = useState(true);
+  const [products,       setProducts]       = useState<any[]>(initialProducts ?? []);
+  const [loading,        setLoading]        = useState(!hasSeed);
   const [error,          setError]          = useState<string | null>(null);
-  const [totalProducts,  setTotalProducts]  = useState(0);
+  const [totalProducts,  setTotalProducts]  = useState(initialTotal ?? initialProducts?.length ?? 0);
   const [layoutCol,      setLayoutCol]      = useState(4);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // ── Sort value mapping (frontend key → backend sort key) ─────────────────
-  const SORT_MAP: Record<string, string> = {
-    newest:            'newest',
-    priceLowToHigh:    'price_low',
-    priceHighToLow:    'price_high',
-    discountHighToLow: 'discount',
-    bestselling:       'bestselling',
-    popularity:        'popular',
-    rating:            'rating',
-    alphabetical:      'name_asc',
-    alphabeticalDesc:  'name_desc',
-  };
+  // When the server seeded products for the current params, skip the very first
+  // client fetch — the seed is already fresh and rendered into the HTML.
+  const skipNextFetchRef = useRef(hasSeed);
 
   // ── API URL ──────────────────────────────────────────────────────────────
+  // Query is built via the shared builder (searchQuery.ts) so this URL matches
+  // exactly what the server used to seed the initial grid — keeping SSR HTML and
+  // client hydration in sync.
   const buildApiUrl = useCallback(() => {
     const base = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001'}/api/products/search`;
-    const p = new URLSearchParams();
-    if (searchQuery?.trim())                p.set('q',           searchQuery.trim());
-    if (searchParams.get('category'))       p.set('category',    searchParams.get('category')!);
-    if (searchParams.get('subcategory'))    p.set('subCategory', searchParams.get('subcategory')!);
-    if (searchParams.get('brand'))          p.set('brand',       searchParams.get('brand')!);
-    if (searchParams.get('origin'))         p.set('origin',      searchParams.get('origin')!);
-    if (searchParams.get('flavor'))         p.set('flavor',      searchParams.get('flavor')!);
-    if (searchParams.get('volume'))         p.set('volume',      searchParams.get('volume')!);
-    if (searchParams.get('size'))           p.set('size',        searchParams.get('size')!);
-
-    // Map frontend sort value to backend sort key
-    const frontendSort = searchParams.get('sort') || '';
-    const backendSort  = SORT_MAP[frontendSort] || '';
-    if (backendSort) p.set('sort', backendSort);
-
-    if (sale === 'true') {
-      p.set('onSale', 'true');
-      // Do NOT pass saleType — we fetch ALL sale products once and
-      // filter client-side so tab switching never triggers a refetch.
-    }
-    if (searchParams.get('minPrice'))       p.set('minPrice',    searchParams.get('minPrice')!);
-    if (searchParams.get('maxPrice'))       p.set('maxPrice',    searchParams.get('maxPrice')!);
-    if (searchParams.get('minABV'))         p.set('minABV',      searchParams.get('minABV')!);
-    if (searchParams.get('maxABV'))         p.set('maxABV',      searchParams.get('maxABV')!);
-    if (searchParams.get('minRating'))      p.set('minRating',   searchParams.get('minRating')!);
-
-    // Fetch more products when a sort is active so the sort covers a larger slice of the catalog.
-    // Price/discount/newest sorts are now executed server-side before pagination, so the returned
-    // products are already the correct top-N — we just need enough to fill several pages.
-    const hasActiveSort = Boolean(frontendSort);
-    p.set('limit', sale === 'true' ? '200' : hasActiveSort ? '150' : '80');
-    return `${base}?${p.toString()}`;
-  }, [searchParams, searchQuery, sale]);
+    const sp = new URLSearchParams(searchParams.toString());
+    return `${base}?${buildShopSearchParams(sp).toString()}`;
+  }, [searchParams]);
 
   // ── Fetch ────────────────────────────────────────────────────────────────
   const fetchProducts = useCallback(async () => {
@@ -300,6 +273,8 @@ function ShopPageContent({ params }: PageProps) {
 
   // Debounce rapid URL-param changes (e.g. slider dragging) by 200ms
   useEffect(() => {
+    // Skip the first fetch when the server already seeded matching products.
+    if (skipNextFetchRef.current) { skipNextFetchRef.current = false; return; }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => { fetchProducts(); }, 200);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
@@ -696,7 +671,7 @@ function ShopPageContent({ params }: PageProps) {
       {/* ── Product grid ─────────────────────────────────────────────────── */}
       {(!isSalePage || visibleProducts.length > 0) && (
         <Shop
-          productPerPage={12}
+          productPerPage={24}
           data={visibleProducts}
           productStyle="style-1"
           searchQuery={searchQuery}
@@ -709,7 +684,7 @@ function ShopPageContent({ params }: PageProps) {
       {/* ── Recommended For You ──────────────────────────────────────────── */}
       {!isSalePage && (
         <div className="mt-8">
-          <RecommendedForYou maxItems={12} layoutCol={layoutCol} />
+          <RecommendedForYou maxItems={12} layoutCol={layoutCol} initialProducts={initialRecommended} />
         </div>
       )}
     </div>
@@ -727,3 +702,5 @@ export default function ShopClient(props: PageProps) {
     </Suspense>
   );
 }
+
+export type { PageProps as ShopClientProps };
