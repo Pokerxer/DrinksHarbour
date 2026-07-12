@@ -286,7 +286,27 @@ const createKorapayCharge = async (amount, email, metadata = {}, options = {}) =
     }
   } catch (error) {
     console.error('Korapay initialize error:', error.response?.data || error.message);
-    throw new ValidationError(error.response?.data?.message || error.message || 'Failed to initialize Korapay payment');
+
+    // AA021 — amount outside the merchant account's per-transaction channel
+    // limits. Korapay's raw message is confusing for shoppers; translate it and
+    // point at the wallet path (wallet payments don't go through the gateway).
+    const kpErr = error.response?.data;
+    if (kpErr?.code === 'AA021') {
+      const limits = String(kpErr.message || '').match(/NGN\s?([\d,]+)/gi) || [];
+      const maxLimit = limits
+        .map((s) => Number(s.replace(/\D/g, '')))
+        .filter((n) => n > 100)
+        .sort((a, b) => b - a)[0];
+      const limitText = maxLimit
+        ? `₦${maxLimit.toLocaleString()} per transaction`
+        : 'the per-transaction limit';
+      throw new ValidationError(
+        `This order total (₦${Math.round(amount).toLocaleString()}) is above ${limitText} for online card/bank payments. ` +
+        `You can fund your DH Wallet in smaller amounts and pay from the wallet, or contact support to complete this order.`
+      );
+    }
+
+    throw new ValidationError(kpErr?.message || error.message || 'Failed to initialize Korapay payment');
   }
 };
 

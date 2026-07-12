@@ -109,6 +109,35 @@ test('verifyKorapayCharge reports non-success statuses as failed', async () => {
   }
 });
 
+test('createKorapayCharge translates AA021 limit errors into shopper-friendly guidance', async () => {
+  const original = axios.post;
+  axios.post = async () => {
+    const err = new Error('Request failed with status code 400');
+    err.response = {
+      data: {
+        status: false,
+        code: 'AA021',
+        message:
+          'The transaction amount should be between NGN100 and NGN200000 for [card] payments, NGN100 and NGN200000 for [bank_transfer] payments. Please check and try again',
+      },
+    };
+    throw err;
+  };
+  try {
+    await assert.rejects(
+      () => paymentService.createKorapayCharge(476900, 'buyer@example.com', {}),
+      (e) => {
+        assert.match(e.message, /₦476,900/, 'names the order amount');
+        assert.match(e.message, /₦200,000 per transaction/, 'extracts the limit from Korapay message');
+        assert.match(e.message, /DH Wallet/, 'points at the wallet path');
+        return true;
+      },
+    );
+  } finally {
+    axios.post = original;
+  }
+});
+
 test('createGatewayTransaction routes to Korapay by default', async () => {
   assert.strictEqual(paymentService.ACTIVE_GATEWAY, 'korapay');
   const stub = stubAxiosPost();
