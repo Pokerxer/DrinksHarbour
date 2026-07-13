@@ -3,7 +3,7 @@
 const Brand = require('../models/Brand');
 const mongoose = require('mongoose');
 const { searchProducts: searchProductsNew } = require('./search.service');
-const { calcPlatformCostPrice, calcPlatformSellingPrice, calcPlatformMargin, resolveRevenueRates, isDiscountActive, applyDiscount, roundUpTo100, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
+const { calcPlatformCostPrice, calcPlatformSellingPrice, calcPlatformMargin, resolveRevenueRates, isDiscountActive, applyDiscount, roundUpTo100, DEFAULT_PLATFORM_MARKUP, DEFAULT_PACK_RATE_MIN_UNITS } = require('../utils/pricing');
 const { ValidationError, ConflictError, NotFoundError, ForbiddenError } = require('../utils/errors');
 const resolveTagReferences = require('../helpers/resolveTagReferences.helper');
 const resolveFlavorReferences = require('../helpers/resolveFlavorReference.helper');
@@ -9545,6 +9545,31 @@ const getProductBySlug = async (slug) => {
       const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
       const websitePrice = platformSellingPrice;
 
+      // Quantity-triggered pack pricing: second per-unit price earned at qty >= unitsPerPack.
+      // Runs the same pipeline (incl. sale discount below) at the tenant's pack rates.
+      const _unitsPerPack = size?.unitsPerPack ?? 1;
+      const _packMinUnits = tenant?.packRateMinUnits ?? DEFAULT_PACK_RATE_MIN_UNITS;
+      const _packReachable = !size?.maxOrderQuantity || size.maxOrderQuantity >= _unitsPerPack;
+      let packUnitPrice = null;
+      let packThreshold = null;
+      let packSavingsPct = null;
+      if (_unitsPerPack >= _packMinUnits && _packReachable && websitePrice > 0) {
+        const packRates = resolveRevenueRates(tenant, _unitsPerPack);
+        const packCost = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, packRates.markupPct, packRates.commissionPct);
+        let packSelling = calcPlatformSellingPrice(packCost, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: size?.platformMarkupOverridePct ?? null });
+        if (saleActive && subProduct.saleDiscountValue > 0) {
+          const discountType = subProduct.saleType || 'percentage';
+          packSelling = discountType === 'fixed'
+            ? roundUpTo100(Math.max(0, packSelling - subProduct.saleDiscountValue))
+            : roundUpTo100(packSelling * (1 - subProduct.saleDiscountValue / 100));
+        }
+        if (packSelling > 0 && packSelling < websitePrice) {
+          packUnitPrice = packSelling;
+          packThreshold = _unitsPerPack;
+          packSavingsPct = Math.round(((websitePrice - packSelling) / websitePrice) * 100);
+        }
+      }
+
       // Sale discount takes precedence over product-level discount for display
       let discountInfo = null;
       const hasSaleDiscount = saleActive && subProduct.saleDiscountValue > 0;
@@ -9622,6 +9647,9 @@ const getProductBySlug = async (slug) => {
           markupPct: effMarkupPct,
           commissionPct: effCommissionPct,
           platformMarkupPct,
+          packUnitPrice,
+          packThreshold,
+          packSavingsPct,
         },
 
         discount: discountInfo,
