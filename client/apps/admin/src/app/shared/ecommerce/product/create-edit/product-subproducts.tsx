@@ -296,15 +296,13 @@ function ReviewDrawer({
             const pmp = s.pricing?.platformMarkupPct ?? 15;
             let unitRaw = 0;
             if (data.pricing?.revenueModel === 'commission') {
-              // sellingPrice on a pack size is already PER UNIT
-              const unitTenantPrice = s.pricing?.sellingPrice || 0;
+              const unitTenantPrice = (s.pricing?.sellingPrice || 0) / units;
               unitRaw =
                 unitTenantPrice *
                 (1 - (data.pricing?.commissionPct ?? 12) / 100) *
                 (1 + pmp / 100);
             } else {
-              // costPrice on a pack size is already PER UNIT
-              const unitCost = s.pricing?.costPrice || 0;
+              const unitCost = (s.pricing?.costPrice || 0) / units;
               unitRaw =
                 unitCost *
                 (1 + (data.pricing?.markupPct ?? 25) / 100) *
@@ -937,9 +935,7 @@ function ReviewDrawer({
                                   packTotal > 0
                                     ? String(
                                         parseFloat(
-                                          (
-                                            packTotal / sizeUnitsPerPack
-                                          ).toFixed(2)
+                                          (packTotal / sizeUnitsPerPack).toFixed(2)
                                         )
                                       )
                                     : '';
@@ -1008,7 +1004,7 @@ function ReviewDrawer({
                                             </div>
                                             <div className="font-bold text-blue-700">
                                               {sizePlatformCost > 0
-                                                ? `₦${(sizeUnitsPerPack > 1 ? sizePlatformCost / sizeUnitsPerPack : sizePlatformCost).toLocaleString(undefined, { maximumFractionDigits: 0 })}${sizeUnitsPerPack > 1 ? '/unit' : ''}`
+                                                ? `₦${sizePlatformCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
                                                 : '—'}
                                             </div>
                                           </div>
@@ -1025,7 +1021,7 @@ function ReviewDrawer({
                                             </div>
                                             <div className="font-bold text-indigo-700">
                                               {sizePlatformSelling > 0
-                                                ? `₦${(sizeUnitsPerPack > 1 ? sizePlatformSelling / sizeUnitsPerPack : sizePlatformSelling).toLocaleString(undefined, { maximumFractionDigits: 0 })}${sizeUnitsPerPack > 1 ? '/unit' : ''}`
+                                                ? `₦${sizePlatformSelling.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
                                                 : '—'}
                                             </div>
                                           </div>
@@ -1052,7 +1048,7 @@ function ReviewDrawer({
                                             </div>
                                             <div className="font-bold text-blue-700">
                                               {sizePlatformCost > 0
-                                                ? `₦${(sizeUnitsPerPack > 1 ? sizePlatformCost / sizeUnitsPerPack : sizePlatformCost).toLocaleString(undefined, { maximumFractionDigits: 0 })}${sizeUnitsPerPack > 1 ? '/unit' : ''}`
+                                                ? `₦${sizePlatformCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
                                                 : '—'}
                                             </div>
                                           </div>
@@ -1069,7 +1065,7 @@ function ReviewDrawer({
                                             </div>
                                             <div className="font-bold text-indigo-700">
                                               {sizePlatformSelling > 0
-                                                ? `₦${(sizeUnitsPerPack > 1 ? sizePlatformSelling / sizeUnitsPerPack : sizePlatformSelling).toLocaleString(undefined, { maximumFractionDigits: 0 })}${sizeUnitsPerPack > 1 ? '/unit' : ''}`
+                                                ? `₦${sizePlatformSelling.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
                                                 : '—'}
                                             </div>
                                           </div>

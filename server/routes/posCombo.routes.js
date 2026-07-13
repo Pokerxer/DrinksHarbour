@@ -17,9 +17,7 @@ function computePrice(sp, sizeDoc, tenant) {
   if (rawCost <= 0 && rawSelling <= 0) return 0;
 
   const platformCost = calcPlatformCostPrice(rawCost, rawSelling, revenueModel, markupPct, commissionPct);
-  // Pack sizes: per-unit chain × unitsPerPack
-  const packUnits = Math.max(1, sizeDoc?.unitsPerPack || 1);
-  return calcPlatformSellingPrice(platformCost, platformMarkupPct) * packUnits;
+  return calcPlatformSellingPrice(platformCost, platformMarkupPct);
 }
 
 router.use(authenticate);
