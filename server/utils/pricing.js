@@ -61,7 +61,11 @@ const resolveLineRates = (tenant, size, quantity = 1) => {
       isPackRate: false,
     };
   }
-  return resolveRevenueRates(tenant, unitsPerPack);
+  // isPackRate reports whether a REDUCED pack rate was actually applied —
+  // a tenant with no pack rates configured falls back to normal rates.
+  const rates = resolveRevenueRates(tenant, unitsPerPack);
+  const hasPackRates = tenant?.packMarkupPercentage != null || tenant?.packCommissionPercentage != null;
+  return { ...rates, isPackRate: rates.isPackRate && hasPackRates };
 };
 
 /**

@@ -148,7 +148,7 @@ test('resolveLineRates: tenant without pack rates stays at normal rates', () => 
   const tenant = { markupPercentage: 15, commissionPercentage: 12 };
   const rates = resolveLineRates(tenant, { unitsPerPack: 6 }, 6);
   assert.strictEqual(rates.markupPct, 15);
-  assert.strictEqual(rates.isPackRate, true); // pack window reached, but rates fall back
+  assert.strictEqual(rates.isPackRate, false); // rates fell back to normal — not a pack rate
 });
 
 test('calculateSizePricing: headline finalPrice uses NORMAL rates regardless of unitsPerPack', () => {
