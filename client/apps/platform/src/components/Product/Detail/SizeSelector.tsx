@@ -17,6 +17,9 @@ interface VendorSize {
   volumeMl?: number;
   minOrderQuantity?: number;
   maxOrderQuantity?: number;
+  packUnitPrice?: number | null;
+  packThreshold?: number | null;
+  packSavingsPct?: number | null;
 }
 
 interface SizeSelectorProps {
@@ -56,6 +59,13 @@ const SizeSelector: React.FC<SizeSelectorProps> = React.memo(
               <span className="text-xs text-gray-500 ml-2">
                 ({selectedSizeData.stock} available)
               </span>
+              {selectedSizeData.packUnitPrice && selectedSizeData.packThreshold ? (
+                <div className="mt-2 text-sm font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  Buy {selectedSizeData.packThreshold}+ and pay {selectedSizeData.currencySymbol}
+                  {selectedSizeData.packUnitPrice.toLocaleString()} each
+                  {selectedSizeData.packSavingsPct ? ` — save ${selectedSizeData.packSavingsPct}%` : ''}
+                </div>
+              ) : null}
             </div>
           )}
         </div>
@@ -195,6 +205,13 @@ const SizeSelector: React.FC<SizeSelectorProps> = React.memo(
                 </span>
               )}
             </div>
+            {selectedSizeData.packUnitPrice && selectedSizeData.packThreshold ? (
+              <div className="mt-2 text-sm font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Buy {selectedSizeData.packThreshold}+ and pay {selectedSizeData.currencySymbol}
+                {selectedSizeData.packUnitPrice.toLocaleString()} each
+                {selectedSizeData.packSavingsPct ? ` — save ${selectedSizeData.packSavingsPct}%` : ''}
+              </div>
+            ) : null}
           </div>
         )}
       </div>

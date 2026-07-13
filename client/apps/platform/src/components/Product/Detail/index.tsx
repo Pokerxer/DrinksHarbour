@@ -64,6 +64,9 @@ interface VendorSize {
   volumeMl?: number;
   minOrderQuantity: number;
   maxOrderQuantity?: number;
+  packUnitPrice?: number | null;
+  packThreshold?: number | null;
+  packSavingsPct?: number | null;
 }
 
 interface ToastState {
@@ -121,6 +124,9 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
       volumeMl: s.volumeMl,
       minOrderQuantity: s.minOrderQuantity || 1,
       maxOrderQuantity: s.maxOrderQuantity,
+      packUnitPrice: s.pricing?.packUnitPrice ?? null,
+      packThreshold: s.pricing?.packThreshold ?? null,
+      packSavingsPct: s.pricing?.packSavingsPct ?? null,
     }));
   }, [selectedVendor]);
 
