@@ -554,14 +554,25 @@ const validateCartItems = async (items) => {
 
     // Platform selling price (markup/commission + product discount) — same pipeline
     // the storefront product page uses, NOT the raw tenant-facing Size.sellingPrice.
-    const currentPrice = calculateSizePricing(
+    // Quantity-aware: at quantity >= packThreshold the whole line pays packUnitPrice.
+    const sizePricing = calculateSizePricing(
       size, subProduct.product, subProduct.tenant,
       subProduct.costPrice, subProduct.baseSellingPrice
-    ).finalPrice;
+    );
+    const packApplied = sizePricing.packUnitPrice != null &&
+      sizePricing.packThreshold != null && quantity >= sizePricing.packThreshold;
+    const currentPrice = packApplied ? sizePricing.packUnitPrice : sizePricing.finalPrice;
+    const packInfo = {
+      baseUnitPrice: sizePricing.finalPrice,
+      packUnitPrice: sizePricing.packUnitPrice,
+      packThreshold: sizePricing.packThreshold,
+      packSavingsPct: sizePricing.packSavingsPct,
+      packApplied,
+    };
     const stock         = size.availableStock || size.stock || 0;
 
     if (size.availability === 'out_of_stock' || stock <= 0) {
-      return { ...base, status: 'out_of_stock', available: false, currentPrice,
+      return { ...base, ...packInfo, status: 'out_of_stock', available: false, currentPrice,
         priceDiff: currentPrice - oldPrice, stockStatus: 'out_of_stock', maxQuantity: 0, isLowStock: false };
     }
 
@@ -569,16 +580,16 @@ const validateCartItems = async (items) => {
     const isLowStock  = size.isLowStock;
 
     if (quantity > maxQuantity) {
-      return { ...base, status: 'quantity_reduced', available: true, currentPrice,
+      return { ...base, ...packInfo, status: 'quantity_reduced', available: true, currentPrice,
         priceDiff: currentPrice - oldPrice, stockStatus: size.availability, maxQuantity, isLowStock };
     }
 
     if (Math.round(currentPrice) !== Math.round(oldPrice)) {
-      return { ...base, status: 'price_changed', available: true, currentPrice,
+      return { ...base, ...packInfo, status: 'price_changed', available: true, currentPrice,
         priceDiff: currentPrice - oldPrice, stockStatus: size.availability, maxQuantity, isLowStock };
     }
 
-    return { ...base, status: 'ok', available: true, currentPrice, priceDiff: 0,
+    return { ...base, ...packInfo, status: 'ok', available: true, currentPrice, priceDiff: 0,
       stockStatus: size.availability, maxQuantity, isLowStock };
   }));
 };
