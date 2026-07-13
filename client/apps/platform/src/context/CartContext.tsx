@@ -523,10 +523,10 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
         const v   = validationMap[key];
         if (!v) return item;
         const newQty   = v.maxQuantity != null ? Math.min(item.quantity || 1, v.maxQuantity) : (item.quantity || 1);
-        const newPrice = (v as any).baseUnitPrice > 0 ? (v as any).baseUnitPrice : (v.currentPrice > 0 ? v.currentPrice : item.price);
+        const newPrice = (v.baseUnitPrice ?? 0) > 0 ? v.baseUnitPrice! : (v.currentPrice > 0 ? v.currentPrice : item.price);
         return { ...item, price: newPrice, quantity: newQty,
-          packUnitPrice: (v as any).packUnitPrice ?? item.packUnitPrice ?? null,
-          packThreshold: (v as any).packThreshold ?? item.packThreshold ?? null };
+          packUnitPrice: v.packUnitPrice ?? null,
+          packThreshold: v.packThreshold ?? null };
       });
     dispatch({ type: "LOAD_CART", payload: updated });
     setValidationMap({});
