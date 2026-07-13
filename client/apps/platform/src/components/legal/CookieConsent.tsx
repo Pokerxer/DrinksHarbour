@@ -28,6 +28,23 @@ function persist(consent: CookieConsent) {
   }
 }
 
+// Read the stored consent record (or null if the visitor hasn't chosen yet).
+export function readConsent(): CookieConsent | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as CookieConsent) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Whether the visitor has granted consent for an optional cookie category.
+export function hasConsent(category: 'preference' | 'analytics' | 'marketing'): boolean {
+  const c = readConsent();
+  return !!c && c[category] === true;
+}
+
 const OPTIONAL_KEYS = ['preference', 'analytics', 'marketing'] as const;
 
 const CATEGORY_COPY: { key: typeof OPTIONAL_KEYS[number]; label: string; desc: string }[] = [

@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { hasConsent } from '@/components/legal/CookieConsent';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -67,8 +68,25 @@ export default function useAnalyticsTracker(): void {
   const sessionIdRef     = useRef<string>('');
   const trackedThisMount = useRef<boolean>(false);
 
+  // ── Consent gate ──────────────────────────────────────────────────────────
+  // Analytics is an optional cookie category: only track once the visitor has
+  // granted analytics consent. Re-checks when they change their choice.
+  const [analyticsAllowed, setAnalyticsAllowed] = useState(false);
+
+  useEffect(() => {
+    const sync = () => setAnalyticsAllowed(hasConsent('analytics'));
+    sync();
+    window.addEventListener('dh:cookie-consent', sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener('dh:cookie-consent', sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, []);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (!analyticsAllowed) return; // no analytics consent → do not track
 
     const now = Date.now();
     const lastFire = lastTracked.get(pathname) ?? 0;
@@ -142,5 +160,5 @@ export default function useAnalyticsTracker(): void {
       window.removeEventListener('beforeunload', sendDuration);
       sendDuration(); // SPA navigation or unmount
     };
-  }, [pathname]);
+  }, [pathname, analyticsAllowed]);
 }
