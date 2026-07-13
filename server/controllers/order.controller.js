@@ -5,10 +5,11 @@ const Coupon = require('../models/Coupon');
 const User = require('../models/User');
 const Tenant = require('../models/Tenant');
 const SubProduct = require('../models/SubProduct');
+const Product = require('../models/Product');
 const Size = require('../models/Size');
 const asyncHandler = require('../utils/asyncHandler');
 const { generateOrderNumber } = require('../utils/orderUtils');
-const { calcPlatformCostPrice, resolveRevenueRates, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
+const { calcPlatformCostPrice, resolveRevenueRates, resolveLineRates, resolveEffectiveUnitPrice, calculateSizePricing, roundUpTo100, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
 const inventoryService = require('../services/inventory.service');
 const { getTenantId, normalizeTenantId } = require('../utils/tenantContext');
 const { ForbiddenError } = require('../utils/errors');
@@ -86,12 +87,12 @@ exports.createOrder = asyncHandler(async (req, res) => {
   const [subProducts, sizes] = await Promise.all([
     subProductIds.length
       ? SubProduct.find({ _id: { $in: subProductIds }, isPublished: true, status: 'active' })
-          .select('_id costPrice baseSellingPrice tenant')
+          .select('_id costPrice baseSellingPrice tenant product isOnSale saleDiscountValue saleType saleStartDate saleEndDate')
           .lean()
       : Promise.resolve([]),
     sizeIds.length
       ? Size.find({ _id: { $in: sizeIds } })
-          .select('_id costPrice sellingPrice tenant unitsPerPack')
+          .select('_id costPrice sellingPrice tenant unitsPerPack maxOrderQuantity platformMarkupOverridePct discountValue discountType discountStart discountEnd')
           .lean()
       : Promise.resolve([]),
   ]);
@@ -120,6 +121,13 @@ exports.createOrder = asyncHandler(async (req, res) => {
     .lean();
   const tenantMap = new Map(tenants.map(t => [t._id.toString(), t]));
 
+  // Product docs are needed to recompute the authoritative platform price
+  const orderProductIds = [...new Set(subProducts.map(sp => sp.product?.toString()).filter(Boolean))];
+  const orderProducts = orderProductIds.length
+    ? await Product.find({ _id: { $in: orderProductIds } }).select('_id platformMarkup platformDiscount').lean()
+    : [];
+  const productMap = new Map(orderProducts.map(p => [p._id.toString(), p]));
+
   // ── Build orderItems ─────────────────────────────────────────────────────
   //
   // Mirrors the server-side pricing pipeline in utils/pricing.js:
@@ -138,11 +146,32 @@ exports.createOrder = asyncHandler(async (req, res) => {
     const tenantId      = sp?.tenant?.toString() || item.tenantId || null;
     const tenant        = tenantMap.get(tenantId);
     const revenueModel  = tenant?.revenueModel ?? 'markup';
-    // Multi-pack sizes are paid out at the tenant's reduced pack rates
-    const { markupPct, commissionPct } = resolveRevenueRates(tenant, sz?.unitsPerPack ?? 1);
+    const qty = item.quantity;
+    // Quantity-triggered pack rates: whole line at pack rates when qty >= unitsPerPack
+    const { markupPct, commissionPct, isPackRate } = resolveLineRates(tenant, sz, qty);
 
-    const customerPrice = item.price;  // platform selling price per unit
-    const qty           = item.quantity;
+    // Server-authoritative unit price — same authority as cart validateCartItems
+    // (calculateSizePricing), plus the SubProduct sale discount the product page applies.
+    const productDoc = productMap.get(sp?.product?.toString());
+    let serverUnitPrice = 0;
+    if (sz && tenant) {
+      const sizePricing = calculateSizePricing(sz, productDoc, tenant, sp?.costPrice ?? 0, sp?.baseSellingPrice ?? 0);
+      serverUnitPrice = resolveEffectiveUnitPrice(sizePricing, qty);
+      if (serverUnitPrice > 0 && sp) {
+        const now = new Date();
+        const saleStart = sp.saleStartDate ? new Date(sp.saleStartDate) : null;
+        const saleEnd   = sp.saleEndDate   ? new Date(sp.saleEndDate)   : null;
+        const saleActive = sp.isOnSale && (sp.saleDiscountValue ?? 0) > 0 &&
+          (!saleStart || now >= saleStart) && (!saleEnd || now <= saleEnd);
+        if (saleActive) {
+          serverUnitPrice = (sp.saleType || 'percentage') === 'fixed'
+            ? roundUpTo100(Math.max(0, serverUnitPrice - sp.saleDiscountValue))
+            : roundUpTo100(serverUnitPrice * (1 - sp.saleDiscountValue / 100));
+        }
+      }
+    }
+    // Fall back to the client price only when the line can't be priced (no size data)
+    const customerPrice = serverUnitPrice > 0 ? serverUnitPrice : item.price;
     const itemSubtotal  = customerPrice * qty;
 
     // Size-level values take priority; fall back to SubProduct
@@ -174,6 +203,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
       platformCommission:    Math.round(platformProfit    * 100) / 100,
       tenantRevenueModel:    revenueModel,
       revenueRateAtPurchase: revenueModel === 'commission' ? commissionPct : markupPct,
+      packRateApplied:       isPackRate,
     };
   });
 

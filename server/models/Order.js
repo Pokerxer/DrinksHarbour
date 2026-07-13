@@ -97,6 +97,11 @@ const orderItemSchema = new Schema({
     type: Number,
     default: 0,
   },
+  // True when the quantity-triggered pack rate was applied to this line
+  packRateApplied: {
+    type: Boolean,
+    default: false,
+  },
   warehouse: { type: ObjectId, ref: 'Warehouse', required: false },
 
   // Which warehouse batches this line drew from (FEFO), for traceability and
