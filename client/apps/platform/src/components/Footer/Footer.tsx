@@ -12,7 +12,7 @@ const SHOP_LINKS = [
   { label: "All Products",   href: "/shop" },
   { label: "New Arrivals",   href: "/shop?tag=new-arrival" },
   { label: "On Sale",        href: "/shop?sale=true" },
-  { label: "Wines",          href: "/shop?category=wines" },
+  { label: "Wines",          href: "/shop?category=wine" },
   { label: "Spirits",        href: "/shop?category=spirits" },
   { label: "Beers & Ciders", href: "/shop?category=beers" },
   { label: "Non-Alcoholic",  href: "/shop?category=non-alcoholic" },

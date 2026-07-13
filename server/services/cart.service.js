@@ -540,7 +540,7 @@ const validateCartItems = async (items) => {
     });
 
     const subProduct = await SubProduct.findOne({ _id: subProductId, status: 'active' })
-      .populate({ path: 'tenant', select: 'status subscriptionStatus revenueModel markupPercentage commissionPercentage' })
+      .populate({ path: 'tenant', select: 'status subscriptionStatus revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits' })
       .populate({ path: 'product', select: 'platformMarkup platformDiscount' });
 
     if (!subProduct || !subProduct.tenant ||

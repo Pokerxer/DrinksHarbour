@@ -414,6 +414,9 @@ export default function TenantDetailPage() {
                   { label: 'Markup %', value: t.markupPercentage != null ? `${t.markupPercentage}%` : null },
                   { label: 'Commission %', value: t.commissionPercentage != null ? `${t.commissionPercentage}%` : null },
                   { label: 'Platform Markup %', value: t.platformMarkupPercentage != null ? `${t.platformMarkupPercentage}%` : null },
+                  { label: 'Pack Markup %', value: t.packMarkupPercentage != null ? `${t.packMarkupPercentage}%` : null },
+                  { label: 'Pack Commission %', value: t.packCommissionPercentage != null ? `${t.packCommissionPercentage}%` : null },
+                  { label: 'Pack Rate From', value: t.packMarkupPercentage != null || t.packCommissionPercentage != null ? `${t.packRateMinUnits ?? 2}+ units` : null },
                 ].map(({ label, value }) => (
                   value && (
                     <div key={label} className="rounded-lg bg-gray-50 border border-gray-100 p-3 text-center">

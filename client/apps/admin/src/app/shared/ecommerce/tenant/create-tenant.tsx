@@ -251,6 +251,10 @@ export default function CreateTenant({
         markupPercentage: data.markupPercentage !== undefined ? data.markupPercentage : undefined,
         commissionPercentage: data.commissionPercentage !== undefined ? data.commissionPercentage : undefined,
         platformMarkupPercentage: data.platformMarkupPercentage !== undefined ? data.platformMarkupPercentage : undefined,
+        // '' clears a pack rate on the server (packs revert to normal rates)
+        packMarkupPercentage: data.packMarkupPercentage !== undefined ? data.packMarkupPercentage : undefined,
+        packCommissionPercentage: data.packCommissionPercentage !== undefined ? data.packCommissionPercentage : undefined,
+        packRateMinUnits: data.packRateMinUnits !== undefined && data.packRateMinUnits !== '' ? data.packRateMinUnits : undefined,
         customPricingNote: data.customPricingNote || '',
         defaultCurrency: data.defaultCurrency || undefined,
         supportedCurrencies: data.supportedCurrencies || '',
@@ -583,6 +587,33 @@ export default function CreateTenant({
                       setValueAs: (v) => (v === '' || v === null ? undefined : Number(v)),
                     })}
                     error={errors.platformMarkupPercentage?.message}
+                  />
+                  <Input
+                    label="Pack Markup %"
+                    type="number"
+                    placeholder="Leave empty to use normal markup"
+                    {...register('packMarkupPercentage', {
+                      setValueAs: (v) => (v === '' || v === null ? '' : Number(v)),
+                    })}
+                    error={errors.packMarkupPercentage?.message}
+                  />
+                  <Input
+                    label="Pack Commission %"
+                    type="number"
+                    placeholder="Leave empty to use normal commission"
+                    {...register('packCommissionPercentage', {
+                      setValueAs: (v) => (v === '' || v === null ? '' : Number(v)),
+                    })}
+                    error={errors.packCommissionPercentage?.message}
+                  />
+                  <Input
+                    label="Pack Rate Min Units"
+                    type="number"
+                    placeholder="2"
+                    {...register('packRateMinUnits', {
+                      setValueAs: (v) => (v === '' || v === null ? '' : Number(v)),
+                    })}
+                    error={errors.packRateMinUnits?.message}
                   />
                   <div className="col-span-2">
                     <Input

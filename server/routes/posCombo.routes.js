@@ -2,14 +2,14 @@ const express  = require('express');
 const router   = express.Router();
 const POSCombo    = require('../models/POSCombo');
 const SubProduct  = require('../models/SubProduct');
-const { calcPlatformCostPrice, calcPlatformSellingPrice, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
+const { calcPlatformCostPrice, calcPlatformSellingPrice, resolveRevenueRates, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
 const { authenticate, attachTenant, tenantAdminOrSuperAdmin } = require('../middleware/auth.middleware');
 
 /** Mirror of pos.controller.js computePOSPricing — produces the platform selling price. */
 function computePrice(sp, sizeDoc, tenant) {
   const revenueModel  = tenant?.revenueModel         ?? 'markup';
-  const markupPct     = tenant?.markupPercentage      ?? 25;
-  const commissionPct = tenant?.commissionPercentage  ?? 12;
+  // Multi-pack sizes use the tenant's reduced pack rates
+  const { markupPct, commissionPct } = resolveRevenueRates(tenant, sizeDoc?.unitsPerPack ?? 1);
   const platformMarkupPct = sp.product?.platformMarkup ?? DEFAULT_PLATFORM_MARKUP;
 
   const rawCost    = (sizeDoc?.costPrice    > 0 ? sizeDoc.costPrice    : null) ?? sp.costPrice    ?? 0;
@@ -30,7 +30,7 @@ const itemsPopulate = {
   select:  'sku baseSellingPrice costPrice availableStock sellWithoutSizeVariants sizes product',
   populate: [
     { path: 'product', select: 'name images type' },
-    { path: 'sizes',   select: 'displayName sellingPrice costPrice availableStock _id sku' },
+    { path: 'sizes',   select: 'displayName sellingPrice costPrice unitsPerPack availableStock _id sku' },
   ],
 };
 

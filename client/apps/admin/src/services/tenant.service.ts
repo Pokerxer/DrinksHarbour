@@ -12,6 +12,9 @@ export interface AdminTenant {
   markupPercentage?: number;
   commissionPercentage?: number;
   platformMarkupPercentage?: number;
+  packMarkupPercentage?: number | null;
+  packCommissionPercentage?: number | null;
+  packRateMinUnits?: number;
   logo?: { url: string; alt?: string };
   primaryColor?: string;
   contactEmail?: string;
@@ -68,6 +71,9 @@ export interface TenantFormData {
   markupPercentage?: number;
   commissionPercentage?: number;
   platformMarkupPercentage?: number;
+  packMarkupPercentage?: number | '';
+  packCommissionPercentage?: number | '';
+  packRateMinUnits?: number | '';
   customPricingNote?: string;
   defaultCurrency?: string;
   supportedCurrencies?: string;

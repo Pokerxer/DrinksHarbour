@@ -4,7 +4,7 @@ const Tenant = require('../models/Tenant');
 const { ForbiddenError } = require('../utils/errors');
 
 const TENANT_SELECT_FIELDS =
-  '_id name slug status subscriptionStatus revenueModel markupPercentage commissionPercentage platformMarkupPercentage defaultCurrency enforceAgeVerification primaryColor logo plan';
+  '_id name slug status subscriptionStatus revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits platformMarkupPercentage defaultCurrency enforceAgeVerification primaryColor logo plan';
 const ADMIN_ROLES = ['super_admin', 'admin'];
 const RESERVED_SUBDOMAINS = ['www', 'drinksharbour', 'localhost', 'admin', 'platform', 'api'];
 

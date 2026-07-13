@@ -438,6 +438,33 @@ function ReviewDrawer({
                           value={`${commissionPct}%`}
                         />
                       )}
+                      {revenueModel === 'markup' &&
+                        (sp as any).tenant?.packMarkupPercentage != null && (
+                          <InfoRow
+                            label="Pack Markup %"
+                            value={
+                              <span className="font-medium text-amber-600">
+                                {(sp as any).tenant.packMarkupPercentage}% from{' '}
+                                {(sp as any).tenant.packRateMinUnits ?? 2}+
+                                units/pack
+                              </span>
+                            }
+                          />
+                        )}
+                      {revenueModel === 'commission' &&
+                        (sp as any).tenant?.packCommissionPercentage !=
+                          null && (
+                          <InfoRow
+                            label="Pack Commission %"
+                            value={
+                              <span className="font-medium text-amber-600">
+                                {(sp as any).tenant.packCommissionPercentage}%
+                                from {(sp as any).tenant.packRateMinUnits ?? 2}+
+                                units/pack
+                              </span>
+                            }
+                          />
+                        )}
                     </Section>
 
                     {/* Pricing Chain - Platform Pricing Pipeline */}
@@ -857,6 +884,14 @@ function ReviewDrawer({
                                 const sizeTenantStorePrice =
                                   sizePricing.tenantDiscount?.discountedPrice ||
                                   null;
+                                // Multi-pack sizes are priced with the tenant's reduced pack rate
+                                const sizeMarkupPct =
+                                  sizePricing.markupPct ?? markupPct;
+                                const sizeCommissionPct =
+                                  sizePricing.commissionPct ?? commissionPct;
+                                const sizeIsPackRate =
+                                  sizePricing.isPackRate || false;
+                                const sizeUnitsPerPack = s.unitsPerPack || 1;
 
                                 const defaultWebsite = sizePlatformSelling;
                                 const currentVal =
@@ -879,9 +914,17 @@ function ReviewDrawer({
                                     key={sizeId}
                                     className="rounded-xl border border-gray-100 bg-gray-50/50 p-3"
                                   >
-                                    <div className="mb-2 flex items-center justify-between">
-                                      <span className="text-xs font-bold text-gray-900">
+                                    <div className="mb-2 flex items-center justify-between gap-2">
+                                      <span className="flex items-center gap-1.5 text-xs font-bold text-gray-900">
                                         {s.size || s.displayName || '-'}
+                                        {sizeIsPackRate && (
+                                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-amber-700">
+                                            Pack ×{sizeUnitsPerPack} ·{' '}
+                                            {revenueModel === 'commission'
+                                              ? `${sizeCommissionPct}% pack commission`
+                                              : `${sizeMarkupPct}% pack markup`}
+                                          </span>
+                                        )}
                                       </span>
                                       <span className="text-[10px] text-gray-400">
                                         {s.stock ?? 0} in stock
@@ -1058,6 +1101,15 @@ function ReviewDrawer({
                                   · platformSelling = platformCost × (1+
                                   {platformMarkupPct}%) · margin = selling −
                                   cost
+                                </span>
+                              )}
+                              {sp.sizes.some(
+                                (s: any) => s.pricing?.isPackRate
+                              ) && (
+                                <span className="text-amber-500">
+                                  {' '}
+                                  · multi-pack sizes use the tenant&apos;s
+                                  reduced pack rate shown on each card
                                 </span>
                               )}
                             </div>

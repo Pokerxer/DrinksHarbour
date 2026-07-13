@@ -452,7 +452,7 @@ const loadCatalog = async (tenantId = null) => {
     const activeTenants = await TenantModel.find({
       status: 'approved',
       subscriptionStatus: { $in: ['active', 'trialing'] },
-    }).select('_id name revenueModel markupPercentage commissionPercentage').lean();
+    }).select('_id name revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits').lean();
     const activeTenantIds = activeTenants.map(t => t._id);
     const tenantById = {};
     activeTenants.forEach(t => { tenantById[t._id.toString()] = t; });
@@ -486,7 +486,7 @@ const loadCatalog = async (tenantId = null) => {
       _id: { $in: allSizeIds },
       status: 'active',
       availability: { $in: ['available', 'in_stock', 'low_stock'] },
-    }).select('_id size volumeMl stock sellingPrice costPrice discountValue discountType discountStart discountEnd availability')
+    }).select('_id size volumeMl stock sellingPrice costPrice unitsPerPack discountValue discountType discountStart discountEnd availability')
       .lean();
     const sizeById = {};
     sizes.forEach(s => { sizeById[s._id.toString()] = s; });

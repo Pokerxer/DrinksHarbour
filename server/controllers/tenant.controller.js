@@ -52,6 +52,14 @@ function buildTenantData(b, isUpdate = false) {
   if (b.markupPercentage !== undefined) data.markupPercentage = Number(b.markupPercentage);
   if (b.commissionPercentage !== undefined) data.commissionPercentage = Number(b.commissionPercentage);
   if (b.platformMarkupPercentage !== undefined) data.platformMarkupPercentage = Number(b.platformMarkupPercentage);
+  // Pack rates are nullable — empty string/null clears them (packs revert to normal rates)
+  if (b.packMarkupPercentage !== undefined) {
+    data.packMarkupPercentage = b.packMarkupPercentage === '' || b.packMarkupPercentage === null ? null : Number(b.packMarkupPercentage);
+  }
+  if (b.packCommissionPercentage !== undefined) {
+    data.packCommissionPercentage = b.packCommissionPercentage === '' || b.packCommissionPercentage === null ? null : Number(b.packCommissionPercentage);
+  }
+  if (b.packRateMinUnits !== undefined) data.packRateMinUnits = Number(b.packRateMinUnits) || 2;
 
   // Boolean fields
   if (b.enforceAgeVerification !== undefined) data.enforceAgeVerification = toBool(b.enforceAgeVerification, true);

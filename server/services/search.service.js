@@ -199,28 +199,25 @@ async function buildSearchQuery(params) {
     ];
   }
   
-  // Category filter
+  // Category filter. An unresolvable slug must match NOTHING, not everything —
+  // otherwise the grid header advertises the full catalog while the client's
+  // own category filter shows zero, and unknown ?category= URLs duplicate the
+  // whole shop for crawlers.
   if (category) {
     const categoryIds = await resolveCategoryIds(category);
-    if (categoryIds.length) {
-      baseQuery.category = { $in: categoryIds };
-    }
+    baseQuery.category = { $in: categoryIds };
   }
-  
-  // SubCategory filter
+
+  // SubCategory filter (same match-nothing rule for unknown slugs)
   if (subCategory) {
     const subCategoryIds = await resolveSubCategoryIds(subCategory);
-    if (subCategoryIds.length) {
-      baseQuery.subCategory = { $in: subCategoryIds };
-    }
+    baseQuery.subCategory = { $in: subCategoryIds };
   }
   
-  // Brand filter
+  // Brand filter (same match-nothing rule for unknown brands)
   if (brand) {
     const brandIds = await resolveBrandIds(brand);
-    if (brandIds.length) {
-      baseQuery.brand = { $in: brandIds };
-    }
+    baseQuery.brand = { $in: brandIds };
   }
   
   // Tags filter

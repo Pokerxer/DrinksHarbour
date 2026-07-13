@@ -531,7 +531,15 @@ export default function ShopHeroBanner({
 
   // ── Visual theme: brand colour first, then curated look, then DB category colour ──
   const themeKey = dbCat?.slug ?? catList[0] ?? (subList[0] ? SUBCAT_PARENT[subList[0]] : undefined);
-  const curated = (themeKey && CONFIGS[themeKey]) || null;
+  // Footer/marketing URLs use plural umbrella slugs (?category=wines) that the
+  // curated map keys as singulars — normalize before lookup.
+  const CURATED_KEY_ALIASES: Record<string, string> = {
+    wines: 'wine', beers: 'beer', ciders: 'cider', liqueurs: 'liqueur',
+    whiskies: 'whisky', whiskeys: 'whisky', 'scotch-whisky': 'scotch',
+    nonalcoholic: 'non-alcoholic',
+  };
+  const curatedKey = themeKey ? (CURATED_KEY_ALIASES[themeKey] ?? themeKey) : undefined;
+  const curated = (curatedKey && CONFIGS[curatedKey]) || null;
   const curatedSub = subList.length === 1 ? SUBCAT_LABELS[subList[0]] : null;
 
   const brandColor = brandOnly ? dbBrand?.brandColors?.primary : undefined;

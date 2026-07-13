@@ -8,7 +8,7 @@ const SubProduct = require('../models/SubProduct');
 const Size = require('../models/Size');
 const asyncHandler = require('../utils/asyncHandler');
 const { generateOrderNumber } = require('../utils/orderUtils');
-const { calcPlatformCostPrice, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
+const { calcPlatformCostPrice, resolveRevenueRates, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
 const inventoryService = require('../services/inventory.service');
 const { getTenantId, normalizeTenantId } = require('../utils/tenantContext');
 const { ForbiddenError } = require('../utils/errors');
@@ -91,7 +91,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
       : Promise.resolve([]),
     sizeIds.length
       ? Size.find({ _id: { $in: sizeIds } })
-          .select('_id costPrice sellingPrice tenant')
+          .select('_id costPrice sellingPrice tenant unitsPerPack')
           .lean()
       : Promise.resolve([]),
   ]);
@@ -116,7 +116,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
     subProducts.map(sp => sp.tenant?.toString()).filter(Boolean)
   )];
   const tenants = await Tenant.find({ _id: { $in: resolvedTenantIds } })
-    .select('_id name revenueModel markupPercentage commissionPercentage platformMarkupPercentage')
+    .select('_id name revenueModel markupPercentage commissionPercentage platformMarkupPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
     .lean();
   const tenantMap = new Map(tenants.map(t => [t._id.toString(), t]));
 
@@ -138,8 +138,8 @@ exports.createOrder = asyncHandler(async (req, res) => {
     const tenantId      = sp?.tenant?.toString() || item.tenantId || null;
     const tenant        = tenantMap.get(tenantId);
     const revenueModel  = tenant?.revenueModel ?? 'markup';
-    const markupPct     = tenant?.markupPercentage     ?? 25;
-    const commissionPct = tenant?.commissionPercentage ?? 12;
+    // Multi-pack sizes are paid out at the tenant's reduced pack rates
+    const { markupPct, commissionPct } = resolveRevenueRates(tenant, sz?.unitsPerPack ?? 1);
 
     const customerPrice = item.price;  // platform selling price per unit
     const qty           = item.quantity;

@@ -1101,7 +1101,7 @@ const createSubProduct = async (data, tenantId, user) => {
       })
       .populate({
         path: 'sizes',
-        select: 'size displayName unitType sellingPrice costPrice platformMarkupOverridePct stock availability markupPercentage roundUp saleDiscountPercentage salePrice compareAtPrice wholesalePrice sku barcode volumeMl weightGrams lowStockThreshold reorderPoint reorderQuantity isDefault isOnSale rank',
+        select: 'size displayName unitType sellingPrice costPrice unitsPerPack platformMarkupOverridePct stock availability markupPercentage roundUp saleDiscountPercentage salePrice compareAtPrice wholesalePrice sku barcode volumeMl weightGrams lowStockThreshold reorderPoint reorderQuantity isDefault isOnSale rank',
       })
       .populate({
         path: 'vendor',
@@ -1186,11 +1186,11 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
     },
     {
       path: 'tenant',
-      select: 'name businessName revenueModel markupPercentage commissionPercentage platformMarkupPercentage defaultCurrency',
+      select: 'name businessName revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits platformMarkupPercentage defaultCurrency',
     },
     {
       path: 'sizes',
-      select: 'size displayName unitType sellingPrice costPrice platformMarkupOverridePct compareAtPrice stock lowStockThreshold availability sku barcode weightGrams volumeMl discountValue discountType discountStart discountEnd totalSold',
+      select: 'size displayName unitType sellingPrice costPrice unitsPerPack platformMarkupOverridePct compareAtPrice stock lowStockThreshold availability sku barcode weightGrams volumeMl discountValue discountType discountStart discountEnd totalSold',
     },
     {
       path: 'vendor',
@@ -4488,7 +4488,7 @@ const getSubProductsByProduct = async (productId) => {
   // Public endpoint: only return published, active SubProducts
   const subProducts = await SubProduct.find({ product: productId, isPublished: true, status: 'active' })
     .populate('product', 'name slug images type isAlcoholic abv volumeMl originCountry brand category subCategory tags flavors description tastingNotes platformMarkup platformDiscount')
-    .populate('tenant', 'name businessName revenueModel markupPercentage commissionPercentage')
+    .populate('tenant', 'name businessName revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
     .populate('sizes', PRIVATE_SIZE_FIELDS)
     .select(PRIVATE_SUBPRODUCT_FIELDS)
     .lean();
@@ -4522,7 +4522,7 @@ const getSubProductById = async (id) => {
   // Public endpoint: only return published, active SubProducts
   const subProduct = await SubProduct.findOne({ _id: id, isPublished: true, status: 'active' })
     .populate('product', 'name slug images type isAlcoholic abv volumeMl originCountry brand category subCategory description platformMarkup platformDiscount')
-    .populate('tenant', 'name businessName revenueModel markupPercentage commissionPercentage')
+    .populate('tenant', 'name businessName revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
     .populate('sizes', PRIVATE_SIZE_FIELDS)
     .select(PRIVATE_SUBPRODUCT_FIELDS)
     .lean();
@@ -4796,7 +4796,7 @@ const adminSetSubProductStatus = async (subProductId, status, priceOverrides = {
   }
 
   const subProduct = await SubProduct.findById(subProductId)
-    .populate('tenant', 'revenueModel markupPercentage commissionPercentage')
+    .populate('tenant', 'revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
     .populate('product', 'platformMarkup platformDiscount');
   if (!subProduct) {
     throw new NotFoundError('Sub-product not found');

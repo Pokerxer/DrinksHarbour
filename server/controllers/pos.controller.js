@@ -24,7 +24,7 @@ const { mutateLoyalty } = require('../services/loyalty.service');
 const { loyaltyDelta } = require('../services/contact.helpers');
 const inventoryService = require('../services/inventory.service');
 const { generateOrderNumber, generateReceiptNumber, generateReturnNumber } = require('../utils/orderUtils');
-const { calcPlatformCostPrice, calcPlatformSellingPrice, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
+const { calcPlatformCostPrice, calcPlatformSellingPrice, resolveRevenueRates, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
 const {
   findMatchingPriceRules,
   applyPriceRules,
@@ -349,8 +349,8 @@ async function restoreStock({ subProductId, sizeId, quantity, tenantId, staffId,
  */
 function computePOSPricing(sp, sizeDoc, tenant) {
   const revenueModel      = tenant?.revenueModel        ?? 'markup';
-  const markupPct         = tenant?.markupPercentage    ?? 25;
-  const commissionPct     = tenant?.commissionPercentage ?? 12;
+  // Multi-pack sizes use the tenant's reduced pack rates
+  const { markupPct, commissionPct } = resolveRevenueRates(tenant, sizeDoc?.unitsPerPack ?? 1);
   const platformMarkupPct = sp.product?.platformMarkup  ?? DEFAULT_PLATFORM_MARKUP;
 
   const productDiscount = sp.product?.platformDiscount?.value > 0 && sp.product?.platformDiscount?.type

@@ -118,11 +118,14 @@ export function normalizeProduct(p: any): any {
 
 // Server-side fetch for the initial (anonymous) section — this is the `trending`
 // endpoint, matching what RecommendedForYou loads first for a logged-out user.
-export async function fetchInitialRecommendations(maxItems = 12): Promise<any[]> {
+// When the shop is filtered to a category, the seed is scoped to it so category
+// pages don't all recommend the same global list.
+export async function fetchInitialRecommendations(maxItems = 12, category?: string): Promise<any[]> {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
   if (!API_URL) return [];
   try {
-    const res = await fetch(`${API_URL}/api/products/trending?limit=${maxItems}`, {
+    const catParam = category ? `&category=${encodeURIComponent(category)}` : '';
+    const res = await fetch(`${API_URL}/api/products/trending?limit=${maxItems}${catParam}`, {
       next: { revalidate: 300 },
     });
     if (!res.ok) return [];

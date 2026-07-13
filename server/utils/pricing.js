@@ -13,6 +13,32 @@
  */
 
 const DEFAULT_PLATFORM_MARKUP = 15;
+const DEFAULT_PACK_RATE_MIN_UNITS = 2;
+
+/**
+ * Resolve the tenant revenue rates for a given size, using the tenant's
+ * reduced pack rates when the size is a multi-pack (unitsPerPack >= the
+ * tenant's packRateMinUnits threshold). Pack rates are optional — when a
+ * tenant hasn't configured them, the normal rates apply to packs too.
+ *
+ * @param {object} tenant - Tenant document (or lean object)
+ * @param {number} unitsPerPack - Size.unitsPerPack (defaults to 1)
+ * @returns {{ markupPct: number, commissionPct: number, isPackRate: boolean }}
+ */
+const resolveRevenueRates = (tenant, unitsPerPack = 1) => {
+  const minUnits = tenant?.packRateMinUnits ?? DEFAULT_PACK_RATE_MIN_UNITS;
+  const isPackRate = (unitsPerPack ?? 1) >= minUnits;
+  const markupPct = tenant?.markupPercentage ?? 25;
+  const commissionPct = tenant?.commissionPercentage ?? 12;
+  if (!isPackRate) {
+    return { markupPct, commissionPct, isPackRate: false };
+  }
+  return {
+    markupPct: tenant?.packMarkupPercentage ?? markupPct,
+    commissionPct: tenant?.packCommissionPercentage ?? commissionPct,
+    isPackRate: true,
+  };
+};
 
 /**
  * Check if a discount is currently active
@@ -216,8 +242,8 @@ const calculateSubProductPricing = (subProduct, product, tenant) => {
  */
 const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fallbackSellingPrice = 0) => {
   const revenueModel = tenant?.revenueModel ?? 'markup';
-  const markupPct = tenant?.markupPercentage ?? 25;
-  const commissionPct = tenant?.commissionPercentage ?? 12;
+  // Multi-pack sizes get the tenant's reduced pack rates
+  const { markupPct, commissionPct, isPackRate } = resolveRevenueRates(tenant, size?.unitsPerPack ?? 1);
   const platformMarkupPct = product?.platformMarkup ?? DEFAULT_PLATFORM_MARKUP;
 
   // Get product-level discount
@@ -261,6 +287,7 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
     revenueModel,
     markupPct,
     commissionPct,
+    isPackRate,
     platformMarkupPct: overridePct ?? platformMarkupPct,
     isPlatformMarkupOverridden: overridePct != null,
     tenantDiscount: tenantStorePrice != null && tenantStorePrice < tenantSellingPrice ? {
@@ -328,6 +355,8 @@ const backCalcStoredPrice = (
 
 module.exports = {
   DEFAULT_PLATFORM_MARKUP,
+  DEFAULT_PACK_RATE_MIN_UNITS,
+  resolveRevenueRates,
   isDiscountActive,
   applyDiscount,
   roundUpTo100,

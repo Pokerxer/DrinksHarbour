@@ -2,6 +2,14 @@ import type { Metadata } from 'next';
 import ShopClient from './ShopClient';
 import { buildShopSearchParams, parseProductsResponse } from './searchQuery';
 import { fetchInitialRecommendations } from '@/components/Shop/recommendations';
+import {
+  resolveCategorySlug,
+  fetchSubCategoryBySlug,
+  subFamilyHasProducts,
+  fetchBrandByName,
+  generatedKeywords,
+  type DbBrand,
+} from './taxonomy';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
 const SITE_NAME = 'DrinksHarbour';
@@ -10,6 +18,14 @@ const SITE_NAME = 'DrinksHarbour';
 // their pages canonicalize to a single URL instead of cannibalizing each other.
 const CATEGORY_CANONICAL_ALIASES: Record<string, string> = {
   'scotch-whisky': 'scotch',
+  // Plural umbrella slugs canonicalize onto the singular form the label maps
+  // and curated hero use, so /shop?category=wines and ?category=wine don't
+  // compete as duplicate pages.
+  wines: 'wine',
+  whiskies: 'whisky',
+  whiskeys: 'whisky',
+  ciders: 'cider',
+  nonalcoholic: 'non-alcoholic',
 };
 
 // Fetch the initial product page on the server so the grid — product names,
@@ -287,6 +303,15 @@ const CATEGORY_LABELS: Record<string, LabelEntry> = {
     ],
   },
 };
+
+// Plural/marketing slugs the footer & campaigns link to (?category=wines) share
+// the label entry of their singular key.
+CATEGORY_LABELS['wines']    = CATEGORY_LABELS['wine'];
+CATEGORY_LABELS['beers']    = CATEGORY_LABELS['beer'];
+CATEGORY_LABELS['ciders']   = CATEGORY_LABELS['cider'];
+CATEGORY_LABELS['liqueurs'] = CATEGORY_LABELS['liqueur'];
+CATEGORY_LABELS['whiskies'] = CATEGORY_LABELS['whisky'];
+CATEGORY_LABELS['whiskeys'] = CATEGORY_LABELS['whisky'];
 
 const SUBCATEGORY_LABELS: Record<string, LabelEntry> = {
   // Whisky
@@ -1077,6 +1102,151 @@ function brandKeywords(brand: string, catLabel?: string): string[] {
   return [...set];
 }
 
+// ─── DB-driven SEO resolution ─────────────────────────────────────────────────
+// The database decides WHICH category/subcategory/brand pages exist and what
+// they're called; the static label maps above only enrich a resolved DB entry
+// with curated keywords/descriptions — they can never create a page the catalog
+// doesn't have. Slugs the catalog doesn't know are noindexed so unknown
+// ?category= URLs stop duplicating the whole shop for crawlers. Admins override
+// any page's SEO via metaTitle/metaDescription/metaKeywords on the document.
+
+interface ResolvedEntry {
+  label: string;
+  titleOverride?: string; // admin-set metaTitle, used verbatim as the page title
+  description?: string;
+  keywords: string[];
+  canonicalSlug: string;
+  noindex?: boolean;
+}
+
+interface SeoContext {
+  cat?: ResolvedEntry;
+  sub?: ResolvedEntry;
+  brandLabel?: string;
+  brandDb?: DbBrand | null | 'offline';
+}
+
+const isSingle = (v: string) => Boolean(v) && !v.includes(',');
+
+async function resolveCategoryEntry(raw: string): Promise<ResolvedEntry> {
+  const slugLower = raw.toLowerCase();
+  const curated = CATEGORY_LABELS[slugLower];
+  const fallbackCanonical = CATEGORY_CANONICAL_ALIASES[slugLower] ?? raw;
+  const res = await resolveCategorySlug(raw);
+
+  if (res.kind === 'db') {
+    const c = res.category;
+    return {
+      label: curated?.title ?? c.name,
+      titleOverride: c.metaTitle || undefined,
+      description: c.metaDescription || curated?.description || c.description?.trim() || undefined,
+      keywords: Array.from(new Set([
+        ...(c.metaKeywords ?? []),
+        ...(curated?.keywords ?? []),
+        ...generatedKeywords(c.name),
+      ])),
+      canonicalSlug: CATEGORY_CANONICAL_ALIASES[c.slug] ?? c.slug,
+    };
+  }
+
+  if (res.kind === 'umbrella') {
+    const label = curated?.title ?? toTitleCase(res.slug);
+    const withProducts = res.members.filter((m) => (m.productCount ?? 0) > 0);
+    const names = (withProducts.length ? withProducts : res.members).map((m) => m.name).slice(0, 6);
+    return {
+      label,
+      description:
+        curated?.description ??
+        `Shop ${names.join(', ')} & more — premium drinks delivered across Nigeria`,
+      keywords: Array.from(new Set([
+        ...(curated?.keywords ?? []),
+        ...generatedKeywords(label),
+        ...names.map((n) => `buy ${n.toLowerCase()} Nigeria`),
+      ])),
+      canonicalSlug: fallbackCanonical,
+    };
+  }
+
+  // 'offline' (API unreachable) keeps the legacy static behaviour; 'unknown'
+  // (catalog has no such category → the grid is empty) is always noindexed.
+  const label = curated?.title ?? toTitleCase(raw);
+  return {
+    label,
+    description: curated?.description,
+    keywords: Array.from(new Set([...(curated?.keywords ?? []), ...generatedKeywords(label)])),
+    canonicalSlug: fallbackCanonical,
+    noindex: res.kind === 'unknown' || !curated,
+  };
+}
+
+async function resolveSubEntry(raw: string): Promise<ResolvedEntry> {
+  const curated = SUBCATEGORY_LABELS[raw.toLowerCase()];
+  const sub = await fetchSubCategoryBySlug(raw);
+
+  if (sub && sub !== 'offline') {
+    return {
+      label: curated?.title ?? sub.name,
+      titleOverride: sub.metaTitle || undefined,
+      description: sub.metaDescription || curated?.description || sub.description?.trim() || undefined,
+      keywords: Array.from(new Set([
+        ...(sub.metaKeywords ?? []),
+        ...(curated?.keywords ?? []),
+        ...generatedKeywords(sub.name),
+      ])),
+      canonicalSlug: sub.slug,
+    };
+  }
+
+  // No document with this slug. It may still be a prefix family the filter
+  // resolves against real subcategories (single-malt → single-malt-scotch, …):
+  // keep the page indexable exactly when the grid will actually have products.
+  const label = curated?.title ?? toTitleCase(raw);
+  if (sub === null) {
+    const family = await subFamilyHasProducts(raw);
+    return {
+      label,
+      description: curated?.description,
+      keywords: Array.from(new Set([...(curated?.keywords ?? []), ...generatedKeywords(label)])),
+      canonicalSlug: raw,
+      noindex: family === false || (family === null && !curated),
+    };
+  }
+
+  // API offline — legacy static behaviour.
+  return {
+    label,
+    description: curated?.description,
+    keywords: curated?.keywords ?? [],
+    canonicalSlug: raw,
+    noindex: !curated,
+  };
+}
+
+// Resolve everything the metadata/hero/JSON-LD need in one pass. Next.js dedupes
+// the underlying fetches between generateMetadata and the page render.
+async function resolveSeoContext(params: Record<string, string>): Promise<SeoContext> {
+  const category    = params.category    || '';
+  const subcategory = params.subcategory || '';
+  const brand       = params.brand       || '';
+
+  const ctx: SeoContext = {};
+  const jobs: Promise<void>[] = [];
+  if (isSingle(category)) {
+    jobs.push(resolveCategoryEntry(category).then((e) => { ctx.cat = e; }));
+  }
+  if (isSingle(subcategory)) {
+    jobs.push(resolveSubEntry(subcategory).then((e) => { ctx.sub = e; }));
+  }
+  if (isSingle(brand)) {
+    jobs.push(fetchBrandByName(brand).then((b) => {
+      ctx.brandDb = b;
+      ctx.brandLabel = (b && b !== 'offline' && b.name) || toTitleCase(brand);
+    }));
+  }
+  await Promise.all(jobs);
+  return ctx;
+}
+
 // ─── Hero seed (server-computed <h1>) ─────────────────────────────────────────
 
 // The shop hero is a client component, so on the first (crawlable) render it has
@@ -1088,7 +1258,7 @@ function brandKeywords(brand: string, catLabel?: string): string[] {
 // initial HTML <h1> stays in lockstep with the page title.
 export interface HeroSeed { label: string; description?: string }
 
-function deriveHeroSeed(params: Record<string, string>): HeroSeed | null {
+function deriveHeroSeed(params: Record<string, string>, ctx: SeoContext): HeroSeed | null {
   const category    = params.category    || '';
   const subcategory = params.subcategory || '';
   const brand       = params.brand       || '';
@@ -1100,7 +1270,7 @@ function deriveHeroSeed(params: Record<string, string>): HeroSeed | null {
   // Search results and no-index filter pages render their own header, not the hero.
   if (search || isNoIndexFilter(params)) return null;
 
-  const single = (v: string) => Boolean(v) && !v.includes(',');
+  const single = isSingle;
 
   if (sale) {
     return { label: 'Deals & Discounts', description: 'Limited-time discounts on premium wines, spirits, beers and more — delivered across Nigeria.' };
@@ -1109,33 +1279,29 @@ function deriveHeroSeed(params: Record<string, string>): HeroSeed | null {
   // Brand hero — client swaps in DB brand copy after hydration; the seed keeps the
   // <h1> correct in the initial HTML.
   if (single(brand)) {
-    return { label: toTitleCase(brand) };
+    return { label: ctx.brandLabel ?? toTitleCase(brand) };
   }
 
   if (single(subcategory)) {
-    const info = SUBCATEGORY_LABELS[subcategory.toLowerCase()];
-    return { label: info?.title ?? toTitleCase(subcategory), description: info?.description };
+    return { label: ctx.sub?.label ?? toTitleCase(subcategory), description: ctx.sub?.description };
   }
 
   if (origin) {
-    const catInfo    = CATEGORY_LABELS[category.toLowerCase()];
-    const catLabel   = catInfo?.title ?? (single(category) ? toTitleCase(category) : '');
+    const catLabel   = ctx.cat?.label ?? (single(category) ? toTitleCase(category) : '');
     const originInfo = ORIGIN_LABELS[origin.toLowerCase()];
     const originAdj  = originInfo?.title ?? toTitleCase(origin);
     return { label: catLabel ? `${originAdj} ${catLabel}` : `${originAdj} Drinks`, description: originInfo?.description };
   }
 
   if (flavor) {
-    const catInfo     = CATEGORY_LABELS[category.toLowerCase()];
-    const catLabel    = catInfo?.title ?? (single(category) ? toTitleCase(category) : '');
+    const catLabel    = ctx.cat?.label ?? (single(category) ? toTitleCase(category) : '');
     const flavorInfo  = FLAVOR_LABELS[flavor.toLowerCase()];
     const flavorLabel = flavorInfo?.title ?? toTitleCase(flavor);
     return { label: catLabel ? `${flavorLabel} ${catLabel}` : `${flavorLabel} Drinks`, description: flavorInfo?.description };
   }
 
   if (single(category)) {
-    const info = CATEGORY_LABELS[category.toLowerCase()];
-    return { label: info?.title ?? toTitleCase(category), description: info?.description };
+    return { label: ctx.cat?.label ?? toTitleCase(category), description: ctx.cat?.description };
   }
 
   // Default shop — keyword-matching heading aligned with the default <title>.
@@ -1196,15 +1362,26 @@ export async function generateMetadata({
     };
   }
 
+  // Resolve category/subcategory/brand against the database — the catalog is
+  // the source of truth for which of these pages exist and what they're called.
+  const ctx = await resolveSeoContext(params);
+  // Filter pages whose subject the catalog doesn't know (unknown category slug,
+  // unknown subcategory, unknown brand) now match zero products server-side, so
+  // don't offer them to crawlers as indexable pages.
+  const unknownSubject =
+    ctx.cat?.noindex || ctx.sub?.noindex || (Boolean(brand) && ctx.brandDb === null);
+  if (unknownSubject) {
+    return { robots: { index: false, follow: true } };
+  }
+
   // ── Brand + Subcategory (no category param) ──────────────────────────────
   if (brand && subcategory && !category) {
-    const brandLabel = toTitleCase(brand);
-    const subInfo    = SUBCATEGORY_LABELS[subcategory.toLowerCase()];
-    const subLabel   = subInfo?.title ?? toTitleCase(subcategory);
+    const brandLabel = ctx.brandLabel ?? toTitleCase(brand);
+    const subLabel   = ctx.sub?.label ?? toTitleCase(subcategory);
     const title      = `Buy ${brandLabel} ${subLabel} Online`;
     const description = `Shop authentic ${brandLabel} ${subLabel.toLowerCase()} in Nigeria. Competitive prices, fast delivery from Abuja to all 36 states on DrinksHarbour.`;
     const url        = `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}&subcategory=${encodeURIComponent(subcategory)}`;
-    const subKw      = subInfo?.keywords?.slice(0, 6) ?? [`buy ${subLabel.toLowerCase()} Nigeria`];
+    const subKw      = ctx.sub?.keywords?.slice(0, 6) ?? [`buy ${subLabel.toLowerCase()} Nigeria`];
     return {
       title: { absolute: `${title} | ${SITE_NAME}` },
       description,
@@ -1217,17 +1394,17 @@ export async function generateMetadata({
 
   // ── Subcategory only (no category, no brand) ──────────────────────────────
   if (subcategory && !category && !brand) {
-    const subInfo  = SUBCATEGORY_LABELS[subcategory.toLowerCase()];
-    const subLabel = subInfo?.title ?? toTitleCase(subcategory);
-    const title    = `Buy ${subLabel} Online Nigeria`;
-    const description = subInfo?.description
-      ? `${subInfo.description}. Fast delivery across all 36 states.`
+    const sub      = ctx.sub;
+    const subLabel = sub?.label ?? toTitleCase(subcategory);
+    const title    = sub?.titleOverride ?? `Buy ${subLabel} Online Nigeria`;
+    const description = sub?.description
+      ? `${sub.description.replace(/\.\s*$/, '')}. Fast delivery across all 36 states.`
       : `Shop premium ${subLabel.toLowerCase()} online in Nigeria. Authentic products with fast delivery from Abuja.`;
-    const url = `${BASE_URL}/shop?subcategory=${encodeURIComponent(subcategory)}`;
+    const url = `${BASE_URL}/shop?subcategory=${encodeURIComponent(sub?.canonicalSlug ?? subcategory)}`;
     return {
       title: { absolute: `${title} | ${SITE_NAME}` },
       description,
-      keywords: [...(subInfo?.keywords ?? [`buy ${subLabel.toLowerCase()} Nigeria`, `${subLabel.toLowerCase()} online Nigeria`, `${subLabel.toLowerCase()} delivery Nigeria`]), SITE_NAME],
+      keywords: [...(sub?.keywords?.length ? sub.keywords : [`buy ${subLabel.toLowerCase()} Nigeria`, `${subLabel.toLowerCase()} online Nigeria`, `${subLabel.toLowerCase()} delivery Nigeria`]), SITE_NAME],
       alternates: { canonical: url },
       openGraph: { type: 'website', url, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/images/logo.png', width: 1200, height: 630, alt: `${subLabel} — ${SITE_NAME}` }] },
       twitter:   { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/images/logo.png'] },
@@ -1236,9 +1413,8 @@ export async function generateMetadata({
 
   // ── Brand + Category combo ────────────────────────────────────────────────
   if (brand && category) {
-    const brandLabel = toTitleCase(brand);
-    const catInfo    = CATEGORY_LABELS[category.toLowerCase()];
-    const catLabel   = catInfo?.title ?? toTitleCase(category);
+    const brandLabel = ctx.brandLabel ?? toTitleCase(brand);
+    const catLabel   = ctx.cat?.label ?? toTitleCase(category);
     const title      = `Buy ${brandLabel} ${catLabel} Online`;
     const description = `Shop authentic ${brandLabel} ${catLabel.toLowerCase()} in Nigeria. Fast delivery from Abuja to all 36 states on DrinksHarbour.`;
     const url = `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}&category=${encodeURIComponent(category)}`;
@@ -1254,9 +1430,12 @@ export async function generateMetadata({
 
   // ── Brand only ────────────────────────────────────────────────────────────
   if (brand) {
-    const brandLabel  = toTitleCase(brand);
-    const title       = `Buy ${brandLabel} Online in Nigeria`;
-    const description = `Shop authentic ${brandLabel} products in Nigeria. Competitive prices, fast delivery from Abuja to all 36 states on DrinksHarbour.`;
+    const db          = ctx.brandDb && ctx.brandDb !== 'offline' ? ctx.brandDb : null;
+    const brandLabel  = ctx.brandLabel ?? toTitleCase(brand);
+    const title       = db?.metaTitle || `Buy ${brandLabel} Online in Nigeria`;
+    const description = db?.metaDescription
+      || db?.shortDescription
+      || `Shop authentic ${brandLabel} products in Nigeria. Competitive prices, fast delivery from Abuja to all 36 states on DrinksHarbour.`;
     const brandUrl    = `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}`;
     return {
       title: { absolute: `${title} | ${SITE_NAME}` },
@@ -1270,8 +1449,7 @@ export async function generateMetadata({
 
   // ── Origin ────────────────────────────────────────────────────────────────
   if (origin) {
-    const catInfo    = CATEGORY_LABELS[category.toLowerCase()];
-    const catLabel   = catInfo?.title ?? (category ? toTitleCase(category) : '');
+    const catLabel   = ctx.cat?.label ?? (category ? toTitleCase(category) : '');
     const originInfo = ORIGIN_LABELS[origin.toLowerCase()];
     const originAdj  = originInfo?.title ?? toTitleCase(origin);
     const pageTitle  = catLabel ? `Buy ${originAdj} ${catLabel} Online` : `Buy ${originAdj} Drinks Online`;
@@ -1296,8 +1474,7 @@ export async function generateMetadata({
 
   // ── Flavor ────────────────────────────────────────────────────────────────
   if (flavor) {
-    const catInfo    = CATEGORY_LABELS[category.toLowerCase()];
-    const catLabel   = catInfo?.title ?? (category ? toTitleCase(category) : '');
+    const catLabel   = ctx.cat?.label ?? (category ? toTitleCase(category) : '');
     const flavorInfo = FLAVOR_LABELS[flavor.toLowerCase()];
     const flavorLabel = flavorInfo?.title ?? toTitleCase(flavor);
     const pageTitle   = catLabel ? `${flavorLabel} ${catLabel}` : `${flavorLabel} Drinks`;
@@ -1322,30 +1499,33 @@ export async function generateMetadata({
 
   // ── Category + subcategory ────────────────────────────────────────────────
   if (category) {
-    const catInfo  = CATEGORY_LABELS[category.toLowerCase()];
-    const catLabel = catInfo?.title ?? toTitleCase(category);
-    const subInfo  = SUBCATEGORY_LABELS[subcategory.toLowerCase()];
-    const subLabel = subInfo?.title ?? (subcategory ? toTitleCase(subcategory) : '');
+    const cat      = ctx.cat;
+    const catLabel = cat?.label ?? toTitleCase(category);
+    const sub      = ctx.sub;
+    const subLabel = sub?.label ?? (subcategory ? toTitleCase(subcategory) : '');
 
-    const pageTitle   = subLabel ? `Buy ${subLabel} Online Nigeria` : `Buy ${catLabel} Online Nigeria`;
-    const description = subInfo?.description
-      ? `${subInfo.description}. Fast delivery across all 36 states.`
-      : catInfo?.description
-        ? `${catInfo.description}. Fast delivery across all 36 states.`
+    const pageTitle = subLabel
+      ? (sub?.titleOverride ?? `Buy ${subLabel} Online Nigeria`)
+      : (cat?.titleOverride ?? `Buy ${catLabel} Online Nigeria`);
+    const trimDot   = (s: string) => s.replace(/\.\s*$/, '');
+    const description = sub?.description
+      ? `${trimDot(sub.description)}. Fast delivery across all 36 states.`
+      : cat?.description
+        ? `${trimDot(cat.description)}. Fast delivery across all 36 states.`
         : `Shop premium ${catLabel.toLowerCase()} online in Nigeria. Authentic products with fast delivery from Abuja.`;
-    // Consolidate duplicate category slugs onto the real catalog slug so the two
-    // near-identical pages don't cannibalize each other (e.g. scotch-whisky is a
-    // phantom slug with no products — canonicalize it to `scotch`).
-    const canonicalCategory = CATEGORY_CANONICAL_ALIASES[category.toLowerCase()] ?? category;
-    const catUrl    = `${BASE_URL}/shop?category=${encodeURIComponent(canonicalCategory)}${subcategory ? `&subcategory=${encodeURIComponent(subcategory)}` : ''}`;
-    const baseKw    = subInfo?.keywords ?? catInfo?.keywords ?? [];
+    // Consolidate duplicate/alias slugs onto the real catalog slug so the two
+    // near-identical pages don't cannibalize each other (e.g. ?category=tequilas
+    // and ?category=scotch-whisky canonicalize to the DB slug).
+    const canonicalCategory = cat?.canonicalSlug ?? (CATEGORY_CANONICAL_ALIASES[category.toLowerCase()] ?? category);
+    const catUrl    = `${BASE_URL}/shop?category=${encodeURIComponent(canonicalCategory)}${subcategory ? `&subcategory=${encodeURIComponent(sub?.canonicalSlug ?? subcategory)}` : ''}`;
+    const baseKw    = (subLabel ? sub?.keywords : cat?.keywords) ?? [];
 
     return {
       title: { absolute: `${pageTitle} | ${SITE_NAME}` },
       description,
       keywords: [
         ...baseKw,
-        ...(subLabel && catInfo?.keywords ? catInfo.keywords.slice(0, 4) : []),
+        ...(subLabel && cat?.keywords ? cat.keywords.slice(0, 4) : []),
         SITE_NAME,
       ],
       alternates: { canonical: catUrl },
@@ -1383,13 +1563,18 @@ export async function generateMetadata({
 
 // ─── JSON-LD ──────────────────────────────────────────────────────────────────
 
-async function buildJsonLd(params: Record<string, string>) {
+async function buildJsonLd(params: Record<string, string>, ctx: SeoContext) {
   const category    = params.category    || '';
   const subcategory = params.subcategory || '';
   const brand       = params.brand       || '';
   const origin      = params.origin      || '';
   const flavor      = params.flavor      || '';
   const sale        = params.sale        === 'true';
+
+  // DB-resolved display names, static/titlecase as fallback.
+  const catLabelOf   = () => ctx.cat?.label ?? toTitleCase(category);
+  const subLabelOf   = () => ctx.sub?.label ?? toTitleCase(subcategory);
+  const brandLabelOf = () => ctx.brandLabel ?? toTitleCase(brand);
 
   const breadcrumbs: { '@type': string; position: number; name: string; item: string }[] = [
     { '@type': 'ListItem', position: 1, name: 'Home', item: BASE_URL },
@@ -1404,32 +1589,32 @@ async function buildJsonLd(params: Record<string, string>) {
     collectionUrl  = `${BASE_URL}/shop?sale=true`;
     breadcrumbs.push({ '@type': 'ListItem', position: 3, name: 'Deals & Discounts', item: collectionUrl });
   } else if (brand && subcategory && !category) {
-    const brandLabel = toTitleCase(brand);
-    const subLabel   = SUBCATEGORY_LABELS[subcategory.toLowerCase()]?.title ?? toTitleCase(subcategory);
+    const brandLabel = brandLabelOf();
+    const subLabel   = subLabelOf();
     collectionUrl  = `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}&subcategory=${encodeURIComponent(subcategory)}`;
     collectionName = `${brandLabel} ${subLabel} — DrinksHarbour`;
     breadcrumbs.push({ '@type': 'ListItem', position: 3, name: brandLabel,                  item: `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}` });
     breadcrumbs.push({ '@type': 'ListItem', position: 4, name: `${brandLabel} ${subLabel}`, item: collectionUrl });
   } else if (subcategory && !category && !brand) {
-    const subLabel = SUBCATEGORY_LABELS[subcategory.toLowerCase()]?.title ?? toTitleCase(subcategory);
+    const subLabel = subLabelOf();
     collectionUrl  = `${BASE_URL}/shop?subcategory=${encodeURIComponent(subcategory)}`;
     collectionName = `Buy ${subLabel} Online — DrinksHarbour`;
     breadcrumbs.push({ '@type': 'ListItem', position: 3, name: subLabel, item: collectionUrl });
   } else if (brand && category) {
-    const catLabel   = CATEGORY_LABELS[category.toLowerCase()]?.title ?? toTitleCase(category);
-    const brandLabel = toTitleCase(brand);
+    const catLabel   = catLabelOf();
+    const brandLabel = brandLabelOf();
     collectionUrl  = `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}&category=${encodeURIComponent(category)}`;
     collectionName = `${brandLabel} ${catLabel} — DrinksHarbour`;
     breadcrumbs.push({ '@type': 'ListItem', position: 3, name: brandLabel,                  item: `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}` });
     breadcrumbs.push({ '@type': 'ListItem', position: 4, name: `${brandLabel} ${catLabel}`, item: collectionUrl });
   } else if (brand) {
-    const brandLabel = toTitleCase(brand);
+    const brandLabel = brandLabelOf();
     collectionUrl  = `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}`;
     collectionName = `${brandLabel} — DrinksHarbour`;
     breadcrumbs.push({ '@type': 'ListItem', position: 3, name: brandLabel, item: collectionUrl });
   } else if (origin) {
     const originLabel = ORIGIN_LABELS[origin.toLowerCase()]?.title ?? toTitleCase(origin);
-    const catLabel    = category ? (CATEGORY_LABELS[category.toLowerCase()]?.title ?? toTitleCase(category)) : '';
+    const catLabel    = category ? catLabelOf() : '';
     collectionUrl   = `${BASE_URL}/shop?origin=${encodeURIComponent(origin)}${category ? `&category=${encodeURIComponent(category)}` : ''}`;
     collectionName  = catLabel ? `${originLabel} ${catLabel} — DrinksHarbour` : `${originLabel} Drinks — DrinksHarbour`;
     breadcrumbs.push({ '@type': 'ListItem', position: 3, name: `${originLabel} Drinks`, item: collectionUrl });
@@ -1439,12 +1624,12 @@ async function buildJsonLd(params: Record<string, string>) {
     collectionName  = `${flavorLabel} Drinks — DrinksHarbour`;
     breadcrumbs.push({ '@type': 'ListItem', position: 3, name: flavorLabel, item: collectionUrl });
   } else if (category) {
-    const catLabel = CATEGORY_LABELS[category.toLowerCase()]?.title ?? toTitleCase(category);
+    const catLabel = catLabelOf();
     collectionUrl  = `${BASE_URL}/shop?category=${encodeURIComponent(category)}`;
     collectionName = `Buy ${catLabel} Online — DrinksHarbour`;
     breadcrumbs.push({ '@type': 'ListItem', position: 3, name: catLabel, item: collectionUrl });
     if (subcategory) {
-      const subLabel = SUBCATEGORY_LABELS[subcategory.toLowerCase()]?.title ?? toTitleCase(subcategory);
+      const subLabel = subLabelOf();
       collectionUrl  = `${BASE_URL}/shop?category=${encodeURIComponent(category)}&subcategory=${encodeURIComponent(subcategory)}`;
       collectionName = `Buy ${subLabel} Online — DrinksHarbour`;
       breadcrumbs.push({ '@type': 'ListItem', position: 4, name: subLabel, item: collectionUrl });
@@ -1477,11 +1662,13 @@ export default async function ShopPage({
   searchParams: Promise<Record<string, string>>;
 }) {
   const params  = await searchParams;
-  const heroSeed = deriveHeroSeed(params);
+  // Same DB-driven resolution the metadata uses — underlying fetches are deduped.
+  const ctx = await resolveSeoContext(params);
+  const heroSeed = deriveHeroSeed(params, ctx);
   const [schemas, initial, initialRecommended] = await Promise.all([
-    buildJsonLd(params),
+    buildJsonLd(params, ctx),
     fetchInitialProducts(params),
-    fetchInitialRecommendations(12),
+    fetchInitialRecommendations(12, params.category),
   ]);
 
   return (

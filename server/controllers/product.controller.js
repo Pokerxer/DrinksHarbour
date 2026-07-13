@@ -820,7 +820,17 @@ const getTrendingProducts = asyncHandler(async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
   const days = parseInt(req.query.days) || 7;
 
-  const products = await productService.getTrendingProducts(limit, days);
+  // Optional ?category= scoping (accepts catalog slugs and umbrella slugs like
+  // "wines"/"spirits"). Unknown slugs fall back to global trending — this is a
+  // discovery section, never an empty one.
+  let categoryIds = null;
+  if (req.query.category) {
+    const { resolveCategoryToObjectIds } = require('../helpers/searchFilter.helper');
+    const ids = await resolveCategoryToObjectIds(String(req.query.category).split(','));
+    if (ids.length) categoryIds = ids;
+  }
+
+  const products = await productService.getTrendingProducts(limit, days, categoryIds);
 
   res.status(200).json({
     success: true,

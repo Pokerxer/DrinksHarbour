@@ -45,6 +45,10 @@ export const tenantFormSchema = z.object({
   markupPercentage: z.number().min(0).max(500).optional(),
   commissionPercentage: z.number().min(0).max(50).optional(),
   platformMarkupPercentage: z.number().min(0).max(100).optional(),
+  // Pack rates are clearable — empty string reverts packs to the normal rates
+  packMarkupPercentage: z.union([z.number().min(0).max(500), z.literal('')]).optional(),
+  packCommissionPercentage: z.union([z.number().min(0).max(50), z.literal('')]).optional(),
+  packRateMinUnits: z.union([z.number().int().min(2), z.literal('')]).optional(),
   customPricingNote: z.string().max(500).optional(),
 
   // Regional

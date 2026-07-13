@@ -3,19 +3,82 @@ const Category = require('../models/Category');
 const SubCategory = require('../models/SubCategory');
 const Brand = require('../models/Brand');
 
+// Umbrella/marketing slugs (footer, ads, SEO pages link to ?category=wines,
+// ?category=spirits, …) mapped to Category.type family PATTERNS. Resolution
+// stays DB-driven: an umbrella slug matches every *published Category
+// document* whose `type` matches the family pattern, so categories added to
+// the DB later (e.g. japanese-whisky, world-whisky, port-wine/fortified_wine)
+// join their family automatically — nothing here duplicates catalog data.
+const WHISKY_PATTERN   = 'whisk|scotch|bourbon';
+const WINE_PATTERN     = 'wine|champagne';
+const SPIRIT_PATTERN   = `${WHISKY_PATTERN}|vodka|gin|rum|tequila|brandy|cognac|soju|baijiu|shochu|mezcal|liqueur|aperitif|digestif|cocktail`;
+const BEER_PATTERN     = 'beer|cider';
+const NON_ALCO_PATTERN = 'coffee|tea|juice|soda|water|milk|yogurt|soft_drink|dairy|functional|syrup';
+
+const CATEGORY_TYPE_GROUPS = {
+  'wine':           WINE_PATTERN,
+  'wines':          WINE_PATTERN,
+  'whisky':         WHISKY_PATTERN,
+  'whiskies':       WHISKY_PATTERN,
+  'whiskeys':       WHISKY_PATTERN,
+  'scotch-whisky':  'scotch',
+  'spirit':         SPIRIT_PATTERN,
+  'spirits':        SPIRIT_PATTERN,
+  'beers':          BEER_PATTERN,
+  'beers-ciders':   BEER_PATTERN,
+  'ciders':         'cider',
+  'non-alcoholic':  NON_ALCO_PATTERN,
+  'nonalcoholic':   NON_ALCO_PATTERN,
+};
+
 /**
- * Resolve category names to ObjectIds
+ * Split requested category slugs into Category.type family patterns (for
+ * umbrella slugs) and literal slug candidates (with a de-pluralized fallback,
+ * e.g. "vodkas" → also tries "vodka").
+ * @param {string[]} names - Raw slugs/names from the URL
+ * @returns {{ typePatterns: string[], slugs: string[] }}
+ */
+const expandCategorySlugs = (names) => {
+  const typePatterns = new Set();
+  const slugs = new Set();
+  for (const raw of names || []) {
+    const n = String(raw).toLowerCase().trim();
+    if (!n) continue;
+    const family = CATEGORY_TYPE_GROUPS[n];
+    if (family) {
+      typePatterns.add(family);
+    } else {
+      slugs.add(n);
+      if (n.length > 3 && n.endsWith('s')) slugs.add(n.slice(0, -1));
+    }
+  }
+  return { typePatterns: [...typePatterns], slugs: [...slugs] };
+};
+
+/**
+ * Resolve category names to ObjectIds.
+ * Umbrella slugs (wines, spirits, …) match Category.type by family pattern;
+ * everything else matches by slug or display name, case-insensitively.
  * @param {string[]} names - Category names to resolve
  * @returns {Promise<string[]>} Array of ObjectId strings
  */
 const resolveCategoryToObjectIds = async (names) => {
   if (!names || names.length === 0) return [];
-  
-  const categories = await Category.find({
-    $or: names.map(n => ({ slug: new RegExp(`^${n}$`, 'i') })),
-    status: 'published'
-  }).select('_id').lean();
-  
+
+  const { typePatterns, slugs } = expandCategorySlugs(names);
+  if (typePatterns.length === 0 && slugs.length === 0) return [];
+
+  const escaped = slugs.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const or = [
+    ...typePatterns.map(p => ({ type: new RegExp(p, 'i') })),
+    ...escaped.map(n => ({ slug: new RegExp(`^${n}$`, 'i') })),
+    // Also match by display name so ?category=Red%20Wine style links work
+    ...escaped.map(n => ({ name: new RegExp(`^${n}$`, 'i') })),
+  ];
+
+  const categories = await Category.find({ $or: or, status: 'published' })
+    .select('_id').lean();
+
   return categories.map(c => c._id.toString());
 };
 
@@ -56,7 +119,7 @@ const resolveSubCategoryToObjectIds = async (names, parentCategoryId = null) => 
     
     let bestMatch = null;
     let bestMatchLength = 0;
-    
+
     const allSubs = [...categorySubs, ...subCategories];
     for (const sc of allSubs) {
       const slugLower = sc.slug.toLowerCase();
@@ -66,14 +129,21 @@ const resolveSubCategoryToObjectIds = async (names, parentCategoryId = null) => 
           bestMatch = sc;
         }
       }
+      // Family/prefix match, DB-driven: a short marketing slug matches every
+      // stored slug it prefixes, so ?subcategory=single-malt covers
+      // single-malt-scotch, single-malt-japanese-whisky, … — whatever the
+      // catalog actually contains.
+      if (slugLower.startsWith(nameLower + '-')) {
+        results.push(sc._id.toString());
+      }
     }
-    
+
     if (bestMatch) {
       results.push(bestMatch._id.toString());
     }
   }
-  
-  return results;
+
+  return [...new Set(results)];
 };
 
 /**
@@ -220,6 +290,8 @@ const toObjectId = (values) => {
 };
 
 module.exports = {
+  CATEGORY_TYPE_GROUPS,
+  expandCategorySlugs,
   resolveCategoryToObjectIds,
   resolveSubCategoryToObjectIds,
   resolveBrandToObjectIds,

@@ -3,6 +3,7 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { FilterState, FilterOptions, SortOption } from '@/types/filter.types';
+import { productMatchesCategory, productMatchesSubCategory } from '@/utils/categoryGroups';
 import FilterSidebar from './FilterSidebar';
 import FilterHeader from './FilterHeader';
 import ProductGrid from './ProductGrid';
@@ -414,15 +415,15 @@ const Shop: React.FC<Props> = ({
       }
 
       if (filters.categoryType) {
-        if (isArrayFilter(filters.categoryType)) {
-          if (product.category?.slug === undefined || !filters.categoryType.includes(product.category?.slug)) return false;
-        } else if (product.category?.slug !== undefined && product.category?.slug !== filters.categoryType) return false;
+        // Umbrella slugs (wines, spirits, …) match on category.type so the
+        // client agrees with the server-side expansion in searchFilter.helper.js.
+        if (!productMatchesCategory(product.category, filters.categoryType)) return false;
       }
 
       if (filters.subCategoryType) {
-        if (isArrayFilter(filters.subCategoryType)) {
-          if (product.subCategory?.slug === undefined || !filters.subCategoryType.includes(product.subCategory?.slug)) return false;
-        } else if (product.subCategory?.slug !== undefined && product.subCategory?.slug !== filters.subCategoryType) return false;
+        // Exact/suffix/prefix-family matching — same rule the server filter
+        // applies (searchFilter.helper.js), so grid and API agree.
+        if (!productMatchesSubCategory(product.subCategory, filters.subCategoryType)) return false;
       }
 
       if (filters.flavorCategory) {

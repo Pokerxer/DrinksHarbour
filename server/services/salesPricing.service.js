@@ -81,7 +81,7 @@ async function computeAuthoritativeLinePrices(items, { tenantId, pricelistId }) 
   if (!needsPricing) return items;
 
   const tenant = await Tenant.findById(tenantId)
-    .select('revenueModel markupPercentage commissionPercentage')
+    .select('revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
     .lean();
   const pricelist = pricelistId
     ? await Pricelist.findOne({ _id: pricelistId, tenant: tenantId }).lean()

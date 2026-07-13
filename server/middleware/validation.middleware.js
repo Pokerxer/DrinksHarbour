@@ -1237,6 +1237,35 @@ const validateTenantCreation = [
     .optional()
     .isFloat({ min: 0, max: 100 })
     .withMessage('Commission percentage must be between 0 and 100'),
+
+  body('packMarkupPercentage')
+    .optional({ nullable: true, checkFalsy: true })
+    .isFloat({ min: 0, max: 500 })
+    .withMessage('Pack markup percentage must be between 0 and 500')
+    .custom((value, { req }) => {
+      const normal = req.body.markupPercentage;
+      if (normal !== undefined && Number(value) > Number(normal)) {
+        throw new Error('Pack markup must not exceed the normal markup percentage');
+      }
+      return true;
+    }),
+
+  body('packCommissionPercentage')
+    .optional({ nullable: true, checkFalsy: true })
+    .isFloat({ min: 0, max: 50 })
+    .withMessage('Pack commission percentage must be between 0 and 50')
+    .custom((value, { req }) => {
+      const normal = req.body.commissionPercentage;
+      if (normal !== undefined && Number(value) > Number(normal)) {
+        throw new Error('Pack commission must not exceed the normal commission percentage');
+      }
+      return true;
+    }),
+
+  body('packRateMinUnits')
+    .optional({ nullable: true, checkFalsy: true })
+    .isInt({ min: 2 })
+    .withMessage('Pack rate minimum units must be at least 2'),
 ];
 
 /**

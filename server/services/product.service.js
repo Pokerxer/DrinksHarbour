@@ -3,7 +3,7 @@
 const Brand = require('../models/Brand');
 const mongoose = require('mongoose');
 const { searchProducts: searchProductsNew } = require('./search.service');
-const { calcPlatformCostPrice, calcPlatformSellingPrice, calcPlatformMargin, isDiscountActive, applyDiscount, roundUpTo100, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
+const { calcPlatformCostPrice, calcPlatformSellingPrice, calcPlatformMargin, resolveRevenueRates, isDiscountActive, applyDiscount, roundUpTo100, DEFAULT_PLATFORM_MARKUP } = require('../utils/pricing');
 const { ValidationError, ConflictError, NotFoundError, ForbiddenError } = require('../utils/errors');
 const resolveTagReferences = require('../helpers/resolveTagReferences.helper');
 const resolveFlavorReferences = require('../helpers/resolveFlavorReference.helper');
@@ -1004,7 +1004,7 @@ const createProduct = async (inputData, user, tenant = null) => {
       .populate('tenant', 'name slug logo city state country')
       .populate({
         path: 'sizes',
-        select: 'size displayName volumeMl sellingPrice costPrice platformMarkupOverridePct stock availableStock availability currency sku isDefault',
+        select: 'size displayName volumeMl sellingPrice costPrice unitsPerPack platformMarkupOverridePct stock availableStock availability currency sku isDefault',
       })
       .lean();
 
@@ -2237,7 +2237,7 @@ const exportTenantProducts = async (tenantId, format = 'csv') => {
     })
     .populate({
       path: 'sizes',
-      select: 'size displayName sellingPrice costPrice platformMarkupOverridePct stock availability',
+      select: 'size displayName sellingPrice costPrice unitsPerPack platformMarkupOverridePct stock availability',
     })
     .lean();
 
@@ -3772,7 +3772,10 @@ const searchProducts = async (searchParams = {}) => {
     isPublished: true,
   };
 
-  // Resolve and build category filter
+  // Resolve and build category filter. An unresolvable slug must match
+  // NOTHING (empty $in), not everything — otherwise unknown ?category= URLs
+  // silently return the whole catalog while the client's own category filter
+  // shows zero, and crawlers see the full shop duplicated per bad slug.
   let categoryFilter = null;
   if (category) {
     if (Array.isArray(category)) {
@@ -3783,22 +3786,16 @@ const searchProducts = async (searchParams = {}) => {
         resolvedIds = await resolveCategoryToObjectIds(names);
       }
       const allIds = [...objectIds, ...resolvedIds];
-      if (allIds.length > 0) {
-        categoryFilter = { category: { $in: allIds.map(id => new mongoose.Types.ObjectId(id)) } };
-      }
+      categoryFilter = { category: { $in: allIds.map(id => new mongoose.Types.ObjectId(id)) } };
     } else {
       if (/^[0-9a-fA-F]{24}$/.test(category)) {
         categoryFilter = { category: new mongoose.Types.ObjectId(category) };
       } else {
         const resolved = await resolveCategoryToObjectIds([category]);
-        if (resolved.length > 0) {
-          categoryFilter = { category: { $in: resolved.map(id => new mongoose.Types.ObjectId(id)) } };
-        }
+        categoryFilter = { category: { $in: resolved.map(id => new mongoose.Types.ObjectId(id)) } };
       }
     }
-    if (categoryFilter) {
-      Object.assign(baseQuery, categoryFilter);
-    }
+    Object.assign(baseQuery, categoryFilter);
   }
 
   // Resolve and build subCategory filter
@@ -3817,22 +3814,17 @@ const searchProducts = async (searchParams = {}) => {
         resolvedIds = await resolveSubCategoryToObjectIds(names, parentCategoryId);
       }
       const allIds = [...objectIds, ...resolvedIds];
-      if (allIds.length > 0) {
-        subCategoryFilter = { subCategory: { $in: allIds.map(id => new mongoose.Types.ObjectId(id)) } };
-      }
+      // Match-nothing rule for unknown subcategory slugs (see category filter)
+      subCategoryFilter = { subCategory: { $in: allIds.map(id => new mongoose.Types.ObjectId(id)) } };
     } else {
       if (/^[0-9a-fA-F]{24}$/.test(subCategory)) {
         subCategoryFilter = { subCategory: new mongoose.Types.ObjectId(subCategory) };
       } else {
         const resolved = await resolveSubCategoryToObjectIds([subCategory], parentCategoryId);
-        if (resolved.length > 0) {
-          subCategoryFilter = { subCategory: { $in: resolved.map(id => new mongoose.Types.ObjectId(id)) } };
-        }
+        subCategoryFilter = { subCategory: { $in: resolved.map(id => new mongoose.Types.ObjectId(id)) } };
       }
     }
-    if (subCategoryFilter) {
-      Object.assign(baseQuery, subCategoryFilter);
-    }
+    Object.assign(baseQuery, subCategoryFilter);
   }
 
   // Resolve and build brand filter
@@ -3846,22 +3838,17 @@ const searchProducts = async (searchParams = {}) => {
         resolvedIds = await resolveBrandToObjectIds(names);
       }
       const allIds = [...objectIds, ...resolvedIds];
-      if (allIds.length > 0) {
-        brandFilter = { brand: { $in: allIds.map(id => new mongoose.Types.ObjectId(id)) } };
-      }
+      // Match-nothing rule for unknown brands (see category filter)
+      brandFilter = { brand: { $in: allIds.map(id => new mongoose.Types.ObjectId(id)) } };
     } else {
       if (/^[0-9a-fA-F]{24}$/.test(brand)) {
         brandFilter = { brand: new mongoose.Types.ObjectId(brand) };
       } else {
         const resolved = await resolveBrandToObjectIds([brand]);
-        if (resolved.length > 0) {
-          brandFilter = { brand: { $in: resolved.map(id => new mongoose.Types.ObjectId(id)) } };
-        }
+        brandFilter = { brand: { $in: resolved.map(id => new mongoose.Types.ObjectId(id)) } };
       }
     }
-    if (brandFilter) {
-      Object.assign(baseQuery, brandFilter);
-    }
+    Object.assign(baseQuery, brandFilter);
   }
 
   // Text search — semantic expansion + synonym-aware regex
@@ -4116,6 +4103,9 @@ const searchProducts = async (searchParams = {}) => {
                 revenueModel: 1,
                 markupPercentage: 1,
                 commissionPercentage: 1,
+                packMarkupPercentage: 1,
+                packCommissionPercentage: 1,
+                packRateMinUnits: 1,
                 defaultCurrency: 1,
               },
               sku: 1,
@@ -4453,7 +4443,9 @@ const searchProducts = async (searchParams = {}) => {
         //   platformSellingPrice = platformCostPrice × (1 + platformMarkupPct/100) [− productDiscount]
         // Tenant discounts are for the tenant's own store only — not used here.
         // ─────────────────────────────────────────────────────────────────────
-        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
+        // Multi-pack sizes use the tenant's reduced pack rates
+        const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, (typeof size !== 'undefined' ? size : sizeItem)?.unitsPerPack ?? 1);
+        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
 
         // Calculate platform selling price with product discount first
         let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
@@ -4542,15 +4534,15 @@ const searchProducts = async (searchParams = {}) => {
             formattedPrice: formatPrice(websitePrice, currency),
             compareAtPrice: size.compareAtPrice
               ? calcPlatformSellingPrice(
-                  calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, markupPct, commissionPct),
+                  calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
                   platformMarkupPct
                 ).toFixed(2)
               : null,
             currency,
             currencySymbol: getCurrencySymbol(currency),
             revenueModel,
-            markupPct,
-            commissionPct,
+            markupPct: effMarkupPct,
+            commissionPct: effCommissionPct,
             platformMarkupPct,
           },
 
@@ -5121,7 +5113,18 @@ const getAvailableFilters = async (query) => {
                         in: {
                           $cond: [
                             { $eq: ['$$sub.tenant.revenueModel', 'markup'] },
-                            { $multiply: ['$$size.costPrice', { $add: [1, { $divide: ['$$sub.tenant.markupPercentage', 100] }] }] },
+                            { $multiply: ['$$size.costPrice', { $add: [1, { $divide: [
+                              // Multi-pack sizes use the tenant's reduced pack markup when configured
+                              { $cond: [
+                                { $and: [
+                                  { $gte: [{ $ifNull: ['$$size.unitsPerPack', 1] }, { $ifNull: ['$$sub.tenant.packRateMinUnits', 2] }] },
+                                  { $ne: [{ $ifNull: ['$$sub.tenant.packMarkupPercentage', null] }, null] },
+                                ] },
+                                '$$sub.tenant.packMarkupPercentage',
+                                '$$sub.tenant.markupPercentage',
+                              ] },
+                              100,
+                            ] }] }] },
                             '$$size.sellingPrice'
                           ]
                         }
@@ -5144,7 +5147,18 @@ const getAvailableFilters = async (query) => {
                         in: {
                           $cond: [
                             { $eq: ['$$sub.tenant.revenueModel', 'markup'] },
-                            { $multiply: ['$$size.costPrice', { $add: [1, { $divide: ['$$sub.tenant.markupPercentage', 100] }] }] },
+                            { $multiply: ['$$size.costPrice', { $add: [1, { $divide: [
+                              // Multi-pack sizes use the tenant's reduced pack markup when configured
+                              { $cond: [
+                                { $and: [
+                                  { $gte: [{ $ifNull: ['$$size.unitsPerPack', 1] }, { $ifNull: ['$$sub.tenant.packRateMinUnits', 2] }] },
+                                  { $ne: [{ $ifNull: ['$$sub.tenant.packMarkupPercentage', null] }, null] },
+                                ] },
+                                '$$sub.tenant.packMarkupPercentage',
+                                '$$sub.tenant.markupPercentage',
+                              ] },
+                              100,
+                            ] }] }] },
                             '$$size.sellingPrice'
                           ]
                         }
@@ -5270,9 +5284,16 @@ const getProductsByFlavors = async (flavorIds, filters = {}, pagination = {}) =>
 /**
  * Get trending products
  */
-const getTrendingProducts = async (limit = 10, dateRange = 7) => {
+const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null) => {
   const Sales = require('../models/Sales');
   const SubProduct = require('../models/SubProduct');
+
+  // Optional category scoping — shop category pages seed their "Recommended
+  // For You" from here so the section matches what the visitor is browsing.
+  const catIds = Array.isArray(categoryIds) && categoryIds.length
+    ? categoryIds.map((id) => new mongoose.Types.ObjectId(String(id)))
+    : null;
+  const catCond = catIds ? { category: { $in: catIds } } : {};
 
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - dateRange);
@@ -5320,6 +5341,7 @@ const getTrendingProducts = async (limit = 10, dateRange = 7) => {
       status: 'approved',
       isPublished: true,
       isFeatured: true,
+      ...catCond,
     })
       .populate('brand', 'name slug logo description')
       .populate('category', 'name slug icon description')
@@ -5332,7 +5354,7 @@ const getTrendingProducts = async (limit = 10, dateRange = 7) => {
     // If no featured products, get random approved products
     if (products.length === 0) {
       products = await Product.aggregate([
-        { $match: { status: 'approved', isPublished: true } },
+        { $match: { status: 'approved', isPublished: true, ...catCond } },
         { $sample: { size: limit } },
         {
           $lookup: {
@@ -5391,6 +5413,7 @@ const getTrendingProducts = async (limit = 10, dateRange = 7) => {
       _id: { $in: productIds },
       status: 'approved',
       isPublished: true,
+      ...catCond,
     })
       .populate('brand', 'name slug logo description')
       .populate('category', 'name slug icon description')
@@ -5398,6 +5421,27 @@ const getTrendingProducts = async (limit = 10, dateRange = 7) => {
         'name slug type description images primaryImage abv volumeMl tenantCount averageRating reviewCount priceRange sale originPrice isAlcoholic flavorNotes country tags isFeatured status isPublished platformMarkup platformDiscount'
       )
       .lean();
+
+    // Category-scoped requests: top up with the category's own products when
+    // few of the globally trending ones belong to it, so the section is never
+    // sparse on a category page.
+    if (catIds && products.length < limit) {
+      const topUp = await Product.find({
+        ...catCond,
+        _id: { $nin: products.map((p) => p._id) },
+        status: 'approved',
+        isPublished: true,
+      })
+        .sort({ isFeatured: -1, averageRating: -1, reviewCount: -1 })
+        .populate('brand', 'name slug logo description')
+        .populate('category', 'name slug icon description')
+        .select(
+          'name slug type description images primaryImage abv volumeMl tenantCount averageRating reviewCount priceRange sale originPrice isAlcoholic flavorNotes country tags isFeatured status isPublished platformMarkup platformDiscount'
+        )
+        .limit(limit - products.length)
+        .lean();
+      products = products.concat(topUp);
+    }
   }
 
   // Fetch SubProducts for each product to get sizes, tenants, and pricing details
@@ -5408,8 +5452,8 @@ const getTrendingProducts = async (limit = 10, dateRange = 7) => {
       product: product._id,
       status: 'active',
     })
-      .populate('tenant', 'name slug logo city state country revenueModel markupPercentage commissionPercentage defaultCurrency primaryColor')
-      .populate('sizes', 'volume unit displayName sellingPrice costPrice platformMarkupOverridePct availableStock compareAtPrice discount discountType discountStart discountEnd currency sku isDefault status availability')
+      .populate('tenant', 'name slug logo city state country revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency primaryColor')
+      .populate('sizes', 'volume unit displayName sellingPrice costPrice unitsPerPack platformMarkupOverridePct availableStock compareAtPrice discount discountType discountStart discountEnd currency sku isDefault status availability')
       .select(
         'tenant baseSellingPrice costPrice discountPercentage finalPrice currency sizes stockQuantity availability minOrderQuantity maxOrderQuantity revenueModel isFeaturedByTenant isOnSale salePrice saleStartDate saleEndDate saleType saleDiscountValue'
       )
@@ -5438,7 +5482,9 @@ const getTrendingProducts = async (limit = 10, dateRange = 7) => {
         const currency = sizeItem.currency || subProduct.currency || tenant.defaultCurrency || 'NGN';
 
         // Platform Pricing Pipeline (same as getAllProducts)
-        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
+        // Multi-pack sizes use the tenant's reduced pack rates
+        const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, (typeof size !== 'undefined' ? size : sizeItem)?.unitsPerPack ?? 1);
+        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
         
         // Calculate platform selling price with product discount first
         let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
@@ -5531,15 +5577,15 @@ const getTrendingProducts = async (limit = 10, dateRange = 7) => {
             formattedPrice: formatPrice(websitePriceVal, currency),
             compareAtPrice: sizeItem.compareAtPrice
               ? calcPlatformSellingPrice(
-                  calcPlatformCostPrice(sizeItem.costPrice || 0, sizeItem.compareAtPrice, revenueModel, markupPct, commissionPct),
+                  calcPlatformCostPrice(sizeItem.costPrice || 0, sizeItem.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
                   platformMarkupPct
                 ).toFixed(2)
               : null,
             currency,
             currencySymbol: getCurrencySymbol(currency),
             revenueModel,
-            markupPct,
-            commissionPct,
+            markupPct: effMarkupPct,
+            commissionPct: effCommissionPct,
             platformMarkupPct,
           },
           discount: discountInfo,
@@ -7322,6 +7368,9 @@ const getAllProducts = async (queryParams) => {
                 revenueModel: 1,
                 markupPercentage: 1,
                 commissionPercentage: 1,
+                packMarkupPercentage: 1,
+                packCommissionPercentage: 1,
+                packRateMinUnits: 1,
                 defaultCurrency: 1,
               },
               sku: 1,
@@ -7680,7 +7729,9 @@ const getAllProducts = async (queryParams) => {
         const currency = size.currency || tenant.defaultCurrency || 'NGN';
 
         // ── Platform Pricing Pipeline ────────────────────────────────────────
-        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
+        // Multi-pack sizes use the tenant's reduced pack rates
+        const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, (typeof size !== 'undefined' ? size : sizeItem)?.unitsPerPack ?? 1);
+        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
         let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
 
         // Store original price before sale discount
@@ -7773,15 +7824,15 @@ const getAllProducts = async (queryParams) => {
             formattedPrice: formatPrice(websitePrice, currency),
             compareAtPrice: size.compareAtPrice
               ? calcPlatformSellingPrice(
-                  calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, markupPct, commissionPct),
+                  calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
                   platformMarkupPct
                 ).toFixed(2)
               : null,
             currency,
             currencySymbol: getCurrencySymbol(currency),
             revenueModel,
-            markupPct,
-            commissionPct,
+            markupPct: effMarkupPct,
+            commissionPct: effCommissionPct,
             platformMarkupPct,
           },
 
@@ -8440,7 +8491,7 @@ const getFeaturedProducts = async (page = 1, limit = 12) => {
 
   const tenants = await Tenant.find({ _id: { $in: tenantIds } })
     .select(
-      'revenueModel markupPercentage commissionPercentage defaultCurrency name slug logo'
+      'revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency name slug logo'
     )
     .lean();
 
@@ -8603,7 +8654,7 @@ const getNewArrivals = async (page = 1, limit = 12, days = 30) => {
 
   const tenants = await Tenant.find({ _id: { $in: tenantIds } })
     .select(
-      'revenueModel markupPercentage commissionPercentage defaultCurrency name slug logo'
+      'revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency name slug logo'
     )
     .lean();
 
@@ -8646,7 +8697,9 @@ const getNewArrivals = async (page = 1, limit = 12, days = 30) => {
         const currency = sizeItem.currency || subProduct.currency || tenant.defaultCurrency || 'NGN';
 
         // Full pricing pipeline (same as getAllProducts)
-        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
+        // Multi-pack sizes use the tenant's reduced pack rates
+        const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, (typeof size !== 'undefined' ? size : sizeItem)?.unitsPerPack ?? 1);
+        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
         const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
         const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
         const websitePriceVal = platformSellingPrice;
@@ -8687,15 +8740,15 @@ const getNewArrivals = async (page = 1, limit = 12, days = 30) => {
             formattedPrice: formatPrice(websitePriceVal, currency),
             compareAtPrice: sizeItem.compareAtPrice
               ? calcPlatformSellingPrice(
-                  calcPlatformCostPrice(sizeItem.costPrice || 0, sizeItem.compareAtPrice, revenueModel, markupPct, commissionPct),
+                  calcPlatformCostPrice(sizeItem.costPrice || 0, sizeItem.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
                   platformMarkupPct
                 ).toFixed(2)
               : null,
             currency,
             currencySymbol: getCurrencySymbol(currency),
             revenueModel: tenant.revenueModel || 'markup',
-            markupPct: tenant.markupPercentage || 25,
-            commissionPct: tenant.commissionPercentage || 12,
+            markupPct: effMarkupPct,
+            commissionPct: effCommissionPct,
             platformMarkupPct: product.platformMarkup || 15,
           },
           discount: discountInfo,
@@ -9036,7 +9089,7 @@ const getBestsellers = async (page = 1, limit = 12) => {
 
   const tenants = await Tenant.find({ _id: { $in: tenantIds } })
     .select(
-      'revenueModel markupPercentage commissionPercentage defaultCurrency name slug logo'
+      'revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency name slug logo'
     )
     .lean();
 
@@ -9073,7 +9126,9 @@ const getBestsellers = async (page = 1, limit = 12) => {
         const costPrice = size.costPrice || subProduct.costPrice || 0;
         const currency = size.currency || subProduct.currency || tenant.defaultCurrency || 'NGN';
 
-        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
+        // Multi-pack sizes use the tenant's reduced pack rates
+        const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, (typeof size !== 'undefined' ? size : sizeItem)?.unitsPerPack ?? 1);
+        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
         const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
         const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
         const websitePrice = platformSellingPrice;
@@ -9113,15 +9168,15 @@ const getBestsellers = async (page = 1, limit = 12) => {
             formattedPrice: formatPrice(websitePrice, currency),
             compareAtPrice: size.compareAtPrice
               ? calcPlatformSellingPrice(
-                  calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, markupPct, commissionPct),
+                  calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
                   platformMarkupPct
                 ).toFixed(2)
               : null,
             currency,
             currencySymbol: getCurrencySymbol(currency),
             revenueModel,
-            markupPct,
-            commissionPct,
+            markupPct: effMarkupPct,
+            commissionPct: effCommissionPct,
             platformMarkupPct,
           },
           discount: discountInfo,
@@ -9390,7 +9445,7 @@ const getProductBySlug = async (slug) => {
         subscriptionStatus: { $in: ['active', 'trialing'] },
       },
       select:
-        'name slug logo primaryColor revenueModel markupPercentage commissionPercentage defaultCurrency country city state',
+        'name slug logo primaryColor revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency country city state',
     })
     .populate({
       path: 'sizes',
@@ -9399,7 +9454,7 @@ const getProductBySlug = async (slug) => {
         availability: { $in: ['available', 'in_stock', 'low_stock', 'pre_order', 'limited_stock'] },
       },
       select:
-        'size displayName sellingPrice costPrice platformMarkupOverridePct discountedPrice compareAtPrice stock availableStock availability currency discount sku isDefault volumeMl',
+        'size displayName sellingPrice costPrice unitsPerPack platformMarkupOverridePct discountedPrice compareAtPrice stock availableStock availability currency discount sku isDefault volumeMl',
     })
     .select(
       'tenant sku costPrice baseSellingPrice currency discount discountType discountedPrice discountStart discountEnd sizes status totalSold totalRevenue isFeaturedByTenant isOnSale salePrice saleStartDate saleEndDate saleType saleDiscountValue'
@@ -9423,7 +9478,7 @@ const getProductBySlug = async (slug) => {
   const tenantIds = activeSubProducts.map((sp) => sp.tenant._id.toString());
   const tenants = await Tenant.find({ _id: { $in: tenantIds } })
     .select(
-      'revenueModel markupPercentage commissionPercentage defaultCurrency name slug logo city state country'
+      'revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency name slug logo city state country'
     )
     .lean();
 
@@ -9478,7 +9533,9 @@ const getProductBySlug = async (slug) => {
       // platformSellingPrice = platformCostPrice × (1 + platformMarkupPct/100) [− productDiscount]
       // SubProduct sale discount applied after platform selling price is computed.
       // ─────────────────────────────────────────────────────────────────────
-      const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
+      // Multi-pack sizes use the tenant's reduced pack rates
+      const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, size?.unitsPerPack ?? 1);
+      const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
       let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
 
       // Store original price before sale discount for display
@@ -9571,15 +9628,15 @@ const getProductBySlug = async (slug) => {
           formattedPrice: formatPrice(websitePrice, currency),
           compareAtPrice: size.compareAtPrice
             ? calcPlatformSellingPrice(
-                calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, markupPct, commissionPct),
+                calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
                 platformMarkupPct
               ).toFixed(2)
             : null,
           currency,
           currencySymbol: getCurrencySymbol(currency),
           revenueModel,
-          markupPct,
-          commissionPct,
+          markupPct: effMarkupPct,
+          commissionPct: effCommissionPct,
           platformMarkupPct,
         },
 
@@ -9996,7 +10053,7 @@ const getProductById = async (id, includePending = false) => {
             subscriptionStatus: { $in: ['active', 'trialing'] },
           },
       select:
-        'name slug logo primaryColor revenueModel markupPercentage commissionPercentage defaultCurrency country city state',
+        'name slug logo primaryColor revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency country city state',
     })
     .populate({
       path: 'sizes',
@@ -10006,7 +10063,7 @@ const getProductById = async (id, includePending = false) => {
             availability: { $in: ['available', 'low_stock', 'pre_order'] },
           },
       select:
-        'size displayName sellingPrice costPrice platformMarkupOverridePct stock availability currency discountValue discountType discountStart discountEnd lowStockThreshold sku barcode weightGrams volumeMl minOrderQuantity maxOrderQuantity',
+        'size displayName sellingPrice costPrice unitsPerPack platformMarkupOverridePct stock availability currency discountValue discountType discountStart discountEnd lowStockThreshold sku barcode weightGrams volumeMl minOrderQuantity maxOrderQuantity',
     })
     .select(
       'tenant sku baseSellingPrice costPrice currency discount discountType discountStart discountEnd sizes shortDescriptionOverride imagesOverride status totalSold totalRevenue isOnSale saleType saleDiscountValue salePrice saleStartDate saleEndDate'
@@ -10037,7 +10094,7 @@ const getProductById = async (id, includePending = false) => {
   const tenants = tenantIds.length > 0 
     ? await Tenant.find({ _id: { $in: tenantIds } })
         .select(
-          'revenueModel markupPercentage commissionPercentage defaultCurrency name slug logo'
+          'revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency name slug logo'
         )
         .lean()
     : [];
@@ -10751,6 +10808,9 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
                 revenueModel: 1,
                 markupPercentage: 1,
                 commissionPercentage: 1,
+                packMarkupPercentage: 1,
+                packCommissionPercentage: 1,
+                packRateMinUnits: 1,
                 defaultCurrency: 1,
               },
               sku: 1,
@@ -11015,7 +11075,9 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
         const currency = size.currency || tenant.defaultCurrency || 'NGN';
 
         // ── Platform Pricing Pipeline ────────────────────────────────────────
-        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, markupPct, commissionPct);
+        // Multi-pack sizes use the tenant's reduced pack rates
+        const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, (typeof size !== 'undefined' ? size : sizeItem)?.unitsPerPack ?? 1);
+        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
         let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
 
         // Store original price before sale discount
@@ -11108,15 +11170,15 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
             formattedPrice: formatPrice(websitePrice, currency),
             compareAtPrice: size.compareAtPrice
               ? calcPlatformSellingPrice(
-                  calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, markupPct, commissionPct),
+                  calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
                   platformMarkupPct
                 ).toFixed(2)
               : null,
             currency,
             currencySymbol: getCurrencySymbol(currency),
             revenueModel,
-            markupPct,
-            commissionPct,
+            markupPct: effMarkupPct,
+            commissionPct: effCommissionPct,
             platformMarkupPct,
           },
 
