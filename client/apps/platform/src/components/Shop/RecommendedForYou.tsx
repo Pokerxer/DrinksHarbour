@@ -14,7 +14,7 @@ import {
   PiPackage,
 } from 'react-icons/pi';
 import { getProductGridLayoutClasses } from './ProductGrid';
-import { normalizeProducts, normalizeProduct } from './recommendations';
+import { normalizeProducts, normalizeProduct, isPublishedProduct } from './recommendations';
 
 interface RecommendedForYouProps {
   maxItems?: number;
@@ -161,7 +161,11 @@ const RecommendedForYou: React.FC<RecommendedForYouProps> = ({
 
   const sectionConfig = SECTION_MAP[currentSection];
   const displayedProducts = useMemo(
-    () => products.filter(p => (p.stockInfo?.totalStock || 0) > 0).slice(0, maxItems),
+    () =>
+      products
+        .filter(isPublishedProduct)
+        .filter(p => (p.stockInfo?.totalStock || 0) > 0)
+        .slice(0, maxItems),
     [products, maxItems]
   );
 

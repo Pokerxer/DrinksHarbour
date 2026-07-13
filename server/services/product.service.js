@@ -5318,12 +5318,13 @@ const getTrendingProducts = async (limit = 10, dateRange = 7) => {
     // Try featured products first
     products = await Product.find({
       status: 'approved',
+      isPublished: true,
       isFeatured: true,
     })
       .populate('brand', 'name slug logo description')
       .populate('category', 'name slug icon description')
       .select(
-        'name slug type description images primaryImage abv volumeMl tenantCount averageRating reviewCount priceRange sale originPrice isAlcoholic flavorNotes country tags isFeatured platformMarkup platformDiscount'
+        'name slug type description images primaryImage abv volumeMl tenantCount averageRating reviewCount priceRange sale originPrice isAlcoholic flavorNotes country tags isFeatured status isPublished platformMarkup platformDiscount'
       )
       .limit(limit)
       .lean();
@@ -5331,7 +5332,7 @@ const getTrendingProducts = async (limit = 10, dateRange = 7) => {
     // If no featured products, get random approved products
     if (products.length === 0) {
       products = await Product.aggregate([
-        { $match: { status: 'approved' } },
+        { $match: { status: 'approved', isPublished: true } },
         { $sample: { size: limit } },
         {
           $lookup: {
@@ -5374,6 +5375,8 @@ const getTrendingProducts = async (limit = 10, dateRange = 7) => {
             country: 1,
             tags: 1,
             isFeatured: 1,
+            status: 1,
+            isPublished: 1,
             brand: 1,
             category: 1,
             platformMarkup: 1,
@@ -5387,11 +5390,12 @@ const getTrendingProducts = async (limit = 10, dateRange = 7) => {
     products = await Product.find({
       _id: { $in: productIds },
       status: 'approved',
+      isPublished: true,
     })
       .populate('brand', 'name slug logo description')
       .populate('category', 'name slug icon description')
       .select(
-        'name slug type description images primaryImage abv volumeMl tenantCount averageRating reviewCount priceRange sale originPrice isAlcoholic flavorNotes country tags isFeatured platformMarkup platformDiscount'
+        'name slug type description images primaryImage abv volumeMl tenantCount averageRating reviewCount priceRange sale originPrice isAlcoholic flavorNotes country tags isFeatured status isPublished platformMarkup platformDiscount'
       )
       .lean();
   }

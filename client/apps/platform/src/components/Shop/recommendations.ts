@@ -18,6 +18,19 @@ export function normalizeProducts(data: any): any[] {
   return [];
 }
 
+// A product is shown in storefront sections only when it is live to shoppers.
+// Guards against approved-but-unpublished (or draft/archived) items that a
+// non-strict endpoint might return. Absent flags are treated as published so a
+// leaner API payload doesn't hide legitimate products.
+const UNPUBLISHED_STATUSES = new Set(['draft', 'pending', 'rejected', 'archived', 'discontinued']);
+
+export function isPublishedProduct(p: any): boolean {
+  if (!p) return false;
+  if (p.isPublished === false) return false;
+  if (typeof p.status === 'string' && UNPUBLISHED_STATUSES.has(p.status)) return false;
+  return true;
+}
+
 export function isProductNew(createdAt: string): boolean {
   try {
     const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
