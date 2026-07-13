@@ -161,8 +161,9 @@ router.get('/combos', protectPOS, async (req, res, next) => {
 
     function computePrice(sp, sizeDoc) {
       const revenueModel      = tenant?.revenueModel        ?? 'markup';
-      // Multi-pack sizes use the tenant's reduced pack rates
-      const { markupPct, commissionPct } = resolveRevenueRates(tenant, sizeDoc?.unitsPerPack ?? 1);
+      // POS quantity/bulk pricing comes from tenant pricelists (minQuantity rules),
+      // not the platform pack trigger — always the normal rates here.
+      const { markupPct, commissionPct } = resolveRevenueRates(tenant, 1);
       const platformMarkupPct = sp.product?.platformMarkup  ?? DEFAULT_PLATFORM_MARKUP;
       const rawCost    = (sizeDoc?.costPrice    > 0 ? sizeDoc.costPrice    : null) ?? sp.costPrice    ?? 0;
       const rawSelling = (sizeDoc?.sellingPrice > 0 ? sizeDoc.sellingPrice : null) ?? sp.baseSellingPrice ?? 0;

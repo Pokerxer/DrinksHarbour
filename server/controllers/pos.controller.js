@@ -349,8 +349,9 @@ async function restoreStock({ subProductId, sizeId, quantity, tenantId, staffId,
  */
 function computePOSPricing(sp, sizeDoc, tenant) {
   const revenueModel      = tenant?.revenueModel        ?? 'markup';
-  // Multi-pack sizes use the tenant's reduced pack rates
-  const { markupPct, commissionPct } = resolveRevenueRates(tenant, sizeDoc?.unitsPerPack ?? 1);
+  // POS quantity/bulk pricing comes from tenant pricelists (minQuantity rules),
+  // not the platform pack trigger — always the normal rates here.
+  const { markupPct, commissionPct } = resolveRevenueRates(tenant, 1);
   const platformMarkupPct = sp.product?.platformMarkup  ?? DEFAULT_PLATFORM_MARKUP;
 
   const productDiscount = sp.product?.platformDiscount?.value > 0 && sp.product?.platformDiscount?.type
