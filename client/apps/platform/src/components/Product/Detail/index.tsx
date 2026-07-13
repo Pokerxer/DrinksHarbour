@@ -62,6 +62,7 @@ interface VendorSize {
   currencySymbol: string;
   discount?: { label?: string; percentage?: number; type?: string; value?: number; hasDiscount?: boolean } | null;
   volumeMl?: number;
+  unitsPerPack: number;
   minOrderQuantity: number;
   maxOrderQuantity?: number;
 }
@@ -119,6 +120,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
       currencySymbol: s.pricing?.currencySymbol || '₦',
       discount: s.discount,
       volumeMl: s.volumeMl,
+      unitsPerPack: s.unitsPerPack || 1,
       minOrderQuantity: s.minOrderQuantity || 1,
       maxOrderQuantity: s.maxOrderQuantity,
     }));
@@ -461,6 +463,12 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                     </span>
                   </>
                 )}
+                {(selectedSizeData?.unitsPerPack || 1) > 1 && displayPrice > 0 && (
+                  <span className="px-2 py-1 bg-amber-50 text-amber-700 text-sm font-semibold rounded-full whitespace-nowrap">
+                    Pack of {selectedSizeData!.unitsPerPack} · {displayCurrencySymbol}
+                    {(displayPrice / selectedSizeData!.unitsPerPack).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}/unit
+                  </span>
+                )}
               </div>
 
               {/* Short Description */}
@@ -565,6 +573,11 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                           {size.volumeMl && (
                             <div className={`text-[10px] sm:text-xs ${isSelected ? 'text-gray-400' : 'text-gray-500'}`}>
                               {size.volumeMl}ml
+                            </div>
+                          )}
+                          {size.unitsPerPack > 1 && (
+                            <div className={`text-[9px] sm:text-[10px] font-semibold ${isSelected ? 'text-amber-300' : 'text-amber-600'}`}>
+                              Pack of {size.unitsPerPack}
                             </div>
                           )}
                           <div className={`text-xs sm:text-sm font-bold mt-1 ${isSelected ? 'text-white' : 'text-gray-900'}`}>
