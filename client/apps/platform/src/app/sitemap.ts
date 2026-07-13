@@ -6,7 +6,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 // Primary category slugs that have dedicated metadata in generateMetadata
 const CATEGORY_SLUGS = [
-  "scotch", "scotch-whisky", "whisky", "whiskey",
+  // `scotch-whisky` intentionally omitted — it's a duplicate of `scotch` (which
+  // canonicalizes it), so we don't advertise the phantom URL in the sitemap.
+  "scotch", "whisky", "whiskey",
   "wine", "champagne", "red-wine", "white-wine",
   "vodka", "rum", "gin", "tequila", "cognac", "brandy",
   "beer", "cider", "liqueur", "non-alcoholic", "gift-sets",

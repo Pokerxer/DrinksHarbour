@@ -6,6 +6,12 @@ import { fetchInitialRecommendations } from '@/components/Shop/recommendations';
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
 const SITE_NAME = 'DrinksHarbour';
 
+// Duplicate/legacy category slugs mapped onto the one real catalog slug, so
+// their pages canonicalize to a single URL instead of cannibalizing each other.
+const CATEGORY_CANONICAL_ALIASES: Record<string, string> = {
+  'scotch-whisky': 'scotch',
+};
+
 // Fetch the initial product page on the server so the grid — product names,
 // prices and crawlable /product/<slug> links — is present in the raw HTML for
 // search engines. ShopClient hydrates from this and takes over filtering.
@@ -1259,7 +1265,11 @@ export async function generateMetadata({
       : catInfo?.description
         ? `${catInfo.description}. Fast delivery across all 36 states.`
         : `Shop premium ${catLabel.toLowerCase()} online in Nigeria. Authentic products with fast delivery from Abuja.`;
-    const catUrl    = `${BASE_URL}/shop?category=${encodeURIComponent(category)}${subcategory ? `&subcategory=${encodeURIComponent(subcategory)}` : ''}`;
+    // Consolidate duplicate category slugs onto the real catalog slug so the two
+    // near-identical pages don't cannibalize each other (e.g. scotch-whisky is a
+    // phantom slug with no products — canonicalize it to `scotch`).
+    const canonicalCategory = CATEGORY_CANONICAL_ALIASES[category.toLowerCase()] ?? category;
+    const catUrl    = `${BASE_URL}/shop?category=${encodeURIComponent(canonicalCategory)}${subcategory ? `&subcategory=${encodeURIComponent(subcategory)}` : ''}`;
     const baseKw    = subInfo?.keywords ?? catInfo?.keywords ?? [];
 
     return {
@@ -1277,7 +1287,7 @@ export async function generateMetadata({
   }
 
   // ── Default shop ──────────────────────────────────────────────────────────
-  const title       = 'Shop Premium Beverages Online';
+  const title       = 'Shop Premium Drinks Online in Nigeria';
   const description = "Browse Nigeria's widest selection of wines, spirits, whiskies, beers & non-alcoholic drinks. Filter by brand, type, price and more. Fast delivery nationwide.";
 
   return {
