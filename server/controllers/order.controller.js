@@ -147,15 +147,23 @@ exports.createOrder = asyncHandler(async (req, res) => {
     const tenant        = tenantMap.get(tenantId);
     const revenueModel  = tenant?.revenueModel ?? 'markup';
     const qty = item.quantity;
-    // Quantity-triggered pack rates: whole line at pack rates when qty >= unitsPerPack
-    const { markupPct, commissionPct, isPackRate } = resolveLineRates(tenant, sz, qty);
-
     // Server-authoritative unit price — same authority as cart validateCartItems
     // (calculateSizePricing), plus the SubProduct sale discount the product page applies.
     const productDoc = productMap.get(sp?.product?.toString());
+    const sizePricing = (sz && tenant)
+      ? calculateSizePricing(sz, productDoc, tenant, sp?.costPrice ?? 0, sp?.baseSellingPrice ?? 0)
+      : null;
+    // Pack pricing applies only when the size actually publishes a cheaper pack
+    // price AND the line quantity reached the threshold — payout rates and the
+    // packRateApplied flag must track the price the customer actually pays.
+    const packApplied = sizePricing?.packUnitPrice != null &&
+      sizePricing?.packThreshold != null && qty >= sizePricing.packThreshold;
+    const { markupPct, commissionPct } = packApplied
+      ? resolveLineRates(tenant, sz, qty)
+      : resolveRevenueRates(tenant, 1);
+
     let serverUnitPrice = 0;
-    if (sz && tenant) {
-      const sizePricing = calculateSizePricing(sz, productDoc, tenant, sp?.costPrice ?? 0, sp?.baseSellingPrice ?? 0);
+    if (sizePricing) {
       serverUnitPrice = resolveEffectiveUnitPrice(sizePricing, qty);
       if (serverUnitPrice > 0 && sp) {
         const now = new Date();
@@ -203,7 +211,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
       platformCommission:    Math.round(platformProfit    * 100) / 100,
       tenantRevenueModel:    revenueModel,
       revenueRateAtPurchase: revenueModel === 'commission' ? commissionPct : markupPct,
-      packRateApplied:       isPackRate,
+      packRateApplied:       packApplied,
     };
   });
 

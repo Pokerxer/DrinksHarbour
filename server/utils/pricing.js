@@ -55,11 +55,7 @@ const resolveLineRates = (tenant, size, quantity = 1) => {
   const unitsPerPack = size?.unitsPerPack ?? 1;
   const minUnits = tenant?.packRateMinUnits ?? DEFAULT_PACK_RATE_MIN_UNITS;
   if (unitsPerPack < minUnits || (quantity ?? 1) < unitsPerPack) {
-    return {
-      markupPct: tenant?.markupPercentage ?? 25,
-      commissionPct: tenant?.commissionPercentage ?? 12,
-      isPackRate: false,
-    };
+    return resolveRevenueRates(tenant, 1);
   }
   // isPackRate reports whether a REDUCED pack rate was actually applied —
   // a tenant with no pack rates configured falls back to normal rates.
