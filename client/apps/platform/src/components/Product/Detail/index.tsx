@@ -131,21 +131,6 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
     return vendorSizes.find((s) => s.size === activeSize) || null;
   }, [activeSize, vendorSizes]);
 
-  // Single-unit size of the same volume from this vendor — reference for
-  // showing how much the selected pack saves per unit
-  const matchingSingleUnit = useMemo(() => {
-    if (!selectedSizeData || selectedSizeData.unitsPerPack <= 1) return null;
-    if (!selectedSizeData.volumeMl) return null;
-    return (
-      vendorSizes.find(
-        (s) =>
-          s.unitsPerPack === 1 &&
-          s.price > 0 &&
-          s.volumeMl === selectedSizeData.volumeMl
-      ) || null
-    );
-  }, [selectedSizeData, vendorSizes]);
-
   const displayPrice = (() => {
     const basePrice = selectedSizeData?.price ?? productData?.priceRange?.min ?? 0;
     const origPrice = selectedSizeData?.originalPrice ?? basePrice;
@@ -479,18 +464,10 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                   </>
                 )}
                 {(selectedSizeData?.unitsPerPack || 1) > 1 && displayPrice > 0 && (
-                  <>
-                    <span className="px-2 py-1 bg-amber-50 text-amber-700 text-sm font-semibold rounded-full whitespace-nowrap">
-                      Pack of {selectedSizeData!.unitsPerPack} · {displayCurrencySymbol}
-                      {(displayPrice / selectedSizeData!.unitsPerPack).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}/unit
-                    </span>
-                    {matchingSingleUnit &&
-                      matchingSingleUnit.price > displayPrice / selectedSizeData!.unitsPerPack && (
-                        <span className="px-2 py-1 bg-green-50 text-green-700 text-sm font-semibold rounded-full whitespace-nowrap">
-                          Save {Math.round((1 - displayPrice / selectedSizeData!.unitsPerPack / matchingSingleUnit.price) * 100)}% vs singles
-                        </span>
-                      )}
-                  </>
+                  <span className="px-2 py-1 bg-amber-50 text-amber-700 text-sm font-semibold rounded-full whitespace-nowrap">
+                    Pack of {selectedSizeData!.unitsPerPack} · {displayCurrencySymbol}
+                    {(displayPrice / selectedSizeData!.unitsPerPack).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}/unit
+                  </span>
                 )}
               </div>
 
@@ -606,11 +583,6 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                           <div className={`text-xs sm:text-sm font-bold mt-1 ${isSelected ? 'text-white' : 'text-gray-900'}`}>
                             {size.currencySymbol}{size.price.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                           </div>
-                          {size.unitsPerPack > 1 && size.price > 0 && (
-                            <div className={`text-[9px] sm:text-[10px] ${isSelected ? 'text-gray-300' : 'text-gray-500'}`}>
-                              {size.currencySymbol}{(size.price / size.unitsPerPack).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}/unit
-                            </div>
-                          )}
                           {size.discount && !isOutOfStock && (
                             <div className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 bg-red-500 text-white text-[9px] sm:text-[10px] font-bold rounded-full">
                               -{size.discount.percentage}%

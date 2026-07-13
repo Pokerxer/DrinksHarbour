@@ -206,11 +206,6 @@ function ReviewDrawer({
   const [sizeWebsitePrices, setSizeWebsitePrices] = useState<
     Record<string, string>
   >({});
-  // Pack sizes only: editable single-unit price at the tenant's NORMAL rate,
-  // shown as a reference next to the pack unit price (display-only)
-  const [sizeNormalUnitPrices, setSizeNormalUnitPrices] = useState<
-    Record<string, string>
-  >({});
   const [baseWebsitePrice, setBaseWebsitePrice] = useState<string>('');
   // Server-computed platform prices — used to detect which inputs the admin
   // actually changed, so unchanged values are never sent as overrides
@@ -259,7 +254,6 @@ function ReviewDrawer({
     setShowApproveConfirm(false);
     setShowDeclineConfirm(false);
     setSizeWebsitePrices({});
-    setSizeNormalUnitPrices({});
     setBaseWebsitePrice('');
     setShowSuccess(null);
     setCurrentSection(0);
@@ -283,38 +277,13 @@ function ReviewDrawer({
         }
 
         const initSizes: Record<string, string> = {};
-        const initNormalUnits: Record<string, string> = {};
         for (const s of data.sizes ?? []) {
           if (s.pricing?.platformSellingPrice > 0) {
             defaults.sizes[s._id] = s.pricing.platformSellingPrice;
             initSizes[s._id] = String(s.pricing.platformSellingPrice);
           }
-          // Pack sizes: what ONE unit would sell for at the tenant's normal
-          // (non-pack) rate — same chain the server uses, incl. round-up-to-100
-          const units = s.unitsPerPack || 1;
-          if (units > 1) {
-            const pmp = s.pricing?.platformMarkupPct ?? 15;
-            let unitRaw = 0;
-            if (data.pricing?.revenueModel === 'commission') {
-              const unitTenantPrice = (s.pricing?.sellingPrice || 0) / units;
-              unitRaw =
-                unitTenantPrice *
-                (1 - (data.pricing?.commissionPct ?? 12) / 100) *
-                (1 + pmp / 100);
-            } else {
-              const unitCost = (s.pricing?.costPrice || 0) / units;
-              unitRaw =
-                unitCost *
-                (1 + (data.pricing?.markupPct ?? 25) / 100) *
-                (1 + pmp / 100);
-            }
-            if (unitRaw > 0) {
-              initNormalUnits[s._id] = String(Math.ceil(unitRaw / 100) * 100);
-            }
-          }
         }
         setSizeWebsitePrices(initSizes);
-        setSizeNormalUnitPrices(initNormalUnits);
         setServerDefaults(defaults);
       })
       .catch(() => setSp(null))
@@ -926,29 +895,6 @@ function ReviewDrawer({
                                 const defaultWebsite = sizePlatformSelling;
                                 const currentVal =
                                   sizeWebsitePrices[sizeId] ?? '';
-                                // Pack sizes: per-unit price inside the pack —
-                                // derived from the pack total (single source of truth)
-                                const packTotal = parseFloat(currentVal);
-                                const packUnitVal =
-                                  sizeUnitsPerPack > 1 &&
-                                  !isNaN(packTotal) &&
-                                  packTotal > 0
-                                    ? String(
-                                        parseFloat(
-                                          (packTotal / sizeUnitsPerPack).toFixed(2)
-                                        )
-                                      )
-                                    : '';
-                                const normalUnitVal =
-                                  sizeNormalUnitPrices[sizeId] ?? '';
-                                const normalUnitNum = parseFloat(normalUnitVal);
-                                const packUnitNum = parseFloat(packUnitVal);
-                                const perUnitSaving =
-                                  !isNaN(normalUnitNum) &&
-                                  !isNaN(packUnitNum) &&
-                                  normalUnitNum > packUnitNum
-                                    ? normalUnitNum - packUnitNum
-                                    : 0;
                                 // Margin follows the editable price live
                                 const enteredSize = parseFloat(currentVal);
                                 const liveSizeMargin =
@@ -1073,218 +1019,68 @@ function ReviewDrawer({
                                       </div>
                                     )}
 
-                                    {sizeUnitsPerPack > 1 ? (
-                                      <div className="space-y-1.5">
-                                        {/* Unit price at the tenant's NORMAL rate (reference) */}
-                                        <div className="rounded-xl border border-gray-200 bg-white px-3 py-2">
-                                          <div className="mb-1 text-[10px] font-semibold text-gray-500">
-                                            Unit Price — normal rate (
-                                            {revenueModel === 'commission'
-                                              ? `${commissionPct}% commission`
-                                              : `${markupPct}% markup`}
-                                            )
-                                          </div>
-                                          <div className="flex items-center gap-1.5">
-                                            <span className="text-xs font-semibold text-gray-500">
-                                              ₦
-                                            </span>
-                                            <input
-                                              type="number"
-                                              min="0"
-                                              step="50"
-                                              value={normalUnitVal}
-                                              onChange={(e) =>
-                                                setSizeNormalUnitPrices(
-                                                  (prev) => ({
-                                                    ...prev,
-                                                    [sizeId]: e.target.value,
-                                                  })
-                                                )
-                                              }
-                                              className="flex-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300"
-                                            />
-                                            <span className="whitespace-nowrap text-[10px] text-gray-400">
-                                              per single unit
-                                            </span>
-                                          </div>
+                                    <div className="rounded-xl border border-green-200 bg-green-50 px-3 py-2">
+                                      <div className="mb-1 flex items-center justify-between">
+                                        <div className="text-[10px] font-semibold text-green-700">
+                                          Final Platform Price (editable)
                                         </div>
-
-                                        {/* Unit price INSIDE the pack — drives the pack total */}
-                                        <div className="rounded-xl border border-green-200 bg-green-50 px-3 py-2">
-                                          <div className="mb-1 flex items-center justify-between">
-                                            <div className="text-[10px] font-semibold text-green-700">
-                                              Unit Price — in pack (editable)
-                                            </div>
-                                            {defaultWebsite > 0 &&
-                                              packTotal !== defaultWebsite && (
-                                                <button
-                                                  type="button"
-                                                  onClick={() =>
-                                                    setSizeWebsitePrices(
-                                                      (prev) => ({
-                                                        ...prev,
-                                                        [sizeId]:
-                                                          String(
-                                                            defaultWebsite
-                                                          ),
-                                                      })
-                                                    )
-                                                  }
-                                                  className="text-[10px] text-green-600 underline"
-                                                >
-                                                  Reset to ₦
-                                                  {defaultWebsite.toLocaleString()}
-                                                </button>
-                                              )}
-                                          </div>
-                                          <div className="flex items-center gap-1.5">
-                                            <span className="text-xs font-semibold text-green-700">
-                                              ₦
-                                            </span>
-                                            <input
-                                              type="number"
-                                              min="0"
-                                              step="50"
-                                              value={packUnitVal}
-                                              onChange={(e) => {
-                                                const unit = parseFloat(
-                                                  e.target.value
-                                                );
+                                        {defaultWebsite > 0 &&
+                                          parseFloat(currentVal) !==
+                                            defaultWebsite && (
+                                            <button
+                                              type="button"
+                                              onClick={() =>
                                                 setSizeWebsitePrices(
                                                   (prev) => ({
                                                     ...prev,
                                                     [sizeId]:
-                                                      !isNaN(unit) && unit > 0
-                                                        ? String(
-                                                            parseFloat(
-                                                              (
-                                                                unit *
-                                                                sizeUnitsPerPack
-                                                              ).toFixed(2)
-                                                            )
-                                                          )
-                                                        : '',
+                                                      String(defaultWebsite),
                                                   })
-                                                );
-                                              }}
-                                              className="flex-1 rounded-lg border border-green-200 bg-white px-2 py-1 text-sm font-bold text-green-900 focus:outline-none focus:ring-2 focus:ring-green-300"
-                                            />
-                                            <span className="whitespace-nowrap text-xs font-bold text-green-800">
-                                              ×{sizeUnitsPerPack} ={' '}
-                                              {!isNaN(packTotal) &&
-                                              packTotal > 0
-                                                ? `₦${packTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
-                                                : '—'}
-                                            </span>
-                                          </div>
-                                          <div className="mt-1 flex items-center justify-between text-[10px]">
-                                            <span className="text-green-600">
-                                              Pack total is the final platform
-                                              price
-                                            </span>
-                                            <span className="flex items-center gap-2">
-                                              {perUnitSaving > 0 && (
-                                                <span className="font-medium text-amber-600">
-                                                  saves ₦
-                                                  {perUnitSaving.toLocaleString(
-                                                    undefined,
-                                                    {
-                                                      maximumFractionDigits: 0,
-                                                    }
-                                                  )}
-                                                  /unit vs single
-                                                </span>
-                                              )}
-                                              {liveSizeMargin != null && (
-                                                <span
-                                                  className={cn(
-                                                    'font-medium',
-                                                    liveSizeMargin > 0
-                                                      ? 'text-blue-600'
-                                                      : 'text-red-500'
-                                                  )}
-                                                >
-                                                  Margin:{' '}
-                                                  {liveSizeMargin > 0
-                                                    ? '+'
-                                                    : ''}
-                                                  ₦
-                                                  {liveSizeMargin.toLocaleString(
-                                                    undefined,
-                                                    {
-                                                      maximumFractionDigits: 0,
-                                                    }
-                                                  )}
-                                                </span>
-                                              )}
-                                            </span>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <div className="rounded-xl border border-green-200 bg-green-50 px-3 py-2">
-                                        <div className="mb-1 flex items-center justify-between">
-                                          <div className="text-[10px] font-semibold text-green-700">
-                                            Final Platform Price (editable)
-                                          </div>
-                                          {defaultWebsite > 0 &&
-                                            parseFloat(currentVal) !==
-                                              defaultWebsite && (
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  setSizeWebsitePrices(
-                                                    (prev) => ({
-                                                      ...prev,
-                                                      [sizeId]:
-                                                        String(defaultWebsite),
-                                                    })
-                                                  )
-                                                }
-                                                className="text-[10px] text-green-600 underline"
-                                              >
-                                                Reset to ₦
-                                                {defaultWebsite.toLocaleString()}
-                                              </button>
-                                            )}
-                                        </div>
-                                        <div className="flex items-center gap-1.5">
-                                          <span className="text-xs font-semibold text-green-700">
-                                            ₦
-                                          </span>
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            step="50"
-                                            value={currentVal}
-                                            onChange={(e) =>
-                                              setSizeWebsitePrices((prev) => ({
-                                                ...prev,
-                                                [sizeId]: e.target.value,
-                                              }))
-                                            }
-                                            className="flex-1 rounded-lg border border-green-200 bg-white px-2 py-1 text-sm font-bold text-green-900 focus:outline-none focus:ring-2 focus:ring-green-300"
-                                          />
-                                          {liveSizeMargin != null && (
-                                            <span
-                                              className={cn(
-                                                'whitespace-nowrap text-[10px] font-medium',
-                                                liveSizeMargin > 0
-                                                  ? 'text-blue-600'
-                                                  : 'text-red-500'
-                                              )}
+                                                )
+                                              }
+                                              className="text-[10px] text-green-600 underline"
                                             >
-                                              Margin:{' '}
-                                              {liveSizeMargin > 0 ? '+' : ''}₦
-                                              {liveSizeMargin.toLocaleString(
-                                                undefined,
-                                                { maximumFractionDigits: 0 }
-                                              )}
-                                            </span>
+                                              Reset to ₦
+                                              {defaultWebsite.toLocaleString()}
+                                            </button>
                                           )}
-                                        </div>
                                       </div>
-                                    )}
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-xs font-semibold text-green-700">
+                                          ₦
+                                        </span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="50"
+                                          value={currentVal}
+                                          onChange={(e) =>
+                                            setSizeWebsitePrices((prev) => ({
+                                              ...prev,
+                                              [sizeId]: e.target.value,
+                                            }))
+                                          }
+                                          className="flex-1 rounded-lg border border-green-200 bg-white px-2 py-1 text-sm font-bold text-green-900 focus:outline-none focus:ring-2 focus:ring-green-300"
+                                        />
+                                        {liveSizeMargin != null && (
+                                          <span
+                                            className={cn(
+                                              'whitespace-nowrap text-[10px] font-medium',
+                                              liveSizeMargin > 0
+                                                ? 'text-blue-600'
+                                                : 'text-red-500'
+                                            )}
+                                          >
+                                            Margin:{' '}
+                                            {liveSizeMargin > 0 ? '+' : ''}₦
+                                            {liveSizeMargin.toLocaleString(
+                                              undefined,
+                                              { maximumFractionDigits: 0 }
+                                            )}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
                                   </div>
                                 );
                               })}

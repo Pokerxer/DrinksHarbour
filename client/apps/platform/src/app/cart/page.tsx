@@ -41,18 +41,6 @@ const CartPage = () => {
     return validationMap[key] ?? null;
   };
 
-  // Helper: units per pack for the item's selected size (1 = single unit),
-  // derived from the product data embedded in the cart item
-  const getUnitsPerPack = (item: any): number => {
-    const vendorEntry =
-      item.availableAt?.find((v: any) => v.tenant?.name === item.selectedVendor) ??
-      item.availableAt?.[0];
-    const sizeEntry = vendorEntry?.sizes?.find(
-      (s: any) => s._id === item.selectedSizeId || s.size === item.selectedSize
-    );
-    return sizeEntry?.unitsPerPack > 1 ? sizeEntry.unitsPerPack : 1;
-  };
-
   // Count items with issues
   const issueItems = useMemo(() => {
     return cartState.cartArray.filter(item => {
@@ -349,12 +337,6 @@ const CartPage = () => {
                                 {item.selectedSize}
                               </span>
                             )}
-                            {getUnitsPerPack(item) > 1 && (
-                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded">
-                                <Icon.PiPackageBold size={10} />
-                                Pack of {getUnitsPerPack(item)}
-                              </span>
-                            )}
                             {/* Validation status badges */}
                             {isOutOfStock && (
                               <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-50 border border-red-100 px-2 py-0.5 rounded">
@@ -410,15 +392,8 @@ const CartPage = () => {
                             )}
 
                             {/* Price */}
-                            <span className="text-right">
-                              <span className="block font-bold text-gray-900 text-sm sm:text-base">
-                                {formatPrice((item.price || 0) * (item.quantity || 1))}
-                              </span>
-                              {getUnitsPerPack(item) > 1 && (item.price || 0) > 0 && (
-                                <span className="block text-[10px] text-amber-600 font-medium">
-                                  ≈ {formatPrice((item.price || 0) / getUnitsPerPack(item))}/unit
-                                </span>
-                              )}
+                            <span className="font-bold text-gray-900 text-sm sm:text-base">
+                              {formatPrice((item.price || 0) * (item.quantity || 1))}
                             </span>
                           </div>
 
