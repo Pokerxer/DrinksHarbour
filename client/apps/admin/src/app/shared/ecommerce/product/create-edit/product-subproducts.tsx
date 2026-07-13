@@ -438,18 +438,19 @@ function ReviewDrawer({
                           value={`${commissionPct}%`}
                         />
                       )}
-                      {revenueModel === 'markup' && (
-                        <InfoRow
-                          label="Pack Markup %"
-                          value={
-                            <span className="font-medium text-amber-600">
-                              {(sp as any).tenant?.packMarkupPercentage ?? 10}%
-                              from {(sp as any).tenant?.packRateMinUnits ?? 2}+
-                              units/pack
-                            </span>
-                          }
-                        />
-                      )}
+                      {revenueModel === 'markup' &&
+                        (sp as any).tenant?.packMarkupPercentage != null && (
+                          <InfoRow
+                            label="Pack Markup %"
+                            value={
+                              <span className="font-medium text-amber-600">
+                                {(sp as any).tenant.packMarkupPercentage}% from{' '}
+                                {(sp as any).tenant.packRateMinUnits ?? 2}+
+                                units/pack
+                              </span>
+                            }
+                          />
+                        )}
                       {revenueModel === 'commission' &&
                         (sp as any).tenant?.packCommissionPercentage !=
                           null && (

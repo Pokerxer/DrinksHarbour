@@ -3,27 +3,12 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Controller, type SubmitHandler } from 'react-hook-form';
-import {
-  Button,
-  Input,
-  Select,
-  Switch,
-  Text,
-  Title,
-  Textarea,
-  type SelectOption,
-} from 'rizzui';
+import { Button, Input, Select, Switch, Text, Title, Textarea, type SelectOption } from 'rizzui';
 import { Form } from '@core/ui/form';
-import {
-  TenantFormInput,
-  tenantFormSchema,
-} from '@/validators/create-tenant.schema';
+import { TenantFormInput, tenantFormSchema } from '@/validators/create-tenant.schema';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import {
-  createAdminTenant,
-  updateAdminTenant,
-} from '@/services/tenant.service';
+import { createAdminTenant, updateAdminTenant } from '@/services/tenant.service';
 import { routes } from '@/config/routes';
 import toast from 'react-hot-toast';
 import { PiTrashBold, PiUploadSimpleBold } from 'react-icons/pi';
@@ -114,9 +99,7 @@ function ImagePicker({
 
   return (
     <div className="space-y-2">
-      {label && (
-        <Text className="text-sm font-medium text-gray-700">{label}</Text>
-      )}
+      {label && <Text className="text-sm font-medium text-gray-700">{label}</Text>}
       {preview ? (
         <div className="relative w-full overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
           <div className="relative aspect-video w-full">
@@ -144,9 +127,7 @@ function ImagePicker({
             <PiUploadSimpleBold className="h-4 w-4 text-gray-400" />
           </div>
           <div className="text-center">
-            <Text className="text-xs font-medium text-gray-600">
-              Click to upload
-            </Text>
+            <Text className="text-xs font-medium text-gray-600">Click to upload</Text>
             <Text className="text-xs text-gray-400">PNG, JPG or WEBP</Text>
           </div>
         </button>
@@ -179,9 +160,7 @@ function VisibilityToggle({
     <div className="flex items-center justify-between py-2.5">
       <div className="min-w-0 flex-1 pr-4">
         <Text className="text-sm font-medium text-gray-700">{label}</Text>
-        {description && (
-          <Text className="text-xs text-gray-400">{description}</Text>
-        )}
+        {description && <Text className="text-xs text-gray-400">{description}</Text>}
       </div>
       <Switch
         checked={!!checked}
@@ -207,9 +186,7 @@ function ColorInput({
   const safe = value || '#1a202c';
   return (
     <div>
-      <Text className="mb-1.5 block text-sm font-medium text-gray-700">
-        {label}
-      </Text>
+      <Text className="mb-1.5 block text-sm font-medium text-gray-700">{label}</Text>
       <div className="flex items-center gap-3">
         <input
           type="color"
@@ -222,7 +199,7 @@ function ColorInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="#1a202c"
-          className="flex-1 rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm text-gray-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono text-gray-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           maxLength={7}
         />
       </div>
@@ -271,31 +248,13 @@ export default function CreateTenant({
         currentPeriodStart: data.currentPeriodStart || '',
         currentPeriodEnd: data.currentPeriodEnd || '',
         revenueModel: data.revenueModel || undefined,
-        markupPercentage:
-          data.markupPercentage !== undefined
-            ? data.markupPercentage
-            : undefined,
-        commissionPercentage:
-          data.commissionPercentage !== undefined
-            ? data.commissionPercentage
-            : undefined,
-        platformMarkupPercentage:
-          data.platformMarkupPercentage !== undefined
-            ? data.platformMarkupPercentage
-            : undefined,
+        markupPercentage: data.markupPercentage !== undefined ? data.markupPercentage : undefined,
+        commissionPercentage: data.commissionPercentage !== undefined ? data.commissionPercentage : undefined,
+        platformMarkupPercentage: data.platformMarkupPercentage !== undefined ? data.platformMarkupPercentage : undefined,
         // '' clears a pack rate on the server (packs revert to normal rates)
-        packMarkupPercentage:
-          data.packMarkupPercentage !== undefined
-            ? data.packMarkupPercentage
-            : undefined,
-        packCommissionPercentage:
-          data.packCommissionPercentage !== undefined
-            ? data.packCommissionPercentage
-            : undefined,
-        packRateMinUnits:
-          data.packRateMinUnits !== undefined && data.packRateMinUnits !== ''
-            ? data.packRateMinUnits
-            : undefined,
+        packMarkupPercentage: data.packMarkupPercentage !== undefined ? data.packMarkupPercentage : undefined,
+        packCommissionPercentage: data.packCommissionPercentage !== undefined ? data.packCommissionPercentage : undefined,
+        packRateMinUnits: data.packRateMinUnits !== undefined && data.packRateMinUnits !== '' ? data.packRateMinUnits : undefined,
         customPricingNote: data.customPricingNote || '',
         defaultCurrency: data.defaultCurrency || undefined,
         supportedCurrencies: data.supportedCurrencies || '',
@@ -314,10 +273,7 @@ export default function CreateTenant({
         psBillControlPolicy: data.psBillControlPolicy || undefined,
         psEnable3WayMatching: data.psEnable3WayMatching ?? undefined,
         psRequirePOApproval: data.psRequirePOApproval ?? undefined,
-        psApprovalThreshold:
-          data.psApprovalThreshold !== undefined
-            ? data.psApprovalThreshold
-            : undefined,
+        psApprovalThreshold: data.psApprovalThreshold !== undefined ? data.psApprovalThreshold : undefined,
         psDefaultPaymentTerms: data.psDefaultPaymentTerms || '',
         psAutoGenerateBill: data.psAutoGenerateBill ?? undefined,
         psAllowPartialReceipts: data.psAllowPartialReceipts ?? undefined,
@@ -359,7 +315,6 @@ export default function CreateTenant({
           revenueModel: 'markup',
           markupPercentage: 40,
           commissionPercentage: 12,
-          packMarkupPercentage: 10,
           platformMarkupPercentage: 15,
           defaultCurrency: 'NGN',
           enforceAgeVerification: true,
@@ -405,9 +360,7 @@ export default function CreateTenant({
                   placeholder="e.g. acme-liquors"
                   {...register('slug')}
                   error={errors.slug?.message}
-                  onFocus={() => {
-                    slugManuallyEdited.current = true;
-                  }}
+                  onFocus={() => { slugManuallyEdited.current = true; }}
                 />
                 <Controller
                   name="plan"
@@ -415,13 +368,8 @@ export default function CreateTenant({
                   render={({ field: { onChange, value } }) => (
                     <Select
                       options={PLAN_OPTIONS}
-                      value={
-                        PLAN_OPTIONS.find((o) => o.value === value) ??
-                        PLAN_OPTIONS[0]
-                      }
-                      onChange={(opt: SelectOption) =>
-                        onChange((opt as any).value)
-                      }
+                      value={PLAN_OPTIONS.find((o) => o.value === value) ?? PLAN_OPTIONS[0]}
+                      onChange={(opt: SelectOption) => onChange((opt as any).value)}
                       label="Plan"
                       placeholder="Select plan"
                     />
@@ -433,13 +381,8 @@ export default function CreateTenant({
                   render={({ field: { onChange, value } }) => (
                     <Select
                       options={REVENUE_MODEL_OPTIONS}
-                      value={
-                        REVENUE_MODEL_OPTIONS.find((o) => o.value === value) ??
-                        REVENUE_MODEL_OPTIONS[0]
-                      }
-                      onChange={(opt: SelectOption) =>
-                        onChange((opt as any).value)
-                      }
+                      value={REVENUE_MODEL_OPTIONS.find((o) => o.value === value) ?? REVENUE_MODEL_OPTIONS[0]}
+                      onChange={(opt: SelectOption) => onChange((opt as any).value)}
                       label="Revenue Model"
                       placeholder="Select model"
                     />
@@ -451,13 +394,8 @@ export default function CreateTenant({
                   render={({ field: { onChange, value } }) => (
                     <Select
                       options={STATUS_OPTIONS}
-                      value={
-                        STATUS_OPTIONS.find((o) => o.value === value) ??
-                        STATUS_OPTIONS[0]
-                      }
-                      onChange={(opt: SelectOption) =>
-                        onChange((opt as any).value)
-                      }
+                      value={STATUS_OPTIONS.find((o) => o.value === value) ?? STATUS_OPTIONS[0]}
+                      onChange={(opt: SelectOption) => onChange((opt as any).value)}
                       label="Status"
                       placeholder="Select status"
                     />
@@ -471,9 +409,7 @@ export default function CreateTenant({
                   error={errors.contactEmail?.message}
                 />
                 <div className="col-span-2">
-                  <Text className="mb-2 block text-sm font-medium text-gray-700">
-                    Logo
-                  </Text>
+                  <Text className="mb-2 block text-sm font-medium text-gray-700">Logo</Text>
                   <ImagePicker
                     currentUrl={currentLogoUrl}
                     onFile={(f) => setLogoFile(f)}
@@ -496,11 +432,10 @@ export default function CreateTenant({
           <div className="flex gap-6 @5xl:gap-7">
             {/* ── Left column ── */}
             <div className="min-w-0 flex-1 space-y-6">
+
               {/* Identity */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-5 font-semibold text-gray-800">
-                  Identity
-                </Title>
+                <Title as="h5" className="mb-5 font-semibold text-gray-800">Identity</Title>
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
                     <Input
@@ -523,14 +458,11 @@ export default function CreateTenant({
                       placeholder="e.g. acme-liquors"
                       {...register('slug')}
                       error={errors.slug?.message}
-                      prefix={<span className="text-sm text-gray-400">/</span>}
-                      onFocus={() => {
-                        slugManuallyEdited.current = true;
-                      }}
+                      prefix={<span className="text-gray-400 text-sm">/</span>}
+                      onFocus={() => { slugManuallyEdited.current = true; }}
                     />
                     <Text className="mt-1.5 text-xs text-gray-400">
-                      Auto-generated from name. Subdomain:{' '}
-                      {watch('slug') || 'slug'}.drinksharbour.com
+                      Auto-generated from name. Subdomain: {watch('slug') || 'slug'}.drinksharbour.com
                     </Text>
                   </div>
                   <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
@@ -556,9 +488,7 @@ export default function CreateTenant({
 
               {/* Plan & Billing */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-5 font-semibold text-gray-800">
-                  Plan & Billing
-                </Title>
+                <Title as="h5" className="mb-5 font-semibold text-gray-800">Plan & Billing</Title>
                 <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
                   <Controller
                     name="plan"
@@ -566,13 +496,8 @@ export default function CreateTenant({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={PLAN_OPTIONS}
-                        value={
-                          PLAN_OPTIONS.find((o) => o.value === value) ??
-                          PLAN_OPTIONS[0]
-                        }
-                        onChange={(opt: SelectOption) =>
-                          onChange((opt as any).value)
-                        }
+                        value={PLAN_OPTIONS.find((o) => o.value === value) ?? PLAN_OPTIONS[0]}
+                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
                         label="Plan"
                         placeholder="Select plan"
                       />
@@ -584,14 +509,8 @@ export default function CreateTenant({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={SUBSCRIPTION_STATUS_OPTIONS}
-                        value={
-                          SUBSCRIPTION_STATUS_OPTIONS.find(
-                            (o) => o.value === value
-                          ) ?? SUBSCRIPTION_STATUS_OPTIONS[0]
-                        }
-                        onChange={(opt: SelectOption) =>
-                          onChange((opt as any).value)
-                        }
+                        value={SUBSCRIPTION_STATUS_OPTIONS.find((o) => o.value === value) ?? SUBSCRIPTION_STATUS_OPTIONS[0]}
+                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
                         label="Subscription Status"
                         placeholder="Select status"
                       />
@@ -627,9 +546,7 @@ export default function CreateTenant({
 
               {/* Revenue Model */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-5 font-semibold text-gray-800">
-                  Revenue Model
-                </Title>
+                <Title as="h5" className="mb-5 font-semibold text-gray-800">Revenue Model</Title>
                 <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
                   <Controller
                     name="revenueModel"
@@ -637,14 +554,8 @@ export default function CreateTenant({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={REVENUE_MODEL_OPTIONS}
-                        value={
-                          REVENUE_MODEL_OPTIONS.find(
-                            (o) => o.value === value
-                          ) ?? REVENUE_MODEL_OPTIONS[0]
-                        }
-                        onChange={(opt: SelectOption) =>
-                          onChange((opt as any).value)
-                        }
+                        value={REVENUE_MODEL_OPTIONS.find((o) => o.value === value) ?? REVENUE_MODEL_OPTIONS[0]}
+                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
                         label="Revenue Model"
                         placeholder="Select model"
                       />
@@ -655,8 +566,7 @@ export default function CreateTenant({
                     type="number"
                     placeholder="40"
                     {...register('markupPercentage', {
-                      setValueAs: (v) =>
-                        v === '' || v === null ? undefined : Number(v),
+                      setValueAs: (v) => (v === '' || v === null ? undefined : Number(v)),
                     })}
                     error={errors.markupPercentage?.message}
                   />
@@ -665,8 +575,7 @@ export default function CreateTenant({
                     type="number"
                     placeholder="12"
                     {...register('commissionPercentage', {
-                      setValueAs: (v) =>
-                        v === '' || v === null ? undefined : Number(v),
+                      setValueAs: (v) => (v === '' || v === null ? undefined : Number(v)),
                     })}
                     error={errors.commissionPercentage?.message}
                   />
@@ -675,18 +584,16 @@ export default function CreateTenant({
                     type="number"
                     placeholder="15"
                     {...register('platformMarkupPercentage', {
-                      setValueAs: (v) =>
-                        v === '' || v === null ? undefined : Number(v),
+                      setValueAs: (v) => (v === '' || v === null ? undefined : Number(v)),
                     })}
                     error={errors.platformMarkupPercentage?.message}
                   />
                   <Input
                     label="Pack Markup %"
                     type="number"
-                    placeholder="10 (default)"
+                    placeholder="Leave empty to use normal markup"
                     {...register('packMarkupPercentage', {
-                      setValueAs: (v) =>
-                        v === '' || v === null ? '' : Number(v),
+                      setValueAs: (v) => (v === '' || v === null ? '' : Number(v)),
                     })}
                     error={errors.packMarkupPercentage?.message}
                   />
@@ -695,8 +602,7 @@ export default function CreateTenant({
                     type="number"
                     placeholder="Leave empty to use normal commission"
                     {...register('packCommissionPercentage', {
-                      setValueAs: (v) =>
-                        v === '' || v === null ? '' : Number(v),
+                      setValueAs: (v) => (v === '' || v === null ? '' : Number(v)),
                     })}
                     error={errors.packCommissionPercentage?.message}
                   />
@@ -705,8 +611,7 @@ export default function CreateTenant({
                     type="number"
                     placeholder="2"
                     {...register('packRateMinUnits', {
-                      setValueAs: (v) =>
-                        v === '' || v === null ? '' : Number(v),
+                      setValueAs: (v) => (v === '' || v === null ? '' : Number(v)),
                     })}
                     error={errors.packRateMinUnits?.message}
                   />
@@ -722,9 +627,7 @@ export default function CreateTenant({
 
               {/* Address */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-5 font-semibold text-gray-800">
-                  Address
-                </Title>
+                <Title as="h5" className="mb-5 font-semibold text-gray-800">Address</Title>
                 <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
                   <div className="col-span-2">
                     <Input
@@ -763,9 +666,7 @@ export default function CreateTenant({
 
               {/* Currency */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-5 font-semibold text-gray-800">
-                  Currency
-                </Title>
+                <Title as="h5" className="mb-5 font-semibold text-gray-800">Currency</Title>
                 <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
                   <Controller
                     name="defaultCurrency"
@@ -773,13 +674,8 @@ export default function CreateTenant({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={CURRENCY_OPTIONS}
-                        value={
-                          CURRENCY_OPTIONS.find((o) => o.value === value) ??
-                          CURRENCY_OPTIONS[0]
-                        }
-                        onChange={(opt: SelectOption) =>
-                          onChange((opt as any).value)
-                        }
+                        value={CURRENCY_OPTIONS.find((o) => o.value === value) ?? CURRENCY_OPTIONS[0]}
+                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
                         label="Default Currency"
                         placeholder="Select currency"
                       />
@@ -791,21 +687,15 @@ export default function CreateTenant({
                       placeholder="e.g. NGN,USD,EUR"
                       {...register('supportedCurrencies')}
                     />
-                    <Text className="mt-1 text-xs text-gray-400">
-                      Comma-separated: NGN, USD, EUR, GBP
-                    </Text>
+                    <Text className="mt-1 text-xs text-gray-400">Comma-separated: NGN, USD, EUR, GBP</Text>
                   </div>
                 </div>
               </div>
 
               {/* Purchase Settings */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-1 font-semibold text-gray-800">
-                  Purchase Settings
-                </Title>
-                <Text className="mb-5 text-sm text-gray-400">
-                  Configure procurement controls for this tenant.
-                </Text>
+                <Title as="h5" className="mb-1 font-semibold text-gray-800">Purchase Settings</Title>
+                <Text className="mb-5 text-sm text-gray-400">Configure procurement controls for this tenant.</Text>
                 <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
                   <Controller
                     name="psBillControlPolicy"
@@ -813,13 +703,8 @@ export default function CreateTenant({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={BILL_CONTROL_OPTIONS}
-                        value={
-                          BILL_CONTROL_OPTIONS.find((o) => o.value === value) ??
-                          BILL_CONTROL_OPTIONS[1]
-                        }
-                        onChange={(opt: SelectOption) =>
-                          onChange((opt as any).value)
-                        }
+                        value={BILL_CONTROL_OPTIONS.find((o) => o.value === value) ?? BILL_CONTROL_OPTIONS[1]}
+                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
                         label="Bill Control Policy"
                         placeholder="Select policy"
                       />
@@ -830,8 +715,7 @@ export default function CreateTenant({
                     type="number"
                     placeholder="0"
                     {...register('psApprovalThreshold', {
-                      setValueAs: (v) =>
-                        v === '' || v === null ? undefined : Number(v),
+                      setValueAs: (v) => (v === '' || v === null ? undefined : Number(v)),
                     })}
                   />
                   <Input
@@ -899,12 +783,8 @@ export default function CreateTenant({
 
               {/* Admin Notes */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-1 font-semibold text-gray-800">
-                  Admin Notes
-                </Title>
-                <Text className="mb-4 text-sm text-gray-400">
-                  Internal notes — not shown to the tenant.
-                </Text>
+                <Title as="h5" className="mb-1 font-semibold text-gray-800">Admin Notes</Title>
+                <Text className="mb-4 text-sm text-gray-400">Internal notes — not shown to the tenant.</Text>
                 <textarea
                   {...register('notes')}
                   placeholder="Any internal notes about this tenant…"
@@ -917,11 +797,10 @@ export default function CreateTenant({
 
             {/* ── Right sidebar ── */}
             <div className="w-72 flex-shrink-0 space-y-6 @5xl:w-80">
+
               {/* Publish panel */}
               <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <Title as="h6" className="mb-4 font-semibold text-gray-800">
-                  Publish
-                </Title>
+                <Title as="h6" className="mb-4 font-semibold text-gray-800">Publish</Title>
                 <div className="mb-4">
                   <Controller
                     name="status"
@@ -929,13 +808,8 @@ export default function CreateTenant({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={STATUS_OPTIONS}
-                        value={
-                          STATUS_OPTIONS.find((o) => o.value === value) ??
-                          STATUS_OPTIONS[0]
-                        }
-                        onChange={(opt: SelectOption) =>
-                          onChange((opt as any).value)
-                        }
+                        value={STATUS_OPTIONS.find((o) => o.value === value) ?? STATUS_OPTIONS[0]}
+                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
                         label="Status"
                         placeholder="Select status"
                       />
@@ -943,11 +817,7 @@ export default function CreateTenant({
                   />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Button
-                    type="submit"
-                    isLoading={isLoading}
-                    className="w-full"
-                  >
+                  <Button type="submit" isLoading={isLoading} className="w-full">
                     {id ? 'Update Tenant' : 'Save Tenant'}
                   </Button>
                   <Button
@@ -963,9 +833,7 @@ export default function CreateTenant({
 
               {/* Logo panel */}
               <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <Title as="h6" className="mb-4 font-semibold text-gray-800">
-                  Logo
-                </Title>
+                <Title as="h6" className="mb-4 font-semibold text-gray-800">Logo</Title>
                 <ImagePicker
                   currentUrl={currentLogoUrl}
                   onFile={(f) => setLogoFile(f)}
@@ -975,9 +843,7 @@ export default function CreateTenant({
 
               {/* Settings panel */}
               <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <Title as="h6" className="mb-2 font-semibold text-gray-800">
-                  Settings
-                </Title>
+                <Title as="h6" className="mb-2 font-semibold text-gray-800">Settings</Title>
                 <div className="divide-y divide-gray-100">
                   <Controller
                     name="enforceAgeVerification"
@@ -1009,12 +875,8 @@ export default function CreateTenant({
               {/* Rejection reason — only show when status is 'rejected' */}
               {statusValue === 'rejected' && (
                 <div className="rounded-xl border border-red-100 bg-red-50 p-5">
-                  <Title as="h6" className="mb-2 font-semibold text-red-700">
-                    Rejection Reason
-                  </Title>
-                  <Text className="mb-3 text-xs text-red-500">
-                    Visible to the tenant owner.
-                  </Text>
+                  <Title as="h6" className="mb-2 font-semibold text-red-700">Rejection Reason</Title>
+                  <Text className="mb-3 text-xs text-red-500">Visible to the tenant owner.</Text>
                   <textarea
                     {...register('rejectionReason')}
                     placeholder="Explain why this tenant was rejected…"
