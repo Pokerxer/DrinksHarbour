@@ -14,6 +14,7 @@
 
 const DEFAULT_PLATFORM_MARKUP = 15;
 const DEFAULT_PACK_RATE_MIN_UNITS = 2;
+const DEFAULT_PACK_MARKUP = 10;
 
 /**
  * Resolve the tenant revenue rates for a given size, using the tenant's
@@ -34,7 +35,8 @@ const resolveRevenueRates = (tenant, unitsPerPack = 1) => {
     return { markupPct, commissionPct, isPackRate: false };
   }
   return {
-    markupPct: tenant?.packMarkupPercentage ?? markupPct,
+    // Packs default to a reduced 10% markup; commission falls back to the normal rate
+    markupPct: tenant?.packMarkupPercentage ?? DEFAULT_PACK_MARKUP,
     commissionPct: tenant?.packCommissionPercentage ?? commissionPct,
     isPackRate: true,
   };
@@ -356,6 +358,7 @@ const backCalcStoredPrice = (
 module.exports = {
   DEFAULT_PLATFORM_MARKUP,
   DEFAULT_PACK_RATE_MIN_UNITS,
+  DEFAULT_PACK_MARKUP,
   resolveRevenueRates,
   isDiscountActive,
   applyDiscount,

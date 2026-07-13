@@ -6,7 +6,10 @@ import { useParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { routes } from '@/config/routes';
-import { getAdminTenantById, updateAdminTenant } from '@/services/tenant.service';
+import {
+  getAdminTenantById,
+  updateAdminTenant,
+} from '@/services/tenant.service';
 import PageHeader from '@/app/shared/page-header';
 import { Badge, Button, Loader, Text, Title } from 'rizzui';
 import toast from 'react-hot-toast';
@@ -39,7 +42,15 @@ function StatusBadge({ status }: { status: string }) {
     archived: { color: 'secondary', label: 'Archived' },
   };
   const cfg = map[status] ?? { color: 'secondary', label: status };
-  return <Badge color={cfg.color} variant="flat" className="text-xs font-semibold capitalize">{cfg.label}</Badge>;
+  return (
+    <Badge
+      color={cfg.color}
+      variant="flat"
+      className="text-xs font-semibold capitalize"
+    >
+      {cfg.label}
+    </Badge>
+  );
 }
 
 function SubStatusBadge({ status }: { status: string }) {
@@ -52,7 +63,11 @@ function SubStatusBadge({ status }: { status: string }) {
     incomplete_expired: { color: 'danger', label: 'Expired' },
   };
   const cfg = map[status] ?? { color: 'secondary', label: status };
-  return <Badge color={cfg.color} variant="flat" className="text-xs font-semibold">{cfg.label}</Badge>;
+  return (
+    <Badge color={cfg.color} variant="flat" className="text-xs font-semibold">
+      {cfg.label}
+    </Badge>
+  );
 }
 
 function PlanBadge({ plan }: { plan: string }) {
@@ -65,7 +80,11 @@ function PlanBadge({ plan }: { plan: string }) {
   };
   const cfg = map[plan] ?? { color: 'secondary' };
   return (
-    <Badge color={cfg.color} variant="flat" className="text-xs font-semibold capitalize">
+    <Badge
+      color={cfg.color}
+      variant="flat"
+      className="text-xs font-semibold capitalize"
+    >
       {(plan || '').replace(/_/g, ' ')}
     </Badge>
   );
@@ -91,7 +110,9 @@ function StatCard({
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-5">
       <div className="mb-3 flex items-center gap-3">
-        <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
+        <div
+          className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${iconBg}`}
+        >
           <span className={iconColor}>{icon}</span>
         </div>
         <Text className="text-sm font-medium text-gray-500">{label}</Text>
@@ -107,8 +128,10 @@ function StatCard({
 function InfoRow({ label, value }: { label: string; value?: React.ReactNode }) {
   if (!value) return null;
   return (
-    <div className="flex items-start gap-3 py-2.5 border-b border-gray-100 last:border-0">
-      <Text className="w-40 flex-shrink-0 text-xs font-medium text-gray-400 uppercase tracking-wide pt-0.5">{label}</Text>
+    <div className="flex items-start gap-3 border-b border-gray-100 py-2.5 last:border-0">
+      <Text className="w-40 flex-shrink-0 pt-0.5 text-xs font-medium uppercase tracking-wide text-gray-400">
+        {label}
+      </Text>
       <div className="flex-1 text-sm text-gray-700">{value}</div>
     </div>
   );
@@ -116,10 +139,18 @@ function InfoRow({ label, value }: { label: string; value?: React.ReactNode }) {
 
 // ─── Section card ─────────────────────────────────────────────────────────────
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-6">
-      <Title as="h6" className="mb-4 font-semibold text-gray-800">{title}</Title>
+      <Title as="h6" className="mb-4 font-semibold text-gray-800">
+        {title}
+      </Title>
       {children}
     </div>
   );
@@ -129,12 +160,20 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function fmtDate(d?: string) {
   if (!d) return null;
-  return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  return new Date(d).toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 function fmtCurrency(n?: number) {
   if (n == null) return '₦0';
-  return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(n);
+  return new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: 'NGN',
+    maximumFractionDigits: 0,
+  }).format(n);
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
@@ -161,7 +200,9 @@ export default function TenantDetailPage() {
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => { load(); }, [token, id]);
+  useEffect(() => {
+    load();
+  }, [token, id]);
 
   async function changeStatus(newStatus: string) {
     if (!token) return;
@@ -201,7 +242,9 @@ export default function TenantDetailPage() {
         <PageHeader title="Tenant" breadcrumb={breadcrumb} />
         <div className="flex h-60 flex-col items-center justify-center gap-4">
           <PiWarningCircleBold className="h-10 w-10 text-red-300" />
-          <Text className="text-sm text-red-500">{error || 'Tenant not found'}</Text>
+          <Text className="text-sm text-red-500">
+            {error || 'Tenant not found'}
+          </Text>
           <Button size="sm" variant="outline" onClick={load}>
             <PiArrowClockwiseBold className="me-1.5 h-4 w-4" /> Retry
           </Button>
@@ -211,8 +254,15 @@ export default function TenantDetailPage() {
   }
 
   const t = tenant;
-  const addressParts = [t.address?.street, t.address?.city, t.address?.lga, t.address?.state, t.address?.country]
-    .filter(Boolean).join(', ');
+  const addressParts = [
+    t.address?.street,
+    t.address?.city,
+    t.address?.lga,
+    t.address?.state,
+    t.address?.country,
+  ]
+    .filter(Boolean)
+    .join(', ');
 
   return (
     <>
@@ -260,17 +310,24 @@ export default function TenantDetailPage() {
       </PageHeader>
 
       <div className="space-y-6">
-
         {/* ── Profile header card ── */}
         <div className="rounded-xl border border-gray-200 bg-white p-6">
           <div className="flex flex-wrap items-start gap-5">
             {/* Logo / avatar */}
             <div
-              className="flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-2xl border border-gray-100 bg-gray-50 overflow-hidden"
-              style={t.primaryColor ? { borderColor: t.primaryColor + '33' } : undefined}
+              className="flex h-20 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-gray-100 bg-gray-50"
+              style={
+                t.primaryColor
+                  ? { borderColor: t.primaryColor + '33' }
+                  : undefined
+              }
             >
               {t.logo?.url ? (
-                <img src={t.logo.url} alt={t.name} className="h-full w-full object-contain p-2" />
+                <img
+                  src={t.logo.url}
+                  alt={t.name}
+                  className="h-full w-full object-contain p-2"
+                />
               ) : (
                 <PiBuildingsBold
                   className="h-9 w-9"
@@ -280,23 +337,33 @@ export default function TenantDetailPage() {
             </div>
 
             {/* Identity */}
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2 mb-1">
-                <Title as="h4" className="font-bold text-gray-900">{t.name}</Title>
+            <div className="min-w-0 flex-1">
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <Title as="h4" className="font-bold text-gray-900">
+                  {t.name}
+                </Title>
                 {t.isSystemTenant && (
-                  <Badge color="warning" variant="flat" className="text-xs">System</Badge>
+                  <Badge color="warning" variant="flat" className="text-xs">
+                    System
+                  </Badge>
                 )}
               </div>
-              <div className="flex items-center gap-1.5 mb-3">
-                <PiGlobeBold className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-                <Text className="text-sm text-gray-400 font-mono">{t.slug}.drinksharbour.com</Text>
+              <div className="mb-3 flex items-center gap-1.5">
+                <PiGlobeBold className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+                <Text className="font-mono text-sm text-gray-400">
+                  {t.slug}.drinksharbour.com
+                </Text>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge status={t.status} />
                 <PlanBadge plan={t.plan} />
                 <SubStatusBadge status={t.subscriptionStatus} />
                 {t.revenueModel && (
-                  <Badge color="secondary" variant="flat" className="text-xs capitalize font-medium">
+                  <Badge
+                    color="secondary"
+                    variant="flat"
+                    className="text-xs font-medium capitalize"
+                  >
                     {t.revenueModel}
                   </Badge>
                 )}
@@ -310,7 +377,9 @@ export default function TenantDetailPage() {
                   className="h-8 w-8 rounded-lg border border-gray-200 shadow-sm"
                   style={{ backgroundColor: t.primaryColor }}
                 />
-                <Text className="font-mono text-xs text-gray-500">{t.primaryColor}</Text>
+                <Text className="font-mono text-xs text-gray-500">
+                  {t.primaryColor}
+                </Text>
               </div>
             )}
           </div>
@@ -322,7 +391,11 @@ export default function TenantDetailPage() {
             icon={<PiPackageBold className="h-5 w-5" />}
             label="Products"
             value={t.productCount ?? 0}
-            sub={t.activeSubProductCount ? `${t.activeSubProductCount} active variants` : undefined}
+            sub={
+              t.activeSubProductCount
+                ? `${t.activeSubProductCount} active variants`
+                : undefined
+            }
             iconBg="bg-blue-50"
             iconColor="text-blue-600"
           />
@@ -344,7 +417,9 @@ export default function TenantDetailPage() {
             icon={<PiClockBold className="h-5 w-5" />}
             label="Created"
             value={fmtDate(t.createdAt) || '—'}
-            sub={t.onboardedAt ? `Onboarded ${fmtDate(t.onboardedAt)}` : undefined}
+            sub={
+              t.onboardedAt ? `Onboarded ${fmtDate(t.onboardedAt)}` : undefined
+            }
             iconBg="bg-gray-50"
             iconColor="text-gray-500"
           />
@@ -352,46 +427,71 @@ export default function TenantDetailPage() {
 
         {/* ── Main body ── */}
         <div className="flex flex-col gap-6 @5xl:flex-row @5xl:items-start">
-
           {/* Left */}
-          <div className="flex-1 min-w-0 space-y-6">
-
+          <div className="min-w-0 flex-1 space-y-6">
             {/* Contact & Identity */}
             <Section title="Contact & Identity">
-              <InfoRow label="Contact Email" value={
-                t.contactEmail && (
-                  <a href={`mailto:${t.contactEmail}`} className="flex items-center gap-1.5 text-primary hover:underline">
-                    <PiEnvelopeBold className="h-3.5 w-3.5 flex-shrink-0" />
-                    {t.contactEmail}
-                  </a>
-                )
-              } />
-              <InfoRow label="Contact Phone" value={
-                t.contactPhone && (
-                  <a href={`tel:${t.contactPhone}`} className="flex items-center gap-1.5 text-primary hover:underline">
-                    <PiPhoneBold className="h-3.5 w-3.5 flex-shrink-0" />
-                    {t.contactPhone}
-                  </a>
-                )
-              } />
+              <InfoRow
+                label="Contact Email"
+                value={
+                  t.contactEmail && (
+                    <a
+                      href={`mailto:${t.contactEmail}`}
+                      className="flex items-center gap-1.5 text-primary hover:underline"
+                    >
+                      <PiEnvelopeBold className="h-3.5 w-3.5 flex-shrink-0" />
+                      {t.contactEmail}
+                    </a>
+                  )
+                }
+              />
+              <InfoRow
+                label="Contact Phone"
+                value={
+                  t.contactPhone && (
+                    <a
+                      href={`tel:${t.contactPhone}`}
+                      className="flex items-center gap-1.5 text-primary hover:underline"
+                    >
+                      <PiPhoneBold className="h-3.5 w-3.5 flex-shrink-0" />
+                      {t.contactPhone}
+                    </a>
+                  )
+                }
+              />
               <InfoRow label="Country" value={t.country} />
               <InfoRow label="Default Currency" value={t.defaultCurrency} />
               {t.supportedCurrencies?.length > 0 && (
-                <InfoRow label="Supported Currencies" value={
-                  <div className="flex flex-wrap gap-1">
-                    {t.supportedCurrencies.map((c: string) => (
-                      <Badge key={c} color="secondary" variant="flat" className="text-xs">{c}</Badge>
-                    ))}
-                  </div>
-                } />
+                <InfoRow
+                  label="Supported Currencies"
+                  value={
+                    <div className="flex flex-wrap gap-1">
+                      {t.supportedCurrencies.map((c: string) => (
+                        <Badge
+                          key={c}
+                          color="secondary"
+                          variant="flat"
+                          className="text-xs"
+                        >
+                          {c}
+                        </Badge>
+                      ))}
+                    </div>
+                  }
+                />
               )}
-              {t.approvedAt && <InfoRow label="Approved At" value={fmtDate(t.approvedAt)} />}
+              {t.approvedAt && (
+                <InfoRow label="Approved At" value={fmtDate(t.approvedAt)} />
+              )}
               {t.rejectionReason && (
-                <InfoRow label="Rejection Reason" value={
-                  <div className="rounded-lg bg-red-50 border border-red-100 px-3 py-2 text-sm text-red-700">
-                    {t.rejectionReason}
-                  </div>
-                } />
+                <InfoRow
+                  label="Rejection Reason"
+                  value={
+                    <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+                      {t.rejectionReason}
+                    </div>
+                  }
+                />
               )}
             </Section>
 
@@ -406,25 +506,65 @@ export default function TenantDetailPage() {
                   {t.revenueModel || 'markup'}
                 </Badge>
                 {t.customPricingNote && (
-                  <Text className="text-xs text-gray-500 italic">{t.customPricingNote}</Text>
+                  <Text className="text-xs italic text-gray-500">
+                    {t.customPricingNote}
+                  </Text>
                 )}
               </div>
               <div className="grid grid-cols-3 gap-3">
                 {[
-                  { label: 'Markup %', value: t.markupPercentage != null ? `${t.markupPercentage}%` : null },
-                  { label: 'Commission %', value: t.commissionPercentage != null ? `${t.commissionPercentage}%` : null },
-                  { label: 'Platform Markup %', value: t.platformMarkupPercentage != null ? `${t.platformMarkupPercentage}%` : null },
-                  { label: 'Pack Markup %', value: t.packMarkupPercentage != null ? `${t.packMarkupPercentage}%` : null },
-                  { label: 'Pack Commission %', value: t.packCommissionPercentage != null ? `${t.packCommissionPercentage}%` : null },
-                  { label: 'Pack Rate From', value: t.packMarkupPercentage != null || t.packCommissionPercentage != null ? `${t.packRateMinUnits ?? 2}+ units` : null },
-                ].map(({ label, value }) => (
-                  value && (
-                    <div key={label} className="rounded-lg bg-gray-50 border border-gray-100 p-3 text-center">
-                      <Text className="text-lg font-bold text-gray-800">{value}</Text>
-                      <Text className="text-xs text-gray-400 mt-0.5">{label}</Text>
-                    </div>
-                  )
-                ))}
+                  {
+                    label: 'Markup %',
+                    value:
+                      t.markupPercentage != null
+                        ? `${t.markupPercentage}%`
+                        : null,
+                  },
+                  {
+                    label: 'Commission %',
+                    value:
+                      t.commissionPercentage != null
+                        ? `${t.commissionPercentage}%`
+                        : null,
+                  },
+                  {
+                    label: 'Platform Markup %',
+                    value:
+                      t.platformMarkupPercentage != null
+                        ? `${t.platformMarkupPercentage}%`
+                        : null,
+                  },
+                  {
+                    label: 'Pack Markup %',
+                    value: `${t.packMarkupPercentage ?? 10}%`,
+                  },
+                  {
+                    label: 'Pack Commission %',
+                    value:
+                      t.packCommissionPercentage != null
+                        ? `${t.packCommissionPercentage}%`
+                        : null,
+                  },
+                  {
+                    label: 'Pack Rate From',
+                    value: `${t.packRateMinUnits ?? 2}+ units`,
+                  },
+                ].map(
+                  ({ label, value }) =>
+                    value && (
+                      <div
+                        key={label}
+                        className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-center"
+                      >
+                        <Text className="text-lg font-bold text-gray-800">
+                          {value}
+                        </Text>
+                        <Text className="mt-0.5 text-xs text-gray-400">
+                          {label}
+                        </Text>
+                      </div>
+                    )
+                )}
               </div>
             </Section>
 
@@ -432,22 +572,45 @@ export default function TenantDetailPage() {
             {(addressParts || t.location?.lat) && (
               <Section title="Address">
                 {addressParts && (
-                  <div className="flex items-start gap-2 mb-4">
-                    <PiMapPinBold className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                  <div className="mb-4 flex items-start gap-2">
+                    <PiMapPinBold className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />
                     <div>
-                      <Text className="text-sm text-gray-700">{t.address?.formatted || addressParts}</Text>
+                      <Text className="text-sm text-gray-700">
+                        {t.address?.formatted || addressParts}
+                      </Text>
                       {t.normalizedState && (
-                        <Text className="text-xs text-gray-400 mt-0.5">State: {t.normalizedState}</Text>
+                        <Text className="mt-0.5 text-xs text-gray-400">
+                          State: {t.normalizedState}
+                        </Text>
                       )}
                     </div>
                   </div>
                 )}
                 {t.location?.lat && (
-                  <div className="flex flex-wrap gap-4 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
-                    <span>Lat: <span className="font-mono font-medium text-gray-700">{t.location.lat.toFixed(6)}</span></span>
-                    <span>Lon: <span className="font-mono font-medium text-gray-700">{t.location.lon?.toFixed(6)}</span></span>
-                    {t.location.source && <span>Source: <span className="font-medium text-gray-700 capitalize">{t.location.source}</span></span>}
-                    {t.location.geocodedAt && <span>Geocoded: {fmtDate(t.location.geocodedAt)}</span>}
+                  <div className="flex flex-wrap gap-4 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                    <span>
+                      Lat:{' '}
+                      <span className="font-mono font-medium text-gray-700">
+                        {t.location.lat.toFixed(6)}
+                      </span>
+                    </span>
+                    <span>
+                      Lon:{' '}
+                      <span className="font-mono font-medium text-gray-700">
+                        {t.location.lon?.toFixed(6)}
+                      </span>
+                    </span>
+                    {t.location.source && (
+                      <span>
+                        Source:{' '}
+                        <span className="font-medium capitalize text-gray-700">
+                          {t.location.source}
+                        </span>
+                      </span>
+                    )}
+                    {t.location.geocodedAt && (
+                      <span>Geocoded: {fmtDate(t.location.geocodedAt)}</span>
+                    )}
                   </div>
                 )}
               </Section>
@@ -457,18 +620,38 @@ export default function TenantDetailPage() {
             {t.purchaseSettings && (
               <Section title="Purchase Settings">
                 <div className="space-y-0">
-                  <InfoRow label="Bill Control" value={
-                    <Badge color="secondary" variant="flat" className="text-xs capitalize">
-                      {(t.purchaseSettings.billControlPolicy || 'received').replace(/_/g, ' ')}
-                    </Badge>
-                  } />
-                  <InfoRow label="Payment Terms" value={t.purchaseSettings.defaultPaymentTerms} />
-                  <InfoRow label="Approval Threshold" value={
-                    t.purchaseSettings.approvalThreshold != null
-                      ? (t.purchaseSettings.approvalThreshold === 0 ? 'All POs require approval' : fmtCurrency(t.purchaseSettings.approvalThreshold))
-                      : null
-                  } />
-                  <InfoRow label="Receiving Location" value={t.purchaseSettings.defaultReceivingLocation} />
+                  <InfoRow
+                    label="Bill Control"
+                    value={
+                      <Badge
+                        color="secondary"
+                        variant="flat"
+                        className="text-xs capitalize"
+                      >
+                        {(
+                          t.purchaseSettings.billControlPolicy || 'received'
+                        ).replace(/_/g, ' ')}
+                      </Badge>
+                    }
+                  />
+                  <InfoRow
+                    label="Payment Terms"
+                    value={t.purchaseSettings.defaultPaymentTerms}
+                  />
+                  <InfoRow
+                    label="Approval Threshold"
+                    value={
+                      t.purchaseSettings.approvalThreshold != null
+                        ? t.purchaseSettings.approvalThreshold === 0
+                          ? 'All POs require approval'
+                          : fmtCurrency(t.purchaseSettings.approvalThreshold)
+                        : null
+                    }
+                  />
+                  <InfoRow
+                    label="Receiving Location"
+                    value={t.purchaseSettings.defaultReceivingLocation}
+                  />
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-3">
                   {[
@@ -478,7 +661,9 @@ export default function TenantDetailPage() {
                     { key: 'allowPartialReceipts', label: 'Partial Receipts' },
                   ].map(({ key, label }) => (
                     <div key={key} className="flex items-center gap-2">
-                      <div className={`h-2 w-2 rounded-full flex-shrink-0 ${t.purchaseSettings[key] ? 'bg-green-400' : 'bg-gray-300'}`} />
+                      <div
+                        className={`h-2 w-2 flex-shrink-0 rounded-full ${t.purchaseSettings[key] ? 'bg-green-400' : 'bg-gray-300'}`}
+                      />
                       <Text className="text-sm text-gray-600">{label}</Text>
                     </div>
                   ))}
@@ -489,8 +674,10 @@ export default function TenantDetailPage() {
             {/* Admin Notes */}
             {t.notes && (
               <Section title="Admin Notes">
-                <div className="rounded-lg bg-amber-50 border border-amber-100 px-4 py-3">
-                  <Text className="text-sm text-amber-900 whitespace-pre-wrap leading-relaxed">{t.notes}</Text>
+                <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3">
+                  <Text className="whitespace-pre-wrap text-sm leading-relaxed text-amber-900">
+                    {t.notes}
+                  </Text>
                 </div>
               </Section>
             )}
@@ -498,28 +685,44 @@ export default function TenantDetailPage() {
 
           {/* Right sidebar */}
           <div className="w-full space-y-6 @5xl:w-72 @5xl:flex-shrink-0">
-
             {/* Subscription */}
             <Section title="Subscription">
               <div className="space-y-0">
                 <InfoRow label="Plan" value={<PlanBadge plan={t.plan} />} />
-                <InfoRow label="Sub. Status" value={<SubStatusBadge status={t.subscriptionStatus} />} />
+                <InfoRow
+                  label="Sub. Status"
+                  value={<SubStatusBadge status={t.subscriptionStatus} />}
+                />
                 <InfoRow label="Trial Ends" value={fmtDate(t.trialEndsAt)} />
-                <InfoRow label="Period Start" value={fmtDate(t.currentPeriodStart)} />
-                <InfoRow label="Period End" value={fmtDate(t.currentPeriodEnd)} />
+                <InfoRow
+                  label="Period Start"
+                  value={fmtDate(t.currentPeriodStart)}
+                />
+                <InfoRow
+                  label="Period End"
+                  value={fmtDate(t.currentPeriodEnd)}
+                />
               </div>
               {(t.stripeCustomerId || t.stripeSubscriptionId) && (
-                <div className="mt-4 space-y-2 rounded-lg bg-gray-50 border border-gray-100 p-3">
+                <div className="mt-4 space-y-2 rounded-lg border border-gray-100 bg-gray-50 p-3">
                   {t.stripeCustomerId && (
                     <div>
-                      <Text className="text-xs text-gray-400 mb-0.5">Stripe Customer</Text>
-                      <Text className="font-mono text-xs text-gray-700 break-all">{t.stripeCustomerId}</Text>
+                      <Text className="mb-0.5 text-xs text-gray-400">
+                        Stripe Customer
+                      </Text>
+                      <Text className="break-all font-mono text-xs text-gray-700">
+                        {t.stripeCustomerId}
+                      </Text>
                     </div>
                   )}
                   {t.stripeSubscriptionId && (
                     <div>
-                      <Text className="text-xs text-gray-400 mb-0.5">Stripe Subscription</Text>
-                      <Text className="font-mono text-xs text-gray-700 break-all">{t.stripeSubscriptionId}</Text>
+                      <Text className="mb-0.5 text-xs text-gray-400">
+                        Stripe Subscription
+                      </Text>
+                      <Text className="break-all font-mono text-xs text-gray-700">
+                        {t.stripeSubscriptionId}
+                      </Text>
                     </div>
                   )}
                 </div>
@@ -530,19 +733,35 @@ export default function TenantDetailPage() {
             <Section title="Settings">
               <div className="space-y-2">
                 {[
-                  { label: 'Age Verification', value: t.enforceAgeVerification, desc: 'Required on storefront' },
-                  { label: 'System Tenant', value: t.isSystemTenant, desc: 'Protected from deletion' },
+                  {
+                    label: 'Age Verification',
+                    value: t.enforceAgeVerification,
+                    desc: 'Required on storefront',
+                  },
+                  {
+                    label: 'System Tenant',
+                    value: t.isSystemTenant,
+                    desc: 'Protected from deletion',
+                  },
                 ].map(({ label, value, desc }) => (
-                  <div key={label} className="flex items-center justify-between py-2">
+                  <div
+                    key={label}
+                    className="flex items-center justify-between py-2"
+                  >
                     <div>
-                      <Text className="text-sm font-medium text-gray-700">{label}</Text>
+                      <Text className="text-sm font-medium text-gray-700">
+                        {label}
+                      </Text>
                       <Text className="text-xs text-gray-400">{desc}</Text>
                     </div>
-                    <div className={`flex h-6 w-6 items-center justify-center rounded-full ${value ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
-                      {value
-                        ? <PiCheckCircleBold className="h-4 w-4" />
-                        : <PiProhibitBold className="h-4 w-4" />
-                      }
+                    <div
+                      className={`flex h-6 w-6 items-center justify-center rounded-full ${value ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}
+                    >
+                      {value ? (
+                        <PiCheckCircleBold className="h-4 w-4" />
+                      ) : (
+                        <PiProhibitBold className="h-4 w-4" />
+                      )}
                     </div>
                   </div>
                 ))}
@@ -553,7 +772,11 @@ export default function TenantDetailPage() {
             <Section title="Quick Actions">
               <div className="space-y-2">
                 <Link href={routes.eCommerce.editTenant(id)} className="block">
-                  <Button variant="outline" size="sm" className="w-full justify-start gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start gap-2"
+                  >
                     <PiPencilLineBold className="h-4 w-4" /> Edit Tenant
                   </Button>
                 </Link>

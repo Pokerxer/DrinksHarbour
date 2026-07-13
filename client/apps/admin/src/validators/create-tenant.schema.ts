@@ -1,9 +1,28 @@
 import { z } from 'zod';
 
-const planValues = ['free_trial', 'starter', 'pro', 'enterprise', 'custom'] as const;
-const subscriptionStatusValues = ['trialing', 'active', 'past_due', 'canceled', 'incomplete', 'incomplete_expired'] as const;
+const planValues = [
+  'free_trial',
+  'starter',
+  'pro',
+  'enterprise',
+  'custom',
+] as const;
+const subscriptionStatusValues = [
+  'trialing',
+  'active',
+  'past_due',
+  'canceled',
+  'incomplete',
+  'incomplete_expired',
+] as const;
 const revenueModelValues = ['markup', 'commission'] as const;
-const statusValues = ['pending', 'approved', 'rejected', 'suspended', 'archived'] as const;
+const statusValues = [
+  'pending',
+  'approved',
+  'rejected',
+  'suspended',
+  'archived',
+] as const;
 const currencyValues = ['NGN', 'USD', 'EUR', 'GBP'] as const;
 const billControlPolicyValues = ['ordered', 'received'] as const;
 
@@ -13,20 +32,33 @@ export const tenantFormSchema = z.object({
   slug: z
     .string()
     .min(1, 'Slug is required')
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug must be lowercase letters, numbers and hyphens only'),
+    .regex(
+      /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+      'Slug must be lowercase letters, numbers and hyphens only'
+    ),
 
-  contactEmail: z.union([z.string().email('Must be a valid email'), z.literal('')]).optional(),
+  contactEmail: z
+    .union([z.string().email('Must be a valid email'), z.literal('')])
+    .optional(),
   contactPhone: z.string().max(30).optional(),
   primaryColor: z
     .union([
-      z.string().regex(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, 'Must be a valid hex colour'),
+      z
+        .string()
+        .regex(
+          /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/,
+          'Must be a valid hex colour'
+        ),
       z.literal(''),
     ])
     .optional()
     .default('#1a202c'),
 
   // Plan & Billing
-  plan: z.preprocess((v) => (v === '' ? undefined : v), z.enum(planValues).optional()),
+  plan: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.enum(planValues).optional()
+  ),
   subscriptionStatus: z.preprocess(
     (v) => (v === '' ? undefined : v),
     z.enum(subscriptionStatusValues).optional()
@@ -46,9 +78,15 @@ export const tenantFormSchema = z.object({
   commissionPercentage: z.number().min(0).max(50).optional(),
   platformMarkupPercentage: z.number().min(0).max(100).optional(),
   // Pack rates are clearable — empty string reverts packs to the normal rates
-  packMarkupPercentage: z.union([z.number().min(0).max(500), z.literal('')]).optional(),
-  packCommissionPercentage: z.union([z.number().min(0).max(50), z.literal('')]).optional(),
-  packRateMinUnits: z.union([z.number().int().min(2), z.literal('')]).optional(),
+  packMarkupPercentage: z
+    .union([z.number().min(0).max(500), z.literal('')])
+    .optional(),
+  packCommissionPercentage: z
+    .union([z.number().min(0).max(50), z.literal('')])
+    .optional(),
+  packRateMinUnits: z
+    .union([z.number().int().min(2), z.literal('')])
+    .optional(),
   customPricingNote: z.string().max(500).optional(),
 
   // Regional
@@ -72,7 +110,10 @@ export const tenantFormSchema = z.object({
   isSystemTenant: z.boolean().default(false),
 
   // Status
-  status: z.preprocess((v) => (v === '' ? undefined : v), z.enum(statusValues).optional()),
+  status: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.enum(statusValues).optional()
+  ),
   rejectionReason: z.string().max(1000).optional(),
 
   // Notes

@@ -106,12 +106,12 @@ const tenantSchema = new Schema(
     },
 
     // Reduced rates for multi-pack sizes (unitsPerPack >= packRateMinUnits).
-    // null → packs use the normal markup/commission rates
+    // Markup defaults to 10%; null commission → packs use the normal commission rate
     packMarkupPercentage: {
       type: Number,
       min: 0,
       max: 500,
-      default: null,
+      default: 10,
     },
 
     packCommissionPercentage: {

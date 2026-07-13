@@ -5114,13 +5114,10 @@ const getAvailableFilters = async (query) => {
                           $cond: [
                             { $eq: ['$$sub.tenant.revenueModel', 'markup'] },
                             { $multiply: ['$$size.costPrice', { $add: [1, { $divide: [
-                              // Multi-pack sizes use the tenant's reduced pack markup when configured
+                              // Multi-pack sizes use the tenant's reduced pack markup (default 10%)
                               { $cond: [
-                                { $and: [
-                                  { $gte: [{ $ifNull: ['$$size.unitsPerPack', 1] }, { $ifNull: ['$$sub.tenant.packRateMinUnits', 2] }] },
-                                  { $ne: [{ $ifNull: ['$$sub.tenant.packMarkupPercentage', null] }, null] },
-                                ] },
-                                '$$sub.tenant.packMarkupPercentage',
+                                { $gte: [{ $ifNull: ['$$size.unitsPerPack', 1] }, { $ifNull: ['$$sub.tenant.packRateMinUnits', 2] }] },
+                                { $ifNull: ['$$sub.tenant.packMarkupPercentage', 10] },
                                 '$$sub.tenant.markupPercentage',
                               ] },
                               100,
@@ -5148,13 +5145,10 @@ const getAvailableFilters = async (query) => {
                           $cond: [
                             { $eq: ['$$sub.tenant.revenueModel', 'markup'] },
                             { $multiply: ['$$size.costPrice', { $add: [1, { $divide: [
-                              // Multi-pack sizes use the tenant's reduced pack markup when configured
+                              // Multi-pack sizes use the tenant's reduced pack markup (default 10%)
                               { $cond: [
-                                { $and: [
-                                  { $gte: [{ $ifNull: ['$$size.unitsPerPack', 1] }, { $ifNull: ['$$sub.tenant.packRateMinUnits', 2] }] },
-                                  { $ne: [{ $ifNull: ['$$sub.tenant.packMarkupPercentage', null] }, null] },
-                                ] },
-                                '$$sub.tenant.packMarkupPercentage',
+                                { $gte: [{ $ifNull: ['$$size.unitsPerPack', 1] }, { $ifNull: ['$$sub.tenant.packRateMinUnits', 2] }] },
+                                { $ifNull: ['$$sub.tenant.packMarkupPercentage', 10] },
                                 '$$sub.tenant.markupPercentage',
                               ] },
                               100,

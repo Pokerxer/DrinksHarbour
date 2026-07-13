@@ -37,10 +37,10 @@ test('pack size resolves to the tenant pack rates', () => {
   assert.strictEqual(rates.isPackRate, true);
 });
 
-test('pack rates fall back to normal rates when not configured', () => {
+test('unconfigured pack markup defaults to 10%; commission falls back to the normal rate', () => {
   const tenant = { markupPercentage: 40, commissionPercentage: 12 };
   const rates = resolveRevenueRates(tenant, 12);
-  assert.strictEqual(rates.markupPct, 40);
+  assert.strictEqual(rates.markupPct, 10);
   assert.strictEqual(rates.commissionPct, 12);
 });
 

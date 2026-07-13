@@ -125,15 +125,27 @@ async function apiFetch<T>(url: string, options: RequestInit): Promise<T> {
   return json.data;
 }
 
-export async function getAdminTenants(token: string): Promise<{ tenants: AdminTenant[]; total: number }> {
-  return apiFetch(`${API_URL}/api/tenants/admin`, { headers: authHeaders(token) });
+export async function getAdminTenants(
+  token: string
+): Promise<{ tenants: AdminTenant[]; total: number }> {
+  return apiFetch(`${API_URL}/api/tenants/admin`, {
+    headers: authHeaders(token),
+  });
 }
 
-export async function getAdminTenantById(token: string, id: string): Promise<{ tenant: AdminTenant }> {
-  return apiFetch(`${API_URL}/api/tenants/admin/${id}`, { headers: authHeaders(token) });
+export async function getAdminTenantById(
+  token: string,
+  id: string
+): Promise<{ tenant: AdminTenant }> {
+  return apiFetch(`${API_URL}/api/tenants/admin/${id}`, {
+    headers: authHeaders(token),
+  });
 }
 
-export async function createAdminTenant(token: string, data: TenantFormData): Promise<{ tenant: AdminTenant }> {
+export async function createAdminTenant(
+  token: string,
+  data: TenantFormData
+): Promise<{ tenant: AdminTenant }> {
   return apiFetch(`${API_URL}/api/tenants/admin`, {
     method: 'POST',
     headers: authHeaders(token),
@@ -141,7 +153,11 @@ export async function createAdminTenant(token: string, data: TenantFormData): Pr
   });
 }
 
-export async function updateAdminTenant(token: string, id: string, data: TenantFormData): Promise<{ tenant: AdminTenant }> {
+export async function updateAdminTenant(
+  token: string,
+  id: string,
+  data: TenantFormData
+): Promise<{ tenant: AdminTenant }> {
   return apiFetch(`${API_URL}/api/tenants/admin/${id}`, {
     method: 'PUT',
     headers: authHeaders(token),
@@ -149,7 +165,10 @@ export async function updateAdminTenant(token: string, id: string, data: TenantF
   });
 }
 
-export async function deleteAdminTenant(token: string, id: string): Promise<void> {
+export async function deleteAdminTenant(
+  token: string,
+  id: string
+): Promise<void> {
   const res = await fetch(`${API_URL}/api/tenants/admin/${id}`, {
     method: 'DELETE',
     headers: authHeaders(token),
