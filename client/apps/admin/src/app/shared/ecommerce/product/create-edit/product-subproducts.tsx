@@ -889,8 +889,6 @@ function ReviewDrawer({
                                   sizePricing.markupPct ?? markupPct;
                                 const sizeCommissionPct =
                                   sizePricing.commissionPct ?? commissionPct;
-                                const sizeIsPackRate =
-                                  sizePricing.isPackRate || false;
                                 const sizeUnitsPerPack = s.unitsPerPack || 1;
 
                                 const defaultWebsite = sizePlatformSelling;
@@ -917,14 +915,6 @@ function ReviewDrawer({
                                     <div className="mb-2 flex items-center justify-between gap-2">
                                       <span className="flex items-center gap-1.5 text-xs font-bold text-gray-900">
                                         {s.size || s.displayName || '-'}
-                                        {sizeIsPackRate && (
-                                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-amber-700">
-                                            Pack ×{sizeUnitsPerPack} ·{' '}
-                                            {revenueModel === 'commission'
-                                              ? `${sizeCommissionPct}% pack commission`
-                                              : `${sizeMarkupPct}% pack markup`}
-                                          </span>
-                                        )}
                                       </span>
                                       <span className="text-[10px] text-gray-400">
                                         {s.stock ?? 0} in stock
@@ -1101,15 +1091,6 @@ function ReviewDrawer({
                                   · platformSelling = platformCost × (1+
                                   {platformMarkupPct}%) · margin = selling −
                                   cost
-                                </span>
-                              )}
-                              {sp.sizes.some(
-                                (s: any) => s.pricing?.isPackRate
-                              ) && (
-                                <span className="text-amber-500">
-                                  {' '}
-                                  · multi-pack sizes use the tenant&apos;s
-                                  reduced pack rate shown on each card
                                 </span>
                               )}
                             </div>

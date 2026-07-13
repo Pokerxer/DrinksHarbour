@@ -41,6 +41,41 @@ const resolveRevenueRates = (tenant, unitsPerPack = 1) => {
 };
 
 /**
+ * Quantity-triggered rate resolution for a transaction line (cart/checkout).
+ * Pack rates apply only when the size is pack-eligible
+ * (unitsPerPack >= tenant.packRateMinUnits) AND the line quantity has reached
+ * the pack size (quantity >= unitsPerPack). The whole line then gets pack rates.
+ *
+ * @param {object} tenant
+ * @param {object} size - needs unitsPerPack
+ * @param {number} quantity - line quantity
+ * @returns {{ markupPct: number, commissionPct: number, isPackRate: boolean }}
+ */
+const resolveLineRates = (tenant, size, quantity = 1) => {
+  const unitsPerPack = size?.unitsPerPack ?? 1;
+  const minUnits = tenant?.packRateMinUnits ?? DEFAULT_PACK_RATE_MIN_UNITS;
+  if (unitsPerPack < minUnits || (quantity ?? 1) < unitsPerPack) {
+    return {
+      markupPct: tenant?.markupPercentage ?? 25,
+      commissionPct: tenant?.commissionPercentage ?? 12,
+      isPackRate: false,
+    };
+  }
+  return resolveRevenueRates(tenant, unitsPerPack);
+};
+
+/**
+ * Pick the per-unit price a line actually pays given its quantity.
+ * @param {object} pricing - output of calculateSizePricing
+ * @param {number} quantity
+ */
+const resolveEffectiveUnitPrice = (pricing, quantity = 1) =>
+  pricing?.packUnitPrice != null && pricing?.packThreshold != null &&
+  (quantity ?? 1) >= pricing.packThreshold
+    ? pricing.packUnitPrice
+    : (pricing?.finalPrice ?? 0);
+
+/**
  * Check if a discount is currently active
  */
 const isDiscountActive = (discount) => {
@@ -242,8 +277,9 @@ const calculateSubProductPricing = (subProduct, product, tenant) => {
  */
 const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fallbackSellingPrice = 0) => {
   const revenueModel = tenant?.revenueModel ?? 'markup';
-  // Multi-pack sizes get the tenant's reduced pack rates
-  const { markupPct, commissionPct, isPackRate } = resolveRevenueRates(tenant, size?.unitsPerPack ?? 1);
+  // Headline price is ALWAYS at the normal rates; the pack rate is published
+  // separately as packUnitPrice and only earned by quantity (resolveLineRates).
+  const { markupPct, commissionPct } = resolveRevenueRates(tenant, 1);
   const platformMarkupPct = product?.platformMarkup ?? DEFAULT_PLATFORM_MARKUP;
 
   // Get product-level discount
@@ -278,6 +314,28 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
   // Step 3: Platform margin
   const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
 
+  // Quantity-triggered pack pricing: a pack-eligible size advertises a second
+  // per-unit price that a line earns at quantity >= unitsPerPack.
+  const unitsPerPack = size?.unitsPerPack ?? 1;
+  const minUnits = tenant?.packRateMinUnits ?? DEFAULT_PACK_RATE_MIN_UNITS;
+  const thresholdReachable = !size?.maxOrderQuantity || size.maxOrderQuantity >= unitsPerPack;
+  let packUnitPrice = null;
+  let packThreshold = null;
+  let packSavingsPct = null;
+  if (unitsPerPack >= minUnits && thresholdReachable && platformSellingPrice > 0) {
+    const packRates = resolveRevenueRates(tenant, unitsPerPack);
+    const packCost = calcPlatformCostPrice(costPrice, tenantSellingPrice, revenueModel, packRates.markupPct, packRates.commissionPct);
+    const packSelling = calcPlatformSellingPrice(packCost, platformMarkupPct, productDiscount, {
+      tenantStorePrice: tenantSellingPrice,
+      platformMarkupOverridePct: overridePct,
+    });
+    if (packSelling > 0 && packSelling < platformSellingPrice) {
+      packUnitPrice = packSelling;
+      packThreshold = unitsPerPack;
+      packSavingsPct = Math.round(((platformSellingPrice - packSelling) / platformSellingPrice) * 100);
+    }
+  }
+
   return {
     // Inputs
     sizeId: size?._id,
@@ -287,7 +345,6 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
     revenueModel,
     markupPct,
     commissionPct,
-    isPackRate,
     platformMarkupPct: overridePct ?? platformMarkupPct,
     isPlatformMarkupOverridden: overridePct != null,
     tenantDiscount: tenantStorePrice != null && tenantStorePrice < tenantSellingPrice ? {
@@ -307,7 +364,12 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
     platformMargin,
 
     // Final price
-    finalPrice: platformSellingPrice
+    finalPrice: platformSellingPrice,
+
+    // Quantity-triggered pack pricing (null when not eligible / no saving)
+    packUnitPrice,
+    packThreshold,
+    packSavingsPct
   };
 };
 
@@ -357,6 +419,8 @@ module.exports = {
   DEFAULT_PLATFORM_MARKUP,
   DEFAULT_PACK_RATE_MIN_UNITS,
   resolveRevenueRates,
+  resolveLineRates,
+  resolveEffectiveUnitPrice,
   isDiscountActive,
   applyDiscount,
   roundUpTo100,
