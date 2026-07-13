@@ -1,7 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const Review = require('../models/Review');
 const Sales = require('../models/Sales');
-const { resolveRevenueRates } = require('../utils/pricing');
 
 /**
  * Build the product query based on filters
@@ -269,10 +268,9 @@ const calculateProductPriceRange = (product, tenantMap) => {
                     size.discountValue,
                     size.discountType,
                     size.discountStart,
-                    size.discountEnd,
-                    size.unitsPerPack
+                    size.discountEnd
                 );
-                
+
                 minPrice = Math.min(minPrice, effectivePrice);
                 maxPrice = Math.max(maxPrice, effectivePrice);
             }
@@ -316,14 +314,13 @@ const calculateProductPriceRange = (product, tenantMap) => {
 /**
  * Calculate effective price with discount validation
  */
-const calculateEffectivePrice = (costPrice, basePrice, tenant, discountValue = 0, discountType = null, discountStart, discountEnd, unitsPerPack = 1) => {
+const calculateEffectivePrice = (costPrice, basePrice, tenant, discountValue = 0, discountType = null, discountStart, discountEnd) => {
     let price = basePrice;
     const now = new Date();
 
-    // Apply tenant revenue model — multi-pack sizes use the reduced pack markup
+    // Headline price is always at normal rates; pack rates are quantity-earned (resolveLineRates)
     if (tenant.revenueModel === 'markup' && tenant.markupPercentage) {
-        const { markupPct } = resolveRevenueRates(tenant, unitsPerPack);
-        price = costPrice * (1 + markupPct / 100);
+        price = costPrice * (1 + tenant.markupPercentage / 100);
     }
     
     // Apply discount if active and valid
@@ -426,10 +423,9 @@ const aggregateProductSizes = (product, tenantMap) => {
                     size.discountValue,
                     size.discountType,
                     size.discountStart,
-                    size.discountEnd,
-                    size.unitsPerPack
+                    size.discountEnd
                 );
-                
+
                 const sizeKey = `${size.size}-${size.volumeMl || ''}`;
                 
                 if (!sizeMap.has(sizeKey)) {
@@ -520,10 +516,9 @@ const aggregateTenantInfo = (product, tenantMap) => {
                     size.discountValue,
                     size.discountType,
                     size.discountStart,
-                    size.discountEnd,
-                    size.unitsPerPack
+                    size.discountEnd
                 );
-                
+
                 tenantInfo.minPrice = Math.min(tenantInfo.minPrice, effectivePrice);
                 tenantInfo.maxPrice = Math.max(tenantInfo.maxPrice, effectivePrice);
             }
