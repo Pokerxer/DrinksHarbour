@@ -23,6 +23,10 @@ interface PageProps {
   // Server-fetched trending products for the "Recommended For You" section,
   // so its cards + /product links are present in the raw HTML too.
   initialRecommended?: any[];
+  // Server-computed keyword-matching hero heading/description, so the initial
+  // (crawlable) <h1> aligns with the page <title> for every filter — including
+  // origin, flavor and DB-only categories the client hero map doesn't curate.
+  heroSeed?: { label: string; description?: string } | null;
 }
 
 interface FilterState {
@@ -142,7 +146,7 @@ function hasRealPriceDrop(product: any): boolean {
 }
 
 // ─── Page ────────────────────────────────────────────────────────────────────
-function ShopPageContent({ params, initialProducts, initialTotal, initialRecommended }: PageProps) {
+function ShopPageContent({ params, initialProducts, initialTotal, initialRecommended, heroSeed }: PageProps) {
   const searchParams = useSearchParams();
   const router  = useRouter();
   const pathname = usePathname();
@@ -384,6 +388,18 @@ function ShopPageContent({ params, initialProducts, initialTotal, initialRecomme
         {isSalePage && (
           <div className="h-40 bg-gradient-to-br from-red-950 via-red-800 to-rose-700 animate-pulse" />
         )}
+        {/* Render the hero (and its keyword <h1>) even while the grid loads or
+            when a filter returns no products, so indexable filter pages always
+            expose their heading to crawlers instead of a bare spinner. */}
+        {!isSalePage && !searchQuery && (
+          <ShopHeroBanner
+            category={categoryParam}
+            subcategory={subcategoryParam}
+            brand={brandParam}
+            totalProducts={totalProducts}
+            seed={heroSeed}
+          />
+        )}
         <div className="min-h-[50vh] flex items-center justify-center">
           <LoadingSpinner variant="bounce" color="rose" size="lg" text={isSalePage ? 'Loading deals…' : 'Finding the best drinks…'} />
         </div>
@@ -609,6 +625,7 @@ function ShopPageContent({ params, initialProducts, initialTotal, initialRecomme
           subcategory={subcategoryParam}
           brand={brandParam}
           totalProducts={totalProducts}
+          seed={heroSeed}
         />
       )}
 

@@ -1077,6 +1077,74 @@ function brandKeywords(brand: string, catLabel?: string): string[] {
   return [...set];
 }
 
+// ─── Hero seed (server-computed <h1>) ─────────────────────────────────────────
+
+// The shop hero is a client component, so on the first (crawlable) render it has
+// no DB categories loaded and falls back to a generic "All Drinks" heading for
+// every filter it doesn't statically curate — origin, flavor, and any DB-only
+// category/subcategory. That leaves the <h1> mismatched with the keyword-rich
+// <title>. We compute a keyword-matching seed here from the SAME label maps the
+// meta title uses, and pass it to the hero as the terminal fallback so the
+// initial HTML <h1> stays in lockstep with the page title.
+export interface HeroSeed { label: string; description?: string }
+
+function deriveHeroSeed(params: Record<string, string>): HeroSeed | null {
+  const category    = params.category    || '';
+  const subcategory = params.subcategory || '';
+  const brand       = params.brand       || '';
+  const origin      = params.origin      || '';
+  const flavor      = params.flavor      || '';
+  const sale        = params.sale        === 'true';
+  const search      = params.search      || '';
+
+  // Search results and no-index filter pages render their own header, not the hero.
+  if (search || isNoIndexFilter(params)) return null;
+
+  const single = (v: string) => Boolean(v) && !v.includes(',');
+
+  if (sale) {
+    return { label: 'Deals & Discounts', description: 'Limited-time discounts on premium wines, spirits, beers and more — delivered across Nigeria.' };
+  }
+
+  // Brand hero — client swaps in DB brand copy after hydration; the seed keeps the
+  // <h1> correct in the initial HTML.
+  if (single(brand)) {
+    return { label: toTitleCase(brand) };
+  }
+
+  if (single(subcategory)) {
+    const info = SUBCATEGORY_LABELS[subcategory.toLowerCase()];
+    return { label: info?.title ?? toTitleCase(subcategory), description: info?.description };
+  }
+
+  if (origin) {
+    const catInfo    = CATEGORY_LABELS[category.toLowerCase()];
+    const catLabel   = catInfo?.title ?? (single(category) ? toTitleCase(category) : '');
+    const originInfo = ORIGIN_LABELS[origin.toLowerCase()];
+    const originAdj  = originInfo?.title ?? toTitleCase(origin);
+    return { label: catLabel ? `${originAdj} ${catLabel}` : `${originAdj} Drinks`, description: originInfo?.description };
+  }
+
+  if (flavor) {
+    const catInfo     = CATEGORY_LABELS[category.toLowerCase()];
+    const catLabel    = catInfo?.title ?? (single(category) ? toTitleCase(category) : '');
+    const flavorInfo  = FLAVOR_LABELS[flavor.toLowerCase()];
+    const flavorLabel = flavorInfo?.title ?? toTitleCase(flavor);
+    return { label: catLabel ? `${flavorLabel} ${catLabel}` : `${flavorLabel} Drinks`, description: flavorInfo?.description };
+  }
+
+  if (single(category)) {
+    const info = CATEGORY_LABELS[category.toLowerCase()];
+    return { label: info?.title ?? toTitleCase(category), description: info?.description };
+  }
+
+  // Default shop — keyword-matching heading aligned with the default <title>.
+  return {
+    label: 'Premium Drinks in Nigeria',
+    description: "Browse Nigeria's widest selection of wines, spirits, whiskies, beers & non-alcoholic drinks — fast delivery nationwide.",
+  };
+}
+
 // ─── Dynamic metadata ─────────────────────────────────────────────────────────
 
 export async function generateMetadata({
@@ -1409,6 +1477,7 @@ export default async function ShopPage({
   searchParams: Promise<Record<string, string>>;
 }) {
   const params  = await searchParams;
+  const heroSeed = deriveHeroSeed(params);
   const [schemas, initial, initialRecommended] = await Promise.all([
     buildJsonLd(params),
     fetchInitialProducts(params),
@@ -1428,6 +1497,7 @@ export default async function ShopPage({
         initialProducts={initial.products}
         initialTotal={initial.total}
         initialRecommended={initialRecommended}
+        heroSeed={heroSeed}
       />
     </>
   );

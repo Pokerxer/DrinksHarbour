@@ -361,6 +361,11 @@ interface ShopHeroBannerProps {
   subcategory?: string | string[] | null;
   brand?: string | string[] | null;
   totalProducts?: number;
+  // Server-computed keyword-matching heading/description. Used as the terminal
+  // fallback so the initial (crawlable) <h1> matches the page <title> for filters
+  // this component doesn't statically curate (origin, flavor, DB-only categories)
+  // and for the default shop — instead of the generic "All Drinks".
+  seed?: { label: string; description?: string } | null;
 }
 
 // ─── Animation variants ───────────────────────────────────────────────────────
@@ -457,6 +462,7 @@ export default function ShopHeroBanner({
   subcategory,
   brand,
   totalProducts,
+  seed,
 }: ShopHeroBannerProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -560,10 +566,10 @@ export default function ShopHeroBanner({
     : null;
 
   // ── Display copy: brand first, then DB category/subcategory, curated fallback, generic last ──
-  const displayLabel       = brandLabel ?? dbSub?.name ?? curatedSub?.label ?? dbCat?.name ?? curated?.label ?? DEFAULT_CONFIG.label;
+  const displayLabel       = brandLabel ?? dbSub?.name ?? curatedSub?.label ?? dbCat?.name ?? curated?.label ?? seed?.label ?? DEFAULT_CONFIG.label;
   const displaySubtitle    = countSubtitle ?? brandSubtitle ?? dbSub?.tagline ?? curatedSub?.subtitle ?? dbCat?.tagline ?? curated?.subtitle ?? DEFAULT_CONFIG.subtitle;
   const displayDescription = stripHtml(
-    brandDescription ?? dbSub?.description ?? curatedSub?.description ?? dbCat?.description ?? curated?.description ?? DEFAULT_CONFIG.description
+    brandDescription ?? dbSub?.description ?? curatedSub?.description ?? dbCat?.description ?? curated?.description ?? seed?.description ?? DEFAULT_CONFIG.description
   );
 
   const ctaText = brandLabel
