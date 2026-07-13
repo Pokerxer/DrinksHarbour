@@ -72,14 +72,18 @@ test('missing tenant and unitsPerPack fall back to platform defaults', () => {
 // calculateSizePricing — pack sizes priced with the pack rate
 // ─────────────────────────────────────────────────────────────────
 
-test('markup model: 12-pack is priced with the pack markup', () => {
+test('markup model: pack chain runs per unit, totals are × unitsPerPack', () => {
   const product = { platformMarkup: 15 };
   const tenant = { revenueModel: 'markup', markupPercentage: 40, packMarkupPercentage: 25 };
-  const size = { costPrice: 12000, sellingPrice: 0, unitsPerPack: 12 };
+  // costPrice is the PER-UNIT supplier cost of the pack size
+  const size = { costPrice: 1000, sellingPrice: 0, unitsPerPack: 12 };
 
   const pricing = calculateSizePricing(size, product, tenant, 0, 0);
-  assert.strictEqual(pricing.platformCostPrice, 15000); // 12000 × 1.25
-  assert.strictEqual(pricing.platformSellingPrice, 17300); // 15000 × 1.15 = 17250 → 17300
+  assert.strictEqual(pricing.unitPlatformCostPrice, 1250); // 1000 × 1.25
+  assert.strictEqual(pricing.unitPlatformSellingPrice, 1500); // 1250 × 1.15 = 1437.5 → 1500
+  assert.strictEqual(pricing.platformCostPrice, 15000); // 1250 × 12
+  assert.strictEqual(pricing.platformSellingPrice, 18000); // 1500 × 12
+  assert.strictEqual(pricing.platformMargin, 3000);
   assert.strictEqual(pricing.markupPct, 25);
   assert.strictEqual(pricing.isPackRate, true);
 });
@@ -95,17 +99,24 @@ test('markup model: single bottle of same tenant keeps the normal markup', () =>
   assert.strictEqual(pricing.isPackRate, false);
 });
 
-test('commission model: pack size uses the pack commission', () => {
+test('commission model: pack commission applies per unit, totals × unitsPerPack', () => {
   const product = { platformMarkup: 15 };
   const tenant = {
     revenueModel: 'commission',
     commissionPercentage: 12,
     packCommissionPercentage: 8,
   };
-  const size = { costPrice: 0, sellingPrice: 24000, unitsPerPack: 12 };
+  // sellingPrice is the PER-UNIT tenant price of the pack size; no undercut
+  // (2530 → round-up 2600 stays above 2000? no — undercut drops below tenant
+  // price, so expected unit selling is 1900)
+  const size = { costPrice: 0, sellingPrice: 2000, unitsPerPack: 12 };
 
   const pricing = calculateSizePricing(size, product, tenant, 0, 0);
-  assert.strictEqual(pricing.platformCostPrice, 22080); // 24000 × 0.92
+  assert.strictEqual(pricing.unitPlatformCostPrice, 1840); // 2000 × 0.92
+  // 1840 × 1.15 = 2116 → 2200 ≥ tenant 2000 → undercut to 1900 (existing rule)
+  assert.strictEqual(pricing.unitPlatformSellingPrice, 1900);
+  assert.strictEqual(pricing.platformCostPrice, 22080); // 1840 × 12
+  assert.strictEqual(pricing.platformSellingPrice, 22800); // 1900 × 12
   assert.strictEqual(pricing.commissionPct, 8);
   assert.strictEqual(pricing.isPackRate, true);
 });
@@ -114,17 +125,31 @@ test('per-size admin override still wins over the platform markup on packs', () 
   const product = { platformMarkup: 15 };
   const tenant = { revenueModel: 'markup', markupPercentage: 40, packMarkupPercentage: 25 };
   const size = {
-    costPrice: 12000,
+    costPrice: 1000,
     sellingPrice: 0,
     unitsPerPack: 12,
     platformMarkupOverridePct: 30,
   };
 
   const pricing = calculateSizePricing(size, product, tenant, 0, 0);
-  // Tenant stage still uses the pack markup; override replaces only the platform stage
+  // Tenant stage still uses the pack markup per unit; override replaces only
+  // the platform stage, then the total is × unitsPerPack
+  assert.strictEqual(pricing.unitPlatformCostPrice, 1250);
+  assert.strictEqual(pricing.unitPlatformSellingPrice, 1700); // 1250 × 1.3 = 1625 → 1700
   assert.strictEqual(pricing.platformCostPrice, 15000);
-  assert.strictEqual(pricing.platformSellingPrice, 19500); // 15000 × 1.3
+  assert.strictEqual(pricing.platformSellingPrice, 20400); // 1700 × 12
   assert.strictEqual(pricing.isPlatformMarkupOverridden, true);
+});
+
+test('single-unit sizes are untouched by the pack multiplier', () => {
+  const product = { platformMarkup: 15 };
+  const tenant = { revenueModel: 'markup', markupPercentage: 25 };
+  const size = { costPrice: 1000, sellingPrice: 0, unitsPerPack: 1 };
+
+  const pricing = calculateSizePricing(size, product, tenant, 0, 0);
+  assert.strictEqual(pricing.platformCostPrice, 1250);
+  assert.strictEqual(pricing.platformSellingPrice, 1500);
+  assert.strictEqual(pricing.unitPlatformSellingPrice, 1500);
 });
 
 // ─────────────────────────────────────────────────────────────────

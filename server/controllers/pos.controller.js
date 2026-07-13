@@ -404,12 +404,14 @@ function computePOSPricing(sp, sizeDoc, tenant) {
     }
   }
 
+  // Pack sizes: the chain above runs per unit — totals are × unitsPerPack
+  const packUnits = Math.max(1, sizeDoc?.unitsPerPack || 1);
   return {
-    sellingPrice:       platformSellingPrice,
-    originalPrice:      priceBeforeSale,
+    sellingPrice:       parseFloat((platformSellingPrice * packUnits).toFixed(2)),
+    originalPrice:      parseFloat((priceBeforeSale * packUnits).toFixed(2)),
     isOnSale:           platformSellingPrice < priceBeforeSale,
     isFlashSale:        flashActive,
-    costPrice:          platformCostPrice,
+    costPrice:          parseFloat((platformCostPrice * packUnits).toFixed(2)),
     revenueModel,
     markupPct,
     commissionPct,

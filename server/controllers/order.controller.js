@@ -149,8 +149,13 @@ exports.createOrder = asyncHandler(async (req, res) => {
     const costPrice         = sz?.costPrice      ?? sp?.costPrice      ?? 0;
     const tenantSellingPrice= sz?.sellingPrice   ?? sp?.baseSellingPrice ?? 0;
 
-    // Use the same calcPlatformCostPrice function used when products are priced
+    // Use the same calcPlatformCostPrice function used when products are priced.
+    // Pack sizes: size costPrice/sellingPrice are per unit — the payout for one
+    // order line item (one pack) covers all units in it
     let vendorCostPerUnit = calcPlatformCostPrice(costPrice, tenantSellingPrice, revenueModel, markupPct, commissionPct);
+    if (sz?.unitsPerPack > 1 && vendorCostPerUnit > 0) {
+      vendorCostPerUnit = parseFloat((vendorCostPerUnit * sz.unitsPerPack).toFixed(2));
+    }
 
     // Fallback: if no cost data was available (costPrice=0 for markup, tenantSellingPrice=0 for commission)
     if (!vendorCostPerUnit || vendorCostPerUnit <= 0) {

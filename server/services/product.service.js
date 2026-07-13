@@ -4443,12 +4443,15 @@ const searchProducts = async (searchParams = {}) => {
         //   platformSellingPrice = platformCostPrice × (1 + platformMarkupPct/100) [− productDiscount]
         // Tenant discounts are for the tenant's own store only — not used here.
         // ─────────────────────────────────────────────────────────────────────
-        // Multi-pack sizes use the tenant's reduced pack rates
-        const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, (typeof size !== 'undefined' ? size : sizeItem)?.unitsPerPack ?? 1);
-        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
+        // Multi-pack sizes: costPrice/sellingPrice are PER-UNIT — the chain
+        // runs per unit at the pack rate, totals are × unitsPerPack
+        const packUnits = Math.max(1, (typeof size !== 'undefined' ? size : sizeItem)?.unitsPerPack || 1);
+        const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, packUnits);
+        const unitPlatformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
+        const platformCostPrice = parseFloat((unitPlatformCostPrice * packUnits).toFixed(2));
 
         // Calculate platform selling price with product discount first
-        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
+        let platformSellingPrice = calcPlatformSellingPrice(unitPlatformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null }) * packUnits;
 
         // Store original price before sale discount for display
         const priceBeforeSale = platformSellingPrice;
@@ -4534,10 +4537,10 @@ const searchProducts = async (searchParams = {}) => {
             displayPrice: websitePrice.toFixed(2),
             formattedPrice: formatPrice(websitePrice, currency),
             compareAtPrice: size.compareAtPrice
-              ? calcPlatformSellingPrice(
+              ? (calcPlatformSellingPrice(
                   calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
                   platformMarkupPct
-                ).toFixed(2)
+                ) * packUnits).toFixed(2)
               : null,
             currency,
             currencySymbol: getCurrencySymbol(currency),
@@ -5114,7 +5117,7 @@ const getAvailableFilters = async (query) => {
                         in: {
                           $cond: [
                             { $eq: ['$$sub.tenant.revenueModel', 'markup'] },
-                            { $multiply: ['$$size.costPrice', { $add: [1, { $divide: [
+                            { $multiply: ['$$size.costPrice', { $ifNull: ['$$size.unitsPerPack', 1] }, { $add: [1, { $divide: [
                               // Multi-pack sizes use the tenant's reduced pack markup (default 10%)
                               { $cond: [
                                 { $gte: [{ $ifNull: ['$$size.unitsPerPack', 1] }, { $ifNull: ['$$sub.tenant.packRateMinUnits', 2] }] },
@@ -5123,7 +5126,7 @@ const getAvailableFilters = async (query) => {
                               ] },
                               100,
                             ] }] }] },
-                            '$$size.sellingPrice'
+                            { $multiply: ['$$size.sellingPrice', { $ifNull: ['$$size.unitsPerPack', 1] }] }
                           ]
                         }
                       }
@@ -5145,7 +5148,7 @@ const getAvailableFilters = async (query) => {
                         in: {
                           $cond: [
                             { $eq: ['$$sub.tenant.revenueModel', 'markup'] },
-                            { $multiply: ['$$size.costPrice', { $add: [1, { $divide: [
+                            { $multiply: ['$$size.costPrice', { $ifNull: ['$$size.unitsPerPack', 1] }, { $add: [1, { $divide: [
                               // Multi-pack sizes use the tenant's reduced pack markup (default 10%)
                               { $cond: [
                                 { $gte: [{ $ifNull: ['$$size.unitsPerPack', 1] }, { $ifNull: ['$$sub.tenant.packRateMinUnits', 2] }] },
@@ -5154,7 +5157,7 @@ const getAvailableFilters = async (query) => {
                               ] },
                               100,
                             ] }] }] },
-                            '$$size.sellingPrice'
+                            { $multiply: ['$$size.sellingPrice', { $ifNull: ['$$size.unitsPerPack', 1] }] }
                           ]
                         }
                       }
@@ -5477,12 +5480,15 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
         const currency = sizeItem.currency || subProduct.currency || tenant.defaultCurrency || 'NGN';
 
         // Platform Pricing Pipeline (same as getAllProducts)
-        // Multi-pack sizes use the tenant's reduced pack rates
-        const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, (typeof size !== 'undefined' ? size : sizeItem)?.unitsPerPack ?? 1);
-        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
+        // Multi-pack sizes: costPrice/sellingPrice are PER-UNIT — the chain
+        // runs per unit at the pack rate, totals are × unitsPerPack
+        const packUnits = Math.max(1, (typeof size !== 'undefined' ? size : sizeItem)?.unitsPerPack || 1);
+        const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, packUnits);
+        const unitPlatformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
+        const platformCostPrice = parseFloat((unitPlatformCostPrice * packUnits).toFixed(2));
         
         // Calculate platform selling price with product discount first
-        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
+        let platformSellingPrice = calcPlatformSellingPrice(unitPlatformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null }) * packUnits;
         
         // Store original price before sale discount for display
         const priceBeforeSale = platformSellingPrice;
@@ -5572,10 +5578,10 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
             displayPrice: websitePriceVal.toFixed(2),
             formattedPrice: formatPrice(websitePriceVal, currency),
             compareAtPrice: sizeItem.compareAtPrice
-              ? calcPlatformSellingPrice(
+              ? (calcPlatformSellingPrice(
                   calcPlatformCostPrice(sizeItem.costPrice || 0, sizeItem.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
                   platformMarkupPct
-                ).toFixed(2)
+                ) * packUnits).toFixed(2)
               : null,
             currency,
             currencySymbol: getCurrencySymbol(currency),
@@ -7725,10 +7731,13 @@ const getAllProducts = async (queryParams) => {
         const currency = size.currency || tenant.defaultCurrency || 'NGN';
 
         // ── Platform Pricing Pipeline ────────────────────────────────────────
-        // Multi-pack sizes use the tenant's reduced pack rates
-        const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, (typeof size !== 'undefined' ? size : sizeItem)?.unitsPerPack ?? 1);
-        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
-        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
+        // Multi-pack sizes: costPrice/sellingPrice are PER-UNIT — the chain
+        // runs per unit at the pack rate, totals are × unitsPerPack
+        const packUnits = Math.max(1, (typeof size !== 'undefined' ? size : sizeItem)?.unitsPerPack || 1);
+        const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, packUnits);
+        const unitPlatformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
+        const platformCostPrice = parseFloat((unitPlatformCostPrice * packUnits).toFixed(2));
+        let platformSellingPrice = calcPlatformSellingPrice(unitPlatformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null }) * packUnits;
 
         // Store original price before sale discount
         const priceBeforeSale = platformSellingPrice;
@@ -7820,10 +7829,10 @@ const getAllProducts = async (queryParams) => {
             displayPrice: websitePrice.toFixed(2),
             formattedPrice: formatPrice(websitePrice, currency),
             compareAtPrice: size.compareAtPrice
-              ? calcPlatformSellingPrice(
+              ? (calcPlatformSellingPrice(
                   calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
                   platformMarkupPct
-                ).toFixed(2)
+                ) * packUnits).toFixed(2)
               : null,
             currency,
             currencySymbol: getCurrencySymbol(currency),
@@ -8694,10 +8703,13 @@ const getNewArrivals = async (page = 1, limit = 12, days = 30) => {
         const currency = sizeItem.currency || subProduct.currency || tenant.defaultCurrency || 'NGN';
 
         // Full pricing pipeline (same as getAllProducts)
-        // Multi-pack sizes use the tenant's reduced pack rates
-        const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, (typeof size !== 'undefined' ? size : sizeItem)?.unitsPerPack ?? 1);
-        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
-        const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
+        // Multi-pack sizes: costPrice/sellingPrice are PER-UNIT — the chain
+        // runs per unit at the pack rate, totals are × unitsPerPack
+        const packUnits = Math.max(1, (typeof size !== 'undefined' ? size : sizeItem)?.unitsPerPack || 1);
+        const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, packUnits);
+        const unitPlatformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
+        const platformCostPrice = parseFloat((unitPlatformCostPrice * packUnits).toFixed(2));
+        const platformSellingPrice = calcPlatformSellingPrice(unitPlatformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null }) * packUnits;
         const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
         const websitePriceVal = platformSellingPrice;
 
@@ -8737,10 +8749,10 @@ const getNewArrivals = async (page = 1, limit = 12, days = 30) => {
             displayPrice: websitePriceVal.toFixed(2),
             formattedPrice: formatPrice(websitePriceVal, currency),
             compareAtPrice: sizeItem.compareAtPrice
-              ? calcPlatformSellingPrice(
+              ? (calcPlatformSellingPrice(
                   calcPlatformCostPrice(sizeItem.costPrice || 0, sizeItem.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
                   platformMarkupPct
-                ).toFixed(2)
+                ) * packUnits).toFixed(2)
               : null,
             currency,
             currencySymbol: getCurrencySymbol(currency),
@@ -9124,10 +9136,13 @@ const getBestsellers = async (page = 1, limit = 12) => {
         const costPrice = size.costPrice || subProduct.costPrice || 0;
         const currency = size.currency || subProduct.currency || tenant.defaultCurrency || 'NGN';
 
-        // Multi-pack sizes use the tenant's reduced pack rates
-        const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, (typeof size !== 'undefined' ? size : sizeItem)?.unitsPerPack ?? 1);
-        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
-        const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
+        // Multi-pack sizes: costPrice/sellingPrice are PER-UNIT — the chain
+        // runs per unit at the pack rate, totals are × unitsPerPack
+        const packUnits = Math.max(1, (typeof size !== 'undefined' ? size : sizeItem)?.unitsPerPack || 1);
+        const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, packUnits);
+        const unitPlatformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
+        const platformCostPrice = parseFloat((unitPlatformCostPrice * packUnits).toFixed(2));
+        const platformSellingPrice = calcPlatformSellingPrice(unitPlatformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null }) * packUnits;
         const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
         const websitePrice = platformSellingPrice;
 
@@ -9166,10 +9181,10 @@ const getBestsellers = async (page = 1, limit = 12) => {
             displayPrice: websitePrice.toFixed(2),
             formattedPrice: formatPrice(websitePrice, currency),
             compareAtPrice: size.compareAtPrice
-              ? calcPlatformSellingPrice(
+              ? (calcPlatformSellingPrice(
                   calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
                   platformMarkupPct
-                ).toFixed(2)
+                ) * packUnits).toFixed(2)
               : null,
             currency,
             currencySymbol: getCurrencySymbol(currency),
@@ -9532,10 +9547,13 @@ const getProductBySlug = async (slug) => {
       // platformSellingPrice = platformCostPrice × (1 + platformMarkupPct/100) [− productDiscount]
       // SubProduct sale discount applied after platform selling price is computed.
       // ─────────────────────────────────────────────────────────────────────
-      // Multi-pack sizes use the tenant's reduced pack rates
-      const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, size?.unitsPerPack ?? 1);
-      const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
-      let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
+      // Multi-pack sizes: costPrice/sellingPrice are PER-UNIT — the chain
+      // runs per unit at the pack rate, totals are × unitsPerPack
+      const packUnits = Math.max(1, size?.unitsPerPack || 1);
+      const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, packUnits);
+      const unitPlatformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
+      const platformCostPrice = parseFloat((unitPlatformCostPrice * packUnits).toFixed(2));
+      let platformSellingPrice = calcPlatformSellingPrice(unitPlatformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null }) * packUnits;
 
       // Store original price before sale discount for display
       const priceBeforeSale = platformSellingPrice;
@@ -9627,10 +9645,10 @@ const getProductBySlug = async (slug) => {
           displayPrice: websitePrice.toFixed(2),
           formattedPrice: formatPrice(websitePrice, currency),
           compareAtPrice: size.compareAtPrice
-            ? calcPlatformSellingPrice(
+            ? (calcPlatformSellingPrice(
                 calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
                 platformMarkupPct
-              ).toFixed(2)
+              ) * packUnits).toFixed(2)
             : null,
           currency,
           currencySymbol: getCurrencySymbol(currency),
@@ -11075,10 +11093,13 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
         const currency = size.currency || tenant.defaultCurrency || 'NGN';
 
         // ── Platform Pricing Pipeline ────────────────────────────────────────
-        // Multi-pack sizes use the tenant's reduced pack rates
-        const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, (typeof size !== 'undefined' ? size : sizeItem)?.unitsPerPack ?? 1);
-        const platformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
-        let platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null });
+        // Multi-pack sizes: costPrice/sellingPrice are PER-UNIT — the chain
+        // runs per unit at the pack rate, totals are × unitsPerPack
+        const packUnits = Math.max(1, (typeof size !== 'undefined' ? size : sizeItem)?.unitsPerPack || 1);
+        const { markupPct: effMarkupPct, commissionPct: effCommissionPct } = resolveRevenueRates(tenant, packUnits);
+        const unitPlatformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, effMarkupPct, effCommissionPct);
+        const platformCostPrice = parseFloat((unitPlatformCostPrice * packUnits).toFixed(2));
+        let platformSellingPrice = calcPlatformSellingPrice(unitPlatformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: (typeof size !== 'undefined' ? size : sizeItem)?.platformMarkupOverridePct ?? null }) * packUnits;
 
         // Store original price before sale discount
         const priceBeforeSale = platformSellingPrice;
@@ -11170,10 +11191,10 @@ async function enrichRelatedProducts(products, includeOutOfStock) {
             displayPrice: websitePrice.toFixed(2),
             formattedPrice: formatPrice(websitePrice, currency),
             compareAtPrice: size.compareAtPrice
-              ? calcPlatformSellingPrice(
+              ? (calcPlatformSellingPrice(
                   calcPlatformCostPrice(size.costPrice || 0, size.compareAtPrice, revenueModel, effMarkupPct, effCommissionPct),
                   platformMarkupPct
-                ).toFixed(2)
+                ) * packUnits).toFixed(2)
               : null,
             currency,
             currencySymbol: getCurrencySymbol(currency),

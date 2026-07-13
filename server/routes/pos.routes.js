@@ -168,7 +168,9 @@ router.get('/combos', protectPOS, async (req, res, next) => {
       const rawSelling = (sizeDoc?.sellingPrice > 0 ? sizeDoc.sellingPrice : null) ?? sp.baseSellingPrice ?? 0;
       if (rawCost <= 0 && rawSelling <= 0) return rawSelling;
       const platformCost = calcPlatformCostPrice(rawCost, rawSelling, revenueModel, markupPct, commissionPct);
-      return calcPlatformSellingPrice(platformCost, platformMarkupPct) || rawSelling;
+      // Pack sizes: per-unit chain × unitsPerPack
+      const packUnits = Math.max(1, sizeDoc?.unitsPerPack || 1);
+      return (calcPlatformSellingPrice(platformCost, platformMarkupPct) * packUnits) || rawSelling;
     }
 
     const combos = await POSCombo.find({ tenant: tenant._id, active: true })

@@ -266,18 +266,29 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
     ? applyDiscount(tenantSellingPrice, tenantDiscount)
     : null;
 
-  // Step 1: Platform cost price
-  const platformCostPrice = calcPlatformCostPrice(costPrice, tenantSellingPrice, revenueModel, markupPct, commissionPct);
+  // Pack semantics: size costPrice/sellingPrice are PER-UNIT values. The full
+  // pricing chain (markup, platform markup, discount, round-up, undercut)
+  // runs per unit, then totals are multiplied by unitsPerPack.
+  const unitsPerPack = Math.max(1, size?.unitsPerPack || 1);
 
-  // Step 2: Platform selling price (markup/override + product discount +
-  // round-up-to-100 + undercut vs the tenant's store price)
+  // Step 1: Platform cost price (per unit)
+  const unitPlatformCostPrice = calcPlatformCostPrice(costPrice, tenantSellingPrice, revenueModel, markupPct, commissionPct);
+
+  // Step 2: Platform selling price per unit (markup/override + product
+  // discount + round-up-to-100 + undercut vs the tenant's store price)
   const overridePct = size?.platformMarkupOverridePct ?? null;
-  const platformSellingPrice = calcPlatformSellingPrice(platformCostPrice, platformMarkupPct, productDiscount, {
+  const unitPlatformSellingPrice = calcPlatformSellingPrice(unitPlatformCostPrice, platformMarkupPct, productDiscount, {
     tenantStorePrice: tenantSellingPrice,
     platformMarkupOverridePct: overridePct,
   });
 
-  // Step 3: Platform margin
+  // Step 3: Pack totals + platform margin
+  const platformCostPrice = unitsPerPack > 1
+    ? parseFloat((unitPlatformCostPrice * unitsPerPack).toFixed(2))
+    : unitPlatformCostPrice;
+  const platformSellingPrice = unitsPerPack > 1
+    ? parseFloat((unitPlatformSellingPrice * unitsPerPack).toFixed(2))
+    : unitPlatformSellingPrice;
   const platformMargin = calcPlatformMargin(platformCostPrice, platformSellingPrice);
 
   return {
@@ -290,6 +301,9 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
     markupPct,
     commissionPct,
     isPackRate,
+    unitsPerPack,
+    unitPlatformCostPrice,
+    unitPlatformSellingPrice,
     platformMarkupPct: overridePct ?? platformMarkupPct,
     isPlatformMarkupOverridden: overridePct != null,
     tenantDiscount: tenantStorePrice != null && tenantStorePrice < tenantSellingPrice ? {

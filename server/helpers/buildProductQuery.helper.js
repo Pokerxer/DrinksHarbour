@@ -339,8 +339,9 @@ const calculateEffectivePrice = (costPrice, basePrice, tenant, discountValue = 0
             }
         }
     }
-    
-    return Math.round(price * 100) / 100;
+
+    // Pack sizes: per-unit chain × unitsPerPack
+    return Math.round(price * (unitsPerPack > 1 ? unitsPerPack : 1) * 100) / 100;
 };
 
 /**
