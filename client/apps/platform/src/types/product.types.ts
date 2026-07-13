@@ -102,6 +102,8 @@ export interface ProductType {
       pricing: {
         websitePrice: number;
         currencySymbol?: string;
+        packUnitPrice?: number | null;
+        packThreshold?: number | null;
       };
     }>;
     isOnSale?: boolean;

@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useCart } from '@/context/CartContext';
+import { useCart, getEffectiveUnitPrice } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useModalWishlistContext } from '@/context/ModalWishlistContext';
 import RecommendedForYou from '@/components/Shop/RecommendedForYou';
@@ -393,9 +393,22 @@ const CartPage = () => {
 
                             {/* Price */}
                             <span className="font-bold text-gray-900 text-sm sm:text-base">
-                              {formatPrice((item.price || 0) * (item.quantity || 1))}
+                              {formatPrice(getEffectiveUnitPrice(item) * (item.quantity || 1))}
                             </span>
                           </div>
+
+                          {/* Pack price tag / nudge */}
+                          {item.packUnitPrice && item.packThreshold ? (
+                            (item.quantity || 1) >= item.packThreshold ? (
+                              <span className="inline-block mt-1 text-xs font-semibold text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">
+                                Pack price applied — {formatPrice(item.packUnitPrice)} each
+                              </span>
+                            ) : (
+                              <span className="inline-block mt-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                                Add {item.packThreshold - (item.quantity || 1)} more to pay {formatPrice(item.packUnitPrice)} each
+                              </span>
+                            )
+                          ) : null}
 
                           {/* Move to Wishlist */}
                           <button

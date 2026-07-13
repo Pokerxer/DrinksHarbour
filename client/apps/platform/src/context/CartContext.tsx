@@ -25,6 +25,8 @@ interface CartItem extends ProductType {
   selectedProductId: string;
   price: number;
   addedAt: number;
+  packUnitPrice?: number | null;
+  packThreshold?: number | null;
 }
 
 interface CartState {
@@ -70,6 +72,10 @@ export interface CartItemValidation {
   stockStatus: string;
   maxQuantity: number | null;
   isLowStock: boolean;
+  baseUnitPrice?: number;
+  packUnitPrice?: number | null;
+  packThreshold?: number | null;
+  packApplied?: boolean;
 }
 
 interface CartContextProps {
@@ -105,6 +111,23 @@ const STORAGE_KEY = 'drinksharbour_cart';
 const generateCartItemId = (productId: string, size: string, vendor: string, color: string): string => {
   return `${productId}-${size || 'default'}-${vendor || 'default'}-${color || 'default'}`;
 };
+
+const getPackFromAvailableAt = (product: ProductType, vendorName: string, size: string): { packUnitPrice: number | null; packThreshold: number | null } => {
+  const none = { packUnitPrice: null, packThreshold: null };
+  if (!product.availableAt || !Array.isArray(product.availableAt)) return none;
+  const vendorEntry = product.availableAt.find((v: any) => v.tenant?.name === vendorName);
+  const sizeEntry = vendorEntry?.sizes?.find((s: any) => s.size === size);
+  if (sizeEntry?.pricing?.packUnitPrice && sizeEntry?.pricing?.packThreshold) {
+    return { packUnitPrice: sizeEntry.pricing.packUnitPrice, packThreshold: sizeEntry.pricing.packThreshold };
+  }
+  return none;
+};
+
+/** Per-unit price a line actually pays: pack price once quantity reaches the threshold. */
+export const getEffectiveUnitPrice = (item: { price?: number; quantity?: number; packUnitPrice?: number | null; packThreshold?: number | null }): number =>
+  item.packUnitPrice && item.packThreshold && (item.quantity || 1) >= item.packThreshold
+    ? item.packUnitPrice
+    : (item.price || 0);
 
 const getPriceFromAvailableAt = (product: ProductType, vendorName: string, size: string): number => {
   if (!product.availableAt || !Array.isArray(product.availableAt)) {
@@ -169,6 +192,7 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
         selectedProductId,
         price: itemPrice,
         addedAt: Date.now(),
+        ...getPackFromAvailableAt(product, selectedVendor, selectedSize),
       };
       
       return { ...state, cartArray: [...state.cartArray, newItem] };
@@ -208,6 +232,7 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
                 selectedVendorId: vendorId,
                 price: itemPrice,
                 addedAt: Date.now(),
+                ...getPackFromAvailableAt(existingItem, vendor, size),
               }
             : item
         ),
@@ -377,6 +402,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
         selectedProductId: productId,
         price: itemPrice,
         addedAt: Date.now(),
+        ...getPackFromAvailableAt(product, vendor || '', size || ''),
       });
     }
     
@@ -456,7 +482,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
           sizeId:       item.selectedSizeId       || null,
           tenantId:     item.selectedVendorId     || null,
           quantity:     item.quantity || 1,
-          price:        item.price || 0,
+          price:        getEffectiveUnitPrice(item),
         }));
 
       if (payload.length === 0) return;
@@ -497,8 +523,10 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
         const v   = validationMap[key];
         if (!v) return item;
         const newQty   = v.maxQuantity != null ? Math.min(item.quantity || 1, v.maxQuantity) : (item.quantity || 1);
-        const newPrice = v.currentPrice > 0 ? v.currentPrice : item.price;
-        return { ...item, price: newPrice, quantity: newQty };
+        const newPrice = (v as any).baseUnitPrice > 0 ? (v as any).baseUnitPrice : (v.currentPrice > 0 ? v.currentPrice : item.price);
+        return { ...item, price: newPrice, quantity: newQty,
+          packUnitPrice: (v as any).packUnitPrice ?? item.packUnitPrice ?? null,
+          packThreshold: (v as any).packThreshold ?? item.packThreshold ?? null };
       });
     dispatch({ type: "LOAD_CART", payload: updated });
     setValidationMap({});
@@ -508,10 +536,10 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
     return generateCartItemId(productId, size, vendor, color);
   };
 
-  const cartTotal = useMemo(() => 
+  const cartTotal = useMemo(() =>
     cartState.cartArray.reduce(
       (sum, item) => {
-        const itemPrice = item.price || 0;
+        const itemPrice = getEffectiveUnitPrice(item);
         return sum + (itemPrice * (item.quantity || 1));
       },
       0

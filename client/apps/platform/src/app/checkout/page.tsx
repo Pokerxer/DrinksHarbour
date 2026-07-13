@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useCart } from '@/context/CartContext';
+import { useCart, getEffectiveUnitPrice } from '@/context/CartContext';
 import CouponComponent from '@/components/Coupon/Coupon';
 import PaymentHandler from '@/components/Payment/PaymentHandler';
 import { API_URL } from '@/lib/api';
@@ -345,7 +345,7 @@ export default function CheckoutPage() {
     cartState.cartArray.map(item => ({
       productId:    item.selectedProductId || item.id || item._id,
       name:         item.name,
-      price:        item.price,
+      price:        getEffectiveUnitPrice(item),
       quantity:     item.quantity || 1,
       sizeId:       item.selectedSizeId    || null,
       subProductId: item.selectedSubProductId || null,
@@ -602,7 +602,7 @@ export default function CheckoutPage() {
           sizeId:       item.selectedSizeId       || null,
           tenantId:     item.selectedVendorId     || null,
           quantity:     item.quantity || 1,
-          price:        item.price || 0,
+          price:        getEffectiveUnitPrice(item),
         }));
 
       if (payload.length === 0) {
@@ -1162,7 +1162,7 @@ export default function CheckoutPage() {
                               <p className="text-sm font-bold text-gray-900 truncate">{item.name}</p>
                               <p className="text-xs text-gray-400">Qty: {item.quantity || 1}{item.selectedSize ? ` · ${item.selectedSize}` : ''}</p>
                             </div>
-                            <span className="text-sm font-black text-gray-900 flex-shrink-0">{fmt(item.price * (item.quantity || 1))}</span>
+                            <span className="text-sm font-black text-gray-900 flex-shrink-0">{fmt(getEffectiveUnitPrice(item) * (item.quantity || 1))}</span>
                           </div>
                         );
                       })}
