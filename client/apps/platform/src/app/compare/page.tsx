@@ -1,90 +1,274 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 import { useCompare } from '@/context/CompareContext';
+import { useCart } from '@/context/CartContext';
+import { useModalCartContext } from '@/context/ModalCartContext';
 import { ProductType } from '@/types/product.types';
 import Rate from '@/components/Other/Rate';
 
+// ---------------------------------------------------------------------------
+// Helpers (pure)
+// ---------------------------------------------------------------------------
+
+const getProductId = (p: ProductType): string => p._id || p.id || '';
+
+const getImageUrl = (p: ProductType): string | null => {
+  const first = p.images?.[0];
+  if (!first) return p.primaryImage?.url || null;
+  return typeof first === 'string' ? first : first.url || null;
+};
+
+const getRating = (p: ProductType): number => Number(p.rating ?? p.rate ?? 0) || 0;
+
+// Total available stock across vendors, or null when the product carries no stock info.
+const getStock = (p: ProductType): number | null => {
+  if (Array.isArray(p.availableAt) && p.availableAt.length > 0) {
+    return p.availableAt.reduce(
+      (sum, v) => sum + (v.sizes || []).reduce((s, sz) => s + (sz.stock || 0), 0),
+      0,
+    );
+  }
+  if (p.availability) return p.availability.inStock ? (p.availability.totalStock || 1) : 0;
+  return typeof p.quantity === 'number' ? p.quantity : null;
+};
+
+// Unknown stock (null) is treated as purchasable.
+const isInStock = (p: ProductType): boolean => {
+  const s = getStock(p);
+  return s == null ? true : s > 0;
+};
+
+const getBadge = (p: ProductType) => {
+  if (p.sale && p.originPrice && p.originPrice > p.price) return { text: 'Sale', className: 'bg-red-500' };
+  if (p.badge?.text) return { text: p.badge.text, className: 'bg-emerald-500' };
+  if (p.new) return { text: 'New', className: 'bg-blue-500' };
+  return null;
+};
+
+// ---------------------------------------------------------------------------
+// Field definitions
+// ---------------------------------------------------------------------------
+
+type Field = {
+  key: string;
+  label: string;
+  // Plain-text representation, used for both display and "differences only" equality.
+  text: (p: ProductType) => string;
+  // Optional richer cell renderer (falls back to `text`).
+  render?: (p: ProductType) => React.ReactNode;
+  // For "best value" highlighting: which direction wins, and how to read the number.
+  better?: 'low' | 'high';
+  numeric?: (p: ProductType) => number | null;
+};
+
 const ComparePage = () => {
-  const { compareState, removeFromCompare, clearCompare, compareCount } = useCompare();
+  const {
+    compareState,
+    removeFromCompare,
+    clearCompare,
+    compareCount,
+    refreshCompareData,
+    isRefreshing,
+  } = useCompare();
+  const { addToCart, updateQuantity, getCartItemId, cartState } = useCart();
+  const { openModalCart } = useModalCartContext();
 
-  const formatPrice = (price: number | undefined | null, currencySymbol: string = '₦') => {
-    if (price == null || isNaN(price)) return `${currencySymbol}0`;
-    return new Intl.NumberFormat('en-NG', {
-      style: 'currency',
-      currency: 'NGN',
-      minimumFractionDigits: 0,
-    }).format(price);
-  };
+  const [currency, setCurrency] = useState('₦');
+  const [showDiffOnly, setShowDiffOnly] = useState(false);
+  const [addedId, setAddedId] = useState<string | null>(null);
 
-  const getCurrencySymbol = () => {
+  const products = compareState.compareArray;
+
+  // Read currency symbol once, and pull fresh price/stock on mount.
+  useEffect(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('currency_symbol') || '₦';
+      setCurrency(localStorage.getItem('currency_symbol') || '₦');
     }
-    return '₦';
-  };
+    refreshCompareData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const getProductBadge = (product: ProductType) => {
-    if (product.sale && product.originPrice && product.originPrice > product.price) {
-      return { text: 'Sale', className: 'bg-red-500' };
-    }
-    if (product.badge) {
-      return { text: product.badge.text, className: 'bg-emerald-500' };
-    }
-    if (product.new) {
-      return { text: 'New', className: 'bg-blue-500' };
-    }
-    return null;
-  };
+  const formatPrice = useCallback(
+    (price: number | undefined | null): string => {
+      if (price == null || isNaN(price)) return `${currency}0`;
+      return `${currency}${Math.round(price).toLocaleString('en-NG')}`;
+    },
+    [currency],
+  );
 
-  const comparisonFields = useMemo(() => [
-    { label: 'Price', key: 'price', format: (v: any) => formatPrice(v, getCurrencySymbol()) },
-    { label: 'Original Price', key: 'originPrice', format: (v: any) => v ? formatPrice(v, getCurrencySymbol()) : '-' },
-    { label: 'Discount', key: 'discount', format: (v: any) => v ? `${v}% OFF` : '-' },
-    { label: 'Rating', key: 'rating', format: (v: any, p: ProductType) => v ? (
-      <div className="flex items-center gap-2">
-        <Rate currentRate={v} size={14} />
-        <span className="text-sm text-gray-600">({p.reviewCount || 0})</span>
-      </div>
-    ) : '-' },
-    { label: 'ABV', key: 'abv', format: (v: any) => v ? `${v}% ABV` : 'Non-Alcoholic' },
-    { label: 'Volume', key: 'volumeMl', format: (v: any) => v ? `${v}ml` : '-' },
-    { label: 'Type', key: 'type' },
-    { label: 'Category', key: 'category', format: (v: any) => v?.name || v || '-' },
-    { label: 'Brand', key: 'brand', format: (v: any) => v?.name || '-' },
-    { label: 'Origin', key: 'originCountry', format: (v: any) => v || '-' },
-    { label: 'Region', key: 'region', format: (v: any) => v || '-' },
-    { label: 'Producer', key: 'producer', format: (v: any) => v || '-' },
-    { label: 'SKU', key: 'sku', format: (v: any) => v || '-' },
-    { label: 'Barcode', key: 'barcode', format: (v: any) => v || '-' },
-    { label: 'Flavors', key: 'flavors', format: (v: any) => v?.map((f: any) => f.name).join(', ') || '-' },
-    { label: 'Tasting Notes', key: 'tastingNotes', format: (v: any) => {
-      if (!v) return '-';
-      const notes = [...(v.aroma || []), ...(v.palate || []), ...(v.finish || [])];
-      return notes.length > 0 ? notes.join(', ') : '-';
-    }},
-    { label: 'Stock Status', key: 'availability', format: (v: any, p: ProductType) => {
-      if (v?.inStock !== undefined) {
-        return v.inStock ? (
-          <span className="text-green-600 font-medium">In Stock</span>
-        ) : (
-          <span className="text-red-600 font-medium">Out of Stock</span>
-        );
+  // -------------------------------------------------------------------------
+  // Add to cart (mirrors the product card's first-available-size resolution)
+  // -------------------------------------------------------------------------
+  const handleAddToCart = useCallback(
+    (product: ProductType) => {
+      const vendor = product.availableAt?.[0];
+      const vendorSizes = vendor?.sizes || [];
+      const firstAvailable = vendorSizes.find((s) => (s.stock || 0) > 0) || vendorSizes[0];
+      const sizeToUse = firstAvailable?.size || product.sizes?.[0]?.size || '';
+      const vendorName = vendor?.tenant?.name || '';
+      const vendorId = vendor?.tenant?._id || '';
+      const sizeId = firstAvailable?._id || '';
+      const subProductId = vendor?._id || '';
+
+      const cartItemId = getCartItemId(getProductId(product), sizeToUse, vendorName, '');
+      const existing = cartState.cartArray.find((i) => i.cartItemId === cartItemId);
+      if (existing) {
+        updateQuantity(cartItemId, (existing.quantity || 1) + 1);
+      } else {
+        addToCart(product, sizeToUse, '', vendorName, vendorId, undefined, sizeId, subProductId);
       }
-      return p.quantity !== undefined ? (
-        p.quantity > 0 ? (
-          <span className="text-green-600 font-medium">In Stock ({p.quantity})</span>
-        ) : (
-          <span className="text-red-600 font-medium">Out of Stock</span>
-        )
-      ) : '-';
-    }},
-  ], []);
 
+      setAddedId(getProductId(product));
+      openModalCart();
+      window.setTimeout(() => setAddedId(null), 1500);
+    },
+    [addToCart, updateQuantity, getCartItemId, cartState.cartArray, openModalCart],
+  );
+
+  // -------------------------------------------------------------------------
+  // Fields
+  // -------------------------------------------------------------------------
+  const fields: Field[] = useMemo(
+    () => [
+      {
+        key: 'price',
+        label: 'Price',
+        text: (p) => formatPrice(p.price),
+        render: (p) => (
+          <div>
+            <span className="font-bold text-gray-900">{formatPrice(p.price)}</span>
+            {p.originPrice && p.originPrice > p.price && (
+              <span className="ml-2 text-sm text-gray-400 line-through">
+                {formatPrice(p.originPrice)}
+              </span>
+            )}
+          </div>
+        ),
+        better: 'low',
+        numeric: (p) => (typeof p.price === 'number' ? p.price : null),
+      },
+      {
+        key: 'discount',
+        label: 'Discount',
+        text: (p) => (p.discount ? `${p.discount}% OFF` : '—'),
+        better: 'high',
+        numeric: (p) => (p.discount ? Number(p.discount) : null),
+      },
+      {
+        key: 'rating',
+        label: 'Rating',
+        text: (p) => (getRating(p) ? `${getRating(p)} (${p.reviewCount || 0})` : '—'),
+        render: (p) =>
+          getRating(p) ? (
+            <div className="flex items-center gap-2">
+              <Rate currentRate={getRating(p)} size={14} />
+              <span className="text-sm text-gray-600">({p.reviewCount || 0})</span>
+            </div>
+          ) : (
+            <span className="text-gray-400">—</span>
+          ),
+        better: 'high',
+        numeric: (p) => getRating(p) || null,
+      },
+      { key: 'abv', label: 'ABV', text: (p) => (p.abv ? `${p.abv}% ABV` : 'Non-Alcoholic') },
+      { key: 'volumeMl', label: 'Volume', text: (p) => (p.volumeMl ? `${p.volumeMl}ml` : '—') },
+      { key: 'type', label: 'Type', text: (p) => p.type || '—' },
+      { key: 'category', label: 'Category', text: (p) => p.category?.name || '—' },
+      { key: 'brand', label: 'Brand', text: (p) => p.brand?.name || '—' },
+      { key: 'originCountry', label: 'Origin', text: (p) => p.originCountry || '—' },
+      { key: 'region', label: 'Region', text: (p) => p.region || '—' },
+      { key: 'producer', label: 'Producer', text: (p) => p.producer || '—' },
+      {
+        key: 'flavors',
+        label: 'Flavors',
+        text: (p) => (p.flavors?.length ? p.flavors.map((f) => f.name).join(', ') : '—'),
+      },
+      {
+        key: 'tastingNotes',
+        label: 'Tasting Notes',
+        text: (p) => {
+          const n = p.tastingNotes;
+          if (!n) return '—';
+          const all = [...(n.aroma || []), ...(n.palate || []), ...(n.finish || [])];
+          return all.length ? all.join(', ') : '—';
+        },
+      },
+      {
+        key: 'availability',
+        label: 'Availability',
+        text: (p) => (isInStock(p) ? 'In Stock' : 'Out of Stock'),
+        render: (p) =>
+          isInStock(p) ? (
+            <span className="inline-flex items-center gap-1.5 text-green-600 font-medium">
+              <span className="w-2 h-2 rounded-full bg-green-500" /> In Stock
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-red-600 font-medium">
+              <span className="w-2 h-2 rounded-full bg-red-500" /> Out of Stock
+            </span>
+          ),
+      },
+      {
+        key: 'description',
+        label: 'Description',
+        text: (p) => p.shortDescription || p.description || 'No description available.',
+        render: (p) => (
+          <p className="text-sm text-gray-600 line-clamp-4">
+            {p.shortDescription || p.description || 'No description available.'}
+          </p>
+        ),
+      },
+    ],
+    [formatPrice],
+  );
+
+  // -------------------------------------------------------------------------
+  // Best-value winners (unique min/max per numeric field)
+  // -------------------------------------------------------------------------
+  const bestByField = useMemo(() => {
+    const map: Record<string, string> = {};
+    if (products.length < 2) return map;
+    fields.forEach((f) => {
+      if (!f.better || !f.numeric) return;
+      const vals = products
+        .map((p) => ({ id: getProductId(p), v: f.numeric!(p) }))
+        .filter((x) => x.v != null && !isNaN(x.v as number)) as { id: string; v: number }[];
+      if (vals.length < 2) return;
+      const target = f.better === 'low'
+        ? Math.min(...vals.map((x) => x.v))
+        : Math.max(...vals.map((x) => x.v));
+      const winners = vals.filter((x) => x.v === target);
+      if (winners.length === 1 && target > 0) map[f.key] = winners[0].id;
+    });
+    return map;
+  }, [products, fields]);
+
+  const bestChip = (key: string): string | null => {
+    if (key === 'price') return 'Best price';
+    if (key === 'rating') return 'Top rated';
+    if (key === 'discount') return 'Biggest saving';
+    return 'Best';
+  };
+
+  // -------------------------------------------------------------------------
+  // Visible fields (respecting "differences only")
+  // -------------------------------------------------------------------------
+  const visibleFields = useMemo(() => {
+    if (!showDiffOnly || products.length < 2) return fields;
+    return fields.filter((f) => {
+      const first = f.text(products[0]);
+      return products.some((p) => f.text(p) !== first);
+    });
+  }, [fields, products, showDiffOnly]);
+
+  // -------------------------------------------------------------------------
+  // Empty state
+  // -------------------------------------------------------------------------
   if (compareCount === 0) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -98,12 +282,10 @@ const ComparePage = () => {
             >
               <Icon.PiScales size={48} className="text-gray-400" />
             </motion.div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-4">
-              No Products to Compare
-            </h1>
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">No Products to Compare</h1>
             <p className="text-gray-600 mb-8">
-              Add products to your comparison list to see them side-by-side. 
-              Visit the shop to explore our selection of beverages.
+              Add products to your comparison list to see them side-by-side. Visit the shop to
+              explore our selection of beverages.
             </p>
             <Link
               href="/shop"
@@ -118,75 +300,129 @@ const ComparePage = () => {
     );
   }
 
+  const gridTemplate = { gridTemplateColumns: `minmax(120px,180px) repeat(${products.length}, minmax(0,1fr))` };
+
+  // Reusable add-to-cart button
+  const CartButton = ({ product }: { product: ProductType }) => {
+    const stocked = isInStock(product);
+    const justAdded = addedId === getProductId(product);
+    if (!stocked) {
+      return (
+        <button
+          disabled
+          className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
+        >
+          <Icon.PiProhibit size={16} /> Out of Stock
+        </button>
+      );
+    }
+    return (
+      <button
+        onClick={() => handleAddToCart(product)}
+        className={`mt-3 w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+          justAdded ? 'bg-green-600 text-white' : 'bg-gray-900 text-white hover:bg-gray-800'
+        }`}
+      >
+        {justAdded ? (
+          <>
+            <Icon.PiCheck size={16} /> Added
+          </>
+        ) : (
+          <>
+            <Icon.PiShoppingCart size={16} /> Add to Cart
+          </>
+        )}
+      </button>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center justify-between">
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
+        <div className="container mx-auto px-4 py-5">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-gray-900 rounded-xl flex items-center justify-center">
-                <Icon.PiScales size={24} className="text-white" />
+              <div className="w-11 h-11 bg-gray-900 rounded-xl flex items-center justify-center">
+                <Icon.PiScales size={22} className="text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Compare Products</h1>
-                <p className="text-sm text-gray-500">
+                <h1 className="text-xl md:text-2xl font-bold text-gray-900">Compare Products</h1>
+                <p className="text-sm text-gray-500 flex items-center gap-2">
                   {compareCount} product{compareCount !== 1 ? 's' : ''} selected
+                  {isRefreshing && (
+                    <span className="inline-flex items-center gap-1 text-amber-600">
+                      <Icon.PiArrowsClockwise size={13} className="animate-spin" /> updating…
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 md:gap-3">
+              {products.length >= 2 && (
+                <button
+                  onClick={() => setShowDiffOnly((v) => !v)}
+                  className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    showDiffOnly
+                      ? 'bg-amber-500 text-white hover:bg-amber-600'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <Icon.PiFunnel size={16} />
+                  <span className="hidden sm:inline">Differences only</span>
+                  <span className="sm:hidden">Diff</span>
+                </button>
+              )}
               <button
                 onClick={clearCompare}
-                className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                className="flex items-center gap-2 px-3 md:px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium"
               >
-                <Icon.PiTrash size={18} />
-                Clear All
+                <Icon.PiTrash size={16} />
+                <span className="hidden sm:inline">Clear All</span>
               </button>
               <Link
                 href="/shop"
-                className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                className="flex items-center gap-2 px-3 md:px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
               >
-                <Icon.PiPlus size={18} />
-                Add More
+                <Icon.PiPlus size={16} />
+                <span className="hidden sm:inline">Add More</span>
               </Link>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Comparison Table */}
       <div className="container mx-auto px-4 py-8">
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          {/* Product Headers */}
-          <div className="grid grid-cols-[200px_repeat(4,1fr)] border-b border-gray-200">
-            {/* Empty corner cell */}
+        {/* ---------------------------------------------------------------- */}
+        {/* DESKTOP: side-by-side table                                      */}
+        {/* ---------------------------------------------------------------- */}
+        <div className="hidden md:block bg-white rounded-2xl shadow-sm overflow-hidden">
+          {/* Product headers */}
+          <div className="grid border-b border-gray-200" style={gridTemplate}>
             <div className="p-4 bg-gray-50 border-r border-gray-200" />
-            
-            {/* Product columns */}
-            {compareState.compareArray.map((product, index) => {
-              const badge = getProductBadge(product);
+            {products.map((product, index) => {
+              const badge = getBadge(product);
+              const img = getImageUrl(product);
               return (
                 <motion.div
-                  key={product.id || product._id}
-                  initial={{ opacity: 0, y: 20 }}
+                  key={getProductId(product)}
+                  initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                  className="p-4 border-r border-gray-200 last:border-r-0"
+                  transition={{ delay: index * 0.06 }}
+                  className="relative p-4 border-r border-gray-200 last:border-r-0"
                 >
-                  {/* Remove button */}
-              <button
-                onClick={() => removeFromCompare(product._id || product.id || '')}
-                className="absolute top-4 right-4 w-8 h-8 bg-red-100 text-red-600 rounded-full flex items-center justify-center hover:bg-red-200 transition-colors"
-              >
-                <Icon.PiX size={16} />
-              </button>
-                  
-                  {/* Product image */}
+                  <button
+                    onClick={() => removeFromCompare(getProductId(product))}
+                    aria-label={`Remove ${product.name}`}
+                    className="absolute top-3 right-3 z-10 w-7 h-7 bg-gray-100 text-gray-500 rounded-full flex items-center justify-center hover:bg-red-100 hover:text-red-600 transition-colors"
+                  >
+                    <Icon.PiX size={14} />
+                  </button>
+
                   <div className="relative aspect-square rounded-xl overflow-hidden bg-gray-100 mb-4">
-                    {product.images && product.images.length > 0 ? (
+                    {img ? (
                       <Image
-                        src={typeof product.images[0] === 'string' ? product.images[0] : product.images[0]?.url}
+                        src={img}
                         alt={product.name}
                         fill
                         className="object-cover"
@@ -194,112 +430,150 @@ const ComparePage = () => {
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
-                        <Icon.PiImage size={48} className="text-gray-400" />
+                        <Icon.PiImage size={40} className="text-gray-400" />
                       </div>
                     )}
-                    
-                    {/* Badge */}
                     {badge && (
                       <div className={`absolute top-2 left-2 px-2 py-1 ${badge.className} text-white text-xs font-bold rounded-lg`}>
                         {badge.text}
                       </div>
                     )}
                   </div>
-                  
-                  {/* Product info */}
-                  <Link href={`/product/${product.slug || product.id || product._id}`}>
+
+                  <Link href={`/product/${product.slug || getProductId(product)}`}>
                     <h3 className="font-bold text-gray-900 mb-1 line-clamp-2 hover:text-amber-600 transition-colors">
                       {product.name}
                     </h3>
                   </Link>
                   {product.brand?.name && (
-                    <p className="text-sm text-gray-500 mb-2">{product.brand.name}</p>
+                    <p className="text-sm text-gray-500">{product.brand.name}</p>
                   )}
-                  <p className="text-lg font-bold text-gray-900">
-                    {formatPrice(product.price, getCurrencySymbol())}
-                  </p>
-                  {product.originPrice && product.originPrice > product.price && (
-                    <p className="text-sm text-gray-400 line-through">
-                      {formatPrice(product.originPrice, getCurrencySymbol())}
-                    </p>
-                  )}
-                  
-                  {/* Add to cart */}
-                  <Link
-                    href={`/product/${product.slug || product.id || product._id}`}
-                    className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors text-sm font-medium"
-                  >
-                    <Icon.PiShoppingCart size={16} />
-                    View Details
-                  </Link>
+                  <CartButton product={product} />
                 </motion.div>
               );
             })}
           </div>
 
-          {/* Comparison Rows */}
-          {comparisonFields.map((field, fieldIndex) => (
-            <motion.div
+          {/* Attribute rows */}
+          {visibleFields.map((field, i) => (
+            <div
               key={field.key}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.1 + fieldIndex * 0.05 }}
-              className={`grid grid-cols-[200px_repeat(4,1fr)] border-b border-gray-100 ${
-                fieldIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
-              }`}
+              className={`grid border-b border-gray-100 last:border-b-0 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
+              style={gridTemplate}
             >
-              {/* Field label */}
-              <div className="p-4 font-medium text-gray-700 bg-gray-50 border-r border-gray-200 flex items-center">
+              <div className="p-4 font-medium text-gray-700 bg-gray-50 border-r border-gray-200 flex items-center text-sm">
                 {field.label}
               </div>
-              
-              {/* Field values */}
-              {compareState.compareArray.map((product) => {
-                const value = product[field.key as keyof ProductType];
+              {products.map((product) => {
+                const isBest = bestByField[field.key] === getProductId(product);
                 return (
                   <div
-                    key={`${product.id || product._id}-${field.key}`}
-                    className="p-4 border-r border-gray-100 last:border-r-0 flex items-center"
+                    key={`${getProductId(product)}-${field.key}`}
+                    className={`p-4 border-r border-gray-100 last:border-r-0 flex items-center text-sm relative ${
+                      isBest ? 'ring-2 ring-inset ring-green-400/60 bg-green-50/50' : ''
+                    }`}
                   >
-                    {typeof field.format === 'function' 
-                      ? field.format(value, product)
-                      : value || '-'
-                    }
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {field.render ? field.render(product) : field.text(product)}
+                      {isBest && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-green-100 text-green-700 text-[11px] font-semibold rounded">
+                          <Icon.PiCheckCircle size={12} /> {bestChip(field.key)}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 );
               })}
-            </motion.div>
+            </div>
           ))}
 
-          {/* Description Row */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-            className="grid grid-cols-[200px_repeat(4,1fr)]"
-          >
-            <div className="p-4 font-medium text-gray-700 bg-gray-50 border-r border-gray-200 flex items-start">
-              Description
+          {showDiffOnly && visibleFields.length === 0 && (
+            <div className="p-8 text-center text-gray-500 text-sm">
+              These products share the same values across all attributes.
             </div>
-            {compareState.compareArray.map((product) => (
-              <div
-                key={`${product.id || product._id}-description`}
-                className="p-4 border-r border-gray-100 last:border-r-0"
-              >
-                <p className="text-sm text-gray-600 line-clamp-4">
-                  {product.shortDescription || product.description || 'No description available.'}
-                </p>
-              </div>
-            ))}
-          </motion.div>
+          )}
         </div>
 
-        {/* Recommendations */}
+        {/* ---------------------------------------------------------------- */}
+        {/* MOBILE: stacked per-product cards                                */}
+        {/* ---------------------------------------------------------------- */}
+        <div className="md:hidden space-y-5">
+          {products.map((product) => {
+            const badge = getBadge(product);
+            const img = getImageUrl(product);
+            return (
+              <motion.div
+                key={getProductId(product)}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-white rounded-2xl shadow-sm overflow-hidden"
+              >
+                <div className="flex gap-4 p-4 border-b border-gray-100 relative">
+                  <button
+                    onClick={() => removeFromCompare(getProductId(product))}
+                    aria-label={`Remove ${product.name}`}
+                    className="absolute top-3 right-3 w-7 h-7 bg-gray-100 text-gray-500 rounded-full flex items-center justify-center"
+                  >
+                    <Icon.PiX size={14} />
+                  </button>
+                  <div className="relative w-24 h-24 flex-shrink-0 rounded-xl overflow-hidden bg-gray-100">
+                    {img ? (
+                      <Image src={img} alt={product.name} fill className="object-cover" sizes="96px" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Icon.PiImage size={28} className="text-gray-400" />
+                      </div>
+                    )}
+                    {badge && (
+                      <div className={`absolute top-1 left-1 px-1.5 py-0.5 ${badge.className} text-white text-[10px] font-bold rounded`}>
+                        {badge.text}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0 pr-6">
+                    <Link href={`/product/${product.slug || getProductId(product)}`}>
+                      <h3 className="font-bold text-gray-900 line-clamp-2">{product.name}</h3>
+                    </Link>
+                    {product.brand?.name && <p className="text-xs text-gray-500">{product.brand.name}</p>}
+                    <p className="mt-1 text-lg font-bold text-gray-900">{formatPrice(product.price)}</p>
+                  </div>
+                </div>
+
+                <dl className="divide-y divide-gray-100">
+                  {visibleFields.map((field) => {
+                    const isBest = bestByField[field.key] === getProductId(product);
+                    return (
+                      <div
+                        key={field.key}
+                        className={`flex items-start justify-between gap-4 px-4 py-2.5 ${isBest ? 'bg-green-50/60' : ''}`}
+                      >
+                        <dt className="text-xs font-medium text-gray-500 flex-shrink-0 pt-0.5">{field.label}</dt>
+                        <dd className="text-sm text-gray-900 text-right flex items-center gap-2 flex-wrap justify-end">
+                          {field.render ? field.render(product) : field.text(product)}
+                          {isBest && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-green-100 text-green-700 text-[10px] font-semibold rounded">
+                              <Icon.PiCheckCircle size={11} /> {bestChip(field.key)}
+                            </span>
+                          )}
+                        </dd>
+                      </div>
+                    );
+                  })}
+                </dl>
+
+                <div className="p-4 pt-2">
+                  <CartButton product={product} />
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+
+        {/* Add-more hint when only one product */}
         {compareCount < 2 && (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
             className="mt-8 p-6 bg-amber-50 border border-amber-200 rounded-2xl"
           >
             <div className="flex items-start gap-4">
@@ -307,12 +581,10 @@ const ComparePage = () => {
                 <Icon.PiInfo size={24} className="text-amber-600" />
               </div>
               <div>
-                <h3 className="font-bold text-gray-900 mb-1">
-                  Add More Products to Compare
-                </h3>
+                <h3 className="font-bold text-gray-900 mb-1">Add More Products to Compare</h3>
                 <p className="text-gray-600 mb-4">
-                  Add at least one more product to see a detailed side-by-side comparison. 
-                  We recommend comparing 2-4 products for the best experience.
+                  Add at least one more product to unlock side-by-side comparison and best-value
+                  highlights. We recommend comparing 2–4 products.
                 </p>
                 <Link
                   href="/shop"

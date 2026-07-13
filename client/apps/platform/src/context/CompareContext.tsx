@@ -7,8 +7,10 @@ import React, {
   useEffect,
   useCallback,
   useState,
+  useRef,
 } from "react";
 import { ProductType } from "@/types/product.types";
+import { API_URL } from "@/lib/api";
 
 interface CompareItem extends ProductType {}
 
@@ -28,7 +30,10 @@ interface CompareContextProps {
   addToCompare: (item: ProductType) => { success: boolean; message: string };
   removeFromCompare: (itemId: string) => void;
   clearCompare: () => void;
+  toggleCompare: (item: ProductType) => { success: boolean; message: string };
   isInCompare: (itemId: string) => boolean;
+  refreshCompareData: () => Promise<void>;
+  isRefreshing: boolean;
   compareCount: number;
   maxCompareLimit: number;
 }
@@ -74,6 +79,10 @@ export const CompareProvider: React.FC<{ children: React.ReactNode }> = ({
     compareArray: [],
   });
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  // Snapshot of the current array for callbacks that must not re-create on every change.
+  const compareRef = useRef<CompareItem[]>([]);
+  compareRef.current = compareState.compareArray;
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -139,6 +148,59 @@ export const CompareProvider: React.FC<{ children: React.ReactNode }> = ({
     dispatch({ type: "CLEAR_COMPARE" });
   }, []);
 
+  const toggleCompare = useCallback(
+    (item: ProductType): { success: boolean; message: string } => {
+      const itemId = getProductId(item);
+      if (compareRef.current.some((c) => getProductId(c) === itemId)) {
+        dispatch({ type: "REMOVE_FROM_COMPARE", payload: itemId });
+        return { success: true, message: "Removed from comparison" };
+      }
+      return addToCompare(item);
+    },
+    [addToCompare],
+  );
+
+  // Re-fetch live price/stock for stored items (localStorage snapshots go stale).
+  // Runs at most 4 parallel requests; silently keeps the snapshot on any failure.
+  const refreshCompareData = useCallback(async () => {
+    const items = compareRef.current;
+    if (items.length === 0) return;
+    setIsRefreshing(true);
+    try {
+      const results = await Promise.all(
+        items.map(async (item) => {
+          if (!item.slug) return item;
+          try {
+            const res = await fetch(`${API_URL}/api/products/slug/${item.slug}`);
+            if (!res.ok) return item;
+            const data = await res.json();
+            const fresh = data?.data?.product || data?.data;
+            if (!fresh) return item;
+            // Merge only the volatile fields; keep the rest of the snapshot.
+            return {
+              ...item,
+              price: fresh.price ?? item.price,
+              originPrice: fresh.originPrice ?? item.originPrice,
+              discount: fresh.discount ?? item.discount,
+              sale: fresh.sale ?? item.sale,
+              rating: fresh.rating ?? item.rating,
+              rate: fresh.rate ?? item.rate,
+              reviewCount: fresh.reviewCount ?? item.reviewCount,
+              availability: fresh.availability ?? item.availability,
+              availableAt: fresh.availableAt ?? item.availableAt,
+              quantity: fresh.quantity ?? item.quantity,
+            } as CompareItem;
+          } catch {
+            return item;
+          }
+        }),
+      );
+      dispatch({ type: "SET_COMPARE", payload: results });
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, []);
+
   const isInCompare = useCallback(
     (itemId: string) => {
       return compareState.compareArray.some((item) => getProductId(item) === itemId);
@@ -155,7 +217,10 @@ export const CompareProvider: React.FC<{ children: React.ReactNode }> = ({
         addToCompare,
         removeFromCompare,
         clearCompare,
+        toggleCompare,
         isInCompare,
+        refreshCompareData,
+        isRefreshing,
         compareCount,
         maxCompareLimit: MAX_COMPARE_ITEMS,
       }}
