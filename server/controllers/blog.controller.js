@@ -74,12 +74,19 @@ const adminGetPost = asyncHandler(async (req, res) => {
 
 function normalizeBody(body) {
   const category = snapCategory(body.category);
+  const seo = body.seo && typeof body.seo === 'object' ? {
+    metaTitle: String(body.seo.metaTitle || '').slice(0, 60),
+    metaDescription: String(body.seo.metaDescription || '').slice(0, 160),
+    ogImage: String(body.seo.ogImage || ''),
+  } : { metaTitle: '', metaDescription: '', ogImage: '' };
   return {
     title: String(body.title || '').trim(),
     excerpt: String(body.excerpt || ''),
     category,
     tags: Array.isArray(body.tags) ? body.tags.map(String).filter(Boolean) : [],
     image: String(body.image || ''),
+    imageAlt: String(body.imageAlt || '').slice(0, 125),
+    seo,
     author: {
       name: String(body.author?.name || ''),
       role: String(body.author?.role || ''),
@@ -133,6 +140,8 @@ const updatePost = asyncHandler(async (req, res) => {
     category: data.category,
     tags: data.tags,
     image: data.image,
+    imageAlt: data.imageAlt,
+    seo: data.seo,
     author: data.author,
     content: data.content,
     featured: data.featured,
