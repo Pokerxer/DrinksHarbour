@@ -9479,10 +9479,10 @@ const getProductBySlug = async (slug) => {
     getProductSales(product._id),
     getReviewsPreview(product._id, 5), // 5 most recent reviews
     Review.find({ product: product._id, status: 'approved' })
-      .sort({ helpful: -1, createdAt: -1 })
+      .sort({ helpfulCount: -1, createdAt: -1 })
       .limit(3)
       .populate('user', 'firstName lastName avatar')
-      .select('rating title comment helpful verifiedPurchase createdAt user images')
+      .select('rating title comment helpfulCount isVerifiedPurchase createdAt user images')
       .lean(),
   ]);
 

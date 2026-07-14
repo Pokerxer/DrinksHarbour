@@ -365,6 +365,37 @@ function buildProductSchema(p: any, slug: string): object {
     };
   }
 
+  // Individual reviews — only real, approved reviews returned by the API
+  // (Google policy: schema must match reviews visible on the page)
+  const sourceReviews: any[] = (p.reviews?.top?.length ? p.reviews.top : p.reviews?.preview) ?? [];
+  const reviewEntries = sourceReviews
+    .filter((r: any) => r?.rating >= 1 && r?.comment)
+    .slice(0, 5)
+    .map((r: any) => {
+      const author =
+        [r.user?.firstName, r.user?.lastName].filter(Boolean).join(" ") ||
+        r.user?.name ||
+        "DrinksHarbour Customer";
+      return {
+        "@type": "Review",
+        reviewRating: {
+          "@type":     "Rating",
+          ratingValue: String(r.rating),
+          bestRating:  "5",
+          worstRating: "1",
+        },
+        author: { "@type": "Person", name: author },
+        ...(r.title ? { name: r.title } : {}),
+        reviewBody: r.comment,
+        ...(r.createdAt
+          ? { datePublished: new Date(r.createdAt).toISOString().slice(0, 10) }
+          : {}),
+      };
+    });
+  if (reviewEntries.length > 0) {
+    schema.review = reviewEntries;
+  }
+
   // Beverage-specific additional properties
   const additionalProperty: { name: string; value: string }[] = [];
   if (p.abv)     additionalProperty.push({ name: "ABV",           value: `${p.abv}%` });
