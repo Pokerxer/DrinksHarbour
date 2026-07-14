@@ -72,7 +72,9 @@ export default function BlogPostsTable() {
     const next = post.status === 'published' ? 'draft' : 'published';
     try {
       await blogService.setStatus(post._id, next, token);
-      toast.success(next === 'published' ? 'Post published' : 'Post unpublished');
+      toast.success(
+        next === 'published' ? 'Post published' : 'Post unpublished'
+      );
       fetchPosts();
     } catch (err) {
       toast.error(err.message);
@@ -93,7 +95,10 @@ export default function BlogPostsTable() {
     return (
       <div className="space-y-3">
         {[...Array(5)].map((_, i) => (
-          <div key={i} className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+          <div
+            key={i}
+            className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm"
+          >
             <div className="h-12 w-16 flex-shrink-0 animate-pulse rounded-lg bg-gray-200" />
             <div className="flex-1 space-y-2">
               <div className="h-4 w-1/2 animate-pulse rounded bg-gray-200" />
@@ -109,7 +114,9 @@ export default function BlogPostsTable() {
     return (
       <div className="rounded-3xl border border-red-200 bg-white p-12 text-center">
         <PiWarningBold className="mx-auto mb-4 h-10 w-10 text-red-500" />
-        <Text className="mb-2 text-lg font-bold text-red-600">Failed to load posts</Text>
+        <Text className="mb-2 text-lg font-bold text-red-600">
+          Failed to load posts
+        </Text>
         <Text className="mb-6 text-gray-500">{error}</Text>
         <Button onClick={fetchPosts}>
           <PiArrowsClockwiseBold className="me-1.5 h-4 w-4" /> Retry
@@ -126,7 +133,9 @@ export default function BlogPostsTable() {
           value={category}
           onChange={(v) => setCategory(v?.value ?? v ?? '')}
           getOptionValue={(o) => o.value}
-          displayValue={(v) => CATEGORY_OPTIONS.find((o) => o.value === v)?.label}
+          displayValue={(v) =>
+            CATEGORY_OPTIONS.find((o) => o.value === v)?.label
+          }
           placeholder="Category"
           className="w-48"
         />
@@ -139,13 +148,19 @@ export default function BlogPostsTable() {
           placeholder="Status"
           className="w-40"
         />
-        <Text className="ms-auto text-sm text-gray-500">{posts.length} posts</Text>
+        <Text className="ms-auto text-sm text-gray-500">
+          {posts.length} posts
+        </Text>
       </div>
 
       {posts.length === 0 ? (
         <div className="rounded-3xl border border-gray-100 bg-white p-12 text-center">
-          <Text className="mb-2 text-lg font-bold text-gray-700">No posts yet</Text>
-          <Text className="mb-6 text-gray-500">Create your first post — or generate one with AI.</Text>
+          <Text className="mb-2 text-lg font-bold text-gray-700">
+            No posts yet
+          </Text>
+          <Text className="mb-6 text-gray-500">
+            Create your first post — or generate one with AI.
+          </Text>
           <Link href={routes.blog.create}>
             <Button as="span">Add Post</Button>
           </Link>
@@ -159,13 +174,27 @@ export default function BlogPostsTable() {
             >
               <div className="relative h-12 w-16 flex-shrink-0 overflow-hidden rounded-lg bg-gray-100">
                 {post.image ? (
-                  <Image src={post.image} alt="" fill sizes="64px" className="object-cover" unoptimized />
+                  <Image
+                    src={post.image}
+                    alt=""
+                    fill
+                    sizes="64px"
+                    className="object-cover"
+                    unoptimized
+                  />
                 ) : null}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <Text className="truncate font-semibold text-gray-900">{post.title}</Text>
-                  {post.featured && <PiStarFill className="h-4 w-4 flex-shrink-0 text-amber-400" title="Featured" />}
+                  <Text className="truncate font-semibold text-gray-900">
+                    {post.title}
+                  </Text>
+                  {post.featured && (
+                    <PiStarFill
+                      className="h-4 w-4 flex-shrink-0 text-amber-400"
+                      title="Featured"
+                    />
+                  )}
                 </div>
                 <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
                   <span>{post.category}</span>
@@ -174,12 +203,17 @@ export default function BlogPostsTable() {
                   {post.publishedAt && (
                     <>
                       <span>·</span>
-                      <span>{new Date(post.publishedAt).toLocaleDateString()}</span>
+                      <span>
+                        {new Date(post.publishedAt).toLocaleDateString()}
+                      </span>
                     </>
                   )}
                 </div>
               </div>
-              <Badge color={post.status === 'published' ? 'success' : 'secondary'} variant="flat">
+              <Badge
+                color={post.status === 'published' ? 'success' : 'secondary'}
+                variant="flat"
+              >
                 {post.status}
               </Badge>
               <div className="flex items-center gap-1.5">
@@ -189,23 +223,43 @@ export default function BlogPostsTable() {
                   title={post.status === 'published' ? 'Unpublish' : 'Publish'}
                   onClick={() => toggleStatus(post)}
                 >
-                  {post.status === 'published' ? <PiEyeSlashBold className="h-4 w-4" /> : <PiEyeBold className="h-4 w-4" />}
+                  {post.status === 'published' ? (
+                    <PiEyeSlashBold className="h-4 w-4" />
+                  ) : (
+                    <PiEyeBold className="h-4 w-4" />
+                  )}
                 </ActionIcon>
-                <ActionIcon size="sm" variant="outline" title="Edit" onClick={() => router.push(routes.blog.edit(post._id))}>
+                <ActionIcon
+                  size="sm"
+                  variant="outline"
+                  title="Edit"
+                  onClick={() => router.push(routes.blog.edit(post._id))}
+                >
                   <PiPencilSimpleBold className="h-4 w-4" />
                 </ActionIcon>
                 <Popover placement="left">
                   <Popover.Trigger>
-                    <ActionIcon size="sm" variant="outline" color="danger" title="Delete">
+                    <ActionIcon
+                      size="sm"
+                      variant="outline"
+                      color="danger"
+                      title="Delete"
+                    >
                       <PiTrashBold className="h-4 w-4" />
                     </ActionIcon>
                   </Popover.Trigger>
                   <Popover.Content>
                     {({ setOpen }) => (
                       <div className="w-56 p-1 text-center">
-                        <Text className="mb-3 font-semibold">Delete this post?</Text>
+                        <Text className="mb-3 font-semibold">
+                          Delete this post?
+                        </Text>
                         <div className="flex justify-center gap-2">
-                          <Button size="sm" variant="outline" onClick={() => setOpen(false)}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setOpen(false)}
+                          >
                             Cancel
                           </Button>
                           <Button

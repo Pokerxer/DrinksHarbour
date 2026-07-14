@@ -10,10 +10,7 @@ export const metadata = {
 
 const pageHeader = {
   title: 'Create Blog Post',
-  breadcrumb: [
-    { href: routes.blog.list, name: 'Blog' },
-    { name: 'Create' },
-  ],
+  breadcrumb: [{ href: routes.blog.list, name: 'Blog' }, { name: 'Create' }],
 };
 
 export default function CreateBlogPostPage() {
