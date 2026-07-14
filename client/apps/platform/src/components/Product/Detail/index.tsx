@@ -201,7 +201,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
   }, [selectedSizeData, displayOriginalPrice, displayPrice, showDetailDiscount]);
 
   const inStock = (selectedSizeData?.stock || 0) > 0;
-  const isLowStock = selectedSizeData?.stock && selectedSizeData.stock <= 5 && selectedSizeData.stock > 0;
+  const isLowStock = (selectedSizeData?.stock ?? 0) > 0 && (selectedSizeData?.stock ?? 0) <= 5;
   const hasDiscount = showDetailDiscount;
   const isFixedDiscount = selectedSizeData?.discount?.type === 'fixed';
 
@@ -616,7 +616,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                           }`}
                         >
                           <div className="font-bold text-sm sm:text-base">{size.displayName}</div>
-                          {size.volumeMl && (
+                          {!!size.volumeMl && (
                             <div className={`text-[10px] sm:text-xs ${isSelected ? 'text-gray-400' : 'text-gray-500'}`}>
                               {size.volumeMl}ml
                             </div>
@@ -851,13 +851,13 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                     <span className="text-xs font-semibold text-amber-700">18+ Required</span>
                   </div>
                 )}
-                {productData.abv && (
+                {!!productData.abv && (
                   <div className="flex items-center justify-center gap-2 p-3 bg-gray-50 border border-gray-200 rounded-xl">
                     <Icon.PiFlask size={18} className="text-gray-600" />
                     <span className="text-xs font-semibold text-gray-700">{productData.abv}% ABV</span>
                   </div>
                 )}
-                {productData.volumeMl && (
+                {!!productData.volumeMl && (
                   <div className="flex items-center justify-center gap-2 p-3 bg-gray-50 border border-gray-200 rounded-xl">
                     <Icon.PiDrop size={18} className="text-gray-600" />
                     <span className="text-xs font-semibold text-gray-700">{productData.volumeMl}ml</span>
@@ -915,7 +915,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                     <span className="font-medium text-gray-900">{productData.producer}</span>
                   </div>
                 )}
-                {productData.abv && (
+                {!!productData.abv && (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500 flex items-center gap-2">
                       <Icon.PiFlask size={14} /> Alcohol

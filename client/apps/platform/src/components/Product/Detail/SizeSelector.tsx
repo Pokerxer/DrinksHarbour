@@ -103,7 +103,7 @@ const SizeSelector: React.FC<SizeSelectorProps> = React.memo(
                     {size.displayName}
                   </span>
                   
-                  {size.volumeMl && (
+                  {!!size.volumeMl && (
                     <span className={`text-xs ${isSelected ? 'text-orange-100' : 'text-gray-500'}`}>
                       {size.volumeMl}ml
                     </span>
@@ -186,7 +186,7 @@ const SizeSelector: React.FC<SizeSelectorProps> = React.memo(
                 <span className="text-lg font-bold text-gray-900">
                   {selectedSizeData.currencySymbol}{selectedSizeData.price.toFixed(2)}
                 </span>
-                {selectedSizeData.originalPrice && selectedSizeData.originalPrice > selectedSizeData.price && (
+                {!!selectedSizeData.originalPrice && selectedSizeData.originalPrice > selectedSizeData.price && (
                   <span className="text-sm text-gray-400 line-through ml-2">
                     {selectedSizeData.currencySymbol}{selectedSizeData.originalPrice.toFixed(2)}
                   </span>
@@ -199,7 +199,7 @@ const SizeSelector: React.FC<SizeSelectorProps> = React.memo(
                   ? `⚠️ Only ${selectedSizeData.stock} items left` 
                   : `✓ ${selectedSizeData.stock} items available`}
               </span>
-              {selectedSizeData.minOrderQuantity && selectedSizeData.minOrderQuantity > 1 && (
+              {!!selectedSizeData.minOrderQuantity && selectedSizeData.minOrderQuantity > 1 && (
                 <span className="text-gray-500">
                   Min: {selectedSizeData.minOrderQuantity}
                 </span>

@@ -103,7 +103,7 @@ const isActive = selectedVendor?.tenant._id === vendor.tenant._id;
                 {/* Vendor Info */}
                 <div className="text-left">
                   <div className="text-sm font-semibold text-gray-900">{vendor.tenant.name}</div>
-                  {vendor.rating && (
+                  {!!vendor.rating && (
                     <div className="flex items-center gap-1 text-xs text-gray-500">
                       <Icon.PiStarFill size={12} className="text-amber-400" />
                       <span>{vendor.rating.toFixed(1)}</span>

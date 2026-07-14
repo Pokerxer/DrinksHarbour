@@ -592,7 +592,7 @@ const IconComponent = tab.icon;
                 >
                   <IconComponent size={18} />
                   {tab.label}
-                  {tab.id === "reviews" && productData.reviewCount && (
+                  {tab.id === "reviews" && !!productData.reviewCount && (
                     <span
                       className={`
                     ml-1 px-2 py-0.5 rounded-full text-xs
