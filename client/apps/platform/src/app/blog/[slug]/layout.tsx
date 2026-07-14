@@ -6,12 +6,25 @@ import ReadingProgress from "./ReadingProgress";
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 const SITE_NAME = "DrinksHarbour";
 
+// Strip inline markdown so structured-data body text is clean prose for crawlers:
+//   [anchor](/slug) → anchor,  **bold** → bold,  *italic* → italic
+function stripInlineMarkdown(text: string): string {
+  return String(text || "")
+    .replace(/\[([^\]]+)\]\((\/[^)\s]+)\)/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1");
+}
+
 function blocksToPlainText(blocks: ContentBlock[]): string {
-  return blocks.map(b => {
-    if (b.text) return b.text;
-    if (b.items) return b.items.join(". ");
-    return "";
-  }).join("\n\n");
+  return blocks
+    .map(b => {
+      if (b.type === "image") return b.caption ? stripInlineMarkdown(b.caption) : "";
+      if (b.text) return stripInlineMarkdown(b.text);
+      if (b.items) return b.items.map(stripInlineMarkdown).join(". ");
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function countWords(text: string): number {
