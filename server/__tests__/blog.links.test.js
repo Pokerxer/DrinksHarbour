@@ -28,6 +28,19 @@ test('sanitizeInlineLinks strips disallowed product links but keeps anchor text'
   assert.strictEqual(out[1].items[1], 'Bad X');
 });
 
+test('sanitizeInlineLinks keeps brand /shop links (any /shop path is allowed)', () => {
+  const allowed = new Set(['/product/real-one']);
+  const isAllowed = (href) => allowed.has(href) || href.startsWith('/shop');
+  const content = [
+    { type: 'p', text: 'Explore the [Hennessy](/shop?brand=hennessy) range tonight.' },
+    { type: 'ul', items: ['Try [Moet](/shop?brand=moet-chandon)', 'Skip [Fake](/product/nope)'] },
+  ];
+  const out = sanitizeInlineLinks(content, isAllowed);
+  assert.strictEqual(out[0].text, 'Explore the [Hennessy](/shop?brand=hennessy) range tonight.');
+  assert.strictEqual(out[1].items[0], 'Try [Moet](/shop?brand=moet-chandon)');
+  assert.strictEqual(out[1].items[1], 'Skip Fake');
+});
+
 test('sanitizeInlineLinks leaves link-free content untouched', () => {
   const content = [{ type: 'p', text: 'Plain paragraph.' }, { type: 'h2', text: 'Heading' }];
   const out = sanitizeInlineLinks(content, () => true);

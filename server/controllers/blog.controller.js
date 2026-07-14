@@ -19,6 +19,8 @@ const {
 
 // Same AI setup as gemini.controller.js: Haiku for structured generation.
 const HAIKU_MODEL = process.env.ANTHROPIC_FAST_MODEL || 'claude-haiku-4-5';
+// A stronger model for full-post generation, which needs more critical thinking.
+const SMART_MODEL = process.env.ANTHROPIC_SMART_MODEL || 'claude-sonnet-4-6';
 const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   : null;
@@ -169,7 +171,7 @@ const deletePost = asyncHandler(async (req, res) => {
 // the AI can weave contextual internal links instead of inventing URLs.
 async function buildLinkCatalog(topic) {
   const baseFilter = { status: 'approved', isPublished: true };
-  const projection = { name: 1, slug: 1, category: 1, subCategory: 1 };
+  const projection = { name: 1, slug: 1, category: 1, subCategory: 1, brand: 1 };
   let products = [];
 
   try {
@@ -181,6 +183,7 @@ async function buildLinkCatalog(topic) {
       .limit(24)
       .populate('category', 'name slug')
       .populate('subCategory', 'name slug')
+      .populate('brand', 'name slug')
       .lean();
   } catch (_) {
     products = [];
@@ -195,6 +198,7 @@ async function buildLinkCatalog(topic) {
         .limit(24)
         .populate('category', 'name slug')
         .populate('subCategory', 'name slug')
+        .populate('brand', 'name slug')
         .lean();
       products = products.concat(extra.filter((p) => !seen.has(String(p._id))));
     } catch (_) {
@@ -211,21 +215,26 @@ async function buildLinkCatalog(topic) {
       category: p.category?.name || '',
       categorySlug: p.category?.slug || '',
       subCategory: p.subCategory?.name || '',
+      brand: p.brand?.name || '',
+      brandSlug: p.brand?.slug || '',
     }));
 
   const categories = new Map();
+  const brands = new Map();
   entries.forEach((e) => {
     if (e.categorySlug && !categories.has(e.categorySlug)) categories.set(e.categorySlug, e.category);
+    if (e.brandSlug && !brands.has(e.brandSlug)) brands.set(e.brandSlug, e.brand);
   });
 
   const allowed = new Set();
   entries.forEach((e) => allowed.add(`/product/${e.slug}`));
   categories.forEach((_name, slug) => allowed.add(`/shop?category=${slug}`));
+  brands.forEach((_name, slug) => allowed.add(`/shop?brand=${slug}`));
 
-  return { entries, categories, allowed };
+  return { entries, categories, brands, allowed };
 }
 
-function catalogToPrompt({ entries, categories }) {
+function catalogToPrompt({ entries, categories, brands }) {
   if (!entries.length) return '';
   const productLines = entries
     .map((e) => {
@@ -236,16 +245,19 @@ function catalogToPrompt({ entries, categories }) {
   const categoryLines = [...categories.entries()]
     .map(([slug, name]) => `- "${name}" → /shop?category=${slug}`)
     .join('\n');
+  const brandLines = [...(brands?.entries() || [])]
+    .map(([slug, name]) => `- "${name}" → /shop?brand=${slug}`)
+    .join('\n');
 
   return `
 
 INTERNAL LINKING: weave 3-6 contextual internal links into paragraph, list, quote, or tip text using markdown syntax [anchor words](/path). Rules:
 - Use ONLY links from the approved catalog below. NEVER invent a URL or product slug.
 - The anchor must be natural words inside a sentence (e.g. "reach for a bottle of [Hennessy VS](/product/hennessy-vs)"), never the raw slug.
-- Link each product at most once. Favour specific products; use a category page only when no specific product fits.
+- Link each product at most once. Favour specific products; use a brand or category page only when no specific product fits.
 
 Approved product links:
-${productLines}${categoryLines ? `\n\nApproved category links:\n${categoryLines}` : ''}`;
+${productLines}${categoryLines ? `\n\nApproved category links:\n${categoryLines}` : ''}${brandLines ? `\n\nApproved brand links:\n${brandLines}` : ''}`;
 }
 
 // A product link must be in the catalog (prevents 404s); other internal paths are safe.
@@ -257,9 +269,9 @@ function makeLinkValidator(allowed) {
   };
 }
 
-async function callHaikuJson(prompt, maxTokens) {
+async function callHaikuJson(prompt, maxTokens, model = HAIKU_MODEL) {
   const message = await anthropic.messages.create({
-    model: HAIKU_MODEL,
+    model,
     max_tokens: maxTokens,
     system:
       'You are an expert drinks & lifestyle content writer for DrinksHarbour, a Nigerian online drinks marketplace. Respond with ONLY valid JSON — no markdown code fences, no explanation, no preamble.',
@@ -298,7 +310,7 @@ Content rules: 600-900 words total; start with an intro paragraph; organize with
 
   let data;
   try {
-    data = parseAiJson(await callHaikuJson(prompt, 4096));
+    data = parseAiJson(await callHaikuJson(prompt, 4096, SMART_MODEL));
   } catch (err) {
     console.error('generatePost AI error:', err.message);
     return res.status(502).json({ message: 'AI returned an unusable response — try again' });
