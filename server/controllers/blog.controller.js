@@ -297,6 +297,11 @@ Return ONLY this JSON shape:
   "excerpt": "compelling summary, max 40 words",
   "category": "one of: ${BLOG_CATEGORIES.join(' | ')}",
   "tags": ["3-5 short tags"],
+  "imageAlt": "short alt text describing a fitting cover image, max 100 chars",
+  "seo": {
+    "metaTitle": "SEO title, max 60 chars",
+    "metaDescription": "meta description, max 155 chars"
+  },
   "content": [
     {"type": "p", "text": "..."},
     {"type": "h2", "text": "..."},
@@ -306,7 +311,9 @@ Return ONLY this JSON shape:
   "author": {"name": "a plausible Nigerian expert name", "role": "their job title", "bio": "1-2 sentence bio"}
 }
 
-Content rules: 600-900 words total; start with an intro paragraph; organize with "h2" section headings; include exactly one "tip" block with a practical pro tip; use "ul" or "ol" blocks with "items" for lists (all other block types use "text"); allowed block types are only: p, h2, h3, ul, ol, quote, tip. Use Nigerian context (naira prices, local brands, Lagos/Abuja references) where natural.${catalogToPrompt(catalog)}`;
+Content rules: 600-900 words total; start with an intro paragraph; organize with "h2" section headings; include exactly one "tip" block with a practical pro tip; use "ul" or "ol" blocks with "items" for lists (all other block types use "text"); allowed block types are only: p, h2, h3, ul, ol, quote, tip. Use Nigerian context (naira prices, local brands, Lagos/Abuja references) where natural.
+SEO rules: metaTitle should be click-worthy and under 60 chars; metaDescription should be an active-voice summary under 155 chars; both may differ from the title/excerpt to target search intent.
+${catalogToPrompt(catalog)}`;
 
   let data;
   try {
@@ -320,11 +327,20 @@ Content rules: 600-900 words total; start with an intro paragraph; organize with
   const content = sanitizeInlineLinks(sanitizeContentBlocks(data.content), makeLinkValidator(catalog.allowed));
   const linkCount = extractInternalLinks(content).length;
   if (linkCount) console.log(`generatePost: kept ${linkCount} internal link(s) for "${topic}"`);
+
+  const seo = {
+    metaTitle: String(data.seo?.metaTitle || '').slice(0, 60),
+    metaDescription: String(data.seo?.metaDescription || '').slice(0, 160),
+    ogImage: '',
+  };
+
   res.json({
     title: String(data.title || topic),
     excerpt: String(data.excerpt || ''),
     category: snapCategory(data.category) || forcedCategory || 'Lifestyle',
     tags: Array.isArray(data.tags) ? data.tags.map(String).slice(0, 5) : [],
+    imageAlt: String(data.imageAlt || '').slice(0, 125),
+    seo,
     content,
     author: {
       name: String(data.author?.name || ''),
@@ -338,8 +354,9 @@ Content rules: 600-900 words total; start with an intro paragraph; organize with
 const generateField = asyncHandler(async (req, res) => {
   if (!anthropic) return res.status(503).json({ message: 'AI is not configured (ANTHROPIC_API_KEY missing)' });
   const { field, post } = req.body || {};
-  if (!['title', 'excerpt', 'tags'].includes(field)) {
-    return res.status(400).json({ message: 'field must be one of: title, excerpt, tags' });
+  const ALLOWED = ['title', 'excerpt', 'tags', 'seoTitle', 'seoDescription', 'imageAlt'];
+  if (!ALLOWED.includes(field)) {
+    return res.status(400).json({ message: `field must be one of: ${ALLOWED.join(', ')}` });
   }
   const bodyText = sanitizeContentBlocks(post?.content)
     .map((b) => [b.text, ...(b.items || [])].filter(Boolean).join(' '))
@@ -350,9 +367,13 @@ const generateField = asyncHandler(async (req, res) => {
     title: 'Return {"value": "an engaging blog title, max 70 chars"}',
     excerpt: 'Return {"value": "a compelling excerpt, max 40 words"}',
     tags: 'Return {"value": ["3-5 short tags"]}',
+    seoTitle: 'Return {"value": "an SEO-friendly title under 60 chars, targeting search intent"}',
+    seoDescription: 'Return {"value": "a meta description in active voice under 155 chars"}',
+    imageAlt: 'Return {"value": "short alt text describing a fitting cover image, max 100 chars"}',
   };
   const prompt = `Blog post title: "${post?.title || ''}"
 Category: ${post?.category || 'unknown'}
+Excerpt: "${post?.excerpt || ''}"
 Body:
 ${bodyText || '(empty)'}
 
@@ -363,6 +384,48 @@ ${asks[field]} for this DrinksHarbour blog post. ONLY the JSON object.`;
     res.json({ value: data.value });
   } catch (err) {
     console.error('generateField AI error:', err.message);
+    return res.status(502).json({ message: 'AI returned an unusable response — try again' });
+  }
+});
+
+// One-shot SEO generation: fills metaTitle + metaDescription together so they
+// read as a coherent pair in SERP/social previews.
+const generateSeo = asyncHandler(async (req, res) => {
+  if (!anthropic) return res.status(503).json({ message: 'AI is not configured (ANTHROPIC_API_KEY missing)' });
+  const { post } = req.body || {};
+  if (!post?.title && !post?.content?.length) {
+    return res.status(400).json({ message: 'Post needs a title or content before generating SEO' });
+  }
+  const bodyText = sanitizeContentBlocks(post?.content)
+    .map((b) => [b.text, ...(b.items || [])].filter(Boolean).join(' '))
+    .join('\n')
+    .slice(0, 6000);
+
+  const prompt = `You are an SEO specialist for DrinksHarbour, a Nigerian drinks marketplace blog.
+Write SEO metadata for this blog post.
+
+Post title: "${post?.title || ''}"
+Category: ${post?.category || 'unknown'}
+Excerpt: "${post?.excerpt || ''}"
+Body:
+${bodyText || '(empty)'}
+
+Return ONLY this JSON shape:
+{
+  "metaTitle": "a click-worthy SEO title under 60 chars, targeting search intent",
+  "metaDescription": "a meta description in active voice under 155 chars that encourages clicks"
+}
+
+The metaTitle and metaDescription must read as a coherent pair in a Google result. Do not repeat the brand name twice. Do NOT wrap the JSON in code fences.`;
+
+  try {
+    const data = parseAiJson(await callHaikuJson(prompt, 512));
+    res.json({
+      metaTitle: String(data.metaTitle || '').slice(0, 60),
+      metaDescription: String(data.metaDescription || '').slice(0, 160),
+    });
+  } catch (err) {
+    console.error('generateSeo AI error:', err.message);
     return res.status(502).json({ message: 'AI returned an unusable response — try again' });
   }
 });
@@ -378,4 +441,5 @@ module.exports = {
   deletePost,
   generatePost,
   generateField,
+  generateSeo,
 };

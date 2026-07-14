@@ -15,12 +15,20 @@ async function request(path: string, token: string, options: RequestInit = {}) {
     let message = 'Request failed';
     try {
       const error = await response.json();
-      message = error.message || message;
+      message = (error as any)?.message || message;
     } catch {}
     throw new Error(message);
   }
   return response.json();
 }
+
+export type GenerateField =
+  | 'title'
+  | 'excerpt'
+  | 'tags'
+  | 'seoTitle'
+  | 'seoDescription'
+  | 'imageAlt';
 
 export const blogService = {
   getPosts(token: string, params?: Record<string, any>) {
@@ -45,7 +53,10 @@ export const blogService = {
   generatePost(body: { topic: string; category?: string }, token: string) {
     return request('/api/blog/admin/ai/generate-post', token, { method: 'POST', body: JSON.stringify(body) });
   },
-  generateField(body: { field: 'title' | 'excerpt' | 'tags'; post: any }, token: string) {
+  generateField(body: { field: GenerateField; post: any }, token: string) {
     return request('/api/blog/admin/ai/generate-field', token, { method: 'POST', body: JSON.stringify(body) });
+  },
+  generateSeo(body: { post: any }, token: string) {
+    return request('/api/blog/admin/ai/generate-seo', token, { method: 'POST', body: JSON.stringify(body) });
   },
 };

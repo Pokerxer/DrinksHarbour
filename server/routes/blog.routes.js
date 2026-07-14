@@ -15,6 +15,7 @@ const {
   deletePost,
   generatePost,
   generateField,
+  generateSeo,
 } = require('../controllers/blog.controller');
 
 // Public
@@ -24,6 +25,7 @@ router.get('/slug/:slug', getPublishedPostBySlug);
 // Admin (authenticated). AI routes registered before '/admin/:id' so "ai" is not treated as an id.
 router.post('/admin/ai/generate-post', authenticate, generatePost);
 router.post('/admin/ai/generate-field', authenticate, generateField);
+router.post('/admin/ai/generate-seo', authenticate, generateSeo);
 router.get('/admin', authenticate, adminListPosts);
 router.post('/admin', authenticate, createPost);
 router.get('/admin/:id', authenticate, adminGetPost);

@@ -2,144 +2,53 @@ import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import * as Icon from 'react-icons/pi';
-import { CATEGORY_COLORS, type ContentBlock } from '../data';
+import { CATEGORY_COLORS } from '../data';
 import { getPosts, getPostBySlug } from '../api';
-import ShareButtons from './ShareButtons';
+import { renderBlock, buildToc } from '../blog-content';
+import {
+  AuthorCard,
+  TagList,
+  RelatedArticles,
+  PrevNextNav,
+  BackToBlogLink,
+} from '../blog-sections';
+import ShareButtons, { ShareRail } from './ShareButtons';
+import TableOfContents from './TableOfContents';
 
 export const revalidate = 300;
 
-// ─── Content renderer ─────────────────────────────────────────────────────────
-
-// Parse inline markdown into styled nodes, leaving surrounding text intact:
-//   [anchor](/internal/path)  → internal Next link (leading-slash hrefs only)
-//   **bold**                  → <strong>
-//   *italic*                  → <em>
-const INLINE_TOKEN_RE = /\[([^\]]+)\]\((\/[^)\s]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
-
-function renderRichText(text?: string): React.ReactNode {
-  if (!text) return text ?? null;
-  const parts: React.ReactNode[] = [];
-  const re = new RegExp(INLINE_TOKEN_RE.source, 'g');
-  let last = 0;
-  let key = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > last) parts.push(text.slice(last, m.index));
-    if (m[2]) {
-      // link: m[1]=anchor, m[2]=href
-      parts.push(
-        <Link
-          key={`lnk-${key++}`}
-          href={m[2]}
-          className="text-red-700 font-semibold underline decoration-red-300 underline-offset-2 hover:decoration-red-600 transition-colors"
-        >
-          {m[1]}
-        </Link>
-      );
-    } else if (m[3] !== undefined) {
-      parts.push(<strong key={`b-${key++}`} className="font-bold text-gray-900">{m[3]}</strong>);
-    } else if (m[4] !== undefined) {
-      parts.push(<em key={`i-${key++}`}>{m[4]}</em>);
-    }
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) parts.push(text.slice(last));
-  return parts.length ? parts : text;
-}
-
-function renderBlock(block: ContentBlock, i: number) {
-  switch (block.type) {
-    case 'h2':
-      return <h2 key={i} className="text-xl font-black text-gray-900 mt-8 mb-3">{renderRichText(block.text)}</h2>;
-    case 'h3':
-      return <h3 key={i} className="text-base font-bold text-gray-900 mt-6 mb-2">{renderRichText(block.text)}</h3>;
-    case 'p':
-      return <p key={i} className="text-gray-700 leading-relaxed">{renderRichText(block.text)}</p>;
-    case 'ul':
-      return (
-        <ul key={i} className="space-y-2 my-1">
-          {block.items?.map((item, j) => (
-            <li key={j} className="flex items-start gap-2.5 text-gray-600 text-sm leading-relaxed">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0 mt-2" />
-              {renderRichText(item)}
-            </li>
-          ))}
-        </ul>
-      );
-    case 'ol':
-      return (
-        <ol key={i} className="space-y-2 my-1 list-none">
-          {block.items?.map((item, j) => (
-            <li key={j} className="flex items-start gap-3 text-gray-600 text-sm leading-relaxed">
-              <span className="w-5 h-5 rounded-full bg-red-100 text-red-700 text-[10px] font-black flex items-center justify-center flex-shrink-0 mt-0.5">
-                {j + 1}
-              </span>
-              {renderRichText(item)}
-            </li>
-          ))}
-        </ol>
-      );
-    case 'quote':
-      return (
-        <blockquote key={i} className="border-l-[3px] border-red-400 pl-5 py-3 my-3 italic text-gray-600 bg-red-50/50 rounded-r-xl pr-5 leading-relaxed">
-          {renderRichText(block.text)}
-        </blockquote>
-      );
-    case 'tip':
-      return (
-        <div key={i} className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4 my-2 shadow-sm">
-          <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-            <Icon.PiLightbulbFilamentBold size={15} className="text-amber-700" />
-          </div>
-          <p className="text-sm text-amber-800 leading-relaxed">{renderRichText(block.text)}</p>
-        </div>
-      );
-    case 'image':
-      if (!block.src) return null;
-      return (
-        <figure key={i} className="my-6">
-          <div className="relative w-full overflow-hidden rounded-2xl bg-gray-100">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={block.src}
-              alt={block.alt || block.caption || ''}
-              className="w-full h-auto object-cover"
-              loading="lazy"
-            />
-          </div>
-          {block.caption ? (
-            <figcaption className="mt-2 text-center text-xs text-gray-500 italic">
-              {block.caption}
-            </figcaption>
-          ) : null}
-        </figure>
-      );
-    default:
-      return null;
-  }
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default async function BlogPostPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function BlogPostPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
   const { slug } = await params;
-  const post    = await getPostBySlug(slug);
-  const all     = post ? await getPosts() : [];
-  const related = all.filter(p => p.slug !== slug && p.category === post?.category).slice(0, 3);
-  const others  = related.length < 2 ? all.filter(p => p.slug !== slug).slice(0, 3) : related;
+  const post = await getPostBySlug(slug);
+  const all = post ? await getPosts() : [];
+  const related = all
+    .filter((p) => p.slug !== slug && p.category === post?.category)
+    .slice(0, 3);
+  const others =
+    related.length < 2 ? all.filter((p) => p.slug !== slug).slice(0, 3) : related;
 
   if (!post) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="w-16 h-16 bg-red-50 text-red-700 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50 text-red-700">
             <Icon.PiBookOpenTextBold size={30} />
           </div>
-          <h1 className="text-2xl font-black text-gray-900 mb-2">Article not found</h1>
-          <p className="text-gray-500 mb-6">This article may have been moved or removed.</p>
+          <h1 className="mb-2 text-2xl font-black text-gray-900">
+            Article not found
+          </h1>
+          <p className="mb-6 text-gray-500">
+            This article may have been moved or removed.
+          </p>
           <Link
             href="/blog"
-            className="inline-flex items-center gap-2 bg-gradient-to-br from-red-700 to-red-900 text-white px-6 py-3 rounded-xl font-bold text-sm"
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-red-700 to-red-900 px-6 py-3 text-sm font-bold text-white"
           >
             <Icon.PiArrowLeft size={15} /> Back to Blog
           </Link>
@@ -148,200 +57,165 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
     );
   }
 
-  const categoryColor = CATEGORY_COLORS[post.category] ?? 'bg-gray-100 text-gray-700';
-  const postIndex = all.findIndex(p => p.slug === slug);
+  const categoryColor =
+    CATEGORY_COLORS[post.category] ?? 'bg-gray-100 text-gray-700';
+  const postIndex = all.findIndex((p) => p.slug === slug);
   const prevPost = postIndex > 0 ? all[postIndex - 1] : null;
-  const nextPost = postIndex >= 0 && postIndex < all.length - 1 ? all[postIndex + 1] : null;
+  const nextPost =
+    postIndex >= 0 && postIndex < all.length - 1 ? all[postIndex + 1] : null;
+  const toc = buildToc(post.content);
+  const heroAlt = post.imageAlt || post.title;
 
   return (
     <div className="min-h-screen bg-gray-50">
       <main>
-        <div className="relative h-80 min-h-[360px] sm:h-[50vh] w-full overflow-hidden">
-          <style dangerouslySetInnerHTML={{
-            __html: `@keyframes hero-zoom{0%{transform:scale(1)}100%{transform:scale(1.06)}}.hero-zoom{animation:hero-zoom 12s cubic-bezier(.25,.46,.45,.94) forwards}`
-          }} />
+        {/* ─── Hero ─────────────────────────────────────────────────────── */}
+        <div className="relative h-80 min-h-[360px] w-full overflow-hidden sm:h-[52vh]">
+          <style
+            dangerouslySetInnerHTML={{
+              __html: `@keyframes hero-zoom{0%{transform:scale(1)}100%{transform:scale(1.06)}}.hero-zoom{animation:hero-zoom 12s cubic-bezier(.25,.46,.45,.94) forwards}`,
+            }}
+          />
           <Image
-          src={post.image}
-          alt={post.title}
-          fill
-          priority
-          sizes="100vw"
-          className="object-cover hero-zoom"
-        />
+            src={post.image}
+            alt={heroAlt}
+            fill
+            priority
+            sizes="100vw"
+            className="object-cover hero-zoom"
+          />
 
-        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-black/40 z-[1]" />
-        <div className="absolute inset-0 bg-gradient-to-br from-black/40 to-transparent z-[1]" />
+          <div className="absolute inset-0 z-[1] bg-gradient-to-t from-black/80 via-black/20 to-black/40" />
+          <div className="absolute inset-0 z-[1] bg-gradient-to-br from-black/40 to-transparent" />
 
-        <div
-          className="absolute inset-0 z-[2] opacity-[0.04] mix-blend-overlay pointer-events-none"
-          style={{
-            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
-            backgroundRepeat: 'repeat',
-            backgroundSize: '256px 256px',
-          }}
-        />
+          <div
+            className="pointer-events-none absolute inset-0 z-[2] opacity-[0.04] mix-blend-overlay"
+            style={{
+              backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+              backgroundRepeat: 'repeat',
+              backgroundSize: '256px 256px',
+            }}
+          />
 
-        <div className="absolute top-6 left-0 right-0 z-10">
-          <div className="container mx-auto max-w-3xl px-4">
-            <nav aria-label="Breadcrumb" className="inline-flex items-center gap-2 text-xs backdrop-blur-md bg-black/30 border border-white/10 rounded-full px-4 py-1.5 shadow-lg">
-              <Link href="/blog" className="text-white/70 hover:text-white transition-colors flex items-center gap-1">
-                <Icon.PiBookOpenText size={12} /> Blog
-              </Link>
-              <Icon.PiCaretRight size={11} className="text-white/30" />
-              <Link href={`/blog?category=${encodeURIComponent(post.category)}`} className="bg-white/20 text-white px-2.5 py-0.5 rounded-full text-[10px] font-bold hover:bg-white/30 transition-colors">
-                {post.category}
-              </Link>
-            </nav>
-          </div>
-        </div>
-
-        <div className="absolute bottom-0 left-0 right-0 pb-8 sm:pb-10 z-10">
-          <div className="container mx-auto max-w-3xl px-4">
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white leading-tight drop-shadow-2xl">
-              {post.title}
-            </h1>
-          </div>
-        </div>
-      </div>
-
-      <div className="container mx-auto max-w-3xl px-4 py-8 pb-16">
-
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4 flex flex-wrap items-center justify-between gap-3 mb-8">
-          <div className="flex items-center gap-4 text-xs text-gray-500 flex-wrap">
-            <span className="flex items-center gap-1.5">
-              <Icon.PiUserCircleBold size={14} className="text-red-600" />
-              <Link href={`/blog?q=${encodeURIComponent(post.author.name)}`} className="font-semibold text-gray-700 hover:text-red-700 transition-colors">{post.author.name}</Link>
-              <span className="text-gray-400">· {post.author.role}</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <time dateTime={post.isoDate}><Icon.PiCalendar size={13} className="text-red-600" /> {post.date}</time>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Icon.PiClock size={13} className="text-red-600" /> {post.readTime}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link href={`/blog?category=${encodeURIComponent(post.category)}`} className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${categoryColor} hover:opacity-80 transition-opacity`}>{post.category}</Link>
-          </div>
-        </div>
-
-        <p className="text-lg text-gray-800 leading-relaxed font-medium border-l-[3px] border-red-400/60 pl-5 mb-10 py-1.5">
-          {post.excerpt}
-        </p>
-
-        <article className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-8 space-y-5 text-base leading-[1.75]">
-          {post.content.map((block, i) => renderBlock(block, i))}
-        </article>
-
-        <div className="flex items-center gap-2 flex-wrap mt-8">
-          <span className="text-xs text-gray-400 font-semibold tracking-wider uppercase">Tags:</span>
-          {post.tags.map(tag => (
-            <Link
-              key={tag}
-              href={`/blog?q=${encodeURIComponent(tag)}`}
-              className="text-xs bg-gray-100 hover:bg-red-50 hover:text-red-700 text-gray-600 px-3 py-1.5 rounded-full font-medium transition-all hover:shadow-sm"
-            >
-              #{tag}
-            </Link>
-          ))}
-        </div>
-
-        <ShareButtons />
-
-        <div className="group bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md p-6 mt-6 flex items-start gap-4 transition-all duration-300">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-red-100 to-red-200 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform duration-300">
-            <Icon.PiUserCircleBold size={30} className="text-red-700" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-black text-gray-900">{post.author.name}</p>
-            <p className="text-xs text-red-700 font-semibold mb-2">{post.author.role}</p>
-            <p className="text-sm text-gray-500 leading-relaxed">
-              {post.author.bio}
-            </p>
-          </div>
-        </div>
-
-        {others.length > 0 && (
-          <div className="mt-12">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-black text-gray-900">More articles</h2>
-              <Link href="/blog" className="text-xs font-semibold text-red-700 hover:underline flex items-center gap-1">
-                View all <Icon.PiArrowRight size={12} />
-              </Link>
-            </div>
-            <div className="grid sm:grid-cols-3 gap-4">
-              {others.map(rel => (
+          {/* Breadcrumb */}
+          <div className="absolute left-0 right-0 top-6 z-10">
+            <div className="container mx-auto max-w-4xl px-4">
+              <nav
+                aria-label="Breadcrumb"
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/30 px-4 py-1.5 text-xs shadow-lg backdrop-blur-md"
+              >
                 <Link
-                  key={rel.slug}
-                  href={`/blog/${rel.slug}`}
-                  className="group bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-lg hover:border-red-100 transition-all duration-300"
+                  href="/blog"
+                  className="flex items-center gap-1 text-white/70 transition-colors hover:text-white"
                 >
-                  <div className="relative h-36 overflow-hidden">
-                    <Image
-                      src={rel.image}
-                      alt={rel.title}
-                      fill
-                      sizes="(max-width: 640px) 100vw, 33vw"
-                      className="object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
-                    <span className={`absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${CATEGORY_COLORS[rel.category] ?? 'bg-gray-100 text-gray-700'}`}>
-                      {rel.category}
-                    </span>
-                  </div>
-                  <div className="p-4">
-                    <h3 className="text-xs font-black text-gray-900 leading-snug group-hover:text-red-700 transition-colors line-clamp-2">
-                      {rel.title}
-                    </h3>
-                    <p className="text-[10px] text-gray-400 mt-1.5 flex items-center gap-1">
-                      <Icon.PiClock size={10} /> {rel.readTime}
-                    </p>
-                  </div>
+                  <Icon.PiBookOpenText size={12} /> Blog
                 </Link>
-              ))}
+                <Icon.PiCaretRight size={11} className="text-white/30" />
+                <Link
+                  href={`/blog?category=${encodeURIComponent(post.category)}`}
+                  className="rounded-full bg-white/20 px-2.5 py-0.5 text-[10px] font-bold text-white transition-colors hover:bg-white/30"
+                >
+                  {post.category}
+                </Link>
+              </nav>
             </div>
           </div>
-        )}
 
-        <div className="mt-10 grid grid-cols-2 gap-3">
-          {prevPost ? (
-            <Link
-              href={`/blog/${prevPost.slug}`}
-              className="group bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:border-red-100 hover:shadow-lg transition-all duration-300 text-left"
-            >
-              <p className="text-[10px] text-gray-400 font-semibold flex items-center gap-1 mb-1 group-hover:text-red-500 transition-colors">
-                <Icon.PiArrowLeft size={10} /> Previous
-              </p>
-              <p className="text-xs font-bold text-gray-700 leading-snug group-hover:text-red-700 transition-colors line-clamp-2">
-                {prevPost.title}
-              </p>
-            </Link>
-          ) : <div />}
-          {nextPost ? (
-            <Link
-              href={`/blog/${nextPost.slug}`}
-              className="group bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:border-red-100 hover:shadow-lg transition-all duration-300 text-right"
-            >
-              <p className="text-[10px] text-gray-400 font-semibold flex items-center gap-1 justify-end mb-1 group-hover:text-red-500 transition-colors">
-                Next <Icon.PiArrowRight size={10} />
-              </p>
-              <p className="text-xs font-bold text-gray-700 leading-snug group-hover:text-red-700 transition-colors line-clamp-2">
-                {nextPost.title}
-              </p>
-            </Link>
-          ) : <div />}
+          {/* Title + featured badge */}
+          <div className="absolute bottom-0 left-0 right-0 z-10 pb-8 sm:pb-12">
+            <div className="container mx-auto max-w-4xl px-4">
+              {post.featured ? (
+                <span className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-amber-400/90 px-3 py-1 text-[11px] font-bold text-amber-900 shadow-sm backdrop-blur-sm">
+                  <Icon.PiStarFill size={12} /> Featured
+                </span>
+              ) : null}
+              <h1 className="text-3xl font-black leading-tight text-white drop-shadow-2xl sm:text-4xl lg:text-5xl">
+                {post.title}
+              </h1>
+            </div>
+          </div>
         </div>
 
-        <div className="mt-4 text-center">
-          <Link
-            href="/blog"
-            className="inline-flex items-center gap-2 border border-gray-200 text-gray-700 px-6 py-3 rounded-xl font-bold text-sm hover:border-red-200 hover:text-red-700 hover:shadow-sm transition-all duration-300"
-          >
-            <Icon.PiArrowLeft size={15} /> Back to Blog
-          </Link>
+        {/* ─── Meta bar ─────────────────────────────────────────────────── */}
+        <div className="container mx-auto max-w-4xl px-4">
+          <div className="-mt-6 relative z-10 mb-8 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-100 bg-white px-5 py-4 shadow-md">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-gray-500">
+              <span className="flex items-center gap-2">
+                <Icon.PiUserCircleBold size={16} className="text-red-600" />
+                <Link
+                  href={`/blog?q=${encodeURIComponent(post.author.name)}`}
+                  className="font-semibold text-gray-700 transition-colors hover:text-red-700"
+                >
+                  {post.author.name}
+                </Link>
+                {post.author.role ? (
+                  <span className="hidden text-gray-400 sm:inline">
+                    · {post.author.role}
+                  </span>
+                ) : null}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Icon.PiCalendar size={13} className="text-red-600" />
+                <time dateTime={post.isoDate}>{post.date}</time>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Icon.PiClock size={13} className="text-red-600" />
+                {post.readTime}
+              </span>
+            </div>
+            <Link
+              href={`/blog?category=${encodeURIComponent(post.category)}`}
+              className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition-opacity hover:opacity-80 ${categoryColor}`}
+            >
+              {post.category}
+            </Link>
+          </div>
         </div>
 
-      </div>
+        {/* ─── Article body: share rail + main + TOC ────────────────────── */}
+        <div className="container mx-auto max-w-4xl px-4 pb-16">
+          {/* Excerpt */}
+          <p className="mb-10 border-l-[3px] border-red-400/60 py-1.5 pl-5 text-lg font-medium leading-relaxed text-gray-800">
+            {post.excerpt}
+          </p>
+
+          <div className="flex gap-8">
+            {/* Desktop share rail */}
+            <ShareRail />
+
+            {/* Article */}
+            <article className="min-w-0 flex-1 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm space-y-5 sm:p-8">
+              {post.content.map((block, i) => renderBlock(block, i))}
+            </article>
+
+            {/* Desktop TOC */}
+            {toc.length >= 3 ? (
+              <aside className="hidden w-56 flex-shrink-0 xl:block">
+                <div className="sticky top-24">
+                  <TableOfContents items={toc} />
+                </div>
+              </aside>
+            ) : null}
+          </div>
+
+          {/* Tags */}
+          <TagList tags={post.tags} />
+
+          {/* Share (mobile + full bar) */}
+          <ShareButtons />
+
+          {/* Author */}
+          <AuthorCard post={post} />
+
+          {/* Related */}
+          <RelatedArticles posts={others} />
+
+          {/* Prev / Next */}
+          <PrevNextNav prev={prevPost} next={nextPost} />
+
+          {/* Back to blog */}
+          <BackToBlogLink />
+        </div>
       </main>
     </div>
   );
