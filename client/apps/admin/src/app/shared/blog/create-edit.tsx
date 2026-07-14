@@ -57,6 +57,7 @@ const BLOCK_OPTIONS = [
   { label: 'Numbered list', value: 'ol' },
   { label: 'Blockquote', value: 'quote' },
   { label: 'Pro tip', value: 'tip' },
+  { label: 'Image', value: 'image' },
 ];
 
 const BLOCK_ACCENT: Record<string, string> = {
@@ -67,6 +68,7 @@ const BLOCK_ACCENT: Record<string, string> = {
   ol: 'border-l-emerald-400',
   quote: 'border-l-amber-400',
   tip: 'border-l-violet-500',
+  image: 'border-l-sky-500',
 };
 
 const BLOCK_PLACEHOLDER: Record<string, string> = {
@@ -188,7 +190,8 @@ function ImageUploadButton({
     if (inputRef.current) inputRef.current.value = '';
     if (!file) return;
     if (!token) return toast.error('Not authenticated — reload and try again');
-    if (!file.type.startsWith('image/')) return toast.error('Please choose an image file');
+    if (!file.type.startsWith('image/'))
+      return toast.error('Please choose an image file');
     setBusy(true);
     try {
       const res = await uploadService.uploadImage(file, token, 'blog');
@@ -675,11 +678,20 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
         </div>
 
         <p className="-mt-2 mb-4 text-xs text-gray-400">
-          Tip: link to products inline with{' '}
+          Formatting: link with{' '}
           <code className="rounded bg-gray-100 px-1 py-0.5 text-[11px] text-gray-600">
-            [anchor text](/product/slug)
+            [anchor](/product/slug)
           </code>
-          . AI-generated posts add these automatically from real catalog items.
+          , bold with{' '}
+          <code className="rounded bg-gray-100 px-1 py-0.5 text-[11px] text-gray-600">
+            **text**
+          </code>
+          , italic with{' '}
+          <code className="rounded bg-gray-100 px-1 py-0.5 text-[11px] text-gray-600">
+            *text*
+          </code>
+          . Add an <span className="font-medium text-gray-500">Image</span> block
+          to place photos between paragraphs.
         </p>
 
         <div className="space-y-3">
@@ -731,7 +743,54 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
                 </span>
               </div>
 
-              {LIST_TYPES.includes(block.type) ? (
+              {block.type === 'image' ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-medium text-gray-500">
+                      Image URL
+                    </label>
+                    <ImageUploadButton
+                      token={token}
+                      label="Upload"
+                      onUploaded={(url) => updateBlock(i, { src: url })}
+                    />
+                  </div>
+                  <Input
+                    size="sm"
+                    placeholder="https://… or upload a file"
+                    value={block.src || ''}
+                    onChange={(e) => updateBlock(i, { src: e.target.value })}
+                  />
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <Input
+                      size="sm"
+                      placeholder="Alt text (accessibility & SEO)"
+                      value={block.alt || ''}
+                      onChange={(e) => updateBlock(i, { alt: e.target.value })}
+                    />
+                    <Input
+                      size="sm"
+                      placeholder="Caption (optional)"
+                      value={block.caption || ''}
+                      onChange={(e) =>
+                        updateBlock(i, { caption: e.target.value })
+                      }
+                    />
+                  </div>
+                  {block.src ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={block.src}
+                      alt={block.alt || 'Block image preview'}
+                      className="mt-1 h-40 w-full rounded-lg object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-24 items-center justify-center rounded-lg border-2 border-dashed border-gray-200 bg-white text-xs text-gray-400">
+                      Upload or paste an image URL
+                    </div>
+                  )}
+                </div>
+              ) : LIST_TYPES.includes(block.type) ? (
                 <Textarea
                   rows={3}
                   placeholder="One list item per line"
@@ -827,7 +886,9 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
               <ImageUploadButton
                 token={token}
                 label="Upload"
-                onUploaded={(url) => set({ seo: { ...post.seo, ogImage: url } })}
+                onUploaded={(url) =>
+                  set({ seo: { ...post.seo, ogImage: url } })
+                }
               />
             </div>
             <Input

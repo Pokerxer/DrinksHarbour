@@ -9,6 +9,10 @@ const contentBlockSchema = new mongoose.Schema(
     type: { type: String, enum: BLOCK_TYPES, required: true },
     text: { type: String, default: '' },
     items: { type: [String], default: [] },
+    // image blocks
+    src: { type: String, default: '' },
+    alt: { type: String, default: '' },
+    caption: { type: String, default: '' },
   },
   { _id: false }
 );

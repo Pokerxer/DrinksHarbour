@@ -8,9 +8,13 @@ export type Category =
   | 'Lifestyle';
 
 export interface ContentBlock {
-  type: 'p' | 'h2' | 'h3' | 'ul' | 'ol' | 'quote' | 'tip';
+  type: 'p' | 'h2' | 'h3' | 'ul' | 'ol' | 'quote' | 'tip' | 'image';
   text?: string;
   items?: string[];
+  // image blocks
+  src?: string;
+  alt?: string;
+  caption?: string;
 }
 
 export interface Post {

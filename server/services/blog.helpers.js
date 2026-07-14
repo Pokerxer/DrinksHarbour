@@ -2,7 +2,7 @@
 'use strict';
 
 const BLOG_CATEGORIES = ['Wine Guide', 'Spirits Guide', 'Beer Guide', 'Recipes', 'Entertaining', 'Lifestyle'];
-const BLOCK_TYPES = ['p', 'h2', 'h3', 'ul', 'ol', 'quote', 'tip'];
+const BLOCK_TYPES = ['p', 'h2', 'h3', 'ul', 'ol', 'quote', 'tip', 'image'];
 
 function slugify(title) {
   return String(title || '')
@@ -39,11 +39,21 @@ function sanitizeContentBlocks(content) {
   const blocks = Array.isArray(content) ? content : [];
   return blocks
     .filter((b) => b && BLOCK_TYPES.includes(b.type))
-    .map((b) => ({
-      type: b.type,
-      text: typeof b.text === 'string' ? b.text : '',
-      items: Array.isArray(b.items) ? b.items.map(String) : [],
-    }));
+    .map((b) => {
+      if (b.type === 'image') {
+        return {
+          type: 'image',
+          src: typeof b.src === 'string' ? b.src : '',
+          alt: typeof b.alt === 'string' ? b.alt : '',
+          caption: typeof b.caption === 'string' ? b.caption : '',
+        };
+      }
+      return {
+        type: b.type,
+        text: typeof b.text === 'string' ? b.text : '',
+        items: Array.isArray(b.items) ? b.items.map(String) : [],
+      };
+    });
 }
 
 function snapCategory(value) {

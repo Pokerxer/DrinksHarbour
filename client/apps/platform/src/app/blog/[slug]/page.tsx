@@ -10,28 +10,37 @@ export const revalidate = 300;
 
 // ─── Content renderer ─────────────────────────────────────────────────────────
 
-// Parse inline markdown links [anchor](/internal/path) into styled Next links,
-// leaving surrounding text intact. Only internal (leading-slash) hrefs are linked.
-const INLINE_LINK_RE = /\[([^\]]+)\]\((\/[^)\s]+)\)/g;
+// Parse inline markdown into styled nodes, leaving surrounding text intact:
+//   [anchor](/internal/path)  → internal Next link (leading-slash hrefs only)
+//   **bold**                  → <strong>
+//   *italic*                  → <em>
+const INLINE_TOKEN_RE = /\[([^\]]+)\]\((\/[^)\s]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
 
 function renderRichText(text?: string): React.ReactNode {
   if (!text) return text ?? null;
   const parts: React.ReactNode[] = [];
-  const re = new RegExp(INLINE_LINK_RE.source, 'g');
+  const re = new RegExp(INLINE_TOKEN_RE.source, 'g');
   let last = 0;
   let key = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) parts.push(text.slice(last, m.index));
-    parts.push(
-      <Link
-        key={`lnk-${key++}`}
-        href={m[2]}
-        className="text-red-700 font-semibold underline decoration-red-300 underline-offset-2 hover:decoration-red-600 transition-colors"
-      >
-        {m[1]}
-      </Link>
-    );
+    if (m[2]) {
+      // link: m[1]=anchor, m[2]=href
+      parts.push(
+        <Link
+          key={`lnk-${key++}`}
+          href={m[2]}
+          className="text-red-700 font-semibold underline decoration-red-300 underline-offset-2 hover:decoration-red-600 transition-colors"
+        >
+          {m[1]}
+        </Link>
+      );
+    } else if (m[3] !== undefined) {
+      parts.push(<strong key={`b-${key++}`} className="font-bold text-gray-900">{m[3]}</strong>);
+    } else if (m[4] !== undefined) {
+      parts.push(<em key={`i-${key++}`}>{m[4]}</em>);
+    }
     last = m.index + m[0].length;
   }
   if (last < text.length) parts.push(text.slice(last));
@@ -84,6 +93,26 @@ function renderBlock(block: ContentBlock, i: number) {
           </div>
           <p className="text-sm text-amber-800 leading-relaxed">{renderRichText(block.text)}</p>
         </div>
+      );
+    case 'image':
+      if (!block.src) return null;
+      return (
+        <figure key={i} className="my-6">
+          <div className="relative w-full overflow-hidden rounded-2xl bg-gray-100">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={block.src}
+              alt={block.alt || block.caption || ''}
+              className="w-full h-auto object-cover"
+              loading="lazy"
+            />
+          </div>
+          {block.caption ? (
+            <figcaption className="mt-2 text-center text-xs text-gray-500 italic">
+              {block.caption}
+            </figcaption>
+          ) : null}
+        </figure>
       );
     default:
       return null;

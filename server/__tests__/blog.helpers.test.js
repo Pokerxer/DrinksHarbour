@@ -60,7 +60,18 @@ test('parseAiJson handles raw JSON, fenced JSON, and JSON with prose around it',
   assert.throws(() => parseAiJson('no json here'));
 });
 
+test('sanitizeContentBlocks preserves image block fields and drops stray text', () => {
+  const out = sanitizeContentBlocks([
+    { type: 'image', src: 'https://x/i.jpg', alt: 'a', caption: 'c', text: 'ignored' },
+    { type: 'p', text: 'hi' },
+    { type: 'bogus', text: 'nope' },
+  ]);
+  assert.deepStrictEqual(out[0], { type: 'image', src: 'https://x/i.jpg', alt: 'a', caption: 'c' });
+  assert.deepStrictEqual(out[1], { type: 'p', text: 'hi', items: [] });
+  assert.strictEqual(out.length, 2);
+});
+
 test('exports category and block-type enums', () => {
   assert.deepStrictEqual(BLOG_CATEGORIES, ['Wine Guide', 'Spirits Guide', 'Beer Guide', 'Recipes', 'Entertaining', 'Lifestyle']);
-  assert.deepStrictEqual(BLOCK_TYPES, ['p', 'h2', 'h3', 'ul', 'ol', 'quote', 'tip']);
+  assert.deepStrictEqual(BLOCK_TYPES, ['p', 'h2', 'h3', 'ul', 'ol', 'quote', 'tip', 'image']);
 });
