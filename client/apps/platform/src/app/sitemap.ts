@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { POSTS } from "./blog/data";
+import { getPosts } from "./blog/api";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -64,9 +64,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/vendors/register/apply`,      lastModified: new Date(), changeFrequency: "monthly", priority: 0.5 },
   ];
 
-  const [slugs, brandSlugs] = await Promise.all([
+  const [slugs, brandSlugs, posts] = await Promise.all([
     fetchProductSlugs(),
     fetchBrandSlugs(),
+    getPosts(),
   ]);
 
   const productPages: MetadataRoute.Sitemap = slugs.map((slug) => ({
@@ -92,9 +93,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.7,
   }));
 
-  const blogPages: MetadataRoute.Sitemap = POSTS.map((post) => ({
+  const blogPages: MetadataRoute.Sitemap = posts.map((post) => ({
     url: `${BASE_URL}/blog/${post.slug}`,
-    lastModified: new Date(post.isoDate),
+    lastModified: new Date(post.date),
     changeFrequency: "monthly",
     priority: 0.6,
   }));
