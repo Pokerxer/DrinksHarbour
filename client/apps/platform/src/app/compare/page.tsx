@@ -9,6 +9,7 @@ import { useCompare } from '@/context/CompareContext';
 import { useCart } from '@/context/CartContext';
 import { useModalCartContext } from '@/context/ModalCartContext';
 import { ProductType } from '@/types/product.types';
+import { resolveProductPrice, resolveProductOriginPrice } from '@/utils/product.utils';
 import Rate from '@/components/Other/Rate';
 
 // ---------------------------------------------------------------------------
@@ -44,7 +45,7 @@ const isInStock = (p: ProductType): boolean => {
 };
 
 const getBadge = (p: ProductType) => {
-  if (p.sale && p.originPrice && p.originPrice > p.price) return { text: 'Sale', className: 'bg-red-500' };
+  if (p.sale && resolveProductOriginPrice(p) && resolveProductOriginPrice(p)! > resolveProductPrice(p)) return { text: 'Sale', className: 'bg-red-500' };
   if (p.badge?.text) return { text: p.badge.text, className: 'bg-emerald-500' };
   if (p.new) return { text: 'New', className: 'bg-blue-500' };
   return null;
@@ -138,19 +139,23 @@ const ComparePage = () => {
       {
         key: 'price',
         label: 'Price',
-        text: (p) => formatPrice(p.price),
-        render: (p) => (
-          <div>
-            <span className="font-bold text-gray-900">{formatPrice(p.price)}</span>
-            {p.originPrice && p.originPrice > p.price && (
-              <span className="ml-2 text-sm text-gray-400 line-through">
-                {formatPrice(p.originPrice)}
-              </span>
-            )}
-          </div>
-        ),
+        text: (p) => formatPrice(resolveProductPrice(p)),
+        render: (p) => {
+          const price = resolveProductPrice(p);
+          const origin = resolveProductOriginPrice(p);
+          return (
+            <div>
+              <span className="font-bold text-gray-900">{formatPrice(price)}</span>
+              {origin && origin > price && (
+                <span className="ml-2 text-sm text-gray-400 line-through">
+                  {formatPrice(origin)}
+                </span>
+              )}
+            </div>
+          );
+        },
         better: 'low',
-        numeric: (p) => (typeof p.price === 'number' ? p.price : null),
+        numeric: (p) => resolveProductPrice(p) || null,
       },
       {
         key: 'discount',
@@ -535,7 +540,7 @@ const ComparePage = () => {
                       <h3 className="font-bold text-gray-900 line-clamp-2">{product.name}</h3>
                     </Link>
                     {product.brand?.name && <p className="text-xs text-gray-500">{product.brand.name}</p>}
-                    <p className="mt-1 text-lg font-bold text-gray-900">{formatPrice(product.price)}</p>
+                    <p className="mt-1 text-lg font-bold text-gray-900">{formatPrice(resolveProductPrice(product))}</p>
                   </div>
                 </div>
 

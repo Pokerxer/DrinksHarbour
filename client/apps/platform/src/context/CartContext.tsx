@@ -12,6 +12,7 @@ import React, {
 import { ProductType } from "@/types/product.types";
 import { API_URL } from "@/lib/api";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { resolveProductPrice } from "@/utils/product.utils";
 
 interface CartItem extends ProductType {
   cartItemId: string;
@@ -131,12 +132,12 @@ export const getEffectiveUnitPrice = (item: { price?: number; quantity?: number;
 
 const getPriceFromAvailableAt = (product: ProductType, vendorName: string, size: string): number => {
   if (!product.availableAt || !Array.isArray(product.availableAt)) {
-    return product.price || product.priceRange?.min || 0;
+    return resolveProductPrice(product);
   }
   
   const vendorEntry = product.availableAt.find((v: any) => v.tenant?.name === vendorName);
   if (!vendorEntry || !vendorEntry.sizes) {
-    return product.price || product.priceRange?.min || 0;
+    return resolveProductPrice(product);
   }
   
   const sizeEntry = vendorEntry.sizes.find((s: any) => s.size === size);
@@ -144,7 +145,7 @@ const getPriceFromAvailableAt = (product: ProductType, vendorName: string, size:
     return sizeEntry.pricing.websitePrice;
   }
   
-  return product.price || product.priceRange?.min || 0;
+  return resolveProductPrice(product);
 };
 
 const CartContext = createContext<CartContextProps | undefined>(undefined);

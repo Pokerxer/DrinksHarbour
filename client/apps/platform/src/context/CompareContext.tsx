@@ -11,6 +11,7 @@ import React, {
 } from "react";
 import { ProductType } from "@/types/product.types";
 import { API_URL } from "@/lib/api";
+import { resolveProductPrice, resolveProductOriginPrice } from "@/utils/product.utils";
 
 interface CompareItem extends ProductType {}
 
@@ -179,8 +180,10 @@ export const CompareProvider: React.FC<{ children: React.ReactNode }> = ({
             // Merge only the volatile fields; keep the rest of the snapshot.
             return {
               ...item,
-              price: fresh.price ?? item.price,
-              originPrice: fresh.originPrice ?? item.originPrice,
+              // getProductBySlug returns no top-level `price`, only priceRange /
+              // availableAt — resolve from those so a stale ₦0 snapshot heals.
+              price: resolveProductPrice(fresh) || item.price,
+              originPrice: resolveProductOriginPrice(fresh) ?? item.originPrice,
               discount: fresh.discount ?? item.discount,
               sale: fresh.sale ?? item.sale,
               rating: fresh.rating ?? item.rating,
