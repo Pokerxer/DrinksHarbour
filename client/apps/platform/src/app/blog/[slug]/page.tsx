@@ -2,12 +2,11 @@ import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import * as Icon from 'react-icons/pi';
-import { POSTS, CATEGORY_COLORS, type ContentBlock } from '../data';
+import { CATEGORY_COLORS, type ContentBlock } from '../data';
+import { getPosts, getPostBySlug } from '../api';
 import ShareButtons from './ShareButtons';
 
-export function generateStaticParams() {
-  return POSTS.map(post => ({ slug: post.slug }));
-}
+export const revalidate = 300;
 
 // ─── Content renderer ─────────────────────────────────────────────────────────
 
@@ -67,9 +66,10 @@ function renderBlock(block: ContentBlock, i: number) {
 
 export default async function BlogPostPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const post    = POSTS.find(p => p.slug === slug);
-  const related = POSTS.filter(p => p.slug !== slug && p.category === post?.category).slice(0, 3);
-  const others  = related.length < 2 ? POSTS.filter(p => p.slug !== slug).slice(0, 3) : related;
+  const post    = await getPostBySlug(slug);
+  const all     = post ? await getPosts() : [];
+  const related = all.filter(p => p.slug !== slug && p.category === post?.category).slice(0, 3);
+  const others  = related.length < 2 ? all.filter(p => p.slug !== slug).slice(0, 3) : related;
 
   if (!post) {
     return (
@@ -92,9 +92,9 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
   }
 
   const categoryColor = CATEGORY_COLORS[post.category] ?? 'bg-gray-100 text-gray-700';
-  const postIndex = POSTS.findIndex(p => p.slug === slug);
-  const prevPost = postIndex > 0 ? POSTS[postIndex - 1] : null;
-  const nextPost = postIndex < POSTS.length - 1 ? POSTS[postIndex + 1] : null;
+  const postIndex = all.findIndex(p => p.slug === slug);
+  const prevPost = postIndex > 0 ? all[postIndex - 1] : null;
+  const nextPost = postIndex >= 0 && postIndex < all.length - 1 ? all[postIndex + 1] : null;
 
   return (
     <div className="min-h-screen bg-gray-50">

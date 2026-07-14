@@ -1,0 +1,75 @@
+// services/blog.helpers.js — pure helpers for the blog module (no DB, no network)
+'use strict';
+
+const BLOG_CATEGORIES = ['Wine Guide', 'Spirits Guide', 'Beer Guide', 'Recipes', 'Entertaining', 'Lifestyle'];
+const BLOCK_TYPES = ['p', 'h2', 'h3', 'ul', 'ol', 'quote', 'tip'];
+
+function slugify(title) {
+  return String(title || '')
+    .toLowerCase()
+    .trim()
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function dedupeSlug(base, existingSlugs) {
+  const taken = new Set(existingSlugs || []);
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(`${base}-${n}`)) n += 1;
+  return `${base}-${n}`;
+}
+
+function countWords(str) {
+  return String(str || '').split(/\s+/).filter(Boolean).length;
+}
+
+function computeReadTime(content) {
+  const blocks = Array.isArray(content) ? content : [];
+  const words = blocks.reduce((sum, b) => {
+    if (!b) return sum;
+    const itemWords = Array.isArray(b.items) ? b.items.reduce((s, it) => s + countWords(it), 0) : 0;
+    return sum + countWords(b.text) + itemWords;
+  }, 0);
+  return `${Math.max(1, Math.round(words / 200))} min read`;
+}
+
+function sanitizeContentBlocks(content) {
+  const blocks = Array.isArray(content) ? content : [];
+  return blocks
+    .filter((b) => b && BLOCK_TYPES.includes(b.type))
+    .map((b) => ({
+      type: b.type,
+      text: typeof b.text === 'string' ? b.text : '',
+      items: Array.isArray(b.items) ? b.items.map(String) : [],
+    }));
+}
+
+function snapCategory(value) {
+  const needle = String(value || '').trim().toLowerCase();
+  return BLOG_CATEGORIES.find((c) => c.toLowerCase() === needle) || null;
+}
+
+// Tolerant JSON extraction for model output: raw JSON, ```json fences, or JSON embedded in prose.
+function parseAiJson(text) {
+  const cleaned = String(text || '').replace(/```json\s*|```\s*/g, '').trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch (_) {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    throw new Error('AI response was not valid JSON');
+  }
+}
+
+module.exports = {
+  BLOG_CATEGORIES,
+  BLOCK_TYPES,
+  slugify,
+  dedupeSlug,
+  computeReadTime,
+  sanitizeContentBlocks,
+  snapCategory,
+  parseAiJson,
+};

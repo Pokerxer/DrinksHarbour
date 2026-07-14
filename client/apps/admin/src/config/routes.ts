@@ -142,6 +142,11 @@ export const routes = {
     checkout: '/ecommerce/checkout',
     trackingId: (id: string) => `/ecommerce/tracking/${id}`,
   },
+  blog: {
+    list: '/blog',
+    create: '/blog/create',
+    edit: (id: string) => `/blog/${id}/edit`,
+  },
   searchAndFilter: {
     realEstate: '/search/real-estate',
     nft: '/search/nft',

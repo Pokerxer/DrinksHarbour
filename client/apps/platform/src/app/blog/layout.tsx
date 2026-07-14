@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { POSTS } from './data';
+import { getPosts } from './api';
 
 const BASE_URL  = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
 const SITE_NAME = 'DrinksHarbour';
@@ -43,39 +43,6 @@ export const metadata: Metadata = {
   },
 };
 
-const blogJsonLd = {
-  '@context': 'https://schema.org',
-  '@type': 'Blog',
-  name: 'DrinksHarbour Blog',
-  description: 'Drink guides, cocktail recipes, tasting notes, and lifestyle content from Nigeria\'s premier beverage store.',
-  url: `${BASE_URL}/blog`,
-  publisher: {
-    '@type': 'Organization',
-    name: SITE_NAME,
-    url: BASE_URL,
-    logo: { '@type': 'ImageObject', url: `${BASE_URL}/logo.png` },
-  },
-  inLanguage: 'en-NG',
-  blogPost: POSTS.map(p => ({
-    '@type': 'BlogPosting',
-    headline: p.title,
-    url: `${BASE_URL}/blog/${p.slug}`,
-    datePublished: p.isoDate,
-    author: { '@type': 'Person', name: p.author.name },
-  })),
-};
-
-const itemListJsonLd = {
-  '@context': 'https://schema.org',
-  '@type': 'ItemList',
-  itemListElement: POSTS.map((p, i) => ({
-    '@type': 'ListItem',
-    position: i + 1,
-    url: `${BASE_URL}/blog/${p.slug}`,
-  })),
-  numberOfItems: POSTS.length,
-};
-
 const breadcrumbJsonLd = {
   '@context': 'https://schema.org',
   '@type': 'BreadcrumbList',
@@ -85,7 +52,42 @@ const breadcrumbJsonLd = {
   ],
 };
 
-export default function BlogLayout({ children }: { children: React.ReactNode }) {
+export default async function BlogLayout({ children }: { children: React.ReactNode }) {
+  const posts = await getPosts();
+
+  const blogJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Blog',
+    name: 'DrinksHarbour Blog',
+    description: 'Drink guides, cocktail recipes, tasting notes, and lifestyle content from Nigeria\'s premier beverage store.',
+    url: `${BASE_URL}/blog`,
+    publisher: {
+      '@type': 'Organization',
+      name: SITE_NAME,
+      url: BASE_URL,
+      logo: { '@type': 'ImageObject', url: `${BASE_URL}/logo.png` },
+    },
+    inLanguage: 'en-NG',
+    blogPost: posts.map(p => ({
+      '@type': 'BlogPosting',
+      headline: p.title,
+      url: `${BASE_URL}/blog/${p.slug}`,
+      datePublished: p.isoDate,
+      author: { '@type': 'Person', name: p.author.name },
+    })),
+  };
+
+  const itemListJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    itemListElement: posts.map((p, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      url: `${BASE_URL}/blog/${p.slug}`,
+    })),
+    numberOfItems: posts.length,
+  };
+
   return (
     <>
       <link rel="preconnect" href="https://images.unsplash.com" crossOrigin="anonymous" />
