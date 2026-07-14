@@ -12,7 +12,6 @@ import { TenantProvider } from "@/context/TenantContext";
 import { resolveTenant } from "@/lib/tenant";
 
 // Deferred — non-critical UI, code-split into separate chunks
-const AgeGate         = dynamic(() => import("@/components/AgeGate/AgeGate"),      { ssr: false });
 const ModalCart       = dynamic(() => import("@/components/Modal/ModalCart"));
 const ModalWishlist   = dynamic(() => import("@/components/Modal/ModalWishlist"));
 const ModalSearch     = dynamic(() => import("@/components/Modal/ModalSearch"));
@@ -23,7 +22,10 @@ const MobileBottomNav = dynamic(() => import("@/components/Navigation").then(mod
 const ChatbotWidget   = dynamic(() => import("@/components/Chatbot/ChatbotWidget"));
 const WhatsAppButton  = dynamic(() => import("@/components/WhatsApp/WhatsAppButton"));
 const PopupBanner     = dynamic(() => import("@/components/Banner/PopupBanner"));
-const CookieConsent   = dynamic(() => import("@/components/legal/CookieConsent"),  { ssr: false });
+// AgeGate + CookieConsent read localStorage at mount, so they must render
+// client-only (ssr: false). That option is only valid inside a Client Component,
+// so they live in ClientOverlays rather than being imported here directly.
+import ClientOverlays from "@/components/Layout/ClientOverlays";
 
 const unkempt = Unkempt({ subsets: ["latin"], weight: ["400", "700"], variable: "--font-unkempt", display: "swap" });
 const kavoon = Kavoon({ subsets: ["latin"], weight: ["400"], variable: "--font-kavoon", display: "swap" });
@@ -198,7 +200,7 @@ export default async function RootLayout({
               })}
             </script>
             <AnalyticsTracker />
-            <AgeGate />
+            <ClientOverlays />
             <Header variant="default" showAnnouncement={false} />
             <main id="main-content">{children}</main>
             <ModalCart />
@@ -212,7 +214,6 @@ export default async function RootLayout({
             <WhatsAppButton />
             <ChatbotWidget />
             <PopupBanner />
-            <CookieConsent />
           </body>
         </html>
       </TenantProvider>
