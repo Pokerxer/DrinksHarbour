@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -17,17 +17,17 @@ const AgeGate: React.FC<AgeGateProps> = ({
   productId,
   minimumAge = 18,
 }) => {
-  const [isVerified, setIsVerified] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    const global  = sessionStorage.getItem(STORAGE_KEY);
-    const product = productId ? sessionStorage.getItem(`${STORAGE_KEY}_${productId}`) : null;
-    setIsVerified(global === 'true' || product === 'true');
-  }, [productId]);
+  // Lazy initializer reads localStorage synchronously on first render (client-only
+  // because this component is loaded with ssr: false in layout.tsx).
+  const [isVerified, setIsVerified] = useState<boolean>(() => {
+    const global  = localStorage.getItem(STORAGE_KEY);
+    const product = productId ? localStorage.getItem(`${STORAGE_KEY}_${productId}`) : null;
+    return global === 'true' || product === 'true';
+  });
 
   const verify = useCallback(() => {
-    sessionStorage.setItem(STORAGE_KEY, 'true');
-    if (productId) sessionStorage.setItem(`${STORAGE_KEY}_${productId}`, 'true');
+    localStorage.setItem(STORAGE_KEY, 'true');
+    if (productId) localStorage.setItem(`${STORAGE_KEY}_${productId}`, 'true');
     setIsVerified(true);
   }, [productId]);
 
@@ -35,8 +35,6 @@ const AgeGate: React.FC<AgeGateProps> = ({
     window.history.back();
   }, []);
 
-  // Loading flicker guard
-  if (isVerified === null) return <div className="fixed inset-0 z-[200]" style={{ backgroundColor: '#0d0d0d' }} />;
   if (isVerified) return null;
 
   return (

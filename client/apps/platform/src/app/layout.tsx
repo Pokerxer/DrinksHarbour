@@ -7,12 +7,12 @@ import GlobalProvider from "./GlobalProvider";
 // Eager — above-the-fold or critical
 import { Header } from "@/components/Header";
 import Footer from "@/components/Footer/Footer";
-import AgeGate from "@/components/AgeGate/AgeGate";
 import AnalyticsTracker from "@/components/Analytics/AnalyticsTracker";
 import { TenantProvider } from "@/context/TenantContext";
 import { resolveTenant } from "@/lib/tenant";
 
 // Deferred — non-critical UI, code-split into separate chunks
+const AgeGate         = dynamic(() => import("@/components/AgeGate/AgeGate"),      { ssr: false });
 const ModalCart       = dynamic(() => import("@/components/Modal/ModalCart"));
 const ModalWishlist   = dynamic(() => import("@/components/Modal/ModalWishlist"));
 const ModalSearch     = dynamic(() => import("@/components/Modal/ModalSearch"));
@@ -23,7 +23,7 @@ const MobileBottomNav = dynamic(() => import("@/components/Navigation").then(mod
 const ChatbotWidget   = dynamic(() => import("@/components/Chatbot/ChatbotWidget"));
 const WhatsAppButton  = dynamic(() => import("@/components/WhatsApp/WhatsAppButton"));
 const PopupBanner     = dynamic(() => import("@/components/Banner/PopupBanner"));
-const CookieConsent   = dynamic(() => import("@/components/legal/CookieConsent"));
+const CookieConsent   = dynamic(() => import("@/components/legal/CookieConsent"),  { ssr: false });
 
 const unkempt = Unkempt({ subsets: ["latin"], weight: ["400", "700"], variable: "--font-unkempt", display: "swap" });
 const kavoon = Kavoon({ subsets: ["latin"], weight: ["400"], variable: "--font-kavoon", display: "swap" });
