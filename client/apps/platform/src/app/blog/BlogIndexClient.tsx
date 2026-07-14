@@ -2,10 +2,10 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useSearchParams } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { type Category, type Post, CATEGORY_COLORS } from './data';
+import BlogImage from './BlogImage';
 
 // ─── Categories ───────────────────────────────────────────────────────────────
 
@@ -26,12 +26,12 @@ function PostCard({ post, large = false }: { post: Post; large?: boolean }) {
   return (
     <article className={`group bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md hover:border-red-100 transition-all flex flex-col ${large ? 'md:flex-row' : ''}`}>
       <div className={`relative overflow-hidden flex-shrink-0 ${large ? 'md:w-2/5 h-56 md:h-auto' : 'h-48'}`}>
-        <Image
+        <BlogImage
           src={post.image}
-          alt={post.title}
+          alt={post.imageAlt || post.title}
           fill
           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-          className="object-cover group-hover:scale-105 transition-transform duration-500"
+          className="object-cover transition-transform duration-500 group-hover:scale-105"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
         <span className={`absolute top-3 left-3 text-[11px] font-bold px-2.5 py-1 rounded-full ${CATEGORY_COLORS[post.category] ?? 'bg-gray-100 text-gray-700'}`}>

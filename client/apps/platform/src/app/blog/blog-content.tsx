@@ -2,6 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
 import type { ContentBlock } from './data';
+import BlogImage from './BlogImage';
 
 // Parse inline markdown into styled nodes, leaving surrounding text intact:
 //   [anchor](/internal/path)  → internal Next link (leading-slash hrefs only)
@@ -142,18 +143,20 @@ export function renderBlock(block: ContentBlock, i: number) {
       if (!block.src) return null;
       return (
         <figure key={i} className="my-8">
-          <div className="relative w-full overflow-hidden rounded-2xl bg-gray-100">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+          <div className="relative aspect-[16/9] w-full overflow-hidden rounded-2xl bg-gray-100">
+            <BlogImage
               src={block.src}
               alt={block.alt || block.caption || ''}
-              className="h-auto w-full object-cover"
-              loading="lazy"
+              fill
+              sizes="(max-width: 768px) 100vw, 768px"
+              className="object-cover"
             />
           </div>
           {block.caption ? (
-            <figcaption className="mt-2.5 text-center text-sm italic text-gray-500">
+            <figcaption className="mt-3 flex items-center justify-center gap-2 text-center text-sm italic text-gray-500">
+              <span className="h-px w-4 bg-gray-300" />
               {block.caption}
+              <span className="h-px w-4 bg-gray-300" />
             </figcaption>
           ) : null}
         </figure>

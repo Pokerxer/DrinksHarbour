@@ -1,7 +1,7 @@
 import Link from 'next/link';
-import Image from 'next/image';
 import * as Icon from 'react-icons/pi';
 import { CATEGORY_COLORS, type Post } from './data';
+import BlogImage from './BlogImage';
 
 function initials(name: string): string {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
@@ -78,7 +78,7 @@ export function RelatedArticles({ posts }: { posts: Post[] }) {
             className="group overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-all duration-300 hover:border-red-100 hover:shadow-lg"
           >
             <div className="relative h-36 overflow-hidden">
-              <Image
+              <BlogImage
                 src={rel.image}
                 alt={rel.imageAlt || rel.title}
                 fill

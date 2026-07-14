@@ -1,6 +1,5 @@
 import React from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import * as Icon from 'react-icons/pi';
 import { CATEGORY_COLORS } from '../data';
 import { getPosts, getPostBySlug } from '../api';
@@ -12,6 +11,7 @@ import {
   PrevNextNav,
   BackToBlogLink,
 } from '../blog-sections';
+import BlogImage from '../BlogImage';
 import ShareButtons, { ShareRail } from './ShareButtons';
 import TableOfContents from './TableOfContents';
 
@@ -76,12 +76,13 @@ export default async function BlogPostPage({
               __html: `@keyframes hero-zoom{0%{transform:scale(1)}100%{transform:scale(1.06)}}.hero-zoom{animation:hero-zoom 12s cubic-bezier(.25,.46,.45,.94) forwards}`,
             }}
           />
-          <Image
+          <BlogImage
             src={post.image}
             alt={heroAlt}
             fill
             priority
             sizes="100vw"
+            aspectClassName="absolute inset-0"
             className="object-cover hero-zoom"
           />
 

@@ -10,7 +10,6 @@ import {
   PiUserBold,
   PiMagnifyingGlassBold,
   PiGlobeBold,
-  PiCameraBold,
   PiSparkleBold,
 } from 'react-icons/pi';
 import {
@@ -21,6 +20,7 @@ import {
   UrlInput,
 } from './editor-primitives';
 import { RegenerateButton } from './ai-bar';
+import SmartImagePreview from './smart-image-preview';
 
 interface AiProps {
   fieldBusy: string;
@@ -85,21 +85,13 @@ export function CoverImageCard({
         </div>
 
         {/* Preview */}
-        <div className="relative aspect-[3/2] overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
-          {post.image ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={post.image}
-              alt={post.imageAlt || 'Cover preview'}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-1.5 text-gray-400">
-              <PiCameraBold className="h-6 w-6" />
-              <span className="text-[11px]">No image yet</span>
-            </div>
-          )}
-        </div>
+        <SmartImagePreview
+          src={post.image}
+          alt={post.imageAlt || 'Cover preview'}
+          aspectClassName="aspect-[3/2]"
+          fit="cover"
+          emptyLabel="No image yet"
+        />
       </div>
     </SectionCard>
   );
@@ -214,14 +206,14 @@ function SocialPreview({
 }) {
   return (
     <div className="overflow-hidden rounded-xl border border-gray-100 bg-white">
-      <div className="flex aspect-[1.91/1] items-center justify-center bg-gray-100 text-gray-400">
-        {image ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={image} alt="Social preview" className="h-full w-full object-cover" />
-        ) : (
-          <span className="text-xs">No social image — falls back to cover</span>
-        )}
-      </div>
+      <SmartImagePreview
+        src={image}
+        alt="Social preview"
+        aspectClassName="aspect-[1.91/1]"
+        fit="cover"
+        emptyLabel="No social image — falls back to cover"
+        showEmptyIcon={false}
+      />
       <div className="border-t border-gray-100 px-3.5 py-2.5">
         <p className="text-[10px] uppercase tracking-wider text-gray-400">
           {domain}

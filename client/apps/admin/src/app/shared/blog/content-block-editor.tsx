@@ -51,6 +51,7 @@ import {
 } from './blog-helpers';
 import RichTextToolbar from './rich-text-toolbar';
 import { BlockControls, ImageUploadButton, UrlInput } from './editor-primitives';
+import SmartImagePreview from './smart-image-preview';
 
 const BLOCK_ICON: Record<BlockType, any> = {
   p: PiTextTBold,
@@ -269,16 +270,22 @@ function SortableBlock({
               />
             </div>
             {block.src ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <SmartImagePreview
                 src={block.src}
                 alt={block.alt || 'Block image preview'}
-                className="mt-1 h-40 w-full rounded-lg object-cover"
+                aspectClassName="aspect-[16/9]"
+                fit="contain"
+                className="mt-1"
               />
             ) : (
-              <div className="flex h-24 items-center justify-center rounded-lg border-2 border-dashed border-gray-200 bg-white/60 text-xs text-gray-400">
-                Upload or paste an image URL
-              </div>
+              <SmartImagePreview
+                src=""
+                alt=""
+                aspectClassName="h-24"
+                fit="contain"
+                emptyLabel="Upload or paste an image URL"
+                className="mt-1"
+              />
             )}
           </div>
         ) : LIST_TYPES.includes(block.type) ? (
