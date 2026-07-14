@@ -215,7 +215,7 @@ function OrderTrackingContent() {
                 </ul>
               </div>
 
-              <a href={`https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_PHONE || '2348000000000'}?text=${encodeURIComponent('Hi! I need help tracking my order.')}`}
+              <a href={`https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_PHONE || '2347048004020'}?text=${encodeURIComponent('Hi! I need help tracking my order.')}`}
                 target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-3 bg-[#25D366] hover:bg-[#1ebe5d] text-white rounded-2xl p-4 transition-colors group">
                 <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">

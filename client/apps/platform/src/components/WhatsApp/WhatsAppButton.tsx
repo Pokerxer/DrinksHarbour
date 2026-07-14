@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const PHONE = process.env.NEXT_PUBLIC_WHATSAPP_PHONE || '2348000000000';
+const PHONE = process.env.NEXT_PUBLIC_WHATSAPP_PHONE || '2347048004020';
 const PREFILL = encodeURIComponent('Hi DrinksHarbour! I need help with ');
 const WA_URL  = `https://wa.me/${PHONE}?text=${PREFILL}`;
 

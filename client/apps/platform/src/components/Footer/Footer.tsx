@@ -236,7 +236,7 @@ export const Footer: React.FC = () => {
                 support@drinksharbour.com
               </a>
               <a
-                href={`https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_PHONE || "2348000000000"}`}
+                href={`https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_PHONE || "2347048004020"}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 text-xs text-white/40 hover:text-white/70 transition-colors"

@@ -58,7 +58,7 @@ const INFO_CARDS = [
     label: 'WhatsApp',
     value: 'Chat with us',
     sub: 'Instant AI support',
-    href: `https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_PHONE || '2348000000000'}?text=${encodeURIComponent('Hi DrinksHarbour! I need help with ')}`,
+    href: `https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_PHONE || '2347048004020'}?text=${encodeURIComponent('Hi DrinksHarbour! I need help with ')}`,
     external: true,
     color: 'bg-emerald-50 text-emerald-700',
   },
@@ -373,7 +373,7 @@ export default function ContactPage() {
 
             {/* WhatsApp CTA */}
             <a
-              href={`https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_PHONE || '2348000000000'}?text=${encodeURIComponent('Hi DrinksHarbour! I need help with ')}`}
+              href={`https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_PHONE || '2347048004020'}?text=${encodeURIComponent('Hi DrinksHarbour! I need help with ')}`}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-4 bg-[#25D366] text-white rounded-2xl p-5 hover:bg-[#1ebe5d] transition-colors shadow-sm group"

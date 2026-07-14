@@ -238,7 +238,7 @@ export default function ReturnsPage() {
               <Icon.PiChatCircleText size={15} /> Start a Return
             </Link>
             <a
-              href={`https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_PHONE || '2348000000000'}?text=${encodeURIComponent('Hi! I need to return an order. Order #: ')}`}
+              href={`https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_PHONE || '2347048004020'}?text=${encodeURIComponent('Hi! I need to return an order. Order #: ')}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 bg-[#25D366] text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-[#1ebe5d] transition-all"

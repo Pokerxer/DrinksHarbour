@@ -396,7 +396,7 @@ export default function FAQPage() {
               <Icon.PiEnvelope size={16} /> Send a Message
             </Link>
             <a
-              href={`https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_PHONE || '2348000000000'}?text=${encodeURIComponent('Hi DrinksHarbour! I need help with ')}`}
+              href={`https://wa.me/${process.env.NEXT_PUBLIC_WHATSAPP_PHONE || '2347048004020'}?text=${encodeURIComponent('Hi DrinksHarbour! I need help with ')}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 bg-[#25D366] text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-[#1ebe5d] transition-all"
