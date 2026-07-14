@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { POSTS, type ContentBlock } from "../data";
+import { type ContentBlock } from "../data";
+import { getPostBySlug } from "../api";
 import ReadingProgress from "./ReadingProgress";
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
@@ -25,7 +26,7 @@ function readTimeToDuration(readTime: string): string {
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const post = POSTS.find(p => p.slug === slug);
+  const post = await getPostBySlug(slug);
   if (!post) return { title: "Article not found" };
 
   return {
@@ -61,7 +62,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function BlogPostLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const post = POSTS.find(p => p.slug === slug);
+  const post = await getPostBySlug(slug);
   if (!post) return <>{children}</>;
 
   const bodyText = blocksToPlainText(post.content);
