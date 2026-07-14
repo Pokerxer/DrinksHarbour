@@ -105,6 +105,22 @@ function sanitizeInlineLinks(content, isAllowed) {
 }
 
 // Tolerant JSON extraction for model output: raw JSON, ```json fences, or JSON embedded in prose.
+// Per-block AI authoring actions surfaced by the admin editor's sparkle menu.
+const AI_BLOCK_ACTIONS = ['rewrite', 'expand', 'shorten'];
+// Block types that carry prose the AI can meaningfully rewrite. Image blocks are
+// excluded — they hold a URL, not text.
+const REWRITABLE_BLOCK_TYPES = ['p', 'h2', 'h3', 'quote', 'tip', 'ul', 'ol'];
+
+// True only when the block is a rewritable type AND actually has content to work
+// on — an empty paragraph or an all-blank list has nothing for the AI to improve.
+function isRewritableBlock(block) {
+  if (!block || !REWRITABLE_BLOCK_TYPES.includes(block.type)) return false;
+  if (block.type === 'ul' || block.type === 'ol') {
+    return Array.isArray(block.items) && block.items.some((it) => String(it || '').trim());
+  }
+  return String(block.text || '').trim().length > 0;
+}
+
 function parseAiJson(text) {
   const cleaned = String(text || '').replace(/```json\s*|```\s*/g, '').trim();
   try {
@@ -119,6 +135,9 @@ function parseAiJson(text) {
 module.exports = {
   BLOG_CATEGORIES,
   BLOCK_TYPES,
+  AI_BLOCK_ACTIONS,
+  REWRITABLE_BLOCK_TYPES,
+  isRewritableBlock,
   slugify,
   dedupeSlug,
   computeReadTime,

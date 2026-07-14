@@ -5,7 +5,8 @@
 // toolbar (for text blocks), and type-specific inputs. Storage format stays
 // the ContentBlock[] shape the public renderer expects.
 
-import { useRef, type CSSProperties } from 'react';
+import { useRef, useState, type CSSProperties } from 'react';
+import toast from 'react-hot-toast';
 import {
   DndContext,
   PointerSensor,
@@ -35,7 +36,12 @@ import {
   PiListNumbersBold,
   PiLightbulbBold,
   PiNotepadBold,
+  PiSparkleBold,
+  PiSpinnerGapBold,
+  PiArrowsClockwiseBold,
+  PiMinusBold,
 } from 'react-icons/pi';
+import { blogService } from '@/services/blog.service';
 import {
   BLOCK_OPTIONS,
   BLOCK_ACCENT,
@@ -63,6 +69,14 @@ const BLOCK_ICON: Record<BlockType, any> = {
   tip: PiLightbulbBold,
   image: PiImageBold,
 };
+
+// Per-block AI authoring actions surfaced in the sparkle menu.
+type AiAction = 'rewrite' | 'expand' | 'shorten';
+const AI_MENU: { action: AiAction; label: string; icon: any; hint: string }[] = [
+  { action: 'rewrite', label: 'Rewrite', icon: PiArrowsClockwiseBold, hint: 'Clearer, better wording' },
+  { action: 'expand', label: 'Expand', icon: PiPlusBold, hint: 'Add more useful detail' },
+  { action: 'shorten', label: 'Shorten', icon: PiMinusBold, hint: 'Tighter and more concise' },
+];
 
 // Per-type visual cues so blocks feel different, not identical cards.
 const BLOCK_BODY_CLS: Record<BlockType, string> = {
@@ -92,6 +106,7 @@ function SortableBlock({
   index,
   total,
   token,
+  postMeta,
   onUpdate,
   onRemove,
   onMoveUp,
@@ -102,6 +117,7 @@ function SortableBlock({
   index: number;
   total: number;
   token: string;
+  postMeta: { title: string; category: string };
   onUpdate: (patch: Partial<ContentBlock>) => void;
   onRemove: () => void;
   onMoveUp: () => void;
@@ -109,6 +125,37 @@ function SortableBlock({
   onInsertAfter: (type: BlockType) => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [aiBusy, setAiBusy] = useState<AiAction | ''>('');
+  const [aiMenuOpen, setAiMenuOpen] = useState(false);
+
+  // Whether this block has prose the AI can meaningfully act on — mirrors the
+  // server's isRewritableBlock guard so we never show a menu that would 400.
+  const canAi =
+    block.type !== 'image' &&
+    (LIST_TYPES.includes(block.type)
+      ? (block.items || []).some((it) => it && it.trim())
+      : !!(block.text && block.text.trim()));
+
+  const runAi = async (action: AiAction) => {
+    setAiMenuOpen(false);
+    setAiBusy(action);
+    try {
+      const res: any = await blogService.generateBlock({ action, block, post: postMeta }, token);
+      if (LIST_TYPES.includes(block.type)) {
+        if (Array.isArray(res?.items) && res.items.length) onUpdate({ items: res.items });
+        else throw new Error('AI returned no list items');
+      } else if (typeof res?.text === 'string' && res.text.trim()) {
+        onUpdate({ text: res.text });
+      } else {
+        throw new Error('AI returned no text');
+      }
+      toast.success(`Block ${action === 'rewrite' ? 'rewritten' : action + 'ed'}`);
+    } catch (err: any) {
+      toast.error(err?.message || 'AI request failed');
+    } finally {
+      setAiBusy('');
+    }
+  };
   const {
     attributes,
     listeners,
@@ -225,7 +272,66 @@ function SortableBlock({
           <span className="ms-1 hidden text-[11px] font-medium text-gray-300 sm:inline">
             #{index + 1}
           </span>
-          <div className="ms-auto">
+          <div className="ms-auto flex items-center gap-1">
+            {canAi ? (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setAiMenuOpen((o) => !o)}
+                  disabled={!!aiBusy}
+                  className={cn(
+                    'flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-semibold transition',
+                    'text-violet-600 hover:bg-violet-50 disabled:cursor-wait disabled:opacity-60',
+                  )}
+                  aria-haspopup="menu"
+                  aria-expanded={aiMenuOpen}
+                  title="AI: rewrite, expand or shorten this block"
+                >
+                  {aiBusy ? (
+                    <PiSpinnerGapBold className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <PiSparkleBold className="h-3.5 w-3.5" />
+                  )}
+                  <span className="hidden sm:inline">{aiBusy ? '…' : 'AI'}</span>
+                </button>
+                {aiMenuOpen && !aiBusy ? (
+                  <>
+                    {/* click-away backdrop */}
+                    <button
+                      type="button"
+                      aria-hidden
+                      tabIndex={-1}
+                      className="fixed inset-0 z-10 cursor-default"
+                      onClick={() => setAiMenuOpen(false)}
+                    />
+                    <div
+                      role="menu"
+                      className="absolute end-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-gray-100 bg-white py-1 shadow-lg"
+                    >
+                      {AI_MENU.map(({ action, label, icon: MI, hint }) => (
+                        <button
+                          key={action}
+                          type="button"
+                          role="menuitem"
+                          onClick={() => runAi(action)}
+                          className="flex w-full items-start gap-2 px-3 py-1.5 text-left transition hover:bg-violet-50"
+                        >
+                          <MI className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-violet-500" />
+                          <span className="min-w-0">
+                            <span className="block text-xs font-medium text-gray-700">
+                              {label}
+                            </span>
+                            <span className="block text-[10px] leading-tight text-gray-400">
+                              {hint}
+                            </span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
             <BlockControls
               onUp={onMoveUp}
               onDown={onMoveDown}
@@ -349,6 +455,7 @@ const ADD_PALETTE: { type: BlockType; icon: any; label: string }[] = [
 export default function ContentBlockEditor({
   content,
   token,
+  postMeta,
   onUpdate,
   onAdd,
   onRemove,
@@ -357,6 +464,7 @@ export default function ContentBlockEditor({
 }: {
   content: ContentBlock[];
   token: string;
+  postMeta: { title: string; category: string };
   onUpdate: (i: number, patch: Partial<ContentBlock>) => void;
   onAdd: () => void;
   onRemove: (i: number) => void;
@@ -409,6 +517,7 @@ export default function ContentBlockEditor({
               index={i}
               total={content.length}
               token={token}
+              postMeta={postMeta}
               onUpdate={(patch) => onUpdate(i, patch)}
               onRemove={() => onRemove(i)}
               onMoveUp={() => onMove(i, -1)}

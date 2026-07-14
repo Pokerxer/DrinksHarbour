@@ -339,6 +339,7 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
           <ContentBlockEditor
             content={post.content}
             token={token}
+            postMeta={{ title: post.title, category: post.category }}
             onUpdate={updateBlock}
             onAdd={addBlock}
             onRemove={removeBlock}

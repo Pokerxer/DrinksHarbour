@@ -16,6 +16,7 @@ const {
   generatePost,
   generateField,
   generateSeo,
+  generateBlock,
 } = require('../controllers/blog.controller');
 
 // Public
@@ -26,6 +27,7 @@ router.get('/slug/:slug', getPublishedPostBySlug);
 router.post('/admin/ai/generate-post', authenticate, generatePost);
 router.post('/admin/ai/generate-field', authenticate, generateField);
 router.post('/admin/ai/generate-seo', authenticate, generateSeo);
+router.post('/admin/ai/generate-block', authenticate, generateBlock);
 router.get('/admin', authenticate, adminListPosts);
 router.post('/admin', authenticate, createPost);
 router.get('/admin/:id', authenticate, adminGetPost);

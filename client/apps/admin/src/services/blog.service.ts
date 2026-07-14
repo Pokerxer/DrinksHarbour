@@ -59,4 +59,10 @@ export const blogService = {
   generateSeo(body: { post: any }, token: string) {
     return request('/api/blog/admin/ai/generate-seo', token, { method: 'POST', body: JSON.stringify(body) });
   },
+  generateBlock(
+    body: { action: 'rewrite' | 'expand' | 'shorten'; block: any; post: any },
+    token: string,
+  ) {
+    return request('/api/blog/admin/ai/generate-block', token, { method: 'POST', body: JSON.stringify(body) });
+  },
 };

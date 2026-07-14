@@ -7,6 +7,8 @@ const BlogPost = require('../models/BlogPost');
 const Product = require('../models/Product');
 const {
   BLOG_CATEGORIES,
+  AI_BLOCK_ACTIONS,
+  isRewritableBlock,
   slugify,
   dedupeSlug,
   computeReadTime,
@@ -431,6 +433,66 @@ The metaTitle and metaDescription must read as a coherent pair in a Google resul
   }
 });
 
+// Per-block rewrite/expand/shorten: the editor's sparkle menu sends one content
+// block plus light post context; we return the revised text (or list items) so
+// the client can swap just that block in place. Haiku keeps this cheap + fast.
+const generateBlock = asyncHandler(async (req, res) => {
+  if (!anthropic) return res.status(503).json({ message: 'AI is not configured (ANTHROPIC_API_KEY missing)' });
+  const { action, block, post } = req.body || {};
+  if (!AI_BLOCK_ACTIONS.includes(action)) {
+    return res.status(400).json({ message: `action must be one of: ${AI_BLOCK_ACTIONS.join(', ')}` });
+  }
+  if (!isRewritableBlock(block)) {
+    return res.status(400).json({ message: 'block must be a non-empty text or list block (p, h2, h3, quote, tip, ul, ol)' });
+  }
+
+  const isList = block.type === 'ul' || block.type === 'ol';
+  const current = isList
+    ? block.items.map((s) => String(s || '').trim()).filter(Boolean)
+    : String(block.text || '').trim();
+
+  const instruction = {
+    rewrite: 'Rewrite it to be clearer, more engaging and better written, keeping the same meaning and roughly the same length',
+    expand: 'Expand it with more useful, specific detail — aim for 40-80% longer while staying on-topic and non-repetitive',
+    shorten: 'Tighten it to be more concise and punchy — cut filler and redundancy but keep every key point',
+  }[action];
+
+  const label = {
+    p: 'paragraph', h2: 'section heading', h3: 'sub-heading',
+    quote: 'pull-quote', tip: 'pro tip', ul: 'bullet list', ol: 'numbered list',
+  }[block.type] || 'text';
+
+  const shape = isList
+    ? 'Return ONLY {"items": ["...", "..."]} — a JSON array of the revised list items.'
+    : 'Return ONLY {"text": "..."} — the revised text as a single JSON string.';
+
+  const prompt = `You are editing one "${label}" block inside a DrinksHarbour blog post (Nigerian drinks & lifestyle magazine tone).
+Post title: "${post?.title || ''}"
+Category: ${post?.category || 'unknown'}
+
+${instruction}. Preserve any Markdown links [text](/url), **bold** and *italic*. Do NOT add a heading, label, or commentary${label.includes('heading') ? '; keep it a short headline, not a sentence' : ''}.
+
+Current ${label}:
+${isList ? current.map((it) => `- ${it}`).join('\n') : current}
+
+${shape} No code fences, no preamble.`;
+
+  try {
+    const data = parseAiJson(await callHaikuJson(prompt, 1024));
+    if (isList) {
+      const items = Array.isArray(data.items) ? data.items.map((s) => String(s).trim()).filter(Boolean) : [];
+      if (!items.length) throw new Error('AI returned no list items');
+      return res.json({ items });
+    }
+    const text = String(data.text || '').trim();
+    if (!text) throw new Error('AI returned empty text');
+    return res.json({ text });
+  } catch (err) {
+    console.error('generateBlock AI error:', err.message);
+    return res.status(502).json({ message: 'AI returned an unusable response — try again' });
+  }
+});
+
 module.exports = {
   getPublishedPosts,
   getPublishedPostBySlug,
@@ -443,4 +505,5 @@ module.exports = {
   generatePost,
   generateField,
   generateSeo,
+  generateBlock,
 };

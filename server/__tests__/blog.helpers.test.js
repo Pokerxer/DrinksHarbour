@@ -4,12 +4,14 @@ const assert = require('node:assert');
 const {
   BLOG_CATEGORIES,
   BLOCK_TYPES,
+  AI_BLOCK_ACTIONS,
   slugify,
   dedupeSlug,
   computeReadTime,
   sanitizeContentBlocks,
   snapCategory,
   parseAiJson,
+  isRewritableBlock,
 } = require('../services/blog.helpers');
 
 test('slugify lowercases, strips apostrophes, and kebab-cases', () => {
@@ -74,4 +76,28 @@ test('sanitizeContentBlocks preserves image block fields and drops stray text', 
 test('exports category and block-type enums', () => {
   assert.deepStrictEqual(BLOG_CATEGORIES, ['Wine Guide', 'Spirits Guide', 'Beer Guide', 'Recipes', 'Entertaining', 'Lifestyle']);
   assert.deepStrictEqual(BLOCK_TYPES, ['p', 'h2', 'h3', 'ul', 'ol', 'quote', 'tip', 'image']);
+});
+
+test('AI_BLOCK_ACTIONS enumerates the per-block rewrite actions', () => {
+  assert.deepStrictEqual(AI_BLOCK_ACTIONS, ['rewrite', 'expand', 'shorten']);
+});
+
+test('isRewritableBlock accepts prose and list blocks, rejects image/unknown/empty', () => {
+  // text-bearing prose blocks
+  for (const type of ['p', 'h2', 'h3', 'quote', 'tip']) {
+    assert.strictEqual(isRewritableBlock({ type, text: 'hi' }), true, `${type} with text`);
+  }
+  // list blocks with items
+  assert.strictEqual(isRewritableBlock({ type: 'ul', items: ['a'] }), true);
+  assert.strictEqual(isRewritableBlock({ type: 'ol', items: ['a', 'b'] }), true);
+  // image blocks have no prose to rewrite
+  assert.strictEqual(isRewritableBlock({ type: 'image', src: 'x', alt: 'a' }), false);
+  // empty content is not rewritable
+  assert.strictEqual(isRewritableBlock({ type: 'p', text: '   ' }), false);
+  assert.strictEqual(isRewritableBlock({ type: 'ul', items: [] }), false);
+  assert.strictEqual(isRewritableBlock({ type: 'ul', items: ['', '  '] }), false);
+  // junk
+  assert.strictEqual(isRewritableBlock({ type: 'bogus', text: 'x' }), false);
+  assert.strictEqual(isRewritableBlock(null), false);
+  assert.strictEqual(isRewritableBlock(undefined), false);
 });
