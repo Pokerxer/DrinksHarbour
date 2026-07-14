@@ -648,7 +648,7 @@ function ReviewDrawer({
                           <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3">
                             <div className="mb-2 flex items-center justify-between">
                               <span className="text-xs font-semibold text-green-700">
-                                Final Platform Price (editable)
+                                Final Platform Unit Selling Price (editable)
                               </span>
                               {defaultWebsite > 0 &&
                                 parseFloat(currentBaseVal) !==
@@ -1159,13 +1159,15 @@ function ReviewDrawer({
                                           </div>
                                           <div className="rounded bg-white/60 px-2 py-1 text-center">
                                             <div className="text-amber-500">
-                                              Pack Margin
+                                              Pack Margin (×{sizeUnitsPerPack})
                                             </div>
                                             <div className="font-bold text-amber-800">
                                               {(() => {
-                                                const pp = parseFloat(sizePackPrices[sizeId] ?? '') ?? sizePackUnitPrice;
+                                                const typed = parseFloat(sizePackPrices[sizeId] ?? '');
+                                                const pp = !isNaN(typed) ? typed : (sizePackUnitPrice ?? NaN);
                                                 if (!pp || isNaN(pp) || (sizePackPlatformCost ?? 0) <= 0) return '—';
-                                                const m = pp - sizePackPlatformCost!;
+                                                // Total margin across all units in the pack
+                                                const m = (pp - sizePackPlatformCost!) * sizeUnitsPerPack;
                                                 return `${m > 0 ? '+' : ''}₦${m.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
                                               })()}
                                             </div>
@@ -1234,7 +1236,7 @@ function ReviewDrawer({
                                     <div className="rounded-xl border border-green-200 bg-green-50 px-3 py-2">
                                       <div className="mb-1 flex items-center justify-between">
                                         <div className="text-[10px] font-semibold text-green-700">
-                                          Final Platform Price (editable)
+                                          Final Platform Unit Selling Price (editable)
                                         </div>
                                         {defaultWebsite > 0 &&
                                           parseFloat(currentVal) !==
