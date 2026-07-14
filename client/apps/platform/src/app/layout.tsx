@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import dynamic from "next/dynamic";
-import { Unkempt, Kavoon } from "next/font/google";
+import { Elms_Sans, Kavoon } from "next/font/google";
 import "@/styles/styles.scss";
 import GlobalProvider from "./GlobalProvider";
 
@@ -27,7 +27,13 @@ const PopupBanner     = dynamic(() => import("@/components/Banner/PopupBanner"))
 // so they live in ClientOverlays rather than being imported here directly.
 import ClientOverlays from "@/components/Layout/ClientOverlays";
 
-const unkempt = Unkempt({ subsets: ["latin"], weight: ["400", "700"], variable: "--font-unkempt", display: "swap" });
+const elmsSans = Elms_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  style: ["normal", "italic"],
+  variable: "--font-elms",
+  display: "swap",
+});
 const kavoon = Kavoon({ subsets: ["latin"], weight: ["400"], variable: "--font-kavoon", display: "swap" });
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
@@ -176,7 +182,7 @@ export default async function RootLayout({
     <GlobalProvider>
       <TenantProvider initialTenant={tenant}>
         <html lang="en-NG">
-          <body className={`${unkempt.className} ${kavoon.variable}`}>
+          <body className={`${elmsSans.className} ${kavoon.variable}`}>
             <script
               type="application/ld+json"
               dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessJsonLd) }}
