@@ -7,7 +7,15 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { Text, Badge, Button, Select, ActionIcon, Popover, Input } from 'rizzui';
+import {
+  Text,
+  Badge,
+  Button,
+  Select,
+  ActionIcon,
+  Popover,
+  Input,
+} from 'rizzui';
 import {
   PiPencilSimpleBold,
   PiTrashBold,
@@ -23,7 +31,8 @@ import {
 import { blogService } from '@/services/blog.service';
 import { routes } from '@/config/routes';
 
-const PLATFORM_URL = process.env.NEXT_PUBLIC_PLATFORM_URL || 'http://localhost:3000';
+const PLATFORM_URL =
+  process.env.NEXT_PUBLIC_PLATFORM_URL || 'http://localhost:3000';
 
 const CATEGORY_OPTIONS = [
   { label: 'All categories', value: '' },
@@ -42,12 +51,12 @@ const STATUS_OPTIONS = [
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
-  'Wine Guide':    'bg-purple-100 text-purple-700',
+  'Wine Guide': 'bg-purple-100 text-purple-700',
   'Spirits Guide': 'bg-amber-100 text-amber-700',
-  'Beer Guide':    'bg-yellow-100 text-yellow-700',
-  'Recipes':       'bg-orange-100 text-orange-700',
-  'Entertaining':  'bg-pink-100 text-pink-700',
-  'Lifestyle':     'bg-teal-100 text-teal-700',
+  'Beer Guide': 'bg-yellow-100 text-yellow-700',
+  Recipes: 'bg-orange-100 text-orange-700',
+  Entertaining: 'bg-pink-100 text-pink-700',
+  Lifestyle: 'bg-teal-100 text-teal-700',
 };
 
 export default function BlogPostsTable() {
@@ -87,7 +96,9 @@ export default function BlogPostsTable() {
     const next = post.status === 'published' ? 'draft' : 'published';
     try {
       await blogService.setStatus(post._id, next, token);
-      toast.success(next === 'published' ? 'Post published' : 'Post unpublished');
+      toast.success(
+        next === 'published' ? 'Post published' : 'Post unpublished'
+      );
       fetchPosts();
     } catch (err: any) {
       toast.error(err.message);
@@ -118,7 +129,10 @@ export default function BlogPostsTable() {
     return (
       <div className="space-y-3">
         {[...Array(5)].map((_, i) => (
-          <div key={i} className="flex gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+          <div
+            key={i}
+            className="flex gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm"
+          >
             <div className="h-20 w-28 flex-shrink-0 animate-pulse rounded-xl bg-gray-200" />
             <div className="flex-1 space-y-2 py-1">
               <div className="h-4 w-3/5 animate-pulse rounded bg-gray-200" />
@@ -135,7 +149,9 @@ export default function BlogPostsTable() {
     return (
       <div className="rounded-3xl border border-red-200 bg-white p-12 text-center">
         <PiWarningBold className="mx-auto mb-4 h-10 w-10 text-red-500" />
-        <Text className="mb-2 text-lg font-bold text-red-600">Failed to load posts</Text>
+        <Text className="mb-2 text-lg font-bold text-red-600">
+          Failed to load posts
+        </Text>
         <Text className="mb-6 text-gray-500">{error}</Text>
         <Button onClick={fetchPosts}>
           <PiArrowsClockwiseBold className="me-1.5 h-4 w-4" /> Retry
@@ -162,7 +178,9 @@ export default function BlogPostsTable() {
           value={category}
           onChange={(v) => setCategory(v?.value ?? v ?? '')}
           getOptionValue={(o) => o.value}
-          displayValue={(v) => CATEGORY_OPTIONS.find((o) => o.value === v)?.label ?? 'Category'}
+          displayValue={(v) =>
+            CATEGORY_OPTIONS.find((o) => o.value === v)?.label ?? 'Category'
+          }
           placeholder="Category"
           className="w-48"
         />
@@ -171,7 +189,9 @@ export default function BlogPostsTable() {
           value={status}
           onChange={(v) => setStatus(v?.value ?? v ?? '')}
           getOptionValue={(o) => o.value}
-          displayValue={(v) => STATUS_OPTIONS.find((o) => o.value === v)?.label ?? 'Status'}
+          displayValue={(v) =>
+            STATUS_OPTIONS.find((o) => o.value === v)?.label ?? 'Status'
+          }
           placeholder="Status"
           className="w-40"
         />
@@ -184,7 +204,9 @@ export default function BlogPostsTable() {
       {visible.length === 0 ? (
         <div className="rounded-3xl border border-gray-100 bg-white p-12 text-center">
           <Text className="mb-2 text-lg font-bold text-gray-700">
-            {posts.length === 0 ? 'No posts yet' : 'No posts match your filters'}
+            {posts.length === 0
+              ? 'No posts yet'
+              : 'No posts match your filters'}
           </Text>
           <Text className="mb-6 text-gray-500">
             {posts.length === 0
@@ -216,7 +238,7 @@ export default function BlogPostsTable() {
                     unoptimized
                   />
                 ) : (
-                  <div className="flex h-full items-center justify-center text-gray-300 text-xs text-center px-1">
+                  <div className="flex h-full items-center justify-center px-1 text-center text-xs text-gray-300">
                     No image
                   </div>
                 )}
@@ -230,10 +252,15 @@ export default function BlogPostsTable() {
                     {post.title}
                   </Text>
                   {post.featured && (
-                    <PiStarFill className="h-4 w-4 flex-shrink-0 text-amber-400" title="Featured" />
+                    <PiStarFill
+                      className="h-4 w-4 flex-shrink-0 text-amber-400"
+                      title="Featured"
+                    />
                   )}
                   <Badge
-                    color={post.status === 'published' ? 'success' : 'secondary'}
+                    color={
+                      post.status === 'published' ? 'success' : 'secondary'
+                    }
                     variant="flat"
                     className="ms-auto flex-shrink-0"
                   >
@@ -250,7 +277,9 @@ export default function BlogPostsTable() {
 
                 {/* Meta row */}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${CATEGORY_COLORS[post.category] || 'bg-gray-100 text-gray-600'}`}>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${CATEGORY_COLORS[post.category] || 'bg-gray-100 text-gray-600'}`}
+                  >
                     {post.category}
                   </span>
                   {post.readTime && (
@@ -259,16 +288,25 @@ export default function BlogPostsTable() {
                     </span>
                   )}
                   {post.tags?.slice(0, 3).map((tag: string) => (
-                    <span key={tag} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                    <span
+                      key={tag}
+                      className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500"
+                    >
                       {tag}
                     </span>
                   ))}
                   {post.tags?.length > 3 && (
-                    <span className="text-xs text-gray-400">+{post.tags.length - 3}</span>
+                    <span className="text-xs text-gray-400">
+                      +{post.tags.length - 3}
+                    </span>
                   )}
                   {post.publishedAt && (
                     <span className="ms-auto text-xs text-gray-400">
-                      {new Date(post.publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      {new Date(post.publishedAt).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
                     </span>
                   )}
                 </div>
@@ -282,9 +320,11 @@ export default function BlogPostsTable() {
                   title={post.status === 'published' ? 'Unpublish' : 'Publish'}
                   onClick={() => toggleStatus(post)}
                 >
-                  {post.status === 'published'
-                    ? <PiEyeSlashBold className="h-4 w-4" />
-                    : <PiEyeBold className="h-4 w-4" />}
+                  {post.status === 'published' ? (
+                    <PiEyeSlashBold className="h-4 w-4" />
+                  ) : (
+                    <PiEyeBold className="h-4 w-4" />
+                  )}
                 </ActionIcon>
                 <ActionIcon
                   size="sm"
@@ -308,23 +348,39 @@ export default function BlogPostsTable() {
                 )}
                 <Popover placement="left">
                   <Popover.Trigger>
-                    <ActionIcon size="sm" variant="outline" color="danger" title="Delete">
+                    <ActionIcon
+                      size="sm"
+                      variant="outline"
+                      color="danger"
+                      title="Delete"
+                    >
                       <PiTrashBold className="h-4 w-4" />
                     </ActionIcon>
                   </Popover.Trigger>
                   <Popover.Content>
                     {({ setOpen }: any) => (
                       <div className="w-56 p-1 text-center">
-                        <Text className="mb-1 font-semibold">Delete this post?</Text>
-                        <Text className="mb-3 text-xs text-gray-500 line-clamp-1">{post.title}</Text>
+                        <Text className="mb-1 font-semibold">
+                          Delete this post?
+                        </Text>
+                        <Text className="mb-3 line-clamp-1 text-xs text-gray-500">
+                          {post.title}
+                        </Text>
                         <div className="flex justify-center gap-2">
-                          <Button size="sm" variant="outline" onClick={() => setOpen(false)}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setOpen(false)}
+                          >
                             Cancel
                           </Button>
                           <Button
                             size="sm"
                             color="danger"
-                            onClick={() => { setOpen(false); removePost(post); }}
+                            onClick={() => {
+                              setOpen(false);
+                              removePost(post);
+                            }}
                           >
                             Delete
                           </Button>
