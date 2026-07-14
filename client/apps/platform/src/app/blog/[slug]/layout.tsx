@@ -29,9 +29,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const post = await getPostBySlug(slug);
   if (!post) return { title: "Article not found" };
 
+  const metaTitle = post.seo?.metaTitle || `${post.title} | DrinksHarbour Blog`;
+  const metaDescription = post.seo?.metaDescription || post.excerpt;
+  const ogImage = post.seo?.ogImage || post.image;
+
   return {
-    title: `${post.title} | DrinksHarbour Blog`,
-    description: post.excerpt,
+    title: metaTitle,
+    description: metaDescription,
     robots: { index: true, follow: true },
     alternates: {
       canonical: `${BASE_URL}/blog/${slug}`,
@@ -41,9 +45,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       type: "article",
       url: `${BASE_URL}/blog/${slug}`,
       siteName: SITE_NAME,
-      title: `${post.title} | DrinksHarbour Blog`,
-      description: post.excerpt,
-      images: [{ url: post.image, width: 1200, height: 630, alt: post.title }],
+      title: metaTitle,
+      description: metaDescription,
+      images: [{ url: ogImage, width: 1200, height: 630, alt: post.imageAlt || post.title }],
       locale: "en_NG",
       publishedTime: post.isoDate,
       modifiedTime: post.isoDate,
@@ -53,9 +57,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     twitter: {
       card: "summary_large_image",
       site: "@DrinkHarbour",
-      title: `${post.title} | DrinksHarbour Blog`,
-      description: post.excerpt,
-      images: [post.image],
+      title: metaTitle,
+      description: metaDescription,
+      images: [ogImage],
     },
   };
 }
@@ -68,13 +72,17 @@ export default async function BlogPostLayout({ children, params }: { children: R
   const bodyText = blocksToPlainText(post.content);
   const wordCount = countWords(bodyText);
 
+  const metaTitle = post.seo?.metaTitle || `${post.title} | DrinksHarbour Blog`;
+  const metaDescription = post.seo?.metaDescription || post.excerpt;
+  const ogImage = post.seo?.ogImage || post.image;
+
   const articleJsonLd: Record<string, unknown> = {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
-    headline: post.title,
-    description: post.excerpt,
-    image: { "@type": "ImageObject", url: post.image, width: 1200, height: 630 },
-    thumbnailUrl: post.image,
+    headline: metaTitle,
+    description: metaDescription,
+    image: { "@type": "ImageObject", url: ogImage, width: 1200, height: 630 },
+    thumbnailUrl: ogImage,
     datePublished: post.isoDate,
     dateModified: post.isoDate,
     author: {

@@ -28,6 +28,12 @@ const blogPostSchema = new mongoose.Schema(
     },
     content: { type: [contentBlockSchema], default: [] },
     readTime: { type: String, default: '' },
+    imageAlt: { type: String, default: '' },
+    seo: {
+      metaTitle: { type: String, default: '' },
+      metaDescription: { type: String, default: '' },
+      ogImage: { type: String, default: '' },
+    },
     status: { type: String, enum: ['draft', 'published'], default: 'draft', index: true },
     featured: { type: Boolean, default: false },
     publishedAt: { type: Date },

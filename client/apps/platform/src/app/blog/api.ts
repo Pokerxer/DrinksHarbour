@@ -13,11 +13,13 @@ function mapPost(raw: any): Post {
     isoDate: String(new Date(iso).toISOString()).slice(0, 10),
     readTime: raw.readTime || '1 min read',
     image: raw.image || 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=1200&q=80',
+    imageAlt: raw.imageAlt || '',
     slug: raw.slug,
     featured: Boolean(raw.featured),
     tags: raw.tags || [],
     author: raw.author || { name: '', role: '', bio: '' },
     content: raw.content || [],
+    seo: raw.seo || {},
   };
 }
 

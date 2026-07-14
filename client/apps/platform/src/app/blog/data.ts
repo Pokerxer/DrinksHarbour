@@ -22,11 +22,13 @@ export interface Post {
   isoDate: string;
   readTime: string;
   image: string;
+  imageAlt?: string;
   slug: string;
   featured?: boolean;
   tags: string[];
   author: { name: string; role: string; bio: string };
   content: ContentBlock[];
+  seo?: { metaTitle?: string; metaDescription?: string; ogImage?: string };
 }
 
 export const CATEGORY_COLORS: Record<string, string> = {
