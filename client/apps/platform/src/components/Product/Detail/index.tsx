@@ -23,6 +23,7 @@ import Rate from '@/components/Other/Rate';
 import ProductSpecifications from './ProductSpecifications';
 import ProductReviews from './ProductReviews';
 import RelatedProducts from './RelatedProducts';
+import PackPricingCard from './PackPricingCard';
 import { ProductType } from '@/types/product.types';
 import * as Icon from 'react-icons/pi';
 
@@ -67,6 +68,7 @@ interface VendorSize {
   packUnitPrice?: number | null;
   packThreshold?: number | null;
   packSavingsPct?: number | null;
+  packPlatformCostPrice?: number | null;
 }
 
 interface ToastState {
@@ -127,6 +129,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
       packUnitPrice: s.pricing?.packUnitPrice ?? null,
       packThreshold: s.pricing?.packThreshold ?? null,
       packSavingsPct: s.pricing?.packSavingsPct ?? null,
+      packPlatformCostPrice: s.pricing?.packPlatformCostPrice ?? null,
     }));
   }, [selectedVendor]);
 
@@ -169,6 +172,23 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
 
   const showDetailDiscount = displayOriginalPrice > displayPrice && displayPrice > 0;
   const displayCurrencySymbol = selectedSizeData?.currencySymbol || productData?.priceRange?.currencySymbol || '₦';
+
+  // ── Pack pricing (quantity-triggered) ──────────────────────────────────────
+  const hasPackPricing = !!(
+    selectedSizeData?.packUnitPrice &&
+    selectedSizeData?.packThreshold
+  );
+  const packRateActive = hasPackPricing && localQuantity >= (selectedSizeData!.packThreshold as number);
+  const effectiveUnitPrice = packRateActive
+    ? (selectedSizeData!.packUnitPrice as number)
+    : displayPrice;
+  const effectiveTotal = effectiveUnitPrice * localQuantity;
+  const packThresholdRemaining = hasPackPricing
+    ? Math.max(0, (selectedSizeData!.packThreshold as number) - localQuantity)
+    : 0;
+  const packTotalSavings = packRateActive
+    ? (displayPrice - effectiveUnitPrice) * localQuantity
+    : 0;
 
   const discountPercentage = useMemo(() => {
     if (selectedSizeData?.discount?.percentage) {
@@ -214,6 +234,12 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
       setLocalQuantity(newQty);
     }
   }, [localQuantity, selectedSizeData]);
+
+  const handleSetQuantityToPack = useCallback(() => {
+    if (!selectedSizeData?.packThreshold) return;
+    const maxQty = selectedSizeData.maxOrderQuantity || selectedSizeData.stock || 99;
+    setLocalQuantity(Math.min(selectedSizeData.packThreshold, maxQty));
+  }, [selectedSizeData]);
 
   const handleAddToCart = useCallback(async () => {
     if (!productData || !selectedSizeData || !selectedVendor) {
@@ -453,12 +479,25 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
               </div>
 
               {/* Price */}
-              <div className="flex items-baseline gap-3 py-4 border-y border-gray-100">
-                <span className={`text-4xl font-bold ${showDetailDiscount ? 'text-red-600' : 'text-gray-900'}`}>
-                  {displayCurrencySymbol}{displayPrice.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-                </span>
-                {showDetailDiscount && (
+              <div className="flex flex-wrap items-baseline gap-3 py-4 border-y border-gray-100">
+                {packRateActive ? (
                   <>
+                    <span className="text-4xl font-bold text-amber-600">
+                      {displayCurrencySymbol}{effectiveUnitPrice.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                    </span>
+                    <span className="text-xl text-gray-400 line-through">
+                      {displayCurrencySymbol}{displayPrice.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                    </span>
+                    <span className="px-2.5 py-1 bg-amber-100 text-amber-700 text-sm font-bold rounded-full flex items-center gap-1">
+                      <Icon.PiArchive size={12} />
+                      Pack rate · Save {selectedSizeData?.packSavingsPct ?? 0}%
+                    </span>
+                  </>
+                ) : showDetailDiscount ? (
+                  <>
+                    <span className="text-4xl font-bold text-red-600">
+                      {displayCurrencySymbol}{displayPrice.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                    </span>
                     <span className="text-xl text-gray-400 line-through">
                       {displayCurrencySymbol}{displayOriginalPrice.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                     </span>
@@ -466,6 +505,15 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                       Save {displayCurrencySymbol}{(displayOriginalPrice - displayPrice).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                     </span>
                   </>
+                ) : (
+                  <span className="text-4xl font-bold text-gray-900">
+                    {displayCurrencySymbol}{displayPrice.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                  </span>
+                )}
+                {hasPackPricing && !packRateActive && (
+                  <span className="text-xs text-amber-500 font-medium ml-auto">
+                    from {displayCurrencySymbol}{(selectedSizeData!.packUnitPrice as number).toLocaleString('en-NG', { maximumFractionDigits: 0 })}/unit at {selectedSizeData!.packThreshold}+
+                  </span>
                 )}
               </div>
 
@@ -581,6 +629,14 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                               -{size.discount.percentage}%
                             </div>
                           )}
+                          {size.packUnitPrice && size.packThreshold && !isOutOfStock && !size.discount && (
+                            <div className={`absolute -top-1.5 -right-1.5 px-1.5 py-0.5 text-white text-[8px] sm:text-[9px] font-bold rounded-full whitespace-nowrap shadow-sm flex items-center gap-0.5 ${
+                              isSelected ? 'bg-amber-400 text-amber-900' : 'bg-amber-500'
+                            }`}>
+                              <Icon.PiArchive size={8} />
+                              {size.packSavingsPct ? `${size.packSavingsPct}% off` : `${size.packThreshold}-pack`}
+                            </div>
+                          )}
                           {isSelected && (
                             <div className="absolute -top-1.5 -left-1.5 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
                               <Icon.PiCheck size={12} className="text-white" />
@@ -593,10 +649,31 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                 </div>
               )}
 
+              {/* Pack Pricing Card */}
+              {hasPackPricing && (
+                <PackPricingCard
+                  currencySymbol={displayCurrencySymbol}
+                  packUnitPrice={selectedSizeData!.packUnitPrice as number}
+                  packThreshold={selectedSizeData!.packThreshold as number}
+                  packSavingsPct={selectedSizeData!.packSavingsPct ?? null}
+                  normalPrice={displayPrice}
+                  quantity={localQuantity}
+                  packRateActive={packRateActive}
+                  packThresholdRemaining={packThresholdRemaining}
+                  onQuickAddPack={handleSetQuantityToPack}
+                />
+              )}
+
               {/* Quantity & Add to Cart */}
               <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                 {/* Quantity Selector */}
-                <div className="flex items-center justify-center sm:justify-start border-2 border-gray-200 rounded-xl py-1 px-2 bg-white">
+                <div className={`flex items-center justify-center sm:justify-start border-2 rounded-xl py-1 px-2 bg-white transition-colors ${
+                  packRateActive
+                    ? 'border-amber-400 ring-2 ring-amber-200'
+                    : hasPackPricing && localQuantity > 0
+                      ? 'border-amber-200'
+                      : 'border-gray-200'
+                }`}>
                   <button
                     onClick={() => handleQuantityChange(-1)}
                     disabled={localQuantity <= (selectedSizeData?.minOrderQuantity || 1)}
@@ -605,8 +682,10 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                     <Icon.PiMinus size={20} />
                   </button>
                   <div className="w-16 sm:w-20 text-center">
-                    <span className="block font-bold text-lg sm:text-xl">{localQuantity}</span>
-                    <span className="block text-[10px] sm:text-xs text-gray-400">items</span>
+                    <span className={`block font-bold text-lg sm:text-xl ${packRateActive ? 'text-amber-600' : ''}`}>{localQuantity}</span>
+                    <span className="block text-[10px] sm:text-xs text-gray-400">
+                      {packRateActive ? 'pack rate' : 'items'}
+                    </span>
                   </div>
                   <button
                     onClick={() => handleQuantityChange(1)}
@@ -627,7 +706,9 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                         ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
                         : !inStock
                           ? 'bg-red-100 text-red-600 cursor-not-allowed'
-                          : 'bg-gray-900 text-white hover:bg-black shadow-lg hover:shadow-xl'
+                          : packRateActive
+                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 shadow-lg shadow-amber-300/40 hover:shadow-xl'
+                            : 'bg-gray-900 text-white hover:bg-black shadow-lg hover:shadow-xl'
                     }`}
                   >
                     {isAddingToCart ? (
@@ -645,6 +726,11 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                         <Icon.PiProhibit size={20} />
                         <span>Out of Stock</span>
                       </>
+                    ) : packRateActive ? (
+                      <>
+                        <Icon.PiShoppingCart size={20} />
+                        <span>Add {localQuantity} to Cart · {displayCurrencySymbol}{effectiveTotal.toLocaleString('en-NG', { maximumFractionDigits: 0 })}</span>
+                      </>
                     ) : (
                       <>
                         <Icon.PiShoppingCart size={20} />
@@ -652,16 +738,27 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                       </>
                     )}
                   </button>
-                  {/* Price display on mobile */}
+                  {/* Price display */}
                   {activeSize && inStock && (
                     <div className="text-center sm:text-right">
-                      <span className="text-lg sm:text-xl font-bold text-gray-900">
-                        {displayCurrencySymbol}{(displayPrice * localQuantity).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                      {packRateActive && packTotalSavings > 0 && (
+                        <div className="text-xs text-green-600 font-semibold mb-0.5 flex items-center justify-center sm:justify-end gap-1">
+                          <Icon.PiCheckCircle size={12} />
+                          You save {displayCurrencySymbol}{packTotalSavings.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
+                        </div>
+                      )}
+                      <span className={`text-lg sm:text-xl font-bold ${packRateActive ? 'text-amber-600' : 'text-gray-900'}`}>
+                        {displayCurrencySymbol}{effectiveTotal.toLocaleString('en-NG', { maximumFractionDigits: 0 })}
                       </span>
                       {localQuantity > 1 && (
                         <span className="text-xs sm:text-sm text-gray-500 ml-2">
-                          ({displayCurrencySymbol}{displayPrice.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} each)
+                          ({displayCurrencySymbol}{effectiveUnitPrice.toLocaleString('en-NG', { maximumFractionDigits: 0 })} each)
                         </span>
+                      )}
+                      {!packRateActive && hasPackPricing && packThresholdRemaining > 0 && (
+                        <div className="text-[11px] text-amber-500 mt-0.5">
+                          Add {packThresholdRemaining} more for pack rate
+                        </div>
                       )}
                     </div>
                   )}

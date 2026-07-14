@@ -319,15 +319,21 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
   const unitsPerPack = size?.unitsPerPack ?? 1;
   const minUnits = tenant?.packRateMinUnits ?? DEFAULT_PACK_RATE_MIN_UNITS;
   const thresholdReachable = !size?.maxOrderQuantity || size.maxOrderQuantity >= unitsPerPack;
+  const packOverridePct = size?.packPlatformMarkupOverridePct ?? null;
+  // Pack cost is computed at the tenant's reduced pack rates (e.g. supplier
+  // cost × (1 + packMarkup%) for markup model). Exposed even when the final
+  // pack selling price doesn't beat the normal price, so the admin can see it.
+  let packPlatformCostPrice = null;
+  let packRatesUsed = null;
   let packUnitPrice = null;
   let packThreshold = null;
   let packSavingsPct = null;
   if (unitsPerPack >= minUnits && thresholdReachable && platformSellingPrice > 0) {
-    const packRates = resolveRevenueRates(tenant, unitsPerPack);
-    const packCost = calcPlatformCostPrice(costPrice, tenantSellingPrice, revenueModel, packRates.markupPct, packRates.commissionPct);
-    const packSelling = calcPlatformSellingPrice(packCost, platformMarkupPct, productDiscount, {
+    packRatesUsed = resolveRevenueRates(tenant, unitsPerPack);
+    packPlatformCostPrice = calcPlatformCostPrice(costPrice, tenantSellingPrice, revenueModel, packRatesUsed.markupPct, packRatesUsed.commissionPct);
+    const packSelling = calcPlatformSellingPrice(packPlatformCostPrice, platformMarkupPct, productDiscount, {
       tenantStorePrice: tenantSellingPrice,
-      platformMarkupOverridePct: overridePct,
+      platformMarkupOverridePct: packOverridePct ?? overridePct,
     });
     if (packSelling > 0 && packSelling < platformSellingPrice) {
       packUnitPrice = packSelling;
@@ -369,7 +375,13 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
     // Quantity-triggered pack pricing (null when not eligible / no saving)
     packUnitPrice,
     packThreshold,
-    packSavingsPct
+    packSavingsPct,
+    // Pack cost price at the tenant's reduced rates (supplier cost × (1+packMarkup%))
+    // and the rates used — exposed so the admin can see the pack cost breakdown.
+    packPlatformCostPrice,
+    packMarkupPct: packRatesUsed?.markupPct ?? null,
+    packCommissionPct: packRatesUsed?.commissionPct ?? null,
+    isPackPlatformMarkupOverridden: packOverridePct != null
   };
 };
 

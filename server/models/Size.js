@@ -202,6 +202,13 @@ const sizeSchema = new Schema(
       type: Number,
       default: null,
     },
+    // Admin pack-price override — effective platform markup % applied ONLY when
+    // computing the quantity-triggered pack unit price. null → pack price uses
+    // the tenant's pack rates with no admin override.
+    packPlatformMarkupOverridePct: {
+      type: Number,
+      default: null,
+    },
     compareAtPrice: {
       type: Number,
       min: 0,

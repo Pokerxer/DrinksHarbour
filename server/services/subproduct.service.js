@@ -15,7 +15,7 @@ const {
   ConflictError 
 } = require('../utils/errors');
 const { generateSKU } = require('../utils/skuGenerator');
-const { calculateSubProductPricing, calculateSizePricing, isDiscountActive } = require('../utils/pricing');
+const { calculateSubProductPricing, calculateSizePricing, isDiscountActive, resolveRevenueRates, calcPlatformCostPrice } = require('../utils/pricing');
 
 // Tenant-sensitive fields that must NEVER be exposed via public endpoints
 const PRIVATE_SUBPRODUCT_FIELDS = '-costPrice -supplierPrice -vendorNotes -vendorContactName -vendorPhone -vendorEmail -vendorWebsite -vendorAddress -tenantNotes -marginPercentage -markupPercentage -reservedStock -reorderPoint -reorderQuantity -lowStockThreshold -embeddingOverride';
@@ -1101,7 +1101,7 @@ const createSubProduct = async (data, tenantId, user) => {
       })
       .populate({
         path: 'sizes',
-        select: 'size displayName unitType sellingPrice costPrice unitsPerPack platformMarkupOverridePct stock availability markupPercentage roundUp saleDiscountPercentage salePrice compareAtPrice wholesalePrice sku barcode volumeMl weightGrams lowStockThreshold reorderPoint reorderQuantity isDefault isOnSale rank',
+        select: 'size displayName unitType sellingPrice costPrice unitsPerPack platformMarkupOverridePct packPlatformMarkupOverridePct stock availability markupPercentage roundUp saleDiscountPercentage salePrice compareAtPrice wholesalePrice sku barcode volumeMl weightGrams lowStockThreshold reorderPoint reorderQuantity isDefault isOnSale rank',
       })
       .populate({
         path: 'vendor',
@@ -1190,7 +1190,7 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
     },
     {
       path: 'sizes',
-      select: 'size displayName unitType sellingPrice costPrice unitsPerPack platformMarkupOverridePct compareAtPrice stock lowStockThreshold availability sku barcode weightGrams volumeMl discountValue discountType discountStart discountEnd totalSold',
+      select: 'size displayName unitType sellingPrice costPrice unitsPerPack platformMarkupOverridePct packPlatformMarkupOverridePct compareAtPrice stock lowStockThreshold availability sku barcode weightGrams volumeMl discountValue discountType discountStart discountEnd totalSold',
     },
     {
       path: 'vendor',
@@ -4863,21 +4863,55 @@ const adminSetSubProductStatus = async (subProductId, status, priceOverrides = {
       const sizes = await Size.find({ _id: { $in: priceOverrides.sizes.map(s => s.id) } });
       const sizeMap = new Map(sizes.map(s => [s._id.toString(), s]));
 
-      for (const { id, websitePrice } of priceOverrides.sizes) {
-        if (!websitePrice || websitePrice <= 0) continue;
+      for (const { id, websitePrice, packUnitPrice: adminPackPrice } of priceOverrides.sizes) {
         const sizeDoc = sizeMap.get(id);
         if (!sizeDoc) continue;
-        const currentSize = calculateSizePricing(
-          sizeDoc,
-          product,
-          tenant,
-          subProduct.costPrice,
-          subProduct.baseSellingPrice
-        );
-        if (!isRealOverride(websitePrice, currentSize.platformSellingPrice)) continue;
-        const pct = toEffectivePct(websitePrice, currentSize.platformCostPrice);
-        if (pct == null) continue;
-        sizeDoc.platformMarkupOverridePct = pct;
+
+        // Normal website price override
+        if (websitePrice && websitePrice > 0) {
+          const currentSize = calculateSizePricing(
+            sizeDoc,
+            product,
+            tenant,
+            subProduct.costPrice,
+            subProduct.baseSellingPrice
+          );
+          if (isRealOverride(websitePrice, currentSize.platformSellingPrice)) {
+            const pct = toEffectivePct(websitePrice, currentSize.platformCostPrice);
+            if (pct != null) sizeDoc.platformMarkupOverridePct = pct;
+          }
+        }
+
+        // ── Pack unit price override ────────────────────────────────────────
+        // Back-calc an effective platform markup % for the PACK price only.
+        // Uses the tenant's pack rates to compute the pack cost, then inverts
+        // the admin's desired pack price → packPlatformMarkupOverridePct.
+        if (adminPackPrice && adminPackPrice > 0) {
+          const currentSize = calculateSizePricing(
+            sizeDoc,
+            product,
+            tenant,
+            subProduct.costPrice,
+            subProduct.baseSellingPrice
+          );
+          const unitsPerPack = sizeDoc.unitsPerPack ?? 1;
+          const minUnits = tenant?.packRateMinUnits ?? 2;
+          if (unitsPerPack >= minUnits) {
+            const packRates = resolveRevenueRates(tenant, unitsPerPack);
+            const packCost = calcPlatformCostPrice(
+              currentSize.costPrice,
+              currentSize.tenantSellingPrice,
+              tenant?.revenueModel ?? 'markup',
+              packRates.markupPct,
+              packRates.commissionPct
+            );
+            const packPct = toEffectivePct(adminPackPrice, packCost);
+            if (packPct != null) {
+              sizeDoc.packPlatformMarkupOverridePct = packPct;
+            }
+          }
+        }
+
         await sizeDoc.save();
       }
     }

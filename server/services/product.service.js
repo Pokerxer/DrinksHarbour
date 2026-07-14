@@ -1004,7 +1004,7 @@ const createProduct = async (inputData, user, tenant = null) => {
       .populate('tenant', 'name slug logo city state country')
       .populate({
         path: 'sizes',
-        select: 'size displayName volumeMl sellingPrice costPrice unitsPerPack platformMarkupOverridePct stock availableStock availability currency sku isDefault',
+        select: 'size displayName volumeMl sellingPrice costPrice unitsPerPack platformMarkupOverridePct packPlatformMarkupOverridePct stock availableStock availability currency sku isDefault',
       })
       .lean();
 
@@ -2237,7 +2237,7 @@ const exportTenantProducts = async (tenantId, format = 'csv') => {
     })
     .populate({
       path: 'sizes',
-      select: 'size displayName sellingPrice costPrice unitsPerPack platformMarkupOverridePct stock availability',
+      select: 'size displayName sellingPrice costPrice unitsPerPack platformMarkupOverridePct packPlatformMarkupOverridePct stock availability',
     })
     .lean();
 
@@ -5437,7 +5437,7 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
       status: 'active',
     })
       .populate('tenant', 'name slug logo city state country revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits defaultCurrency primaryColor')
-      .populate('sizes', 'volume unit displayName sellingPrice costPrice unitsPerPack platformMarkupOverridePct availableStock compareAtPrice discount discountType discountStart discountEnd currency sku isDefault status availability')
+      .populate('sizes', 'volume unit displayName sellingPrice costPrice unitsPerPack platformMarkupOverridePct packPlatformMarkupOverridePct availableStock compareAtPrice discount discountType discountStart discountEnd currency sku isDefault status availability')
       .select(
         'tenant baseSellingPrice costPrice discountPercentage finalPrice currency sizes stockQuantity availability minOrderQuantity maxOrderQuantity revenueModel isFeaturedByTenant isOnSale salePrice saleStartDate saleEndDate saleType saleDiscountValue'
       )
@@ -9438,7 +9438,7 @@ const getProductBySlug = async (slug) => {
         availability: { $in: ['available', 'in_stock', 'low_stock', 'pre_order', 'limited_stock'] },
       },
       select:
-        'size displayName sellingPrice costPrice unitsPerPack platformMarkupOverridePct discountedPrice compareAtPrice stock availableStock availability currency discount sku isDefault volumeMl',
+        'size displayName sellingPrice costPrice unitsPerPack platformMarkupOverridePct packPlatformMarkupOverridePct discountedPrice compareAtPrice stock availableStock availability currency discount sku isDefault volumeMl',
     })
     .select(
       'tenant sku costPrice baseSellingPrice currency discount discountType discountedPrice discountStart discountEnd sizes status totalSold totalRevenue isFeaturedByTenant isOnSale salePrice saleStartDate saleEndDate saleType saleDiscountValue'
@@ -9553,10 +9553,15 @@ const getProductBySlug = async (slug) => {
       let packUnitPrice = null;
       let packThreshold = null;
       let packSavingsPct = null;
+      let packPlatformCostPrice = null;
+      let packMarkupPctUsed = null;
+      let packCommissionPctUsed = null;
       if (_unitsPerPack >= _packMinUnits && _packReachable && websitePrice > 0) {
         const packRates = resolveRevenueRates(tenant, _unitsPerPack);
-        const packCost = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, packRates.markupPct, packRates.commissionPct);
-        let packSelling = calcPlatformSellingPrice(packCost, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: size?.platformMarkupOverridePct ?? null });
+        packMarkupPctUsed = packRates.markupPct;
+        packCommissionPctUsed = packRates.commissionPct;
+        packPlatformCostPrice = calcPlatformCostPrice(costPrice, sellingPrice, revenueModel, packRates.markupPct, packRates.commissionPct);
+        let packSelling = calcPlatformSellingPrice(packPlatformCostPrice, platformMarkupPct, productDiscount, { tenantStorePrice: sellingPrice, platformMarkupOverridePct: size?.packPlatformMarkupOverridePct ?? size?.platformMarkupOverridePct ?? null });
         if (saleActive && subProduct.saleDiscountValue > 0) {
           const discountType = subProduct.saleType || 'percentage';
           packSelling = discountType === 'fixed'
@@ -9650,6 +9655,9 @@ const getProductBySlug = async (slug) => {
           packUnitPrice,
           packThreshold,
           packSavingsPct,
+          packPlatformCostPrice,
+          packMarkupPct: packMarkupPctUsed,
+          packCommissionPct: packCommissionPctUsed,
         },
 
         discount: discountInfo,
@@ -10075,7 +10083,7 @@ const getProductById = async (id, includePending = false) => {
             availability: { $in: ['available', 'low_stock', 'pre_order'] },
           },
       select:
-        'size displayName sellingPrice costPrice unitsPerPack platformMarkupOverridePct stock availability currency discountValue discountType discountStart discountEnd lowStockThreshold sku barcode weightGrams volumeMl minOrderQuantity maxOrderQuantity',
+        'size displayName sellingPrice costPrice unitsPerPack platformMarkupOverridePct packPlatformMarkupOverridePct stock availability currency discountValue discountType discountStart discountEnd lowStockThreshold sku barcode weightGrams volumeMl minOrderQuantity maxOrderQuantity',
     })
     .select(
       'tenant sku baseSellingPrice costPrice currency discount discountType discountStart discountEnd sizes shortDescriptionOverride imagesOverride status totalSold totalRevenue isOnSale saleType saleDiscountValue salePrice saleStartDate saleEndDate'

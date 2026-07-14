@@ -50,6 +50,9 @@ export default function EditTenantPage() {
           markupPercentage: tenant.markupPercentage ?? 40,
           commissionPercentage: tenant.commissionPercentage ?? 12,
           platformMarkupPercentage: tenant.platformMarkupPercentage ?? 15,
+          packMarkupPercentage: tenant.packMarkupPercentage ?? '',
+          packCommissionPercentage: tenant.packCommissionPercentage ?? '',
+          packRateMinUnits: tenant.packRateMinUnits ?? '',
           customPricingNote: tenant.customPricingNote || '',
           defaultCurrency: tenant.defaultCurrency || 'NGN',
           supportedCurrencies: Array.isArray(tenant.supportedCurrencies)

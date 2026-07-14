@@ -27,6 +27,7 @@ import {
   PiShoppingBagBold,
   PiUserBold,
   PiCheckSquareBold,
+  PiArchiveBold,
 } from 'react-icons/pi';
 import { subproductService } from '@/services/subproduct.service';
 import cn from '@core/utils/class-names';
@@ -176,7 +177,7 @@ function Section({
 
 type PriceOverrides = {
   baseWebsitePrice?: number;
-  sizes?: Array<{ id: string; websitePrice: number }>;
+  sizes?: Array<{ id: string; websitePrice: number; packUnitPrice?: number }>;
 };
 
 function ReviewDrawer({
@@ -206,13 +207,17 @@ function ReviewDrawer({
   const [sizeWebsitePrices, setSizeWebsitePrices] = useState<
     Record<string, string>
   >({});
+  const [sizePackPrices, setSizePackPrices] = useState<
+    Record<string, string>
+  >({});
   const [baseWebsitePrice, setBaseWebsitePrice] = useState<string>('');
   // Server-computed platform prices — used to detect which inputs the admin
   // actually changed, so unchanged values are never sent as overrides
   const [serverDefaults, setServerDefaults] = useState<{
     base: number;
     sizes: Record<string, number>;
-  }>({ base: 0, sizes: {} });
+    packPrices: Record<string, number>;
+  }>({ base: 0, sizes: {}, packPrices: {} });
   const [showSuccess, setShowSuccess] = useState<string | null>(null);
   const [currentSection, setCurrentSection] = useState(0);
 
@@ -254,6 +259,7 @@ function ReviewDrawer({
     setShowApproveConfirm(false);
     setShowDeclineConfirm(false);
     setSizeWebsitePrices({});
+    setSizePackPrices({});
     setBaseWebsitePrice('');
     setShowSuccess(null);
     setCurrentSection(0);
@@ -266,10 +272,11 @@ function ReviewDrawer({
         setSp(data);
         if (!data) return;
 
-        const defaults: { base: number; sizes: Record<string, number> } = {
-          base: 0,
-          sizes: {},
-        };
+        const defaults: {
+          base: number;
+          sizes: Record<string, number>;
+          packPrices: Record<string, number>;
+        } = { base: 0, sizes: {}, packPrices: {} };
 
         if (data.pricing?.platformSellingPrice > 0) {
           defaults.base = data.pricing.platformSellingPrice;
@@ -277,13 +284,19 @@ function ReviewDrawer({
         }
 
         const initSizes: Record<string, string> = {};
+        const initPackSizes: Record<string, string> = {};
         for (const s of data.sizes ?? []) {
           if (s.pricing?.platformSellingPrice > 0) {
             defaults.sizes[s._id] = s.pricing.platformSellingPrice;
             initSizes[s._id] = String(s.pricing.platformSellingPrice);
           }
+          if (s.pricing?.packUnitPrice != null && s.pricing?.packUnitPrice > 0) {
+            defaults.packPrices[s._id] = s.pricing.packUnitPrice;
+            initPackSizes[s._id] = String(s.pricing.packUnitPrice);
+          }
         }
         setSizeWebsitePrices(initSizes);
+        setSizePackPrices(initPackSizes);
         setServerDefaults(defaults);
       })
       .catch(() => setSp(null))
@@ -300,9 +313,26 @@ function ReviewDrawer({
     const overrides: PriceOverrides = {};
     const bp = parseFloat(baseWebsitePrice);
     if (changed(bp, serverDefaults.base)) overrides.baseWebsitePrice = bp;
-    const sizeEntries = Object.entries(sizeWebsitePrices)
-      .map(([id, v]) => ({ id, websitePrice: parseFloat(v) }))
-      .filter((e) => changed(e.websitePrice, serverDefaults.sizes[e.id]));
+
+    // Merge website price overrides + pack price overrides per size
+    const allSizeIds = new Set([
+      ...Object.keys(sizeWebsitePrices),
+      ...Object.keys(sizePackPrices),
+    ]);
+    const sizeEntries: Array<{ id: string; websitePrice: number; packUnitPrice?: number }> = [];
+    for (const id of allSizeIds) {
+      const wp = parseFloat(sizeWebsitePrices[id] ?? '');
+      const pp = parseFloat(sizePackPrices[id] ?? '');
+      const wpChanged = changed(wp, serverDefaults.sizes[id]);
+      const ppChanged = changed(pp, serverDefaults.packPrices[id]);
+      if (wpChanged || ppChanged) {
+        sizeEntries.push({
+          id,
+          websitePrice: wpChanged ? wp : (serverDefaults.sizes[id] || 0),
+          ...(ppChanged ? { packUnitPrice: pp } : {}),
+        });
+      }
+    }
     if (sizeEntries.length) overrides.sizes = sizeEntries;
     try {
       await onApprove(sp._id, overrides);
@@ -890,6 +920,21 @@ function ReviewDrawer({
                                 const sizeCommissionPct =
                                   sizePricing.commissionPct ?? commissionPct;
                                 const sizeUnitsPerPack = s.unitsPerPack || 1;
+                                const sizePackUnitPrice =
+                                  sizePricing.packUnitPrice ?? null;
+                                const sizePackThreshold =
+                                  sizePricing.packThreshold ?? null;
+                                const sizePackSavingsPct =
+                                  sizePricing.packSavingsPct ?? null;
+                                const sizePackPlatformCost =
+                                  sizePricing.packPlatformCostPrice ?? null;
+                                const sizePackMarkupPct =
+                                  sizePricing.packMarkupPct ?? null;
+                                const sizePackCommissionPct =
+                                  sizePricing.packCommissionPct ?? null;
+                                const sizeIsPack =
+                                  sizePackUnitPrice != null &&
+                                  sizePackThreshold != null;
 
                                 const defaultWebsite = sizePlatformSelling;
                                 const currentVal =
@@ -915,6 +960,11 @@ function ReviewDrawer({
                                     <div className="mb-2 flex items-center justify-between gap-2">
                                       <span className="flex items-center gap-1.5 text-xs font-bold text-gray-900">
                                         {s.size || s.displayName || '-'}
+                                        {sizeUnitsPerPack > 1 && (
+                                          <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">
+                                            {sizeUnitsPerPack}-pack
+                                          </span>
+                                        )}
                                       </span>
                                       <span className="text-[10px] text-gray-400">
                                         {s.stock ?? 0} in stock
@@ -1007,6 +1057,177 @@ function ReviewDrawer({
                                             </div>
                                           </div>
                                         </div>
+                                      </div>
+                                    )}
+
+                                    {sizeIsPack && (
+                                      <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                                        <div className="mb-2 flex items-center justify-between">
+                                          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-700">
+                                            <PiArchiveBold className="h-3 w-3" />
+                                            Pack Pricing
+                                          </div>
+                                          <span className="text-[9px] text-amber-500">
+                                            Threshold: {sizePackThreshold}+ units
+                                            {sizePackSavingsPct != null
+                                              ? ` · ${sizePackSavingsPct}% off`
+                                              : ''}
+                                          </span>
+                                        </div>
+
+                                        {/* Pack pipeline: Supplier Cost → ×(1+packMarkup%) → Pack Platform Cost → Pack Selling */}
+                                        <div className="mb-2 space-y-1.5">
+                                          <div className="flex items-center gap-1 text-[10px]">
+                                            <div className="flex-1 rounded-lg border border-gray-200 bg-white/60 px-2 py-1.5 text-center">
+                                              <div className="mb-0.5 text-gray-500">
+                                                Supplier Cost
+                                              </div>
+                                              <div className="font-bold text-gray-700">
+                                                {sizeSupplierCost > 0
+                                                  ? `₦${sizeSupplierCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                                                  : '—'}
+                                              </div>
+                                            </div>
+                                            <div className="flex-shrink-0 px-0.5 text-center text-amber-500">
+                                              ×(1+
+                                              {revenueModel === 'markup'
+                                                ? `${sizePackMarkupPct ?? sizeMarkupPct}%`
+                                                : `${sizePackCommissionPct ?? sizeCommissionPct}%`}
+                                              )
+                                            </div>
+                                            <div className="flex-1 rounded-lg border border-amber-200 bg-amber-100/60 px-2 py-1.5 text-center">
+                                              <div className="mb-0.5 text-amber-600">
+                                                Pack Platform Cost
+                                              </div>
+                                              <div className="font-bold text-amber-800">
+                                                {sizePackPlatformCost != null
+                                                  ? `₦${sizePackPlatformCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                                                  : '—'}
+                                              </div>
+                                            </div>
+                                            <div className="flex-shrink-0 px-0.5 text-center text-amber-500">
+                                              ×(1+
+                                              {sizePricing.platformMarkupPct ?? platformMarkupPct}%
+                                              )
+                                            </div>
+                                            <div className="flex-1 rounded-lg border border-amber-300 bg-amber-200/60 px-2 py-1.5 text-center">
+                                              <div className="mb-0.5 text-amber-700">
+                                                Pack Selling
+                                              </div>
+                                              <div className="font-bold text-amber-900">
+                                                {(() => {
+                                                  const pp = parseFloat(sizePackPrices[sizeId] ?? '');
+                                                  if (pp && !isNaN(pp)) return `₦${pp.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+                                                  return sizePackUnitPrice != null
+                                                    ? `₦${sizePackUnitPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                                                    : '—';
+                                                })()}
+                                              </div>
+                                            </div>
+                                          </div>
+                                          <p className="text-center text-[9px] text-amber-600">
+                                            packCost = supplierCost × (1+
+                                            {revenueModel === 'markup'
+                                              ? `${sizePackMarkupPct ?? sizeMarkupPct}%`
+                                              : `${sizePackCommissionPct ?? sizeCommissionPct}%`}
+                                            ) · packSelling = packCost × (1+
+                                            {sizePricing.platformMarkupPct ?? platformMarkupPct}%)
+                                          </p>
+                                        </div>
+
+                                        {/* Pack margin (live, follows editable pack price) */}
+                                        <div className="mb-2 grid grid-cols-3 gap-1.5 text-[10px]">
+                                          <div className="rounded bg-white/60 px-2 py-1 text-center">
+                                            <div className="text-amber-500">
+                                              Normal Price
+                                            </div>
+                                            <div className="font-bold text-gray-500 line-through">
+                                              {sizePlatformSelling > 0
+                                                ? `₦${sizePlatformSelling.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                                                : '—'}
+                                            </div>
+                                          </div>
+                                          <div className="rounded bg-white/60 px-2 py-1 text-center">
+                                            <div className="text-amber-500">
+                                              Pack Cost
+                                            </div>
+                                            <div className="font-bold text-amber-800">
+                                              {sizePackPlatformCost != null
+                                                ? `₦${sizePackPlatformCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                                                : '—'}
+                                            </div>
+                                          </div>
+                                          <div className="rounded bg-white/60 px-2 py-1 text-center">
+                                            <div className="text-amber-500">
+                                              Pack Margin
+                                            </div>
+                                            <div className="font-bold text-amber-800">
+                                              {(() => {
+                                                const pp = parseFloat(sizePackPrices[sizeId] ?? '') ?? sizePackUnitPrice;
+                                                if (!pp || isNaN(pp) || (sizePackPlatformCost ?? 0) <= 0) return '—';
+                                                const m = pp - sizePackPlatformCost!;
+                                                return `${m > 0 ? '+' : ''}₦${m.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+                                              })()}
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {/* Editable pack unit price */}
+                                        <div className="rounded-lg border border-amber-300 bg-white px-3 py-2">
+                                          <div className="mb-1 flex items-center justify-between">
+                                            <span className="text-[10px] font-semibold text-amber-700">
+                                              Pack Unit Price (editable)
+                                            </span>
+                                            {sizePackUnitPrice != null &&
+                                              sizePackUnitPrice > 0 &&
+                                              (() => {
+                                                const currentPackVal = sizePackPrices[sizeId] ?? '';
+                                                const defaultPack = sizePackUnitPrice;
+                                                return (
+                                                  parseFloat(currentPackVal) !== defaultPack && (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() =>
+                                                        setSizePackPrices((prev) => ({
+                                                          ...prev,
+                                                          [sizeId]: String(defaultPack),
+                                                        }))
+                                                      }
+                                                      className="text-[10px] text-amber-600 underline"
+                                                    >
+                                                      Reset to ₦{defaultPack.toLocaleString()}
+                                                    </button>
+                                                  )
+                                                );
+                                              })()}
+                                          </div>
+                                          <div className="flex items-center gap-1.5">
+                                            <span className="text-xs font-semibold text-amber-700">
+                                              ₦
+                                            </span>
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              step="50"
+                                              value={sizePackPrices[sizeId] ?? ''}
+                                              onChange={(e) =>
+                                                setSizePackPrices((prev) => ({
+                                                  ...prev,
+                                                  [sizeId]: e.target.value,
+                                                }))
+                                              }
+                                              placeholder={sizePackUnitPrice != null ? String(sizePackUnitPrice) : ''}
+                                              className="flex-1 rounded-lg border border-amber-200 bg-white px-2 py-1 text-sm font-bold text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                                            />
+                                          </div>
+                                        </div>
+                                        <p className="mt-1.5 text-[9px] text-amber-600">
+                                          Buy {sizePackThreshold}+ → per-unit price drops to the
+                                          pack price. Uses tenant pack{' '}
+                                          {revenueModel === 'markup'
+                                            ? `markup ${sizeMarkupPct}%`
+                                            : `commission ${sizeCommissionPct}%`}.
+                                        </p>
                                       </div>
                                     )}
 

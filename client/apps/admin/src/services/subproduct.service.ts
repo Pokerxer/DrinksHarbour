@@ -586,7 +586,7 @@ export const subproductService = {
     token: string,
     priceOverrides?: {
       baseWebsitePrice?: number;
-      sizes?: Array<{ id: string; websitePrice: number }>;
+      sizes?: Array<{ id: string; websitePrice: number; packUnitPrice?: number }>;
     },
     declineReason?: string
   ) {
