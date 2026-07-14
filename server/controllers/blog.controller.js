@@ -4,6 +4,7 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const asyncHandler = require('express-async-handler');
 const BlogPost = require('../models/BlogPost');
+const Product = require('../models/Product');
 const {
   BLOG_CATEGORIES,
   slugify,
@@ -12,6 +13,8 @@ const {
   sanitizeContentBlocks,
   snapCategory,
   parseAiJson,
+  extractInternalLinks,
+  sanitizeInlineLinks,
 } = require('../services/blog.helpers');
 
 // Same AI setup as gemini.controller.js: Haiku for structured generation.
@@ -162,6 +165,98 @@ const deletePost = asyncHandler(async (req, res) => {
 
 // ── AI (Haiku) ────────────────────────────────────────────────────────────
 
+// Build a catalog of real, linkable products (+ their categories) for a topic so
+// the AI can weave contextual internal links instead of inventing URLs.
+async function buildLinkCatalog(topic) {
+  const baseFilter = { status: 'approved', isPublished: true };
+  const projection = { name: 1, slug: 1, category: 1, subCategory: 1 };
+  let products = [];
+
+  try {
+    products = await Product.find(
+      { ...baseFilter, $text: { $search: topic } },
+      { ...projection, score: { $meta: 'textScore' } }
+    )
+      .sort({ score: { $meta: 'textScore' } })
+      .limit(24)
+      .populate('category', 'name slug')
+      .populate('subCategory', 'name slug')
+      .lean();
+  } catch (_) {
+    products = [];
+  }
+
+  // Fallback to recent products when the topic matches few/none.
+  if (products.length < 6) {
+    try {
+      const seen = new Set(products.map((p) => String(p._id)));
+      const extra = await Product.find(baseFilter, projection)
+        .sort({ publishedAt: -1, createdAt: -1 })
+        .limit(24)
+        .populate('category', 'name slug')
+        .populate('subCategory', 'name slug')
+        .lean();
+      products = products.concat(extra.filter((p) => !seen.has(String(p._id))));
+    } catch (_) {
+      /* keep whatever we have */
+    }
+  }
+
+  const entries = products
+    .filter((p) => p && p.slug && p.name)
+    .slice(0, 20)
+    .map((p) => ({
+      name: p.name,
+      slug: p.slug,
+      category: p.category?.name || '',
+      categorySlug: p.category?.slug || '',
+      subCategory: p.subCategory?.name || '',
+    }));
+
+  const categories = new Map();
+  entries.forEach((e) => {
+    if (e.categorySlug && !categories.has(e.categorySlug)) categories.set(e.categorySlug, e.category);
+  });
+
+  const allowed = new Set();
+  entries.forEach((e) => allowed.add(`/product/${e.slug}`));
+  categories.forEach((_name, slug) => allowed.add(`/shop?category=${slug}`));
+
+  return { entries, categories, allowed };
+}
+
+function catalogToPrompt({ entries, categories }) {
+  if (!entries.length) return '';
+  const productLines = entries
+    .map((e) => {
+      const tail = e.category ? ` (${e.category}${e.subCategory ? ` / ${e.subCategory}` : ''})` : '';
+      return `- "${e.name}" → /product/${e.slug}${tail}`;
+    })
+    .join('\n');
+  const categoryLines = [...categories.entries()]
+    .map(([slug, name]) => `- "${name}" → /shop?category=${slug}`)
+    .join('\n');
+
+  return `
+
+INTERNAL LINKING: weave 3-6 contextual internal links into paragraph, list, quote, or tip text using markdown syntax [anchor words](/path). Rules:
+- Use ONLY links from the approved catalog below. NEVER invent a URL or product slug.
+- The anchor must be natural words inside a sentence (e.g. "reach for a bottle of [Hennessy VS](/product/hennessy-vs)"), never the raw slug.
+- Link each product at most once. Favour specific products; use a category page only when no specific product fits.
+
+Approved product links:
+${productLines}${categoryLines ? `\n\nApproved category links:\n${categoryLines}` : ''}`;
+}
+
+// A product link must be in the catalog (prevents 404s); other internal paths are safe.
+function makeLinkValidator(allowed) {
+  return (href) => {
+    if (allowed.has(href)) return true;
+    if (href.startsWith('/product/')) return false;
+    return href.startsWith('/shop') || href.startsWith('/blog') || href === '/';
+  };
+}
+
 async function callHaikuJson(prompt, maxTokens) {
   const message = await anthropic.messages.create({
     model: HAIKU_MODEL,
@@ -179,6 +274,7 @@ const generatePost = asyncHandler(async (req, res) => {
   const topic = String(req.body.topic || '').trim();
   if (!topic) return res.status(400).json({ message: 'topic is required' });
   const forcedCategory = snapCategory(req.body.category);
+  const catalog = await buildLinkCatalog(topic);
 
   const prompt = `Write a complete blog post for DrinksHarbour (Nigerian online drinks marketplace, Abuja-based) about: "${topic}".
 ${forcedCategory ? `The category MUST be exactly "${forcedCategory}".` : `Choose the single best category from: ${BLOG_CATEGORIES.join(', ')}.`}
@@ -198,7 +294,7 @@ Return ONLY this JSON shape:
   "author": {"name": "a plausible Nigerian expert name", "role": "their job title", "bio": "1-2 sentence bio"}
 }
 
-Content rules: 600-900 words total; start with an intro paragraph; organize with "h2" section headings; include exactly one "tip" block with a practical pro tip; use "ul" or "ol" blocks with "items" for lists (all other block types use "text"); allowed block types are only: p, h2, h3, ul, ol, quote, tip. Use Nigerian context (naira prices, local brands, Lagos/Abuja references) where natural.`;
+Content rules: 600-900 words total; start with an intro paragraph; organize with "h2" section headings; include exactly one "tip" block with a practical pro tip; use "ul" or "ol" blocks with "items" for lists (all other block types use "text"); allowed block types are only: p, h2, h3, ul, ol, quote, tip. Use Nigerian context (naira prices, local brands, Lagos/Abuja references) where natural.${catalogToPrompt(catalog)}`;
 
   let data;
   try {
@@ -208,7 +304,10 @@ Content rules: 600-900 words total; start with an intro paragraph; organize with
     return res.status(502).json({ message: 'AI returned an unusable response — try again' });
   }
 
-  const content = sanitizeContentBlocks(data.content);
+  // Strip any hallucinated product links, keeping only real catalog URLs.
+  const content = sanitizeInlineLinks(sanitizeContentBlocks(data.content), makeLinkValidator(catalog.allowed));
+  const linkCount = extractInternalLinks(content).length;
+  if (linkCount) console.log(`generatePost: kept ${linkCount} internal link(s) for "${topic}"`);
   res.json({
     title: String(data.title || topic),
     excerpt: String(data.excerpt || ''),

@@ -51,6 +51,49 @@ function snapCategory(value) {
   return BLOG_CATEGORIES.find((c) => c.toLowerCase() === needle) || null;
 }
 
+// Inline internal links use markdown syntax with an internal (leading-slash) href:
+//   [anchor words](/product/some-slug)
+const INTERNAL_LINK_RE = /\[([^\]]+)\]\((\/[^)\s]+)\)/g;
+
+// Collect every internal link across a content array (for logging / validation).
+function extractInternalLinks(content) {
+  const blocks = Array.isArray(content) ? content : [];
+  const out = [];
+  const scan = (text) => {
+    if (typeof text !== 'string') return;
+    const re = new RegExp(INTERNAL_LINK_RE.source, 'g');
+    let m;
+    while ((m = re.exec(text)) !== null) out.push({ text: m[1], href: m[2] });
+  };
+  blocks.forEach((b) => {
+    if (!b) return;
+    scan(b.text);
+    (Array.isArray(b.items) ? b.items : []).forEach(scan);
+  });
+  return out;
+}
+
+function stripDisallowedLinks(text, isAllowed) {
+  if (typeof text !== 'string') return text;
+  return text.replace(INTERNAL_LINK_RE, (full, anchor, href) =>
+    isAllowed(href) ? full : anchor
+  );
+}
+
+// Replace links whose href fails `isAllowed(href)` with their plain anchor text,
+// so hallucinated product URLs never ship as broken links.
+function sanitizeInlineLinks(content, isAllowed) {
+  const blocks = Array.isArray(content) ? content : [];
+  return blocks.map((b) => {
+    if (!b) return b;
+    return {
+      ...b,
+      text: typeof b.text === 'string' ? stripDisallowedLinks(b.text, isAllowed) : b.text,
+      items: Array.isArray(b.items) ? b.items.map((it) => stripDisallowedLinks(it, isAllowed)) : b.items,
+    };
+  });
+}
+
 // Tolerant JSON extraction for model output: raw JSON, ```json fences, or JSON embedded in prose.
 function parseAiJson(text) {
   const cleaned = String(text || '').replace(/```json\s*|```\s*/g, '').trim();
@@ -72,4 +115,6 @@ module.exports = {
   sanitizeContentBlocks,
   snapCategory,
   parseAiJson,
+  extractInternalLinks,
+  sanitizeInlineLinks,
 };

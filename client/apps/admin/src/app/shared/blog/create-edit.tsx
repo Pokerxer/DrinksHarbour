@@ -36,7 +36,14 @@ import {
 import { blogService } from '@/services/blog.service';
 import { routes } from '@/config/routes';
 
-const CATEGORIES = ['Wine Guide', 'Spirits Guide', 'Beer Guide', 'Recipes', 'Entertaining', 'Lifestyle'];
+const CATEGORIES = [
+  'Wine Guide',
+  'Spirits Guide',
+  'Beer Guide',
+  'Recipes',
+  'Entertaining',
+  'Lifestyle',
+];
 const CATEGORY_OPTIONS = CATEGORIES.map((c) => ({ label: c, value: c }));
 
 const BLOCK_OPTIONS = [
@@ -50,21 +57,21 @@ const BLOCK_OPTIONS = [
 ];
 
 const BLOCK_ACCENT: Record<string, string> = {
-  p:     'border-l-gray-300',
-  h2:    'border-l-blue-500',
-  h3:    'border-l-blue-300',
-  ul:    'border-l-green-500',
-  ol:    'border-l-emerald-400',
+  p: 'border-l-gray-300',
+  h2: 'border-l-blue-500',
+  h3: 'border-l-blue-300',
+  ul: 'border-l-green-500',
+  ol: 'border-l-emerald-400',
   quote: 'border-l-amber-400',
-  tip:   'border-l-violet-500',
+  tip: 'border-l-violet-500',
 };
 
 const BLOCK_PLACEHOLDER: Record<string, string> = {
-  p:     'Write your paragraph…',
-  h2:    'Section heading…',
-  h3:    'Sub-heading…',
+  p: 'Write your paragraph…',
+  h2: 'Section heading…',
+  h3: 'Sub-heading…',
   quote: 'Blockquote text…',
-  tip:   'Pro tip text…',
+  tip: 'Pro tip text…',
 };
 
 const LIST_TYPES = ['ul', 'ol'];
@@ -97,21 +104,59 @@ function computeReadTime(content: any[]) {
   const words = blocks.reduce((sum: number, b: any) => {
     if (!b) return sum;
     const itemWords = Array.isArray(b.items)
-      ? b.items.reduce((s: number, it: string) => s + String(it || '').split(/\s+/).filter(Boolean).length, 0)
+      ? b.items.reduce(
+          (s: number, it: string) =>
+            s +
+            String(it || '')
+              .split(/\s+/)
+              .filter(Boolean).length,
+          0
+        )
       : 0;
-    return sum + String(b.text || '').split(/\s+/).filter(Boolean).length + itemWords;
+    return (
+      sum +
+      String(b.text || '')
+        .split(/\s+/)
+        .filter(Boolean).length +
+      itemWords
+    );
   }, 0);
   return `${Math.max(1, Math.round(words / 200))} min read`;
 }
 
-function CharCount({ value, max, warn }: { value: string; max: number; warn?: number }) {
+function CharCount({
+  value,
+  max,
+  warn,
+}: {
+  value: string;
+  max: number;
+  warn?: number;
+}) {
   const threshold = warn ?? Math.round(max * 0.9);
   const len = String(value || '').length;
-  const cls = len > max ? 'text-red-500 font-medium' : len > threshold ? 'text-amber-500' : 'text-gray-400';
-  return <span className={`text-xs ${cls}`}>{len}/{max}</span>;
+  const cls =
+    len > max
+      ? 'text-red-500 font-medium'
+      : len > threshold
+        ? 'text-amber-500'
+        : 'text-gray-400';
+  return (
+    <span className={`text-xs ${cls}`}>
+      {len}/{max}
+    </span>
+  );
 }
 
-function SectionCard({ title, icon: Icon, children }: { title: string; icon?: any; children: React.ReactNode }) {
+function SectionCard({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  icon?: any;
+  children: React.ReactNode;
+}) {
   return (
     <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center gap-2 border-b border-gray-100 pb-3">
@@ -162,18 +207,24 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
   };
 
   const addTag = (raw: string) => {
-    const parts = raw.split(',').map((t) => t.trim()).filter(Boolean);
+    const parts = raw
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
     if (!parts.length) return;
     set({ tags: [...new Set([...post.tags, ...parts])] });
     setTagInput('');
   };
 
-  const removeTag = (tag: string) => set({ tags: post.tags.filter((t: string) => t !== tag) });
+  const removeTag = (tag: string) =>
+    set({ tags: post.tags.filter((t: string) => t !== tag) });
 
   const updateBlock = (i: number, patch: any) =>
     setPost((p) => ({
       ...p,
-      content: p.content.map((b: any, j: number) => (j === i ? { ...b, ...patch } : b)),
+      content: p.content.map((b: any, j: number) =>
+        j === i ? { ...b, ...patch } : b
+      ),
     }));
 
   const addBlock = () =>
@@ -183,7 +234,10 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
     }));
 
   const removeBlock = (i: number) =>
-    setPost((p) => ({ ...p, content: p.content.filter((_: any, j: number) => j !== i) }));
+    setPost((p) => ({
+      ...p,
+      content: p.content.filter((_: any, j: number) => j !== i),
+    }));
 
   const moveBlock = (i: number, dir: number) =>
     setPost((p) => {
@@ -251,7 +305,9 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
   };
 
   const liveReadTime = computeReadTime(post.content);
-  const previewTitle = post.seo?.metaTitle || (post.title ? `${post.title} | DrinksHarbour Blog` : '');
+  const previewTitle =
+    post.seo?.metaTitle ||
+    (post.title ? `${post.title} | DrinksHarbour Blog` : '');
   const previewDesc = post.seo?.metaDescription || post.excerpt;
 
   if (sessionStatus === 'loading' || loading) {
@@ -270,7 +326,9 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
       <div className="rounded-2xl border border-violet-200 bg-gradient-to-r from-violet-50 to-purple-50 p-5">
         <div className="mb-3 flex items-center gap-2">
           <PiSparkleBold className="h-5 w-5 text-violet-600" />
-          <Text className="font-semibold text-violet-800">Generate with AI · Haiku</Text>
+          <Text className="font-semibold text-violet-800">
+            Generate with AI · Haiku
+          </Text>
           <span className="ms-auto rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-medium text-violet-600">
             Beta
           </span>
@@ -286,7 +344,10 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
           />
           <Select
             label="Category (optional)"
-            options={[{ label: 'Let AI choose', value: '' }, ...CATEGORY_OPTIONS]}
+            options={[
+              { label: 'Let AI choose', value: '' },
+              ...CATEGORY_OPTIONS,
+            ]}
             value={aiCategory}
             onChange={(v) => setAiCategory(v?.value ?? v ?? '')}
             getOptionValue={(o) => o.value}
@@ -334,11 +395,17 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
               />
               <span
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
-                title={slugTouched ? 'Slug locked — you edited it manually' : 'Slug auto-syncs with title'}
+                title={
+                  slugTouched
+                    ? 'Slug locked — you edited it manually'
+                    : 'Slug auto-syncs with title'
+                }
               >
-                {slugTouched
-                  ? <PiLockSimpleBold className="h-4 w-4" />
-                  : <PiLockSimpleOpenBold className="h-4 w-4" />}
+                {slugTouched ? (
+                  <PiLockSimpleBold className="h-4 w-4" />
+                ) : (
+                  <PiLockSimpleOpenBold className="h-4 w-4" />
+                )}
               </span>
             </div>
           </div>
@@ -356,9 +423,13 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
           {/* Excerpt */}
           <div className="md:col-span-2">
             <div className="mb-1.5 flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-700">Excerpt</label>
+              <label className="text-sm font-medium text-gray-700">
+                Excerpt
+              </label>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400">Target 120–160 chars</span>
+                <span className="text-xs text-gray-400">
+                  Target 120–160 chars
+                </span>
                 <CharCount value={post.excerpt} max={160} warn={145} />
                 <ActionIcon
                   size="sm"
@@ -442,9 +513,7 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
               checked={post.featured}
               onChange={(e) => set({ featured: e.target.checked })}
             />
-            {post.featured && (
-              <PiStarBold className="h-4 w-4 text-amber-400" />
-            )}
+            {post.featured && <PiStarBold className="h-4 w-4 text-amber-400" />}
           </div>
         </div>
       </SectionCard>
@@ -460,7 +529,9 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
           />
           <div>
             <div className="mb-1.5 flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-700">Alt text</label>
+              <label className="text-sm font-medium text-gray-700">
+                Alt text
+              </label>
               <CharCount value={post.imageAlt} max={125} warn={100} />
             </div>
             <Input
@@ -494,20 +565,26 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
             label="Name"
             placeholder="Author name"
             value={post.author.name}
-            onChange={(e) => set({ author: { ...post.author, name: e.target.value } })}
+            onChange={(e) =>
+              set({ author: { ...post.author, name: e.target.value } })
+            }
           />
           <Input
             label="Role / Title"
             placeholder="e.g. Senior Wine Correspondent"
             value={post.author.role}
-            onChange={(e) => set({ author: { ...post.author, role: e.target.value } })}
+            onChange={(e) =>
+              set({ author: { ...post.author, role: e.target.value } })
+            }
           />
           <Textarea
             label="Bio"
             rows={2}
             placeholder="Short bio shown below the article…"
             value={post.author.bio}
-            onChange={(e) => set({ author: { ...post.author, bio: e.target.value } })}
+            onChange={(e) =>
+              set({ author: { ...post.author, bio: e.target.value } })
+            }
             className="md:col-span-2"
           />
         </div>
@@ -524,11 +601,19 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
           </span>
         </div>
 
+        <p className="-mt-2 mb-4 text-xs text-gray-400">
+          Tip: link to products inline with{' '}
+          <code className="rounded bg-gray-100 px-1 py-0.5 text-[11px] text-gray-600">
+            [anchor text](/product/slug)
+          </code>
+          . AI-generated posts add these automatically from real catalog items.
+        </p>
+
         <div className="space-y-3">
           {post.content.map((block: any, i: number) => (
             <div
               key={i}
-              className={`rounded-xl border border-gray-100 border-l-4 bg-gray-50/60 p-3 ${BLOCK_ACCENT[block.type] ?? 'border-l-gray-300'}`}
+              className={`rounded-xl border border-l-4 border-gray-100 bg-gray-50/60 p-3 ${BLOCK_ACCENT[block.type] ?? 'border-l-gray-300'}`}
             >
               <div className="mb-2 flex items-center gap-2">
                 <Select
@@ -536,7 +621,9 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
                   value={block.type}
                   onChange={(v) => updateBlock(i, { type: v?.value ?? v })}
                   getOptionValue={(o) => o.value}
-                  displayValue={(v) => BLOCK_OPTIONS.find((o) => o.value === v)?.label ?? v}
+                  displayValue={(v) =>
+                    BLOCK_OPTIONS.find((o) => o.value === v)?.label ?? v
+                  }
                   className="w-44"
                   size="sm"
                 />
@@ -576,7 +663,9 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
                   rows={3}
                   placeholder="One list item per line"
                   value={(block.items || []).join('\n')}
-                  onChange={(e) => updateBlock(i, { items: e.target.value.split('\n') })}
+                  onChange={(e) =>
+                    updateBlock(i, { items: e.target.value.split('\n') })
+                  }
                 />
               ) : (
                 <Textarea
@@ -598,49 +687,74 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
       {/* ─── SEO & Meta ──────────────────────────────────────── */}
       <SectionCard title="SEO & Meta" icon={PiMagnifyingGlassBold}>
         <p className="mb-4 text-sm text-gray-500">
-          Override what search engines and social platforms display. Leave blank to inherit from the post title and excerpt.
+          Override what search engines and social platforms display. Leave blank
+          to inherit from the post title and excerpt.
         </p>
 
         <div className="grid grid-cols-1 gap-4">
           {/* Meta title */}
           <div>
             <div className="mb-1.5 flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-700">Meta title</label>
+              <label className="text-sm font-medium text-gray-700">
+                Meta title
+              </label>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400">Target 50–60 chars</span>
+                <span className="text-xs text-gray-400">
+                  Target 50–60 chars
+                </span>
                 <CharCount value={post.seo?.metaTitle} max={60} warn={55} />
               </div>
             </div>
             <Input
-              placeholder={post.title ? `${post.title} | DrinksHarbour Blog` : 'Defaults to post title'}
+              placeholder={
+                post.title
+                  ? `${post.title} | DrinksHarbour Blog`
+                  : 'Defaults to post title'
+              }
               value={post.seo?.metaTitle || ''}
-              onChange={(e) => set({ seo: { ...post.seo, metaTitle: e.target.value } })}
+              onChange={(e) =>
+                set({ seo: { ...post.seo, metaTitle: e.target.value } })
+              }
             />
           </div>
 
           {/* Meta description */}
           <div>
             <div className="mb-1.5 flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-700">Meta description</label>
+              <label className="text-sm font-medium text-gray-700">
+                Meta description
+              </label>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400">Target 150–160 chars</span>
-                <CharCount value={post.seo?.metaDescription} max={160} warn={145} />
+                <span className="text-xs text-gray-400">
+                  Target 150–160 chars
+                </span>
+                <CharCount
+                  value={post.seo?.metaDescription}
+                  max={160}
+                  warn={145}
+                />
               </div>
             </div>
             <Textarea
               rows={3}
               placeholder={post.excerpt || 'Defaults to excerpt'}
               value={post.seo?.metaDescription || ''}
-              onChange={(e) => set({ seo: { ...post.seo, metaDescription: e.target.value } })}
+              onChange={(e) =>
+                set({ seo: { ...post.seo, metaDescription: e.target.value } })
+              }
             />
           </div>
 
           {/* OG image */}
           <Input
             label="Social / OG image URL"
-            placeholder={post.image || 'Defaults to cover image · 1200×630 px recommended'}
+            placeholder={
+              post.image || 'Defaults to cover image · 1200×630 px recommended'
+            }
             value={post.seo?.ogImage || ''}
-            onChange={(e) => set({ seo: { ...post.seo, ogImage: e.target.value } })}
+            onChange={(e) =>
+              set({ seo: { ...post.seo, ogImage: e.target.value } })
+            }
           />
         </div>
 
@@ -672,7 +786,11 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
               : 'Untitled post'}
           </p>
           <div className="ms-auto flex items-center gap-3">
-            <Button variant="outline" isLoading={saving} onClick={() => save('draft')}>
+            <Button
+              variant="outline"
+              isLoading={saving}
+              onClick={() => save('draft')}
+            >
               <PiFloppyDiskBold className="me-1.5 h-4 w-4" /> Save Draft
             </Button>
             <Button isLoading={saving} onClick={() => save('published')}>

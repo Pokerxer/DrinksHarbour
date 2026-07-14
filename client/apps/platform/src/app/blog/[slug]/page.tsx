@@ -10,21 +10,49 @@ export const revalidate = 300;
 
 // ─── Content renderer ─────────────────────────────────────────────────────────
 
+// Parse inline markdown links [anchor](/internal/path) into styled Next links,
+// leaving surrounding text intact. Only internal (leading-slash) hrefs are linked.
+const INLINE_LINK_RE = /\[([^\]]+)\]\((\/[^)\s]+)\)/g;
+
+function renderRichText(text?: string): React.ReactNode {
+  if (!text) return text ?? null;
+  const parts: React.ReactNode[] = [];
+  const re = new RegExp(INLINE_LINK_RE.source, 'g');
+  let last = 0;
+  let key = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    parts.push(
+      <Link
+        key={`lnk-${key++}`}
+        href={m[2]}
+        className="text-red-700 font-semibold underline decoration-red-300 underline-offset-2 hover:decoration-red-600 transition-colors"
+      >
+        {m[1]}
+      </Link>
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts.length ? parts : text;
+}
+
 function renderBlock(block: ContentBlock, i: number) {
   switch (block.type) {
     case 'h2':
-      return <h2 key={i} className="text-xl font-black text-gray-900 mt-8 mb-3">{block.text}</h2>;
+      return <h2 key={i} className="text-xl font-black text-gray-900 mt-8 mb-3">{renderRichText(block.text)}</h2>;
     case 'h3':
-      return <h3 key={i} className="text-base font-bold text-gray-900 mt-6 mb-2">{block.text}</h3>;
+      return <h3 key={i} className="text-base font-bold text-gray-900 mt-6 mb-2">{renderRichText(block.text)}</h3>;
     case 'p':
-      return <p key={i} className="text-gray-700 leading-relaxed">{block.text}</p>;
+      return <p key={i} className="text-gray-700 leading-relaxed">{renderRichText(block.text)}</p>;
     case 'ul':
       return (
         <ul key={i} className="space-y-2 my-1">
           {block.items?.map((item, j) => (
             <li key={j} className="flex items-start gap-2.5 text-gray-600 text-sm leading-relaxed">
               <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0 mt-2" />
-              {item}
+              {renderRichText(item)}
             </li>
           ))}
         </ul>
@@ -37,7 +65,7 @@ function renderBlock(block: ContentBlock, i: number) {
               <span className="w-5 h-5 rounded-full bg-red-100 text-red-700 text-[10px] font-black flex items-center justify-center flex-shrink-0 mt-0.5">
                 {j + 1}
               </span>
-              {item}
+              {renderRichText(item)}
             </li>
           ))}
         </ol>
@@ -45,7 +73,7 @@ function renderBlock(block: ContentBlock, i: number) {
     case 'quote':
       return (
         <blockquote key={i} className="border-l-[3px] border-red-400 pl-5 py-3 my-3 italic text-gray-600 bg-red-50/50 rounded-r-xl pr-5 leading-relaxed">
-          {block.text}
+          {renderRichText(block.text)}
         </blockquote>
       );
     case 'tip':
@@ -54,7 +82,7 @@ function renderBlock(block: ContentBlock, i: number) {
           <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5">
             <Icon.PiLightbulbFilamentBold size={15} className="text-amber-700" />
           </div>
-          <p className="text-sm text-amber-800 leading-relaxed">{block.text}</p>
+          <p className="text-sm text-amber-800 leading-relaxed">{renderRichText(block.text)}</p>
         </div>
       );
     default:
