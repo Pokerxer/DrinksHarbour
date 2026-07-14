@@ -83,7 +83,7 @@ export function RelatedArticles({ posts }: { posts: Post[] }) {
                 alt={rel.imageAlt || rel.title}
                 fill
                 sizes="(max-width: 640px) 100vw, 33vw"
-                className="object-cover transition-transform duration-500 group-hover:scale-105"
+                className="object-cover transition-transform duration-500 group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
               <span

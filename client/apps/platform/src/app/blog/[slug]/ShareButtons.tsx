@@ -62,7 +62,7 @@ export default function ShareButtons() {
             key={label}
             aria-label={label}
             title={label}
-            className={`w-12 h-12 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 transition-all duration-200 hover:scale-110 active:scale-95 ${color} ${platform === null && copied ? 'bg-gray-100 text-gray-700 border-gray-300' : ''}`}
+            className={`w-12 h-12 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 transition-all duration-200 hover:scale-110 active:scale-95 motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100 ${color} ${platform === null && copied ? 'bg-gray-100 text-gray-700 border-gray-300' : ''}`}
             onClick={() => handleClick(platform)}
           >
             <Ic size={18} />
@@ -113,7 +113,7 @@ export function ShareRail() {
           key={label}
           aria-label={label}
           title={label}
-          className={`flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 shadow-sm transition-all duration-200 hover:scale-110 ${color} ${platform === null && copied ? 'bg-gray-100 text-gray-700 border-gray-300' : ''}`}
+          className={`flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 shadow-sm transition-all duration-200 hover:scale-110 motion-reduce:transition-none motion-reduce:hover:scale-100 ${color} ${platform === null && copied ? 'bg-gray-100 text-gray-700 border-gray-300' : ''}`}
           onClick={() => handleClick(platform)}
         >
           <Ic size={16} />

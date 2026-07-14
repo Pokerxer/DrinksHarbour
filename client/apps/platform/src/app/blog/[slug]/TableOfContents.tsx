@@ -51,6 +51,7 @@ export default function TableOfContents({ items }: { items: TocItem[] }) {
           <li key={item.id}>
             <a
               href={`#${item.id}`}
+              aria-current={active === item.id ? 'location' : undefined}
               className={cn(
                 '-ml-px block border-l-2 py-1.5 text-sm leading-snug transition-colors',
                 item.level === 3 ? 'pl-5' : 'pl-3.5 font-medium',

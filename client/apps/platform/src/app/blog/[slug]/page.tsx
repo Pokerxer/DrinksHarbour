@@ -73,7 +73,7 @@ export default async function BlogPostPage({
         <div className="relative h-80 min-h-[360px] w-full overflow-hidden sm:h-[52vh]">
           <style
             dangerouslySetInnerHTML={{
-              __html: `@keyframes hero-zoom{0%{transform:scale(1)}100%{transform:scale(1.06)}}.hero-zoom{animation:hero-zoom 12s cubic-bezier(.25,.46,.45,.94) forwards}`,
+              __html: `@keyframes hero-zoom{0%{transform:scale(1)}100%{transform:scale(1.06)}}.hero-zoom{animation:hero-zoom 12s cubic-bezier(.25,.46,.45,.94) forwards}@media(prefers-reduced-motion:reduce){.hero-zoom{animation:none;transform:none}}`,
             }}
           />
           <BlogImage
