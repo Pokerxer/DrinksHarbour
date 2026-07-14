@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
@@ -32,8 +32,11 @@ import {
   PiRocketLaunchBold,
   PiClockBold,
   PiStarBold,
+  PiUploadSimpleBold,
+  PiSpinnerGapBold,
 } from 'react-icons/pi';
 import { blogService } from '@/services/blog.service';
+import { uploadService } from '@/services/upload.service';
 import { routes } from '@/config/routes';
 
 const CATEGORIES = [
@@ -165,6 +168,65 @@ function SectionCard({
       </div>
       {children}
     </div>
+  );
+}
+
+function ImageUploadButton({
+  token,
+  onUploaded,
+  label = 'Upload image',
+}: {
+  token: string;
+  onUploaded: (url: string) => void;
+  label?: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (inputRef.current) inputRef.current.value = '';
+    if (!file) return;
+    if (!token) return toast.error('Not authenticated — reload and try again');
+    if (!file.type.startsWith('image/')) return toast.error('Please choose an image file');
+    setBusy(true);
+    try {
+      const res = await uploadService.uploadImage(file, token, 'blog');
+      const url = res?.data?.url;
+      if (!url) throw new Error('Upload succeeded but no URL was returned');
+      onUploaded(url);
+      toast.success('Image uploaded');
+    } catch (err: any) {
+      toast.error(err.message || 'Upload failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFile}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={busy}
+        onClick={() => inputRef.current?.click()}
+      >
+        {busy ? (
+          <PiSpinnerGapBold className="me-1.5 h-4 w-4 animate-spin" />
+        ) : (
+          <PiUploadSimpleBold className="me-1.5 h-4 w-4" />
+        )}
+        {busy ? 'Uploading…' : label}
+      </Button>
+    </>
   );
 }
 
@@ -521,12 +583,23 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
       {/* ─── Cover image ─────────────────────────────────────── */}
       <SectionCard title="Cover Image" icon={PiImageBold}>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Input
-            label="Image URL"
-            placeholder="https://…"
-            value={post.image}
-            onChange={(e) => set({ image: e.target.value })}
-          />
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="text-sm font-medium text-gray-700">
+                Image URL
+              </label>
+              <ImageUploadButton
+                token={token}
+                label="Upload"
+                onUploaded={(url) => set({ image: url })}
+              />
+            </div>
+            <Input
+              placeholder="https://… or upload a file"
+              value={post.image}
+              onChange={(e) => set({ image: e.target.value })}
+            />
+          </div>
           <div>
             <div className="mb-1.5 flex items-center justify-between">
               <label className="text-sm font-medium text-gray-700">
@@ -746,16 +819,36 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
           </div>
 
           {/* OG image */}
-          <Input
-            label="Social / OG image URL"
-            placeholder={
-              post.image || 'Defaults to cover image · 1200×630 px recommended'
-            }
-            value={post.seo?.ogImage || ''}
-            onChange={(e) =>
-              set({ seo: { ...post.seo, ogImage: e.target.value } })
-            }
-          />
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="text-sm font-medium text-gray-700">
+                Social / OG image URL
+              </label>
+              <ImageUploadButton
+                token={token}
+                label="Upload"
+                onUploaded={(url) => set({ seo: { ...post.seo, ogImage: url } })}
+              />
+            </div>
+            <Input
+              placeholder={
+                post.image ||
+                'Defaults to cover image · 1200×630 px recommended'
+              }
+              value={post.seo?.ogImage || ''}
+              onChange={(e) =>
+                set({ seo: { ...post.seo, ogImage: e.target.value } })
+              }
+            />
+            {post.seo?.ogImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={post.seo.ogImage}
+                alt="OG image preview"
+                className="mt-3 h-40 w-full rounded-xl object-cover"
+              />
+            ) : null}
+          </div>
         </div>
 
         {/* Google SERP preview */}
