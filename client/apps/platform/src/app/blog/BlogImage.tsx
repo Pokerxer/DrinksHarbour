@@ -33,9 +33,10 @@ export default function BlogImage({
   }, [rest.src]);
 
   if (errored && showFallback) {
-    const base =
-      'flex items-center justify-center bg-gray-100 text-gray-400 ' +
-      (aspectClassName ?? '');
+    // With `fill`, the caller supplies a positioned+sized container, so the
+    // fallback must stretch to fill it; otherwise fall back to aspectClassName.
+    const sizing = rest.fill ? 'absolute inset-0' : (aspectClassName ?? '');
+    const base = `flex items-center justify-center bg-gray-100 text-gray-400 ${sizing}`;
     return (
       <div className={`${base} ${className ?? ''}`} role="img" aria-label={alt as string}>
         <Icon.PiImageBrokenBold size={28} />
@@ -44,11 +45,15 @@ export default function BlogImage({
   }
 
   if (rest.fill) {
+    // The wrapper must be an absolutely-positioned box that fills the caller's
+    // container — a bare `relative` div has no height, which collapses the
+    // filled <Image> to zero and makes it invisible.
     return (
-      <div className={`relative ${aspectClassName ?? ''}`}>
+      <div className={`absolute inset-0 ${aspectClassName ?? ''}`}>
         <Image
           {...rest}
           alt={alt}
+          className={className}
           placeholder="blur"
           blurDataURL={SHIMMER_BLUR}
           onError={() => setErrored(true)}
