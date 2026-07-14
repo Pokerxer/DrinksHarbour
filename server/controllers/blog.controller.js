@@ -305,13 +305,14 @@ Return ONLY this JSON shape:
   "content": [
     {"type": "p", "text": "..."},
     {"type": "h2", "text": "..."},
+    {"type": "image", "src": "", "alt": "descriptive alt text", "caption": "short caption"},
     {"type": "ul", "items": ["...", "..."]},
     {"type": "tip", "text": "..."}
   ],
   "author": {"name": "a plausible Nigerian expert name", "role": "their job title", "bio": "1-2 sentence bio"}
 }
 
-Content rules: 600-900 words total; start with an intro paragraph; organize with "h2" section headings; include exactly one "tip" block with a practical pro tip; use "ul" or "ol" blocks with "items" for lists (all other block types use "text"); allowed block types are only: p, h2, h3, ul, ol, quote, tip. Use Nigerian context (naira prices, local brands, Lagos/Abuja references) where natural.
+Content rules: 600-900 words total; start with an intro paragraph; organize with "h2" section headings; include exactly one "tip" block with a practical pro tip; use "ul" or "ol" blocks with "items" for lists (all other block types use "text"); allowed block types are only: p, h2, h3, ul, ol, quote, tip, image. Insert 1-2 "image" blocks at natural break points (after a relevant section) as placeholders — ALWAYS leave "src" as an empty string (the author uploads the real photo), but write a specific "alt" and a short editorial "caption" describing the ideal photo. Use Nigerian context (naira prices, local brands, Lagos/Abuja references) where natural.
 SEO rules: metaTitle should be click-worthy and under 60 chars; metaDescription should be an active-voice summary under 155 chars; both may differ from the title/excerpt to target search intent.
 ${catalogToPrompt(catalog)}`;
 
