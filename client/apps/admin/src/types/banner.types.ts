@@ -250,6 +250,26 @@ export const BANNER_PRIORITY_OPTIONS: { value: BannerPriority; label: string }[]
   { value: 'urgent', label: 'Urgent' },
 ];
 
+export const BANNER_CTA_STYLE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'primary', label: 'Primary' },
+  { value: 'secondary', label: 'Secondary' },
+  { value: 'outline', label: 'Outline' },
+  { value: 'text', label: 'Text Link' },
+  { value: 'custom', label: 'Custom' },
+];
+
+export const BANNER_CONTENT_POSITION_OPTIONS: { value: string; label: string }[] = [
+  { value: 'top-left', label: 'Top Left' },
+  { value: 'top-center', label: 'Top Center' },
+  { value: 'top-right', label: 'Top Right' },
+  { value: 'center-left', label: 'Center Left' },
+  { value: 'center', label: 'Center' },
+  { value: 'center-right', label: 'Center Right' },
+  { value: 'bottom-left', label: 'Bottom Left' },
+  { value: 'bottom-center', label: 'Bottom Center' },
+  { value: 'bottom-right', label: 'Bottom Right' },
+];
+
 export const BANNER_LINK_TYPE_OPTIONS: { value: BannerLinkType; label: string }[] = [
   { value: 'internal', label: 'Internal Link' },
   { value: 'external', label: 'External Link' },

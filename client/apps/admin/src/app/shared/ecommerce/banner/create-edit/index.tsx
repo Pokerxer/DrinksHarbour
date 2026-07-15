@@ -14,6 +14,8 @@ import {
   BANNER_PLACEMENT_OPTIONS,
   BANNER_STATUS_OPTIONS,
   BANNER_PRIORITY_OPTIONS,
+  BANNER_CTA_STYLE_OPTIONS,
+  BANNER_CONTENT_POSITION_OPTIONS,
   BANNER_LINK_TYPE_OPTIONS,
   BANNER_VISIBLE_TO_OPTIONS,
   BannerFormData,
@@ -70,21 +72,21 @@ function CollapsibleSection({ icon, iconBg, title, subtitle, defaultOpen = true,
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+    <div className="rounded-2xl border border-gray-200/70 bg-white shadow-sm overflow-hidden">
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center gap-3 p-5 hover:bg-gray-50 transition-colors"
+        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50/60 transition-colors"
       >
-        <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0', iconBg)}>
+        <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0', iconBg)}>
           {icon}
         </div>
         <div className="flex-1 text-left">
-          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-          <p className="text-sm text-gray-500">{subtitle}</p>
+          <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+          {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
         </div>
         <div className={cn('transition-transform', isOpen ? 'rotate-180' : '')}>
-          <PiCaretDownBold className="w-5 h-5 text-gray-400" />
+          <PiCaretDownBold className="w-4 h-4 text-gray-400" />
         </div>
       </button>
       <AnimatePresence initial={false}>
@@ -96,7 +98,7 @@ function CollapsibleSection({ icon, iconBg, title, subtitle, defaultOpen = true,
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="p-5 pt-0">
+            <div className="px-4 pb-4">
               {children}
             </div>
           </motion.div>
@@ -276,6 +278,27 @@ function TagsInput({ tags, onChange }: { tags: string[]; onChange: (tags: string
   );
 }
 
+// CTA style → button classes (shared between form preview + details page)
+const PREVIEW_CTA_CLS: Record<string, string> = {
+  primary:   'bg-orange-500 text-white',
+  secondary: 'bg-white text-gray-900 border border-gray-300',
+  outline:   'bg-transparent text-white border-2 border-white',
+  text:      'text-white underline underline-offset-4',
+  custom:    'bg-gray-900 text-white',
+};
+
+const PREVIEW_POS_CLS: Record<string, string> = {
+  'top-left':       'items-start justify-start text-left',
+  'top-center':     'items-start justify-center text-center',
+  'top-right':      'items-start justify-end text-right',
+  'center-left':    'items-center justify-start text-left',
+  'center':         'items-center justify-center text-center',
+  'center-right':   'items-center justify-end text-right',
+  'bottom-left':    'items-end justify-start text-left',
+  'bottom-center':  'items-end justify-center text-center',
+  'bottom-right':   'items-end justify-end text-right',
+};
+
 function BannerPreview({ formData }: { formData: BannerFormData }) {
   if (!formData.image?.url) {
     return (
@@ -288,46 +311,49 @@ function BannerPreview({ formData }: { formData: BannerFormData }) {
     );
   }
 
+  const posCls = PREVIEW_POS_CLS[formData.contentPosition] || PREVIEW_POS_CLS.center;
+  const ctaCls = PREVIEW_CTA_CLS[formData.ctaStyle] || PREVIEW_CTA_CLS.primary;
+
   return (
     <div
       className="relative rounded-xl overflow-hidden border border-gray-200 aspect-[3/1]"
       style={{ backgroundColor: formData.backgroundColor }}
     >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={formData.image.url} alt="Preview" className="absolute inset-0 w-full h-full object-cover" />
       <div
         className="absolute inset-0"
         style={{ backgroundColor: `rgba(0,0,0,${(formData.overlayOpacity || 0) / 100})` }}
       />
-      <div
-        className={cn(
-          'absolute inset-0 flex flex-col p-6',
-          formData.contentPosition?.includes('top') ? 'justify-start' : formData.contentPosition?.includes('bottom') ? 'justify-end' : 'justify-center',
-          formData.textAlignment === 'left' ? 'items-start' : formData.textAlignment === 'right' ? 'items-end' : 'items-center',
-        )}
-      >
-        {formData.title && (
-          <p
-            className="text-xl font-bold drop-shadow-lg"
-            style={{ color: formData.textColor, textAlign: formData.textAlignment as any }}
-          >
-            {formData.title}
-          </p>
-        )}
+      <div className={cn('absolute inset-0 flex flex-col gap-1.5 p-6', posCls)}>
         {formData.subtitle && (
           <p
-            className="text-sm mt-1 drop-shadow"
+            className="text-sm font-medium drop-shadow"
             style={{ color: formData.textColor, textAlign: formData.textAlignment as any }}
           >
             {formData.subtitle}
           </p>
         )}
-        {formData.ctaText && (
-          <button
-            className="mt-3 px-5 py-2 rounded-lg text-sm font-semibold shadow-lg"
-            style={{ backgroundColor: formData.textColor, color: formData.backgroundColor }}
+        {formData.title && (
+          <p
+            className="text-xl font-black drop-shadow-lg"
+            style={{ color: formData.textColor, textAlign: formData.textAlignment as any }}
           >
+            {formData.title}
+          </p>
+        )}
+        {formData.description && (
+          <p
+            className="text-xs drop-shadow line-clamp-2 max-w-xs"
+            style={{ color: formData.textColor ? `${formData.textColor}b0` : undefined, textAlign: formData.textAlignment as any }}
+          >
+            {formData.description}
+          </p>
+        )}
+        {formData.ctaText && (
+          <span className={cn('mt-1.5 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-bold shadow-lg', ctaCls)}>
             {formData.ctaText}
-          </button>
+          </span>
         )}
       </div>
     </div>
@@ -630,6 +656,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
     priority: 'medium',
     ctaText: '',
     ctaLink: '',
+    ctaStyle: 'primary',
     linkType: 'internal',
     backgroundColor: '#FFFFFF',
     textColor: '#000000',
@@ -731,6 +758,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
       priority: data.priority || 'medium',
       ctaText: data.ctaText || '',
       ctaLink: data.ctaLink || '',
+      ctaStyle: data.ctaStyle || 'primary',
       linkType: data.linkType || 'internal',
       backgroundColor: data.backgroundColor || '#FFFFFF',
       textColor: data.textColor || '#000000',
@@ -1094,10 +1122,22 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-gray-200 border-t-gray-900 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-500">Loading banner...</p>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="h-8 w-48 animate-pulse rounded-lg bg-gray-100" />
+          <div className="flex gap-2">
+            <div className="h-9 w-28 animate-pulse rounded-lg bg-gray-100" />
+            <div className="h-9 w-28 animate-pulse rounded-lg bg-gray-100" />
+            <div className="h-9 w-32 animate-pulse rounded-lg bg-gray-100" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-3">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-24 animate-pulse rounded-2xl bg-gray-100" style={{ animationDelay: `${i * 80}ms` }} />
+            ))}
+          </div>
+          <div className="h-64 animate-pulse rounded-2xl bg-gray-100" />
         </div>
       </div>
     );
@@ -1106,17 +1146,24 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Header with preview toggle */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-gray-900">{isEdit ? 'Edit Banner' : 'Create New Banner'}</h2>
-          {hasUnsavedChanges && (
-            <span className="text-sm text-amber-600 mt-1 flex items-center gap-1">
+          {hasUnsavedChanges ? (
+            <span className="text-sm text-amber-600 mt-1 flex items-center gap-1.5">
               <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
               Unsaved changes
             </span>
+          ) : isEdit ? (
+            <span className="text-sm text-gray-400 mt-1 flex items-center gap-1.5">
+              <span className="w-2 h-2 bg-emerald-500 rounded-full" />
+              All changes saved
+            </span>
+          ) : (
+            <p className="text-sm text-gray-400 mt-1">Fill in the details below to create a banner</p>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <Button
             variant="outline"
             onClick={() => setShowAIGenerate(true)}
@@ -1763,15 +1810,51 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
               <div className="grid grid-cols-2 gap-4">
                 <Select label="Type" options={BANNER_TYPE_OPTIONS} value={formData.type} onChange={v => set('type', v)} />
                 <Select label="Placement" options={BANNER_PLACEMENT_OPTIONS} value={formData.placement} onChange={v => set('placement', v)} />
-                <Select label="Priority" options={BANNER_PRIORITY_OPTIONS} value={formData.priority} onChange={v => set('priority', v)} />
-                <Input
-                  label="Display Order"
-                  type="number"
-                  min={0}
-                  value={formData.displayOrder}
-                  onChange={e => set('displayOrder', parseInt(e.target.value) || 0)}
-                />
               </div>
+
+              {/* Priority — visual segmented control with color dots */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Priority</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {BANNER_PRIORITY_OPTIONS.map(opt => {
+                    const active = formData.priority === opt.value;
+                    const colors: Record<string, string> = {
+                      low: 'bg-gray-400',
+                      medium: 'bg-amber-500',
+                      high: 'bg-orange-500',
+                      urgent: 'bg-red-500',
+                    };
+                    const activeCls: Record<string, string> = {
+                      low: 'border-gray-300 bg-gray-50 text-gray-700',
+                      medium: 'border-amber-300 bg-amber-50 text-amber-700',
+                      high: 'border-orange-300 bg-orange-50 text-orange-700',
+                      urgent: 'border-red-300 bg-red-50 text-red-700',
+                    };
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => set('priority', opt.value)}
+                        className={`flex items-center justify-center gap-1.5 rounded-lg border-2 py-2 text-xs font-semibold transition ${
+                          active ? activeCls[opt.value] : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        <span className={`h-2 w-2 rounded-full ${colors[opt.value]}`} />
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <Input
+                label="Display Order"
+                type="number"
+                min={0}
+                value={formData.displayOrder}
+                onChange={e => set('displayOrder', parseInt(e.target.value) || 0)}
+                hint="Lower numbers appear first"
+              />
             </div>
           </CollapsibleSection>
 
@@ -1851,6 +1934,28 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                 onChange={e => set('ctaText', e.target.value)}
                 suffix={<FieldSparkle field="ctaText" />}
               />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">CTA Style</label>
+                <div className="flex flex-wrap gap-2">
+                  {BANNER_CTA_STYLE_OPTIONS.map(opt => {
+                    const active = formData.ctaStyle === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => set('ctaStyle', opt.value)}
+                        className={`rounded-lg border-2 px-3 py-1.5 text-xs font-semibold transition ${
+                          active
+                            ? 'border-orange-300 bg-orange-50 text-orange-700'
+                            : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <Input
                 label="CTA Link / URL"
                 placeholder="https://example.com/shop"
@@ -1904,11 +2009,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                 />
                 <Select
                   label="Content Position"
-                  options={[
-                    { value: 'top-left', label: 'Top Left' }, { value: 'top-center', label: 'Top Center' }, { value: 'top-right', label: 'Top Right' },
-                    { value: 'center-left', label: 'Center Left' }, { value: 'center', label: 'Center' }, { value: 'center-right', label: 'Center Right' },
-                    { value: 'bottom-left', label: 'Bottom Left' }, { value: 'bottom-center', label: 'Bottom Center' }, { value: 'bottom-right', label: 'Bottom Right' },
-                  ]}
+                  options={BANNER_CONTENT_POSITION_OPTIONS}
                   value={formData.contentPosition}
                   onChange={v => set('contentPosition', v)}
                 />
@@ -2047,9 +2148,24 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                   <dt className="text-gray-500">Placement</dt>
                   <dd className="font-medium text-gray-900">{BANNER_PLACEMENT_OPTIONS.find(p => p.value === formData.placement)?.label}</dd>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <dt className="text-gray-500">Priority</dt>
-                  <dd className="font-medium text-gray-900 capitalize">{formData.priority}</dd>
+                  <dd>
+                    {(() => {
+                      const colors: Record<string, string> = { low: 'bg-gray-100 text-gray-600', medium: 'bg-amber-50 text-amber-700', high: 'bg-orange-50 text-orange-700', urgent: 'bg-red-50 text-red-700' };
+                      const dots: Record<string, string> = { low: 'bg-gray-400', medium: 'bg-amber-500', high: 'bg-orange-500', urgent: 'bg-red-500' };
+                      return (
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${colors[formData.priority] || colors.medium}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${dots[formData.priority] || dots.medium}`} />
+                          {formData.priority}
+                        </span>
+                      );
+                    })()}
+                  </dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-gray-500">CTA Style</dt>
+                  <dd className="font-medium text-gray-900">{BANNER_CTA_STYLE_OPTIONS.find(c => c.value === formData.ctaStyle)?.label || 'Primary'}</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-gray-500">Status</dt>
@@ -2070,6 +2186,37 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
           </div>
         </div>
       </div>
+
+      {/* Sticky save bar */}
+      <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-gray-200 bg-white/95 px-4 py-3 shadow-[0_-4px_12px_rgba(16,24,40,0.06)] backdrop-blur-md">
+        <div className="mx-auto flex max-w-7xl items-center gap-3">
+          <div className="hidden min-w-0 flex-1 sm:block">
+            <p className="truncate text-sm text-gray-500">
+              {formData.title || 'Untitled banner'}
+            </p>
+            {hasUnsavedChanges ? (
+              <span className="flex items-center gap-1 text-xs font-medium text-amber-600">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+                Unsaved
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-xs text-gray-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                Saved
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 sm:ms-auto">
+            <Button variant="outline" type="button" onClick={() => router.push(routes.eCommerce.banners)}>
+              Cancel
+            </Button>
+            <Button type="submit" isLoading={submitting}>
+              {isEdit ? 'Update Banner' : 'Create Banner'}
+            </Button>
+          </div>
+        </div>
+      </div>
+      <div className="h-16" />
     </form>
   );
 }
@@ -2108,18 +2255,29 @@ function GeneratedContentPreview({ content, onApply, onClose }: GeneratedContent
             key={index}
             className="relative bg-white rounded-lg p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow"
           >
-            {/* Mini Banner Preview */}
+            {/* Mini Banner Preview with content position + CTA style */}
             <div
-              className="h-20 rounded-lg mb-3 flex items-center justify-center text-center p-3"
+              className="relative h-24 rounded-lg mb-3 overflow-hidden flex p-3"
               style={{ backgroundColor: item.backgroundColor || '#1a1a2e' }}
             >
-              <div>
-                <p className="text-white font-bold text-sm" style={{ color: item.textColor }}>
+              <div className={cn(
+                'flex flex-col gap-0.5',
+                PREVIEW_POS_CLS[item.contentPosition] || PREVIEW_POS_CLS.center,
+              )}>
+                <p className="font-bold text-sm leading-tight drop-shadow" style={{ color: item.textColor || '#fff' }}>
                   {item.title || 'Title'}
                 </p>
-                <p className="text-white/80 text-xs" style={{ color: item.textColor }}>
+                <p className="text-xs leading-tight opacity-80 drop-shadow" style={{ color: item.textColor || '#fff' }}>
                   {item.subtitle || 'Subtitle'}
                 </p>
+                {item.ctaText && (
+                  <span className={cn(
+                    'mt-1 inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold w-fit',
+                    PREVIEW_CTA_CLS[item.ctaStyle] || PREVIEW_CTA_CLS.primary,
+                  )}>
+                    {item.ctaText}
+                  </span>
+                )}
               </div>
             </div>
 
