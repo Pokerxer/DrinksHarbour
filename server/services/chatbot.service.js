@@ -128,6 +128,13 @@ STRICT PRICING RULES (ALWAYS ENFORCED):
 3. ✅ ONLY quote prices that appear in the CATALOG DATA provided in this prompt.
 4. If CATALOG DATA is empty: say you couldn't find it in stock right now and suggest browsing /shop.
 
+STOCK DISCLOSURE RULES (STRICT — ALWAYS ENFORCED):
+- The stock/quantity numbers in the CATALOG DATA are INTERNAL. By default you must NEVER tell the customer how many units are available, never confirm or deny a specific count they guess, and never hint at the amount (no "plenty", "loads", "tons in stock", "more than enough", etc.).
+- You may reveal the exact remaining quantity ONLY in these two cases:
+  1. LOW STOCK — the item has FEWER THAN 6 units left. State it to create gentle urgency, e.g. "Only 3 left, so grab it soon! 🍷".
+  2. NOT ENOUGH — the customer wants MORE units than we have in stock. Tell them the most they can order, e.g. "We only have 4 of those right now, so I can add up to 4 to your cart."
+- In every other case (6 or more units, and the customer wants no more than we have) simply say it is "in stock" / "available" with NO number. If they ask "how many do you have?", don't give the number — confirm it's in stock and ask how many they'd like.
+
 KNOWLEDGE RULES:
 5. ✅ For product descriptions, history, tasting notes, food pairings, cocktail recipes, and beverage education — use your full expert knowledge freely. This is what you excel at.
 6. ✅ When a customer asks "tell me more" about a product in the catalog — give a rich, expert-level breakdown: origin story, production method, flavor profile, food pairings, best serving temperature, glassware, and any fun facts.
@@ -613,7 +620,8 @@ const loadCatalog = async (tenantId = null) => {
     if (catalogLines.length === 0) return null;
 
     const categoriesLine = categorySet.size > 0 ? `CATEGORIES IN CATALOG: ${[...categorySet].join(', ')}\n\n` : '';
-    const text = `${categoriesLine}PRODUCTS:\n${catalogLines.join('\n')}`;
+    const stockNote = `(NOTE: every "stock:" figure below is INTERNAL — use it to decide if you can fulfil the requested quantity, but do NOT disclose the number to the customer unless it is below 6 or they asked for more than we have. See STOCK DISCLOSURE RULES.)\n\n`;
+    const text = `${categoriesLine}${stockNote}PRODUCTS:\n${catalogLines.join('\n')}`;
 
     const value = { text, entries };
     _catalogCache[cacheKey] = { time: now, value };
@@ -1231,7 +1239,7 @@ ${intent.type === 'event_planning' ? `- You are now a sommelier-level EVENT DRIN
 ${intent.type === 'discount' ? '- Highlight on-sale items from the catalog first. Show original vs sale price.' : ''}
 ${intent.type === 'cocktail' ? '- Give a full cocktail recipe using your expert knowledge. Mention if the base spirit is in our catalog.' : ''}
 ${intent.type === 'gift' ? '- Recommend premium gifting options from the catalog. Suggest presentation ideas.' : ''}
-${intent.type === 'availability' ? '- Confirm clearly if in stock from the catalog. Direct yes/no first, then details.' : ''}
+${intent.type === 'availability' ? '- Confirm clearly if in stock from the catalog (direct yes/no first). Do NOT reveal the quantity in stock unless it is below 6 or they asked for more than we have — see STOCK DISCLOSURE RULES.' : ''}
 ${intent.type === 'product_info' ? `- Give a RICH, EXPERT-LEVEL breakdown. Use your full beverage knowledge plus the catalog entry. Structure your response with:
   **About**: Origin, producer history, what makes this product special
   **Tasting Notes**: Color, aroma, palate, finish — be evocative and specific
