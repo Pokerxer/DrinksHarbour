@@ -1153,10 +1153,9 @@ export default function CreateEditBanner({
           : null) ||
         contextProducts.find((p) => p.id === aiContextData.productId);
       if (product) {
-        setTargetProduct({
-          _id: product.slug || product.id,
-          name: product.name,
-        });
+        // targetProduct is an ObjectId ref on the Banner model — must be the id,
+        // never the slug, or the save fails casting to ObjectId.
+        setTargetProduct({ _id: product.id, name: product.name });
         set('linkType', 'product');
         set('ctaLink', `/shop?search=${encodeURIComponent(product.name)}`);
       }
