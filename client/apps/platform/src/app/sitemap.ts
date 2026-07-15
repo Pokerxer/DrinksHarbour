@@ -4,6 +4,19 @@ import { getPosts } from "./blog/api";
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
+// Next.js interpolates entry.url straight into <loc> without XML-escaping, so a
+// raw `&` (e.g. in the combined ?category=..&subcategory=.. URLs) produces
+// invalid XML and Google rejects the whole sitemap. Escape the five XML-reserved
+// characters ourselves. `&` must be replaced first so we don't double-encode.
+function xmlEscapeUrl(url: string): string {
+  return url
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
 // Primary category slugs that have dedicated metadata in generateMetadata
 const CATEGORY_SLUGS = [
   // `scotch-whisky` intentionally omitted — it's a duplicate of `scotch` (which
@@ -153,5 +166,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }));
 
-  return [...staticPages, ...categoryPages, ...subcategoryPages, ...brandPages, ...productPages, ...blogPages];
+  return [
+    ...staticPages,
+    ...categoryPages,
+    ...subcategoryPages,
+    ...brandPages,
+    ...productPages,
+    ...blogPages,
+  ].map((entry) => ({ ...entry, url: xmlEscapeUrl(entry.url) }));
 }
