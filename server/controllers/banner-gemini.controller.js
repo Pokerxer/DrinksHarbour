@@ -1,87 +1,39 @@
 // controllers/banner-gemini.controller.js
-const Groq = require('groq-sdk');
+// Banner AI authoring. Backed by Anthropic Haiku (aligned with blog.controller.js
+// and gemini.controller.js) — kept at this filename/route for backwards compat.
+'use strict';
+
+const Anthropic = require('@anthropic-ai/sdk');
 const asyncHandler = require('express-async-handler');
 const Category = require('../models/Category');
 const Product = require('../models/Product');
 const Brand = require('../models/Brand');
+const {
+  AI_FIELD_ACTIONS,
+  isEnhanceableField,
+  clampField,
+  parseAiJson,
+  sanitizeBannerData,
+} = require('../services/banner.helpers');
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' });
-const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const HAIKU_MODEL = process.env.ANTHROPIC_FAST_MODEL || 'claude-haiku-4-5';
+const anthropic = process.env.ANTHROPIC_API_KEY
+  ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  : null;
 
-// Groq-backed drop-in for the Gemini SDK API surface
-const genAI = {
-  getGenerativeModel: ({ generationConfig = {} } = {}) => {
-    const temperature = generationConfig.temperature ?? 0.7;
-    const maxTokens = generationConfig.maxOutputTokens ?? 2048;
-    return {
-      generateContent: async (promptOrObj) => {
-        let content = '';
-        if (typeof promptOrObj === 'string') {
-          content = promptOrObj;
-        } else if (promptOrObj?.contents) {
-          content = promptOrObj.contents
-            .flatMap(c => c.parts || [])
-            .map(p => p.text || '')
-            .join('\n');
-        } else {
-          content = String(promptOrObj);
-        }
-        const completion = await groq.chat.completions.create({
-          model: GROQ_MODEL,
-          messages: [{ role: 'user', content }],
-          temperature,
-          max_tokens: maxTokens,
-        });
-        const text = completion.choices[0]?.message?.content || '';
-        return { response: { text: () => text } };
-      },
-    };
-  },
-};
-
-const MODEL_NAME = GROQ_MODEL;
-
-function parseJSONResponse(text, defaultValue = {}) {
-  if (!text || typeof text !== 'string') {
-    return defaultValue;
-  }
-
-  let cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-  cleaned = cleaned.replace(/[\x00-\x1f\x7f-\x9f]/g, '');
-  cleaned = cleaned.replace(/\\n/g, ' ').replace(/\n/g, ' ');
-
-  const firstBrace = cleaned.indexOf('{');
-  const firstBracket = cleaned.indexOf('[');
-  const start = firstBrace === -1 ? firstBracket : (firstBracket === -1 ? firstBrace : Math.min(firstBrace, firstBracket));
-
-  const lastBrace = cleaned.lastIndexOf('}');
-  const lastBracket = cleaned.lastIndexOf(']');
-  const end = lastBrace === -1 ? lastBracket : (lastBracket === -1 ? lastBrace : Math.max(lastBrace, lastBracket));
-
-  if (start !== -1 && end !== -1 && end > start) {
-    cleaned = cleaned.substring(start, end + 1);
-  }
-
-  cleaned = cleaned.trim();
-
-  try {
-    return JSON.parse(cleaned);
-  } catch (parseError) {
-    const jsonMatch = cleaned.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-    if (jsonMatch) {
-      try {
-        return JSON.parse(jsonMatch[0]);
-      } catch {
-        return defaultValue;
-      }
-    }
-    return defaultValue;
-  }
+// One JSON round-trip to Haiku with a copywriter system prompt. Throws on refusal
+// so callers can fall back to demo content or return a clean 502.
+async function callBannerHaikuJson(prompt, maxTokens = 1024) {
+  const message = await anthropic.messages.create({
+    model: HAIKU_MODEL,
+    max_tokens: maxTokens,
+    system:
+      'You are an expert e-commerce copywriter for DrinksHarbour, a premium Nigerian drinks marketplace. Respond with ONLY valid JSON — no markdown code fences, no explanation, no preamble.',
+    messages: [{ role: 'user', content: prompt }],
+  });
+  if (message.stop_reason === 'refusal') throw new Error('Claude declined the request');
+  return message.content?.[0]?.text || '';
 }
-
-const BANNER_TYPES = ['hero', 'promotional', 'category', 'product', 'seasonal', 'announcement', 'custom'];
-const BANNER_PLACEMENTS = ['home_hero', 'home_secondary', 'category_top', 'product_page', 'checkout', 'sidebar', 'footer', 'popup', 'header'];
-const BANNER_VISIBLE_TO = ['all', 'guests', 'authenticated', 'new_customers', 'returning_customers', 'vip'];
 
 const fetchCategories = async () => {
   try {
@@ -123,33 +75,30 @@ const fetchBrands = async (limit = 20) => {
   }
 };
 
+const STYLE_GUIDANCE = {
+  playful: '- Playful, fun, energetic tone',
+  elegant: '- Elegant, sophisticated, premium tone',
+  urgent: '- Urgent, FOMO-inducing, action-oriented',
+  calm: '- Calm, reassuring, trustworthy tone',
+};
+
 /**
  * Generate complete banner content using AI
- * POST /api/banner/generate-banner
+ * POST /api/banner-ai/generate
  */
 const generateBannerContent = asyncHandler(async (req, res) => {
-  const { 
-    productId, 
-    categoryId, 
-    brandId, 
-    bannerType, 
-    placement,
-    customContext,
-    style 
-  } = req.body;
+  const { productId, categoryId, brandId, bannerType, placement, customContext, style } = req.body;
+
+  if (!anthropic) {
+    return res.json({
+      success: true,
+      data: generateDemoBannerContent(req.body),
+      note: 'Using demo data - AI not configured (ANTHROPIC_API_KEY missing)',
+      fallback: true,
+    });
+  }
 
   try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.9,
-        maxOutputTokens: 2048,
-        responseMimeType: 'application/json',
-      }
-    });
-
     let productContext = null;
     let categoryContext = null;
     let brandContext = null;
@@ -176,30 +125,20 @@ const generateBannerContent = asyncHandler(async (req, res) => {
     if (categoryId) {
       const category = await Category.findById(categoryId).lean();
       if (category) {
-        categoryContext = {
-          name: category.name,
-          type: category.type,
-          description: category.description
-        };
+        categoryContext = { name: category.name, type: category.type, description: category.description };
       }
     }
 
     if (brandId) {
       const brand = await Brand.findById(brandId).lean();
       if (brand) {
-        brandContext = {
-          name: brand.name,
-          description: brand.description
-        };
+        brandContext = { name: brand.name, description: brand.description };
       }
     }
 
-    const prompt = `You are an expert e-commerce copywriter for DrinksHarbour, a premium beverages online store.
+    const prompt = `Generate catchy, conversion-optimized banner content for a beverage e-commerce platform.
 
-Generate catchy, conversion-optimized banner content for a beverage e-commerce platform.
-
-${productContext ? `
-PRODUCT CONTEXT:
+${productContext ? `PRODUCT CONTEXT:
 - Product Name: "${productContext.name}"
 - Type: ${productContext.type || 'N/A'}
 - Brand: ${productContext.brand || 'N/A'}
@@ -209,31 +148,20 @@ PRODUCT CONTEXT:
 - Origin: ${productContext.origin || 'N/A'}
 ${productContext.vintage ? `- Vintage: ${productContext.vintage}` : ''}
 ` : ''}
-
-${categoryContext ? `
-CATEGORY CONTEXT:
+${categoryContext ? `CATEGORY CONTEXT:
 - Category: "${categoryContext.name}"
 - Type: ${categoryContext.type || 'N/A'}
 - Description: ${categoryContext.description || 'N/A'}
 ` : ''}
-
-${brandContext ? `
-BRAND CONTEXT:
+${brandContext ? `BRAND CONTEXT:
 - Brand: "${brandContext.name}"
 - Description: ${brandContext.description || 'N/A'}
 ` : ''}
-
-${customContext ? `
-ADDITIONAL CONTEXT:
+${customContext ? `ADDITIONAL CONTEXT:
 ${customContext}
 ` : ''}
-
 STYLE GUIDANCE:
-${style === 'playful' ? '- Playful, fun, energetic tone' : ''}
-${style === 'elegant' ? '- Elegant, sophisticated, premium tone' : ''}
-${style === 'urgent' ? '- Urgent, FOMO-inducing, action-oriented' : ''}
-${style === 'calm' ? '- Calm, reassuring, trustworthy tone' : ''}
-${!style ? '- Balanced, professional yet engaging tone' : ''}
+${STYLE_GUIDANCE[style] || '- Balanced, professional yet engaging tone'}
 
 Banner Type: ${bannerType || 'promotional'}
 Placement: ${placement || 'home_hero'}
@@ -244,25 +172,19 @@ Return ONLY valid JSON (no markdown, no explanation):
 {
   "title": "Catchy headline (max 60 chars, create urgency or excitement)",
   "subtitle": "Supporting text (max 100 chars, expand on the value proposition)",
-  "ctaText": "Action button text (3-6 words, e.g. 'Shop Now', 'Discover More', 'Get Yours Today')",
+  "ctaText": "Action button text (3-6 words, e.g. 'Shop Now', 'Discover More')",
   "backgroundColor": "#hexcolor that complements beverages (warm, appetizing colors work well)",
   "textColor": "#hexcolor for maximum contrast and readability on the background",
-  "tags": ["relevant", "searchable", "tags", "for", "this", "banner"],
+  "tags": ["relevant", "searchable", "tags"],
   "contentPosition": "center",
   "textAlignment": "center"
 }`;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    const text = await callBannerHaikuJson(prompt, 2048);
+    const parsed = parseAiJson(text, null);
+    if (!parsed || typeof parsed !== 'object') throw new Error('Invalid AI response');
 
-    let data = parseJSONResponse(text);
-
-    if (!data || typeof data !== 'object') {
-      throw new Error('Invalid AI response');
-    }
-
-    data = sanitizeBannerData(data);
+    const data = sanitizeBannerData(parsed);
 
     res.json({
       success: true,
@@ -274,10 +196,8 @@ Return ONLY valid JSON (no markdown, no explanation):
         generatedAt: new Date().toISOString()
       }
     });
-
   } catch (error) {
     console.error('Banner generation error:', error.message);
-
     return res.json({
       success: true,
       data: generateDemoBannerContent(req.body),
@@ -288,11 +208,11 @@ Return ONLY valid JSON (no markdown, no explanation):
 });
 
 /**
- * Generate demo banner content (used as fallback)
+ * Generate demo banner content (used as fallback when AI is unavailable)
  */
 const generateDemoBannerContent = (params) => {
-  const { categoryId, productId, brandId, bannerType, style } = params;
-  
+  const { style } = params;
+
   const styleConfigs = {
     playful: {
       titles: ['Cheers to Good Times!', 'Drink Happy!', 'Let\'s Celebrate!', 'Party Ready?'],
@@ -317,9 +237,8 @@ const generateDemoBannerContent = (params) => {
   };
 
   const config = styleConfigs[style] || styleConfigs.playful;
-  
   const randomPick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-  
+
   const colors = [
     { bg: '#1a1a2e', text: '#ffffff' },
     { bg: '#2d1b4e', text: '#ffffff' },
@@ -341,162 +260,108 @@ const generateDemoBannerContent = (params) => {
     tags: ['premium', 'quality', 'drinks', 'beverages'],
     contentPosition: 'center',
     textAlignment: 'center',
-    styleNote: `Demo content generated with ${style} style`
+    styleNote: `Demo content generated with ${style || 'playful'} style`
   };
 };
 
 /**
  * Generate banner suggestions (multiple options)
- * POST /api/banner/generate-banner-suggestions
+ * POST /api/banner-ai/suggestions
  */
 const generateBannerSuggestions = asyncHandler(async (req, res) => {
-  const { 
-    productId, 
-    categoryId, 
-    brandId, 
-    count = 3 
-  } = req.body;
+  const { productId, categoryId, brandId, count = 3 } = req.body;
+
+  const demoFallback = () => {
+    const demoSuggestions = [];
+    for (let i = 0; i < count; i++) {
+      demoSuggestions.push(generateDemoBannerContent({ ...req.body, style: ['playful', 'elegant', 'urgent', 'calm'][i % 4] }));
+    }
+    return demoSuggestions;
+  };
+
+  if (!anthropic) {
+    const demo = demoFallback();
+    return res.json({
+      success: true,
+      data: demo,
+      note: 'Using demo data - AI not configured',
+      fallback: true,
+      metadata: { count: demo.length, generatedAt: new Date().toISOString() }
+    });
+  }
 
   try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0.8,
-        topK: 40,
-        topP: 0.9,
-        maxOutputTokens: 4096,
-        responseMimeType: 'application/json',
-      }
-    });
-
     let contextDesc = '';
-    
+
     if (productId) {
       const product = await Product.findById(productId).populate('brand', 'name').lean();
-      if (product) {
-        contextDesc = `Product: "${product.name}" by ${product.brand?.name || 'Unknown Brand'}`;
-      }
+      if (product) contextDesc = `Product: "${product.name}" by ${product.brand?.name || 'Unknown Brand'}`;
     } else if (categoryId) {
       const category = await Category.findById(categoryId).lean();
-      if (category) {
-        contextDesc = `Category: "${category.name}"`;
-      }
+      if (category) contextDesc = `Category: "${category.name}"`;
     } else if (brandId) {
       const brand = await Brand.findById(brandId).lean();
-      if (brand) {
-        contextDesc = `Brand: "${brand.name}"`;
-      }
+      if (brand) contextDesc = `Brand: "${brand.name}"`;
     }
 
     const prompt = `Generate ${count} different banner content options for: ${contextDesc || 'a promotional banner'}
 
-Create varied options with different:
-- Tones (urgent, playful, elegant, informative)
-- CTA styles (direct, curiosity-driven, benefit-focused)
-- Color schemes (pick complementary colors that work well for beverage marketing)
+Create varied options with different tones (urgent, playful, elegant, informative), CTA styles, and complementary color schemes for beverage marketing.
 
-Each option should include:
-- title (catchy headline, max 60 chars)
-- subtitle (supporting text, max 100 chars)
-- ctaText (action button, 3-6 words)
-- backgroundColor (hex color)
-- textColor (hex color for contrast)
-- tags (array of 4-6 relevant tags)
-- styleNote (brief description of the tone/approach)
+Each option must include: title (max 60 chars), subtitle (max 100 chars), ctaText (3-6 words), backgroundColor (hex), textColor (hex for contrast), tags (4-6), styleNote (brief tone description).
 
-Return ONLY valid JSON array (no markdown):
-[
-  {
-    "title": "Option 1 title",
-    "subtitle": "Option 1 subtitle",
-    "ctaText": "Option 1 CTA",
-    "backgroundColor": "#color",
-    "textColor": "#color",
-    "tags": ["tag1", "tag2"],
-    "styleNote": "Tone description"
-  },
-  ...
-]`;
+Return ONLY a valid JSON array (no markdown):
+[{ "title": "...", "subtitle": "...", "ctaText": "...", "backgroundColor": "#...", "textColor": "#...", "tags": ["..."], "styleNote": "..." }]`;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-
-    let suggestions = parseJSONResponse(text, []);
-
-    if (!Array.isArray(suggestions)) {
-      suggestions = [];
-    }
-
+    const text = await callBannerHaikuJson(prompt, 4096);
+    let suggestions = parseAiJson(text, []);
+    if (!Array.isArray(suggestions)) suggestions = [];
     suggestions = suggestions.slice(0, count).map(sanitizeBannerData);
 
     res.json({
       success: true,
       data: suggestions,
-      metadata: {
-        count: suggestions.length,
-        generatedAt: new Date().toISOString()
-      }
+      metadata: { count: suggestions.length, generatedAt: new Date().toISOString() }
     });
-
   } catch (error) {
     console.error('Banner suggestions error:', error.message);
-
-    const demoSuggestions = [];
-    for (let i = 0; i < count; i++) {
-      demoSuggestions.push(generateDemoBannerContent({ ...req.body, style: ['playful', 'elegant', 'urgent', 'calm'][i % 4] }));
-    }
-
+    const demo = demoFallback();
     res.json({
       success: true,
-      data: demoSuggestions,
+      data: demo,
       note: 'Using demo data - AI service unavailable',
       fallback: true,
-      metadata: {
-        count: demoSuggestions.length,
-        generatedAt: new Date().toISOString()
-      }
+      metadata: { count: demo.length, generatedAt: new Date().toISOString() }
     });
   }
 });
 
 /**
- * Enhance existing banner content
- * POST /api/banner/enhance-banner
+ * Enhance existing banner content (title/subtitle/ctaText together)
+ * POST /api/banner-ai/enhance
  */
 const enhanceBannerContent = asyncHandler(async (req, res) => {
-  const { 
-    title, 
-    subtitle, 
-    ctaText,
-    style,
-    goal 
-  } = req.body;
+  const { title, subtitle, ctaText, style, goal } = req.body;
 
   if (!title && !subtitle && !ctaText) {
     res.status(400);
     throw new Error('At least one field (title, subtitle, or ctaText) is required');
   }
+  if (!anthropic) return res.status(503).json({ message: 'AI is not configured (ANTHROPIC_API_KEY missing)' });
 
-  try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0.7,
-        topP: 0.9,
-        maxOutputTokens: 1024,
-        responseMimeType: 'application/json',
-      }
-    });
+  const goalText = goal === 'urgency' ? 'Create urgency and FOMO'
+    : goal === 'engagement' ? 'Increase engagement and clicks'
+    : goal === 'trust' ? 'Build trust and credibility'
+    : 'Maximize conversions';
 
-    const prompt = `You are an expert e-commerce copywriter. Enhance the following banner content for maximum conversions.
+  const prompt = `Enhance the following banner content for maximum conversions.
 
 Current content:
 ${title ? `- Title: "${title}"` : ''}
 ${subtitle ? `- Subtitle: "${subtitle}"` : ''}
 ${ctaText ? `- CTA: "${ctaText}"` : ''}
 
-Goal: ${goal === 'urgency' ? 'Create urgency and FOMO' : goal === 'engagement' ? 'Increase engagement and clicks' : goal === 'trust' ? 'Build trust and credibility' : 'Maximize conversions'}
+Goal: ${goalText}
 Style: ${style || 'professional'}
 
 Enhance and return ONLY the JSON (no markdown):
@@ -507,123 +372,111 @@ Enhance and return ONLY the JSON (no markdown):
   "improvementNotes": "Brief explanation of what was improved"
 }`;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-
-    let data = parseJSONResponse(text);
-
+  try {
+    const data = parseAiJson(await callBannerHaikuJson(prompt, 1024), null);
+    if (!data || typeof data !== 'object') throw new Error('Invalid AI response');
     res.json({
       success: true,
-      data,
+      data: {
+        title: data.title ? clampField('title', data.title) : (title ? title : null),
+        subtitle: data.subtitle ? clampField('subtitle', data.subtitle) : (subtitle ? subtitle : null),
+        ctaText: data.ctaText ? clampField('ctaText', data.ctaText) : (ctaText ? ctaText : null),
+        improvementNotes: typeof data.improvementNotes === 'string' ? data.improvementNotes : '',
+      },
       metadata: {
         enhancedFields: [title && 'title', subtitle && 'subtitle', ctaText && 'ctaText'].filter(Boolean),
         generatedAt: new Date().toISOString()
       }
     });
-
   } catch (error) {
     console.error('Banner enhancement error:', error.message);
+    return res.status(502).json({ message: 'AI returned an unusable response — try again' });
+  }
+});
 
-    res.status(500);
-    throw new Error(`Failed to enhance banner: ${error.message}`);
+/**
+ * Enhance a single banner copy field (per-field sparkle in the editor).
+ * Mirrors the blog editor's per-block rewrite/expand/shorten.
+ * POST /api/banner-ai/enhance-field
+ * @body { field: 'title'|'subtitle'|'ctaText', value: string, action?, context? }
+ */
+const enhanceField = asyncHandler(async (req, res) => {
+  if (!anthropic) return res.status(503).json({ message: 'AI is not configured (ANTHROPIC_API_KEY missing)' });
+  const { field, value, action = 'rewrite', context = {} } = req.body || {};
+
+  if (!AI_FIELD_ACTIONS.includes(action)) {
+    return res.status(400).json({ message: `action must be one of: ${AI_FIELD_ACTIONS.join(', ')}` });
+  }
+  if (!isEnhanceableField(field, value)) {
+    return res.status(400).json({ message: 'field must be one of title, subtitle, ctaText and value must be non-empty' });
+  }
+
+  const label = { title: 'headline', subtitle: 'supporting subtitle', ctaText: 'call-to-action button label' }[field];
+  const limit = { title: 60, subtitle: 100, ctaText: 30 }[field];
+  const instruction = {
+    rewrite: 'Rewrite it to be clearer and more compelling, keeping the same intent and roughly the same length',
+    expand: 'Make it a touch richer and more descriptive while staying within the length limit',
+    shorten: 'Tighten it — cut filler, keep it punchy and scannable',
+    punchier: 'Make it bolder and more action-driven to boost clicks, without being gimmicky',
+  }[action];
+
+  const prompt = `You are editing the ${label} of a DrinksHarbour promotional banner (premium Nigerian drinks marketplace).
+${context.type ? `Banner type: ${context.type}\n` : ''}${context.placement ? `Placement: ${context.placement}\n` : ''}${context.title && field !== 'title' ? `Banner title for context: "${context.title}"\n` : ''}
+${instruction}. Keep it under ${limit} characters. Do NOT add quotes, labels, or commentary.
+
+Current ${label}: "${value}"
+
+Return ONLY {"value": "..."} — the revised ${label} as a single JSON string. No code fences, no preamble.`;
+
+  try {
+    const data = parseAiJson(await callBannerHaikuJson(prompt, 512), null);
+    const revised = clampField(field, data && data.value);
+    if (!revised) throw new Error('AI returned empty value');
+    return res.json({ success: true, field, value: revised });
+  } catch (err) {
+    console.error('enhanceField AI error:', err.message);
+    return res.status(502).json({ message: 'AI returned an unusable response — try again' });
   }
 });
 
 /**
  * Generate banner image prompt
- * POST /api/banner/generate-image-prompt
+ * POST /api/banner-ai/image-prompt
  */
 const generateImagePrompt = asyncHandler(async (req, res) => {
-  const { 
-    title, 
-    subtitle, 
-    bannerType,
-    style 
-  } = req.body;
+  const { title, subtitle, bannerType, style } = req.body;
 
   if (!title) {
     res.status(400);
     throw new Error('Banner title is required');
   }
+  if (!anthropic) return res.status(503).json({ message: 'AI is not configured (ANTHROPIC_API_KEY missing)' });
 
-  try {
-    const model = genAI.getGenerativeModel({
-      model: MODEL_NAME,
-      generationConfig: {
-        temperature: 0.8,
-        maxOutputTokens: 512,
-      }
-    });
-
-    const prompt = `Generate a detailed image generation prompt for creating a banner image.
+  const prompt = `Generate a detailed image generation prompt for a marketing banner image.
 
 Banner Title: "${title}"
 ${subtitle ? `Banner Subtitle: "${subtitle}"` : ''}
 Banner Type: ${bannerType || 'promotional'}
 Style: ${style || 'modern, clean, professional'}
 
-The prompt should be suitable for AI image generation (DALL-E, Midjourney, Stable Diffusion).
-Include:
-- Main subject/focus
-- Composition and layout
-- Color mood and palette
-- Style references
-- Text placement guidance
-- Technical specs (aspect ratio, etc.)
+The prompt should suit AI image generators (DALL-E, Midjourney, Stable Diffusion). Include main subject/focus, composition and layout, color mood and palette, style references, text placement guidance, and technical specs.
 
 Return ONLY valid JSON:
-{
-  "prompt": "Detailed image generation prompt",
-  "negativePrompt": "What to avoid in the image",
-  "suggestedStyle": "photography, illustration, etc.",
-  "aspectRatio": "3:1 or 16:9"
-}`;
+{ "prompt": "Detailed image generation prompt", "negativePrompt": "What to avoid", "suggestedStyle": "photography, illustration, etc.", "aspectRatio": "3:1 or 16:9" }`;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-
-    const data = parseJSONResponse(text);
-
-    res.json({
-      success: true,
-      data,
-      metadata: {
-        generatedAt: new Date().toISOString()
-      }
-    });
-
+  try {
+    const data = parseAiJson(await callBannerHaikuJson(prompt, 512), null);
+    if (!data || typeof data !== 'object') throw new Error('Invalid AI response');
+    res.json({ success: true, data, metadata: { generatedAt: new Date().toISOString() } });
   } catch (error) {
     console.error('Image prompt generation error:', error.message);
-
-    res.status(500);
-    throw new Error(`Failed to generate image prompt: ${error.message}`);
+    return res.status(502).json({ message: 'AI returned an unusable response — try again' });
   }
 });
 
 /**
- * Sanitize and validate banner data from AI
- */
-const sanitizeBannerData = (data) => {
-  const hexColorRegex = /^#[0-9A-Fa-f]{6}$/;
-  
-  return {
-    title: typeof data.title === 'string' ? data.title.substring(0, 60) : '',
-    subtitle: typeof data.subtitle === 'string' ? data.subtitle.substring(0, 100) : '',
-    ctaText: typeof data.ctaText === 'string' ? data.ctaText.substring(0, 30) : '',
-    backgroundColor: hexColorRegex.test(data.backgroundColor) ? data.backgroundColor : '#1a1a2e',
-    textColor: hexColorRegex.test(data.textColor) ? data.textColor : '#ffffff',
-    tags: Array.isArray(data.tags) ? data.tags.slice(0, 10) : [],
-    contentPosition: ['top-left', 'top-center', 'top-right', 'center-left', 'center', 'center-right', 'bottom-left', 'bottom-center', 'bottom-right'].includes(data.contentPosition) ? data.contentPosition : 'center',
-    textAlignment: ['left', 'center', 'right'].includes(data.textAlignment) ? data.textAlignment : 'center',
-    styleNote: data.styleNote || ''
-  };
-};
-
-/**
  * Get context data for banner generation
- * GET /api/banner/context-data
+ * GET /api/banner-ai/context-data
  */
 const getContextData = asyncHandler(async (req, res) => {
   try {
@@ -632,15 +485,7 @@ const getContextData = asyncHandler(async (req, res) => {
       fetchProducts(50),
       fetchBrands(50)
     ]);
-
-    res.json({
-      success: true,
-      data: {
-        categories,
-        products,
-        brands
-      }
-    });
+    res.json({ success: true, data: { categories, products, brands } });
   } catch (error) {
     console.error('Error fetching context data:', error);
     res.status(500);
@@ -652,6 +497,7 @@ module.exports = {
   generateBannerContent,
   generateBannerSuggestions,
   enhanceBannerContent,
+  enhanceField,
   generateImagePrompt,
   getContextData
 };

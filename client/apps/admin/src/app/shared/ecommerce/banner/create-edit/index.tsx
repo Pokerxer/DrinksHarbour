@@ -672,6 +672,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
   const [generatedContent, setGeneratedContent] = useState<any>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestionCount, setSuggestionCount] = useState(3);
+  const [enhancingField, setEnhancingField] = useState<string | null>(null);
 
   useEffect(() => {
     if (showAIGenerate && token) {
@@ -933,6 +934,69 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
     setShowAIGenerate(false);
     setGeneratedContent(null);
     setShowSuggestions(false);
+  };
+
+  // Per-field AI sparkle: rewrite one copy field in place (title/subtitle/ctaText).
+  const handleEnhanceField = async (
+    field: 'title' | 'subtitle' | 'ctaText',
+    action: 'rewrite' | 'expand' | 'shorten' | 'punchier' = 'rewrite'
+  ) => {
+    const value = (formData[field] || '').trim();
+    if (!value) {
+      toast.error('Add some text first, then let AI polish it');
+      return;
+    }
+    if (!token) {
+      toast.error('Authentication required');
+      return;
+    }
+    setEnhancingField(field);
+    try {
+      const response = await bannerService.enhanceBannerField(
+        {
+          field,
+          value,
+          action,
+          context: { type: formData.type, placement: formData.placement, title: formData.title },
+        },
+        token
+      );
+      if (response?.value) {
+        set(field, response.value);
+        toast.success('Polished by AI ✨');
+      } else {
+        toast.error('AI returned nothing usable — try again');
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to enhance field');
+    } finally {
+      setEnhancingField(null);
+    }
+  };
+
+  // Small inline sparkle button rendered as an Input suffix.
+  const FieldSparkle = ({ field }: { field: 'title' | 'subtitle' | 'ctaText' }) => {
+    const busy = enhancingField === field;
+    const disabled = busy || !(formData[field] || '').trim();
+    return (
+      <button
+        type="button"
+        onClick={() => handleEnhanceField(field)}
+        disabled={disabled}
+        title="Rewrite this field with AI"
+        aria-label={`Rewrite ${field} with AI`}
+        className={cn(
+          'flex items-center justify-center rounded-md p-1 transition-colors',
+          disabled ? 'text-gray-300 cursor-not-allowed' : 'text-purple-500 hover:text-purple-700 hover:bg-purple-50'
+        )}
+      >
+        {busy ? (
+          <PiSpinnerBold className="w-4 h-4 animate-spin" />
+        ) : (
+          <PiSparkleBold className="w-4 h-4" />
+        )}
+      </button>
+    );
   };
 
   const getContextLabel = () => {
@@ -1528,6 +1592,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                 onChange={e => set('title', e.target.value)}
                 required
                 className="w-full"
+                suffix={<FieldSparkle field="title" />}
               />
               <Input
                 label="Subtitle"
@@ -1535,6 +1600,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                 value={formData.subtitle || ''}
                 onChange={e => set('subtitle', e.target.value)}
                 className="w-full"
+                suffix={<FieldSparkle field="subtitle" />}
               />
               <Textarea
                 label="Description"
@@ -1633,6 +1699,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                 placeholder="Shop Now"
                 value={formData.ctaText || ''}
                 onChange={e => set('ctaText', e.target.value)}
+                suffix={<FieldSparkle field="ctaText" />}
               />
               <Input
                 label="CTA Link / URL"

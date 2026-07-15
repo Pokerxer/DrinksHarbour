@@ -86,6 +86,23 @@ const enhanceBannerValidation = [
     .trim(),
 ];
 
+const enhanceFieldValidation = [
+  body('field')
+    .isIn(['title', 'subtitle', 'ctaText'])
+    .withMessage('field must be one of title, subtitle, ctaText'),
+  body('value')
+    .isString()
+    .trim()
+    .notEmpty()
+    .withMessage('value is required')
+    .isLength({ max: 200 })
+    .withMessage('value cannot exceed 200 characters'),
+  body('action')
+    .optional()
+    .isIn(['rewrite', 'expand', 'shorten', 'punchier'])
+    .withMessage('Invalid action'),
+];
+
 const generateImagePromptValidation = [
   body('title')
     .notEmpty()
@@ -159,6 +176,18 @@ router.post(
   enhanceBannerValidation,
   validate,
   bannerGeminiController.enhanceBannerContent
+);
+
+/**
+ * Enhance a single banner copy field (per-field editor sparkle)
+ * @example POST /api/banner-ai/enhance-field
+ * @body { field: 'title'|'subtitle'|'ctaText', value: string, action?: string }
+ */
+router.post(
+  '/enhance-field',
+  enhanceFieldValidation,
+  validate,
+  bannerGeminiController.enhanceField
 );
 
 /**

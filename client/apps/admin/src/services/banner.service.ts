@@ -288,6 +288,29 @@ export const bannerService = {
     return response.json();
   },
 
+  async enhanceBannerField(params: {
+    field: 'title' | 'subtitle' | 'ctaText';
+    value: string;
+    action?: 'rewrite' | 'expand' | 'shorten' | 'punchier';
+    context?: { type?: string; placement?: string; title?: string };
+  }, token: string) {
+    const response = await fetch(`${API_URL}/api/banner-ai/enhance-field`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(params),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to enhance field');
+    }
+
+    return response.json();
+  },
+
   async generateImagePrompt(params: {
     title: string;
     subtitle?: string;
