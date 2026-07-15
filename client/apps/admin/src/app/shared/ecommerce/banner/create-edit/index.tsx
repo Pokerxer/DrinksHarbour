@@ -1190,7 +1190,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
           setGeneratedContent(null);
           setShowSuggestions(false);
         }}
-        className="max-w-2xl"
+        className="max-w-4xl"
         overlayClassName="backdrop-blur-sm"
       >
         <div className="p-0">
@@ -1271,7 +1271,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
           </div>
 
           {/* Content */}
-          <div className="p-6 max-h-[60vh] overflow-y-auto">
+          <div className="p-6 max-h-[70vh] overflow-y-auto">
             {!showSuggestions ? (
               /* Single Generation Mode */
               <div className="space-y-6">
@@ -1456,7 +1456,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                   </button>
                 </div>
 
-                {/* Product Dropdown */}
+                {/* Product Picker */}
                 {(aiContextData.productId || aiContextData.productId === 'loading') && aiContextData.productId !== '' && (
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1.5">
@@ -1464,11 +1464,12 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                     </label>
                     {isLoadingContext || aiContextData.productId === 'loading' ? (
                       <div className="flex items-center gap-2 px-3 py-2.5 text-sm text-gray-500 bg-gray-50 rounded-lg">
-                        <PiSpinnerBold className="w-4 h-4 animate-spin" /> Loading...
+                        <PiSpinnerBold className="w-4 h-4 animate-spin" /> Loading products...
                       </div>
                     ) : (
-                      <>
-                        <div className="relative mb-2">
+                      <div className="space-y-2">
+                        {/* Search input */}
+                        <div className="relative">
                           <PiMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                           <input
                             type="text"
@@ -1477,7 +1478,18 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                             placeholder="Search products by name or brand..."
                             className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2 text-sm placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none"
                           />
+                          {aiProductSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setAiProductSearch('')}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                            >
+                              <PiX className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
+
+                        {/* Product list */}
                         {(() => {
                           const q = aiProductSearch.trim().toLowerCase();
                           const list = q
@@ -1485,23 +1497,69 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                                 `${p.name} ${p.brand || ''}`.toLowerCase().includes(q))
                             : contextProducts;
                           return (
-                            <>
-                              <select
-                                value={aiContextData.productId}
-                                onChange={e => setAiContextData(prev => ({ ...prev, productId: e.target.value }))}
-                                size={Math.min(Math.max(list.length, 3), 6)}
-                                className="w-full rounded-lg border border-purple-200 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none bg-white"
-                              >
-                                {list.length === 0 && <option value="" disabled>No products match “{aiProductSearch}”</option>}
-                                {list.map(p => (
-                                  <option key={p.id} value={p.id}>{p.name}{p.brand ? ` — ${p.brand}` : ''}</option>
-                                ))}
-                              </select>
-                              <p className="mt-1 text-[11px] text-gray-400">{list.length} product{list.length === 1 ? '' : 's'}</p>
-                            </>
+                            <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-50">
+                              {list.length === 0 ? (
+                                <div className="flex items-center justify-center py-8 text-sm text-gray-400">
+                                  No products match &ldquo;{aiProductSearch}&rdquo;
+                                </div>
+                              ) : (
+                                list.map(p => {
+                                  const selected = aiContextData.productId === p.id;
+                                  return (
+                                    <button
+                                      key={p.id}
+                                      type="button"
+                                      onClick={() => setAiContextData(prev => ({ ...prev, productId: p.id }))}
+                                      className={cn(
+                                        'flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors',
+                                        selected
+                                          ? 'bg-purple-50 ring-1 ring-purple-300'
+                                          : 'hover:bg-gray-50',
+                                      )}
+                                    >
+                                      {/* Thumbnail */}
+                                      <div className="h-9 w-9 flex-shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                                        {p.image ? (
+                                          // eslint-disable-next-line @next/next/no-img-element
+                                          <img src={p.image} alt={p.name} className="h-full w-full object-cover" />
+                                        ) : (
+                                          <div className="flex h-full w-full items-center justify-center">
+                                            <PiPackage className="h-4 w-4 text-gray-300" />
+                                          </div>
+                                        )}
+                                      </div>
+                                      {/* Name + brand */}
+                                      <div className="min-w-0 flex-1">
+                                        <p className={cn('truncate text-sm font-medium', selected ? 'text-purple-700' : 'text-gray-900')}>
+                                          {p.name}
+                                        </p>
+                                        {p.brand && (
+                                          <p className="truncate text-xs text-gray-400">{p.brand}</p>
+                                        )}
+                                      </div>
+                                      {/* Check */}
+                                      {selected && (
+                                        <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-purple-500 text-white">
+                                          <PiCheckBold className="w-3 h-3" />
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                })
+                              )}
+                            </div>
                           );
                         })()}
-                      </>
+                        <p className="text-[11px] text-gray-400">
+                          {(() => {
+                            const q = aiProductSearch.trim().toLowerCase();
+                            const count = q
+                              ? contextProducts.filter(p => `${p.name} ${p.brand || ''}`.toLowerCase().includes(q)).length
+                              : contextProducts.length;
+                            return `${count} product${count === 1 ? '' : 's'}`;
+                          })()}
+                        </p>
+                      </div>
                     )}
                   </div>
                 )}
@@ -1542,8 +1600,9 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                         <PiSpinnerBold className="w-4 h-4 animate-spin" /> Loading...
                       </div>
                     ) : (
-                      <>
-                        <div className="relative mb-2">
+                      <div className="space-y-2">
+                        {/* Search input */}
+                        <div className="relative">
                           <PiMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                           <input
                             type="text"
@@ -1552,7 +1611,18 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                             placeholder="Search subcategories..."
                             className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2 text-sm placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none"
                           />
+                          {aiSubcategorySearch && (
+                            <button
+                              type="button"
+                              onClick={() => setAiSubcategorySearch('')}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                            >
+                              <PiX className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
+
+                        {/* Subcategory list */}
                         {(() => {
                           const q = aiSubcategorySearch.trim().toLowerCase();
                           const list = q
@@ -1560,23 +1630,56 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                                 `${s.name} ${s.parentName || ''}`.toLowerCase().includes(q))
                             : contextSubcategories;
                           return (
-                            <>
-                              <select
-                                value={aiContextData.subcategoryId}
-                                onChange={e => setAiContextData(prev => ({ ...prev, subcategoryId: e.target.value }))}
-                                size={Math.min(Math.max(list.length, 3), 6)}
-                                className="w-full rounded-lg border border-purple-200 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none bg-white"
-                              >
-                                {list.length === 0 && <option value="" disabled>No subcategories match “{aiSubcategorySearch}”</option>}
-                                {list.map(s => (
-                                  <option key={s.id} value={s.id}>{s.name}{s.parentName ? ` — ${s.parentName}` : ''}</option>
-                                ))}
-                              </select>
-                              <p className="mt-1 text-[11px] text-gray-400">{list.length} subcategor{list.length === 1 ? 'y' : 'ies'}</p>
-                            </>
+                            <div className="max-h-48 overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-50">
+                              {list.length === 0 ? (
+                                <div className="flex items-center justify-center py-8 text-sm text-gray-400">
+                                  No subcategories match &ldquo;{aiSubcategorySearch}&rdquo;
+                                </div>
+                              ) : (
+                                list.map(s => {
+                                  const selected = aiContextData.subcategoryId === s.id;
+                                  return (
+                                    <button
+                                      key={s.id}
+                                      type="button"
+                                      onClick={() => setAiContextData(prev => ({ ...prev, subcategoryId: s.id }))}
+                                      className={cn(
+                                        'flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors',
+                                        selected
+                                          ? 'bg-purple-50 ring-1 ring-purple-300'
+                                          : 'hover:bg-gray-50',
+                                      )}
+                                    >
+                                      <div className="min-w-0 flex-1">
+                                        <p className={cn('truncate text-sm font-medium', selected ? 'text-purple-700' : 'text-gray-900')}>
+                                          {s.name}
+                                        </p>
+                                        {s.parentName && (
+                                          <p className="truncate text-xs text-gray-400">{s.parentName}</p>
+                                        )}
+                                      </div>
+                                      {selected && (
+                                        <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-purple-500 text-white">
+                                          <PiCheckBold className="w-3 h-3" />
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                })
+                              )}
+                            </div>
                           );
                         })()}
-                      </>
+                        <p className="text-[11px] text-gray-400">
+                          {(() => {
+                            const q = aiSubcategorySearch.trim().toLowerCase();
+                            const count = q
+                              ? contextSubcategories.filter(s => `${s.name} ${s.parentName || ''}`.toLowerCase().includes(q)).length
+                              : contextSubcategories.length;
+                            return `${count} subcategor${count === 1 ? 'y' : 'ies'}`;
+                          })()}
+                        </p>
+                      </div>
                     )}
                   </div>
                 )}
