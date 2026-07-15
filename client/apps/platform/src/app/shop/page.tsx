@@ -1117,6 +1117,8 @@ interface ResolvedEntry {
   keywords: string[];
   canonicalSlug: string;
   noindex?: boolean;
+  parentSlug?: string;  // subcategory only: its parent category slug
+  parentLabel?: string; // subcategory only: its parent category display name
 }
 
 interface SeoContext {
@@ -1194,6 +1196,8 @@ async function resolveSubEntry(raw: string): Promise<ResolvedEntry> {
         ...generatedKeywords(sub.name),
       ])),
       canonicalSlug: sub.slug,
+      parentSlug: sub.parent?.slug || undefined,
+      parentLabel: sub.parent?.name || undefined,
     };
   }
 
@@ -1400,7 +1404,16 @@ export async function generateMetadata({
     const description = sub?.description
       ? `${sub.description.replace(/\.\s*$/, '')}. Fast delivery across all 36 states.`
       : `Shop premium ${subLabel.toLowerCase()} online in Nigeria. Authentic products with fast delivery from Abuja.`;
-    const url = `${BASE_URL}/shop?subcategory=${encodeURIComponent(sub?.canonicalSlug ?? subcategory)}`;
+    // Canonicalize to the combined category+subcategory form when the parent is
+    // known, so this standalone URL doesn't compete with the same page reached
+    // via ?category=..&subcategory=.. (the form used in the sitemap & blog links).
+    const canonicalSub = sub?.canonicalSlug ?? subcategory;
+    const parentSlug = sub?.parentSlug
+      ? (CATEGORY_CANONICAL_ALIASES[sub.parentSlug.toLowerCase()] ?? sub.parentSlug)
+      : '';
+    const url = parentSlug
+      ? `${BASE_URL}/shop?category=${encodeURIComponent(parentSlug)}&subcategory=${encodeURIComponent(canonicalSub)}`
+      : `${BASE_URL}/shop?subcategory=${encodeURIComponent(canonicalSub)}`;
     return {
       title: { absolute: `${title} | ${SITE_NAME}` },
       description,
@@ -1596,10 +1609,21 @@ async function buildJsonLd(params: Record<string, string>, ctx: SeoContext) {
     breadcrumbs.push({ '@type': 'ListItem', position: 3, name: brandLabel,                  item: `${BASE_URL}/shop?brand=${encodeURIComponent(brand)}` });
     breadcrumbs.push({ '@type': 'ListItem', position: 4, name: `${brandLabel} ${subLabel}`, item: collectionUrl });
   } else if (subcategory && !category && !brand) {
-    const subLabel = subLabelOf();
-    collectionUrl  = `${BASE_URL}/shop?subcategory=${encodeURIComponent(subcategory)}`;
+    const subLabel   = subLabelOf();
+    const parentSlug  = ctx.sub?.parentSlug
+      ? (CATEGORY_CANONICAL_ALIASES[ctx.sub.parentSlug.toLowerCase()] ?? ctx.sub.parentSlug)
+      : '';
+    const parentLabel = ctx.sub?.parentLabel;
+    if (parentSlug) {
+      // Mirror the combined canonical: Home › Shop › Category › Subcategory.
+      collectionUrl = `${BASE_URL}/shop?category=${encodeURIComponent(parentSlug)}&subcategory=${encodeURIComponent(subcategory)}`;
+      breadcrumbs.push({ '@type': 'ListItem', position: 3, name: parentLabel ?? toTitleCase(parentSlug), item: `${BASE_URL}/shop?category=${encodeURIComponent(parentSlug)}` });
+      breadcrumbs.push({ '@type': 'ListItem', position: 4, name: subLabel, item: collectionUrl });
+    } else {
+      collectionUrl = `${BASE_URL}/shop?subcategory=${encodeURIComponent(subcategory)}`;
+      breadcrumbs.push({ '@type': 'ListItem', position: 3, name: subLabel, item: collectionUrl });
+    }
     collectionName = `Buy ${subLabel} Online — DrinksHarbour`;
-    breadcrumbs.push({ '@type': 'ListItem', position: 3, name: subLabel, item: collectionUrl });
   } else if (brand && category) {
     const catLabel   = catLabelOf();
     const brandLabel = brandLabelOf();

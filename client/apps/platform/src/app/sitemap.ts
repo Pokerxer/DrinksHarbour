@@ -44,6 +44,39 @@ async function fetchBrandSlugs(): Promise<string[]> {
   }
 }
 
+interface SubcatEntry {
+  slug: string;
+  parentSlug: string;
+  productCount: number;
+}
+
+// Subcategories carry their parent category (populated), so the sitemap can
+// advertise them in the SAME combined `?category=..&subcategory=..` form that
+// generateMetadata canonicalizes to (and that the blog internal links use).
+async function fetchSubcategories(): Promise<SubcatEntry[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/subcategories?status=published`, {
+      next: { revalidate: 86400 },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const subs: {
+      slug?: string;
+      parent?: { slug?: string };
+      productCount?: number;
+    }[] = data?.data?.subcategories ?? data?.data ?? [];
+    return subs
+      .map((s) => ({
+        slug: s?.slug ?? '',
+        parentSlug: s?.parent?.slug ?? '',
+        productCount: s?.productCount ?? 0,
+      }))
+      .filter((s) => s.slug && s.parentSlug);
+  } catch {
+    return [];
+  }
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticPages: MetadataRoute.Sitemap = [
     { url: BASE_URL,                                  lastModified: new Date(), changeFrequency: "daily",   priority: 1.0 },
@@ -64,9 +97,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/vendors/register/apply`,      lastModified: new Date(), changeFrequency: "monthly", priority: 0.5 },
   ];
 
-  const [slugs, brandSlugs, posts] = await Promise.all([
+  const [slugs, brandSlugs, subcats, posts] = await Promise.all([
     fetchProductSlugs(),
     fetchBrandSlugs(),
+    fetchSubcategories(),
     getPosts(),
   ]);
 
@@ -85,6 +119,25 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.85,
   }));
 
+  // Subcategory shop pages — combined category+subcategory form (the canonical
+  // generateMetadata emits). Only list subcategories that actually have products;
+  // empty ones are noindexed, so advertising them would waste crawl budget.
+  const seenSubUrls = new Set<string>();
+  const subcategoryPages: MetadataRoute.Sitemap = subcats
+    .filter((s) => s.productCount > 0)
+    .map((s) => `${BASE_URL}/shop?category=${s.parentSlug}&subcategory=${s.slug}`)
+    .filter((url) => {
+      if (seenSubUrls.has(url)) return false;
+      seenSubUrls.add(url);
+      return true;
+    })
+    .map((url) => ({
+      url,
+      lastModified: new Date(),
+      changeFrequency: "daily",
+      priority: 0.8,
+    }));
+
   // Brand shop filter pages
   const brandPages: MetadataRoute.Sitemap = brandSlugs.map((slug) => ({
     url: `${BASE_URL}/shop?brand=${slug}`,
@@ -100,5 +153,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }));
 
-  return [...staticPages, ...categoryPages, ...brandPages, ...productPages, ...blogPages];
+  return [...staticPages, ...categoryPages, ...subcategoryPages, ...brandPages, ...productPages, ...blogPages];
 }
