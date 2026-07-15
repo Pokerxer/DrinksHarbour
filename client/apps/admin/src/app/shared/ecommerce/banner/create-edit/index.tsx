@@ -48,6 +48,10 @@ import {
   PiInfo,
   PiStorefrontBold,
   PiArrowsClockwise,
+  PiConfettiBold,
+  PiDiamondBold,
+  PiFireBold,
+  PiLeafBold,
 } from 'react-icons/pi';
 import toast from 'react-hot-toast';
 import cn from '@core/utils/class-names';
@@ -693,6 +697,12 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
   // Search filters for the AI-modal product/subcategory pickers (long lists).
   const [aiProductSearch, setAiProductSearch] = useState('');
   const [aiSubcategorySearch, setAiSubcategorySearch] = useState('');
+  // Live (server-backed) product search for the AI modal — searches ALL products,
+  // not just the ~50 preloaded in context. Mirrors LinkSelector's searchProducts.
+  const [aiProductResults, setAiProductResults] = useState<any[]>([]);
+  const [aiSearchingProducts, setAiSearchingProducts] = useState(false);
+  const [aiSelectedProduct, setAiSelectedProduct] = useState<any>(null);
+  const [aiBrandSearch, setAiBrandSearch] = useState('');
   const [aiContextData, setAiContextData] = useState({
     productId: '',
     categoryId: '',
@@ -711,6 +721,43 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
       fetchContextData();
     }
   }, [showAIGenerate, token]);
+
+  // Debounced live product search for the AI modal (searches all products).
+  useEffect(() => {
+    if (!showAIGenerate || !token) return;
+    const q = aiProductSearch.trim();
+    if (q.length < 2) {
+      setAiProductResults([]);
+      setAiSearchingProducts(false);
+      return;
+    }
+    setAiSearchingProducts(true);
+    const t = setTimeout(async () => {
+      try {
+        const response = await productService.getProducts(token, { search: q, limit: 15 });
+        const list = response?.data?.products || response?.products || [];
+        setAiProductResults(
+          list.map((p: any) => ({
+            id: p._id || p.id,
+            name: p.name,
+            slug: p.slug,
+            brand: typeof p.brand === 'object' ? p.brand?.name || '' : p.brand || '',
+            image:
+              p.image ||
+              p.thumbnail ||
+              p.featuredImage?.url ||
+              (Array.isArray(p.images) ? p.images[0]?.url || p.images[0] : undefined),
+          }))
+        );
+      } catch (err) {
+        console.error('AI product search failed:', err);
+        setAiProductResults([]);
+      } finally {
+        setAiSearchingProducts(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [aiProductSearch, showAIGenerate, token]);
 
   useEffect(() => {
     if (bannerId && !initialData) {
@@ -958,9 +1005,11 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
     // Derive the CTA link client-side from the selected target (never trust an
     // AI-generated URL). Subcategory link uses the slug-based shop filter.
     if (aiContextData.productId) {
-      const product = contextProducts.find(p => p.id === aiContextData.productId);
+      const product =
+        (aiSelectedProduct && aiSelectedProduct.id === aiContextData.productId ? aiSelectedProduct : null) ||
+        contextProducts.find(p => p.id === aiContextData.productId);
       if (product) {
-        setTargetProduct({ _id: product.id, name: product.name });
+        setTargetProduct({ _id: product.slug || product.id, name: product.name });
         set('linkType', 'product');
         set('ctaLink', `/shop?search=${encodeURIComponent(product.name)}`);
       }
@@ -1084,6 +1133,8 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
     }));
     setAiProductSearch('');
     setAiSubcategorySearch('');
+    setAiProductResults([]);
+    setAiSelectedProduct(null);
     setGeneratedContent(null);
   };
 
@@ -1190,7 +1241,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
           setGeneratedContent(null);
           setShowSuggestions(false);
         }}
-        className="max-w-4xl"
+        className="max-w-6xl w-[95vw]"
         overlayClassName="backdrop-blur-sm"
       >
         <div className="p-0">
@@ -1306,7 +1357,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                           <p className="text-sm font-medium text-gray-900">Product</p>
                           <p className="text-xs text-gray-500 truncate">
                             {aiContextData.productId && aiContextData.productId !== 'loading'
-                              ? contextProducts.find(p => p.id === aiContextData.productId)?.name || 'Selected'
+                              ? (aiSelectedProduct?.id === aiContextData.productId ? aiSelectedProduct.name : contextProducts.find(p => p.id === aiContextData.productId)?.name) || 'Selected'
                               : aiContextData.productId === 'loading'
                                 ? 'Loading...'
                                 : 'Click to select'}
@@ -1491,16 +1542,19 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
 
                         {/* Product list */}
                         {(() => {
-                          const q = aiProductSearch.trim().toLowerCase();
-                          const list = q
-                            ? contextProducts.filter(p =>
-                                `${p.name} ${p.brand || ''}`.toLowerCase().includes(q))
-                            : contextProducts;
+                          const q = aiProductSearch.trim();
+                          // 2+ chars → live server search across ALL products; otherwise
+                          // show the preloaded popular set.
+                          const list = q.length >= 2 ? aiProductResults : contextProducts;
                           return (
                             <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-50">
-                              {list.length === 0 ? (
+                              {aiSearchingProducts ? (
+                                <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-400">
+                                  <PiSpinnerBold className="w-4 h-4 animate-spin" /> Searching…
+                                </div>
+                              ) : list.length === 0 ? (
                                 <div className="flex items-center justify-center py-8 text-sm text-gray-400">
-                                  No products match &ldquo;{aiProductSearch}&rdquo;
+                                  {q.length >= 2 ? <>No products match &ldquo;{aiProductSearch}&rdquo;</> : 'No products available'}
                                 </div>
                               ) : (
                                 list.map(p => {
@@ -1509,7 +1563,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                                     <button
                                       key={p.id}
                                       type="button"
-                                      onClick={() => setAiContextData(prev => ({ ...prev, productId: p.id }))}
+                                      onClick={() => { setAiContextData(prev => ({ ...prev, productId: p.id })); setAiSelectedProduct(p); }}
                                       className={cn(
                                         'flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors',
                                         selected
@@ -1551,13 +1605,9 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                           );
                         })()}
                         <p className="text-[11px] text-gray-400">
-                          {(() => {
-                            const q = aiProductSearch.trim().toLowerCase();
-                            const count = q
-                              ? contextProducts.filter(p => `${p.name} ${p.brand || ''}`.toLowerCase().includes(q)).length
-                              : contextProducts.length;
-                            return `${count} product${count === 1 ? '' : 's'}`;
-                          })()}
+                          {aiProductSearch.trim().length >= 2
+                            ? `${aiProductResults.length} result${aiProductResults.length === 1 ? '' : 's'}`
+                            : 'Showing popular products — type at least 2 characters to search all'}
                         </p>
                       </div>
                     )}
@@ -1684,7 +1734,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                   </div>
                 )}
 
-                {/* Brand Dropdown */}
+                {/* Brand Picker */}
                 {(aiContextData.brandId || aiContextData.brandId === 'loading') && aiContextData.brandId !== '' && (
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1.5">
@@ -1692,19 +1742,97 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                     </label>
                     {isLoadingContext || aiContextData.brandId === 'loading' ? (
                       <div className="flex items-center gap-2 px-3 py-2.5 text-sm text-gray-500 bg-gray-50 rounded-lg">
-                        <PiSpinnerBold className="w-4 h-4 animate-spin" /> Loading...
+                        <PiSpinnerBold className="w-4 h-4 animate-spin" /> Loading brands...
                       </div>
                     ) : (
-                      <select
-                        value={aiContextData.brandId}
-                        onChange={e => setAiContextData(prev => ({ ...prev, brandId: e.target.value }))}
-                        className="w-full rounded-lg border border-purple-200 px-3 py-2.5 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none bg-white"
-                      >
-                        <option value="">Choose a brand...</option>
-                        {contextBrands.map(b => (
-                          <option key={b.id} value={b.id}>{b.name}</option>
-                        ))}
-                      </select>
+                      <div className="space-y-2">
+                        {/* Search input */}
+                        <div className="relative">
+                          <PiMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                          <input
+                            type="text"
+                            value={aiBrandSearch}
+                            onChange={e => setAiBrandSearch(e.target.value)}
+                            placeholder="Search brands..."
+                            className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2 text-sm placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none"
+                          />
+                          {aiBrandSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setAiBrandSearch('')}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                            >
+                              <PiX className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Brand list */}
+                        {(() => {
+                          const q = aiBrandSearch.trim().toLowerCase();
+                          const list = q
+                            ? contextBrands.filter(b =>
+                                `${b.name} ${b.countryOfOrigin || ''}`.toLowerCase().includes(q))
+                            : contextBrands;
+                          return (
+                            <div className="max-h-48 overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-50">
+                              {list.length === 0 ? (
+                                <div className="flex items-center justify-center py-8 text-sm text-gray-400">
+                                  No brands match &ldquo;{aiBrandSearch}&rdquo;
+                                </div>
+                              ) : (
+                                list.map(b => {
+                                  const selected = aiContextData.brandId === b.id;
+                                  return (
+                                    <button
+                                      key={b.id}
+                                      type="button"
+                                      onClick={() => setAiContextData(prev => ({ ...prev, brandId: b.id }))}
+                                      className={cn(
+                                        'flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors',
+                                        selected
+                                          ? 'bg-purple-50 ring-1 ring-purple-300'
+                                          : 'hover:bg-gray-50',
+                                      )}
+                                    >
+                                      {b.logo?.url ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img src={b.logo.url} alt={b.name} className="h-8 w-8 flex-shrink-0 rounded-lg border border-gray-200 object-cover" />
+                                      ) : (
+                                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-gray-100">
+                                          <PiStorefrontBold className="h-4 w-4 text-gray-400" />
+                                        </div>
+                                      )}
+                                      <div className="min-w-0 flex-1">
+                                        <p className={cn('truncate text-sm font-medium', selected ? 'text-purple-700' : 'text-gray-900')}>
+                                          {b.name}
+                                        </p>
+                                        {b.countryOfOrigin && (
+                                          <p className="truncate text-xs text-gray-400">{b.countryOfOrigin}</p>
+                                        )}
+                                      </div>
+                                      {selected && (
+                                        <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-purple-500 text-white">
+                                          <PiCheckBold className="w-3 h-3" />
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                })
+                              )}
+                            </div>
+                          );
+                        })()}
+                        <p className="text-[11px] text-gray-400">
+                          {(() => {
+                            const q = aiBrandSearch.trim().toLowerCase();
+                            const count = q
+                              ? contextBrands.filter(b => `${b.name} ${b.countryOfOrigin || ''}`.toLowerCase().includes(q)).length
+                              : contextBrands.length;
+                            return `${count} brand${count === 1 ? '' : 's'}`;
+                          })()}
+                        </p>
+                      </div>
                     )}
                   </div>
                 )}
@@ -1714,23 +1842,23 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                   <label className="block text-sm font-semibold text-gray-700 mb-3">Choose Style</label>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {([
-                      { key: 'playful', icon: '🎉', color: 'from-pink-500 to-orange-400', bg: 'bg-pink-50' },
-                      { key: 'elegant', icon: '✨', color: 'from-purple-500 to-indigo-500', bg: 'bg-purple-50' },
-                      { key: 'urgent', icon: '🔥', color: 'from-red-500 to-pink-500', bg: 'bg-red-50' },
-                      { key: 'calm', icon: '🌿', color: 'from-green-500 to-teal-400', bg: 'bg-green-50' },
-                    ] as const).map(({ key, icon, color, bg }) => (
+                      { key: 'playful', icon: PiConfettiBold, color: 'from-pink-500 to-orange-400', bg: 'bg-pink-50', text: 'text-pink-600' },
+                      { key: 'elegant', icon: PiDiamondBold, color: 'from-purple-500 to-indigo-500', bg: 'bg-purple-50', text: 'text-purple-600' },
+                      { key: 'urgent', icon: PiFireBold, color: 'from-red-500 to-pink-500', bg: 'bg-red-50', text: 'text-red-600' },
+                      { key: 'calm', icon: PiLeafBold, color: 'from-green-500 to-teal-400', bg: 'bg-green-50', text: 'text-teal-600' },
+                    ] as const).map(({ key, icon: Ic, color, bg, text }) => (
                       <button
                         key={key}
                         type="button"
                         onClick={() => setAiContextData(prev => ({ ...prev, style: key }))}
                         className={cn(
-                          'p-3 rounded-xl text-center transition-all',
+                          'p-3 rounded-xl text-center transition-all flex flex-col items-center gap-1.5',
                           aiContextData.style === key
                             ? `bg-gradient-to-br ${color} text-white shadow-lg scale-105`
-                            : `${bg} text-gray-600 hover:scale-105`
+                            : `${bg} ${text} hover:scale-105`
                         )}
                       >
-                        <span className="text-xl block mb-1">{icon}</span>
+                        <Ic className="w-5 h-5" />
                         <span className="text-xs font-medium capitalize">{key}</span>
                       </button>
                     ))}
@@ -1761,17 +1889,26 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
             ) : (
               /* Multiple Options Mode */
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <p className="text-sm text-gray-600">Generate multiple style variations</p>
-                  <select
-                    value={suggestionCount}
-                    onChange={e => setSuggestionCount(Number(e.target.value))}
-                    className="text-sm rounded-lg border border-gray-200 px-3 py-1.5 focus:border-purple-500 outline-none"
-                  >
-                    <option value={2}>2 options</option>
-                    <option value={3}>3 options</option>
-                    <option value={4}>4 options</option>
-                  </select>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-gray-400">Options:</span>
+                    {[2, 3, 4].map(n => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setSuggestionCount(n)}
+                        className={cn(
+                          'rounded-lg px-3 py-1 text-xs font-semibold transition',
+                          suggestionCount === n
+                            ? 'bg-purple-500 text-white'
+                            : 'border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50',
+                        )}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {generatedContent ? (
@@ -1781,10 +1918,14 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                     onClose={() => setGeneratedContent(null)}
                   />
                 ) : (
-                  <div className="text-center py-8 text-gray-500 border-2 border-dashed border-gray-200 rounded-xl">
-                    <PiSparkleBold className="w-10 h-10 mx-auto mb-3 opacity-40" />
-                    <p className="text-sm font-medium mb-1">No options generated yet</p>
-                    <p className="text-xs text-gray-400">Click the button below to generate multiple banner variations</p>
+                  <div className="flex flex-col items-center justify-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-purple-50 mb-3">
+                      <PiStackBold className="w-7 h-7 text-purple-400" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-600 mb-1">No options generated yet</p>
+                    <p className="text-xs text-gray-400 text-center max-w-xs">
+                      Pick a context above, choose a count, then click the button below to generate variations
+                    </p>
                   </div>
                 )}
               </div>
