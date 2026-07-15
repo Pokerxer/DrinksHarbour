@@ -53,7 +53,8 @@ const fetchCategories = async () => {
 
 const fetchProducts = async (limit = 20) => {
   try {
-    const products = await Product.find({ status: 'published' })
+    // Product status enum has no 'published' — approved is the live/visible state.
+    const products = await Product.find({ status: 'approved' })
       .select('_id name slug type brand')
       .populate('brand', 'name')
       .limit(limit)
