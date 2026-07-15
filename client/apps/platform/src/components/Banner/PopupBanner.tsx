@@ -8,6 +8,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
+// Tiny class-name joiner (platform app has no cn util).
+function cn(...parts: (string | false | undefined | null)[]): string {
+  return parts.filter(Boolean).join(' ');
+}
+
 // ─── Frequency / session helpers ─────────────────────────────────────────────
 
 const SEEN_KEY   = 'dh_popup_seen';   // localStorage: Record<bannerId, lastSeenTimestamp>
@@ -73,6 +78,7 @@ interface BannerData {
   image: { url: string; alt?: string };
   endDate?: string;
   tags?: string[];
+  contentPosition?: string;
   popup?: PopupConfig;
 }
 
@@ -82,6 +88,34 @@ interface PopupBannerProps {
   /** Override all fetched popups with a single preview (admin use) */
   preview?: BannerData;
 }
+
+// ─── CTA style → button classes (matches PlacementBanner) ────────────────────
+
+const CTA_CLS: Record<string, string> = {
+  primary:   'bg-orange-500 text-white hover:bg-orange-600 shadow-lg shadow-orange-900/25',
+  secondary: 'bg-white text-gray-900 hover:bg-gray-100 shadow-lg',
+  outline:   'bg-transparent text-white border-2 border-white hover:bg-white/10',
+  text:      'text-white underline underline-offset-4 hover:decoration-2',
+  custom:    'bg-gray-900 text-white hover:bg-gray-800 shadow-lg',
+};
+
+function ctaButtonClass(ctaStyle?: string): string {
+  return CTA_CLS[ctaStyle || 'primary'] || CTA_CLS.primary;
+}
+
+// ─── Content position → flex alignment ────────────────────────────────────────
+
+const POS_CLS: Record<string, string> = {
+  'top-left':       'items-start justify-start text-left',
+  'top-center':     'items-start justify-center text-center',
+  'top-right':      'items-start justify-end text-right',
+  'center-left':    'items-center justify-start text-left',
+  'center':         'items-center justify-center text-center',
+  'center-right':   'items-center justify-end text-right',
+  'bottom-left':    'items-end justify-start text-left',
+  'bottom-center':  'items-end justify-center text-center',
+  'bottom-right':   'items-end justify-end text-right',
+};
 
 // ─── Countdown ────────────────────────────────────────────────────────────────
 
@@ -180,7 +214,7 @@ function EmailCapture({
         <div className="w-12 h-12 rounded-full bg-green-500/20 border border-green-500/30 flex items-center justify-center mx-auto mb-3">
           <Icon.PiCheckBold size={22} className="text-green-400" />
         </div>
-        <p className="text-white font-bold text-sm">You're in!</p>
+        <p className="text-white font-bold text-sm">You&apos;re in!</p>
         {couponCode && (
           <div className="mt-3 px-4 py-2 bg-white/10 border border-white/20 rounded-xl">
             <p className="text-white/60 text-xs mb-1">Your discount code:</p>
@@ -258,10 +292,13 @@ function PopupContent({
   const notifAnim   = slideAnim;
 
   const anim = variant === 'modal' ? modalAnim : variant === 'full_screen' ? fullAnim : variant === 'notification' ? notifAnim : slideAnim;
-  const transition = { type: 'spring', stiffness: 320, damping: 28 };
+  const transition = { type: 'spring', stiffness: 320, damping: 28 } as any;
 
   // ── Notification (compact) ────────────────────────────────────────────────
   if (variant === 'notification') {
+    const nTxt = banner.textColor || '#fff';
+    const nOverlay = (banner.overlayOpacity || 0) / 100;
+    const nCta = ctaButtonClass(banner.ctaStyle);
     const posClass = {
       'bottom-right': 'bottom-5 right-5',
       'bottom-left':  'bottom-5 left-5',
@@ -274,27 +311,28 @@ function PopupContent({
       <motion.div
         variants={notifAnim} initial="hidden" animate="visible" exit="exit"
         transition={transition}
-        className={`fixed z-[9999] ${posClass} w-80 rounded-2xl shadow-2xl overflow-hidden`}
+        className={cn('fixed z-[9999] w-80 max-w-[calc(100vw-2rem)] rounded-2xl shadow-2xl overflow-hidden', posClass)}
         style={{ backgroundColor: bg }}
       >
         <div className="relative p-5">
           {cfg.showCloseButton !== false && (
             <button
               onClick={onClose}
-              className="absolute top-3 right-3 w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-all"
+              className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-white/70 transition-all hover:bg-white/20 hover:text-white"
             >
               <Icon.PiXBold size={11} />
             </button>
           )}
           {!imgErr && banner.image?.url && (
-            <div className="relative h-28 -mx-5 -mt-5 mb-4 overflow-hidden">
+            <div className="relative -mx-5 -mt-5 mb-4 h-28 overflow-hidden">
               <Image src={banner.image.url} alt={banner.image.alt || banner.title} fill className="object-cover" onError={() => setImgErr(true)} />
+              {nOverlay > 0 && <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${nOverlay})` }} />}
               <div className="absolute inset-0" style={{ background: `linear-gradient(to top, ${bg}, transparent 60%)` }} />
             </div>
           )}
-          {banner.subtitle && <p className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-1">{banner.subtitle}</p>}
-          <h3 className="text-white font-black text-base leading-snug mb-1">{banner.title}</h3>
-          {banner.description && <p className="text-white/65 text-xs leading-relaxed mb-3">{banner.description}</p>}
+          {banner.subtitle && <p className="mb-1 text-xs font-bold uppercase tracking-wider" style={{ color: `${nTxt}99` }}>{banner.subtitle}</p>}
+          <h3 className="mb-1 text-base font-black leading-snug" style={{ color: nTxt }}>{banner.title}</h3>
+          {banner.description && <p className="mb-3 text-xs leading-relaxed" style={{ color: `${nTxt}99` }}>{banner.description}</p>}
           {cfg.collectEmail
             ? <EmailCapture bannerId={banner._id} couponCode={cfg.couponCode} onSuccess={onClose} accentColor="#DC2626" />
             : banner.ctaText && (
@@ -302,7 +340,7 @@ function PopupContent({
                 href={banner.ctaLink || '#'}
                 onClick={() => { trackClick(); onClose(); }}
                 target={banner.linkType === 'external' ? '_blank' : undefined}
-                className="block w-full text-center px-4 py-2 rounded-xl font-bold text-sm bg-gradient-to-r from-red-700 to-red-800 text-white hover:from-red-800 hover:to-red-900 transition-all mt-3"
+                className={cn('mt-3 block w-full rounded-xl px-4 py-2 text-center text-sm font-bold transition-all', nCta)}
               >
                 {banner.ctaText}
               </Link>
@@ -314,11 +352,14 @@ function PopupContent({
 
   // ── Full-screen ───────────────────────────────────────────────────────────
   if (variant === 'full_screen') {
+    const fsTxt = banner.textColor || '#fff';
+    const fsOverlay = (banner.overlayOpacity || 0) / 100;
+    const fsCta = ctaButtonClass(banner.ctaStyle);
     return (
       <>
         <motion.div
           variants={fullAnim} initial="hidden" animate="visible" exit="exit"
-          className="fixed inset-0 z-[9998] bg-black/70 backdrop-blur-sm"
+          className="fixed inset-0 z-[9998] bg-black/80 backdrop-blur-md"
           onClick={cfg.closeOnBackdrop !== false ? onClose : undefined}
         />
         <motion.div
@@ -326,41 +367,42 @@ function PopupContent({
           transition={{ duration: 0.35 }}
           className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
         >
-          <div className="relative w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl" style={{ backgroundColor: bg }}>
+          <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl shadow-2xl" style={{ backgroundColor: bg }}>
             {/* Hero image */}
             {!imgErr && banner.image?.url && (
               <div className="relative h-64 md:h-80">
                 <Image src={banner.image.url} alt={banner.image.alt || banner.title} fill className="object-cover" priority onError={() => setImgErr(true)} />
+                {fsOverlay > 0 && <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${fsOverlay})` }} />}
                 <div className="absolute inset-0" style={{ background: `linear-gradient(to top, ${bg} 0%, transparent 60%)` }} />
                 {cfg.showCloseButton !== false && (
                   <button
                     onClick={onClose}
-                    className="absolute top-4 right-4 w-9 h-9 rounded-full bg-black/30 hover:bg-black/50 backdrop-blur-sm flex items-center justify-center text-white transition-all"
+                    className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-md transition-all hover:bg-black/50 hover:scale-110"
                   >
                     <Icon.PiXBold size={16} />
                   </button>
                 )}
               </div>
             )}
-            <div className="p-8 text-center">
+            <div className="p-8 text-center md:p-10">
               {cfg.showCloseButton !== false && imgErr && (
-                <button onClick={onClose} className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all">
+                <button onClick={onClose} className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition-all hover:bg-white/20 hover:scale-110">
                   <Icon.PiXBold size={16} />
                 </button>
               )}
               {banner.subtitle && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/10 rounded-full text-white/75 text-xs font-semibold uppercase tracking-wider mb-4">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider mb-4" style={{ color: `${fsTxt}bb` }}>
                   <Icon.PiSparkleFill size={10} className="text-amber-400" />
                   {banner.subtitle}
                 </span>
               )}
-              <h2 className="text-white text-3xl md:text-4xl font-black leading-tight mb-3">{banner.title}</h2>
-              {banner.description && <p className="text-white/70 text-base leading-relaxed mb-4 max-w-md mx-auto">{banner.description}</p>}
+              <h2 className="text-3xl font-black leading-tight md:text-4xl" style={{ color: fsTxt }}>{banner.title}</h2>
+              {banner.description && <p className="mx-auto mt-2 max-w-md text-base leading-relaxed" style={{ color: `${fsTxt}99` }}>{banner.description}</p>}
               {banner.endDate && <MiniCountdown endDate={banner.endDate} />}
               {cfg.couponCode && !cfg.collectEmail && (
-                <div className="inline-flex items-center gap-3 px-5 py-3 bg-white/10 border border-white/20 rounded-2xl my-4">
+                <div className="inline-flex items-center gap-3 rounded-2xl border border-white/20 bg-white/10 px-5 py-3 my-4">
                   <Icon.PiTagFill size={16} className="text-amber-400" />
-                  <span className="text-white font-black tracking-widest text-lg">{cfg.couponCode}</span>
+                  <span className="font-black tracking-widest text-lg" style={{ color: fsTxt }}>{cfg.couponCode}</span>
                 </div>
               )}
               {cfg.collectEmail
@@ -370,13 +412,13 @@ function PopupContent({
                     href={banner.ctaLink || '#'}
                     onClick={() => { trackClick(); onClose(); }}
                     target={banner.linkType === 'external' ? '_blank' : undefined}
-                    className="inline-flex items-center gap-2 px-10 py-4 rounded-2xl font-black text-sm bg-gradient-to-r from-red-700 to-red-800 text-white hover:from-red-800 hover:to-red-900 transition-all mt-4 shadow-lg shadow-red-900/30"
+                    className={cn('inline-flex items-center gap-2 rounded-2xl px-10 py-4 text-sm font-black transition-all mt-4', fsCta)}
                   >
                     {banner.ctaText} <Icon.PiArrowRight size={15} />
                   </Link>
                 )}
-              <button onClick={onClose} className="block mx-auto mt-4 text-white/35 hover:text-white/60 text-xs transition-colors">
-                No thanks, I'll skip
+              <button onClick={onClose} className="mx-auto mt-4 block text-xs transition-colors hover:underline" style={{ color: `${fsTxt}55` }}>
+                No thanks, I&apos;ll skip
               </button>
             </div>
           </div>
@@ -387,6 +429,9 @@ function PopupContent({
 
   // ── Slide-in ──────────────────────────────────────────────────────────────
   if (variant === 'slide_in') {
+    const siTxt = banner.textColor || '#fff';
+    const siOverlay = (banner.overlayOpacity || 0) / 100;
+    const siCta = ctaButtonClass(banner.ctaStyle);
     const posClass = {
       'bottom-right': 'bottom-6 right-6',
       'bottom-left':  'bottom-6 left-6',
@@ -399,32 +444,33 @@ function PopupContent({
       <motion.div
         variants={slideAnim} initial="hidden" animate="visible" exit="exit"
         transition={transition}
-        className={`fixed z-[9999] ${posClass} w-80 rounded-2xl shadow-2xl overflow-hidden`}
+        className={cn('fixed z-[9999] w-80 max-w-[calc(100vw-2rem)] rounded-2xl shadow-2xl overflow-hidden sm:w-96', posClass)}
         style={{ backgroundColor: bg }}
       >
         {!imgErr && banner.image?.url && (
           <div className="relative h-36 overflow-hidden">
             <Image src={banner.image.url} alt={banner.image.alt || banner.title} fill className="object-cover" onError={() => setImgErr(true)} />
+            {siOverlay > 0 && <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${siOverlay})` }} />}
             <div className="absolute inset-0" style={{ background: `linear-gradient(to top, ${bg}, transparent 50%)` }} />
           </div>
         )}
-        <div className="p-5 relative">
+        <div className="relative p-5">
           {cfg.showCloseButton !== false && (
             <button
               onClick={onClose}
-              className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/60 hover:text-white transition-all"
+              className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-white/60 transition-all hover:bg-white/20 hover:text-white"
             >
               <Icon.PiXBold size={12} />
             </button>
           )}
-          {banner.subtitle && <p className="text-white/55 text-[10px] font-bold uppercase tracking-wider mb-1">{banner.subtitle}</p>}
-          <h3 className="text-white font-black text-base leading-tight pr-8 mb-2">{banner.title}</h3>
-          {banner.description && <p className="text-white/60 text-xs leading-relaxed mb-3">{banner.description}</p>}
+          {banner.subtitle && <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: `${siTxt}99` }}>{banner.subtitle}</p>}
+          <h3 className="pr-8 text-base font-black leading-tight" style={{ color: siTxt }}>{banner.title}</h3>
+          {banner.description && <p className="mt-1 text-xs leading-relaxed" style={{ color: `${siTxt}99` }}>{banner.description}</p>}
           {banner.endDate && <MiniCountdown endDate={banner.endDate} />}
           {cfg.couponCode && !cfg.collectEmail && (
-            <div className="flex items-center gap-2 px-3 py-2 bg-white/10 border border-white/15 rounded-xl my-3">
+            <div className="my-3 flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2">
               <Icon.PiTagFill size={13} className="text-amber-400 flex-shrink-0" />
-              <span className="text-white font-black tracking-widest text-sm">{cfg.couponCode}</span>
+              <span className="text-sm font-black tracking-widest" style={{ color: siTxt }}>{cfg.couponCode}</span>
             </div>
           )}
           {cfg.collectEmail
@@ -434,7 +480,7 @@ function PopupContent({
                 href={banner.ctaLink || '#'}
                 onClick={() => { trackClick(); onClose(); }}
                 target={banner.linkType === 'external' ? '_blank' : undefined}
-                className="block w-full text-center px-4 py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-red-700 to-red-800 text-white hover:from-red-800 hover:to-red-900 transition-all mt-3"
+                className={cn('mt-3 block w-full rounded-xl px-4 py-2.5 text-center text-sm font-bold transition-all', siCta)}
               >
                 {banner.ctaText} →
               </Link>
@@ -445,12 +491,17 @@ function PopupContent({
   }
 
   // ── Modal (default) ───────────────────────────────────────────────────────
+  const txtColor = banner.textColor || '#fff';
+  const overlay = (banner.overlayOpacity || 0) / 100;
+  const posCls = POS_CLS[banner.contentPosition || 'center'] || POS_CLS.center;
+  const ctaCls = ctaButtonClass(banner.ctaStyle);
+
   return (
     <>
       {/* Backdrop */}
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[9998] bg-black/60 backdrop-blur-sm"
+        className="fixed inset-0 z-[9998] bg-black/70 backdrop-blur-md"
         onClick={cfg.closeOnBackdrop !== false ? onClose : undefined}
       />
 
@@ -462,17 +513,28 @@ function PopupContent({
         onClick={e => e.stopPropagation()}
       >
         <div
-          className="relative w-full max-w-md rounded-3xl overflow-hidden shadow-2xl"
+          className="relative w-full max-w-lg overflow-hidden rounded-3xl shadow-2xl"
           style={{ backgroundColor: bg }}
         >
           {/* Image strip */}
           {!imgErr && banner.image?.url && (
-            <div className="relative h-52 overflow-hidden">
-              <Image src={banner.image.url} alt={banner.image.alt || banner.title} fill className="object-cover" priority onError={() => setImgErr(true)} />
+            <div className="relative h-60 overflow-hidden md:h-72">
+              <Image
+                src={banner.image.url}
+                alt={banner.image.alt || banner.title}
+                fill
+                className="object-cover"
+                priority
+                onError={() => setImgErr(true)}
+              />
+              {/* Overlay opacity */}
+              {overlay > 0 && (
+                <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${overlay})` }} />
+              )}
               <div className="absolute inset-0" style={{ background: `linear-gradient(to top, ${bg} 0%, transparent 55%)` }} />
-              {/* Priority / discount badge */}
+              {/* Discount badge */}
               {banner.tags?.some(t => t.includes('%')) && (
-                <div className="absolute top-4 left-4 bg-gradient-to-br from-red-600 to-red-700 text-white px-3 py-1.5 rounded-xl font-black text-lg shadow-lg">
+                <div className="absolute top-4 left-4 flex items-center gap-1.5 bg-gradient-to-br from-red-600 to-red-700 text-white px-3.5 py-2 rounded-2xl font-black text-lg shadow-lg backdrop-blur-sm">
                   {banner.tags.find(t => t.includes('%'))}
                 </div>
               )}
@@ -484,33 +546,37 @@ function PopupContent({
             <button
               onClick={onClose}
               aria-label="Close popup"
-              className="absolute top-4 right-4 w-9 h-9 rounded-full bg-black/25 hover:bg-black/40 backdrop-blur-sm flex items-center justify-center text-white transition-all z-10"
+              className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-md transition-all hover:bg-black/50 hover:scale-110"
             >
-              <Icon.PiXBold size={15} />
+              <Icon.PiXBold size={16} />
             </button>
           )}
 
-          {/* Content */}
-          <div className="p-7 text-center">
+          {/* Content — positioned per contentPosition */}
+          <div className={cn('flex flex-col gap-2.5 p-7 md:p-8', posCls)}>
             {banner.subtitle && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/10 rounded-full text-white/70 text-[10px] font-bold uppercase tracking-wider mb-4">
+              <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: `${txtColor}bb` }}>
                 <Icon.PiSparkleFill size={9} className="text-amber-400" />
                 {banner.subtitle}
               </span>
             )}
 
-            <h2 className="text-white text-2xl font-black leading-tight mb-2">{banner.title}</h2>
+            <h2 className="text-2xl font-black leading-tight md:text-3xl" style={{ color: txtColor }}>
+              {banner.title}
+            </h2>
 
             {banner.description && (
-              <p className="text-white/65 text-sm leading-relaxed mb-4">{banner.description}</p>
+              <p className="max-w-sm text-sm leading-relaxed" style={{ color: `${txtColor}99` }}>
+                {banner.description}
+              </p>
             )}
 
             {banner.endDate && <MiniCountdown endDate={banner.endDate} />}
 
             {cfg.couponCode && !cfg.collectEmail && (
-              <div className="inline-flex items-center gap-3 px-5 py-2.5 bg-white/10 border border-white/20 rounded-2xl my-4">
+              <div className="inline-flex w-fit items-center gap-3 rounded-2xl border border-white/20 bg-white/10 px-5 py-2.5 my-2">
                 <Icon.PiTagFill size={15} className="text-amber-400" />
-                <span className="text-white font-black tracking-widest">{cfg.couponCode}</span>
+                <span className="font-black tracking-widest" style={{ color: txtColor }}>{cfg.couponCode}</span>
               </div>
             )}
 
@@ -521,7 +587,7 @@ function PopupContent({
                 href={banner.ctaLink || '#'}
                 onClick={() => { trackClick(); onClose(); }}
                 target={banner.linkType === 'external' ? '_blank' : undefined}
-                className="inline-flex items-center gap-2 px-8 py-3.5 rounded-2xl font-black text-sm bg-gradient-to-r from-red-700 to-red-800 text-white hover:from-red-800 hover:to-red-900 transition-all mt-2 shadow-lg shadow-red-900/25"
+                className={cn('inline-flex w-fit items-center gap-2 rounded-2xl px-8 py-3.5 text-sm font-black transition-all', ctaCls)}
               >
                 {banner.ctaText} <Icon.PiArrowRight size={14} />
               </Link>
@@ -529,7 +595,8 @@ function PopupContent({
 
             <button
               onClick={onClose}
-              className="block mx-auto mt-4 text-white/30 hover:text-white/55 text-xs transition-colors"
+              className="mt-3 text-xs transition-colors hover:underline"
+              style={{ color: `${txtColor}55` }}
             >
               No thanks
             </button>
