@@ -370,10 +370,10 @@ function PopupContent({
           <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl shadow-2xl" style={{ backgroundColor: bg }}>
             {/* Hero image */}
             {!imgErr && banner.image?.url && (
-              <div className="relative h-64 md:h-80">
-                <Image src={banner.image.url} alt={banner.image.alt || banner.title} fill className="object-cover" priority onError={() => setImgErr(true)} />
-                {fsOverlay > 0 && <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${fsOverlay})` }} />}
-                <div className="absolute inset-0" style={{ background: `linear-gradient(to top, ${bg} 0%, transparent 60%)` }} />
+              <div className="relative h-72 md:h-96">
+                <Image src={banner.image.url} alt={banner.image.alt || banner.title} fill className="object-cover object-center" priority onError={() => setImgErr(true)} />
+                {fsOverlay > 0 && <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${Math.min(fsOverlay, 0.35)})` }} />}
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/5" style={{ background: `linear-gradient(to top, ${bg} 0%, transparent 100%)` }} />
                 {cfg.showCloseButton !== false && (
                   <button
                     onClick={onClose}
@@ -513,25 +513,26 @@ function PopupContent({
         onClick={e => e.stopPropagation()}
       >
         <div
-          className="relative w-full max-w-lg overflow-hidden rounded-3xl shadow-2xl"
+          className="relative max-h-[92vh] w-full max-w-lg overflow-y-auto overflow-x-hidden rounded-3xl shadow-2xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           style={{ backgroundColor: bg }}
         >
           {/* Image strip */}
           {!imgErr && banner.image?.url && (
-            <div className="relative h-60 overflow-hidden md:h-72">
+            <div className="relative h-72 overflow-hidden sm:h-80 md:h-96">
               <Image
                 src={banner.image.url}
                 alt={banner.image.alt || banner.title}
                 fill
-                className="object-cover"
+                className="object-cover object-center"
                 priority
                 onError={() => setImgErr(true)}
               />
-              {/* Overlay opacity */}
+              {/* Overlay opacity — capped so the product never washes out */}
               {overlay > 0 && (
-                <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${overlay})` }} />
+                <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${Math.min(overlay, 0.35)})` }} />
               )}
-              <div className="absolute inset-0" style={{ background: `linear-gradient(to top, ${bg} 0%, transparent 55%)` }} />
+              {/* Soft fade confined to the bottom third — keeps the product vivid up top while blending into the content */}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/5" style={{ background: `linear-gradient(to top, ${bg} 0%, transparent 100%)` }} />
               {/* Discount badge */}
               {banner.tags?.some(t => t.includes('%')) && (
                 <div className="absolute top-4 left-4 flex items-center gap-1.5 bg-gradient-to-br from-red-600 to-red-700 text-white px-3.5 py-2 rounded-2xl font-black text-lg shadow-lg backdrop-blur-sm">
