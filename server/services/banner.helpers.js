@@ -9,6 +9,9 @@ const BANNER_VISIBLE_TO = ['all', 'guests', 'authenticated', 'new_customers', 'r
 const BANNER_AI_STYLES = ['playful', 'elegant', 'urgent', 'calm'];
 const CONTENT_POSITIONS = ['top-left', 'top-center', 'top-right', 'center-left', 'center', 'center-right', 'bottom-left', 'bottom-center', 'bottom-right'];
 const TEXT_ALIGNMENTS = ['left', 'center', 'right'];
+// CTA button visual style (mirrors models/Banner.js ctaStyle enum). Lets the AI
+// pick a button treatment that fits the tone it generated.
+const BANNER_CTA_STYLES = ['primary', 'secondary', 'outline', 'text', 'custom'];
 
 // Per-field AI authoring surfaced by the create-edit sparkle buttons. Mirrors the
 // blog editor's per-block rewrite/expand/shorten (see blog.helpers isRewritableBlock).
@@ -103,7 +106,7 @@ function parseAiJson(text, defaultValue = {}) {
 // validate colors, and snap position/alignment enums to known values.
 function sanitizeBannerData(data) {
   const d = data && typeof data === 'object' ? data : {};
-  return {
+  const out = {
     title: clampField('title', typeof d.title === 'string' ? d.title : ''),
     subtitle: clampField('subtitle', typeof d.subtitle === 'string' ? d.subtitle : ''),
     ctaText: clampField('ctaText', typeof d.ctaText === 'string' ? d.ctaText : ''),
@@ -114,6 +117,18 @@ function sanitizeBannerData(data) {
     textAlignment: snapEnum(d.textAlignment, TEXT_ALIGNMENTS, 'center'),
     styleNote: typeof d.styleNote === 'string' ? d.styleNote : '',
   };
+
+  // AI-picked banner OPTIONS. Only included when the model returned a value that
+  // snaps to a known enum member — a missing/garbage field is omitted so it never
+  // clobbers the user's existing choice when the preview is applied.
+  const type = snapEnum(d.type, BANNER_TYPES, null);
+  if (type) out.type = type;
+  const placement = snapEnum(d.placement, BANNER_PLACEMENTS, null);
+  if (placement) out.placement = placement;
+  const ctaStyle = snapEnum(d.ctaStyle, BANNER_CTA_STYLES, null);
+  if (ctaStyle) out.ctaStyle = ctaStyle;
+
+  return out;
 }
 
 module.exports = {
@@ -124,6 +139,7 @@ module.exports = {
   BANNER_TEXT_FIELDS,
   AI_FIELD_ACTIONS,
   ENHANCE_GOALS,
+  BANNER_CTA_STYLES,
   CONTENT_POSITIONS,
   TEXT_ALIGNMENTS,
   FIELD_LIMITS,

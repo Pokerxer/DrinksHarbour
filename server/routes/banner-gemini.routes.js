@@ -20,6 +20,10 @@ const generateBannerValidation = [
     .optional()
     .isMongoId()
     .withMessage('Invalid category ID'),
+  body('subcategoryId')
+    .optional()
+    .isMongoId()
+    .withMessage('Invalid subcategory ID'),
   body('brandId')
     .optional()
     .isMongoId()
@@ -47,6 +51,10 @@ const generateSuggestionsValidation = [
     .optional()
     .isMongoId()
     .withMessage('Invalid category ID'),
+  body('subcategoryId')
+    .optional()
+    .isMongoId()
+    .withMessage('Invalid subcategory ID'),
   body('brandId')
     .optional()
     .isMongoId()

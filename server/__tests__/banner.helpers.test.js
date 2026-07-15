@@ -4,6 +4,7 @@ const assert = require('node:assert');
 const {
   BANNER_TYPES,
   BANNER_PLACEMENTS,
+  BANNER_CTA_STYLES,
   BANNER_TEXT_FIELDS,
   AI_FIELD_ACTIONS,
   ENHANCE_GOALS,
@@ -85,6 +86,32 @@ test('sanitizeBannerData tolerates non-object / missing fields', () => {
   assert.strictEqual(out.title, '');
   assert.deepStrictEqual(out.tags, []);
   assert.strictEqual(out.contentPosition, 'center');
+});
+
+test('sanitizeBannerData snaps AI-picked type/placement/ctaStyle when valid', () => {
+  const out = sanitizeBannerData({
+    title: 'Hi',
+    type: 'PRODUCT',
+    placement: 'Home_Hero',
+    ctaStyle: 'Outline',
+  });
+  assert.strictEqual(out.type, 'product');
+  assert.strictEqual(out.placement, 'home_hero');
+  assert.strictEqual(out.ctaStyle, 'outline');
+});
+
+test('sanitizeBannerData omits invalid/missing type/placement/ctaStyle', () => {
+  const withGarbage = sanitizeBannerData({ title: 'Hi', type: 'nope', placement: 'x', ctaStyle: 'fancy' });
+  assert.ok(!('type' in withGarbage), 'invalid type omitted');
+  assert.ok(!('placement' in withGarbage), 'invalid placement omitted');
+  assert.ok(!('ctaStyle' in withGarbage), 'invalid ctaStyle omitted');
+
+  const bare = sanitizeBannerData({ title: 'Hi' });
+  assert.ok(!('type' in bare) && !('placement' in bare) && !('ctaStyle' in bare));
+});
+
+test('exports BANNER_CTA_STYLES', () => {
+  assert.deepStrictEqual(BANNER_CTA_STYLES, ['primary', 'secondary', 'outline', 'text', 'custom']);
 });
 
 test('computeScheduledStatus flips scheduled/active/expired by window', () => {

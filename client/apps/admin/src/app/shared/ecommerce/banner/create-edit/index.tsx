@@ -660,11 +660,16 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
   const [contextProducts, setContextProducts] = useState<any[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<any[]>([]);
   const [contextCategories, setContextCategories] = useState<any[]>([]);
+  const [contextSubcategories, setContextSubcategories] = useState<any[]>([]);
   const [contextBrands, setContextBrands] = useState<any[]>([]);
   const [isLoadingContext, setIsLoadingContext] = useState(false);
+  // Search filters for the AI-modal product/subcategory pickers (long lists).
+  const [aiProductSearch, setAiProductSearch] = useState('');
+  const [aiSubcategorySearch, setAiSubcategorySearch] = useState('');
   const [aiContextData, setAiContextData] = useState({
     productId: '',
     categoryId: '',
+    subcategoryId: '',
     brandId: '',
     style: 'playful' as 'playful' | 'elegant' | 'urgent' | 'calm',
     customContext: '',
@@ -775,12 +780,14 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
       if (response.success) {
         const products = response.data.products || [];
         const categories = response.data.categories || [];
+        const subcategories = response.data.subcategories || [];
         const brands = response.data.brands || [];
         setContextProducts(products);
         setFilteredProducts(products);
         setContextCategories(categories);
+        setContextSubcategories(subcategories);
         setContextBrands(brands);
-        
+
         // Auto-select first item if in loading state
         setAiContextData(prev => {
           if (prev.productId === 'loading' && products.length > 0) {
@@ -788,6 +795,9 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
           }
           if (prev.categoryId === 'loading' && categories.length > 0) {
             return { ...prev, categoryId: categories[0].id };
+          }
+          if (prev.subcategoryId === 'loading' && subcategories.length > 0) {
+            return { ...prev, subcategoryId: subcategories[0].id };
           }
           if (prev.brandId === 'loading' && brands.length > 0) {
             return { ...prev, brandId: brands[0].id };
@@ -803,6 +813,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
         ...prev,
         productId: prev.productId === 'loading' ? '' : prev.productId,
         categoryId: prev.categoryId === 'loading' ? '' : prev.categoryId,
+        subcategoryId: prev.subcategoryId === 'loading' ? '' : prev.subcategoryId,
         brandId: prev.brandId === 'loading' ? '' : prev.brandId,
       }));
     } finally {
@@ -810,14 +821,15 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
     }
   };
 
-  const handleSelectContext = (type: 'product' | 'category' | 'brand') => {
+  const handleSelectContext = (type: 'product' | 'category' | 'subcategory' | 'brand') => {
     // Clear existing selections
     setAiContextData(prev => ({
       ...prev,
       productId: '',
       categoryId: '',
+      subcategoryId: '',
       brandId: '',
-      [type]: '', // Will be set after dropdown selection
+      [`${type}Id`]: '', // Will be set after dropdown selection
     }));
   };
 
@@ -847,6 +859,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
 
       if (aiContextData.productId) params.productId = aiContextData.productId;
       if (aiContextData.categoryId) params.categoryId = aiContextData.categoryId;
+      if (aiContextData.subcategoryId) params.subcategoryId = aiContextData.subcategoryId;
       if (aiContextData.brandId) params.brandId = aiContextData.brandId;
       if (aiContextData.customContext) params.customContext = aiContextData.customContext;
 
@@ -880,6 +893,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
 
       if (aiContextData.productId) params.productId = aiContextData.productId;
       if (aiContextData.categoryId) params.categoryId = aiContextData.categoryId;
+      if (aiContextData.subcategoryId) params.subcategoryId = aiContextData.subcategoryId;
       if (aiContextData.brandId) params.brandId = aiContextData.brandId;
       if (aiContextData.customContext) params.customContext = aiContextData.customContext;
 
@@ -907,29 +921,45 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
     if (content.contentPosition) set('contentPosition', content.contentPosition);
     if (content.textAlignment) set('textAlignment', content.textAlignment);
     if (content.tags && Array.isArray(content.tags)) set('tags', content.tags);
-    
-    // Update linked product/category if selected
+
+    // AI-picked banner OPTIONS (only present when the model chose a valid enum value).
+    if (content.type) set('type', content.type);
+    if (content.placement) set('placement', content.placement);
+    if (content.ctaStyle) set('ctaStyle', content.ctaStyle);
+
+    // Derive the CTA link client-side from the selected target (never trust an
+    // AI-generated URL). Subcategory link uses the slug-based shop filter.
     if (aiContextData.productId) {
       const product = contextProducts.find(p => p.id === aiContextData.productId);
       if (product) {
         setTargetProduct({ _id: product.id, name: product.name });
+        set('linkType', 'product');
         set('ctaLink', `/shop?search=${encodeURIComponent(product.name)}`);
+      }
+    }
+    if (aiContextData.subcategoryId) {
+      const subcategory = contextSubcategories.find(s => s.id === aiContextData.subcategoryId);
+      if (subcategory) {
+        set('linkType', 'category');
+        set('ctaLink', `/shop?subcategory=${encodeURIComponent(subcategory.slug || subcategory.id)}`);
       }
     }
     if (aiContextData.categoryId) {
       const category = contextCategories.find(c => c.id === aiContextData.categoryId);
       if (category) {
         setTargetCategory({ _id: category.id, name: category.name });
+        set('linkType', 'category');
         set('ctaLink', `/shop?category=${category.id}`);
       }
     }
     if (aiContextData.brandId) {
       const brand = contextBrands.find(b => b.id === aiContextData.brandId);
       if (brand) {
+        set('linkType', 'brand');
         set('ctaLink', `/shop?search=${encodeURIComponent(brand.name)}`);
       }
     }
-    
+
     toast.success('Content applied to banner!');
     setShowAIGenerate(false);
     setGeneratedContent(null);
@@ -1020,9 +1050,12 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
       ...prev,
       productId: '',
       categoryId: '',
+      subcategoryId: '',
       brandId: '',
       customContext: '',
     }));
+    setAiProductSearch('');
+    setAiSubcategorySearch('');
     setGeneratedContent(null);
   };
 
@@ -1137,11 +1170,12 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                 </div>
               </div>
               {/* Context Badge */}
-              {(aiContextData.productId || aiContextData.categoryId || aiContextData.brandId) && (
+              {(aiContextData.productId || aiContextData.categoryId || aiContextData.subcategoryId || aiContextData.brandId) && (
                 <div className="flex items-center gap-2 bg-white/20 rounded-full px-3 py-1.5">
                   <span className="text-white/90 text-xs">
                     {aiContextData.productId && 'Product'}
                     {aiContextData.categoryId && 'Category'}
+                    {aiContextData.subcategoryId && 'Subcategory'}
                     {aiContextData.brandId && 'Brand'}
                   </span>
                   <button
@@ -1197,7 +1231,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                 {/* Context Selection */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-3">What is this banner for?</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {/* Products */}
                     <button
                       type="button"
@@ -1280,6 +1314,47 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                       </div>
                     </button>
 
+                    {/* Subcategories */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (aiContextData.subcategoryId) {
+                          setAiContextData(prev => ({ ...prev, subcategoryId: '' }));
+                        } else {
+                          fetchContextData();
+                          setAiContextData(prev => ({ ...prev, subcategoryId: 'loading' }));
+                        }
+                      }}
+                      className={cn(
+                        'relative p-4 rounded-xl border-2 transition-all text-left',
+                        aiContextData.subcategoryId ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-300'
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={cn(
+                          'w-10 h-10 rounded-lg flex items-center justify-center',
+                          aiContextData.subcategoryId ? 'bg-purple-100' : 'bg-gray-100'
+                        )}>
+                          <PiFolder className={cn('w-5 h-5', aiContextData.subcategoryId ? 'text-purple-600' : 'text-gray-400')} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900">Subcategory</p>
+                          <p className="text-xs text-gray-500 truncate">
+                            {aiContextData.subcategoryId && aiContextData.subcategoryId !== 'loading'
+                              ? contextSubcategories.find(s => s.id === aiContextData.subcategoryId)?.name || 'Selected'
+                              : aiContextData.subcategoryId === 'loading'
+                                ? 'Loading...'
+                                : 'Click to select'}
+                          </p>
+                        </div>
+                        {aiContextData.subcategoryId && aiContextData.subcategoryId !== 'loading' && (
+                          <span className="w-5 h-5 rounded-full bg-purple-500 text-white flex items-center justify-center">
+                            <PiCheckBold className="w-3 h-3" />
+                          </span>
+                        )}
+                      </div>
+                    </button>
+
                     {/* Brands */}
                     <button
                       type="button"
@@ -1326,7 +1401,7 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                   <button
                     type="button"
                     onClick={handleClearContext}
-                    className="col-span-1 sm:col-span-3 p-3 rounded-xl border-2 border-dashed border-gray-300 hover:border-purple-300 transition-all text-center"
+                    className="col-span-2 sm:col-span-4 p-3 rounded-xl border-2 border-dashed border-gray-300 hover:border-purple-300 transition-all text-center"
                   >
                     <p className="text-xs text-gray-500">
                       Or generate without specific context
@@ -1345,16 +1420,41 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                         <PiSpinnerBold className="w-4 h-4 animate-spin" /> Loading...
                       </div>
                     ) : (
-                      <select
-                        value={aiContextData.productId}
-                        onChange={e => setAiContextData(prev => ({ ...prev, productId: e.target.value }))}
-                        className="w-full rounded-lg border border-purple-200 px-3 py-2.5 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none bg-white"
-                      >
-                        <option value="">Choose a product...</option>
-                        {contextProducts.map(p => (
-                          <option key={p.id} value={p.id}>{p.name}{p.brand ? ` - ${p.brand}` : ''}</option>
-                        ))}
-                      </select>
+                      <>
+                        <div className="relative mb-2">
+                          <PiMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                          <input
+                            type="text"
+                            value={aiProductSearch}
+                            onChange={e => setAiProductSearch(e.target.value)}
+                            placeholder="Search products by name or brand..."
+                            className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2 text-sm placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none"
+                          />
+                        </div>
+                        {(() => {
+                          const q = aiProductSearch.trim().toLowerCase();
+                          const list = q
+                            ? contextProducts.filter(p =>
+                                `${p.name} ${p.brand || ''}`.toLowerCase().includes(q))
+                            : contextProducts;
+                          return (
+                            <>
+                              <select
+                                value={aiContextData.productId}
+                                onChange={e => setAiContextData(prev => ({ ...prev, productId: e.target.value }))}
+                                size={Math.min(Math.max(list.length, 3), 6)}
+                                className="w-full rounded-lg border border-purple-200 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none bg-white"
+                              >
+                                {list.length === 0 && <option value="" disabled>No products match “{aiProductSearch}”</option>}
+                                {list.map(p => (
+                                  <option key={p.id} value={p.id}>{p.name}{p.brand ? ` — ${p.brand}` : ''}</option>
+                                ))}
+                              </select>
+                              <p className="mt-1 text-[11px] text-gray-400">{list.length} product{list.length === 1 ? '' : 's'}</p>
+                            </>
+                          );
+                        })()}
+                      </>
                     )}
                   </div>
                 )}
@@ -1380,6 +1480,56 @@ export default function CreateEditBanner({ bannerId, initialData }: CreateEditBa
                           <option key={c.id} value={c.id}>{c.name}</option>
                         ))}
                       </select>
+                    )}
+                  </div>
+                )}
+
+                {/* Subcategory Dropdown */}
+                {(aiContextData.subcategoryId || aiContextData.subcategoryId === 'loading') && aiContextData.subcategoryId !== '' && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1.5">
+                      {aiContextData.subcategoryId === 'loading' ? 'Loading subcategories...' : 'Select Subcategory'}
+                    </label>
+                    {isLoadingContext || aiContextData.subcategoryId === 'loading' ? (
+                      <div className="flex items-center gap-2 px-3 py-2.5 text-sm text-gray-500 bg-gray-50 rounded-lg">
+                        <PiSpinnerBold className="w-4 h-4 animate-spin" /> Loading...
+                      </div>
+                    ) : (
+                      <>
+                        <div className="relative mb-2">
+                          <PiMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                          <input
+                            type="text"
+                            value={aiSubcategorySearch}
+                            onChange={e => setAiSubcategorySearch(e.target.value)}
+                            placeholder="Search subcategories..."
+                            className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2 text-sm placeholder-gray-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none"
+                          />
+                        </div>
+                        {(() => {
+                          const q = aiSubcategorySearch.trim().toLowerCase();
+                          const list = q
+                            ? contextSubcategories.filter(s =>
+                                `${s.name} ${s.parentName || ''}`.toLowerCase().includes(q))
+                            : contextSubcategories;
+                          return (
+                            <>
+                              <select
+                                value={aiContextData.subcategoryId}
+                                onChange={e => setAiContextData(prev => ({ ...prev, subcategoryId: e.target.value }))}
+                                size={Math.min(Math.max(list.length, 3), 6)}
+                                className="w-full rounded-lg border border-purple-200 px-3 py-2 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none bg-white"
+                              >
+                                {list.length === 0 && <option value="" disabled>No subcategories match “{aiSubcategorySearch}”</option>}
+                                {list.map(s => (
+                                  <option key={s.id} value={s.id}>{s.name}{s.parentName ? ` — ${s.parentName}` : ''}</option>
+                                ))}
+                              </select>
+                              <p className="mt-1 text-[11px] text-gray-400">{list.length} subcategor{list.length === 1 ? 'y' : 'ies'}</p>
+                            </>
+                          );
+                        })()}
+                      </>
                     )}
                   </div>
                 )}
@@ -1988,6 +2138,23 @@ function GeneratedContentPreview({ content, onApply, onClose }: GeneratedContent
                   {item.ctaText || 'Shop Now'}
                 </span>
               </div>
+
+              {/* AI-picked options — shown so the admin sees what the model chose */}
+              {(item.type || item.placement || item.ctaStyle || item.contentPosition || item.textAlignment) && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-2">
+                  {[
+                    item.type && ['Type', item.type],
+                    item.placement && ['Placement', item.placement.replace(/_/g, ' ')],
+                    item.ctaStyle && ['CTA style', item.ctaStyle],
+                    item.contentPosition && ['Position', item.contentPosition.replace(/-/g, ' ')],
+                    item.textAlignment && ['Align', item.textAlignment],
+                  ].filter(Boolean).map(([label, value]: any) => (
+                    <span key={label} className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] rounded-full font-medium capitalize">
+                      {label}: {value}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Apply Button */}

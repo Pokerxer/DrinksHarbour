@@ -9,7 +9,7 @@ export const bannerService = {
 
     const response = await fetch(url, {
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 
@@ -24,7 +24,7 @@ export const bannerService = {
   async getBannerById(id: string, token: string) {
     const response = await fetch(`${API_URL}/api/banners/${id}`, {
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 
@@ -41,7 +41,7 @@ export const bannerService = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(data),
     });
@@ -59,7 +59,7 @@ export const bannerService = {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(data),
     });
@@ -77,7 +77,7 @@ export const bannerService = {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(data),
     });
@@ -94,7 +94,7 @@ export const bannerService = {
     const response = await fetch(`${API_URL}/api/banners/${id}`, {
       method: 'DELETE',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 
@@ -111,7 +111,7 @@ export const bannerService = {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ status }),
     });
@@ -128,7 +128,7 @@ export const bannerService = {
     const response = await fetch(`${API_URL}/api/banners/${id}/toggle-active`, {
       method: 'PATCH',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 
@@ -145,7 +145,7 @@ export const bannerService = {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ bannerIds, status }),
     });
@@ -162,7 +162,7 @@ export const bannerService = {
     const response = await fetch(`${API_URL}/api/banners/${id}/clone`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 
@@ -177,7 +177,7 @@ export const bannerService = {
   async getBannerAnalytics(id: string, token: string) {
     const response = await fetch(`${API_URL}/api/banners/${id}/analytics`, {
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 
@@ -201,7 +201,10 @@ export const bannerService = {
     });
   },
 
-  async getActiveBannersForPlacement(placement: string, params?: Record<string, any>) {
+  async getActiveBannersForPlacement(
+    placement: string,
+    params?: Record<string, any>
+  ) {
     const queryString = params ? new URLSearchParams(params).toString() : '';
     const url = `${API_URL}/api/banners/placement/${placement}${queryString ? `?${queryString}` : ''}`;
 
@@ -215,20 +218,24 @@ export const bannerService = {
     return response.json();
   },
 
-  async generateBannerContent(params: {
-    productId?: string;
-    categoryId?: string;
-    brandId?: string;
-    bannerType?: string;
-    placement?: string;
-    customContext?: string;
-    style?: 'playful' | 'elegant' | 'urgent' | 'calm';
-  }, token: string) {
+  async generateBannerContent(
+    params: {
+      productId?: string;
+      categoryId?: string;
+      subcategoryId?: string;
+      brandId?: string;
+      bannerType?: string;
+      placement?: string;
+      customContext?: string;
+      style?: 'playful' | 'elegant' | 'urgent' | 'calm';
+    },
+    token: string
+  ) {
     const response = await fetch(`${API_URL}/api/banner-ai/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(params),
     });
@@ -241,17 +248,21 @@ export const bannerService = {
     return response.json();
   },
 
-  async generateBannerSuggestions(params: {
-    productId?: string;
-    categoryId?: string;
-    brandId?: string;
-    count?: number;
-  }, token: string) {
+  async generateBannerSuggestions(
+    params: {
+      productId?: string;
+      categoryId?: string;
+      subcategoryId?: string;
+      brandId?: string;
+      count?: number;
+    },
+    token: string
+  ) {
     const response = await fetch(`${API_URL}/api/banner-ai/suggestions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(params),
     });
@@ -264,18 +275,21 @@ export const bannerService = {
     return response.json();
   },
 
-  async enhanceBannerContent(params: {
-    title?: string;
-    subtitle?: string;
-    ctaText?: string;
-    goal?: 'urgency' | 'engagement' | 'trust' | 'conversions';
-    style?: string;
-  }, token: string) {
+  async enhanceBannerContent(
+    params: {
+      title?: string;
+      subtitle?: string;
+      ctaText?: string;
+      goal?: 'urgency' | 'engagement' | 'trust' | 'conversions';
+      style?: string;
+    },
+    token: string
+  ) {
     const response = await fetch(`${API_URL}/api/banner-ai/enhance`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(params),
     });
@@ -288,17 +302,20 @@ export const bannerService = {
     return response.json();
   },
 
-  async enhanceBannerField(params: {
-    field: 'title' | 'subtitle' | 'ctaText';
-    value: string;
-    action?: 'rewrite' | 'expand' | 'shorten' | 'punchier';
-    context?: { type?: string; placement?: string; title?: string };
-  }, token: string) {
+  async enhanceBannerField(
+    params: {
+      field: 'title' | 'subtitle' | 'ctaText';
+      value: string;
+      action?: 'rewrite' | 'expand' | 'shorten' | 'punchier';
+      context?: { type?: string; placement?: string; title?: string };
+    },
+    token: string
+  ) {
     const response = await fetch(`${API_URL}/api/banner-ai/enhance-field`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(params),
     });
@@ -311,17 +328,20 @@ export const bannerService = {
     return response.json();
   },
 
-  async generateImagePrompt(params: {
-    title: string;
-    subtitle?: string;
-    bannerType?: string;
-    style?: string;
-  }, token: string) {
+  async generateImagePrompt(
+    params: {
+      title: string;
+      subtitle?: string;
+      bannerType?: string;
+      style?: string;
+    },
+    token: string
+  ) {
     const response = await fetch(`${API_URL}/api/banner-ai/image-prompt`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(params),
     });
@@ -337,7 +357,7 @@ export const bannerService = {
   async getBannerContextData(token: string) {
     const response = await fetch(`${API_URL}/api/banner-ai/context-data`, {
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
 

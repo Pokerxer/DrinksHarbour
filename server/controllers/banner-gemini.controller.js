@@ -6,10 +6,16 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const asyncHandler = require('express-async-handler');
 const Category = require('../models/Category');
+const SubCategory = require('../models/SubCategory');
 const Product = require('../models/Product');
 const Brand = require('../models/Brand');
 const {
   AI_FIELD_ACTIONS,
+  BANNER_TYPES,
+  BANNER_PLACEMENTS,
+  BANNER_CTA_STYLES,
+  CONTENT_POSITIONS,
+  TEXT_ALIGNMENTS,
   isEnhanceableField,
   clampField,
   parseAiJson,
@@ -75,6 +81,29 @@ const fetchBrands = async (limit = 20) => {
   }
 };
 
+const fetchSubCategories = async (limit = 100) => {
+  try {
+    const subs = await SubCategory.find({ status: 'published' })
+      .select('_id name slug type parent')
+      .populate('parent', 'name slug')
+      .sort({ displayOrder: 1, name: 1 })
+      .limit(limit)
+      .lean();
+    return subs.map(s => ({
+      id: s._id.toString(),
+      name: s.name,
+      slug: s.slug,
+      type: s.type,
+      parentId: s.parent?._id ? s.parent._id.toString() : '',
+      parentName: s.parent?.name || '',
+      parentSlug: s.parent?.slug || '',
+    }));
+  } catch (error) {
+    console.error('Error fetching subcategories:', error);
+    return [];
+  }
+};
+
 const STYLE_GUIDANCE = {
   playful: '- Playful, fun, energetic tone',
   elegant: '- Elegant, sophisticated, premium tone',
@@ -87,7 +116,7 @@ const STYLE_GUIDANCE = {
  * POST /api/banner-ai/generate
  */
 const generateBannerContent = asyncHandler(async (req, res) => {
-  const { productId, categoryId, brandId, bannerType, placement, customContext, style } = req.body;
+  const { productId, categoryId, subcategoryId, brandId, bannerType, placement, customContext, style } = req.body;
 
   if (!anthropic) {
     return res.json({
@@ -101,6 +130,7 @@ const generateBannerContent = asyncHandler(async (req, res) => {
   try {
     let productContext = null;
     let categoryContext = null;
+    let subcategoryContext = null;
     let brandContext = null;
 
     if (productId) {
@@ -129,6 +159,18 @@ const generateBannerContent = asyncHandler(async (req, res) => {
       }
     }
 
+    if (subcategoryId) {
+      const subcategory = await SubCategory.findById(subcategoryId).populate('parent', 'name').lean();
+      if (subcategory) {
+        subcategoryContext = {
+          name: subcategory.name,
+          type: subcategory.type,
+          parent: subcategory.parent?.name,
+          description: subcategory.description || subcategory.shortDescription,
+        };
+      }
+    }
+
     if (brandId) {
       const brand = await Brand.findById(brandId).lean();
       if (brand) {
@@ -153,6 +195,12 @@ ${categoryContext ? `CATEGORY CONTEXT:
 - Type: ${categoryContext.type || 'N/A'}
 - Description: ${categoryContext.description || 'N/A'}
 ` : ''}
+${subcategoryContext ? `SUBCATEGORY CONTEXT:
+- Subcategory: "${subcategoryContext.name}"
+- Parent Category: ${subcategoryContext.parent || 'N/A'}
+- Type: ${subcategoryContext.type || 'N/A'}
+- Description: ${subcategoryContext.description || 'N/A'}
+` : ''}
 ${brandContext ? `BRAND CONTEXT:
 - Brand: "${brandContext.name}"
 - Description: ${brandContext.description || 'N/A'}
@@ -163,10 +211,18 @@ ${customContext}
 STYLE GUIDANCE:
 ${STYLE_GUIDANCE[style] || '- Balanced, professional yet engaging tone'}
 
-Banner Type: ${bannerType || 'promotional'}
-Placement: ${placement || 'home_hero'}
+Preferred Banner Type: ${bannerType || '(you choose)'}
+Preferred Placement: ${placement || '(you choose)'}
 
 Generate content that will drive clicks and conversions. Make it compelling and action-oriented.
+Also PICK the banner configuration that best fits the context, tone, and placement above,
+choosing each value from its allowed list:
+- type: ${BANNER_TYPES.join(' | ')}
+- placement: ${BANNER_PLACEMENTS.join(' | ')}
+- ctaStyle: ${BANNER_CTA_STYLES.join(' | ')}
+- contentPosition: ${CONTENT_POSITIONS.join(' | ')}
+- textAlignment: ${TEXT_ALIGNMENTS.join(' | ')}
+(If a preferred type/placement is given above, honor it unless it clearly conflicts with the content.)
 
 Return ONLY valid JSON (no markdown, no explanation):
 {
@@ -176,8 +232,11 @@ Return ONLY valid JSON (no markdown, no explanation):
   "backgroundColor": "#hexcolor that complements beverages (warm, appetizing colors work well)",
   "textColor": "#hexcolor for maximum contrast and readability on the background",
   "tags": ["relevant", "searchable", "tags"],
-  "contentPosition": "center",
-  "textAlignment": "center"
+  "type": "one of the allowed type values",
+  "placement": "one of the allowed placement values",
+  "ctaStyle": "one of the allowed ctaStyle values",
+  "contentPosition": "one of the allowed contentPosition values",
+  "textAlignment": "one of the allowed textAlignment values"
 }`;
 
     const text = await callBannerHaikuJson(prompt, 2048);
@@ -192,6 +251,7 @@ Return ONLY valid JSON (no markdown, no explanation):
       metadata: {
         hasProduct: !!productContext,
         hasCategory: !!categoryContext,
+        hasSubcategory: !!subcategoryContext,
         hasBrand: !!brandContext,
         generatedAt: new Date().toISOString()
       }
@@ -269,7 +329,7 @@ const generateDemoBannerContent = (params) => {
  * POST /api/banner-ai/suggestions
  */
 const generateBannerSuggestions = asyncHandler(async (req, res) => {
-  const { productId, categoryId, brandId, count = 3 } = req.body;
+  const { productId, categoryId, subcategoryId, brandId, count = 3 } = req.body;
 
   const demoFallback = () => {
     const demoSuggestions = [];
@@ -296,6 +356,9 @@ const generateBannerSuggestions = asyncHandler(async (req, res) => {
     if (productId) {
       const product = await Product.findById(productId).populate('brand', 'name').lean();
       if (product) contextDesc = `Product: "${product.name}" by ${product.brand?.name || 'Unknown Brand'}`;
+    } else if (subcategoryId) {
+      const subcategory = await SubCategory.findById(subcategoryId).populate('parent', 'name').lean();
+      if (subcategory) contextDesc = `Subcategory: "${subcategory.name}"${subcategory.parent?.name ? ` (under ${subcategory.parent.name})` : ''}`;
     } else if (categoryId) {
       const category = await Category.findById(categoryId).lean();
       if (category) contextDesc = `Category: "${category.name}"`;
@@ -480,12 +543,13 @@ Return ONLY valid JSON:
  */
 const getContextData = asyncHandler(async (req, res) => {
   try {
-    const [categories, products, brands] = await Promise.all([
+    const [categories, subcategories, products, brands] = await Promise.all([
       fetchCategories(),
+      fetchSubCategories(150),
       fetchProducts(50),
       fetchBrands(50)
     ]);
-    res.json({ success: true, data: { categories, products, brands } });
+    res.json({ success: true, data: { categories, subcategories, products, brands } });
   } catch (error) {
     console.error('Error fetching context data:', error);
     res.status(500);
