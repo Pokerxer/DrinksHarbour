@@ -226,26 +226,31 @@ async function buildLinkCatalog(topic) {
       category: p.category?.name || '',
       categorySlug: p.category?.slug || '',
       subCategory: p.subCategory?.name || '',
+      subCategorySlug: p.subCategory?.slug || '',
       brand: p.brand?.name || '',
       brandSlug: p.brand?.slug || '',
     }));
 
   const categories = new Map();
+  const subCategories = new Map();
   const brands = new Map();
   entries.forEach((e) => {
     if (e.categorySlug && !categories.has(e.categorySlug)) categories.set(e.categorySlug, e.category);
+    if (e.subCategorySlug && e.categorySlug && !subCategories.has(e.subCategorySlug))
+      subCategories.set(e.subCategorySlug, { name: e.subCategory, categorySlug: e.categorySlug });
     if (e.brandSlug && !brands.has(e.brandSlug)) brands.set(e.brandSlug, e.brand);
   });
 
   const allowed = new Set();
   entries.forEach((e) => allowed.add(`/product/${e.slug}`));
   categories.forEach((_name, slug) => allowed.add(`/shop?category=${slug}`));
+  subCategories.forEach((v, slug) => allowed.add(`/shop?category=${v.categorySlug}&subcategory=${slug}`));
   brands.forEach((_name, slug) => allowed.add(`/shop?brand=${slug}`));
 
-  return { entries, categories, brands, allowed };
+  return { entries, categories, subCategories, brands, allowed };
 }
 
-function catalogToPrompt({ entries, categories, brands }) {
+function catalogToPrompt({ entries, categories, subCategories, brands }) {
   if (!entries.length) return '';
   const productLines = entries
     .map((e) => {
@@ -255,6 +260,9 @@ function catalogToPrompt({ entries, categories, brands }) {
     .join('\n');
   const categoryLines = [...categories.entries()]
     .map(([slug, name]) => `- "${name}" → /shop?category=${slug}`)
+    .join('\n');
+  const subCategoryLines = [...(subCategories?.entries() || [])]
+    .map(([slug, v]) => `- "${v.name}" → /shop?category=${v.categorySlug}&subcategory=${slug}`)
     .join('\n');
   const brandLines = [...(brands?.entries() || [])]
     .map(([slug, name]) => `- "${name}" → /shop?brand=${slug}`)
@@ -268,7 +276,7 @@ INTERNAL LINKING: weave 3-6 contextual internal links into paragraph, list, quot
 - Link each product at most once. Favour specific products; use a brand or category page only when no specific product fits.
 
 Approved product links:
-${productLines}${categoryLines ? `\n\nApproved category links:\n${categoryLines}` : ''}${brandLines ? `\n\nApproved brand links:\n${brandLines}` : ''}`;
+${productLines}${categoryLines ? `\n\nApproved category links:\n${categoryLines}` : ''}${subCategoryLines ? `\n\nApproved subcategory links:\n${subCategoryLines}` : ''}${brandLines ? `\n\nApproved brand links:\n${brandLines}` : ''}`;
 }
 
 // A product link must be in the catalog (prevents 404s); other internal paths are safe.

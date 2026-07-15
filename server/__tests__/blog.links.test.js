@@ -41,6 +41,18 @@ test('sanitizeInlineLinks keeps brand /shop links (any /shop path is allowed)', 
   assert.strictEqual(out[1].items[1], 'Skip Fake');
 });
 
+test('sanitizeInlineLinks keeps combined category+subcategory /shop links', () => {
+  const isAllowed = (href) => href.startsWith('/shop');
+  const content = [
+    { type: 'p', text: 'Pour a glass of [Cabernet](/shop?category=red-wine&subcategory=cabernet-sauvignon) tonight.' },
+  ];
+  const out = sanitizeInlineLinks(content, isAllowed);
+  assert.strictEqual(
+    out[0].text,
+    'Pour a glass of [Cabernet](/shop?category=red-wine&subcategory=cabernet-sauvignon) tonight.'
+  );
+});
+
 test('sanitizeInlineLinks leaves link-free content untouched', () => {
   const content = [{ type: 'p', text: 'Plain paragraph.' }, { type: 'h2', text: 'Heading' }];
   const out = sanitizeInlineLinks(content, () => true);
