@@ -6,7 +6,7 @@ import BreadcrumbProduct from "@/components/Breadcrumb/BreadcrumbProduct";
 import LoadingSpinner from "@/components/loader/LoadingSpinner";
 import type { ProductType } from "@/types/product.types";
 import * as Icon from "react-icons/pi";
-import { AnnouncementBanner } from "@/components/Banner";
+import { AnnouncementBanner, PlacementBanner } from "@/components/Banner";
 
 // Defer heavy components — ProductDetail pulls in Swiper + all modules
 const ProductDetail = dynamic(() => import("@/components/Product/Detail"), {
@@ -194,6 +194,9 @@ export default function ProductClient({ slug }: { slug: string }) {
       <AnnouncementBanner placement="header" layout="static" variant="info" />
       <div className="container mx-auto px-4 pt-6">
         <BreadcrumbProduct data={productData} productPage="default" productId={slug} />
+      </div>
+      <div className="container mx-auto px-4 pb-2">
+        <PlacementBanner placement="product_page" variant="hero" limit={1} />
       </div>
       <ProductDetail productData={productData} relatedProducts={relatedProducts} />
       <ProductReviews productId={productData._id} />

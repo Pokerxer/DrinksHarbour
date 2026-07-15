@@ -13,6 +13,7 @@ import { API_URL } from '@/lib/api';
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
 import AddressAutocomplete, { type AddressDetails } from '@/components/AddressAutocomplete/AddressAutocomplete';
 import LocationPickerMap from '@/components/LocationPickerMap/LocationPickerMap';
+import PlacementBanner from '@/components/Banner/PlacementBanner';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -806,6 +807,9 @@ export default function CheckoutPage() {
       <div className="bg-gray-50 min-h-screen">
         <div className="container mx-auto max-w-6xl px-4 py-8">
           <h1 className="sr-only">Checkout</h1>
+          <div className="mb-5">
+            <PlacementBanner placement="checkout" variant="compact" limit={1} />
+          </div>
           <form onSubmit={handleSubmit}>
 
             <AnimatePresence>

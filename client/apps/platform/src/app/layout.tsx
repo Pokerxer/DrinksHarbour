@@ -22,6 +22,7 @@ const MobileBottomNav = dynamic(() => import("@/components/Navigation").then(mod
 const ChatbotWidget   = dynamic(() => import("@/components/Chatbot/ChatbotWidget"));
 const WhatsAppButton  = dynamic(() => import("@/components/WhatsApp/WhatsAppButton"));
 const PopupBanner     = dynamic(() => import("@/components/Banner/PopupBanner"));
+const FooterPlacementBanner = dynamic(() => import("@/components/Banner/PlacementBanner"));
 // AgeGate + CookieConsent read localStorage at mount, so they must render
 // client-only (ssr: false). That option is only valid inside a Client Component,
 // so they live in ClientOverlays rather than being imported here directly.
@@ -209,6 +210,9 @@ export default async function RootLayout({
             <ClientOverlays />
             <Header variant="default" showAnnouncement={false} />
             <main id="main-content">{children}</main>
+            <div className="container mx-auto px-4 py-4">
+              <FooterPlacementBanner placement="footer" variant="footer" limit={1} />
+            </div>
             <ModalCart />
             <ModalWishlist />
             <ModalSearch />
