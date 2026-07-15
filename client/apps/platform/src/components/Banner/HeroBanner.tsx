@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
-import { motion, AnimatePresence, Variants } from 'framer-motion';
+import { motion, AnimatePresence, Variants, useReducedMotion } from 'framer-motion';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -80,6 +80,9 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   const [direction, setDirection]   = useState(0);
   const [isPaused, setIsPaused]     = useState(false);
   const [imgErrors, setImgErrors]   = useState<Record<string, boolean>>({});
+  const reduceMotion = useReducedMotion();
+  // Respect prefers-reduced-motion: no auto-advancing, parallax, or blur wipes.
+  const effectiveAutoPlay = autoPlay && !reduceMotion;
 
   useEffect(() => {
     const fetchBanners = async () => {
@@ -103,55 +106,67 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   const slides = banners.length > 0 ? banners : FALLBACK_SLIDES;
 
   // Cinematic transition — layered parallax (dolly) + rack-focus + light-wipe
-  // Background, gradient, and text move at different parallax depths.
-  const slideVariants = {
-    enter:  (d: number) => ({ opacity: 0, scale: 1.18, filter: 'blur(14px)' }),
-    center: { zIndex: 1, opacity: 1, scale: 1, filter: 'blur(0px)' },
-    exit:   (d: number) => ({ zIndex: 0, opacity: 0, scale: 0.94, filter: 'blur(12px)' }),
-  };
+  // Background, gradient, and text move at different parallax depths. When the
+  // visitor prefers reduced motion we collapse every layer to a simple opacity
+  // cross-fade with no transform, scale, or blur.
+  const slideVariants = reduceMotion
+    ? { enter: { opacity: 0 }, center: { zIndex: 1, opacity: 1 }, exit: { zIndex: 0, opacity: 0 } }
+    : {
+        enter:  (d: number) => ({ opacity: 0, scale: 1.18, filter: 'blur(14px)' }),
+        center: { zIndex: 1, opacity: 1, scale: 1, filter: 'blur(0px)' },
+        exit:   (d: number) => ({ zIndex: 0, opacity: 0, scale: 0.94, filter: 'blur(12px)' }),
+      };
 
   // Parallax depth layers — background drifts opposite to foreground
-  const bgParallaxVariants: Variants = {
-    enter:  (d: number) => ({ x: d > 0 ? '6%' : '-6%', scale: 1.18 }),
-    center: { x: '0%', scale: 1.08 },
-    exit:   (d: number) => ({ x: d < 0 ? '6%' : '-6%', scale: 1.14 }),
-  };
+  const bgParallaxVariants: Variants = reduceMotion
+    ? { enter: {}, center: {}, exit: {} }
+    : {
+        enter:  (d: number) => ({ x: d > 0 ? '6%' : '-6%', scale: 1.18 }),
+        center: { x: '0%', scale: 1.08 },
+        exit:   (d: number) => ({ x: d < 0 ? '6%' : '-6%', scale: 1.14 }),
+      };
 
   // Gradient/light layer — drifts slower (midground) + a directional light-wipe opacity
-  const midParallaxVariants: Variants = {
-    enter:  (d: number) => ({ x: d > 0 ? '3%' : '-3%', opacity: 0 }),
-    center: { x: '0%', opacity: 1 },
-    exit:   (d: number) => ({ x: d < 0 ? '3%' : '-3%', opacity: 0 }),
-  };
+  const midParallaxVariants: Variants = reduceMotion
+    ? { enter: { opacity: 1 }, center: { opacity: 1 }, exit: { opacity: 1 } }
+    : {
+        enter:  (d: number) => ({ x: d > 0 ? '3%' : '-3%', opacity: 0 }),
+        center: { x: '0%', opacity: 1 },
+        exit:   (d: number) => ({ x: d < 0 ? '3%' : '-3%', opacity: 0 }),
+      };
 
   // Staggered text entrance — badge → title → desc → CTA → pills
   const containerVariants: Variants = {
     initial: { opacity: 1 },
-    animate: { opacity: 1, transition: { staggerChildren: 0.12, delayChildren: 0.3 } },
-    exit:    { opacity: 1, transition: { staggerChildren: 0.035, staggerDirection: -1 } },
+    animate: { opacity: 1, transition: { staggerChildren: reduceMotion ? 0 : 0.12, delayChildren: reduceMotion ? 0 : 0.3 } },
+    exit:    { opacity: 1, transition: { staggerChildren: reduceMotion ? 0 : 0.035, staggerDirection: -1 } },
   };
 
-  const textVariants: Variants = {
-    initial:  { y: 36, opacity: 0, filter: 'blur(10px)' },
-    animate:  { y: 0, opacity: 1, filter: 'blur(0px)', transition: { duration: 0.85, ease: [0.16, 1, 0.3, 1] } },
-    exit:     { y: -22, opacity: 0, filter: 'blur(8px)', transition: { duration: 0.4, ease: [0.4, 0, 1, 1] } },
-  };
+  const textVariants: Variants = reduceMotion
+    ? { initial: { opacity: 1 }, animate: { opacity: 1 }, exit: { opacity: 1 } }
+    : {
+        initial:  { y: 36, opacity: 0, filter: 'blur(10px)' },
+        animate:  { y: 0, opacity: 1, filter: 'blur(0px)', transition: { duration: 0.85, ease: [0.16, 1, 0.3, 1] } },
+        exit:     { y: -22, opacity: 0, filter: 'blur(8px)', transition: { duration: 0.4, ease: [0.4, 0, 1, 1] } },
+      };
 
-  const btnVariants: Variants = {
-    initial:  { scale: 0.82, opacity: 0, y: 18, filter: 'blur(6px)' },
-    animate:  { scale: 1, opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: 0.7, ease: [0.34, 1.56, 0.64, 1] } },
-  };
+  const btnVariants: Variants = reduceMotion
+    ? { initial: { opacity: 1 }, animate: { opacity: 1 } }
+    : {
+        initial:  { scale: 0.82, opacity: 0, y: 18, filter: 'blur(6px)' },
+        animate:  { scale: 1, opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: 0.7, ease: [0.34, 1.56, 0.64, 1] } },
+      };
 
   // Auto-advance
   useEffect(() => {
-    if (!autoPlay || slides.length <= 1 || isPaused || loading) return;
+    if (!effectiveAutoPlay || slides.length <= 1 || isPaused || loading) return;
     const interval = slides[currentIndex]?.autoplay?.interval || 6000;
     const timer = setInterval(() => {
       setDirection(1);
       setCurrentIndex(p => (p + 1) % slides.length);
     }, interval);
     return () => clearInterval(timer);
-  }, [autoPlay, slides, currentIndex, isPaused, loading]);
+  }, [effectiveAutoPlay, slides, currentIndex, isPaused, loading]);
 
   const handleNext = useCallback(() => {
     setDirection(1);
@@ -203,13 +218,21 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
   return (
     <div
       className="relative w-full h-[70vh] min-h-[500px] max-h-[800px] overflow-hidden"
+      role="region"
+      aria-roledescription="carousel"
+      aria-label="Promotional banners"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
+      onFocus={() => setIsPaused(true)}
+      onBlur={() => setIsPaused(false)}
     >
       <AnimatePresence initial={false} custom={direction} mode="sync">
         <motion.div
           key={slide._id}
           custom={direction}
+          role="group"
+          aria-roledescription="slide"
+          aria-label={`${currentIndex + 1} of ${slides.length}: ${slide.title}`}
           variants={slideVariants}
           initial="enter"
           animate="center"
@@ -402,8 +425,10 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
           {slides.map((_, i) => (
             <button
               key={i}
+              type="button"
               onClick={() => handleDotClick(i)}
-              aria-label={`Slide ${i + 1}`}
+              aria-label={`Go to slide ${i + 1} of ${slides.length}`}
+              aria-current={i === currentIndex ? 'true' : undefined}
               className={`h-2 rounded-full transition-all duration-300 ${i === currentIndex ? 'bg-amber-400 w-7 shadow-[0_0_10px_rgba(245,176,66,0.6)]' : 'bg-white/35 hover:bg-white/60 w-2'}`}
             />
           ))}
@@ -411,7 +436,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
       )}
 
       {/* Progress bar — warm amber on brand red */}
-      {autoPlay && slides.length > 1 && !isPaused && (
+      {effectiveAutoPlay && slides.length > 1 && !isPaused && (
         <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/10 z-20">
           <motion.div
             key={`pb-${slide._id}`}

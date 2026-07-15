@@ -3,7 +3,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import * as Icon from 'react-icons/pi';
 import {
   fetchAllCategories,
@@ -385,6 +385,14 @@ const btnVariants = {
   animate: { scale: 1, opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.34, 1.56, 0.64, 1] } },
 };
 
+// When the visitor prefers reduced motion we render everything in its final state
+// (no transforms, no blur, no stagger) — this also lets the LCP <h1>/description
+// paint immediately instead of tweening up from opacity 0.
+const STATIC_VARIANTS = {
+  initial: { opacity: 1 },
+  animate: { opacity: 1, transition: { staggerChildren: 0, delayChildren: 0 } },
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 // Normalize a possibly comma-joined param into a lowercase, trimmed slug list.
@@ -466,6 +474,13 @@ export default function ShopHeroBanner({
 }: ShopHeroBannerProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const reduceMotion = useReducedMotion();
+
+  // Swap the entrance animation for a static, final-state render when the visitor
+  // has prefers-reduced-motion set.
+  const cVar = reduceMotion ? STATIC_VARIANTS : containerVariants;
+  const tVar = reduceMotion ? STATIC_VARIANTS : textVariants;
+  const bVar = reduceMotion ? STATIC_VARIANTS : btnVariants;
 
   // ── DB-sourced categories/subcategories — the source of truth for chips + slugs ──
   const [allCats, setAllCats] = useState<Category[]>([]);
@@ -670,13 +685,13 @@ export default function ShopHeroBanner({
         {/* Content */}
         <div className="relative z-10 container mx-auto px-5 md:px-10 h-full flex items-center">
           <motion.div
-            variants={containerVariants}
+            variants={cVar}
             initial="initial"
             animate="animate"
             className="max-w-2xl"
           >
             {/* Badge / subtitle */}
-            <motion.div variants={textVariants} className="mb-5">
+            <motion.div variants={tVar} className="mb-5">
               <span
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold border backdrop-blur-md"
                 style={{
@@ -691,11 +706,14 @@ export default function ShopHeroBanner({
             </motion.div>
 
             {/* Headline — with brand logo when a single brand is active */}
-            <motion.div variants={textVariants} className="flex items-center gap-4 mb-4">
+            <motion.div variants={tVar} className="flex items-center gap-4 mb-4">
               {brandLabel && dbBrand?.logo?.url && (
                 <img
                   src={dbBrand.logo.url}
-                  alt={brandLabel}
+                  alt=""
+                  aria-hidden="true"
+                  loading="eager"
+                  decoding="async"
                   className="h-14 w-14 sm:h-20 sm:w-20 flex-shrink-0 rounded-2xl bg-white/90 object-contain p-1.5 shadow-lg"
                 />
               )}
@@ -712,7 +730,7 @@ export default function ShopHeroBanner({
 
             {/* Description */}
             <motion.p
-              variants={textVariants}
+              variants={tVar}
               className="text-white/70 mb-8 leading-relaxed max-w-xl"
               style={{ fontSize: 'clamp(14px, 1.5vw, 18px)' }}
             >
@@ -720,7 +738,7 @@ export default function ShopHeroBanner({
             </motion.p>
 
             {/* CTAs */}
-            <motion.div variants={btnVariants} className="flex items-center gap-3 flex-wrap">
+            <motion.div variants={bVar} className="flex items-center gap-3 flex-wrap">
               <Link
                 href={ctaUrl}
                 className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full font-bold text-sm transition-all duration-300 hover:scale-105"
@@ -749,7 +767,7 @@ export default function ShopHeroBanner({
             </motion.div>
 
             {/* Trust pills */}
-            <motion.div variants={textVariants} className="flex flex-wrap gap-2.5 mt-8">
+            <motion.div variants={tVar} className="flex flex-wrap gap-2.5 mt-8">
               {[
                 { icon: <Icon.PiTruck size={12} />, label: 'Fast Delivery' },
                 { icon: <Icon.PiSealCheck size={12} />, label: 'Authentic Products' },
@@ -768,7 +786,7 @@ export default function ShopHeroBanner({
 
             {/* Product count */}
             {typeof totalProducts === 'number' && totalProducts > 0 && (
-              <motion.p variants={textVariants} className="mt-4 text-white/40 text-xs font-medium">
+              <motion.p variants={tVar} className="mt-4 text-white/40 text-xs font-medium">
                 {totalProducts.toLocaleString()} product{totalProducts !== 1 ? 's' : ''} available
               </motion.p>
             )}
@@ -777,7 +795,8 @@ export default function ShopHeroBanner({
       </div>
 
       {/* ── Subcategory chip rail ─────────────────────────────────────────────── */}
-      <div
+      <nav
+        aria-label={isDefault ? 'Browse drink categories' : `Filter ${displayLabel} by subcategory`}
         className="overflow-x-auto no-scrollbar border-b"
         style={{ background: `${dark}`, borderColor: `${glow}20` }}
       >
@@ -843,7 +862,7 @@ export default function ShopHeroBanner({
             </>
           )}
         </div>
-      </div>
+      </nav>
     </div>
   );
 }

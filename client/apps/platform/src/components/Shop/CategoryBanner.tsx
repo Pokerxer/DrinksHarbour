@@ -211,10 +211,11 @@ const CategoryBanner: React.FC<CategoryBannerProps> = ({
               <>
                 <Image
                   src={primaryImage}
-                  alt={name}
+                  alt={bannerImage?.alt || featuredImage?.alt || name}
                   fill
                   className="object-cover"
                   priority
+                  sizes="(max-width: 768px) 100vw, 1152px"
                 />
                 <div className="absolute inset-0 bg-gradient-to-r from-gray-900/80 via-gray-900/50 to-transparent"></div>
               </>
@@ -350,12 +351,17 @@ const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
   const viewCount = stats?.viewCount || 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div 
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${name} details`}
+    >
+      <div
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
         onClick={onClose}
       />
-      
+
       <div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl shadow-2xl">
         {featuredImage?.url ? (
           <div className="relative h-48 md:h-64 w-full">
@@ -364,11 +370,14 @@ const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
               alt={featuredImage.alt || name}
               fill
               className="object-cover"
+              sizes="(max-width: 768px) 100vw, 896px"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
             
             <button
+              type="button"
               onClick={onClose}
+              aria-label="Close category details"
               className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 hover:bg-white/40 text-white flex items-center justify-center transition-colors"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -391,7 +400,9 @@ const CategoryDetailsModal: React.FC<CategoryDetailsModalProps> = ({
             style={{ background: `linear-gradient(135deg, ${color}15 0%, #f8fafc 100%)` }}
           >
             <button
+              type="button"
               onClick={onClose}
+              aria-label="Close category details"
               className="absolute top-4 right-4 w-10 h-10 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 flex items-center justify-center transition-colors"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
