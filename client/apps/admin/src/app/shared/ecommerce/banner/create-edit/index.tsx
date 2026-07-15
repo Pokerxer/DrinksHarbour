@@ -1328,11 +1328,16 @@ export default function CreateEditBanner({
 
     setSubmitting(true);
     try {
+      // targetProduct/targetCategory are ObjectId refs on the Banner model, but
+      // the link selectors store a slug in _id to build the CTA URL. Only send
+      // real ObjectIds so the save never fails casting a slug; the ctaLink
+      // already carries the destination for slug-based targets.
+      const isObjectId = (v?: string) => !!v && /^[a-f\d]{24}$/i.test(v);
       const payload = {
         ...formData,
         deviceTargeting,
-        targetProduct: targetProduct?._id || undefined,
-        targetCategory: targetCategory?._id || undefined,
+        targetProduct: isObjectId(targetProduct?._id) ? targetProduct!._id : undefined,
+        targetCategory: isObjectId(targetCategory?._id) ? targetCategory!._id : undefined,
       };
       const response =
         isEdit && bannerId
