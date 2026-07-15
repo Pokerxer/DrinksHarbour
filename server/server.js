@@ -347,6 +347,8 @@ async function startServer() {
       startExpiryCron();
       const { startQuarantineCron } = require('./jobs/quarantineExpired.job');
       startQuarantineCron();
+      const { startBannerScheduleCron } = require('./jobs/bannerSchedule.job');
+      startBannerScheduleCron();
     }
 
     console.log('\n┌──────────────────────────────────────────────────────┐');

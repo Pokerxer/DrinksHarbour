@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import * as Icon from 'react-icons/pi';
@@ -187,6 +187,17 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
     if (!id || id.startsWith('fallback')) return;
     try { await fetch(`${API_URL}/api/banners/${id}/click`, { method: 'POST' }); } catch {}
   };
+
+  // Record one impression per real banner per mount, when it first becomes the
+  // visible slide — pairs with click tracking so CTR has a denominator.
+  const seenImpressions = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (loading) return;
+    const id = slides[currentIndex]?._id;
+    if (!id || id.startsWith('fallback') || seenImpressions.current.has(id)) return;
+    seenImpressions.current.add(id);
+    fetch(`${API_URL}/api/banners/${id}/impression`, { method: 'POST' }).catch(() => {});
+  }, [currentIndex, slides, loading]);
 
   const contentPos = (p = 'center') => ({
     'top-left': 'items-start justify-start', 'top-center': 'items-start justify-center', 'top-right': 'items-start justify-end',

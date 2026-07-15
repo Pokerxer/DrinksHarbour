@@ -13,6 +13,8 @@ const {
   clampField,
   parseAiJson,
   sanitizeBannerData,
+  computeScheduledStatus,
+  MANAGED_STATUSES,
 } = require('../services/banner.helpers');
 
 test('isEnhanceableField accepts non-empty text fields, rejects empty/unknown', () => {
@@ -83,6 +85,35 @@ test('sanitizeBannerData tolerates non-object / missing fields', () => {
   assert.strictEqual(out.title, '');
   assert.deepStrictEqual(out.tags, []);
   assert.strictEqual(out.contentPosition, 'center');
+});
+
+test('computeScheduledStatus flips scheduled/active/expired by window', () => {
+  const now = new Date('2026-07-15T12:00:00Z');
+  const past = '2026-07-01T00:00:00Z';
+  const future = '2026-08-01T00:00:00Z';
+
+  // before start -> scheduled
+  assert.strictEqual(computeScheduledStatus({ status: 'scheduled', startDate: future }, now), 'scheduled');
+  assert.strictEqual(computeScheduledStatus({ status: 'active', startDate: future }, now), 'scheduled');
+  // within window -> active
+  assert.strictEqual(computeScheduledStatus({ status: 'scheduled', startDate: past, endDate: future }, now), 'active');
+  assert.strictEqual(computeScheduledStatus({ status: 'active', startDate: past, endDate: future }, now), 'active');
+  // past end -> expired (end takes precedence over start)
+  assert.strictEqual(computeScheduledStatus({ status: 'active', startDate: past, endDate: past }, now), 'expired');
+  assert.strictEqual(computeScheduledStatus({ status: 'scheduled', endDate: past }, now), 'expired');
+  // extended endDate can revive an expired banner
+  assert.strictEqual(computeScheduledStatus({ status: 'expired', startDate: past, endDate: future }, now), 'active');
+  // no dates -> stays active
+  assert.strictEqual(computeScheduledStatus({ status: 'active' }, now), 'active');
+});
+
+test('computeScheduledStatus never touches manual statuses', () => {
+  const now = new Date('2026-07-15T12:00:00Z');
+  for (const status of ['draft', 'paused', 'archived']) {
+    assert.strictEqual(computeScheduledStatus({ status, endDate: '2026-07-01T00:00:00Z' }, now), null);
+  }
+  assert.strictEqual(computeScheduledStatus(null, now), null);
+  assert.deepStrictEqual(MANAGED_STATUSES, ['scheduled', 'active', 'expired']);
 });
 
 test('exports action + goal enums', () => {

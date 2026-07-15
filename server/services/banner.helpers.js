@@ -16,7 +16,24 @@ const BANNER_TEXT_FIELDS = ['title', 'subtitle', 'ctaText'];
 const AI_FIELD_ACTIONS = ['rewrite', 'expand', 'shorten', 'punchier'];
 const ENHANCE_GOALS = ['urgency', 'engagement', 'trust', 'conversions'];
 
+// Statuses the scheduling cron is allowed to auto-transition. draft/paused/
+// archived are explicit human states the cron must never touch.
+const MANAGED_STATUSES = ['scheduled', 'active', 'expired'];
+
 const HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
+
+// Decide the status a scheduled banner *should* have right now, from its
+// start/end window. Returns null for banners in an unmanaged status (draft/
+// paused/archived) so the caller leaves them alone. Pure + testable — the cron
+// just diffs this against the stored status.
+function computeScheduledStatus(banner, now = new Date()) {
+  if (!banner || !MANAGED_STATUSES.includes(banner.status)) return null;
+  const start = banner.startDate ? new Date(banner.startDate) : null;
+  const end = banner.endDate ? new Date(banner.endDate) : null;
+  if (end && now > end) return 'expired';
+  if (start && now < start) return 'scheduled';
+  return 'active';
+}
 
 // A field can only be AI-enhanced when it's a known text field AND already has
 // content to work on — an empty title has nothing for the model to improve.
@@ -110,6 +127,8 @@ module.exports = {
   CONTENT_POSITIONS,
   TEXT_ALIGNMENTS,
   FIELD_LIMITS,
+  MANAGED_STATUSES,
+  computeScheduledStatus,
   isEnhanceableField,
   snapEnum,
   snapHexColor,
