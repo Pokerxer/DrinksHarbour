@@ -337,84 +337,270 @@ const PREVIEW_POS_CLS: Record<string, string> = {
   'bottom-right': 'items-end justify-end text-right',
 };
 
+// Placement → preview aspect ratio + layout label (matches platform renders)
+const PLACEMENT_PREVIEW: Record<
+  string,
+  { aspect: string; label: string; layout: 'hero' | 'compact' | 'footer' | 'sidebar' | 'bar' | 'modal' }
+> = {
+  home_hero:      { aspect: 'aspect-[21/9]',  label: 'Home Hero — full-width carousel',      layout: 'hero' },
+  home_secondary: { aspect: 'aspect-[3/1]',   label: 'Home Secondary — promotional strip',    layout: 'hero' },
+  category_top:   { aspect: 'aspect-[21/9]',  label: 'Category Top — wide banner',            layout: 'hero' },
+  product_page:   { aspect: 'aspect-[21/9]',  label: 'Product Page — hero banner',            layout: 'hero' },
+  checkout:       { aspect: 'auto',           label: 'Checkout — compact inline strip',       layout: 'compact' },
+  sidebar:        { aspect: 'aspect-[3/4]',   label: 'Sidebar — vertical card',               layout: 'sidebar' },
+  footer:         { aspect: 'auto',           label: 'Footer — promo strip',                  layout: 'footer' },
+  popup:          { aspect: 'aspect-[4/3]',   label: 'Popup — modal overlay',                 layout: 'modal' },
+  header:         { aspect: 'auto',           label: 'Header — thin announcement bar',        layout: 'bar' },
+};
+
+// Recommended type for each placement (for hint badges)
+const PLACEMENT_TYPE_HINT: Record<string, string> = {
+  home_hero: 'hero',
+  home_secondary: 'promotional',
+  category_top: 'category',
+  product_page: 'product',
+  checkout: 'promotional',
+  sidebar: 'promotional',
+  footer: 'promotional',
+  popup: 'announcement',
+  header: 'announcement',
+};
+
 function BannerPreview({ formData }: { formData: BannerFormData }) {
+  const placement = PLACEMENT_PREVIEW[formData.placement] || PLACEMENT_PREVIEW.home_hero;
+  const posCls = PREVIEW_POS_CLS[formData.contentPosition] || PREVIEW_POS_CLS.center;
+  const ctaCls = PREVIEW_CTA_CLS[formData.ctaStyle] || PREVIEW_CTA_CLS.primary;
+  const overlay = (formData.overlayOpacity || 0) / 100;
+
+  // ─── Empty state ──────────────────────────────────────────────────────────
   if (!formData.image?.url) {
     return (
-      <div className="flex aspect-[3/1] items-center justify-center rounded-xl border-2 border-dashed border-gray-200 bg-gray-50">
+      <div className={`flex ${placement.aspect || 'aspect-[3/1]'} items-center justify-center rounded-xl border-2 border-dashed border-gray-200 bg-gray-50`}>
         <div className="text-center text-gray-400">
-          <PiImageBold className="mx-auto mb-2 h-12 w-12" />
-          <p className="text-sm">Banner preview will appear here</p>
+          <PiImageBold className="mx-auto mb-2 h-10 w-10" />
+          <p className="text-sm">Upload an image to preview</p>
+          <p className="mt-0.5 text-[11px]">{placement.label}</p>
         </div>
       </div>
     );
   }
 
-  const posCls =
-    PREVIEW_POS_CLS[formData.contentPosition] || PREVIEW_POS_CLS.center;
-  const ctaCls = PREVIEW_CTA_CLS[formData.ctaStyle] || PREVIEW_CTA_CLS.primary;
-
-  return (
-    <div
-      className="relative aspect-[3/1] overflow-hidden rounded-xl border border-gray-200"
-      style={{ backgroundColor: formData.backgroundColor }}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={formData.image.url}
-        alt="Preview"
-        className="absolute inset-0 h-full w-full object-cover"
-      />
-      <div
-        className="absolute inset-0"
-        style={{
-          backgroundColor: `rgba(0,0,0,${(formData.overlayOpacity || 0) / 100})`,
-        }}
-      />
-      <div className={cn('absolute inset-0 flex flex-col gap-1.5 p-6', posCls)}>
-        {formData.subtitle && (
-          <p
-            className="text-sm font-medium drop-shadow"
-            style={{
-              color: formData.textColor,
-              textAlign: formData.textAlignment as any,
-            }}
-          >
-            {formData.subtitle}
+  // ─── Header bar — thin announcement ────────────────────────────────────────
+  if (placement.layout === 'bar') {
+    return (
+      <div className="space-y-2">
+        <div
+          className="flex items-center justify-between gap-3 rounded-lg px-4 py-2.5"
+          style={{ backgroundColor: formData.backgroundColor || '#7C1D1D' }}
+        >
+          <p className="truncate text-sm font-bold" style={{ color: formData.textColor || '#fff' }}>
+            {formData.title || 'Announcement title'}
           </p>
-        )}
-        {formData.title && (
-          <p
-            className="text-xl font-black drop-shadow-lg"
-            style={{
-              color: formData.textColor,
-              textAlign: formData.textAlignment as any,
-            }}
-          >
-            {formData.title}
-          </p>
-        )}
-        {formData.description && (
-          <p
-            className="line-clamp-2 max-w-xs text-xs drop-shadow"
-            style={{
-              color: formData.textColor ? `${formData.textColor}b0` : undefined,
-              textAlign: formData.textAlignment as any,
-            }}
-          >
-            {formData.description}
-          </p>
-        )}
-        {formData.ctaText && (
-          <span
-            className={cn(
-              'mt-1.5 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-bold shadow-lg',
-              ctaCls
-            )}
-          >
-            {formData.ctaText}
-          </span>
-        )}
+          {formData.ctaText && (
+            <span className={cn('flex-shrink-0 rounded-lg px-3 py-1 text-xs font-bold', ctaCls)}>
+              {formData.ctaText}
+            </span>
+          )}
+        </div>
+        <p className="text-[11px] text-gray-400">{placement.label}</p>
       </div>
+    );
+  }
+
+  // ─── Checkout — compact inline strip ──────────────────────────────────────
+  if (placement.layout === 'compact') {
+    return (
+      <div className="space-y-2">
+        <div
+          className="flex items-center gap-3 rounded-xl px-4 py-3"
+          style={{ backgroundColor: formData.backgroundColor || '#1A1A2E' }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={formData.image.url} alt="Preview" className="hidden h-12 w-20 flex-shrink-0 rounded-lg object-cover sm:block" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-bold" style={{ color: formData.textColor || '#fff' }}>
+              {formData.title || 'Banner title'}
+            </p>
+            {formData.subtitle && (
+              <p className="truncate text-xs" style={{ color: formData.textColor ? `${formData.textColor}b0` : 'rgba(255,255,255,0.7)' }}>
+                {formData.subtitle}
+              </p>
+            )}
+          </div>
+          {formData.ctaText && (
+            <span className={cn('flex-shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold', ctaCls)}>
+              {formData.ctaText}
+            </span>
+          )}
+        </div>
+        <p className="text-[11px] text-gray-400">{placement.label}</p>
+      </div>
+    );
+  }
+
+  // ─── Footer — promo strip with bg image at 30% ─────────────────────────────
+  if (placement.layout === 'footer') {
+    return (
+      <div className="space-y-2">
+        <div
+          className="relative overflow-hidden rounded-xl"
+          style={{ backgroundColor: formData.backgroundColor || '#7C1D1D' }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={formData.image.url} alt="Preview" className="absolute inset-0 h-full w-full object-cover opacity-30" />
+          <div className="relative flex flex-col items-center gap-3 p-5 text-center sm:flex-row sm:justify-between sm:text-left">
+            <div className="min-w-0">
+              <p className="truncate text-base font-black" style={{ color: formData.textColor || '#fff' }}>
+                {formData.title || 'Banner title'}
+              </p>
+              {formData.subtitle && (
+                <p className="truncate text-sm" style={{ color: formData.textColor ? `${formData.textColor}b0` : 'rgba(255,255,255,0.7)' }}>
+                  {formData.subtitle}
+                </p>
+              )}
+            </div>
+            {formData.ctaText && (
+              <span className={cn('flex-shrink-0 rounded-xl px-4 py-2 text-sm font-bold', ctaCls)}>
+                {formData.ctaText}
+              </span>
+            )}
+          </div>
+        </div>
+        <p className="text-[11px] text-gray-400">{placement.label}</p>
+      </div>
+    );
+  }
+
+  // ─── Sidebar — narrow vertical card ────────────────────────────────────────
+  if (placement.layout === 'sidebar') {
+    return (
+      <div className="space-y-2">
+        <div className="relative mx-auto aspect-[3/4] w-48 overflow-hidden rounded-xl border border-gray-200" style={{ backgroundColor: formData.backgroundColor }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={formData.image.url} alt="Preview" className="absolute inset-0 h-full w-full object-cover" />
+          {overlay > 0 && <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${overlay})` }} />}
+          <div className={cn('absolute inset-0 flex flex-col gap-1 p-3', posCls)}>
+            {formData.subtitle && (
+              <p className="text-[10px] font-medium drop-shadow" style={{ color: formData.textColor }}>
+                {formData.subtitle}
+              </p>
+            )}
+            <p className="text-sm font-black leading-tight drop-shadow-lg" style={{ color: formData.textColor }}>
+              {formData.title || 'Title'}
+            </p>
+            {formData.ctaText && (
+              <span className={cn('mt-1 inline-flex w-fit rounded px-2 py-1 text-[10px] font-bold', ctaCls)}>
+                {formData.ctaText}
+              </span>
+            )}
+          </div>
+        </div>
+        <p className="text-[11px] text-gray-400">{placement.label}</p>
+      </div>
+    );
+  }
+
+  // ─── Popup — modal frame ───────────────────────────────────────────────────
+  if (placement.layout === 'modal') {
+    return (
+      <div className="space-y-2">
+        <div className="relative rounded-xl border border-gray-200 bg-black/40 p-4">
+          <div className="relative mx-auto aspect-[4/3] w-full max-w-sm overflow-hidden rounded-xl border-2 border-white/20 shadow-2xl" style={{ backgroundColor: formData.backgroundColor }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={formData.image.url} alt="Preview" className="absolute inset-0 h-full w-full object-cover" />
+            {overlay > 0 && <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${overlay})` }} />}
+            <div className={cn('absolute inset-0 flex flex-col gap-1.5 p-5', posCls)}>
+              {formData.subtitle && (
+                <p className="text-xs font-medium drop-shadow" style={{ color: formData.textColor }}>
+                  {formData.subtitle}
+                </p>
+              )}
+              <p className="text-lg font-black leading-tight drop-shadow-lg" style={{ color: formData.textColor }}>
+                {formData.title || 'Popup title'}
+              </p>
+              {formData.ctaText && (
+                <span className={cn('mt-1 inline-flex w-fit rounded-lg px-3 py-1.5 text-xs font-bold', ctaCls)}>
+                  {formData.ctaText}
+                </span>
+              )}
+            </div>
+            {/* Close button */}
+            <div className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/40 text-white">
+              <PiX className="h-3.5 w-3.5" />
+            </div>
+          </div>
+        </div>
+        <p className="text-[11px] text-gray-400">{placement.label}</p>
+      </div>
+    );
+  }
+
+  // ─── Hero / default — wide banner with positioned content ──────────────────
+  return (
+    <div className="space-y-2">
+      <div
+        className={`relative ${placement.aspect} overflow-hidden rounded-xl border border-gray-200`}
+        style={{ backgroundColor: formData.backgroundColor }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={formData.image.url}
+          alt="Preview"
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundColor: `rgba(0,0,0,${overlay})`,
+          }}
+        />
+        <div className={cn('absolute inset-0 flex flex-col gap-1.5 p-6', posCls)}>
+          {formData.subtitle && (
+            <p
+              className="text-sm font-medium drop-shadow"
+              style={{
+                color: formData.textColor,
+                textAlign: formData.textAlignment as any,
+              }}
+            >
+              {formData.subtitle}
+            </p>
+          )}
+          {formData.title && (
+            <p
+              className="text-xl font-black drop-shadow-lg"
+              style={{
+                color: formData.textColor,
+                textAlign: formData.textAlignment as any,
+              }}
+            >
+              {formData.title}
+            </p>
+          )}
+          {formData.description && (
+            <p
+              className="line-clamp-2 max-w-xs text-xs drop-shadow"
+              style={{
+                color: formData.textColor ? `${formData.textColor}b0` : undefined,
+                textAlign: formData.textAlignment as any,
+              }}
+            >
+              {formData.description}
+            </p>
+          )}
+          {formData.ctaText && (
+            <span
+              className={cn(
+                'mt-1.5 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-bold shadow-lg',
+                ctaCls
+              )}
+            >
+              {formData.ctaText}
+            </span>
+          )}
+        </div>
+      </div>
+      <p className="text-[11px] text-gray-400">{placement.label}</p>
     </div>
   );
 }
@@ -1336,8 +1522,12 @@ export default function CreateEditBanner({
       const payload = {
         ...formData,
         deviceTargeting,
-        targetProduct: isObjectId(targetProduct?._id) ? targetProduct!._id : undefined,
-        targetCategory: isObjectId(targetCategory?._id) ? targetCategory!._id : undefined,
+        targetProduct: isObjectId(targetProduct?._id)
+          ? targetProduct!._id
+          : undefined,
+        targetCategory: isObjectId(targetCategory?._id)
+          ? targetCategory!._id
+          : undefined,
       };
       const response =
         isEdit && bannerId
@@ -2542,15 +2732,38 @@ export default function CreateEditBanner({
                   label="Type"
                   options={BANNER_TYPE_OPTIONS}
                   value={formData.type}
-                  onChange={(v) => set('type', v)}
+                  onChange={(v: any) => set('type', v?.value ?? v)}
+                  getOptionValue={(o) => o.value}
+                  displayValue={(v: any) => v}
                 />
                 <Select
                   label="Placement"
                   options={BANNER_PLACEMENT_OPTIONS}
                   value={formData.placement}
-                  onChange={(v) => set('placement', v)}
+                  onChange={(v: any) => set('placement', v?.value ?? v)}
+                  getOptionValue={(o) => o.value}
+                  displayValue={(v: any) => v}
                 />
               </div>
+
+              {/* Type + Placement combination hint */}
+              {(() => {
+                const recommended = PLACEMENT_TYPE_HINT[formData.placement];
+                const mismatch = recommended && formData.type !== recommended && formData.type !== 'custom' && formData.type !== 'promotional';
+                return (
+                  <div className={cn(
+                    'flex items-center gap-2 rounded-lg px-3 py-2 text-xs',
+                    mismatch ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-600',
+                  )}>
+                    <PiInfo className="h-3.5 w-3.5 flex-shrink-0" />
+                    {mismatch ? (
+                      <span>Tip: <strong className="capitalize">{recommended}</strong> type is typically used for <strong className="capitalize">{formData.placement.replace(/_/g, ' ')}</strong> placement. Your current type is <strong className="capitalize">{formData.type}</strong>.</span>
+                    ) : (
+                      <span>Preview shows how this banner renders on the storefront as a <strong className="capitalize">{formData.placement.replace(/_/g, ' ')}</strong>.</span>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Priority — visual segmented control with color dots */}
               <div>
@@ -2649,8 +2862,10 @@ export default function CreateEditBanner({
                 label="Link Type"
                 options={BANNER_LINK_TYPE_OPTIONS}
                 value={formData.linkType}
-                onChange={(v) => {
-                  set('linkType', v);
+                getOptionValue={(o) => o.value}
+                displayValue={(v: any) => v}
+                onChange={(v: any) => {
+                  set('linkType', v?.value ?? v);
                   setTargetProduct(null);
                   setTargetCategory(null);
                   set('ctaLink', '');
@@ -2776,13 +2991,17 @@ export default function CreateEditBanner({
                     { value: 'right', label: 'Right' },
                   ]}
                   value={formData.textAlignment}
-                  onChange={(v) => set('textAlignment', v)}
+                  getOptionValue={(o) => o.value}
+                  displayValue={(v: any) => v}
+                  onChange={(v: any) => set('textAlignment', v?.value ?? v)}
                 />
                 <Select
                   label="Content Position"
                   options={BANNER_CONTENT_POSITION_OPTIONS}
                   value={formData.contentPosition}
-                  onChange={(v) => set('contentPosition', v)}
+                  getOptionValue={(o) => o.value}
+                  displayValue={(v: any) => v}
+                  onChange={(v: any) => set('contentPosition', v?.value ?? v)}
                 />
               </div>
               <div>
@@ -2854,13 +3073,17 @@ export default function CreateEditBanner({
                   label="Status"
                   options={BANNER_STATUS_OPTIONS}
                   value={formData.status}
-                  onChange={(v) => set('status', v)}
+                  getOptionValue={(o) => o.value}
+                  displayValue={(v: any) => v}
+                  onChange={(v: any) => set('status', v?.value ?? v)}
                 />
                 <Select
                   label="Visible To"
                   options={BANNER_VISIBLE_TO_OPTIONS}
                   value={formData.visibleTo}
-                  onChange={(v) => set('visibleTo', v)}
+                  getOptionValue={(o) => o.value}
+                  displayValue={(v: any) => v}
+                  onChange={(v: any) => set('visibleTo', v?.value ?? v)}
                 />
               </div>
               <div className="flex items-center justify-between rounded-lg border border-gray-200 p-4">
