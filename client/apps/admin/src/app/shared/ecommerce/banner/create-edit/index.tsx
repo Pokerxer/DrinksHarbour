@@ -338,7 +338,7 @@ const PREVIEW_POS_CLS: Record<string, string> = {
 };
 
 // Placement → preview aspect ratio + layout label (matches platform renders)
-const PLACEMENT_PREVIEW: Record<
+export const PLACEMENT_PREVIEW: Record<
   string,
   {
     aspect: string;
@@ -404,7 +404,7 @@ const PLACEMENT_TYPE_HINT: Record<string, string> = {
 
 // Mini page schematic for a placement option: gray blocks sketch the page,
 // the purple block marks where this banner renders.
-function PlacementThumb({
+export function PlacementThumb({
   placement,
   selected,
 }: {
@@ -555,7 +555,7 @@ function PlacementThumb({
   );
 }
 
-function BannerPreview({ formData }: { formData: BannerFormData }) {
+export function BannerPreview({ formData }: { formData: BannerFormData }) {
   const placement =
     PLACEMENT_PREVIEW[formData.placement] || PLACEMENT_PREVIEW.home_hero;
   const posCls =

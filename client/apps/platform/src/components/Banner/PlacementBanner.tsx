@@ -55,6 +55,15 @@ const CTA_CLS: Record<string, string> = {
 
 type Variant = 'hero' | 'compact' | 'footer' | 'sidebar';
 
+// Hero-variant aspect ratio per placement — home_secondary is a shorter
+// promotional strip; the wide slots share the 21/9 hero shape.
+const PLACEMENT_ASPECT: Record<string, string> = {
+  home_hero: '21/9',
+  home_secondary: '3/1',
+  category_top: '21/9',
+  product_page: '21/9',
+};
+
 export default function PlacementBanner({
   placement,
   variant = 'hero',
@@ -270,15 +279,28 @@ export default function PlacementBanner({
         initial={{ opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
         className="relative overflow-hidden rounded-2xl border border-gray-200/50 bg-gray-900"
-        style={{ aspectRatio: '21/9' }}
+        style={{
+          aspectRatio:
+            PLACEMENT_ASPECT[banner.placement || placement] || '21/9',
+        }}
       >
         {banner.image?.url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={banner.image.url}
-            alt={banner.image?.alt || banner.title}
-            className="absolute inset-0 h-full w-full object-cover"
-          />
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={banner.image.url}
+              alt={banner.image?.alt || banner.title}
+              className={`absolute inset-0 h-full w-full object-cover ${banner.mobileImage?.url ? 'hidden sm:block' : ''}`}
+            />
+            {banner.mobileImage?.url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={banner.mobileImage.url}
+                alt={banner.image?.alt || banner.title}
+                className="absolute inset-0 h-full w-full object-cover sm:hidden"
+              />
+            )}
+          </>
         ) : (
           <div
             className="absolute inset-0"

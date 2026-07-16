@@ -35,6 +35,11 @@ import {
   BANNER_PLACEMENT_OPTIONS,
   BANNER_CTA_STYLE_OPTIONS,
 } from '@/types/banner.types';
+import {
+  BannerPreview,
+  PlacementThumb,
+  PLACEMENT_PREVIEW,
+} from '@/app/shared/ecommerce/banner/create-edit';
 
 // ─── Priority badge (matches list table colors) ──────────────────────────────
 
@@ -297,62 +302,24 @@ export default function BannerDetailsPage({ params }: { params: Promise<{ id: st
       </PageHeader>
 
       <div className="space-y-5">
-        {/* ─── Live Preview ─────────────────────────────────────────────── */}
-        <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-gray-900 shadow-sm">
-          {banner.image?.url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={banner.image.url}
-              alt={banner.title}
-              className="h-64 w-full object-cover md:h-80"
-            />
-          ) : (
-            <div className="flex h-64 items-center justify-center bg-gradient-to-br from-gray-800 to-gray-900 md:h-80">
-              <PiImageBold className="h-12 w-12 text-gray-600" />
+        {/* ─── Live Preview — placement-accurate render ─────────────────── */}
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={banner.status} />
+              <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
+                {typeLabel}
+              </span>
+              <span className="inline-flex items-center rounded-full bg-gray-900 px-2.5 py-1 text-xs font-medium text-white">
+                {placementLabel}
+              </span>
             </div>
-          )}
-
-          {/* Overlay */}
-          <div
-            className="absolute inset-0"
-            style={{ backgroundColor: `rgba(0,0,0,${(banner.overlayOpacity || 0) / 100})` }}
-          />
-
-          {/* Content positioned per contentPosition */}
-          <div className={`absolute inset-0 flex flex-col gap-3 p-6 md:p-10 ${posCls}`}>
-            {banner.subtitle && (
-              <p className="text-sm font-medium text-white/80 md:text-base">
-                {banner.subtitle}
-              </p>
-            )}
-            <h2 className="text-2xl font-black text-white drop-shadow-lg md:text-4xl" style={{ color: banner.textColor || '#fff' }}>
-              {banner.title}
-            </h2>
-            {banner.description && (
-              <p className="max-w-md text-sm text-white/70 md:text-base" style={{ color: banner.textColor ? `${banner.textColor}b0` : undefined }}>
-                {banner.description}
-              </p>
-            )}
-            {banner.ctaText && (
-              <div>
-                <span className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold transition ${ctaCls}`}>
-                  {banner.ctaText}
-                  <PiArrowRightBold className="h-3.5 w-3.5" />
-                </span>
-              </div>
-            )}
+            <p className="text-xs text-gray-400">
+              {PLACEMENT_PREVIEW[banner.placement]?.label ||
+                'Live preview as rendered on the storefront'}
+            </p>
           </div>
-
-          {/* Top-left badges */}
-          <div className="absolute left-4 top-4 flex flex-wrap gap-2">
-            <StatusBadge status={banner.status} />
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-white/90 text-gray-700 backdrop-blur-sm">
-              {typeLabel}
-            </span>
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-black/40 text-white backdrop-blur-sm">
-              {placementLabel}
-            </span>
-          </div>
+          <BannerPreview formData={banner} />
         </div>
 
         {/* ─── Analytics ────────────────────────────────────────────────── */}
@@ -401,6 +368,18 @@ export default function BannerDetailsPage({ params }: { params: Promise<{ id: st
                 <InfoRow label="Visible To" value={banner.visibleTo ? String(banner.visibleTo).replace(/_/g, ' ') : 'All'} />
                 <InfoRow label="Global" badge={banner.isGlobal ? <span className="text-emerald-600">Yes</span> : <span className="text-gray-500">No</span>} />
               </dl>
+              {/* Where this banner renders on the storefront */}
+              <div className="mt-3 flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                <div className="w-24 flex-shrink-0">
+                  <PlacementThumb placement={banner.placement} selected />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-gray-700">{placementLabel}</p>
+                  <p className="text-[11px] text-gray-400">
+                    {PLACEMENT_PREVIEW[banner.placement]?.label || 'Storefront placement'}
+                  </p>
+                </div>
+              </div>
             </Card>
 
             {/* CTA card */}
