@@ -57,6 +57,24 @@ async function fetchBrandSlugs(): Promise<string[]> {
   }
 }
 
+// Published category slugs for the /categories/[slug] detail pages. These are
+// listed IN ADDITION to the /shop?category= filter URLs (same rule as brands:
+// both forms stay in the sitemap, each canonical for its own URL).
+async function fetchCategorySlugs(): Promise<string[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/categories`, {
+      next: { revalidate: 86400 },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const cats: { slug?: string }[] =
+      data?.data?.categories ?? data?.data ?? data?.categories ?? [];
+    return cats.map((c) => c.slug).filter(Boolean) as string[];
+  } catch {
+    return [];
+  }
+}
+
 interface SubcatEntry {
   slug: string;
   parentSlug: string;
@@ -110,9 +128,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/vendors/register/apply`,      lastModified: new Date(), changeFrequency: "monthly", priority: 0.5 },
   ];
 
-  const [slugs, brandSlugs, subcats, posts] = await Promise.all([
+  const [slugs, brandSlugs, categorySlugs, subcats, posts] = await Promise.all([
     fetchProductSlugs(),
     fetchBrandSlugs(),
+    fetchCategorySlugs(),
     fetchSubcategories(),
     getPosts(),
   ]);
@@ -151,6 +170,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     }));
 
+  // Category detail pages — alongside (never replacing) the /shop?category=
+  // filter URLs above.
+  const categoryDetailPages: MetadataRoute.Sitemap = categorySlugs.map(
+    (slug) => ({
+      url: `${BASE_URL}/categories/${slug}`,
+      lastModified: new Date(),
+      changeFrequency: "weekly",
+      priority: 0.7,
+    })
+  );
+
   // Brand pages — both the detail page and the shop filter listing
   const brandPages: MetadataRoute.Sitemap = brandSlugs.flatMap((slug) => [
     {
@@ -177,6 +207,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   return [
     ...staticPages,
     ...categoryPages,
+    ...categoryDetailPages,
     ...subcategoryPages,
     ...brandPages,
     ...productPages,
