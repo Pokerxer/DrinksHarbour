@@ -217,7 +217,7 @@ function BrandCard({ brand }: { brand: Brand }) {
   const color = getBrandColor(brand);
 
   return (
-    <Link href={`/shop?brand=${encodeURIComponent(brand.name)}`} className="block h-full">
+    <Link href={brand.slug ? `/brands/${brand.slug}` : `/shop?brand=${encodeURIComponent(brand.name)}`} className="block h-full">
       <motion.div
         whileHover={{ y: -6 }}
         transition={{ duration: 0.3 }}
