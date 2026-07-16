@@ -732,6 +732,112 @@ For the four seasonal booleans, set true only for seasons this subcategory is es
   res.json({ success: true, data });
 });
 
+const SUB_SMART_MODEL = process.env.ANTHROPIC_SMART_MODEL || 'claude-sonnet-4-6';
+
+const generateSubCategory = asyncHandler(async (req, res) => {
+  const topic = String(req.body?.topic || '').trim();
+  const parentName = String(req.body?.parentName || '').trim();
+  if (!topic) return res.status(400).json({ success: false, message: 'topic is required' });
+  if (!parentName) return res.status(400).json({ success: false, message: 'parentName is required' });
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(500).json({ success: false, message: 'ANTHROPIC_API_KEY is not configured' });
+  }
+
+  const parent = await Category.findOne({
+    name: new RegExp(`^${String(parentName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+  })
+    .select('_id slug name')
+    .lean();
+
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const catalog = await buildSubCategoryLinkCatalog(topic, parentName);
+
+  const system =
+    'You are a content assistant for DrinksHarbour, Nigeria\'s premier online premium beverages store. ' +
+    'Respond with ONLY a single valid JSON object — no prose, no markdown fences.';
+
+  const prompt = `Create a complete product subcategory for DrinksHarbour based on this topic/name: "${topic}".
+Parent category: "${parentName}"
+
+This subcategory sits under the "${parentName}" parent category. Fill EVERY field below with compelling, professional content.
+
+Return a JSON object with exactly these keys:
+{
+  "name": "concise subcategory name, singular, title case (max 80 chars)",
+  "displayName": "display-friendly name, plural if appropriate (max 120 chars)",
+  "tagline": "short punchy tagline that sells the subcategory (max 150 chars)",
+  "shortDescription": "2 sentences for listings and cards (max 280 chars)",
+  "description": "3-4 compelling, informative paragraphs formatted as HTML using <p> tags (plus inline <a> internal links per the linking rules below, if a catalog is provided) (max 1800 chars including tags)",
+  "type": "the drink type this subcategory belongs to, e.g. whiskey, wine (max 100 chars)",
+  "subType": "a more specific sub-type label, e.g. Single Malt, or '' (max 100 chars)",
+  "style": "single best value from: ${SUBCATEGORY_STYLES.join(', ')}",
+  "typicalFlavors": "comma-separated list of 4-8 typical flavors/tasting notes",
+  "commonPairings": "comma-separated list of 4-6 food or occasion pairings",
+  "seasonalSpring": false,
+  "seasonalSummer": false,
+  "seasonalFall": false,
+  "seasonalWinter": false,
+  "metaTitle": "SEO page title with brand context for the Nigeria market (max 100 chars)",
+  "metaDescription": "SEO meta description (max 320 chars)",
+  "metaKeywords": "8-12 comma-separated search keywords relevant in Nigeria",
+  "color": "6-digit hex color that fits the subcategory mood, e.g. #C0812A for whiskey, #722F37 for wine",
+  "icon": "single most relevant emoji"
+}
+
+For the four seasonal booleans, set true only for seasons this subcategory is especially suited to (e.g. stouts in winter, rosé in summer); all false if not seasonal.${subCategoryCatalogToPrompt(catalog)}`;
+
+  const response = await anthropic.messages.create({
+    model: SUB_SMART_MODEL,
+    max_tokens: 4096,
+    system,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const raw = (response.content || []).map((c) => c.text || '').join('');
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start === -1 || end === -1) {
+    return res.status(502).json({ success: false, message: 'AI returned invalid JSON' });
+  }
+
+  let json;
+  try {
+    json = JSON.parse(raw.slice(start, end + 1));
+  } catch {
+    return res.status(502).json({ success: false, message: 'AI returned invalid JSON' });
+  }
+
+  const name = aiStr(json.name, 80) || topic;
+  const parentSlug = parent?.slug || catalog.parentSlug || slugifyName(parentName);
+  const data = {
+    name,
+    slug: slugifyName(name),
+    parent: parent?._id ? String(parent._id) : '',
+    displayName: aiStr(json.displayName, 120),
+    tagline: aiStr(json.tagline, 150),
+    shortDescription: aiStr(json.shortDescription, 280),
+    description: aiStr(stripUnapprovedLinks(json.description, catalog.allowed), 2000),
+    type: aiStr(json.type, 100),
+    subType: aiStr(json.subType, 100),
+    style: SUBCATEGORY_STYLES.includes(json.style) ? json.style : '',
+    typicalFlavors: aiStr(json.typicalFlavors, 500),
+    commonPairings: aiStr(json.commonPairings, 500),
+    seasonalSpring: aiBool(json.seasonalSpring),
+    seasonalSummer: aiBool(json.seasonalSummer),
+    seasonalFall: aiBool(json.seasonalFall),
+    seasonalWinter: aiBool(json.seasonalWinter),
+    metaTitle: aiStr(json.metaTitle, 100),
+    metaDescription: aiStr(json.metaDescription, 320),
+    metaKeywords: aiStr(json.metaKeywords, 500),
+    canonicalUrl: `https://www.drinksharbour.com/categories/${parentSlug}/${slugifyName(name)}`,
+    color: HEX_RE.test(aiStr(json.color, 7)) ? aiStr(json.color, 7) : '#6B7280',
+    icon: aiStr(json.icon, 20),
+    status: 'draft',
+  };
+
+  res.json({ success: true, data });
+});
+
 module.exports = {
   getSubCategories,
   getSubCategoriesByCategory,
@@ -743,4 +849,5 @@ module.exports = {
   updateSubCategory,
   deleteSubCategory,
   fillWithAI,
+  generateSubCategory,
 };
