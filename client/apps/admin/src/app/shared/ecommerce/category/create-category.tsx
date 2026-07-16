@@ -386,6 +386,15 @@ export default function CreateCategory({
         useEffect(() => {
           if (!aiDraft) return;
           slugManuallyEdited.current = true;
+          const VALID_TYPES = TYPE_OPTIONS.map((o) => o.value);
+          const VALID_ALCOHOL = ALCOHOL_CATEGORY_OPTIONS.map((o) => o.value);
+          const VALID_STATUS = STATUS_OPTIONS.map((o) => o.value);
+          const coerce = (f: string, v: any) => {
+            if (f === 'type') return VALID_TYPES.includes(v) ? v : '';
+            if (f === 'alcoholCategory') return VALID_ALCOHOL.includes(v) ? v : 'alcoholic';
+            if (f === 'status') return VALID_STATUS.includes(v) ? v : 'draft';
+            return v;
+          };
           const fields = [
             'name', 'slug', 'displayName', 'tagline', 'shortDescription',
             'type', 'subType', 'alcoholCategory', 'description',
@@ -393,9 +402,15 @@ export default function CreateCategory({
             'color', 'icon', 'status',
           ];
           fields.forEach((f) => {
-            if (aiDraft[f] === undefined || aiDraft[f] === null || aiDraft[f] === '') return;
-            setValue(f as any, aiDraft[f], { shouldValidate: true, shouldDirty: true });
+            const v = aiDraft[f];
+            if (v === undefined || v === null) return;
+            const coerced = coerce(f, v);
+            if (coerced === '') return;
+            setValue(f as any, coerced, { shouldValidate: true, shouldDirty: true });
           });
+          if (!aiDraft.type || !VALID_TYPES.includes(aiDraft.type)) {
+            toast.error('AI did not return a valid Type — please select one before saving');
+          }
           toast.success('AI draft applied — review and publish');
         }, [aiDraft]);
 

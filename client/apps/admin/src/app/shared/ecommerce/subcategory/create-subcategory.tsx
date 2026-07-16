@@ -339,6 +339,13 @@ export default function CreateSubCategory({
         useEffect(() => {
           if (!aiDraft) return;
           slugManuallyEdited.current = true;
+          const VALID_STYLES = STYLE_OPTIONS.map((o) => o.value);
+          const VALID_STATUS = STATUS_OPTIONS.map((o) => o.value);
+          const coerce = (f: string, v: any) => {
+            if (f === 'style') return VALID_STYLES.includes(v) ? v : '';
+            if (f === 'status') return VALID_STATUS.includes(v) ? v : 'draft';
+            return v;
+          };
           const fields = [
             'name', 'slug', 'parent', 'displayName', 'tagline', 'shortDescription',
             'type', 'subType', 'style', 'description',
@@ -348,9 +355,15 @@ export default function CreateSubCategory({
             'color', 'icon', 'status',
           ];
           fields.forEach((f) => {
-            if (aiDraft[f] === undefined || aiDraft[f] === null || aiDraft[f] === '') return;
-            setValue(f as any, aiDraft[f], { shouldValidate: true, shouldDirty: true });
+            const v = aiDraft[f];
+            if (v === undefined || v === null) return;
+            const coerced = coerce(f, v);
+            if (coerced === '') return;
+            setValue(f as any, coerced, { shouldValidate: true, shouldDirty: true });
           });
+          if (!aiDraft.parent) {
+            toast.error('AI did not resolve a parent category — please select one before saving');
+          }
           toast.success('AI draft applied — review and publish');
         }, [aiDraft]);
 
