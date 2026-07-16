@@ -52,6 +52,44 @@ async function fetchBrandProducts(brandName: string) {
   }
 }
 
+// Related houses: same category first, topped up from popular brands.
+async function fetchRelatedBrands(brand: any): Promise<any[]> {
+  const grab = async (url: string): Promise<any[]> => {
+    try {
+      const res = await fetch(url, { next: { revalidate: 3600 } });
+      if (!res.ok) return [];
+      const data = await res.json();
+      const list = data?.data?.brands ?? data?.brands ?? data?.data ?? [];
+      return Array.isArray(list) ? list : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const seen = new Set<string>([brand.slug]);
+  const related: any[] = [];
+  const add = (list: any[]) => {
+    for (const b of list) {
+      if (b?.slug && !seen.has(b.slug)) {
+        seen.add(b.slug);
+        related.push(b);
+      }
+    }
+  };
+
+  if (brand.primaryCategory) {
+    add(
+      await grab(
+        `${API_URL}/api/brands/category/${encodeURIComponent(brand.primaryCategory)}?limit=9`
+      )
+    );
+  }
+  if (related.length < 6) {
+    add(await grab(`${API_URL}/api/brands/popular?limit=9`));
+  }
+  return related.slice(0, 6);
+}
+
 // ─── Text formatting ──────────────────────────────────────────────────────────
 // Brand copy is stored with HTML markup (<p>, <br>, entities). Convert it to
 // clean paragraph strings for rendering, metadata and JSON-LD.
@@ -256,7 +294,10 @@ export default async function BrandPage({
   const brand = await fetchBrand(slug);
   if (!brand) notFound();
 
-  const products = await fetchBrandProducts(brand.name);
+  const [products, relatedBrands] = await Promise.all([
+    fetchBrandProducts(brand.name),
+    fetchRelatedBrands(brand),
+  ]);
   const jsonLd = buildJsonLd(brand, slug);
 
   const primary = brand.brandColors?.primary || '#7C1D1D';
@@ -662,6 +703,78 @@ export default async function BrandPage({
                         </p>
                       )}
                     </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* ── Related brands ────────────────────────────────────────────── */}
+        {relatedBrands.length > 0 && (
+          <section aria-labelledby="related-brands-heading">
+            <div className="mb-6 flex items-end justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-gray-400">
+                  More houses
+                </p>
+                <h2
+                  id="related-brands-heading"
+                  className={`${fraunces.className} mt-1 text-3xl text-gray-900`}
+                >
+                  Related brands
+                </h2>
+              </div>
+              <Link
+                href="/brands"
+                className="inline-flex flex-shrink-0 items-center gap-1 text-sm font-semibold hover:underline"
+                style={{ color: primary }}
+              >
+                All brands
+                <Icon.PiArrowRightBold className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-6">
+              {relatedBrands.map((b: any) => {
+                const bColor = b.brandColors?.primary || '#7C1D1D';
+                const origin = [b.region, b.countryOfOrigin]
+                  .filter(Boolean)
+                  .join(', ');
+                return (
+                  <Link
+                    key={b.slug}
+                    href={`/brands/${b.slug}`}
+                    className="group flex flex-col items-center rounded-2xl border border-gray-200 bg-white p-5 text-center shadow-sm transition hover:-translate-y-1 hover:shadow-lg motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+                  >
+                    <span className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-gray-100 bg-gray-50 p-2">
+                      {b.logo?.url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={b.logo.url}
+                          alt=""
+                          loading="lazy"
+                          className="h-full w-full object-contain"
+                        />
+                      ) : (
+                        <span
+                          className={`${fraunces.className} text-2xl font-semibold`}
+                          style={{ color: bColor }}
+                        >
+                          {(b.name || '?').charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                    </span>
+                    <span
+                      className={`${fraunces.className} mt-3 line-clamp-1 text-base text-gray-900`}
+                    >
+                      {b.name}
+                    </span>
+                    {origin && (
+                      <span className="mt-1 line-clamp-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400">
+                        {origin}
+                      </span>
+                    )}
                   </Link>
                 );
               })}
