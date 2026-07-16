@@ -1,3 +1,5 @@
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -6,6 +8,14 @@ const nextConfig = {
   },
   typescript: {
     ignoreBuildErrors: true,
+  },
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: `${API_URL}/api/:path*`,
+      },
+    ];
   },
   images: {
     formats: ['image/avif', 'image/webp'],
