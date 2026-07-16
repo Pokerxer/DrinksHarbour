@@ -81,7 +81,7 @@ export const emptySubProductData = {
   taxRate: 0,
   marginPercentage: 0,
   markupPercentage: 25,
-  roundUp: 'none',
+  roundUp: '100',
   pricingStrategy: 'cost_plus',
   minPrice: null,
   maxPrice: null,

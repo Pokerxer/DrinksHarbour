@@ -357,6 +357,9 @@ const sizeSchema = new Schema(
           'bottle', 'can', 'glass_bottle', 'plastic_bottle', 'tetra_pak',
           'keg', 'barrel', 'box', 'bag', 'pouch', 'carton',
           'jar', 'tin', 'tub', 'pod', 'capsule', 'sachet',
+          'pack-4', 'pack-6', 'pack-8', 'pack-10', 'pack-12', 'pack-18',
+          'pack-24', 'pack-30', 'pack-36',
+          'case-6', 'case-12', 'case-24',
         ]
       },
       material: String,

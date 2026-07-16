@@ -13,6 +13,7 @@ function normalizeStockStatus(v: string | undefined | null): string {
 }
 
 export interface SizeFormData {
+  _id?: string;
   size: string;
   displayName?: string;
   sizeCategory?: string;
@@ -230,7 +231,8 @@ const transformSize = (size: SizeFormData): SizeFormData => {
   const volumeMl = toNumber(size.volumeMl);
   return {
     ...size,
-    unitsPerPack: toNumber(size.unitsPerPack) ?? 1,
+    sizeCategory: size.sizeCategory || 'standard',
+    unitsPerPack: toNumber(size.unitsPerPack) ?? 6,
     basePrice: toNumber(size.basePrice) ?? 0,
     costPrice: toNumber(size.costPrice) ?? 0,
     stock: toNumber(size.stock) ?? 0,
@@ -306,7 +308,7 @@ export const transformFormData = (data: SubProductFormInput) => {
     taxRate: toNumber(sp.taxRate) ?? 0,
     marginPercentage: toNumber(sp.marginPercentage) ?? 0,
     markupPercentage: sp.markupPercentage ?? 25,
-    roundUp: sp.roundUp || 'none',
+    roundUp: sp.roundUp || '100',
     pricingStrategy: sp.pricingStrategy || 'cost_plus',
     minPrice: toNumber(sp.minPrice) ?? null,
     maxPrice: toNumber(sp.maxPrice) ?? null,
@@ -480,21 +482,29 @@ export const transformBackendToForm = (
 
   // Transform sizes from backend format
   const transformedSizes = (sp.sizes || []).map((size: any) => ({
+    _id: size._id || size.id || '',
     size: size.size || '',
     displayName: size.displayName || '',
-    sizeCategory: size.sizeCategory || '',
+    sizeCategory: size.sizeCategory || 'standard',
     unitType: size.unitType || 'volume_ml',
     volumeMl: size.volumeMl ?? 0,
     weightGrams: size.weightGrams ?? 0,
     servingsPerUnit: size.servingsPerUnit ?? 0,
-    unitsPerPack: size.unitsPerPack ?? 1,
+    unitsPerPack: size.unitsPerPack ?? 6,
+    // Backend stores packaging as { type, material, ... } — flatten to the
+    // type string the UI <select> expects (e.g. 'pack-6').
+    packaging: size.packaging
+      ? typeof size.packaging === 'object'
+        ? size.packaging.type || 'pack-6'
+        : size.packaging
+      : 'pack-6',
     basePrice: size.basePrice ?? 0,
     compareAtPrice: size.compareAtPrice ?? 0,
     costPrice: size.costPrice ?? 0,
     wholesalePrice: size.wholesalePrice ?? 0,
     currency: size.currency || sp.currency || 'NGN',
     markupPercentage: size.markupPercentage ?? 25,
-    roundUp: size.roundUp || 'none',
+    roundUp: size.roundUp || '100',
     saleDiscountPercentage: size.saleDiscountPercentage ?? 0,
     salePrice: size.salePrice ?? 0,
     stock: size.stock ?? 0,
@@ -524,7 +534,7 @@ export const transformBackendToForm = (
       taxRate: sp.taxRate ?? 0,
       marginPercentage: sp.marginPercentage ?? 0,
       markupPercentage: sp.markupPercentage ?? 25,
-      roundUp: sp.roundUp || 'none',
+      roundUp: sp.roundUp || '100',
       pricingStrategy: sp.pricingStrategy || 'cost_plus',
       minPrice: sp.minPrice ?? null,
       maxPrice: sp.maxPrice ?? null,

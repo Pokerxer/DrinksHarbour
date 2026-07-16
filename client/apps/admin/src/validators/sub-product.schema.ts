@@ -29,17 +29,18 @@ const optionalPositiveNumber = z.preprocess(
 
 // Size option schema for sub-product variants
 export const sizeOptionSchema = z.object({
+  _id: z.string().optional(),
   size: z.string({ required_error: 'Size selection is required' })
     .min(1, 'Please select a size from the dropdown'),
   displayName: z.string().optional(),
-  sizeCategory: z.string().optional(),
+  sizeCategory: z.string().default('standard'),
   unitType: z.string().optional(),
   volumeMl: optionalNumber,
   weightGrams: optionalNumber,
   servingsPerUnit: optionalNumber,
   unitsPerPack: z.preprocess(
-    (val) => (val === '' || val === null || val === undefined) ? 1 : Number(val),
-    z.number().default(1)
+    (val) => (val === '' || val === null || val === undefined) ? 6 : Number(val),
+    z.number().default(6)
   ),
   basePrice: optionalNumber,
   compareAtPrice: optionalNumber,
@@ -50,7 +51,7 @@ export const sizeOptionSchema = z.object({
     (val) => (val === '' || val === null || val === undefined) ? 25 : Number(val),
     z.number().min(0).max(500).default(25)
   ),
-  roundUp: z.enum(['none', '100', '500', '1000']).default('none'),
+  roundUp: z.enum(['none', '100', '500', '1000']).default('100'),
   pricingStrategy: z.enum(['cost_plus', 'market_based', 'value_based', 'penetration']).default('cost_plus'),
   minPrice: optionalNumber,
   maxPrice: optionalNumber,
@@ -160,7 +161,7 @@ const subProductDataSchema = z.object({
     (val) => (val === '' || val === null || val === undefined) ? 25 : Number(val),
     z.number().min(0).max(500).default(25)
   ),
-  roundUp: z.enum(['none', '100', '500', '1000']).default('none'),
+  roundUp: z.enum(['none', '100', '500', '1000']).default('100'),
   pricingStrategy: z.enum(['cost_plus', 'market_based', 'value_based', 'penetration']).default('cost_plus'),
   minPrice: optionalNumber,
   maxPrice: optionalNumber,

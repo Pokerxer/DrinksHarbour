@@ -1835,11 +1835,15 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
       const existingSizes = await Size.find({ subproduct: subProductId }).lean();
       
       console.log('📦 Existing sizes in DB:', existingSizes.map(s => ({ _id: s._id, size: s.size })));
-      console.log('📦 Sizes from client:', data.sizes.map(s => ({ size: s.size, stock: s.stock })));
+      console.log('📦 Sizes from client:', data.sizes.map(s => ({ _id: s._id, size: s.size, stock: s.stock })));
       
-      // Create a map by size name (case-insensitive matching)
+      // Build lookup maps:
+      //  1. by _id (primary — preserves document identity when size value is edited)
+      //  2. by size value (case-insensitive fallback for sizes added before _id tracking)
+      const existingSizeById = new Map();
       const existingSizeMap = new Map();
       for (const s of existingSizes) {
+        existingSizeById.set(String(s._id), s);
         existingSizeMap.set(s.size.toLowerCase(), s);
         existingSizeMap.set(s.size, s); // Also store exact match
       }
@@ -1847,14 +1851,24 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
       const updatedSizeIds = [];
       
       for (const sizeData of data.sizes) {
-        const sizeKey = sizeData.size?.toLowerCase();
-        const existingSize = existingSizeMap.get(sizeData.size) || existingSizeMap.get(sizeKey);
-        
+        // Prefer _id match so editing a size's value updates the same document
+        // (preserves WarehouseStock, order history, and movement audit trails).
+        // Fall back to size-value match only for sizes without _id (new rows).
+        let existingSize = null;
+        if (sizeData._id) {
+          existingSize = existingSizeById.get(String(sizeData._id));
+        }
+        if (!existingSize) {
+          const sizeKey = sizeData.size?.toLowerCase();
+          existingSize = existingSizeMap.get(sizeData.size) || existingSizeMap.get(sizeKey);
+        }
         console.log(`📦 Matching size "${sizeData.size}":`, existingSize ? `Found (${existingSize._id})` : 'Not found - will create new');
         
         if (existingSize) {
-          // Update existing size
+          // Update existing size — include `size` so editing the value
+          // (e.g. 75cl → 1L) updates the same document instead of recreating it.
           Object.assign(existingSize, {
+            size: sizeData.size || existingSize.size,
             displayName: sizeData.displayName || existingSize.displayName,
             // Map empty string to 'standard' for valid enum
             sizeCategory: sizeData.sizeCategory || existingSize.sizeCategory || 'standard',
@@ -1863,7 +1877,7 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
             weightGrams: sizeData.weightGrams ?? existingSize.weightGrams,
             servingsPerUnit: sizeData.servingsPerUnit ?? existingSize.servingsPerUnit,
             unitsPerPack: sizeData.unitsPerPack ?? existingSize.unitsPerPack ?? 6,
-            packaging: sizeData.packaging ?? existingSize.packaging ?? 'pack-6',
+            packaging: normalizePackaging(sizeData.packaging ?? existingSize.packaging ?? 'pack-6'),
             basePrice: sizeData.basePrice ?? existingSize.basePrice,
             compareAtPrice: sizeData.compareAtPrice ?? existingSize.compareAtPrice,
             costPrice: sizeData.costPrice ?? existingSize.costPrice,
@@ -1879,7 +1893,7 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
             sku: sizeData.sku || existingSize.sku || `${subProduct.sku}-${sizeData.size}`.toUpperCase().replace(/\s+/g, ''),
             barcode: sizeData.barcode || existingSize.barcode || '',
             markupPercentage: sizeData.markupPercentage ?? existingSize.markupPercentage,
-            roundUp: sizeData.roundUp || existingSize.roundUp || 'none',
+            roundUp: sizeData.roundUp || existingSize.roundUp || '100',
             saleDiscountPercentage: sizeData.saleDiscountPercentage ?? existingSize.saleDiscountPercentage,
             salePrice: sizeData.salePrice ?? existingSize.salePrice,
             // Map salePrice/basePrice to sellingPrice for compatibility — basePrice is
@@ -1907,7 +1921,7 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
             weightGrams: sizeData.weightGrams ?? null,
             servingsPerUnit: sizeData.servingsPerUnit ?? 0,
             unitsPerPack: sizeData.unitsPerPack ?? 6,
-            packaging: sizeData.packaging ?? 'pack-6',
+            packaging: normalizePackaging(sizeData.packaging ?? 'pack-6'),
             basePrice: sizeData.basePrice ?? subProduct.baseSellingPrice,
             compareAtPrice: sizeData.compareAtPrice ?? null,
             costPrice: sizeData.costPrice ?? subProduct.costPrice ?? 0,
@@ -1923,7 +1937,7 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
             sku: sizeData.sku || `${subProduct.sku}-${sizeData.size}`.toUpperCase().replace(/\s+/g, ''),
             barcode: sizeData.barcode || '',
             markupPercentage: sizeData.markupPercentage ?? subProduct.markupPercentage,
-            roundUp: sizeData.roundUp || 'none',
+            roundUp: sizeData.roundUp || '100',
             saleDiscountPercentage: sizeData.saleDiscountPercentage ?? 0,
             salePrice: sizeData.salePrice ?? null,
             // Map salePrice to sellingPrice for compatibility
@@ -2164,13 +2178,32 @@ function validateDuplicateSizes(sizes) {
   for (let i = 0; i < sizes.length; i++) {
     const val = sizes[i]?.size;
     if (!val) continue;
-    if (seen.has(val)) {
+    // Case-insensitive + trimmed comparison so "75cl" and "75CL" are duplicates.
+    const key = String(val).toLowerCase().trim();
+    if (seen.has(key)) {
       throw new ValidationError(
         `Duplicate size value "${val}" at index ${i}. Each size value can only appear once per product.`
       );
     }
-    seen.add(val);
+    seen.add(key);
   }
+}
+
+/**
+ * Normalise the packaging field so the UI's flat string (e.g. 'pack-6')
+ * is stored as the object the Size model expects: { type: 'pack-6' }.
+ * - Already an object with a valid type → pass through.
+ * - String → { type: string }.
+ * - Empty/null/undefined → { type: 'pack-6' } (platform default).
+ */
+function normalizePackaging(packaging) {
+  if (packaging && typeof packaging === 'object' && !Array.isArray(packaging)) {
+    return packaging;
+  }
+  if (typeof packaging === 'string' && packaging.trim() !== '') {
+    return { type: packaging.trim() };
+  }
+  return { type: 'pack-6' };
 }
 
 /**
@@ -2254,7 +2287,7 @@ const createSizeVariants = async (sizes, subProductId, defaultCurrency, tenantId
         volumeMl,
         weightGrams,
         servingsPerUnit,
-        unitsPerPack = 1,
+        unitsPerPack = 6,
         basePrice: sellingPrice,
         compareAtPrice,
         costPrice: sizeCostPrice,
@@ -2262,7 +2295,7 @@ const createSizeVariants = async (sizes, subProductId, defaultCurrency, tenantId
         currency = defaultCurrency,
         // Auto-calculation fields
         markupPercentage = 25,
-        roundUp = 'none',
+        roundUp = '100',
         saleDiscountPercentage = 0,
         salePrice,
         // Inventory
@@ -2390,7 +2423,7 @@ const createSizeVariants = async (sizes, subProductId, defaultCurrency, tenantId
         orderIncrement: orderIncrement || 1,
         requiresAgeVerification,
         // Packaging & Details
-        packaging: packaging || '',
+        packaging: normalizePackaging(packaging),
         // Rank
         rank: rank || (i + 1),
         // Analytics
@@ -2458,14 +2491,14 @@ const createSizeVariantsWithTransaction = async (sizes, subProductId, defaultCur
         volumeMl,
         weightGrams,
         servingsPerUnit,
-        unitsPerPack = 1,
+        unitsPerPack = 6,
         basePrice: sellingPrice,
         compareAtPrice,
         costPrice: sizeCostPrice,
         wholesalePrice,
         currency = defaultCurrency,
         markupPercentage = 25,
-        roundUp = 'none',
+        roundUp = '100',
         saleDiscountPercentage = 0,
         salePrice,
         stock = 0,
@@ -2572,7 +2605,7 @@ const createSizeVariantsWithTransaction = async (sizes, subProductId, defaultCur
         maxOrderQuantity: maxOrderQuantity || null,
         orderIncrement: orderIncrement || 1,
         requiresAgeVerification,
-        packaging: packaging || '',
+        packaging: normalizePackaging(packaging),
         rank: rank || (i + 1),
         totalSold: 0,
         totalRevenue: 0,
@@ -2620,14 +2653,14 @@ const createSizeVariantsWithoutTransaction = async (sizes, subProductId, default
         volumeMl,
         weightGrams,
         servingsPerUnit,
-        unitsPerPack = 1,
+        unitsPerPack = 6,
         basePrice: sellingPrice,
         compareAtPrice,
         costPrice: sizeCostPrice,
         wholesalePrice,
         currency = defaultCurrency,
         markupPercentage = 25,
-        roundUp = 'none',
+        roundUp = '100',
         saleDiscountPercentage = 0,
         salePrice,
         stock = 0,
@@ -2734,7 +2767,7 @@ const createSizeVariantsWithoutTransaction = async (sizes, subProductId, default
         maxOrderQuantity: maxOrderQuantity || null,
         orderIncrement: orderIncrement || 1,
         requiresAgeVerification,
-        packaging: packaging || '',
+        packaging: normalizePackaging(packaging),
         rank: rank || (i + 1),
         totalSold: 0,
         totalRevenue: 0,
@@ -4600,9 +4633,12 @@ const addSize = async (subProductId, sizeData, tenantId, user = null) => {
     subProduct.sizes = [];
   }
 
-  // Validate no duplicate size value on this SubProduct
+  // Validate no duplicate size value on this SubProduct (case-insensitive)
   if (sizeData.size) {
-    const existingSize = await Size.findOne({ subproduct: subProductId, size: sizeData.size });
+    const existingSize = await Size.findOne({
+      subproduct: subProductId,
+      size: { $regex: new RegExp(`^${sizeData.size.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+    });
     if (existingSize) {
       throw new ValidationError(
         `A size with value "${sizeData.size}" already exists on this product.`
@@ -4617,6 +4653,7 @@ const addSize = async (subProductId, sizeData, tenantId, user = null) => {
 
   const newSize = {
     ...sizeData,
+    packaging: normalizePackaging(sizeData.packaging),
     subproduct: subProductId,
     tenant: tenantId,
   };
@@ -4654,9 +4691,13 @@ const updateSize = async (subProductId, sizeId, updateData, tenantId, user = nul
     throw new NotFoundError('Size not found');
   }
 
-  // Validate duplicate size value if changing the size field
-  if (updateData.size && updateData.size !== size.size) {
-    const existingSize = await Size.findOne({ subproduct: subProductId, size: updateData.size });
+  // Validate duplicate size value if changing the size field (case-insensitive)
+  if (updateData.size && updateData.size.toLowerCase() !== size.size.toLowerCase()) {
+    const existingSize = await Size.findOne({
+      subproduct: subProductId,
+      size: { $regex: new RegExp(`^${updateData.size.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+      _id: { $ne: sizeId },
+    });
     if (existingSize) {
       throw new ValidationError(
         `A size with value "${updateData.size}" already exists on this product.`
@@ -4669,6 +4710,10 @@ const updateSize = async (subProductId, sizeId, updateData, tenantId, user = nul
     await validateBarcodeUniqueness(updateData.barcode, tenantId, sizeId);
   }
 
+  // Normalise packaging string → object before assigning
+  if (updateData.packaging !== undefined) {
+    updateData.packaging = normalizePackaging(updateData.packaging);
+  }
   Object.assign(size, updateData);
   await size.save();
 

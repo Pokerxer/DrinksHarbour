@@ -384,7 +384,7 @@ export default function SubProductSizes() {
     append({
       size: '',
       displayName: '',
-      sizeCategory: '',
+      sizeCategory: 'standard',
       unitType: 'volume_ml',
       volumeMl: null,
       weightGrams: null,
