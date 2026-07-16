@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useModalCartContext } from '@/context/ModalCartContext';
-import { useCart } from '@/context/CartContext';
+import { useCart, getEffectiveUnitPrice } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useModalWishlistContext } from '@/context/ModalWishlistContext';
 
@@ -454,10 +454,23 @@ const ModalCart = () => {
                                         </p>
                                       )}
                                       <span className={`font-bold ${isPriceChanged && !appliedUpdates ? (validation!.currentPrice > validation!.oldPrice ? 'text-red-600' : 'text-green-600') : 'text-gray-900'}`}>
-                                        {formatPrice((isPriceChanged && !appliedUpdates ? validation!.currentPrice : (item.price || 0)) * (item.quantity || 1))}
+                                        {formatPrice((isPriceChanged && !appliedUpdates ? validation!.currentPrice : getEffectiveUnitPrice(item)) * (item.quantity || 1))}
                                       </span>
                                     </div>
                                   </div>
+
+                                  {/* Pack price tag / nudge */}
+                                  {item.packUnitPrice && item.packThreshold ? (
+                                    (item.quantity || 1) >= item.packThreshold ? (
+                                      <span className="inline-block mt-1 text-xs font-semibold text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">
+                                        Pack price applied — {formatPrice(item.packUnitPrice)} each
+                                      </span>
+                                    ) : (
+                                      <span className="inline-block mt-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                                        Add {item.packThreshold - (item.quantity || 1)} more to pay {formatPrice(item.packUnitPrice)} each
+                                      </span>
+                                    )
+                                  ) : null}
 
                                   {/* Move to Wishlist */}
                                   <button
