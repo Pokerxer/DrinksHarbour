@@ -9568,7 +9568,7 @@ const getProductBySlug = async (slug) => {
             ? roundUpTo100(Math.max(0, packSelling - subProduct.saleDiscountValue))
             : roundUpTo100(packSelling * (1 - subProduct.saleDiscountValue / 100));
         }
-        if (packSelling > 0 && packSelling < websitePrice) {
+        if (packSelling > 0) {
           packUnitPrice = packSelling;
           packThreshold = _unitsPerPack;
           packSavingsPct = Math.round(((websitePrice - packSelling) / websitePrice) * 100);

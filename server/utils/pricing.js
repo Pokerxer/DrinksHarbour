@@ -335,7 +335,7 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
       tenantStorePrice: tenantSellingPrice,
       platformMarkupOverridePct: packOverridePct ?? overridePct,
     });
-    if (packSelling > 0 && packSelling < platformSellingPrice) {
+    if (packSelling > 0) {
       packUnitPrice = packSelling;
       packThreshold = unitsPerPack;
       packSavingsPct = Math.round(((platformSellingPrice - packSelling) / platformSellingPrice) * 100);
