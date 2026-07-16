@@ -242,10 +242,12 @@ async function buildLinkCatalog(topic) {
   });
 
   const allowed = new Set();
-  entries.forEach((e) => allowed.add(`/product/${e.slug}`));
-  categories.forEach((_name, slug) => allowed.add(`/shop?category=${slug}`));
-  subCategories.forEach((v, slug) => allowed.add(`/shop?category=${v.categorySlug}&subcategory=${slug}`));
-  brands.forEach((_name, slug) => allowed.add(`/shop?brand=${slug}`));
+  entries.forEach((e) => {
+    allowed.add(`/product/${e.slug}`);
+    if (e.categorySlug) allowed.add(`/categories/${e.categorySlug}`);
+    if (e.categorySlug && e.subCategorySlug) allowed.add(`/categories/${e.categorySlug}/${e.subCategorySlug}`);
+    if (e.brandSlug) allowed.add(`/brands/${e.brandSlug}`);
+  });
 
   return { entries, categories, subCategories, brands, allowed };
 }
@@ -259,13 +261,13 @@ function catalogToPrompt({ entries, categories, subCategories, brands }) {
     })
     .join('\n');
   const categoryLines = [...categories.entries()]
-    .map(([slug, name]) => `- "${name}" → /shop?category=${slug}`)
+    .map(([slug, name]) => `- "${name}" → /categories/${slug}`)
     .join('\n');
   const subCategoryLines = [...(subCategories?.entries() || [])]
-    .map(([slug, v]) => `- "${v.name}" → /shop?category=${v.categorySlug}&subcategory=${slug}`)
+    .map(([slug, v]) => `- "${v.name}" → /categories/${v.categorySlug}/${slug}`)
     .join('\n');
   const brandLines = [...(brands?.entries() || [])]
-    .map(([slug, name]) => `- "${name}" → /shop?brand=${slug}`)
+    .map(([slug, name]) => `- "${name}" → /brands/${slug}`)
     .join('\n');
 
   return `
@@ -284,7 +286,7 @@ function makeLinkValidator(allowed) {
   return (href) => {
     if (allowed.has(href)) return true;
     if (href.startsWith('/product/')) return false;
-    return href.startsWith('/shop') || href.startsWith('/blog') || href === '/';
+    return href.startsWith('/categories') || href.startsWith('/brands') || href.startsWith('/blog') || href === '/';
   };
 }
 
