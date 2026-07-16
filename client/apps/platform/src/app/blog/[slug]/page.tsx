@@ -14,6 +14,7 @@ import {
 import BlogImage from '../BlogImage';
 import ShareButtons, { ShareRail } from './ShareButtons';
 import TableOfContents from './TableOfContents';
+import PlacementBanner from '@/components/Banner/PlacementBanner';
 
 export const revalidate = 300;
 
@@ -192,8 +193,13 @@ export default async function BlogPostPage({
             {/* Desktop TOC */}
             {toc.length >= 3 ? (
               <aside className="hidden w-56 flex-shrink-0 xl:block">
-                <div className="sticky top-24">
+                <div className="sticky top-24 space-y-4">
                   <TableOfContents items={toc} />
+                  <PlacementBanner
+                    placement="sidebar"
+                    variant="sidebar"
+                    limit={1}
+                  />
                 </div>
               </aside>
             ) : null}

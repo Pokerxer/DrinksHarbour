@@ -13,6 +13,9 @@ const FlashSale = dynamic(() => import("@/components/Home1/FlashSale"), {
 });
 const FeaturedDeals = dynamic(() => import("@/components/Home1/FeaturedDeals"));
 const Benefit = dynamic(() => import("@/components/Home1/Benefit"));
+const PlacementBanner = dynamic(
+  () => import("@/components/Banner/PlacementBanner")
+);
 const RecommendedForYou = dynamic(
   () => import("@/components/Shop/RecommendedForYou")
 );
@@ -95,6 +98,16 @@ export default async function Home() {
             />
           </div>
         </section>
+
+        {/* Home Secondary — admin-managed promotional strip */}
+        <LazySection rootMargin="300px">
+          <PlacementBanner
+            placement="home_secondary"
+            variant="hero"
+            limit={1}
+            className="container mx-auto px-3 py-4"
+          />
+        </LazySection>
 
         {/* Benefits */}
         <LazySection rootMargin="200px">

@@ -8,6 +8,7 @@ const _shopCache = new Map<string, { data: any[]; total: number; ts: number }>()
 const SHOP_CACHE_TTL = 30_000;
 import Shop from '@/components/Shop';
 import ShopHeroBanner from '@/components/Shop/ShopHeroBanner';
+import PlacementBanner from '@/components/Banner/PlacementBanner';
 import LoadingSpinner from '@/components/loader/LoadingSpinner';
 import * as Icon from 'react-icons/pi';
 import RecommendedForYou from '@/components/Shop/RecommendedForYou';
@@ -626,6 +627,16 @@ function ShopPageContent({ params, initialProducts, initialTotal, initialRecomme
           brand={brandParam}
           totalProducts={totalProducts}
           seed={heroSeed}
+        />
+      )}
+
+      {/* ── Category Top — admin-managed banner for category browsing ────── */}
+      {!isSalePage && !searchQuery && (categoryParam || subcategoryParam) && (
+        <PlacementBanner
+          placement="category_top"
+          variant="hero"
+          limit={1}
+          className="container mx-auto px-3 pt-4 sm:px-4"
         />
       )}
 

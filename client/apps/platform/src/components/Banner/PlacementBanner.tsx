@@ -53,7 +53,7 @@ const CTA_CLS: Record<string, string> = {
   custom:    'bg-gray-900 text-white hover:bg-gray-800',
 };
 
-type Variant = 'hero' | 'compact' | 'footer';
+type Variant = 'hero' | 'compact' | 'footer' | 'sidebar';
 
 export default function PlacementBanner({
   placement,
@@ -200,6 +200,66 @@ export default function PlacementBanner({
           </div>
         </motion.div>
       </AnimatePresence>
+    );
+  }
+
+  // ─── Sidebar variant — vertical promo card ───────────────────────────────────
+  if (variant === 'sidebar') {
+    return (
+      <div className={className}>
+        <div
+          className="relative overflow-hidden rounded-2xl border border-gray-200/50 bg-gray-900"
+          style={{ aspectRatio: '3/4' }}
+        >
+          {banner.image?.url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={banner.image.url}
+              alt={banner.image?.alt || banner.title}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          ) : (
+            <div
+              className="absolute inset-0"
+              style={{ backgroundColor: banner.backgroundColor || '#1A1A2E' }}
+            />
+          )}
+          {/* Legibility gradient + optional overlay */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+          {overlay > 0 && (
+            <div
+              className="absolute inset-0"
+              style={{ backgroundColor: `rgba(0,0,0,${overlay})` }}
+            />
+          )}
+          <div className="absolute inset-0 flex flex-col items-start justify-end gap-1.5 p-4">
+            {banner.subtitle && (
+              <p
+                className="text-xs font-medium text-white/80"
+                style={{ color: banner.textColor ? `${banner.textColor}cc` : undefined }}
+              >
+                {banner.subtitle}
+              </p>
+            )}
+            <h3
+              className="text-lg font-black leading-tight drop-shadow"
+              style={{ color: banner.textColor || '#fff' }}
+            >
+              {banner.title}
+            </h3>
+            {banner.ctaText && (
+              <Link
+                href={banner.ctaLink || '#'}
+                onClick={() => trackClick(banner._id)}
+                className={`mt-1.5 inline-flex items-center gap-1 rounded-lg px-3.5 py-2 text-xs font-bold transition ${ctaCls}`}
+              >
+                {banner.ctaText}
+                <Icon.PiArrowRightBold className="h-3 w-3" />
+              </Link>
+            )}
+          </div>
+        </div>
+      </div>
     );
   }
 
