@@ -221,12 +221,14 @@ export default function CreateCategory({
   currentImages,
   isModalView = true,
   onSuccess,
+  aiDraft,
 }: {
   id?: string;
   isModalView?: boolean;
   category?: CategoryFormInput;
   currentImages?: { thumbnail?: string; featured?: string; banner?: string };
   onSuccess?: () => void;
+  aiDraft?: any;
 }) {
   const { data: session } = useSession();
   const token = (session?.user as any)?.token as string;
@@ -380,6 +382,22 @@ export default function CreateCategory({
           });
           setAiSuggestions(null);
         }, [aiSuggestions]);
+
+        useEffect(() => {
+          if (!aiDraft) return;
+          slugManuallyEdited.current = true;
+          const fields = [
+            'name', 'slug', 'displayName', 'tagline', 'shortDescription',
+            'type', 'subType', 'alcoholCategory', 'description',
+            'metaTitle', 'metaDescription', 'metaKeywords', 'canonicalUrl',
+            'color', 'icon', 'status',
+          ];
+          fields.forEach((f) => {
+            if (aiDraft[f] === undefined || aiDraft[f] === null || aiDraft[f] === '') return;
+            setValue(f as any, aiDraft[f], { shouldValidate: true, shouldDirty: true });
+          });
+          toast.success('AI draft applied — review and publish');
+        }, [aiDraft]);
 
         return isModalView ? (
           // ── MODAL layout ────────────────────────────────────────────────────
