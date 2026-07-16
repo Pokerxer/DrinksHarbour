@@ -8,6 +8,7 @@ const adminRoles = ['super_admin', 'admin', 'tenant_owner', 'tenant_admin'];
 
 // Admin CRUD (protected) - must come before /:id routes
 router.post('/admin/ai-fill', protect, authorize(...adminRoles), categoryController.fillWithAI);
+router.post('/admin/ai/generate-category', protect, authorize(...adminRoles), categoryController.generateCategory);
 router.get('/admin', protect, authorize(...adminRoles), categoryController.getAdminCategories);
 router.post('/admin', protect, authorize(...adminRoles), uploadCategoryImages, categoryController.createCategory);
 router.put('/admin/:id', protect, authorize(...adminRoles), uploadCategoryImages, categoryController.updateCategory);
