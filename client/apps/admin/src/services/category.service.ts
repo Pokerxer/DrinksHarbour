@@ -181,7 +181,7 @@ export const categoryService = {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(body),
     });
-    const json = await res.json();
+    const json: any = await res.json();
     if (!res.ok) throw new Error(json.message || 'AI generation failed');
     return json;
   },

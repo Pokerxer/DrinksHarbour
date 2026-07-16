@@ -1,5 +1,5 @@
 // @ts-nocheck
-import CreateCategory from '@/app/shared/ecommerce/category/create-category';
+import CreateCategoryClient from './create/create-category-client';
 import PageHeader from '@/app/shared/page-header';
 import EcommercePageHeader from '@/app/shared/ecommerce/ecommerce-page-header';
 import { routes } from '@/config/routes';
@@ -27,7 +27,7 @@ export default function CreateCategoryPage() {
           title={pageHeader.title}
           breadcrumb={pageHeader.breadcrumb}
         />
-        <CreateCategory isModalView={false} />
+        <CreateCategoryClient />
       </div>
     </>
   );
