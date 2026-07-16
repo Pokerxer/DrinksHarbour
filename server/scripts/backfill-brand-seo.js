@@ -1,0 +1,181 @@
+/**
+ * Backfill missing brand copy + SEO meta with claude-haiku-4-5.
+ *
+ * The /brands/[slug] pages fall back to generic copy when a brand has no
+ * description/metaTitle/metaDescription — thin pages that won't rank. This
+ * fills ONLY the missing copy fields on each brand; existing values are
+ * never overwritten, and contact details / socials / colors / enums are
+ * never touched (those stay admin-curated via the ai-fill form).
+ *
+ * Fields filled when empty: tagline, shortDescription, description (HTML
+ * <p> paragraphs, same format the admin ai-fill produces), story,
+ * metaTitle, metaDescription, metaKeywords.
+ *
+ * Usage:
+ *   node scripts/backfill-brand-seo.js [--dry-run] [--limit=N] [--delay=ms]
+ *
+ *   --dry-run   show what would be filled, no writes, no AI calls beyond
+ *               the first brand (printed as a sample)
+ *   --limit=N   process at most N brands (default: all)
+ *   --delay=ms  pause between AI calls (default 800)
+ */
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env'), quiet: true });
+const mongoose = require('mongoose');
+const Anthropic = require('@anthropic-ai/sdk');
+const Brand = require('../models/Brand');
+const Product = require('../models/Product');
+
+const MODEL = 'claude-haiku-4-5';
+const DRY_RUN = process.argv.includes('--dry-run');
+const LIMIT = Number((process.argv.find((a) => a.startsWith('--limit=')) || '').split('=')[1]) || Infinity;
+const DELAY_MS = Number((process.argv.find((a) => a.startsWith('--delay=')) || '').split('=')[1]) || 800;
+
+// Copy fields we own here, with clamp lengths matching the admin ai-fill.
+const FIELDS = {
+  tagline: 150,
+  shortDescription: 280,
+  description: 5000,
+  story: 5000,
+  metaTitle: 100,
+  metaDescription: 320,
+};
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const clamp = (v, max) => (v === undefined || v === null ? '' : String(v).trim().slice(0, max));
+
+function missingFields(brand) {
+  const missing = Object.keys(FIELDS).filter((f) => !String(brand[f] || '').trim());
+  if (!Array.isArray(brand.metaKeywords) || brand.metaKeywords.length === 0) {
+    missing.push('metaKeywords');
+  }
+  return missing;
+}
+
+function buildPrompt(brand, missing, productNames) {
+  const known = [
+    `Name: "${brand.name}"`,
+    brand.brandType && `Brand type: ${String(brand.brandType).replace(/_/g, ' ')}`,
+    brand.primaryCategory && `Primary category: ${String(brand.primaryCategory).replace(/_/g, ' ')}`,
+    brand.countryOfOrigin && `Country of origin: ${brand.countryOfOrigin}`,
+    brand.region && `Region: ${brand.region}`,
+    brand.founded && `Founded: ${brand.founded}`,
+    productNames.length && `Products we stock: ${productNames.join('; ')}`,
+  ]
+    .filter(Boolean)
+    .join('\n- ');
+
+  const specs = {
+    tagline: '"short punchy brand tagline (max 150 chars)"',
+    shortDescription: '"2 compelling sentences for brand listings and cards (max 280 chars)"',
+    description:
+      '"3-4 paragraphs about the brand history, quality and positioning, formatted as HTML using <p> tags only (max 3000 chars)"',
+    story:
+      '"2-3 plain-text paragraphs narrating the brand heritage, founding story and mission, separated by blank lines (max 3000 chars)"',
+    metaTitle: '"SEO page title targeting buyers in Nigeria, e.g. brand + buy online Nigeria (max 100 chars)"',
+    metaDescription: '"SEO meta description for the brand page, Nigeria market (max 320 chars)"',
+    metaKeywords: '"8-12 comma-separated search keywords relevant to this brand in Nigeria"',
+  };
+
+  const keys = missing.map((f) => `  "${f}": ${specs[f]}`).join(',\n');
+
+  return `Generate brand page content for DrinksHarbour (Nigeria's premium online drinks store).
+
+Known facts about the brand:
+- ${known}
+
+Use your real knowledge of this brand. Where a fact is genuinely unknown, write plausible professional copy without inventing specific claims (no fake awards, dates or figures).
+
+Return a JSON object with exactly these keys:
+{
+${keys}
+}`;
+}
+
+async function main() {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.error('ANTHROPIC_API_KEY is not configured');
+    process.exit(1);
+  }
+  await mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI);
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  // Most-stocked brands first — they get the most page traffic.
+  const brands = await Brand.find({}).sort({ productCount: -1, name: 1 }).lean();
+  const todo = brands.filter((b) => missingFields(b).length > 0).slice(0, LIMIT);
+
+  console.log(`${brands.length} brands total, ${todo.length} need backfill${DRY_RUN ? ' (dry run)' : ''}`);
+
+  let filled = 0;
+  let failed = 0;
+
+  for (const [i, brand] of todo.entries()) {
+    const missing = missingFields(brand);
+
+    if (DRY_RUN && i > 0) {
+      console.log(`[dry] ${brand.name}: would fill ${missing.join(', ')}`);
+      continue;
+    }
+
+    const productNames = (
+      await Product.find({ brand: brand._id }).select('name').sort({ createdAt: -1 }).limit(8).lean()
+    ).map((p) => p.name);
+
+    try {
+      const response = await anthropic.messages.create({
+        model: MODEL,
+        max_tokens: 4096,
+        system:
+          "You are a content assistant for DrinksHarbour, Nigeria's premier online premium beverages store. " +
+          "You know the world's drinks brands well. Respond with ONLY a single valid JSON object — no prose, no markdown fences.",
+        messages: [{ role: 'user', content: buildPrompt(brand, missing, productNames) }],
+      });
+
+      const raw = (response.content || []).map((c) => c.text || '').join('');
+      const start = raw.indexOf('{');
+      const end = raw.lastIndexOf('}');
+      if (start === -1 || end === -1) throw new Error('no JSON in response');
+      const json = JSON.parse(raw.slice(start, end + 1));
+
+      const $set = {};
+      for (const f of missing) {
+        if (f === 'metaKeywords') {
+          const kw = clamp(json.metaKeywords, 500)
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .slice(0, 12);
+          if (kw.length) $set.metaKeywords = kw;
+        } else {
+          const v = clamp(json[f], FIELDS[f]);
+          if (v) $set[f] = v;
+        }
+      }
+
+      if (Object.keys($set).length === 0) throw new Error('AI returned no usable fields');
+
+      if (DRY_RUN) {
+        console.log(`[dry sample] ${brand.name}:`);
+        for (const [k, v] of Object.entries($set)) {
+          console.log(`  ${k}: ${String(v).slice(0, 100)}${String(v).length > 100 ? '…' : ''}`);
+        }
+      } else {
+        await Brand.updateOne({ _id: brand._id }, { $set });
+        filled++;
+        console.log(`[${i + 1}/${todo.length}] ${brand.name}: filled ${Object.keys($set).join(', ')}`);
+      }
+    } catch (err) {
+      failed++;
+      console.error(`[${i + 1}/${todo.length}] ${brand.name}: FAILED — ${err.message}`);
+    }
+
+    if (i < todo.length - 1) await sleep(DELAY_MS);
+  }
+
+  console.log(`\nDone. ${filled} brands updated, ${failed} failed, ${todo.length} examined.`);
+  await mongoose.disconnect();
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
