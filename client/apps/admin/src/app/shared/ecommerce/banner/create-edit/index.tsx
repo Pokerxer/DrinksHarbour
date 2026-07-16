@@ -2276,441 +2276,437 @@ export default function CreateEditBanner({
 
                 {/* Product Picker */}
                 {aiActiveTarget === 'product' && (
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-gray-500">
-                        Select Product
-                      </label>
-                      {isLoadingContext ? (
-                        <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-500">
-                          <PiSpinnerBold className="h-4 w-4 animate-spin" />{' '}
-                          Loading products...
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-500">
+                      Select Product
+                    </label>
+                    {isLoadingContext ? (
+                      <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-500">
+                        <PiSpinnerBold className="h-4 w-4 animate-spin" />{' '}
+                        Loading products...
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {/* Search input */}
+                        <div className="relative">
+                          <PiMagnifyingGlass className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                          <input
+                            type="text"
+                            autoFocus
+                            value={aiProductSearch}
+                            onChange={(e) => setAiProductSearch(e.target.value)}
+                            placeholder="Search products by name or brand..."
+                            className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm placeholder-gray-400 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                          />
+                          {aiProductSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setAiProductSearch('')}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                            >
+                              <PiX className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {/* Search input */}
-                          <div className="relative">
-                            <PiMagnifyingGlass className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                            <input
-                              type="text"
-                              autoFocus
-                              value={aiProductSearch}
-                              onChange={(e) =>
-                                setAiProductSearch(e.target.value)
-                              }
-                              placeholder="Search products by name or brand..."
-                              className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm placeholder-gray-400 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
-                            />
-                            {aiProductSearch && (
-                              <button
-                                type="button"
-                                onClick={() => setAiProductSearch('')}
-                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
-                              >
-                                <PiX className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
 
-                          {/* Product list */}
-                          {(() => {
-                            const q = aiProductSearch.trim();
-                            // 2+ chars → live server search across ALL products;
-                            // 1 char → instant local filter of the preloaded set;
-                            // empty → the preloaded popular set.
-                            const list =
-                              q.length >= 2
-                                ? aiProductResults
-                                : q
-                                  ? contextProducts.filter((p) =>
-                                      `${p.name} ${p.brand || ''}`
-                                        .toLowerCase()
-                                        .includes(q.toLowerCase())
-                                    )
-                                  : contextProducts;
-                            return (
-                              <div className="max-h-72 divide-y divide-gray-50 overflow-y-auto rounded-lg border border-gray-200">
-                                {aiSearchingProducts ? (
-                                  <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-400">
-                                    <PiSpinnerBold className="h-4 w-4 animate-spin" />{' '}
-                                    Searching…
-                                  </div>
-                                ) : list.length === 0 ? (
-                                  <div className="flex items-center justify-center py-8 text-sm text-gray-400">
-                                    {q.length >= 2 ? (
-                                      <>
-                                        No products match &ldquo;
-                                        {aiProductSearch}&rdquo;
-                                      </>
-                                    ) : (
-                                      'No products available'
-                                    )}
-                                  </div>
-                                ) : (
-                                  list.map((p) => {
-                                    const selected =
-                                      aiContextData.productId === p.id;
-                                    return (
-                                      <button
-                                        key={p.id}
-                                        type="button"
-                                        onClick={() => {
-                                          setAiContextData((prev) => ({
-                                            ...prev,
-                                            productId: p.id,
-                                          }));
-                                          setAiSelectedProduct(p);
-                                        }}
-                                        className={cn(
-                                          'flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors',
-                                          selected
-                                            ? 'bg-purple-50 ring-1 ring-purple-300'
-                                            : 'hover:bg-gray-50'
+                        {/* Product list */}
+                        {(() => {
+                          const q = aiProductSearch.trim();
+                          // 2+ chars → live server search across ALL products;
+                          // 1 char → instant local filter of the preloaded set;
+                          // empty → the preloaded popular set.
+                          const list =
+                            q.length >= 2
+                              ? aiProductResults
+                              : q
+                                ? contextProducts.filter((p) =>
+                                    `${p.name} ${p.brand || ''}`
+                                      .toLowerCase()
+                                      .includes(q.toLowerCase())
+                                  )
+                                : contextProducts;
+                          return (
+                            <div className="max-h-72 divide-y divide-gray-50 overflow-y-auto rounded-lg border border-gray-200">
+                              {aiSearchingProducts ? (
+                                <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-400">
+                                  <PiSpinnerBold className="h-4 w-4 animate-spin" />{' '}
+                                  Searching…
+                                </div>
+                              ) : list.length === 0 ? (
+                                <div className="flex items-center justify-center py-8 text-sm text-gray-400">
+                                  {q.length >= 2 ? (
+                                    <>
+                                      No products match &ldquo;
+                                      {aiProductSearch}&rdquo;
+                                    </>
+                                  ) : (
+                                    'No products available'
+                                  )}
+                                </div>
+                              ) : (
+                                list.map((p) => {
+                                  const selected =
+                                    aiContextData.productId === p.id;
+                                  return (
+                                    <button
+                                      key={p.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setAiContextData((prev) => ({
+                                          ...prev,
+                                          productId: p.id,
+                                        }));
+                                        setAiSelectedProduct(p);
+                                      }}
+                                      className={cn(
+                                        'flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors',
+                                        selected
+                                          ? 'bg-purple-50 ring-1 ring-purple-300'
+                                          : 'hover:bg-gray-50'
+                                      )}
+                                    >
+                                      {/* Thumbnail */}
+                                      <div className="h-9 w-9 flex-shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                                        {p.image ? (
+                                          // eslint-disable-next-line @next/next/no-img-element
+                                          <img
+                                            src={p.image}
+                                            alt={p.name}
+                                            className="h-full w-full object-cover"
+                                          />
+                                        ) : (
+                                          <div className="flex h-full w-full items-center justify-center">
+                                            <PiPackage className="h-4 w-4 text-gray-300" />
+                                          </div>
                                         )}
-                                      >
-                                        {/* Thumbnail */}
-                                        <div className="h-9 w-9 flex-shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
-                                          {p.image ? (
-                                            // eslint-disable-next-line @next/next/no-img-element
-                                            <img
-                                              src={p.image}
-                                              alt={p.name}
-                                              className="h-full w-full object-cover"
-                                            />
-                                          ) : (
-                                            <div className="flex h-full w-full items-center justify-center">
-                                              <PiPackage className="h-4 w-4 text-gray-300" />
-                                            </div>
+                                      </div>
+                                      {/* Name + brand */}
+                                      <div className="min-w-0 flex-1">
+                                        <p
+                                          className={cn(
+                                            'truncate text-sm font-medium',
+                                            selected
+                                              ? 'text-purple-700'
+                                              : 'text-gray-900'
                                           )}
-                                        </div>
-                                        {/* Name + brand */}
-                                        <div className="min-w-0 flex-1">
-                                          <p
-                                            className={cn(
-                                              'truncate text-sm font-medium',
-                                              selected
-                                                ? 'text-purple-700'
-                                                : 'text-gray-900'
-                                            )}
-                                          >
-                                            {p.name}
+                                        >
+                                          {p.name}
+                                        </p>
+                                        {p.brand && (
+                                          <p className="truncate text-xs text-gray-400">
+                                            {p.brand}
                                           </p>
-                                          {p.brand && (
-                                            <p className="truncate text-xs text-gray-400">
-                                              {p.brand}
-                                            </p>
-                                          )}
-                                        </div>
-                                        {/* Check */}
-                                        {selected && (
-                                          <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-purple-500 text-white">
-                                            <PiCheckBold className="h-3 w-3" />
-                                          </span>
                                         )}
-                                      </button>
-                                    );
-                                  })
-                                )}
-                              </div>
-                            );
-                          })()}
-                          <p className="text-[11px] text-gray-400">
-                            {aiProductSearch.trim().length >= 2
-                              ? `${aiProductResults.length} result${aiProductResults.length === 1 ? '' : 's'} across all products`
-                              : 'Showing popular products — keep typing to search the full catalog by name or brand'}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                                      </div>
+                                      {/* Check */}
+                                      {selected && (
+                                        <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-purple-500 text-white">
+                                          <PiCheckBold className="h-3 w-3" />
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                })
+                              )}
+                            </div>
+                          );
+                        })()}
+                        <p className="text-[11px] text-gray-400">
+                          {aiProductSearch.trim().length >= 2
+                            ? `${aiProductResults.length} result${aiProductResults.length === 1 ? '' : 's'} across all products`
+                            : 'Showing popular products — keep typing to search the full catalog by name or brand'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Category Dropdown */}
                 {aiActiveTarget === 'category' && (
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-gray-500">
-                        Select Category
-                      </label>
-                      {isLoadingContext ? (
-                        <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-500">
-                          <PiSpinnerBold className="h-4 w-4 animate-spin" />{' '}
-                          Loading...
-                        </div>
-                      ) : (
-                        <select
-                          value={aiContextData.categoryId}
-                          onChange={(e) =>
-                            setAiContextData((prev) => ({
-                              ...prev,
-                              categoryId: e.target.value,
-                            }))
-                          }
-                          className="w-full rounded-lg border border-purple-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
-                        >
-                          <option value="">Choose a category...</option>
-                          {contextCategories.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                  )}
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-500">
+                      Select Category
+                    </label>
+                    {isLoadingContext ? (
+                      <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-500">
+                        <PiSpinnerBold className="h-4 w-4 animate-spin" />{' '}
+                        Loading...
+                      </div>
+                    ) : (
+                      <select
+                        value={aiContextData.categoryId}
+                        onChange={(e) =>
+                          setAiContextData((prev) => ({
+                            ...prev,
+                            categoryId: e.target.value,
+                          }))
+                        }
+                        className="w-full rounded-lg border border-purple-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                      >
+                        <option value="">Choose a category...</option>
+                        {contextCategories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                )}
 
                 {/* Subcategory Dropdown */}
                 {aiActiveTarget === 'subcategory' && (
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-gray-500">
-                        Select Subcategory
-                      </label>
-                      {isLoadingContext ? (
-                        <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-500">
-                          <PiSpinnerBold className="h-4 w-4 animate-spin" />{' '}
-                          Loading...
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-500">
+                      Select Subcategory
+                    </label>
+                    {isLoadingContext ? (
+                      <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-500">
+                        <PiSpinnerBold className="h-4 w-4 animate-spin" />{' '}
+                        Loading...
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {/* Search input */}
+                        <div className="relative">
+                          <PiMagnifyingGlass className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                          <input
+                            type="text"
+                            autoFocus
+                            value={aiSubcategorySearch}
+                            onChange={(e) =>
+                              setAiSubcategorySearch(e.target.value)
+                            }
+                            placeholder="Search subcategories..."
+                            className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm placeholder-gray-400 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                          />
+                          {aiSubcategorySearch && (
+                            <button
+                              type="button"
+                              onClick={() => setAiSubcategorySearch('')}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                            >
+                              <PiX className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {/* Search input */}
-                          <div className="relative">
-                            <PiMagnifyingGlass className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                            <input
-                              type="text"
-                              autoFocus
-                              value={aiSubcategorySearch}
-                              onChange={(e) =>
-                                setAiSubcategorySearch(e.target.value)
-                              }
-                              placeholder="Search subcategories..."
-                              className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm placeholder-gray-400 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
-                            />
-                            {aiSubcategorySearch && (
-                              <button
-                                type="button"
-                                onClick={() => setAiSubcategorySearch('')}
-                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
-                              >
-                                <PiX className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
 
-                          {/* Subcategory list */}
+                        {/* Subcategory list */}
+                        {(() => {
+                          const q = aiSubcategorySearch.trim().toLowerCase();
+                          const list = q
+                            ? contextSubcategories.filter((s) =>
+                                `${s.name} ${s.parentName || ''}`
+                                  .toLowerCase()
+                                  .includes(q)
+                              )
+                            : contextSubcategories;
+                          return (
+                            <div className="max-h-48 divide-y divide-gray-50 overflow-y-auto rounded-lg border border-gray-200">
+                              {list.length === 0 ? (
+                                <div className="flex items-center justify-center py-8 text-sm text-gray-400">
+                                  No subcategories match &ldquo;
+                                  {aiSubcategorySearch}&rdquo;
+                                </div>
+                              ) : (
+                                list.map((s) => {
+                                  const selected =
+                                    aiContextData.subcategoryId === s.id;
+                                  return (
+                                    <button
+                                      key={s.id}
+                                      type="button"
+                                      onClick={() =>
+                                        setAiContextData((prev) => ({
+                                          ...prev,
+                                          subcategoryId: s.id,
+                                        }))
+                                      }
+                                      className={cn(
+                                        'flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors',
+                                        selected
+                                          ? 'bg-purple-50 ring-1 ring-purple-300'
+                                          : 'hover:bg-gray-50'
+                                      )}
+                                    >
+                                      <div className="min-w-0 flex-1">
+                                        <p
+                                          className={cn(
+                                            'truncate text-sm font-medium',
+                                            selected
+                                              ? 'text-purple-700'
+                                              : 'text-gray-900'
+                                          )}
+                                        >
+                                          {s.name}
+                                        </p>
+                                        {s.parentName && (
+                                          <p className="truncate text-xs text-gray-400">
+                                            {s.parentName}
+                                          </p>
+                                        )}
+                                      </div>
+                                      {selected && (
+                                        <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-purple-500 text-white">
+                                          <PiCheckBold className="h-3 w-3" />
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                })
+                              )}
+                            </div>
+                          );
+                        })()}
+                        <p className="text-[11px] text-gray-400">
                           {(() => {
                             const q = aiSubcategorySearch.trim().toLowerCase();
-                            const list = q
+                            const count = q
                               ? contextSubcategories.filter((s) =>
                                   `${s.name} ${s.parentName || ''}`
                                     .toLowerCase()
                                     .includes(q)
-                                )
-                              : contextSubcategories;
-                            return (
-                              <div className="max-h-48 divide-y divide-gray-50 overflow-y-auto rounded-lg border border-gray-200">
-                                {list.length === 0 ? (
-                                  <div className="flex items-center justify-center py-8 text-sm text-gray-400">
-                                    No subcategories match &ldquo;
-                                    {aiSubcategorySearch}&rdquo;
-                                  </div>
-                                ) : (
-                                  list.map((s) => {
-                                    const selected =
-                                      aiContextData.subcategoryId === s.id;
-                                    return (
-                                      <button
-                                        key={s.id}
-                                        type="button"
-                                        onClick={() =>
-                                          setAiContextData((prev) => ({
-                                            ...prev,
-                                            subcategoryId: s.id,
-                                          }))
-                                        }
-                                        className={cn(
-                                          'flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors',
-                                          selected
-                                            ? 'bg-purple-50 ring-1 ring-purple-300'
-                                            : 'hover:bg-gray-50'
-                                        )}
-                                      >
-                                        <div className="min-w-0 flex-1">
-                                          <p
-                                            className={cn(
-                                              'truncate text-sm font-medium',
-                                              selected
-                                                ? 'text-purple-700'
-                                                : 'text-gray-900'
-                                            )}
-                                          >
-                                            {s.name}
-                                          </p>
-                                          {s.parentName && (
-                                            <p className="truncate text-xs text-gray-400">
-                                              {s.parentName}
-                                            </p>
-                                          )}
-                                        </div>
-                                        {selected && (
-                                          <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-purple-500 text-white">
-                                            <PiCheckBold className="h-3 w-3" />
-                                          </span>
-                                        )}
-                                      </button>
-                                    );
-                                  })
-                                )}
-                              </div>
-                            );
+                                ).length
+                              : contextSubcategories.length;
+                            return `${count} subcategor${count === 1 ? 'y' : 'ies'}`;
                           })()}
-                          <p className="text-[11px] text-gray-400">
-                            {(() => {
-                              const q = aiSubcategorySearch
-                                .trim()
-                                .toLowerCase();
-                              const count = q
-                                ? contextSubcategories.filter((s) =>
-                                    `${s.name} ${s.parentName || ''}`
-                                      .toLowerCase()
-                                      .includes(q)
-                                  ).length
-                                : contextSubcategories.length;
-                              return `${count} subcategor${count === 1 ? 'y' : 'ies'}`;
-                            })()}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Brand Picker */}
                 {aiActiveTarget === 'brand' && (
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-gray-500">
-                        Select Brand
-                      </label>
-                      {isLoadingContext ? (
-                        <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-500">
-                          <PiSpinnerBold className="h-4 w-4 animate-spin" />{' '}
-                          Loading brands...
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-500">
+                      Select Brand
+                    </label>
+                    {isLoadingContext ? (
+                      <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-500">
+                        <PiSpinnerBold className="h-4 w-4 animate-spin" />{' '}
+                        Loading brands...
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {/* Search input */}
+                        <div className="relative">
+                          <PiMagnifyingGlass className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                          <input
+                            type="text"
+                            autoFocus
+                            value={aiBrandSearch}
+                            onChange={(e) => setAiBrandSearch(e.target.value)}
+                            placeholder="Search brands..."
+                            className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm placeholder-gray-400 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+                          />
+                          {aiBrandSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setAiBrandSearch('')}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                            >
+                              <PiX className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {/* Search input */}
-                          <div className="relative">
-                            <PiMagnifyingGlass className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                            <input
-                              type="text"
-                              autoFocus
-                              value={aiBrandSearch}
-                              onChange={(e) => setAiBrandSearch(e.target.value)}
-                              placeholder="Search brands..."
-                              className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm placeholder-gray-400 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
-                            />
-                            {aiBrandSearch && (
-                              <button
-                                type="button"
-                                onClick={() => setAiBrandSearch('')}
-                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
-                              >
-                                <PiX className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
 
-                          {/* Brand list */}
+                        {/* Brand list */}
+                        {(() => {
+                          const q = aiBrandSearch.trim().toLowerCase();
+                          const list = q
+                            ? contextBrands.filter((b) =>
+                                `${b.name} ${b.countryOfOrigin || ''}`
+                                  .toLowerCase()
+                                  .includes(q)
+                              )
+                            : contextBrands;
+                          return (
+                            <div className="max-h-48 divide-y divide-gray-50 overflow-y-auto rounded-lg border border-gray-200">
+                              {list.length === 0 ? (
+                                <div className="flex items-center justify-center py-8 text-sm text-gray-400">
+                                  No brands match &ldquo;{aiBrandSearch}
+                                  &rdquo;
+                                </div>
+                              ) : (
+                                list.map((b) => {
+                                  const selected =
+                                    aiContextData.brandId === b.id;
+                                  return (
+                                    <button
+                                      key={b.id}
+                                      type="button"
+                                      onClick={() =>
+                                        setAiContextData((prev) => ({
+                                          ...prev,
+                                          brandId: b.id,
+                                        }))
+                                      }
+                                      className={cn(
+                                        'flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors',
+                                        selected
+                                          ? 'bg-purple-50 ring-1 ring-purple-300'
+                                          : 'hover:bg-gray-50'
+                                      )}
+                                    >
+                                      {b.logo?.url ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                          src={b.logo.url}
+                                          alt={b.name}
+                                          className="h-8 w-8 flex-shrink-0 rounded-lg border border-gray-200 object-cover"
+                                        />
+                                      ) : (
+                                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-gray-100">
+                                          <PiStorefrontBold className="h-4 w-4 text-gray-400" />
+                                        </div>
+                                      )}
+                                      <div className="min-w-0 flex-1">
+                                        <p
+                                          className={cn(
+                                            'truncate text-sm font-medium',
+                                            selected
+                                              ? 'text-purple-700'
+                                              : 'text-gray-900'
+                                          )}
+                                        >
+                                          {b.name}
+                                        </p>
+                                        {b.countryOfOrigin && (
+                                          <p className="truncate text-xs text-gray-400">
+                                            {b.countryOfOrigin}
+                                          </p>
+                                        )}
+                                      </div>
+                                      {selected && (
+                                        <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-purple-500 text-white">
+                                          <PiCheckBold className="h-3 w-3" />
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                })
+                              )}
+                            </div>
+                          );
+                        })()}
+                        <p className="text-[11px] text-gray-400">
                           {(() => {
                             const q = aiBrandSearch.trim().toLowerCase();
-                            const list = q
+                            const count = q
                               ? contextBrands.filter((b) =>
                                   `${b.name} ${b.countryOfOrigin || ''}`
                                     .toLowerCase()
                                     .includes(q)
-                                )
-                              : contextBrands;
-                            return (
-                              <div className="max-h-48 divide-y divide-gray-50 overflow-y-auto rounded-lg border border-gray-200">
-                                {list.length === 0 ? (
-                                  <div className="flex items-center justify-center py-8 text-sm text-gray-400">
-                                    No brands match &ldquo;{aiBrandSearch}
-                                    &rdquo;
-                                  </div>
-                                ) : (
-                                  list.map((b) => {
-                                    const selected =
-                                      aiContextData.brandId === b.id;
-                                    return (
-                                      <button
-                                        key={b.id}
-                                        type="button"
-                                        onClick={() =>
-                                          setAiContextData((prev) => ({
-                                            ...prev,
-                                            brandId: b.id,
-                                          }))
-                                        }
-                                        className={cn(
-                                          'flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors',
-                                          selected
-                                            ? 'bg-purple-50 ring-1 ring-purple-300'
-                                            : 'hover:bg-gray-50'
-                                        )}
-                                      >
-                                        {b.logo?.url ? (
-                                          // eslint-disable-next-line @next/next/no-img-element
-                                          <img
-                                            src={b.logo.url}
-                                            alt={b.name}
-                                            className="h-8 w-8 flex-shrink-0 rounded-lg border border-gray-200 object-cover"
-                                          />
-                                        ) : (
-                                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-gray-100">
-                                            <PiStorefrontBold className="h-4 w-4 text-gray-400" />
-                                          </div>
-                                        )}
-                                        <div className="min-w-0 flex-1">
-                                          <p
-                                            className={cn(
-                                              'truncate text-sm font-medium',
-                                              selected
-                                                ? 'text-purple-700'
-                                                : 'text-gray-900'
-                                            )}
-                                          >
-                                            {b.name}
-                                          </p>
-                                          {b.countryOfOrigin && (
-                                            <p className="truncate text-xs text-gray-400">
-                                              {b.countryOfOrigin}
-                                            </p>
-                                          )}
-                                        </div>
-                                        {selected && (
-                                          <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-purple-500 text-white">
-                                            <PiCheckBold className="h-3 w-3" />
-                                          </span>
-                                        )}
-                                      </button>
-                                    );
-                                  })
-                                )}
-                              </div>
-                            );
+                                ).length
+                              : contextBrands.length;
+                            return `${count} brand${count === 1 ? '' : 's'}`;
                           })()}
-                          <p className="text-[11px] text-gray-400">
-                            {(() => {
-                              const q = aiBrandSearch.trim().toLowerCase();
-                              const count = q
-                                ? contextBrands.filter((b) =>
-                                    `${b.name} ${b.countryOfOrigin || ''}`
-                                      .toLowerCase()
-                                      .includes(q)
-                                  ).length
-                                : contextBrands.length;
-                              return `${count} brand${count === 1 ? '' : 's'}`;
-                            })()}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Placement & Type */}
                 <div className="grid gap-6 lg:grid-cols-2">
