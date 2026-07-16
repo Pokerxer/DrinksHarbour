@@ -52,6 +52,40 @@ async function fetchBrandProducts(brandName: string) {
   }
 }
 
+// ─── Text formatting ──────────────────────────────────────────────────────────
+// Brand copy is stored with HTML markup (<p>, <br>, entities). Convert it to
+// clean paragraph strings for rendering, metadata and JSON-LD.
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0?39;|&apos;|&rsquo;|&lsquo;/gi, "'")
+    .replace(/&ldquo;|&rdquo;/gi, '"')
+    .replace(/&ndash;|&mdash;/gi, '—')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
+}
+
+function toParagraphs(raw?: string): string[] {
+  if (!raw) return [];
+  const text = decodeEntities(
+    raw
+      .replace(/<\/(p|div|h[1-6]|li)>/gi, '\n')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+  );
+  return text
+    .split(/\n+/)
+    .map((s) => s.trim().replace(/\s+/g, ' '))
+    .filter(Boolean);
+}
+
+function plainText(raw?: string): string {
+  return toParagraphs(raw).join(' ');
+}
+
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 
 export async function generateMetadata({
@@ -75,9 +109,9 @@ export async function generateMetadata({
     brand.metaTitle ||
     `${brand.name} — Buy ${brand.name} Drinks Online in Nigeria`;
   const description = (
-    brand.metaDescription ||
-    brand.shortDescription ||
-    brand.description ||
+    plainText(brand.metaDescription) ||
+    plainText(brand.shortDescription) ||
+    plainText(brand.description) ||
     `Shop authentic ${brand.name} drinks on DrinksHarbour with fast delivery across Nigeria.${brand.tagline ? ` ${brand.tagline}.` : ''}`
   ).slice(0, 160);
   const ogImage =
@@ -135,8 +169,11 @@ function buildJsonLd(brand: any, slug: string) {
     url,
     ...(brand.legalName ? { legalName: brand.legalName } : {}),
     ...(brand.logo?.url ? { logo: brand.logo.url } : {}),
-    ...(brand.description || brand.shortDescription
-      ? { description: brand.description || brand.shortDescription }
+    ...(plainText(brand.description) || plainText(brand.shortDescription)
+      ? {
+          description:
+            plainText(brand.description) || plainText(brand.shortDescription),
+        }
       : {}),
     ...(brand.tagline ? { slogan: brand.tagline } : {}),
     ...(sameAs.length ? { sameAs } : {}),
@@ -268,6 +305,12 @@ export default async function BrandPage({
   ) as [string, string][];
 
   const monogram = (brand.name || '?').charAt(0).toUpperCase();
+
+  const descriptionParas = toParagraphs(brand.description);
+  const aboutParas = descriptionParas.length
+    ? descriptionParas
+    : toParagraphs(brand.shortDescription);
+  const storyParas = toParagraphs(brand.story);
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -446,7 +489,7 @@ export default async function BrandPage({
 
       <div className="container mx-auto space-y-12 px-4 py-10 sm:py-14">
         {/* ── The house — about + story ─────────────────────────────────── */}
-        {(brand.description || brand.shortDescription || brand.story) && (
+        {(aboutParas.length > 0 || storyParas.length > 0) && (
           <section
             aria-labelledby="brand-about-heading"
             className="grid gap-8 lg:grid-cols-12"
@@ -523,21 +566,33 @@ export default async function BrandPage({
             </div>
 
             <div className="space-y-6 lg:col-span-8">
-              {(brand.description || brand.shortDescription) && (
-                <p
-                  className={`${fraunces.className} bp-dropcap whitespace-pre-line text-lg leading-relaxed text-gray-700`}
-                >
-                  {brand.description || brand.shortDescription}
-                </p>
+              {aboutParas.length > 0 && (
+                <div className="space-y-4">
+                  {/* Lead paragraph — serif with drop cap */}
+                  <p
+                    className={`${fraunces.className} bp-dropcap text-lg leading-relaxed text-gray-700`}
+                  >
+                    {aboutParas[0]}
+                  </p>
+                  {aboutParas.slice(1).map((para, i) => (
+                    <p key={i} className="text-[15px] leading-7 text-gray-600">
+                      {para}
+                    </p>
+                  ))}
+                </div>
               )}
-              {brand.story && (
+              {storyParas.length > 0 && (
                 <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-8">
                   <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">
                     Our story
                   </p>
-                  <p className="whitespace-pre-line text-sm leading-7 text-gray-600">
-                    {brand.story}
-                  </p>
+                  <div className="space-y-3">
+                    {storyParas.map((para, i) => (
+                      <p key={i} className="text-sm leading-7 text-gray-600">
+                        {para}
+                      </p>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
