@@ -171,6 +171,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     }));
 
+  // Subcategory detail pages — alongside (never replacing) the combined
+  // /shop?category=&subcategory= filter URLs above. Same productCount>0
+  // gate so we don't advertise thin pages.
+  const subcategoryDetailPages: MetadataRoute.Sitemap = subcats
+    .filter((s) => s.productCount > 0)
+    .map((s) => ({
+      url: `${BASE_URL}/categories/${s.parentSlug}/${s.slug}`,
+      lastModified: new Date(),
+      changeFrequency: "weekly" as const,
+      priority: 0.7,
+    }));
+
   // Category detail pages — alongside (never replacing) the /shop?category=
   // filter URLs above.
   const categoryDetailPages: MetadataRoute.Sitemap = categorySlugs.map(
@@ -210,6 +222,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...categoryPages,
     ...categoryDetailPages,
     ...subcategoryPages,
+    ...subcategoryDetailPages,
     ...brandPages,
     ...productPages,
     ...blogPages,

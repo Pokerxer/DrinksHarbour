@@ -606,7 +606,7 @@ export default async function CategoryPage({
                     {subcategories.map((s: any) => (
                       <Link
                         key={s.slug}
-                        href={`/shop?category=${encodeURIComponent(category.slug)}&subcategory=${encodeURIComponent(s.slug)}`}
+                        href={`/categories/${category.slug}/${s.slug}`}
                         className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium capitalize text-gray-600 transition hover:border-gray-400 hover:text-gray-900"
                       >
                         {s.name}

@@ -908,6 +908,23 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                     )}
                   </div>
                 )}
+                {productData.subCategory?.name && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500 flex items-center gap-2">
+                      <Icon.PiTag size={14} /> Style
+                    </span>
+                    {productData.subCategory?.slug && productData.category?.slug ? (
+                      <Link
+                        href={`/categories/${productData.category.slug}/${productData.subCategory.slug}`}
+                        className="font-medium text-gray-900 transition-colors hover:underline"
+                      >
+                        {productData.subCategory.name}
+                      </Link>
+                    ) : (
+                      <span className="font-medium text-gray-900">{productData.subCategory.name}</span>
+                    )}
+                  </div>
+                )}
                 {productData.originCountry && (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500 flex items-center gap-2">
