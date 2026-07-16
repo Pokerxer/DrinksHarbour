@@ -245,8 +245,8 @@ function buildJsonLd(category: any, slug: string, products: any[]) {
       {
         '@type': 'ListItem',
         position: 2,
-        name: 'Shop',
-        item: `${BASE_URL}/shop`,
+        name: 'Categories',
+        item: `${BASE_URL}/categories`,
       },
       { '@type': 'ListItem', position: 3, name, item: url },
     ],
@@ -466,8 +466,11 @@ export default async function CategoryPage({
               </li>
               <li aria-hidden="true">/</li>
               <li>
-                <Link href="/shop" className="transition hover:text-white">
-                  Shop
+                <Link
+                  href="/categories"
+                  className="transition hover:text-white"
+                >
+                  Categories
                 </Link>
               </li>
               <li aria-hidden="true">/</li>
@@ -720,11 +723,11 @@ export default async function CategoryPage({
                 </h2>
               </div>
               <Link
-                href="/shop"
+                href="/categories"
                 className="inline-flex flex-shrink-0 items-center gap-1 text-sm font-semibold hover:underline"
                 style={{ color: primary }}
               >
-                All drinks
+                All categories
                 <Icon.PiArrowRightBold className="h-3.5 w-3.5" />
               </Link>
             </div>
