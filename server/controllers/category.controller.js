@@ -22,7 +22,7 @@ const getCategories = asyncHandler(async (req, res) => {
   const query = { status };
 
   const categories = await Category.find(query)
-    .select('name slug type description shortDescription tagline icon color featuredImage bannerImage thumbnailImage isFeatured isTrending isPopular displayOrder parent level metaTitle metaDescription metaKeywords')
+    .select('name slug displayName type subType alcoholCategory description shortDescription tagline icon color featuredImage bannerImage thumbnailImage isFeatured isTrending isPopular displayOrder parent level metaTitle metaDescription metaKeywords')
     .sort({ order: 1, name: 1 })
     .lean();
 
