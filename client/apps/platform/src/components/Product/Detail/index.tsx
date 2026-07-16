@@ -896,7 +896,16 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                     <span className="text-gray-500 flex items-center gap-2">
                       <Icon.PiTag size={14} /> Category
                     </span>
-                    <span className="font-medium text-gray-900">{productData.category.name || productData.category}</span>
+                    {productData.category?.slug ? (
+                      <Link
+                        href={`/categories/${productData.category.slug}`}
+                        className="font-medium text-gray-900 transition-colors hover:underline"
+                      >
+                        {productData.category.name}
+                      </Link>
+                    ) : (
+                      <span className="font-medium text-gray-900">{productData.category.name || productData.category}</span>
+                    )}
                   </div>
                 )}
                 {productData.originCountry && (
