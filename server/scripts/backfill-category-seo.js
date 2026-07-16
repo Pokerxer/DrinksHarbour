@@ -24,6 +24,7 @@ const mongoose = require('mongoose');
 const Anthropic = require('@anthropic-ai/sdk');
 const Category = require('../models/Category');
 const SubCategory = require('../models/SubCategory');
+const Brand = require('../models/Brand'); // registers ref for populate
 const Product = require('../models/Product');
 
 const MODEL = 'claude-haiku-4-5';

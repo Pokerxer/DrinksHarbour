@@ -1,4 +1,5 @@
 const SubCategory = require('../models/SubCategory');
+const Category = require('../models/Category'); // registers ref for populate
 const Product = require('../models/Product');
 const asyncHandler = require('../utils/asyncHandler');
 const cloudinaryService = require('../services/cloudinary.service');
@@ -540,6 +541,102 @@ function slugifyName(str) {
     .replace(/-+/g, '-');
 }
 
+// Build a catalog of real, linkable pages for a subcategory so the AI can
+// weave contextual internal links instead of inventing URLs (same approach as
+// the blog and category generators). Subcategory copy links to DETAIL pages —
+// /product/slug first (a subcategory is a leaf hub for its bottles), then the
+// parent category and sibling styles, then /brands/slug.
+async function buildSubCategoryLinkCatalog(name, parentName) {
+  const empty = { products: [], siblings: [], brands: new Map(), parentSlug: '', parentName: parentName || '', allowed: new Set() };
+  try {
+    const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const sub = await SubCategory.findOne({ name: new RegExp(`^${esc(name)}$`, 'i') })
+      .select('slug parent')
+      .populate('parent', 'name slug')
+      .lean();
+
+    const baseFilter = { status: 'approved', isPublished: true };
+    const projection = { name: 1, slug: 1, brand: 1 };
+    let products = [];
+    if (sub) {
+      products = await Product.find({ ...baseFilter, subCategory: sub._id }, projection)
+        .sort({ createdAt: -1 })
+        .limit(12)
+        .populate('brand', 'name slug')
+        .lean();
+    }
+    // Text-search fallback for brand-new subcategories with no linked products yet.
+    if (products.length < 6) {
+      try {
+        const seen = new Set(products.map((p) => String(p._id)));
+        const extra = await Product.find(
+          { ...baseFilter, $text: { $search: String(name) } },
+          { ...projection, score: { $meta: 'textScore' } }
+        )
+          .sort({ score: { $meta: 'textScore' } })
+          .limit(12)
+          .populate('brand', 'name slug')
+          .lean();
+        products = products.concat(extra.filter((p) => !seen.has(String(p._id))));
+      } catch (_) {
+        /* keep whatever we have */
+      }
+    }
+    products = products.filter((p) => p && p.slug && p.name).slice(0, 12);
+
+    let siblings = [];
+    const parentSlug = sub?.parent?.slug || '';
+    if (sub?.parent?._id) {
+      siblings = await SubCategory.find({ parent: sub.parent._id, status: 'published', _id: { $ne: sub._id } })
+        .select('name slug')
+        .sort({ productCount: -1, name: 1 })
+        .limit(8)
+        .lean();
+    }
+
+    const brands = new Map();
+    products.forEach((p) => {
+      if (p.brand?.slug && !brands.has(p.brand.slug)) brands.set(p.brand.slug, p.brand.name);
+    });
+
+    const allowed = new Set();
+    products.forEach((p) => allowed.add(`/product/${p.slug}`));
+    brands.forEach((_n, slug) => allowed.add(`/brands/${slug}`));
+    if (parentSlug) {
+      allowed.add(`/categories/${parentSlug}`);
+      siblings.forEach((s) => allowed.add(`/categories/${parentSlug}/${s.slug}`));
+    }
+
+    return { products, siblings, brands, parentSlug, parentName: sub?.parent?.name || parentName || '', allowed };
+  } catch (_) {
+    return empty;
+  }
+}
+
+function subCategoryCatalogToPrompt({ products, siblings, brands, parentSlug, parentName }) {
+  if (!products.length && !siblings.length && !parentSlug) return '';
+  const parentLine = parentSlug ? `- "${parentName}" (parent category) → /categories/${parentSlug}` : '';
+  const siblingLines = siblings.map((s) => `- "${s.name}" → /categories/${parentSlug}/${s.slug}`).join('\n');
+  const productLines = products.map((p) => `- "${p.name}" → /product/${p.slug}`).join('\n');
+  const brandLines = [...brands.entries()].map(([slug, n]) => `- "${n}" → /brands/${slug}`).join('\n');
+
+  return `
+
+INTERNAL LINKING: inside the description HTML, weave 3-6 contextual internal links as <a href="/path">natural anchor words</a>. Rules:
+- Use ONLY links from the approved catalog below. NEVER invent a URL or slug.
+- The anchor must be natural words inside a sentence, never the raw slug.
+- Link each target at most once. Prefer standout products, then the parent category and sibling styles, then brands.${parentLine ? `\n\nApproved category links:\n${parentLine}` : ''}${siblingLines ? `\n\nApproved sibling style links:\n${siblingLines}` : ''}${productLines ? `\n\nApproved product links:\n${productLines}` : ''}${brandLines ? `\n\nApproved brand links:\n${brandLines}` : ''}`;
+}
+
+// Strip <a> tags whose href isn't in the approved set, keeping the anchor text
+// (prevents 404s from hallucinated slugs).
+function stripUnapprovedLinks(html, allowed) {
+  return String(html || '').replace(
+    /<a\s[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi,
+    (match, href, text) => (allowed.has(href) ? match : text)
+  );
+}
+
 const fillWithAI = asyncHandler(async (req, res) => {
   const { name, type, parentName } = req.body;
 
@@ -551,6 +648,7 @@ const fillWithAI = asyncHandler(async (req, res) => {
   }
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const catalog = await buildSubCategoryLinkCatalog(name, parentName);
 
   const system =
     'You are a content assistant for DrinksHarbour, Nigeria\'s premier online premium beverages store. ' +
@@ -566,7 +664,7 @@ Return a JSON object with exactly these keys:
   "displayName": "display-friendly name, plural if appropriate (max 120 chars)",
   "tagline": "short punchy tagline that sells the subcategory (max 150 chars)",
   "shortDescription": "2 sentences for listings and cards (max 280 chars)",
-  "description": "3-4 compelling, informative paragraphs formatted as HTML using <p> tags only (max 1800 chars including tags)",
+  "description": "3-4 compelling, informative paragraphs formatted as HTML using <p> tags (plus inline <a> internal links per the linking rules below, if a catalog is provided) (max 1800 chars including tags)",
   "type": "the drink type this subcategory belongs to, e.g. whiskey, wine (max 100 chars)",
   "subType": "a more specific sub-type label, e.g. Single Malt, or '' (max 100 chars)",
   "style": "single best value from: ${SUBCATEGORY_STYLES.join(', ')}",
@@ -583,7 +681,7 @@ Return a JSON object with exactly these keys:
   "icon": "single most relevant emoji"
 }
 
-For the four seasonal booleans, set true only for seasons this subcategory is especially suited to (e.g. stouts in winter, rosé in summer); all false if not seasonal.`;
+For the four seasonal booleans, set true only for seasons this subcategory is especially suited to (e.g. stouts in winter, rosé in summer); all false if not seasonal.${subCategoryCatalogToPrompt(catalog)}`;
 
   const response = await anthropic.messages.create({
     model: AI_FILL_MODEL,
@@ -611,7 +709,7 @@ For the four seasonal booleans, set true only for seasons this subcategory is es
     displayName: aiStr(json.displayName, 120),
     tagline: aiStr(json.tagline, 150),
     shortDescription: aiStr(json.shortDescription, 280),
-    description: aiStr(json.description, 2000),
+    description: aiStr(stripUnapprovedLinks(json.description, catalog.allowed), 2000),
     type: aiStr(json.type, 100),
     subType: aiStr(json.subType, 100),
     style: SUBCATEGORY_STYLES.includes(json.style) ? json.style : '',
@@ -624,7 +722,9 @@ For the four seasonal booleans, set true only for seasons this subcategory is es
     metaTitle: aiStr(json.metaTitle, 100),
     metaDescription: aiStr(json.metaDescription, 320),
     metaKeywords: aiStr(json.metaKeywords, 500),
-    canonicalUrl: `https://drinksharbour.com/shop/${slugifyName(name)}`,
+    canonicalUrl: (catalog.parentSlug || parentName)
+      ? `https://www.drinksharbour.com/categories/${catalog.parentSlug || slugifyName(parentName)}/${slugifyName(name)}`
+      : `https://www.drinksharbour.com/shop?subcategory=${slugifyName(name)}`,
     color: HEX_RE.test(aiStr(json.color, 7)) ? aiStr(json.color, 7) : '',
     icon: aiStr(json.icon, 20),
   };

@@ -24,6 +24,7 @@ const mongoose = require('mongoose');
 const Anthropic = require('@anthropic-ai/sdk');
 const SubCategory = require('../models/SubCategory');
 const Category = require('../models/Category'); // registers ref for populate
+const Brand = require('../models/Brand'); // registers ref for populate
 const Product = require('../models/Product');
 
 const MODEL = 'claude-haiku-4-5';
@@ -44,6 +45,31 @@ const FIELDS = {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const clamp = (v, max) => (v === undefined || v === null ? '' : String(v).trim().slice(0, max));
 
+// Strip <a> tags whose href isn't in the approved set, keeping the anchor text
+// (prevents 404s from hallucinated slugs). Mirrors the ai-fill endpoint.
+function stripUnapprovedLinks(html, allowed) {
+  return String(html || '').replace(
+    /<a\s[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi,
+    (match, href, text) => (allowed.has(href) ? match : text)
+  );
+}
+
+// Internal-link catalog: detail pages only (/product, parent /categories/cat,
+// sibling /categories/cat/sub, /brands) — the self-canonical SEO pages.
+function linksBlock({ products, siblings, brands, parentSlug, parentName }) {
+  if (!products.length && !siblings.length && !parentSlug) return '';
+  const parentLine = parentSlug ? `- "${parentName}" (parent category) → /categories/${parentSlug}` : '';
+  const siblingLines = siblings.map((s) => `- "${s.name}" → /categories/${parentSlug}/${s.slug}`).join('\n');
+  const productLines = products.map((p) => `- "${p.name}" → /product/${p.slug}`).join('\n');
+  const brandLines = [...brands.entries()].map(([slug, n]) => `- "${n}" → /brands/${slug}`).join('\n');
+  return `
+
+INTERNAL LINKING: inside the description HTML, weave 3-6 contextual internal links as <a href="/path">natural anchor words</a>. Rules:
+- Use ONLY links from the approved catalog below. NEVER invent a URL or slug.
+- The anchor must be natural words inside a sentence, never the raw slug.
+- Link each target at most once. Prefer standout products, then the parent category and sibling styles, then brands.${parentLine ? `\n\nApproved category links:\n${parentLine}` : ''}${siblingLines ? `\n\nApproved sibling style links:\n${siblingLines}` : ''}${productLines ? `\n\nApproved product links:\n${productLines}` : ''}${brandLines ? `\n\nApproved brand links:\n${brandLines}` : ''}`;
+}
+
 function missingFields(sub) {
   const missing = Object.keys(FIELDS).filter((f) => !String(sub[f] || '').trim());
   if (!Array.isArray(sub.metaKeywords) || sub.metaKeywords.length === 0) {
@@ -52,7 +78,7 @@ function missingFields(sub) {
   return missing;
 }
 
-function buildPrompt(sub, missing, productNames) {
+function buildPrompt(sub, missing, productNames, links) {
   const known = [
     `Name: "${sub.name}"`,
     sub.parent?.name && `Parent category: ${sub.parent.name}`,
@@ -69,7 +95,7 @@ function buildPrompt(sub, missing, productNames) {
     tagline: '"short punchy tagline that sells the subcategory (max 150 chars)"',
     shortDescription: '"2 compelling sentences for listings and cards (max 280 chars)"',
     description:
-      '"3-4 compelling, informative paragraphs about the subcategory — what defines the style, how it differs within its parent category, how it is enjoyed, why buy it here — formatted as HTML using <p> tags only (max 1800 chars including tags)"',
+      '"3-4 compelling, informative paragraphs about the subcategory — what defines the style, how it differs within its parent category, how it is enjoyed, why buy it here — formatted as HTML using <p> tags (plus inline <a> internal links per the linking rules below, if a catalog is provided) (max 1800 chars including tags)"',
     metaTitle: '"SEO page title targeting buyers in Nigeria, e.g. subcategory + buy online Nigeria (max 100 chars)"',
     metaDescription: '"SEO meta description for the subcategory page, Nigeria market (max 320 chars)"',
     metaKeywords: '"8-12 comma-separated search keywords relevant to this subcategory in Nigeria"',
@@ -87,7 +113,7 @@ Use your real knowledge of this drinks style. Where a fact is genuinely unknown,
 Return a JSON object with exactly these keys:
 {
 ${keys}
-}`;
+}${links || ''}`;
 }
 
 async function main() {
@@ -118,9 +144,34 @@ async function main() {
       continue;
     }
 
-    const productNames = (
-      await Product.find({ subCategory: sub._id }).select('name').sort({ createdAt: -1 }).limit(8).lean()
-    ).map((p) => p.name);
+    const products = (
+      await Product.find({ subCategory: sub._id, status: 'approved', isPublished: true })
+        .select('name slug brand')
+        .sort({ createdAt: -1 })
+        .limit(12)
+        .populate('brand', 'name slug')
+        .lean()
+    ).filter((p) => p.name && p.slug);
+    const productNames = products.slice(0, 8).map((p) => p.name);
+    const parentSlug = sub.parent?.slug || '';
+    const siblings = sub.parent?._id
+      ? await SubCategory.find({ parent: sub.parent._id, status: 'published', _id: { $ne: sub._id } })
+          .select('name slug')
+          .sort({ productCount: -1, name: 1 })
+          .limit(8)
+          .lean()
+      : [];
+    const brands = new Map();
+    products.forEach((p) => {
+      if (p.brand?.slug && !brands.has(p.brand.slug)) brands.set(p.brand.slug, p.brand.name);
+    });
+    const allowed = new Set([
+      ...products.map((p) => `/product/${p.slug}`),
+      ...[...brands.keys()].map((slug) => `/brands/${slug}`),
+      ...(parentSlug ? [`/categories/${parentSlug}`] : []),
+      ...(parentSlug ? siblings.map((s) => `/categories/${parentSlug}/${s.slug}`) : []),
+    ]);
+    const links = linksBlock({ products, siblings, brands, parentSlug, parentName: sub.parent?.name || '' });
 
     try {
       const response = await anthropic.messages.create({
@@ -129,7 +180,7 @@ async function main() {
         system:
           "You are a content assistant for DrinksHarbour, Nigeria's premier online premium beverages store. " +
           "You know the world's drinks styles well. Respond with ONLY a single valid JSON object — no prose, no markdown fences.",
-        messages: [{ role: 'user', content: buildPrompt(sub, missing, productNames) }],
+        messages: [{ role: 'user', content: buildPrompt(sub, missing, productNames, links) }],
       });
 
       const raw = (response.content || []).map((c) => c.text || '').join('');
@@ -148,7 +199,8 @@ async function main() {
             .slice(0, 12);
           if (kw.length) $set.metaKeywords = kw;
         } else {
-          const v = clamp(json[f], FIELDS[f]);
+          const raw = f === 'description' ? stripUnapprovedLinks(json[f], allowed) : json[f];
+          const v = clamp(raw, FIELDS[f]);
           if (v) $set[f] = v;
         }
       }
