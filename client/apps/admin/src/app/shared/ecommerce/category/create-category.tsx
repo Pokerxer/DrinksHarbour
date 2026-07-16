@@ -186,6 +186,27 @@ function ImagePicker({
   );
 }
 
+// ─── AiFieldButton ───────────────────────────────────────────────────────────
+// Small per-field "Generate" trigger, like the blog editor's regenerate buttons.
+
+function AiFieldButton({ loading, onClick }: { loading: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        onClick();
+      }}
+      disabled={loading}
+      title="Generate this field with AI"
+      className="inline-flex flex-shrink-0 items-center gap-1 rounded-md border border-violet-200 px-1.5 py-0.5 text-[11px] font-medium text-violet-600 transition hover:bg-violet-50 disabled:opacity-50"
+    >
+      <span>{loading ? '⏳' : '✨'}</span>
+      {loading ? 'Generating…' : 'Generate'}
+    </button>
+  );
+}
+
 // ─── VisibilityToggle ─────────────────────────────────────────────────────────
 
 function VisibilityToggle({
@@ -243,7 +264,40 @@ export default function CreateCategory({
   ]);
   const slugManuallyEdited = useRef(false);
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiField, setAiField] = useState<string | null>(null);
   const [aiSuggestions, setAiSuggestions] = useState<Record<string, string> | null>(null);
+
+  // Generate a single field via the same ai-fill endpoint and apply only it.
+  async function generateSingleField(
+    field: string,
+    name: string,
+    type: string,
+    alcoholCategory: string,
+    setValue: (k: any, v: any, opts?: any) => void
+  ) {
+    if (!name?.trim()) {
+      toast.error('Enter a category name first');
+      return;
+    }
+    setAiField(field);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/categories/admin/ai-fill`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name, type, alcoholCategory }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.message);
+      const v = json.data?.[field];
+      if (!v) throw new Error('AI returned nothing for this field');
+      setValue(field, v, { shouldValidate: true, shouldDirty: true });
+      toast.success('Field generated');
+    } catch (err: any) {
+      toast.error(err.message || 'AI generation failed');
+    } finally {
+      setAiField(null);
+    }
+  }
 
   async function triggerAiFill(name: string, type: string, alcoholCategory: string) {
     if (!name.trim()) { toast.error('Enter a category name first'); return; }
@@ -358,10 +412,22 @@ export default function CreateCategory({
       }}
       className="isomorphic-form flex flex-grow flex-col @container"
     >
-      {({ register, control, watch, setValue, formState: { errors } }) => {
+      {({ register, control, watch, setValue, formState: { errors, submitCount } }) => {
         const nameValue = watch('name');
         const colorValue = watch('color') || '#6B7280';
         const shortDescValue = watch('shortDescription') || '';
+        const descValue = watch('description') || '';
+        const gen = (field: string) =>
+          generateSingleField(field, watch('name'), watch('type'), watch('alcoholCategory') || 'alcoholic', setValue);
+
+        // Surface WHY a submit was refused — fields without a visible error
+        // slot (e.g. the Quill description) previously failed silently.
+        // eslint-disable-next-line react-hooks/rules-of-hooks
+        useEffect(() => {
+          if (!submitCount || Object.keys(errors).length === 0) return;
+          const [k, v] = Object.entries(errors)[0] as any;
+          toast.error(`Cannot save — ${k}: ${v?.message || 'invalid value'}`);
+        }, [submitCount]);
 
         // Auto-generate slug from name unless manually edited
         // eslint-disable-next-line react-hooks/rules-of-hooks
@@ -556,7 +622,12 @@ export default function CreateCategory({
                     </Text>
                   </div>
                   <Input
-                    label="Tagline"
+                    label={
+                      <span className="flex w-full items-center justify-between">
+                        Tagline
+                        <AiFieldButton loading={aiField === 'tagline'} onClick={() => gen('tagline')} />
+                      </span>
+                    }
                     placeholder="e.g. The finest single malts from Scotland"
                     {...register('tagline')}
                     error={errors.tagline?.message}
@@ -644,10 +715,16 @@ export default function CreateCategory({
                 <Title as="h5" className="mb-5 font-semibold text-gray-800">Description</Title>
                 <div className="space-y-4">
                   <div>
-                    <Text className="mb-1.5 block text-sm font-medium text-gray-700">
-                      Short Description{' '}
-                      <span className="font-normal text-gray-400">({shortDescValue.length}/280)</span>
-                    </Text>
+                    <div className="mb-1.5 flex items-center justify-between">
+                      <Text className="block text-sm font-medium text-gray-700">
+                        Short Description{' '}
+                        <span className="font-normal text-gray-400">({shortDescValue.length}/280)</span>
+                      </Text>
+                      <AiFieldButton
+                        loading={aiField === 'shortDescription'}
+                        onClick={() => gen('shortDescription')}
+                      />
+                    </div>
                     <textarea
                       {...register('shortDescription')}
                       placeholder="A brief summary shown in listings and cards…"
@@ -660,7 +737,23 @@ export default function CreateCategory({
                     )}
                   </div>
                   <div>
-                    <Text className="mb-1.5 block text-sm font-medium text-gray-700">Full Description</Text>
+                    <div className="mb-1.5 flex items-center justify-between">
+                      <Text className="block text-sm font-medium text-gray-700">
+                        Full Description{' '}
+                        <span
+                          className={cn(
+                            'font-normal',
+                            descValue.length > 2000 ? 'text-red-500' : 'text-gray-400'
+                          )}
+                        >
+                          ({descValue.length}/2000)
+                        </span>
+                      </Text>
+                      <AiFieldButton
+                        loading={aiField === 'description'}
+                        onClick={() => gen('description')}
+                      />
+                    </div>
                     <Controller
                       control={control}
                       name="description"
@@ -673,6 +766,11 @@ export default function CreateCategory({
                         />
                       )}
                     />
+                    {errors.description?.message && (
+                      <Text className="mt-1 text-xs text-red-500">
+                        {errors.description.message} — the editor adds HTML markup, trim the text to fit.
+                      </Text>
+                    )}
                   </div>
                 </div>
               </div>
@@ -685,13 +783,24 @@ export default function CreateCategory({
                 </Text>
                 <div className="space-y-4">
                   <Input
-                    label="Meta Title"
+                    label={
+                      <span className="flex w-full items-center justify-between">
+                        Meta Title
+                        <AiFieldButton loading={aiField === 'metaTitle'} onClick={() => gen('metaTitle')} />
+                      </span>
+                    }
                     placeholder="e.g. Buy Single Malt Whisky Online | DrinksHarbour"
                     {...register('metaTitle')}
                     error={errors.metaTitle?.message}
                   />
                   <div>
-                    <Text className="mb-1.5 block text-sm font-medium text-gray-700">Meta Description</Text>
+                    <div className="mb-1.5 flex items-center justify-between">
+                      <Text className="block text-sm font-medium text-gray-700">Meta Description</Text>
+                      <AiFieldButton
+                        loading={aiField === 'metaDescription'}
+                        onClick={() => gen('metaDescription')}
+                      />
+                    </div>
                     <textarea
                       {...register('metaDescription')}
                       placeholder="A short description for search engines (up to 320 characters)…"
@@ -702,7 +811,15 @@ export default function CreateCategory({
                   </div>
                   <div>
                     <Input
-                      label="Meta Keywords"
+                      label={
+                        <span className="flex w-full items-center justify-between">
+                          Meta Keywords
+                          <AiFieldButton
+                            loading={aiField === 'metaKeywords'}
+                            onClick={() => gen('metaKeywords')}
+                          />
+                        </span>
+                      }
                       placeholder="e.g. whisky, scotch, single malt, premium spirits"
                       {...register('metaKeywords')}
                       error={errors.metaKeywords?.message}
