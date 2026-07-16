@@ -171,4 +171,18 @@ export const categoryService = {
     const result = await response.json();
     return result.data || [];
   },
+
+  async generateCategory(
+    body: { topic: string; parentName?: string },
+    token: string,
+  ): Promise<{ success: boolean; data: any }> {
+    const res = await fetch(`${API_URL}/api/categories/admin/ai/generate-category`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.message || 'AI generation failed');
+    return json;
+  },
 };
