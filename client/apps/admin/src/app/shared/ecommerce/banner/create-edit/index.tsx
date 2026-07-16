@@ -340,17 +340,53 @@ const PREVIEW_POS_CLS: Record<string, string> = {
 // Placement → preview aspect ratio + layout label (matches platform renders)
 const PLACEMENT_PREVIEW: Record<
   string,
-  { aspect: string; label: string; layout: 'hero' | 'compact' | 'footer' | 'sidebar' | 'bar' | 'modal' }
+  {
+    aspect: string;
+    label: string;
+    layout: 'hero' | 'compact' | 'footer' | 'sidebar' | 'bar' | 'modal';
+  }
 > = {
-  home_hero:      { aspect: 'aspect-[21/9]',  label: 'Home Hero — full-width carousel',      layout: 'hero' },
-  home_secondary: { aspect: 'aspect-[3/1]',   label: 'Home Secondary — promotional strip',    layout: 'hero' },
-  category_top:   { aspect: 'aspect-[21/9]',  label: 'Category Top — wide banner',            layout: 'hero' },
-  product_page:   { aspect: 'aspect-[21/9]',  label: 'Product Page — hero banner',            layout: 'hero' },
-  checkout:       { aspect: 'auto',           label: 'Checkout — compact inline strip',       layout: 'compact' },
-  sidebar:        { aspect: 'aspect-[3/4]',   label: 'Sidebar — vertical card',               layout: 'sidebar' },
-  footer:         { aspect: 'auto',           label: 'Footer — promo strip',                  layout: 'footer' },
-  popup:          { aspect: 'aspect-[4/3]',   label: 'Popup — modal overlay',                 layout: 'modal' },
-  header:         { aspect: 'auto',           label: 'Header — thin announcement bar',        layout: 'bar' },
+  home_hero: {
+    aspect: 'aspect-[21/9]',
+    label: 'Home Hero — full-width carousel',
+    layout: 'hero',
+  },
+  home_secondary: {
+    aspect: 'aspect-[3/1]',
+    label: 'Home Secondary — promotional strip',
+    layout: 'hero',
+  },
+  category_top: {
+    aspect: 'aspect-[21/9]',
+    label: 'Category Top — wide banner',
+    layout: 'hero',
+  },
+  product_page: {
+    aspect: 'aspect-[21/9]',
+    label: 'Product Page — hero banner',
+    layout: 'hero',
+  },
+  checkout: {
+    aspect: 'auto',
+    label: 'Checkout — compact inline strip',
+    layout: 'compact',
+  },
+  sidebar: {
+    aspect: 'aspect-[3/4]',
+    label: 'Sidebar — vertical card',
+    layout: 'sidebar',
+  },
+  footer: { aspect: 'auto', label: 'Footer — promo strip', layout: 'footer' },
+  popup: {
+    aspect: 'aspect-[4/3]',
+    label: 'Popup — modal overlay',
+    layout: 'modal',
+  },
+  header: {
+    aspect: 'auto',
+    label: 'Header — thin announcement bar',
+    layout: 'bar',
+  },
 };
 
 // Recommended type for each placement (for hint badges)
@@ -366,16 +402,173 @@ const PLACEMENT_TYPE_HINT: Record<string, string> = {
   header: 'announcement',
 };
 
+// Mini page schematic for a placement option: gray blocks sketch the page,
+// the purple block marks where this banner renders.
+function PlacementThumb({
+  placement,
+  selected,
+}: {
+  placement: string;
+  selected: boolean;
+}) {
+  const b = cn(
+    'rounded-[2px]',
+    selected ? 'bg-purple-500' : 'bg-purple-400/70'
+  );
+  const g = 'rounded-[2px] bg-gray-200';
+
+  const body = (() => {
+    switch (placement) {
+      case 'home_hero':
+        return (
+          <>
+            <div className={cn(g, 'h-1.5 flex-none')} />
+            <div className={cn(b, 'flex-1')} />
+            <div className="grid flex-none grid-cols-3 gap-0.5">
+              <div className={cn(g, 'h-3')} />
+              <div className={cn(g, 'h-3')} />
+              <div className={cn(g, 'h-3')} />
+            </div>
+          </>
+        );
+      case 'home_secondary':
+        return (
+          <>
+            <div className={cn(g, 'h-1.5 flex-none')} />
+            <div className={cn(g, 'h-4 flex-none')} />
+            <div className={cn(b, 'h-2.5 flex-none')} />
+            <div className="grid flex-1 grid-cols-3 gap-0.5">
+              <div className={g} />
+              <div className={g} />
+              <div className={g} />
+            </div>
+          </>
+        );
+      case 'category_top':
+        return (
+          <>
+            <div className={cn(g, 'h-1.5 flex-none')} />
+            <div className={cn(b, 'h-4 flex-none')} />
+            <div className="grid flex-1 grid-cols-4 gap-0.5">
+              <div className={g} />
+              <div className={g} />
+              <div className={g} />
+              <div className={g} />
+            </div>
+          </>
+        );
+      case 'product_page':
+        return (
+          <>
+            <div className={cn(g, 'h-1.5 flex-none')} />
+            <div className={cn(b, 'h-3.5 flex-none')} />
+            <div className="flex flex-1 gap-0.5">
+              <div className={cn(g, 'w-1/3')} />
+              <div className="flex flex-1 flex-col gap-0.5">
+                <div className={cn(g, 'h-1.5 w-3/4')} />
+                <div className={cn(g, 'h-1.5')} />
+                <div className={cn(g, 'h-1.5 w-1/2')} />
+              </div>
+            </div>
+          </>
+        );
+      case 'checkout':
+        return (
+          <>
+            <div className={cn(g, 'h-1.5 flex-none')} />
+            <div className={cn(g, 'h-1.5 w-2/3 flex-none')} />
+            <div className={cn(g, 'h-1.5 w-3/4 flex-none')} />
+            <div className={cn(b, 'h-2.5 flex-none')} />
+            <div className="flex flex-1 items-end justify-end">
+              <div className="h-2 w-1/3 rounded-[2px] bg-gray-300" />
+            </div>
+          </>
+        );
+      case 'sidebar':
+        return (
+          <>
+            <div className={cn(g, 'h-1.5 flex-none')} />
+            <div className="flex flex-1 gap-0.5">
+              <div className="flex flex-1 flex-col gap-0.5">
+                <div className={cn(g, 'flex-1')} />
+                <div className={cn(g, 'h-1.5 w-2/3 flex-none')} />
+              </div>
+              <div className={cn(b, 'w-1/4')} />
+            </div>
+          </>
+        );
+      case 'footer':
+        return (
+          <>
+            <div className={cn(g, 'h-1.5 flex-none')} />
+            <div className="grid flex-1 grid-cols-3 gap-0.5">
+              <div className={g} />
+              <div className={g} />
+              <div className={g} />
+            </div>
+            <div className={cn(b, 'h-2.5 flex-none')} />
+          </>
+        );
+      case 'popup':
+        return (
+          <>
+            <div className="flex h-full flex-col gap-0.5 opacity-40">
+              <div className={cn(g, 'h-1.5 flex-none')} />
+              <div className="grid flex-1 grid-cols-3 gap-0.5">
+                <div className={g} />
+                <div className={g} />
+                <div className={g} />
+              </div>
+            </div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className={cn(b, 'h-3/5 w-3/5 rounded shadow-sm')} />
+            </div>
+          </>
+        );
+      case 'header':
+        return (
+          <>
+            <div className={cn(b, 'h-1.5 flex-none')} />
+            <div className={cn(g, 'h-2 flex-none')} />
+            <div className="grid flex-1 grid-cols-3 gap-0.5">
+              <div className={g} />
+              <div className={g} />
+              <div className={g} />
+            </div>
+          </>
+        );
+      default:
+        return <div className={cn(g, 'flex-1')} />;
+    }
+  })();
+
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        'relative mb-2 flex h-16 w-full flex-col gap-0.5 overflow-hidden rounded-md border p-1',
+        selected ? 'border-purple-200 bg-white' : 'border-gray-100 bg-gray-50'
+      )}
+    >
+      {body}
+    </div>
+  );
+}
+
 function BannerPreview({ formData }: { formData: BannerFormData }) {
-  const placement = PLACEMENT_PREVIEW[formData.placement] || PLACEMENT_PREVIEW.home_hero;
-  const posCls = PREVIEW_POS_CLS[formData.contentPosition] || PREVIEW_POS_CLS.center;
+  const placement =
+    PLACEMENT_PREVIEW[formData.placement] || PLACEMENT_PREVIEW.home_hero;
+  const posCls =
+    PREVIEW_POS_CLS[formData.contentPosition] || PREVIEW_POS_CLS.center;
   const ctaCls = PREVIEW_CTA_CLS[formData.ctaStyle] || PREVIEW_CTA_CLS.primary;
   const overlay = (formData.overlayOpacity || 0) / 100;
 
   // ─── Empty state ──────────────────────────────────────────────────────────
   if (!formData.image?.url) {
     return (
-      <div className={`flex ${placement.aspect || 'aspect-[3/1]'} items-center justify-center rounded-xl border-2 border-dashed border-gray-200 bg-gray-50`}>
+      <div
+        className={`flex ${placement.aspect || 'aspect-[3/1]'} items-center justify-center rounded-xl border-2 border-dashed border-gray-200 bg-gray-50`}
+      >
         <div className="text-center text-gray-400">
           <PiImageBold className="mx-auto mb-2 h-10 w-10" />
           <p className="text-sm">Upload an image to preview</p>
@@ -393,11 +586,19 @@ function BannerPreview({ formData }: { formData: BannerFormData }) {
           className="flex items-center justify-between gap-3 rounded-lg px-4 py-2.5"
           style={{ backgroundColor: formData.backgroundColor || '#7C1D1D' }}
         >
-          <p className="truncate text-sm font-bold" style={{ color: formData.textColor || '#fff' }}>
+          <p
+            className="truncate text-sm font-bold"
+            style={{ color: formData.textColor || '#fff' }}
+          >
             {formData.title || 'Announcement title'}
           </p>
           {formData.ctaText && (
-            <span className={cn('flex-shrink-0 rounded-lg px-3 py-1 text-xs font-bold', ctaCls)}>
+            <span
+              className={cn(
+                'flex-shrink-0 rounded-lg px-3 py-1 text-xs font-bold',
+                ctaCls
+              )}
+            >
               {formData.ctaText}
             </span>
           )}
@@ -416,19 +617,38 @@ function BannerPreview({ formData }: { formData: BannerFormData }) {
           style={{ backgroundColor: formData.backgroundColor || '#1A1A2E' }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={formData.image.url} alt="Preview" className="hidden h-12 w-20 flex-shrink-0 rounded-lg object-cover sm:block" />
+          <img
+            src={formData.image.url}
+            alt="Preview"
+            className="hidden h-12 w-20 flex-shrink-0 rounded-lg object-cover sm:block"
+          />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold" style={{ color: formData.textColor || '#fff' }}>
+            <p
+              className="truncate text-sm font-bold"
+              style={{ color: formData.textColor || '#fff' }}
+            >
               {formData.title || 'Banner title'}
             </p>
             {formData.subtitle && (
-              <p className="truncate text-xs" style={{ color: formData.textColor ? `${formData.textColor}b0` : 'rgba(255,255,255,0.7)' }}>
+              <p
+                className="truncate text-xs"
+                style={{
+                  color: formData.textColor
+                    ? `${formData.textColor}b0`
+                    : 'rgba(255,255,255,0.7)',
+                }}
+              >
                 {formData.subtitle}
               </p>
             )}
           </div>
           {formData.ctaText && (
-            <span className={cn('flex-shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold', ctaCls)}>
+            <span
+              className={cn(
+                'flex-shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold',
+                ctaCls
+              )}
+            >
               {formData.ctaText}
             </span>
           )}
@@ -447,20 +667,39 @@ function BannerPreview({ formData }: { formData: BannerFormData }) {
           style={{ backgroundColor: formData.backgroundColor || '#7C1D1D' }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={formData.image.url} alt="Preview" className="absolute inset-0 h-full w-full object-cover opacity-30" />
+          <img
+            src={formData.image.url}
+            alt="Preview"
+            className="absolute inset-0 h-full w-full object-cover opacity-30"
+          />
           <div className="relative flex flex-col items-center gap-3 p-5 text-center sm:flex-row sm:justify-between sm:text-left">
             <div className="min-w-0">
-              <p className="truncate text-base font-black" style={{ color: formData.textColor || '#fff' }}>
+              <p
+                className="truncate text-base font-black"
+                style={{ color: formData.textColor || '#fff' }}
+              >
                 {formData.title || 'Banner title'}
               </p>
               {formData.subtitle && (
-                <p className="truncate text-sm" style={{ color: formData.textColor ? `${formData.textColor}b0` : 'rgba(255,255,255,0.7)' }}>
+                <p
+                  className="truncate text-sm"
+                  style={{
+                    color: formData.textColor
+                      ? `${formData.textColor}b0`
+                      : 'rgba(255,255,255,0.7)',
+                  }}
+                >
                   {formData.subtitle}
                 </p>
               )}
             </div>
             {formData.ctaText && (
-              <span className={cn('flex-shrink-0 rounded-xl px-4 py-2 text-sm font-bold', ctaCls)}>
+              <span
+                className={cn(
+                  'flex-shrink-0 rounded-xl px-4 py-2 text-sm font-bold',
+                  ctaCls
+                )}
+              >
                 {formData.ctaText}
               </span>
             )}
@@ -475,21 +714,46 @@ function BannerPreview({ formData }: { formData: BannerFormData }) {
   if (placement.layout === 'sidebar') {
     return (
       <div className="space-y-2">
-        <div className="relative mx-auto aspect-[3/4] w-48 overflow-hidden rounded-xl border border-gray-200" style={{ backgroundColor: formData.backgroundColor }}>
+        <div
+          className="relative mx-auto aspect-[3/4] w-48 overflow-hidden rounded-xl border border-gray-200"
+          style={{ backgroundColor: formData.backgroundColor }}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={formData.image.url} alt="Preview" className="absolute inset-0 h-full w-full object-cover" />
-          {overlay > 0 && <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${overlay})` }} />}
-          <div className={cn('absolute inset-0 flex flex-col gap-1 p-3', posCls)}>
+          <img
+            src={formData.image.url}
+            alt="Preview"
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+          {overlay > 0 && (
+            <div
+              className="absolute inset-0"
+              style={{ backgroundColor: `rgba(0,0,0,${overlay})` }}
+            />
+          )}
+          <div
+            className={cn('absolute inset-0 flex flex-col gap-1 p-3', posCls)}
+          >
             {formData.subtitle && (
-              <p className="text-[10px] font-medium drop-shadow" style={{ color: formData.textColor }}>
+              <p
+                className="text-[10px] font-medium drop-shadow"
+                style={{ color: formData.textColor }}
+              >
                 {formData.subtitle}
               </p>
             )}
-            <p className="text-sm font-black leading-tight drop-shadow-lg" style={{ color: formData.textColor }}>
+            <p
+              className="text-sm font-black leading-tight drop-shadow-lg"
+              style={{ color: formData.textColor }}
+            >
               {formData.title || 'Title'}
             </p>
             {formData.ctaText && (
-              <span className={cn('mt-1 inline-flex w-fit rounded px-2 py-1 text-[10px] font-bold', ctaCls)}>
+              <span
+                className={cn(
+                  'mt-1 inline-flex w-fit rounded px-2 py-1 text-[10px] font-bold',
+                  ctaCls
+                )}
+              >
                 {formData.ctaText}
               </span>
             )}
@@ -505,21 +769,49 @@ function BannerPreview({ formData }: { formData: BannerFormData }) {
     return (
       <div className="space-y-2">
         <div className="relative rounded-xl border border-gray-200 bg-black/40 p-4">
-          <div className="relative mx-auto aspect-[4/3] w-full max-w-sm overflow-hidden rounded-xl border-2 border-white/20 shadow-2xl" style={{ backgroundColor: formData.backgroundColor }}>
+          <div
+            className="relative mx-auto aspect-[4/3] w-full max-w-sm overflow-hidden rounded-xl border-2 border-white/20 shadow-2xl"
+            style={{ backgroundColor: formData.backgroundColor }}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={formData.image.url} alt="Preview" className="absolute inset-0 h-full w-full object-cover" />
-            {overlay > 0 && <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${overlay})` }} />}
-            <div className={cn('absolute inset-0 flex flex-col gap-1.5 p-5', posCls)}>
+            <img
+              src={formData.image.url}
+              alt="Preview"
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            {overlay > 0 && (
+              <div
+                className="absolute inset-0"
+                style={{ backgroundColor: `rgba(0,0,0,${overlay})` }}
+              />
+            )}
+            <div
+              className={cn(
+                'absolute inset-0 flex flex-col gap-1.5 p-5',
+                posCls
+              )}
+            >
               {formData.subtitle && (
-                <p className="text-xs font-medium drop-shadow" style={{ color: formData.textColor }}>
+                <p
+                  className="text-xs font-medium drop-shadow"
+                  style={{ color: formData.textColor }}
+                >
                   {formData.subtitle}
                 </p>
               )}
-              <p className="text-lg font-black leading-tight drop-shadow-lg" style={{ color: formData.textColor }}>
+              <p
+                className="text-lg font-black leading-tight drop-shadow-lg"
+                style={{ color: formData.textColor }}
+              >
                 {formData.title || 'Popup title'}
               </p>
               {formData.ctaText && (
-                <span className={cn('mt-1 inline-flex w-fit rounded-lg px-3 py-1.5 text-xs font-bold', ctaCls)}>
+                <span
+                  className={cn(
+                    'mt-1 inline-flex w-fit rounded-lg px-3 py-1.5 text-xs font-bold',
+                    ctaCls
+                  )}
+                >
                   {formData.ctaText}
                 </span>
               )}
@@ -554,7 +846,9 @@ function BannerPreview({ formData }: { formData: BannerFormData }) {
             backgroundColor: `rgba(0,0,0,${overlay})`,
           }}
         />
-        <div className={cn('absolute inset-0 flex flex-col gap-1.5 p-6', posCls)}>
+        <div
+          className={cn('absolute inset-0 flex flex-col gap-1.5 p-6', posCls)}
+        >
           {formData.subtitle && (
             <p
               className="text-sm font-medium drop-shadow"
@@ -581,7 +875,9 @@ function BannerPreview({ formData }: { formData: BannerFormData }) {
             <p
               className="line-clamp-2 max-w-xs text-xs drop-shadow"
               style={{
-                color: formData.textColor ? `${formData.textColor}b0` : undefined,
+                color: formData.textColor
+                  ? `${formData.textColor}b0`
+                  : undefined,
                 textAlign: formData.textAlignment as any,
               }}
             >
@@ -997,6 +1293,16 @@ export default function CreateEditBanner({
   const [aiSearchingProducts, setAiSearchingProducts] = useState(false);
   const [aiSelectedProduct, setAiSelectedProduct] = useState<any>(null);
   const [aiBrandSearch, setAiBrandSearch] = useState('');
+  // Which context picker is expanded. Selection state lives in aiContextData;
+  // keeping "which picker is open" separate avoids the old 'loading' sentinel
+  // that got stuck when context data was already cached.
+  const [aiActiveTarget, setAiActiveTarget] = useState<
+    'product' | 'category' | 'subcategory' | 'brand' | null
+  >(null);
+  // Placement/type the AI should generate for — editable inside the modal,
+  // seeded from the form each time the modal opens.
+  const [aiPlacement, setAiPlacement] = useState('home_hero');
+  const [aiType, setAiType] = useState('promotional');
   const [aiContextData, setAiContextData] = useState({
     productId: '',
     categoryId: '',
@@ -1014,6 +1320,11 @@ export default function CreateEditBanner({
     if (showAIGenerate && token) {
       fetchContextData();
     }
+    if (showAIGenerate) {
+      setAiPlacement(formData.placement || 'home_hero');
+      setAiType(formData.type || 'promotional');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showAIGenerate, token]);
 
   // Debounced live product search for the AI modal (searches all products).
@@ -1176,52 +1487,38 @@ export default function CreateEditBanner({
         setContextCategories(categories);
         setContextSubcategories(subcategories);
         setContextBrands(brands);
-
-        // Auto-select first item if in loading state
-        setAiContextData((prev) => {
-          if (prev.productId === 'loading' && products.length > 0) {
-            return { ...prev, productId: products[0].id };
-          }
-          if (prev.categoryId === 'loading' && categories.length > 0) {
-            return { ...prev, categoryId: categories[0].id };
-          }
-          if (prev.subcategoryId === 'loading' && subcategories.length > 0) {
-            return { ...prev, subcategoryId: subcategories[0].id };
-          }
-          if (prev.brandId === 'loading' && brands.length > 0) {
-            return { ...prev, brandId: brands[0].id };
-          }
-          return prev;
-        });
       }
     } catch (err) {
       console.error('Failed to fetch context data:', err);
       toast.error('Failed to load products and categories');
-      // Clear loading state on error
-      setAiContextData((prev) => ({
-        ...prev,
-        productId: prev.productId === 'loading' ? '' : prev.productId,
-        categoryId: prev.categoryId === 'loading' ? '' : prev.categoryId,
-        subcategoryId:
-          prev.subcategoryId === 'loading' ? '' : prev.subcategoryId,
-        brandId: prev.brandId === 'loading' ? '' : prev.brandId,
-      }));
     } finally {
       setIsLoadingContext(false);
     }
   };
 
-  const handleSelectContext = (
+  // Toggle a context target card: opens its picker (clearing other targets'
+  // selections), or clears + collapses it when it is already active.
+  const handleToggleTarget = (
     type: 'product' | 'category' | 'subcategory' | 'brand'
   ) => {
-    // Clear existing selections
+    if (aiActiveTarget === type) {
+      setAiActiveTarget(null);
+      setAiContextData((prev) => ({ ...prev, [`${type}Id`]: '' }));
+      if (type === 'product') {
+        setAiSelectedProduct(null);
+        setAiProductSearch('');
+      }
+      return;
+    }
+    fetchContextData();
+    setAiActiveTarget(type);
+    // Only one target type can drive generation at a time.
     setAiContextData((prev) => ({
       ...prev,
-      productId: '',
-      categoryId: '',
-      subcategoryId: '',
-      brandId: '',
-      [`${type}Id`]: '', // Will be set after dropdown selection
+      productId: type === 'product' ? prev.productId : '',
+      categoryId: type === 'category' ? prev.categoryId : '',
+      subcategoryId: type === 'subcategory' ? prev.subcategoryId : '',
+      brandId: type === 'brand' ? prev.brandId : '',
     }));
   };
 
@@ -1244,8 +1541,8 @@ export default function CreateEditBanner({
 
     try {
       const params: any = {
-        bannerType: formData.type,
-        placement: formData.placement,
+        bannerType: aiType || formData.type,
+        placement: aiPlacement || formData.placement,
         style: aiContextData.style,
       };
 
@@ -1284,6 +1581,8 @@ export default function CreateEditBanner({
     try {
       const params: any = {
         count: suggestionCount,
+        bannerType: aiType || formData.type,
+        placement: aiPlacement || formData.placement,
       };
 
       if (aiContextData.productId) params.productId = aiContextData.productId;
@@ -1329,6 +1628,11 @@ export default function CreateEditBanner({
     if (content.type) set('type', content.type);
     if (content.placement) set('placement', content.placement);
     if (content.ctaStyle) set('ctaStyle', content.ctaStyle);
+
+    // The placement/type chosen in the modal are authoritative — the AI was
+    // asked to generate for them, so they win over any model deviation.
+    if (aiPlacement) set('placement', aiPlacement);
+    if (aiType) set('type', aiType);
 
     // Derive the CTA link client-side from the selected target (never trust an
     // AI-generated URL). Subcategory link uses the slug-based shop filter.
@@ -1491,8 +1795,10 @@ export default function CreateEditBanner({
     }));
     setAiProductSearch('');
     setAiSubcategorySearch('');
+    setAiBrandSearch('');
     setAiProductResults([]);
     setAiSelectedProduct(null);
+    setAiActiveTarget(null);
     setGeneratedContent(null);
   };
 
@@ -1630,8 +1936,8 @@ export default function CreateEditBanner({
           setGeneratedContent(null);
           setShowSuggestions(false);
         }}
-        customSize="1120px"
-        className="w-[95vw] max-w-6xl"
+        customSize="1400px"
+        className="w-[96vw] max-w-[1400px]"
         overlayClassName="backdrop-blur-sm"
       >
         <div className="p-0">
@@ -1742,23 +2048,10 @@ export default function CreateEditBanner({
                     {/* Products */}
                     <button
                       type="button"
-                      onClick={() => {
-                        if (aiContextData.productId) {
-                          setAiContextData((prev) => ({
-                            ...prev,
-                            productId: '',
-                          }));
-                        } else {
-                          fetchContextData();
-                          setAiContextData((prev) => ({
-                            ...prev,
-                            productId: 'loading',
-                          }));
-                        }
-                      }}
+                      onClick={() => handleToggleTarget('product')}
                       className={cn(
                         'relative rounded-xl border-2 p-4 text-left transition-all',
-                        aiContextData.productId
+                        aiContextData.productId || aiActiveTarget === 'product'
                           ? 'border-purple-500 bg-purple-50'
                           : 'border-gray-200 hover:border-purple-300'
                       )}
@@ -1767,7 +2060,8 @@ export default function CreateEditBanner({
                         <div
                           className={cn(
                             'flex h-10 w-10 items-center justify-center rounded-lg',
-                            aiContextData.productId
+                            aiContextData.productId ||
+                              aiActiveTarget === 'product'
                               ? 'bg-purple-100'
                               : 'bg-gray-100'
                           )}
@@ -1775,7 +2069,8 @@ export default function CreateEditBanner({
                           <PiPackage
                             className={cn(
                               'h-5 w-5',
-                              aiContextData.productId
+                              aiContextData.productId ||
+                                aiActiveTarget === 'product'
                                 ? 'text-purple-600'
                                 : 'text-gray-400'
                             )}
@@ -1786,48 +2081,34 @@ export default function CreateEditBanner({
                             Product
                           </p>
                           <p className="truncate text-xs text-gray-500">
-                            {aiContextData.productId &&
-                            aiContextData.productId !== 'loading'
+                            {aiContextData.productId
                               ? (aiSelectedProduct?.id ===
                                 aiContextData.productId
                                   ? aiSelectedProduct.name
                                   : contextProducts.find(
                                       (p) => p.id === aiContextData.productId
                                     )?.name) || 'Selected'
-                              : aiContextData.productId === 'loading'
-                                ? 'Loading...'
-                                : 'Click to select'}
+                              : aiActiveTarget === 'product'
+                                ? 'Type below to search'
+                                : 'Click to choose'}
                           </p>
                         </div>
-                        {aiContextData.productId &&
-                          aiContextData.productId !== 'loading' && (
-                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-500 text-white">
-                              <PiCheckBold className="h-3 w-3" />
-                            </span>
-                          )}
+                        {aiContextData.productId && (
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-500 text-white">
+                            <PiCheckBold className="h-3 w-3" />
+                          </span>
+                        )}
                       </div>
                     </button>
 
                     {/* Categories */}
                     <button
                       type="button"
-                      onClick={() => {
-                        if (aiContextData.categoryId) {
-                          setAiContextData((prev) => ({
-                            ...prev,
-                            categoryId: '',
-                          }));
-                        } else {
-                          fetchContextData();
-                          setAiContextData((prev) => ({
-                            ...prev,
-                            categoryId: 'loading',
-                          }));
-                        }
-                      }}
+                      onClick={() => handleToggleTarget('category')}
                       className={cn(
                         'relative rounded-xl border-2 p-4 text-left transition-all',
-                        aiContextData.categoryId
+                        aiContextData.categoryId ||
+                          aiActiveTarget === 'category'
                           ? 'border-purple-500 bg-purple-50'
                           : 'border-gray-200 hover:border-purple-300'
                       )}
@@ -1836,7 +2117,8 @@ export default function CreateEditBanner({
                         <div
                           className={cn(
                             'flex h-10 w-10 items-center justify-center rounded-lg',
-                            aiContextData.categoryId
+                            aiContextData.categoryId ||
+                              aiActiveTarget === 'category'
                               ? 'bg-purple-100'
                               : 'bg-gray-100'
                           )}
@@ -1844,7 +2126,8 @@ export default function CreateEditBanner({
                           <PiFolder
                             className={cn(
                               'h-5 w-5',
-                              aiContextData.categoryId
+                              aiContextData.categoryId ||
+                                aiActiveTarget === 'category'
                                 ? 'text-purple-600'
                                 : 'text-gray-400'
                             )}
@@ -1855,45 +2138,31 @@ export default function CreateEditBanner({
                             Category
                           </p>
                           <p className="truncate text-xs text-gray-500">
-                            {aiContextData.categoryId &&
-                            aiContextData.categoryId !== 'loading'
+                            {aiContextData.categoryId
                               ? contextCategories.find(
                                   (c) => c.id === aiContextData.categoryId
                                 )?.name || 'Selected'
-                              : aiContextData.categoryId === 'loading'
-                                ? 'Loading...'
-                                : 'Click to select'}
+                              : aiActiveTarget === 'category'
+                                ? 'Pick below'
+                                : 'Click to choose'}
                           </p>
                         </div>
-                        {aiContextData.categoryId &&
-                          aiContextData.categoryId !== 'loading' && (
-                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-500 text-white">
-                              <PiCheckBold className="h-3 w-3" />
-                            </span>
-                          )}
+                        {aiContextData.categoryId && (
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-500 text-white">
+                            <PiCheckBold className="h-3 w-3" />
+                          </span>
+                        )}
                       </div>
                     </button>
 
                     {/* Subcategories */}
                     <button
                       type="button"
-                      onClick={() => {
-                        if (aiContextData.subcategoryId) {
-                          setAiContextData((prev) => ({
-                            ...prev,
-                            subcategoryId: '',
-                          }));
-                        } else {
-                          fetchContextData();
-                          setAiContextData((prev) => ({
-                            ...prev,
-                            subcategoryId: 'loading',
-                          }));
-                        }
-                      }}
+                      onClick={() => handleToggleTarget('subcategory')}
                       className={cn(
                         'relative rounded-xl border-2 p-4 text-left transition-all',
-                        aiContextData.subcategoryId
+                        aiContextData.subcategoryId ||
+                          aiActiveTarget === 'subcategory'
                           ? 'border-purple-500 bg-purple-50'
                           : 'border-gray-200 hover:border-purple-300'
                       )}
@@ -1902,7 +2171,8 @@ export default function CreateEditBanner({
                         <div
                           className={cn(
                             'flex h-10 w-10 items-center justify-center rounded-lg',
-                            aiContextData.subcategoryId
+                            aiContextData.subcategoryId ||
+                              aiActiveTarget === 'subcategory'
                               ? 'bg-purple-100'
                               : 'bg-gray-100'
                           )}
@@ -1910,7 +2180,8 @@ export default function CreateEditBanner({
                           <PiFolder
                             className={cn(
                               'h-5 w-5',
-                              aiContextData.subcategoryId
+                              aiContextData.subcategoryId ||
+                                aiActiveTarget === 'subcategory'
                                 ? 'text-purple-600'
                                 : 'text-gray-400'
                             )}
@@ -1921,45 +2192,30 @@ export default function CreateEditBanner({
                             Subcategory
                           </p>
                           <p className="truncate text-xs text-gray-500">
-                            {aiContextData.subcategoryId &&
-                            aiContextData.subcategoryId !== 'loading'
+                            {aiContextData.subcategoryId
                               ? contextSubcategories.find(
                                   (s) => s.id === aiContextData.subcategoryId
                                 )?.name || 'Selected'
-                              : aiContextData.subcategoryId === 'loading'
-                                ? 'Loading...'
-                                : 'Click to select'}
+                              : aiActiveTarget === 'subcategory'
+                                ? 'Type below to search'
+                                : 'Click to choose'}
                           </p>
                         </div>
-                        {aiContextData.subcategoryId &&
-                          aiContextData.subcategoryId !== 'loading' && (
-                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-500 text-white">
-                              <PiCheckBold className="h-3 w-3" />
-                            </span>
-                          )}
+                        {aiContextData.subcategoryId && (
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-500 text-white">
+                            <PiCheckBold className="h-3 w-3" />
+                          </span>
+                        )}
                       </div>
                     </button>
 
                     {/* Brands */}
                     <button
                       type="button"
-                      onClick={() => {
-                        if (aiContextData.brandId) {
-                          setAiContextData((prev) => ({
-                            ...prev,
-                            brandId: '',
-                          }));
-                        } else {
-                          fetchContextData();
-                          setAiContextData((prev) => ({
-                            ...prev,
-                            brandId: 'loading',
-                          }));
-                        }
-                      }}
+                      onClick={() => handleToggleTarget('brand')}
                       className={cn(
                         'relative rounded-xl border-2 p-4 text-left transition-all',
-                        aiContextData.brandId
+                        aiContextData.brandId || aiActiveTarget === 'brand'
                           ? 'border-purple-500 bg-purple-50'
                           : 'border-gray-200 hover:border-purple-300'
                       )}
@@ -1968,7 +2224,7 @@ export default function CreateEditBanner({
                         <div
                           className={cn(
                             'flex h-10 w-10 items-center justify-center rounded-lg',
-                            aiContextData.brandId
+                            aiContextData.brandId || aiActiveTarget === 'brand'
                               ? 'bg-purple-100'
                               : 'bg-gray-100'
                           )}
@@ -1976,7 +2232,8 @@ export default function CreateEditBanner({
                           <PiStorefrontBold
                             className={cn(
                               'h-5 w-5',
-                              aiContextData.brandId
+                              aiContextData.brandId ||
+                                aiActiveTarget === 'brand'
                                 ? 'text-purple-600'
                                 : 'text-gray-400'
                             )}
@@ -1987,22 +2244,20 @@ export default function CreateEditBanner({
                             Brand
                           </p>
                           <p className="truncate text-xs text-gray-500">
-                            {aiContextData.brandId &&
-                            aiContextData.brandId !== 'loading'
+                            {aiContextData.brandId
                               ? contextBrands.find(
                                   (b) => b.id === aiContextData.brandId
                                 )?.name || 'Selected'
-                              : aiContextData.brandId === 'loading'
-                                ? 'Loading...'
-                                : 'Click to select'}
+                              : aiActiveTarget === 'brand'
+                                ? 'Type below to search'
+                                : 'Click to choose'}
                           </p>
                         </div>
-                        {aiContextData.brandId &&
-                          aiContextData.brandId !== 'loading' && (
-                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-500 text-white">
-                              <PiCheckBold className="h-3 w-3" />
-                            </span>
-                          )}
+                        {aiContextData.brandId && (
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-500 text-white">
+                            <PiCheckBold className="h-3 w-3" />
+                          </span>
+                        )}
                       </div>
                     </button>
                   </div>
@@ -2020,17 +2275,12 @@ export default function CreateEditBanner({
                 </div>
 
                 {/* Product Picker */}
-                {(aiContextData.productId ||
-                  aiContextData.productId === 'loading') &&
-                  aiContextData.productId !== '' && (
+                {aiActiveTarget === 'product' && (
                     <div>
                       <label className="mb-1.5 block text-xs font-medium text-gray-500">
-                        {aiContextData.productId === 'loading'
-                          ? 'Loading products...'
-                          : 'Select Product'}
+                        Select Product
                       </label>
-                      {isLoadingContext ||
-                      aiContextData.productId === 'loading' ? (
+                      {isLoadingContext ? (
                         <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-500">
                           <PiSpinnerBold className="h-4 w-4 animate-spin" />{' '}
                           Loading products...
@@ -2042,6 +2292,7 @@ export default function CreateEditBanner({
                             <PiMagnifyingGlass className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                             <input
                               type="text"
+                              autoFocus
                               value={aiProductSearch}
                               onChange={(e) =>
                                 setAiProductSearch(e.target.value)
@@ -2063,14 +2314,21 @@ export default function CreateEditBanner({
                           {/* Product list */}
                           {(() => {
                             const q = aiProductSearch.trim();
-                            // 2+ chars → live server search across ALL products; otherwise
-                            // show the preloaded popular set.
+                            // 2+ chars → live server search across ALL products;
+                            // 1 char → instant local filter of the preloaded set;
+                            // empty → the preloaded popular set.
                             const list =
                               q.length >= 2
                                 ? aiProductResults
-                                : contextProducts;
+                                : q
+                                  ? contextProducts.filter((p) =>
+                                      `${p.name} ${p.brand || ''}`
+                                        .toLowerCase()
+                                        .includes(q.toLowerCase())
+                                    )
+                                  : contextProducts;
                             return (
-                              <div className="max-h-56 divide-y divide-gray-50 overflow-y-auto rounded-lg border border-gray-200">
+                              <div className="max-h-72 divide-y divide-gray-50 overflow-y-auto rounded-lg border border-gray-200">
                                 {aiSearchingProducts ? (
                                   <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-400">
                                     <PiSpinnerBold className="h-4 w-4 animate-spin" />{' '}
@@ -2157,8 +2415,8 @@ export default function CreateEditBanner({
                           })()}
                           <p className="text-[11px] text-gray-400">
                             {aiProductSearch.trim().length >= 2
-                              ? `${aiProductResults.length} result${aiProductResults.length === 1 ? '' : 's'}`
-                              : 'Showing popular products — type at least 2 characters to search all'}
+                              ? `${aiProductResults.length} result${aiProductResults.length === 1 ? '' : 's'} across all products`
+                              : 'Showing popular products — keep typing to search the full catalog by name or brand'}
                           </p>
                         </div>
                       )}
@@ -2166,17 +2424,12 @@ export default function CreateEditBanner({
                   )}
 
                 {/* Category Dropdown */}
-                {(aiContextData.categoryId ||
-                  aiContextData.categoryId === 'loading') &&
-                  aiContextData.categoryId !== '' && (
+                {aiActiveTarget === 'category' && (
                     <div>
                       <label className="mb-1.5 block text-xs font-medium text-gray-500">
-                        {aiContextData.categoryId === 'loading'
-                          ? 'Loading categories...'
-                          : 'Select Category'}
+                        Select Category
                       </label>
-                      {isLoadingContext ||
-                      aiContextData.categoryId === 'loading' ? (
+                      {isLoadingContext ? (
                         <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-500">
                           <PiSpinnerBold className="h-4 w-4 animate-spin" />{' '}
                           Loading...
@@ -2204,17 +2457,12 @@ export default function CreateEditBanner({
                   )}
 
                 {/* Subcategory Dropdown */}
-                {(aiContextData.subcategoryId ||
-                  aiContextData.subcategoryId === 'loading') &&
-                  aiContextData.subcategoryId !== '' && (
+                {aiActiveTarget === 'subcategory' && (
                     <div>
                       <label className="mb-1.5 block text-xs font-medium text-gray-500">
-                        {aiContextData.subcategoryId === 'loading'
-                          ? 'Loading subcategories...'
-                          : 'Select Subcategory'}
+                        Select Subcategory
                       </label>
-                      {isLoadingContext ||
-                      aiContextData.subcategoryId === 'loading' ? (
+                      {isLoadingContext ? (
                         <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-500">
                           <PiSpinnerBold className="h-4 w-4 animate-spin" />{' '}
                           Loading...
@@ -2226,6 +2474,7 @@ export default function CreateEditBanner({
                             <PiMagnifyingGlass className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                             <input
                               type="text"
+                              autoFocus
                               value={aiSubcategorySearch}
                               onChange={(e) =>
                                 setAiSubcategorySearch(e.target.value)
@@ -2332,17 +2581,12 @@ export default function CreateEditBanner({
                   )}
 
                 {/* Brand Picker */}
-                {(aiContextData.brandId ||
-                  aiContextData.brandId === 'loading') &&
-                  aiContextData.brandId !== '' && (
+                {aiActiveTarget === 'brand' && (
                     <div>
                       <label className="mb-1.5 block text-xs font-medium text-gray-500">
-                        {aiContextData.brandId === 'loading'
-                          ? 'Loading brands...'
-                          : 'Select Brand'}
+                        Select Brand
                       </label>
-                      {isLoadingContext ||
-                      aiContextData.brandId === 'loading' ? (
+                      {isLoadingContext ? (
                         <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-500">
                           <PiSpinnerBold className="h-4 w-4 animate-spin" />{' '}
                           Loading brands...
@@ -2354,6 +2598,7 @@ export default function CreateEditBanner({
                             <PiMagnifyingGlass className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                             <input
                               type="text"
+                              autoFocus
                               value={aiBrandSearch}
                               onChange={(e) => setAiBrandSearch(e.target.value)}
                               placeholder="Search brands..."
@@ -2467,6 +2712,101 @@ export default function CreateEditBanner({
                     </div>
                   )}
 
+                {/* Placement & Type */}
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <div>
+                    <label className="mb-3 block text-sm font-semibold text-gray-700">
+                      Placement
+                    </label>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {BANNER_PLACEMENT_OPTIONS.map((opt) => {
+                        const meta = PLACEMENT_PREVIEW[opt.value];
+                        const hint = meta?.label.split('—')[1]?.trim();
+                        const selected = aiPlacement === opt.value;
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => {
+                              setAiPlacement(opt.value);
+                              // Snap type to the placement's recommended type;
+                              // the user can still override below.
+                              const rec = PLACEMENT_TYPE_HINT[opt.value];
+                              if (rec) setAiType(rec);
+                            }}
+                            className={cn(
+                              'rounded-lg border p-2.5 text-left transition-all',
+                              selected
+                                ? 'border-purple-500 bg-purple-50 ring-1 ring-purple-200'
+                                : 'border-gray-200 hover:border-purple-300'
+                            )}
+                          >
+                            <PlacementThumb
+                              placement={opt.value}
+                              selected={selected}
+                            />
+                            <p
+                              className={cn(
+                                'text-xs font-semibold',
+                                selected ? 'text-purple-700' : 'text-gray-800'
+                              )}
+                            >
+                              {opt.label}
+                            </p>
+                            {hint && (
+                              <p className="mt-0.5 truncate text-[10px] text-gray-400">
+                                {hint}
+                              </p>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-3 block text-sm font-semibold text-gray-700">
+                      Banner Type
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {BANNER_TYPE_OPTIONS.map((opt) => {
+                        const selected = aiType === opt.value;
+                        const recommended =
+                          PLACEMENT_TYPE_HINT[aiPlacement] === opt.value;
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setAiType(opt.value)}
+                            className={cn(
+                              'rounded-full border px-3 py-1.5 text-xs font-medium transition-all',
+                              selected
+                                ? 'border-purple-500 bg-purple-500 text-white shadow-sm'
+                                : 'border-gray-200 text-gray-600 hover:border-purple-300 hover:bg-purple-50'
+                            )}
+                          >
+                            {opt.label}
+                            {recommended && (
+                              <span
+                                className={cn(
+                                  'ml-1',
+                                  selected ? 'text-white' : 'text-purple-500'
+                                )}
+                              >
+                                ✨
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-2 text-[11px] text-gray-400">
+                      ✨ recommended for the selected placement — copy is
+                      written for this placement and type, and both are applied
+                      to the banner on Apply.
+                    </p>
+                  </div>
+                </div>
+
                 {/* Style Selection */}
                 <div>
                   <label className="mb-3 block text-sm font-semibold text-gray-700">
@@ -2560,7 +2900,15 @@ export default function CreateEditBanner({
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm text-gray-600">
-                    Generate multiple style variations
+                    Generate multiple style variations for{' '}
+                    <span className="font-medium text-gray-800">
+                      {BANNER_PLACEMENT_OPTIONS.find(
+                        (o) => o.value === aiPlacement
+                      )?.label || 'Home Hero'}
+                      {' · '}
+                      {BANNER_TYPE_OPTIONS.find((o) => o.value === aiType)
+                        ?.label || 'Promotional'}
+                    </span>
                   </p>
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-gray-400">Options:</span>
@@ -2749,17 +3097,41 @@ export default function CreateEditBanner({
               {/* Type + Placement combination hint */}
               {(() => {
                 const recommended = PLACEMENT_TYPE_HINT[formData.placement];
-                const mismatch = recommended && formData.type !== recommended && formData.type !== 'custom' && formData.type !== 'promotional';
+                const mismatch =
+                  recommended &&
+                  formData.type !== recommended &&
+                  formData.type !== 'custom' &&
+                  formData.type !== 'promotional';
                 return (
-                  <div className={cn(
-                    'flex items-center gap-2 rounded-lg px-3 py-2 text-xs',
-                    mismatch ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-600',
-                  )}>
+                  <div
+                    className={cn(
+                      'flex items-center gap-2 rounded-lg px-3 py-2 text-xs',
+                      mismatch
+                        ? 'bg-amber-50 text-amber-700'
+                        : 'bg-blue-50 text-blue-600'
+                    )}
+                  >
                     <PiInfo className="h-3.5 w-3.5 flex-shrink-0" />
                     {mismatch ? (
-                      <span>Tip: <strong className="capitalize">{recommended}</strong> type is typically used for <strong className="capitalize">{formData.placement.replace(/_/g, ' ')}</strong> placement. Your current type is <strong className="capitalize">{formData.type}</strong>.</span>
+                      <span>
+                        Tip:{' '}
+                        <strong className="capitalize">{recommended}</strong>{' '}
+                        type is typically used for{' '}
+                        <strong className="capitalize">
+                          {formData.placement.replace(/_/g, ' ')}
+                        </strong>{' '}
+                        placement. Your current type is{' '}
+                        <strong className="capitalize">{formData.type}</strong>.
+                      </span>
                     ) : (
-                      <span>Preview shows how this banner renders on the storefront as a <strong className="capitalize">{formData.placement.replace(/_/g, ' ')}</strong>.</span>
+                      <span>
+                        Preview shows how this banner renders on the storefront
+                        as a{' '}
+                        <strong className="capitalize">
+                          {formData.placement.replace(/_/g, ' ')}
+                        </strong>
+                        .
+                      </span>
                     )}
                   </div>
                 );

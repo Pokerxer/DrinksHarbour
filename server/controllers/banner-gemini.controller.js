@@ -330,7 +330,7 @@ const generateDemoBannerContent = (params) => {
  * POST /api/banner-ai/suggestions
  */
 const generateBannerSuggestions = asyncHandler(async (req, res) => {
-  const { productId, categoryId, subcategoryId, brandId, count = 3 } = req.body;
+  const { productId, categoryId, subcategoryId, brandId, bannerType, placement, count = 3 } = req.body;
 
   const demoFallback = () => {
     const demoSuggestions = [];
@@ -368,8 +368,13 @@ const generateBannerSuggestions = asyncHandler(async (req, res) => {
       if (brand) contextDesc = `Brand: "${brand.name}"`;
     }
 
-    const prompt = `Generate ${count} different banner content options for: ${contextDesc || 'a promotional banner'}
+    const placementDesc = [
+      placement ? `Placement: ${placement}` : '',
+      bannerType ? `Banner type: ${bannerType}` : '',
+    ].filter(Boolean).join(' | ');
 
+    const prompt = `Generate ${count} different banner content options for: ${contextDesc || 'a promotional banner'}
+${placementDesc ? `\nTarget: ${placementDesc}. Tailor copy length and tone to suit this placement (e.g. header/checkout strips need very short punchy copy; hero placements can be more expressive).\n` : ''}
 Create varied options with different tones (urgent, playful, elegant, informative), CTA styles, and complementary color schemes for beverage marketing.
 
 Each option must include: title (max 60 chars), subtitle (max 100 chars), ctaText (3-6 words), backgroundColor (hex), textColor (hex for contrast), tags (4-6), styleNote (brief tone description).

@@ -11917,11 +11917,21 @@ const getAdminProductList = async ({ page = 1, limit = 500, search, status, cate
       : brand;
   }
   if (search) {
-    query.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { slug: { $regex: search, $options: 'i' } },
-      { description: { $regex: search, $options: 'i' } },
+    const searchRegex = { $regex: escapeRegex(search), $options: 'i' };
+    const or = [
+      { name: searchRegex },
+      { slug: searchRegex },
+      { description: searchRegex },
     ];
+    // Also match by brand name so admin pickers can search "name or brand".
+    const matchingBrands = await Brand.find({ name: searchRegex })
+      .select('_id')
+      .limit(50)
+      .lean();
+    if (matchingBrands.length) {
+      or.push({ brand: { $in: matchingBrands.map((b) => b._id) } });
+    }
+    query.$or = or;
   }
 
   const [products, total] = await Promise.all([
