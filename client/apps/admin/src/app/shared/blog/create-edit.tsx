@@ -95,7 +95,7 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
     setPost((p: any) => ({
       ...p,
       content: p.content.map((b: ContentBlock, j: number) =>
-        j === i ? { ...b, ...patch } : b,
+        j === i ? { ...b, ...patch } : b
       ),
     }));
     setDirty(true);
@@ -137,8 +137,10 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
   const hasExistingContent = useMemo(
     () =>
       Boolean(post.title || post.excerpt || post.tags.length) ||
-      post.content.some((b: ContentBlock) => b.text || b.src || b.items?.length),
-    [post.title, post.excerpt, post.tags, post.content],
+      post.content.some(
+        (b: ContentBlock) => b.text || b.src || b.items?.length
+      ),
+    [post.title, post.excerpt, post.tags, post.content]
   );
 
   const applyAi = (data: any) => {
@@ -170,7 +172,7 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
       // Confirm before clobbering work the editor may have already done.
       if (
         window.confirm(
-          'Generating a new draft will replace the current title, content, tags, and SEO. Continue?',
+          'Generating a new draft will replace the current title, content, tags, and SEO. Continue?'
         )
       ) {
         overwrite();
@@ -197,7 +199,7 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
       } else {
         const res: any = await blogService.generateField(
           { field: field as any, post } as any,
-          token,
+          token
         );
         const value = res?.value;
         if (field === 'tags') set({ tags: Array.isArray(value) ? value : [] });
@@ -314,7 +316,7 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
                   'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition',
                   view === 'write'
                     ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-800',
+                    : 'text-gray-500 hover:text-gray-800'
                 )}
               >
                 <PiPencilSimpleBold className="h-3.5 w-3.5" /> Write
@@ -326,7 +328,7 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
                   'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition',
                   view === 'preview'
                     ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-800',
+                    : 'text-gray-500 hover:text-gray-800'
                 )}
               >
                 <PiEyeBold className="h-3.5 w-3.5" /> Preview

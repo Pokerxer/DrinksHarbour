@@ -207,9 +207,9 @@ function ReviewDrawer({
   const [sizeWebsitePrices, setSizeWebsitePrices] = useState<
     Record<string, string>
   >({});
-  const [sizePackPrices, setSizePackPrices] = useState<
-    Record<string, string>
-  >({});
+  const [sizePackPrices, setSizePackPrices] = useState<Record<string, string>>(
+    {}
+  );
   const [baseWebsitePrice, setBaseWebsitePrice] = useState<string>('');
   // Server-computed platform prices — used to detect which inputs the admin
   // actually changed, so unchanged values are never sent as overrides
@@ -290,7 +290,10 @@ function ReviewDrawer({
             defaults.sizes[s._id] = s.pricing.platformSellingPrice;
             initSizes[s._id] = String(s.pricing.platformSellingPrice);
           }
-          if (s.pricing?.packUnitPrice != null && s.pricing?.packUnitPrice > 0) {
+          if (
+            s.pricing?.packUnitPrice != null &&
+            s.pricing?.packUnitPrice > 0
+          ) {
             defaults.packPrices[s._id] = s.pricing.packUnitPrice;
             initPackSizes[s._id] = String(s.pricing.packUnitPrice);
           }
@@ -319,7 +322,11 @@ function ReviewDrawer({
       ...Object.keys(sizeWebsitePrices),
       ...Object.keys(sizePackPrices),
     ]);
-    const sizeEntries: Array<{ id: string; websitePrice: number; packUnitPrice?: number }> = [];
+    const sizeEntries: Array<{
+      id: string;
+      websitePrice: number;
+      packUnitPrice?: number;
+    }> = [];
     for (const id of allSizeIds) {
       const wp = parseFloat(sizeWebsitePrices[id] ?? '');
       const pp = parseFloat(sizePackPrices[id] ?? '');
@@ -328,7 +335,7 @@ function ReviewDrawer({
       if (wpChanged || ppChanged) {
         sizeEntries.push({
           id,
-          websitePrice: wpChanged ? wp : (serverDefaults.sizes[id] || 0),
+          websitePrice: wpChanged ? wp : serverDefaults.sizes[id] || 0,
           ...(ppChanged ? { packUnitPrice: pp } : {}),
         });
       }
@@ -1068,7 +1075,8 @@ function ReviewDrawer({
                                             Pack Pricing
                                           </div>
                                           <span className="text-[9px] text-amber-500">
-                                            Threshold: {sizePackThreshold}+ units
+                                            Threshold: {sizePackThreshold}+
+                                            units
                                             {sizePackSavingsPct != null
                                               ? ` · ${sizePackSavingsPct}% off`
                                               : ''}
@@ -1107,8 +1115,9 @@ function ReviewDrawer({
                                             </div>
                                             <div className="flex-shrink-0 px-0.5 text-center text-amber-500">
                                               ×(1+
-                                              {sizePricing.platformMarkupPct ?? platformMarkupPct}%
-                                              )
+                                              {sizePricing.platformMarkupPct ??
+                                                platformMarkupPct}
+                                              % )
                                             </div>
                                             <div className="flex-1 rounded-lg border border-amber-300 bg-amber-200/60 px-2 py-1.5 text-center">
                                               <div className="mb-0.5 text-amber-700">
@@ -1116,9 +1125,13 @@ function ReviewDrawer({
                                               </div>
                                               <div className="font-bold text-amber-900">
                                                 {(() => {
-                                                  const pp = parseFloat(sizePackPrices[sizeId] ?? '');
-                                                  if (pp && !isNaN(pp)) return `₦${pp.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-                                                  return sizePackUnitPrice != null
+                                                  const pp = parseFloat(
+                                                    sizePackPrices[sizeId] ?? ''
+                                                  );
+                                                  if (pp && !isNaN(pp))
+                                                    return `₦${pp.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+                                                  return sizePackUnitPrice !=
+                                                    null
                                                     ? `₦${sizePackUnitPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
                                                     : '—';
                                                 })()}
@@ -1131,7 +1144,9 @@ function ReviewDrawer({
                                               ? `${sizePackMarkupPct ?? sizeMarkupPct}%`
                                               : `${sizePackCommissionPct ?? sizeCommissionPct}%`}
                                             ) · packSelling = packCost × (1+
-                                            {sizePricing.platformMarkupPct ?? platformMarkupPct}%)
+                                            {sizePricing.platformMarkupPct ??
+                                              platformMarkupPct}
+                                            %)
                                           </p>
                                         </div>
 
@@ -1163,11 +1178,23 @@ function ReviewDrawer({
                                             </div>
                                             <div className="font-bold text-amber-800">
                                               {(() => {
-                                                const typed = parseFloat(sizePackPrices[sizeId] ?? '');
-                                                const pp = !isNaN(typed) ? typed : (sizePackUnitPrice ?? NaN);
-                                                if (!pp || isNaN(pp) || (sizePackPlatformCost ?? 0) <= 0) return '—';
+                                                const typed = parseFloat(
+                                                  sizePackPrices[sizeId] ?? ''
+                                                );
+                                                const pp = !isNaN(typed)
+                                                  ? typed
+                                                  : (sizePackUnitPrice ?? NaN);
+                                                if (
+                                                  !pp ||
+                                                  isNaN(pp) ||
+                                                  (sizePackPlatformCost ?? 0) <=
+                                                    0
+                                                )
+                                                  return '—';
                                                 // Total margin across all units in the pack
-                                                const m = (pp - sizePackPlatformCost!) * sizeUnitsPerPack;
+                                                const m =
+                                                  (pp - sizePackPlatformCost!) *
+                                                  sizeUnitsPerPack;
                                                 return `${m > 0 ? '+' : ''}₦${m.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
                                               })()}
                                             </div>
@@ -1183,21 +1210,30 @@ function ReviewDrawer({
                                             {sizePackUnitPrice != null &&
                                               sizePackUnitPrice > 0 &&
                                               (() => {
-                                                const currentPackVal = sizePackPrices[sizeId] ?? '';
-                                                const defaultPack = sizePackUnitPrice;
+                                                const currentPackVal =
+                                                  sizePackPrices[sizeId] ?? '';
+                                                const defaultPack =
+                                                  sizePackUnitPrice;
                                                 return (
-                                                  parseFloat(currentPackVal) !== defaultPack && (
+                                                  parseFloat(currentPackVal) !==
+                                                    defaultPack && (
                                                     <button
                                                       type="button"
                                                       onClick={() =>
-                                                        setSizePackPrices((prev) => ({
-                                                          ...prev,
-                                                          [sizeId]: String(defaultPack),
-                                                        }))
+                                                        setSizePackPrices(
+                                                          (prev) => ({
+                                                            ...prev,
+                                                            [sizeId]:
+                                                              String(
+                                                                defaultPack
+                                                              ),
+                                                          })
+                                                        )
                                                       }
                                                       className="text-[10px] text-amber-600 underline"
                                                     >
-                                                      Reset to ₦{defaultPack.toLocaleString()}
+                                                      Reset to ₦
+                                                      {defaultPack.toLocaleString()}
                                                     </button>
                                                   )
                                                 );
@@ -1211,24 +1247,32 @@ function ReviewDrawer({
                                               type="number"
                                               min="0"
                                               step="50"
-                                              value={sizePackPrices[sizeId] ?? ''}
+                                              value={
+                                                sizePackPrices[sizeId] ?? ''
+                                              }
                                               onChange={(e) =>
                                                 setSizePackPrices((prev) => ({
                                                   ...prev,
                                                   [sizeId]: e.target.value,
                                                 }))
                                               }
-                                              placeholder={sizePackUnitPrice != null ? String(sizePackUnitPrice) : ''}
+                                              placeholder={
+                                                sizePackUnitPrice != null
+                                                  ? String(sizePackUnitPrice)
+                                                  : ''
+                                              }
                                               className="flex-1 rounded-lg border border-amber-200 bg-white px-2 py-1 text-sm font-bold text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-300"
                                             />
                                           </div>
                                         </div>
                                         <p className="mt-1.5 text-[9px] text-amber-600">
-                                          Buy {sizePackThreshold}+ → per-unit price drops to the
-                                          pack price. Uses tenant pack{' '}
+                                          Buy {sizePackThreshold}+ → per-unit
+                                          price drops to the pack price. Uses
+                                          tenant pack{' '}
                                           {revenueModel === 'markup'
                                             ? `markup ${sizeMarkupPct}%`
-                                            : `commission ${sizeCommissionPct}%`}.
+                                            : `commission ${sizeCommissionPct}%`}
+                                          .
                                         </p>
                                       </div>
                                     )}
@@ -1236,7 +1280,8 @@ function ReviewDrawer({
                                     <div className="rounded-xl border border-green-200 bg-green-50 px-3 py-2">
                                       <div className="mb-1 flex items-center justify-between">
                                         <div className="text-[10px] font-semibold text-green-700">
-                                          Final Platform Unit Selling Price (editable)
+                                          Final Platform Unit Selling Price
+                                          (editable)
                                         </div>
                                         {defaultWebsite > 0 &&
                                           parseFloat(currentVal) !==
