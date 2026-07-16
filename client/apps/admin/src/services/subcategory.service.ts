@@ -130,3 +130,17 @@ export async function deleteAdminSubCategory(token: string, id: string): Promise
   const json = await res.json();
   if (!res.ok) throw new Error(json.message || 'Delete failed');
 }
+
+export async function generateSubCategory(
+  body: { topic: string; parentName: string },
+  token: string,
+): Promise<{ success: boolean; data: any }> {
+  const res = await fetch(`${API_URL}/api/subcategories/admin/ai/generate-subcategory`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+  const json: any = await res.json();
+  if (!res.ok) throw new Error(json.message || 'AI generation failed');
+  return json;
+}
