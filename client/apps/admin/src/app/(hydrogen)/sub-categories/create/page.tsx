@@ -1,5 +1,5 @@
 // @ts-nocheck
-import CreateSubCategoryClient from './create/create-subcategory-client';
+import CreateSubCategoryClient from './create-subcategory-client';
 import PageHeader from '@/app/shared/page-header';
 import EcommercePageHeader from '@/app/shared/ecommerce/ecommerce-page-header';
 import { routes } from '@/config/routes';
