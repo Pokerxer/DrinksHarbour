@@ -1,4 +1,5 @@
 const Category = require('../models/Category');
+const SubCategory = require('../models/SubCategory');
 const Product = require('../models/Product');
 const asyncHandler = require('../utils/asyncHandler');
 const cloudinaryService = require('../services/cloudinary.service');
@@ -456,6 +457,100 @@ function slugifyName(str) {
     .replace(/-+/g, '-');
 }
 
+// Build a catalog of real, linkable pages for a category so the AI can weave
+// contextual internal links instead of inventing URLs (same approach as the
+// blog generator). Category copy links to DETAIL pages — /categories/cat/sub,
+// /product/slug, /brands/slug — which are the self-canonical SEO pages that
+// benefit from internal link equity; /shop filter URLs are already fed by the
+// blog and the sitemap.
+async function buildCategoryLinkCatalog(name) {
+  const empty = { products: [], subCategories: [], brands: new Map(), categorySlug: '', allowed: new Set() };
+  try {
+    const category = await Category.findOne({
+      name: new RegExp(`^${String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+    })
+      .select('slug')
+      .lean();
+
+    const baseFilter = { status: 'approved', isPublished: true };
+    const projection = { name: 1, slug: 1, brand: 1 };
+    let products = [];
+    if (category) {
+      products = await Product.find({ ...baseFilter, category: category._id }, projection)
+        .sort({ createdAt: -1 })
+        .limit(16)
+        .populate('brand', 'name slug')
+        .lean();
+    }
+    // Text-search fallback for brand-new categories with no linked products yet.
+    if (products.length < 6) {
+      try {
+        const seen = new Set(products.map((p) => String(p._id)));
+        const extra = await Product.find(
+          { ...baseFilter, $text: { $search: String(name) } },
+          { ...projection, score: { $meta: 'textScore' } }
+        )
+          .sort({ score: { $meta: 'textScore' } })
+          .limit(12)
+          .populate('brand', 'name slug')
+          .lean();
+        products = products.concat(extra.filter((p) => !seen.has(String(p._id))));
+      } catch (_) {
+        /* keep whatever we have */
+      }
+    }
+    products = products.filter((p) => p && p.slug && p.name).slice(0, 12);
+
+    let subCategories = [];
+    if (category) {
+      subCategories = await SubCategory.find({ parent: category._id, status: 'published' })
+        .select('name slug')
+        .sort({ productCount: -1, name: 1 })
+        .limit(10)
+        .lean();
+    }
+
+    const brands = new Map();
+    products.forEach((p) => {
+      if (p.brand?.slug && !brands.has(p.brand.slug)) brands.set(p.brand.slug, p.brand.name);
+    });
+
+    const allowed = new Set();
+    products.forEach((p) => allowed.add(`/product/${p.slug}`));
+    brands.forEach((_n, slug) => allowed.add(`/brands/${slug}`));
+    if (category) subCategories.forEach((s) => allowed.add(`/categories/${category.slug}/${s.slug}`));
+
+    return { products, subCategories, brands, categorySlug: category?.slug || '', allowed };
+  } catch (_) {
+    return empty;
+  }
+}
+
+function categoryCatalogToPrompt({ products, subCategories, brands, categorySlug }) {
+  if (!products.length && !subCategories.length) return '';
+  const subLines = subCategories
+    .map((s) => `- "${s.name}" → /categories/${categorySlug}/${s.slug}`)
+    .join('\n');
+  const productLines = products.map((p) => `- "${p.name}" → /product/${p.slug}`).join('\n');
+  const brandLines = [...brands.entries()].map(([slug, name]) => `- "${name}" → /brands/${slug}`).join('\n');
+
+  return `
+
+INTERNAL LINKING: inside the description HTML, weave 3-6 contextual internal links as <a href="/path">natural anchor words</a>. Rules:
+- Use ONLY links from the approved catalog below. NEVER invent a URL or slug.
+- The anchor must be natural words inside a sentence (e.g. "a peaty <a href="/categories/scotch/islay-scotch">Islay single malt</a>"), never the raw slug.
+- Link each target at most once. Prefer subcategory pages, then standout products, then brands.${subLines ? `\n\nApproved subcategory links:\n${subLines}` : ''}${productLines ? `\n\nApproved product links:\n${productLines}` : ''}${brandLines ? `\n\nApproved brand links:\n${brandLines}` : ''}`;
+}
+
+// Strip <a> tags whose href isn't in the approved set, keeping the anchor text
+// (prevents 404s from hallucinated slugs).
+function stripUnapprovedLinks(html, allowed) {
+  return String(html || '').replace(
+    /<a\s[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi,
+    (match, href, text) => (allowed.has(href) ? match : text)
+  );
+}
+
 const fillWithAI = asyncHandler(async (req, res) => {
   const { name, type, alcoholCategory } = req.body;
 
@@ -467,6 +562,7 @@ const fillWithAI = asyncHandler(async (req, res) => {
   }
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const catalog = await buildCategoryLinkCatalog(name);
 
   const system =
     'You are a content assistant for DrinksHarbour, Nigeria\'s premier online premium beverages store. ' +
@@ -482,7 +578,7 @@ Return a JSON object with exactly these keys:
   "displayName": "display-friendly name, plural if appropriate (max 120 chars)",
   "tagline": "short punchy tagline that sells the category (max 150 chars)",
   "shortDescription": "2 sentences for listings and cards (max 280 chars)",
-  "description": "3-4 compelling, informative paragraphs formatted as HTML using <p> tags only (max 1800 chars including tags)",
+  "description": "3-4 compelling, informative paragraphs formatted as HTML using <p> tags (plus inline <a> internal links per the linking rules below, if a catalog is provided) (max 1800 chars including tags)",
   "type": "single best value from: ${CATEGORY_TYPES.join(', ')}",
   "subType": "a more specific sub-type label, e.g. Single Malt, or '' (max 80 chars)",
   "alcoholCategory": "single best value from: ${ALCOHOL_CATEGORIES.join(', ')}",
@@ -491,7 +587,7 @@ Return a JSON object with exactly these keys:
   "metaKeywords": "8-12 comma-separated search keywords relevant in Nigeria",
   "color": "6-digit hex color that fits the category mood, e.g. #C0812A for whiskey, #722F37 for wine",
   "icon": "single most relevant emoji"
-}`;
+}${categoryCatalogToPrompt(catalog)}`;
 
   const response = await anthropic.messages.create({
     model: AI_FILL_MODEL,
@@ -519,14 +615,14 @@ Return a JSON object with exactly these keys:
     displayName: aiStr(json.displayName, 120),
     tagline: aiStr(json.tagline, 150),
     shortDescription: aiStr(json.shortDescription, 280),
-    description: aiStr(json.description, 2000),
+    description: aiStr(stripUnapprovedLinks(json.description, catalog.allowed), 2000),
     type: CATEGORY_TYPES.includes(json.type) ? json.type : '',
     subType: aiStr(json.subType, 80),
     alcoholCategory: ALCOHOL_CATEGORIES.includes(json.alcoholCategory) ? json.alcoholCategory : '',
     metaTitle: aiStr(json.metaTitle, 100),
     metaDescription: aiStr(json.metaDescription, 320),
     metaKeywords: aiStr(json.metaKeywords, 500),
-    canonicalUrl: `https://drinksharbour.com/shop/${slugifyName(name)}`,
+    canonicalUrl: `https://www.drinksharbour.com/categories/${slugifyName(name)}`,
     color: HEX_RE.test(aiStr(json.color, 7)) ? aiStr(json.color, 7) : '',
     icon: aiStr(json.icon, 20),
   };

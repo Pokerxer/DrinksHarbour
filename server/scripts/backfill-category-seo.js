@@ -23,6 +23,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env'), 
 const mongoose = require('mongoose');
 const Anthropic = require('@anthropic-ai/sdk');
 const Category = require('../models/Category');
+const SubCategory = require('../models/SubCategory');
 const Product = require('../models/Product');
 
 const MODEL = 'claude-haiku-4-5';
@@ -43,6 +44,30 @@ const FIELDS = {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const clamp = (v, max) => (v === undefined || v === null ? '' : String(v).trim().slice(0, max));
 
+// Strip <a> tags whose href isn't in the approved set, keeping the anchor text
+// (prevents 404s from hallucinated slugs). Mirrors the ai-fill endpoint.
+function stripUnapprovedLinks(html, allowed) {
+  return String(html || '').replace(
+    /<a\s[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi,
+    (match, href, text) => (allowed.has(href) ? match : text)
+  );
+}
+
+// Internal-link catalog: detail pages only (/categories/cat/sub, /product,
+// /brands) — the self-canonical SEO pages that benefit from link equity.
+function linksBlock({ subs, products, brands, categorySlug }) {
+  if (!subs.length && !products.length) return '';
+  const subLines = subs.map((s) => `- "${s.name}" → /categories/${categorySlug}/${s.slug}`).join('\n');
+  const productLines = products.map((p) => `- "${p.name}" → /product/${p.slug}`).join('\n');
+  const brandLines = [...brands.entries()].map(([slug, name]) => `- "${name}" → /brands/${slug}`).join('\n');
+  return `
+
+INTERNAL LINKING: inside the description HTML, weave 3-6 contextual internal links as <a href="/path">natural anchor words</a>. Rules:
+- Use ONLY links from the approved catalog below. NEVER invent a URL or slug.
+- The anchor must be natural words inside a sentence, never the raw slug.
+- Link each target at most once. Prefer subcategory pages, then standout products, then brands.${subLines ? `\n\nApproved subcategory links:\n${subLines}` : ''}${productLines ? `\n\nApproved product links:\n${productLines}` : ''}${brandLines ? `\n\nApproved brand links:\n${brandLines}` : ''}`;
+}
+
 function missingFields(category) {
   const missing = Object.keys(FIELDS).filter((f) => !String(category[f] || '').trim());
   if (!Array.isArray(category.metaKeywords) || category.metaKeywords.length === 0) {
@@ -51,7 +76,7 @@ function missingFields(category) {
   return missing;
 }
 
-function buildPrompt(category, missing, productNames) {
+function buildPrompt(category, missing, productNames, links) {
   const known = [
     `Name: "${category.name}"`,
     category.type && `Type: ${String(category.type).replace(/_/g, ' ')}`,
@@ -67,7 +92,7 @@ function buildPrompt(category, missing, productNames) {
     tagline: '"short punchy tagline that sells the category (max 150 chars)"',
     shortDescription: '"2 compelling sentences for listings and cards (max 280 chars)"',
     description:
-      '"3-4 compelling, informative paragraphs about the category — what it is, styles, how it is enjoyed, why buy it here — formatted as HTML using <p> tags only (max 1800 chars including tags)"',
+      '"3-4 compelling, informative paragraphs about the category — what it is, styles, how it is enjoyed, why buy it here — formatted as HTML using <p> tags (plus inline <a> internal links per the linking rules below, if a catalog is provided) (max 1800 chars including tags)"',
     metaTitle: '"SEO page title targeting buyers in Nigeria, e.g. category + buy online Nigeria (max 100 chars)"',
     metaDescription: '"SEO meta description for the category page, Nigeria market (max 320 chars)"',
     metaKeywords: '"8-12 comma-separated search keywords relevant to this category in Nigeria"',
@@ -85,7 +110,7 @@ Use your real knowledge of this drinks category. Where a fact is genuinely unkno
 Return a JSON object with exactly these keys:
 {
 ${keys}
-}`;
+}${links || ''}`;
 }
 
 async function main() {
@@ -113,9 +138,30 @@ async function main() {
       continue;
     }
 
-    const productNames = (
-      await Product.find({ category: category._id }).select('name').sort({ createdAt: -1 }).limit(8).lean()
-    ).map((p) => p.name);
+    const products = (
+      await Product.find({ category: category._id, status: 'approved', isPublished: true })
+        .select('name slug brand')
+        .sort({ createdAt: -1 })
+        .limit(12)
+        .populate('brand', 'name slug')
+        .lean()
+    ).filter((p) => p.name && p.slug);
+    const productNames = products.slice(0, 8).map((p) => p.name);
+    const subs = await SubCategory.find({ parent: category._id, status: 'published' })
+      .select('name slug')
+      .sort({ productCount: -1, name: 1 })
+      .limit(10)
+      .lean();
+    const brands = new Map();
+    products.forEach((p) => {
+      if (p.brand?.slug && !brands.has(p.brand.slug)) brands.set(p.brand.slug, p.brand.name);
+    });
+    const allowed = new Set([
+      ...products.map((p) => `/product/${p.slug}`),
+      ...[...brands.keys()].map((slug) => `/brands/${slug}`),
+      ...subs.map((s) => `/categories/${category.slug}/${s.slug}`),
+    ]);
+    const links = linksBlock({ subs, products, brands, categorySlug: category.slug });
 
     try {
       const response = await anthropic.messages.create({
@@ -124,7 +170,7 @@ async function main() {
         system:
           "You are a content assistant for DrinksHarbour, Nigeria's premier online premium beverages store. " +
           "You know the world's drinks categories well. Respond with ONLY a single valid JSON object — no prose, no markdown fences.",
-        messages: [{ role: 'user', content: buildPrompt(category, missing, productNames) }],
+        messages: [{ role: 'user', content: buildPrompt(category, missing, productNames, links) }],
       });
 
       const raw = (response.content || []).map((c) => c.text || '').join('');
@@ -143,7 +189,8 @@ async function main() {
             .slice(0, 12);
           if (kw.length) $set.metaKeywords = kw;
         } else {
-          const v = clamp(json[f], FIELDS[f]);
+          const raw = f === 'description' ? stripUnapprovedLinks(json[f], allowed) : json[f];
+          const v = clamp(raw, FIELDS[f]);
           if (v) $set[f] = v;
         }
       }

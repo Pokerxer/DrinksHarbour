@@ -129,6 +129,62 @@ function plainText(raw?: string): string {
   return toParagraphs(raw).join(' ');
 }
 
+type Seg = { text: string; href?: string };
+
+// Like toParagraphs, but preserves internal <a href> links — AI-written
+// category copy carries contextual links to subcategory/product/brand detail
+// pages (only same-site hrefs survive; everything else renders as text).
+function toRichParagraphs(raw?: string): Seg[][] {
+  if (!raw) return [];
+  const html = raw
+    .replace(/<\/(p|div|h[1-6]|li)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<(?!\/?a[\s>])[^>]+>/g, '');
+  return html
+    .split(/\n+/)
+    .map((line) => {
+      const segs: Seg[] = [];
+      const re = /<a\s[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+      let last = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(line))) {
+        if (m.index > last) segs.push({ text: line.slice(last, m.index) });
+        const href = m[1];
+        segs.push({
+          text: m[2].replace(/<[^>]+>/g, ''),
+          ...(href.startsWith('/') ? { href } : {}),
+        });
+        last = m.index + m[0].length;
+      }
+      if (last < line.length) segs.push({ text: line.slice(last) });
+      return segs
+        .map((s) => ({ ...s, text: decodeEntities(s.text).replace(/\s+/g, ' ') }))
+        .filter((s) => s.text.trim());
+    })
+    .filter((p) => p.length);
+}
+
+function RichText({ segs, linkColor }: { segs: Seg[]; linkColor: string }) {
+  return (
+    <>
+      {segs.map((s, i) =>
+        s.href ? (
+          <Link
+            key={i}
+            href={s.href}
+            className="font-medium underline decoration-1 underline-offset-2 transition hover:opacity-80"
+            style={{ color: linkColor }}
+          >
+            {s.text}
+          </Link>
+        ) : (
+          <span key={i}>{s.text}</span>
+        )
+      )}
+    </>
+  );
+}
+
 function label(v?: string): string {
   return String(v || '').replace(/_/g, ' ');
 }
@@ -389,10 +445,10 @@ export default async function CategoryPage({
 
   const monogram = (name || '?').charAt(0).toUpperCase();
 
-  const descriptionParas = toParagraphs(category.description);
+  const descriptionParas = toRichParagraphs(category.description);
   const aboutParas = descriptionParas.length
     ? descriptionParas
-    : toParagraphs(category.shortDescription);
+    : toRichParagraphs(category.shortDescription);
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -624,11 +680,11 @@ export default async function CategoryPage({
                   <p
                     className={`${fraunces.className} cp-dropcap text-lg leading-relaxed text-gray-700`}
                   >
-                    {aboutParas[0]}
+                    <RichText segs={aboutParas[0]} linkColor={primary} />
                   </p>
                   {aboutParas.slice(1).map((para, i) => (
                     <p key={i} className="text-[15px] leading-7 text-gray-600">
-                      {para}
+                      <RichText segs={para} linkColor={primary} />
                     </p>
                   ))}
                 </div>
