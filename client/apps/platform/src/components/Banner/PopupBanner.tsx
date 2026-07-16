@@ -8,6 +8,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
+// Animated GIFs must skip the Next image optimizer so they keep animating.
+const isGif = (u?: string) => !!u && /\.gif(\?|$)/i.test(u);
+
 // Tiny class-name joiner (platform app has no cn util).
 function cn(...parts: (string | false | undefined | null)[]): string {
   return parts.filter(Boolean).join(' ');
@@ -325,7 +328,7 @@ function PopupContent({
           )}
           {!imgErr && banner.image?.url && (
             <div className="relative -mx-5 -mt-5 mb-4 h-28 overflow-hidden">
-              <Image src={banner.image.url} alt={banner.image.alt || banner.title} fill className="object-cover" onError={() => setImgErr(true)} />
+              <Image src={banner.image.url} alt={banner.image.alt || banner.title} fill className="object-cover" unoptimized={isGif(banner.image.url)} onError={() => setImgErr(true)} />
               {nOverlay > 0 && <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${nOverlay})` }} />}
               <div className="absolute inset-0" style={{ background: `linear-gradient(to top, ${bg}, transparent 60%)` }} />
             </div>
@@ -371,7 +374,7 @@ function PopupContent({
             {/* Hero image */}
             {!imgErr && banner.image?.url && (
               <div className="relative h-72 md:h-96">
-                <Image src={banner.image.url} alt={banner.image.alt || banner.title} fill className="object-cover object-center" priority onError={() => setImgErr(true)} />
+                <Image src={banner.image.url} alt={banner.image.alt || banner.title} fill className="object-cover object-center" priority unoptimized={isGif(banner.image.url)} onError={() => setImgErr(true)} />
                 {fsOverlay > 0 && <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${Math.min(fsOverlay, 0.35)})` }} />}
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/5" style={{ background: `linear-gradient(to top, ${bg} 0%, transparent 100%)` }} />
                 {cfg.showCloseButton !== false && (
@@ -449,7 +452,7 @@ function PopupContent({
       >
         {!imgErr && banner.image?.url && (
           <div className="relative h-36 overflow-hidden">
-            <Image src={banner.image.url} alt={banner.image.alt || banner.title} fill className="object-cover" onError={() => setImgErr(true)} />
+            <Image src={banner.image.url} alt={banner.image.alt || banner.title} fill className="object-cover" unoptimized={isGif(banner.image.url)} onError={() => setImgErr(true)} />
             {siOverlay > 0 && <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${siOverlay})` }} />}
             <div className="absolute inset-0" style={{ background: `linear-gradient(to top, ${bg}, transparent 50%)` }} />
           </div>

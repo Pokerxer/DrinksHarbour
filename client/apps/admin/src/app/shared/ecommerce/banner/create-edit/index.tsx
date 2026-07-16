@@ -228,7 +228,7 @@ function ImageUploadField({
                   Click to upload
                 </span>
                 <span className="text-xs text-gray-400">
-                  PNG, JPG, WEBP up to 10MB
+                  PNG, JPG, WEBP, GIF (animated) up to 20MB
                 </span>
               </>
             )}

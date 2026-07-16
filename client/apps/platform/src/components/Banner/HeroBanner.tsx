@@ -225,6 +225,8 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
 
   const slide = slides[currentIndex];
   const imgSrc = imgErrors[slide._id] ? '/images/images/product/1000x1000.png' : slide.image.url;
+  // Animated GIFs must skip the Next image optimizer so they keep animating.
+  const gifSrc = /\.gif(\?|$)/i.test(imgSrc);
 
   return (
     <div
@@ -276,6 +278,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
                 className="object-cover"
                 priority
                 sizes="100vw"
+                unoptimized={gifSrc}
                 onError={() => setImgErrors(p => ({ ...p, [slide._id]: true }))}
               />
             </motion.div>
