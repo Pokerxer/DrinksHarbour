@@ -298,7 +298,50 @@ export default async function BrandPage({
     fetchBrandProducts(brand.name),
     fetchRelatedBrands(brand),
   ]);
-  const jsonLd = buildJsonLd(brand, slug);
+
+  // FAQ — built from real data so the answers stay true per brand.
+  const prices = products
+    .map(productPrice)
+    .filter((n): n is number => n !== null);
+  const minPrice = prices.length ? Math.min(...prices) : null;
+  const maxPrice = prices.length ? Math.max(...prices) : null;
+
+  const faqs: { q: string; a: string }[] = [
+    {
+      q: `Is ${brand.name} on DrinksHarbour original?`,
+      a: `Yes. Every ${brand.name} product sold on DrinksHarbour is 100% authentic, sourced through vetted distributors and checked before dispatch.`,
+    },
+    minPrice !== null && {
+      q: `How much does ${brand.name} cost in Nigeria?`,
+      a:
+        maxPrice !== null && maxPrice !== minPrice
+          ? `${brand.name} prices on DrinksHarbour currently range from ${NGN.format(minPrice)} to ${NGN.format(maxPrice)}, depending on the product and bottle size.`
+          : `${brand.name} is currently available on DrinksHarbour from ${NGN.format(minPrice)}. Prices vary by product and bottle size.`,
+    },
+    {
+      q: `Does DrinksHarbour deliver ${brand.name} across Nigeria?`,
+      a: `Yes. Order ${brand.name} online and get it delivered across Nigeria, with same-day options available in Abuja.`,
+    },
+    products.length > 0 && {
+      q: `Which ${brand.name} products can I buy online?`,
+      a: `DrinksHarbour stocks ${brand.name} products including ${products
+        .slice(0, 3)
+        .map((p: any) => p.name)
+        .join(', ')}${products.length > 3 ? ' and more' : ''}. See the full range on the ${brand.name} shop page.`,
+    },
+  ].filter(Boolean) as { q: string; a: string }[];
+
+  const faqLd = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: faqs.map((f) => ({
+      '@type': 'Question',
+      name: f.q,
+      acceptedAnswer: { '@type': 'Answer', text: f.a },
+    })),
+  };
+
+  const jsonLd = [...buildJsonLd(brand, slug), faqLd];
 
   const primary = brand.brandColors?.primary || '#7C1D1D';
   const secondary = brand.brandColors?.secondary || '#1A1A2E';
@@ -778,6 +821,43 @@ export default async function BrandPage({
                   </Link>
                 );
               })}
+            </div>
+          </section>
+        )}
+
+        {/* ── FAQ ───────────────────────────────────────────────────────── */}
+        {faqs.length > 0 && (
+          <section aria-labelledby="brand-faq-heading">
+            <div className="mb-6">
+              <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-gray-400">
+                Good to know
+              </p>
+              <h2
+                id="brand-faq-heading"
+                className={`${fraunces.className} mt-1 text-3xl text-gray-900`}
+              >
+                Frequently asked questions
+              </h2>
+            </div>
+            <div className="divide-y divide-gray-100 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+              {faqs.map((f) => (
+                <details key={f.q} className="group">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5 [&::-webkit-details-marker]:hidden">
+                    <span
+                      className={`${fraunces.className} text-base text-gray-900`}
+                    >
+                      {f.q}
+                    </span>
+                    <Icon.PiPlusBold
+                      aria-hidden="true"
+                      className="h-4 w-4 flex-shrink-0 text-gray-400 transition-transform group-open:rotate-45 motion-reduce:transition-none"
+                    />
+                  </summary>
+                  <p className="px-6 pb-5 text-sm leading-7 text-gray-600">
+                    {f.a}
+                  </p>
+                </details>
+              ))}
             </div>
           </section>
         )}

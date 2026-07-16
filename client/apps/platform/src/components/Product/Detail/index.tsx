@@ -454,11 +454,19 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
             <div className="product-info space-y-6">
               {/* Brand & Title */}
               <div>
-                {productData.brand?.name && (
-                  <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                    {productData.brand.name}
-                  </p>
-                )}
+                {productData.brand?.name &&
+                  (productData.brand?.slug ? (
+                    <Link
+                      href={`/brands/${productData.brand.slug}`}
+                      className="mb-2 inline-block text-sm font-semibold uppercase tracking-wide text-gray-500 transition-colors hover:text-gray-900 hover:underline"
+                    >
+                      {productData.brand.name}
+                    </Link>
+                  ) : (
+                    <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                      {productData.brand.name}
+                    </p>
+                  ))}
                 <h1 className="text-3xl md:text-4xl font-bold text-gray-900 leading-tight">
                   {productData.name}
                 </h1>
