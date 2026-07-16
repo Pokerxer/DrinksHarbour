@@ -1,4 +1,3 @@
-
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -50,6 +49,47 @@ async function fetchCategoryProducts(categoryId: string) {
     const data = await res.json();
     const list = data?.data?.products ?? data?.products ?? data?.data ?? [];
     return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+// The category's published subcategories — surfaced as style chips that deep
+// link into the shop's combined ?category=&subcategory= canonical form.
+async function fetchSubcategories(categoryId: string): Promise<any[]> {
+  try {
+    const res = await fetch(
+      `${API_URL}/api/subcategories/by-category/${encodeURIComponent(categoryId)}`,
+      { next: { revalidate: 3600 } }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    const list =
+      data?.data?.subcategories ?? data?.subcategories ?? data?.data ?? [];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+// Related shelves: other published categories, same alcohol family first.
+async function fetchRelatedCategories(category: any): Promise<any[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/categories`, {
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const list = data?.data?.categories ?? data?.categories ?? data?.data ?? [];
+    if (!Array.isArray(list)) return [];
+    const others = list.filter((c: any) => c?.slug && c.slug !== category.slug);
+    const sameFamily = others.filter(
+      (c: any) => c.alcoholCategory === category.alcoholCategory
+    );
+    const rest = others.filter(
+      (c: any) => c.alcoholCategory !== category.alcoholCategory
+    );
+    return [...sameFamily, ...rest].slice(0, 6);
   } catch {
     return [];
   }
@@ -264,11 +304,57 @@ export default async function CategoryPage({
   const category = await fetchCategory(slug);
   if (!category) notFound();
 
-  const products = await fetchCategoryProducts(String(category._id));
-
-  const jsonLd = buildJsonLd(category, slug, products);
+  const [products, subcategories, relatedCategories] = await Promise.all([
+    fetchCategoryProducts(String(category._id)),
+    fetchSubcategories(String(category._id)),
+    fetchRelatedCategories(category),
+  ]);
 
   const name = category.displayName || category.name;
+
+  // FAQ — built from real data so the answers stay true per category.
+  const prices = products
+    .map(productPrice)
+    .filter((n): n is number => n !== null);
+  const minPrice = prices.length ? Math.min(...prices) : null;
+  const maxPrice = prices.length ? Math.max(...prices) : null;
+
+  const faqs: { q: string; a: string }[] = [
+    {
+      q: `Is the ${name} sold on DrinksHarbour original?`,
+      a: `Yes. Every ${name} product sold on DrinksHarbour is 100% authentic, sourced through vetted distributors and checked before dispatch.`,
+    },
+    minPrice !== null && {
+      q: `How much does ${name} cost in Nigeria?`,
+      a:
+        maxPrice !== null && maxPrice !== minPrice
+          ? `${name} prices on DrinksHarbour currently range from ${NGN.format(minPrice)} to ${NGN.format(maxPrice)}, depending on the brand and bottle size.`
+          : `${name} is currently available on DrinksHarbour from ${NGN.format(minPrice)}. Prices vary by brand and bottle size.`,
+    },
+    {
+      q: `Does DrinksHarbour deliver ${name} across Nigeria?`,
+      a: `Yes. Order ${name} online and get it delivered across Nigeria, with same-day options available in Abuja.`,
+    },
+    products.length > 0 && {
+      q: `Which ${name} products can I buy online?`,
+      a: `DrinksHarbour stocks ${name} products including ${products
+        .slice(0, 3)
+        .map((p: any) => p.name)
+        .join(', ')}${products.length > 3 ? ' and more' : ''}. See the full range on the ${name} shop page.`,
+    },
+  ].filter(Boolean) as { q: string; a: string }[];
+
+  const faqLd = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: faqs.map((f) => ({
+      '@type': 'Question',
+      name: f.q,
+      acceptedAnswer: { '@type': 'Answer', text: f.a },
+    })),
+  };
+
+  const jsonLd = [...buildJsonLd(category, slug, products), faqLd];
   // No brandColors on categories — lean on the stored accent color over the
   // same deep-ink base the brand labels use.
   const primary = category.color || '#7C1D1D';
@@ -489,7 +575,7 @@ export default async function CategoryPage({
 
       <div className="container mx-auto space-y-12 px-4 py-10 sm:py-14">
         {/* ── The cellar — about ────────────────────────────────────────── */}
-        {aboutParas.length > 0 && (
+        {(aboutParas.length > 0 || subcategories.length > 0) && (
           <section
             aria-labelledby="category-about-heading"
             className="grid gap-8 lg:grid-cols-12"
@@ -507,23 +593,44 @@ export default async function CategoryPage({
               <div className="mt-4 max-w-[9rem]">
                 <LabelRule tone={`${primary}55`} />
               </div>
+
+              {subcategories.length > 0 && (
+                <div className="mt-6">
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">
+                    Browse by style
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {subcategories.map((s: any) => (
+                      <Link
+                        key={s.slug}
+                        href={`/shop?category=${encodeURIComponent(category.slug)}&subcategory=${encodeURIComponent(s.slug)}`}
+                        className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium capitalize text-gray-600 transition hover:border-gray-400 hover:text-gray-900"
+                      >
+                        {s.name}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="space-y-6 lg:col-span-8">
-              <div className="space-y-4">
-                {/* Lead paragraph — serif with drop cap */}
-                <p
-                  className={`${fraunces.className} cp-dropcap text-lg leading-relaxed text-gray-700`}
-                >
-                  {aboutParas[0]}
-                </p>
-                {aboutParas.slice(1).map((para, i) => (
-                  <p key={i} className="text-[15px] leading-7 text-gray-600">
-                    {para}
+            {aboutParas.length > 0 && (
+              <div className="space-y-6 lg:col-span-8">
+                <div className="space-y-4">
+                  {/* Lead paragraph — serif with drop cap */}
+                  <p
+                    className={`${fraunces.className} cp-dropcap text-lg leading-relaxed text-gray-700`}
+                  >
+                    {aboutParas[0]}
                   </p>
-                ))}
+                  {aboutParas.slice(1).map((para, i) => (
+                    <p key={i} className="text-[15px] leading-7 text-gray-600">
+                      {para}
+                    </p>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </section>
         )}
 
@@ -593,6 +700,117 @@ export default async function CategoryPage({
                   </Link>
                 );
               })}
+            </div>
+          </section>
+        )}
+
+        {/* ── Related categories ────────────────────────────────────────── */}
+        {relatedCategories.length > 0 && (
+          <section aria-labelledby="related-categories-heading">
+            <div className="mb-6 flex items-end justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-gray-400">
+                  More shelves
+                </p>
+                <h2
+                  id="related-categories-heading"
+                  className={`${fraunces.className} mt-1 text-3xl text-gray-900`}
+                >
+                  Related categories
+                </h2>
+              </div>
+              <Link
+                href="/shop"
+                className="inline-flex flex-shrink-0 items-center gap-1 text-sm font-semibold hover:underline"
+                style={{ color: primary }}
+              >
+                All drinks
+                <Icon.PiArrowRightBold className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-6">
+              {relatedCategories.map((c: any) => {
+                const cColor = c.color || '#7C1D1D';
+                const cName = c.displayName || c.name;
+                return (
+                  <Link
+                    key={c.slug}
+                    href={`/categories/${c.slug}`}
+                    className="group flex flex-col items-center rounded-2xl border border-gray-200 bg-white p-5 text-center shadow-sm transition hover:-translate-y-1 hover:shadow-lg motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+                  >
+                    <span className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-gray-100 bg-gray-50 p-2">
+                      {c.thumbnailImage?.url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={c.thumbnailImage.url}
+                          alt=""
+                          loading="lazy"
+                          className="h-full w-full object-contain"
+                        />
+                      ) : c.icon ? (
+                        <span aria-hidden="true" className="text-2xl">
+                          {c.icon}
+                        </span>
+                      ) : (
+                        <span
+                          className={`${fraunces.className} text-2xl font-semibold`}
+                          style={{ color: cColor }}
+                        >
+                          {(cName || '?').charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                    </span>
+                    <span
+                      className={`${fraunces.className} mt-3 line-clamp-1 text-base text-gray-900`}
+                    >
+                      {cName}
+                    </span>
+                    {c.type && (
+                      <span className="mt-1 line-clamp-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400">
+                        {label(c.type)}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* ── FAQ ───────────────────────────────────────────────────────── */}
+        {faqs.length > 0 && (
+          <section aria-labelledby="category-faq-heading">
+            <div className="mb-6">
+              <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-gray-400">
+                Good to know
+              </p>
+              <h2
+                id="category-faq-heading"
+                className={`${fraunces.className} mt-1 text-3xl text-gray-900`}
+              >
+                Frequently asked questions
+              </h2>
+            </div>
+            <div className="divide-y divide-gray-100 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+              {faqs.map((f) => (
+                <details key={f.q} className="group">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5 [&::-webkit-details-marker]:hidden">
+                    <span
+                      className={`${fraunces.className} text-base text-gray-900`}
+                    >
+                      {f.q}
+                    </span>
+                    <Icon.PiPlusBold
+                      aria-hidden="true"
+                      className="h-4 w-4 flex-shrink-0 text-gray-400 transition-transform group-open:rotate-45 motion-reduce:transition-none"
+                    />
+                  </summary>
+                  <p className="px-6 pb-5 text-sm leading-7 text-gray-600">
+                    {f.a}
+                  </p>
+                </details>
+              ))}
             </div>
           </section>
         )}
