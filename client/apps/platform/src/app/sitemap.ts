@@ -151,13 +151,21 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     }));
 
-  // Brand shop filter pages
-  const brandPages: MetadataRoute.Sitemap = brandSlugs.map((slug) => ({
-    url: `${BASE_URL}/brands/${slug}`,
-    lastModified: new Date(),
-    changeFrequency: "weekly",
-    priority: 0.7,
-  }));
+  // Brand pages — both the detail page and the shop filter listing
+  const brandPages: MetadataRoute.Sitemap = brandSlugs.flatMap((slug) => [
+    {
+      url: `${BASE_URL}/brands/${slug}`,
+      lastModified: new Date(),
+      changeFrequency: "weekly" as const,
+      priority: 0.7,
+    },
+    {
+      url: `${BASE_URL}/shop?brand=${slug}`,
+      lastModified: new Date(),
+      changeFrequency: "weekly" as const,
+      priority: 0.7,
+    },
+  ]);
 
   const blogPages: MetadataRoute.Sitemap = posts.map((post) => ({
     url: `${BASE_URL}/blog/${post.slug}`,
