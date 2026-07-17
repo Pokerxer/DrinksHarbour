@@ -83,7 +83,7 @@ const subCategorySchema = new Schema(
     
     description: {
       type: String,
-      maxlength: 2000,
+      maxlength: 20000,
       trim: true,
     },
     

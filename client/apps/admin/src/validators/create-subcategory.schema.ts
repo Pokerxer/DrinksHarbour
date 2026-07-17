@@ -19,7 +19,7 @@ export const subCategoryFormSchema = z.object({
   subType: z.string().max(100).optional(),
   style: z.enum(validStyles).optional(),
   // Content
-  description: z.string().max(2000).optional(),
+  description: z.string().max(20000).optional(),
   shortDescription: z.string().max(280).optional(),
   // Flavors & Pairings (comma-separated in form)
   typicalFlavors: z.string().optional(),

@@ -24,7 +24,7 @@ export const categoryFormSchema = z.object({
   subType: z.string().max(80).optional(),
   alcoholCategory: z.enum(['alcoholic', 'non_alcoholic', 'low_alcohol', 'alcohol_free', 'mixed']).optional().default('alcoholic'),
   // Content
-  description: z.string().max(2000).optional(),
+  description: z.string().max(20000).optional(),
   shortDescription: z.string().max(280).optional(),
   // Hierarchy
   parentCategory: z.string().optional(),

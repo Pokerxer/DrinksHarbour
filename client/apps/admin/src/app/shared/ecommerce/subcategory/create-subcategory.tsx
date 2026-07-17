@@ -5,7 +5,16 @@ import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Controller, type SubmitHandler } from 'react-hook-form';
 import QuillLoader from '@core/components/loader/quill-loader';
-import { Button, Input, Select, Switch, Text, Title, Textarea, type SelectOption } from 'rizzui';
+import {
+  Button,
+  Input,
+  Select,
+  Switch,
+  Text,
+  Title,
+  Textarea,
+  type SelectOption,
+} from 'rizzui';
 import cn from '@core/utils/class-names';
 import { Form } from '@core/ui/form';
 import {
@@ -14,7 +23,10 @@ import {
 } from '@/validators/create-subcategory.schema';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { createSubCategory, updateSubCategory } from '@/services/subcategory.service';
+import {
+  createSubCategory,
+  updateSubCategory,
+} from '@/services/subcategory.service';
 import { getAdminCategories } from '@/services/category.service';
 import { routes } from '@/config/routes';
 import toast from 'react-hot-toast';
@@ -94,7 +106,9 @@ function ImagePicker({
 
   return (
     <div className="space-y-2">
-      {label && <Text className="text-sm font-medium text-gray-700">{label}</Text>}
+      {label && (
+        <Text className="text-sm font-medium text-gray-700">{label}</Text>
+      )}
       {preview ? (
         <div className="relative w-full overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
           <div className="relative aspect-video w-full">
@@ -122,7 +136,9 @@ function ImagePicker({
             <PiUploadSimpleBold className="h-4 w-4 text-gray-400" />
           </div>
           <div className="text-center">
-            <Text className="text-xs font-medium text-gray-600">Click to upload</Text>
+            <Text className="text-xs font-medium text-gray-600">
+              Click to upload
+            </Text>
             <Text className="text-xs text-gray-400">PNG, JPG or WEBP</Text>
           </div>
         </button>
@@ -141,7 +157,13 @@ function ImagePicker({
 // ─── AiFieldButton ───────────────────────────────────────────────────────────
 // Small per-field "Generate" trigger, like the blog editor's regenerate buttons.
 
-function AiFieldButton({ loading, onClick }: { loading: boolean; onClick: () => void }) {
+function AiFieldButton({
+  loading,
+  onClick,
+}: {
+  loading: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
@@ -176,7 +198,9 @@ function VisibilityToggle({
     <div className="flex items-center justify-between py-2.5">
       <div className="min-w-0 flex-1 pr-4">
         <Text className="text-sm font-medium text-gray-700">{label}</Text>
-        {description && <Text className="text-xs text-gray-400">{description}</Text>}
+        {description && (
+          <Text className="text-xs text-gray-400">{description}</Text>
+        )}
       </div>
       <Switch
         checked={!!checked}
@@ -208,14 +232,21 @@ export default function CreateSubCategory({
   const router = useRouter();
 
   const [isLoading, setLoading] = useState(false);
-  const [thumbnailImageFile, setThumbnailImageFile] = useState<File | null>(null);
+  const [thumbnailImageFile, setThumbnailImageFile] = useState<File | null>(
+    null
+  );
   const [featuredImageFile, setFeaturedImageFile] = useState<File | null>(null);
   const [bannerImageFile, setBannerImageFile] = useState<File | null>(null);
-  const [parentOptions, setParentOptions] = useState<{ value: string; label: string }[]>([]);
+  const [parentOptions, setParentOptions] = useState<
+    { value: string; label: string }[]
+  >([]);
   const slugManuallyEdited = useRef(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiField, setAiField] = useState<string | null>(null);
-  const [aiSuggestions, setAiSuggestions] = useState<Record<string, string> | null>(null);
+  const [aiSuggestions, setAiSuggestions] = useState<Record<
+    string,
+    string
+  > | null>(null);
 
   // Generate a single field via the same ai-fill endpoint and apply only it.
   async function generateSingleField(
@@ -231,12 +262,19 @@ export default function CreateSubCategory({
     }
     setAiField(field);
     try {
-      const parentName = parentOptions.find((o) => o.value === parentValue)?.label || '';
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/subcategories/admin/ai-fill`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name, type, parentName }),
-      });
+      const parentName =
+        parentOptions.find((o) => o.value === parentValue)?.label || '';
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/subcategories/admin/ai-fill`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ name, type, parentName }),
+        }
+      );
       const json = await res.json();
       if (!json.success) throw new Error(json.message);
       const v = json.data?.[field];
@@ -250,16 +288,30 @@ export default function CreateSubCategory({
     }
   }
 
-  async function triggerAiFill(name: string, type: string, parentValue: string) {
-    if (!name.trim()) { toast.error('Enter a subcategory name first'); return; }
+  async function triggerAiFill(
+    name: string,
+    type: string,
+    parentValue: string
+  ) {
+    if (!name.trim()) {
+      toast.error('Enter a subcategory name first');
+      return;
+    }
     setAiLoading(true);
     try {
-      const parentName = parentOptions.find((o) => o.value === parentValue)?.label || '';
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/subcategories/admin/ai-fill`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name, type, parentName }),
-      });
+      const parentName =
+        parentOptions.find((o) => o.value === parentValue)?.label || '';
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/subcategories/admin/ai-fill`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ name, type, parentName }),
+        }
+      );
       const json = await res.json();
       if (!json.success) throw new Error(json.message);
       setAiSuggestions(json.data);
@@ -299,7 +351,10 @@ export default function CreateSubCategory({
         description: data.description || '',
         shortDescription: data.shortDescription || '',
         status: data.status || 'draft',
-        displayOrder: (rawOrder !== undefined && !isNaN(Number(rawOrder))) ? Number(rawOrder) : 999,
+        displayOrder:
+          rawOrder !== undefined && !isNaN(Number(rawOrder))
+            ? Number(rawOrder)
+            : 999,
         isFeatured: data.isFeatured ?? false,
         isTrending: data.isTrending ?? false,
         isPopular: data.isPopular ?? false,
@@ -366,13 +421,25 @@ export default function CreateSubCategory({
       }}
       className="isomorphic-form flex flex-grow flex-col @container"
     >
-      {({ register, control, watch, setValue, formState: { errors, submitCount } }) => {
+      {({
+        register,
+        control,
+        watch,
+        setValue,
+        formState: { errors, submitCount },
+      }) => {
         const nameValue = watch('name');
         const colorValue = watch('color') || '#6B7280';
         const shortDescValue = watch('shortDescription') || '';
         const descValue = watch('description') || '';
         const gen = (field: string) =>
-          generateSingleField(field, watch('name'), watch('type') || '', watch('parent') || '', setValue);
+          generateSingleField(
+            field,
+            watch('name'),
+            watch('type') || '',
+            watch('parent') || '',
+            setValue
+          );
 
         // Surface WHY a submit was refused — fields without a visible error
         // slot (e.g. the Quill description) previously failed silently.
@@ -414,22 +481,44 @@ export default function CreateSubCategory({
             return v;
           };
           const fields = [
-            'name', 'slug', 'parent', 'displayName', 'tagline', 'shortDescription',
-            'type', 'subType', 'style', 'description',
-            'typicalFlavors', 'commonPairings',
-            'seasonalSpring', 'seasonalSummer', 'seasonalFall', 'seasonalWinter',
-            'metaTitle', 'metaDescription', 'metaKeywords', 'canonicalUrl',
-            'color', 'icon', 'status',
+            'name',
+            'slug',
+            'parent',
+            'displayName',
+            'tagline',
+            'shortDescription',
+            'type',
+            'subType',
+            'style',
+            'description',
+            'typicalFlavors',
+            'commonPairings',
+            'seasonalSpring',
+            'seasonalSummer',
+            'seasonalFall',
+            'seasonalWinter',
+            'metaTitle',
+            'metaDescription',
+            'metaKeywords',
+            'canonicalUrl',
+            'color',
+            'icon',
+            'status',
           ];
           fields.forEach((f) => {
             const v = aiDraft[f];
             if (v === undefined || v === null) return;
             const coerced = coerce(f, v);
             if (coerced === '') return;
-            setValue(f as any, coerced, { shouldValidate: true, shouldDirty: true });
+            setValue(f as any, coerced, {
+              shouldValidate: true,
+              shouldDirty: true,
+            });
           });
           if (!aiDraft.parent) {
-            toast.error('AI did not resolve a parent category — please select one before saving');
+            toast.error(
+              'AI did not resolve a parent category — please select one before saving'
+            );
           }
           toast.success('AI draft applied — review and publish');
         }, [aiDraft]);
@@ -447,8 +536,15 @@ export default function CreateSubCategory({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={parentOptions}
-                        value={(() => { const found = parentOptions.find((o) => o.value === value); return found ?? ''; })()}
-                        onChange={(opt: SelectOption) => onChange((opt as any).value ?? '')}
+                        value={(() => {
+                          const found = parentOptions.find(
+                            (o) => o.value === value
+                          );
+                          return found ?? '';
+                        })()}
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value ?? '')
+                        }
                         label="Parent Category *"
                         placeholder="Select parent category"
                         error={errors?.parent?.message}
@@ -467,7 +563,9 @@ export default function CreateSubCategory({
                   placeholder="e.g. single-malt"
                   {...register('slug')}
                   error={errors.slug?.message}
-                  onFocus={() => { slugManuallyEdited.current = true; }}
+                  onFocus={() => {
+                    slugManuallyEdited.current = true;
+                  }}
                 />
                 <Controller
                   name="status"
@@ -475,8 +573,15 @@ export default function CreateSubCategory({
                   render={({ field: { onChange, value } }) => (
                     <Select
                       options={STATUS_OPTIONS}
-                      value={(() => { const found = STATUS_OPTIONS.find((o) => o.value === value); return found ?? ''; })()}
-                      onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                      value={(() => {
+                        const found = STATUS_OPTIONS.find(
+                          (o) => o.value === value
+                        );
+                        return found ?? '';
+                      })()}
+                      onChange={(opt: SelectOption) =>
+                        onChange((opt as any).value)
+                      }
                       label="Status"
                       placeholder="Select status"
                     />
@@ -485,7 +590,9 @@ export default function CreateSubCategory({
                 <div className="col-span-2">
                   <Text className="mb-1 block text-sm font-medium text-gray-700">
                     Short Description{' '}
-                    <span className="text-gray-400 font-normal">({shortDescValue.length}/280)</span>
+                    <span className="font-normal text-gray-400">
+                      ({shortDescValue.length}/280)
+                    </span>
                   </Text>
                   <textarea
                     {...register('shortDescription')}
@@ -496,7 +603,9 @@ export default function CreateSubCategory({
                   />
                 </div>
                 <div className="col-span-2">
-                  <Text className="mb-2 block text-sm font-medium text-gray-700">Thumbnail Image</Text>
+                  <Text className="mb-2 block text-sm font-medium text-gray-700">
+                    Thumbnail Image
+                  </Text>
                   <ImagePicker
                     currentUrl={currentImages?.thumbnail}
                     onFile={(f) => setThumbnailImageFile(f)}
@@ -519,18 +628,25 @@ export default function CreateSubCategory({
           <div className="flex gap-6 @5xl:gap-7">
             {/* ── Left column (main content) ── */}
             <div className="min-w-0 flex-1 space-y-6">
-
               {/* Basic Information */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
                 <div className="mb-5 flex items-center justify-between">
-                  <Title as="h5" className="font-semibold text-gray-800">Basic Information</Title>
+                  <Title as="h5" className="font-semibold text-gray-800">
+                    Basic Information
+                  </Title>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     isLoading={aiLoading}
                     disabled={aiLoading}
-                    onClick={() => triggerAiFill(watch('name'), watch('type') || '', watch('parent') || '')}
+                    onClick={() =>
+                      triggerAiFill(
+                        watch('name'),
+                        watch('type') || '',
+                        watch('parent') || ''
+                      )
+                    }
                     className="gap-1.5 border-violet-200 text-violet-600 hover:bg-violet-50"
                   >
                     {!aiLoading && <span>✨</span>}
@@ -546,8 +662,15 @@ export default function CreateSubCategory({
                       render={({ field: { onChange, value } }) => (
                         <Select
                           options={parentOptions}
-                          value={(() => { const found = parentOptions.find((o) => o.value === value); return found ?? ''; })()}
-                          onChange={(opt: SelectOption) => onChange((opt as any).value ?? '')}
+                          value={(() => {
+                            const found = parentOptions.find(
+                              (o) => o.value === value
+                            );
+                            return found ?? '';
+                          })()}
+                          onChange={(opt: SelectOption) =>
+                            onChange((opt as any).value ?? '')
+                          }
                           label="Parent Category *"
                           placeholder="Select parent category"
                           error={errors?.parent?.message}
@@ -555,7 +678,8 @@ export default function CreateSubCategory({
                       )}
                     />
                     <Text className="mt-1 text-xs text-gray-400">
-                      Required. Every subcategory must belong to a parent category.
+                      Required. Every subcategory must belong to a parent
+                      category.
                     </Text>
                   </div>
                   <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
@@ -578,18 +702,24 @@ export default function CreateSubCategory({
                       placeholder="e.g. single-malt"
                       {...register('slug')}
                       error={errors.slug?.message}
-                      prefix={<span className="text-gray-400 text-sm">/</span>}
-                      onFocus={() => { slugManuallyEdited.current = true; }}
+                      prefix={<span className="text-sm text-gray-400">/</span>}
+                      onFocus={() => {
+                        slugManuallyEdited.current = true;
+                      }}
                     />
                     <Text className="mt-1.5 text-xs text-gray-400">
-                      Auto-generated from name. Edit to customise. Lowercase letters, numbers and hyphens only.
+                      Auto-generated from name. Edit to customise. Lowercase
+                      letters, numbers and hyphens only.
                     </Text>
                   </div>
                   <Input
                     label={
                       <span className="flex w-full items-center justify-between">
                         Tagline
-                        <AiFieldButton loading={aiField === 'tagline'} onClick={() => gen('tagline')} />
+                        <AiFieldButton
+                          loading={aiField === 'tagline'}
+                          onClick={() => gen('tagline')}
+                        />
                       </span>
                     }
                     placeholder="e.g. The finest single malts from Scotland"
@@ -601,7 +731,9 @@ export default function CreateSubCategory({
 
               {/* Classification */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-5 font-semibold text-gray-800">Classification</Title>
+                <Title as="h5" className="mb-5 font-semibold text-gray-800">
+                  Classification
+                </Title>
                 <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
                   <Input
                     label="Type"
@@ -621,8 +753,15 @@ export default function CreateSubCategory({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={STYLE_OPTIONS}
-                        value={(() => { const found = STYLE_OPTIONS.find((o) => o.value === value); return found ?? ''; })()}
-                        onChange={(opt: SelectOption) => onChange((opt as any).value ?? '')}
+                        value={(() => {
+                          const found = STYLE_OPTIONS.find(
+                            (o) => o.value === value
+                          );
+                          return found ?? '';
+                        })()}
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value ?? '')
+                        }
                         label="Style"
                         placeholder="Select style"
                         error={errors?.style?.message}
@@ -634,7 +773,10 @@ export default function CreateSubCategory({
                     type="number"
                     placeholder="999"
                     {...register('displayOrder', {
-                      setValueAs: (v) => (v === '' || v === null || isNaN(Number(v)) ? 999 : Number(v)),
+                      setValueAs: (v) =>
+                        v === '' || v === null || isNaN(Number(v))
+                          ? 999
+                          : Number(v),
                     })}
                     error={errors.displayOrder?.message}
                   />
@@ -643,13 +785,17 @@ export default function CreateSubCategory({
 
               {/* Description */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-5 font-semibold text-gray-800">Description</Title>
+                <Title as="h5" className="mb-5 font-semibold text-gray-800">
+                  Description
+                </Title>
                 <div className="space-y-4">
                   <div>
                     <div className="mb-1.5 flex items-center justify-between">
                       <Text className="block text-sm font-medium text-gray-700">
                         Short Description{' '}
-                        <span className="font-normal text-gray-400">({shortDescValue.length}/280)</span>
+                        <span className="font-normal text-gray-400">
+                          ({shortDescValue.length}/280)
+                        </span>
                       </Text>
                       <AiFieldButton
                         loading={aiField === 'shortDescription'}
@@ -664,7 +810,9 @@ export default function CreateSubCategory({
                       className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                     {errors.shortDescription?.message && (
-                      <Text className="mt-1 text-xs text-red-500">{errors.shortDescription.message}</Text>
+                      <Text className="mt-1 text-xs text-red-500">
+                        {errors.shortDescription.message}
+                      </Text>
                     )}
                   </div>
                   <div>
@@ -674,10 +822,12 @@ export default function CreateSubCategory({
                         <span
                           className={cn(
                             'font-normal',
-                            descValue.length > 2000 ? 'text-red-500' : 'text-gray-400'
+                            descValue.length > 20000
+                              ? 'text-red-500'
+                              : 'text-gray-400'
                           )}
                         >
-                          ({descValue.length}/2000)
+                          ({descValue.length}/20000)
                         </span>
                       </Text>
                       <AiFieldButton
@@ -699,7 +849,8 @@ export default function CreateSubCategory({
                     />
                     {errors.description?.message && (
                       <Text className="mt-1 text-xs text-red-500">
-                        {errors.description.message} — the editor adds HTML markup, trim the text to fit.
+                        {errors.description.message} — the editor adds HTML
+                        markup, trim the text to fit.
                       </Text>
                     )}
                   </div>
@@ -708,14 +859,18 @@ export default function CreateSubCategory({
 
               {/* Flavors & Pairings */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-1 font-semibold text-gray-800">Flavors & Pairings</Title>
+                <Title as="h5" className="mb-1 font-semibold text-gray-800">
+                  Flavors & Pairings
+                </Title>
                 <Text className="mb-5 text-sm text-gray-400">
                   Help customers discover and understand this subcategory.
                 </Text>
                 <div className="space-y-4">
                   <div>
                     <div className="mb-1.5 flex items-center justify-between">
-                      <Text className="block text-sm font-medium text-gray-700">Typical Flavors</Text>
+                      <Text className="block text-sm font-medium text-gray-700">
+                        Typical Flavors
+                      </Text>
                       <AiFieldButton
                         loading={aiField === 'typicalFlavors'}
                         onClick={() => gen('typicalFlavors')}
@@ -727,11 +882,15 @@ export default function CreateSubCategory({
                       rows={2}
                       className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     />
-                    <Text className="mt-1 text-xs text-gray-400">Separate with commas.</Text>
+                    <Text className="mt-1 text-xs text-gray-400">
+                      Separate with commas.
+                    </Text>
                   </div>
                   <div>
                     <div className="mb-1.5 flex items-center justify-between">
-                      <Text className="block text-sm font-medium text-gray-700">Common Pairings</Text>
+                      <Text className="block text-sm font-medium text-gray-700">
+                        Common Pairings
+                      </Text>
                       <AiFieldButton
                         loading={aiField === 'commonPairings'}
                         onClick={() => gen('commonPairings')}
@@ -743,14 +902,18 @@ export default function CreateSubCategory({
                       rows={2}
                       className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     />
-                    <Text className="mt-1 text-xs text-gray-400">Separate with commas.</Text>
+                    <Text className="mt-1 text-xs text-gray-400">
+                      Separate with commas.
+                    </Text>
                   </div>
                 </div>
               </div>
 
               {/* SEO */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-1 font-semibold text-gray-800">SEO</Title>
+                <Title as="h5" className="mb-1 font-semibold text-gray-800">
+                  SEO
+                </Title>
                 <Text className="mb-5 text-sm text-gray-400">
                   Optimise how this subcategory appears in search engines.
                 </Text>
@@ -759,7 +922,10 @@ export default function CreateSubCategory({
                     label={
                       <span className="flex w-full items-center justify-between">
                         Meta Title
-                        <AiFieldButton loading={aiField === 'metaTitle'} onClick={() => gen('metaTitle')} />
+                        <AiFieldButton
+                          loading={aiField === 'metaTitle'}
+                          onClick={() => gen('metaTitle')}
+                        />
                       </span>
                     }
                     placeholder="e.g. Buy Single Malt Whisky Online | DrinksHarbour"
@@ -768,7 +934,9 @@ export default function CreateSubCategory({
                   />
                   <div>
                     <div className="mb-1.5 flex items-center justify-between">
-                      <Text className="block text-sm font-medium text-gray-700">Meta Description</Text>
+                      <Text className="block text-sm font-medium text-gray-700">
+                        Meta Description
+                      </Text>
                       <AiFieldButton
                         loading={aiField === 'metaDescription'}
                         onClick={() => gen('metaDescription')}
@@ -797,7 +965,9 @@ export default function CreateSubCategory({
                       {...register('metaKeywords')}
                       error={errors.metaKeywords?.message}
                     />
-                    <Text className="mt-1 text-xs text-gray-400">Separate keywords with commas.</Text>
+                    <Text className="mt-1 text-xs text-gray-400">
+                      Separate keywords with commas.
+                    </Text>
                   </div>
                   <Input
                     label="Canonical URL"
@@ -810,8 +980,12 @@ export default function CreateSubCategory({
 
               {/* Admin Notes */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-1 font-semibold text-gray-800">Admin Notes</Title>
-                <Text className="mb-4 text-sm text-gray-400">Internal notes — not shown to customers.</Text>
+                <Title as="h5" className="mb-1 font-semibold text-gray-800">
+                  Admin Notes
+                </Title>
+                <Text className="mb-4 text-sm text-gray-400">
+                  Internal notes — not shown to customers.
+                </Text>
                 <textarea
                   {...register('notes')}
                   placeholder="Any internal notes about this subcategory…"
@@ -824,10 +998,11 @@ export default function CreateSubCategory({
 
             {/* ── Right sidebar ── */}
             <div className="w-72 flex-shrink-0 space-y-6 @5xl:w-80">
-
               {/* Publish panel */}
               <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <Title as="h6" className="mb-4 font-semibold text-gray-800">Publish</Title>
+                <Title as="h6" className="mb-4 font-semibold text-gray-800">
+                  Publish
+                </Title>
                 <div className="mb-4">
                   <Controller
                     name="status"
@@ -835,8 +1010,15 @@ export default function CreateSubCategory({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={STATUS_OPTIONS}
-                        value={(() => { const found = STATUS_OPTIONS.find((o) => o.value === value); return found ?? ''; })()}
-                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                        value={(() => {
+                          const found = STATUS_OPTIONS.find(
+                            (o) => o.value === value
+                          );
+                          return found ?? '';
+                        })()}
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value)
+                        }
                         label="Status"
                         placeholder="Select status"
                       />
@@ -844,7 +1026,11 @@ export default function CreateSubCategory({
                   />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Button type="submit" isLoading={isLoading} className="w-full">
+                  <Button
+                    type="submit"
+                    isLoading={isLoading}
+                    className="w-full"
+                  >
                     {id ? 'Update SubCategory' : 'Publish SubCategory'}
                   </Button>
                   {!id && (
@@ -856,7 +1042,11 @@ export default function CreateSubCategory({
                       onClick={() => {
                         setValue('status', 'draft');
                         setTimeout(() => {
-                          (document.querySelector('.isomorphic-form') as HTMLFormElement)?.requestSubmit();
+                          (
+                            document.querySelector(
+                              '.isomorphic-form'
+                            ) as HTMLFormElement
+                          )?.requestSubmit();
                         }, 50);
                       }}
                     >
@@ -876,7 +1066,9 @@ export default function CreateSubCategory({
 
               {/* Images panel */}
               <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <Title as="h6" className="mb-4 font-semibold text-gray-800">Images</Title>
+                <Title as="h6" className="mb-4 font-semibold text-gray-800">
+                  Images
+                </Title>
                 <div className="space-y-5">
                   <ImagePicker
                     label="Thumbnail"
@@ -901,7 +1093,9 @@ export default function CreateSubCategory({
 
               {/* Visibility panel */}
               <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <Title as="h6" className="mb-2 font-semibold text-gray-800">Visibility</Title>
+                <Title as="h6" className="mb-2 font-semibold text-gray-800">
+                  Visibility
+                </Title>
                 <div className="divide-y divide-gray-100">
                   <Controller
                     name="isFeatured"
@@ -956,8 +1150,12 @@ export default function CreateSubCategory({
 
               {/* Seasonal panel */}
               <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <Title as="h6" className="mb-2 font-semibold text-gray-800">Seasonal</Title>
-                <Text className="mb-3 text-xs text-gray-400">Mark seasons when this subcategory is especially relevant.</Text>
+                <Title as="h6" className="mb-2 font-semibold text-gray-800">
+                  Seasonal
+                </Title>
+                <Text className="mb-3 text-xs text-gray-400">
+                  Mark seasons when this subcategory is especially relevant.
+                </Text>
                 <div className="divide-y divide-gray-100">
                   <Controller
                     name="seasonalSpring"
@@ -1008,10 +1206,14 @@ export default function CreateSubCategory({
 
               {/* Appearance panel */}
               <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <Title as="h6" className="mb-4 font-semibold text-gray-800">Appearance</Title>
+                <Title as="h6" className="mb-4 font-semibold text-gray-800">
+                  Appearance
+                </Title>
                 <div className="space-y-4">
                   <div>
-                    <Text className="mb-1.5 block text-sm font-medium text-gray-700">Accent Colour</Text>
+                    <Text className="mb-1.5 block text-sm font-medium text-gray-700">
+                      Accent Colour
+                    </Text>
                     <div className="flex items-center gap-3">
                       <input
                         type="color"
@@ -1024,12 +1226,14 @@ export default function CreateSubCategory({
                         value={colorValue}
                         onChange={(e) => setValue('color', e.target.value)}
                         placeholder="#6B7280"
-                        className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono text-gray-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                        className="flex-1 rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm text-gray-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                         maxLength={7}
                       />
                     </div>
                     {errors.color?.message && (
-                      <Text className="mt-1 text-xs text-red-500">{errors.color.message}</Text>
+                      <Text className="mt-1 text-xs text-red-500">
+                        {errors.color.message}
+                      </Text>
                     )}
                   </div>
                   <Input

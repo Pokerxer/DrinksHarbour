@@ -37,7 +37,7 @@ const DELAY_MS = Number((process.argv.find((a) => a.startsWith('--delay=')) || '
 const FIELDS = {
   tagline: 150,
   shortDescription: 280,
-  description: 2000,
+  description: 20000,
   metaTitle: 100,
   metaDescription: 320,
 };
@@ -95,7 +95,7 @@ function buildPrompt(sub, missing, productNames, links) {
     tagline: '"short punchy tagline that sells the subcategory (max 150 chars)"',
     shortDescription: '"2 compelling sentences for listings and cards (max 280 chars)"',
     description:
-      '"3-4 compelling, informative paragraphs about the subcategory — what defines the style, how it differs within its parent category, how it is enjoyed, why buy it here — formatted as HTML using <p> tags (plus inline <a> internal links per the linking rules below, if a catalog is provided) (max 1800 chars including tags)"',
+      '"6-10 detailed, informative paragraphs (roughly 800-1500 words) about the subcategory — what defines the style, how it differs within its parent category, how it is enjoyed, why buy it here — formatted as HTML using <p> tags (plus inline <a> internal links per the linking rules below, if a catalog is provided) (max 20000 chars including tags)"',
     metaTitle: '"SEO page title targeting buyers in Nigeria, e.g. subcategory + buy online Nigeria (max 100 chars)"',
     metaDescription: '"SEO meta description for the subcategory page, Nigeria market (max 320 chars)"',
     metaKeywords: '"8-12 comma-separated search keywords relevant to this subcategory in Nigeria"',
@@ -176,7 +176,7 @@ async function main() {
     try {
       const response = await anthropic.messages.create({
         model: MODEL,
-        max_tokens: 4096,
+        max_tokens: 8192,
         system:
           "You are a content assistant for DrinksHarbour, Nigeria's premier online premium beverages store. " +
           "You know the world's drinks styles well. Respond with ONLY a single valid JSON object — no prose, no markdown fences.",

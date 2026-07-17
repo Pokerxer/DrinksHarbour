@@ -5,7 +5,16 @@ import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Controller, type SubmitHandler } from 'react-hook-form';
 import QuillLoader from '@core/components/loader/quill-loader';
-import { Button, Input, Select, Switch, Text, Title, Textarea, type SelectOption } from 'rizzui';
+import {
+  Button,
+  Input,
+  Select,
+  Switch,
+  Text,
+  Title,
+  Textarea,
+  type SelectOption,
+} from 'rizzui';
 import cn from '@core/utils/class-names';
 import { Form } from '@core/ui/form';
 import {
@@ -14,7 +23,11 @@ import {
 } from '@/validators/create-category.schema';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { createCategory, updateCategory, getAdminCategories } from '@/services/category.service';
+import {
+  createCategory,
+  updateCategory,
+  getAdminCategories,
+} from '@/services/category.service';
 import { routes } from '@/config/routes';
 import toast from 'react-hot-toast';
 import { PiTrashBold, PiUploadSimpleBold } from 'react-icons/pi';
@@ -142,7 +155,9 @@ function ImagePicker({
 
   return (
     <div className="space-y-2">
-      {label && <Text className="text-sm font-medium text-gray-700">{label}</Text>}
+      {label && (
+        <Text className="text-sm font-medium text-gray-700">{label}</Text>
+      )}
       {preview ? (
         <div className="relative w-full overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
           <div className="relative aspect-video w-full">
@@ -170,7 +185,9 @@ function ImagePicker({
             <PiUploadSimpleBold className="h-4 w-4 text-gray-400" />
           </div>
           <div className="text-center">
-            <Text className="text-xs font-medium text-gray-600">Click to upload</Text>
+            <Text className="text-xs font-medium text-gray-600">
+              Click to upload
+            </Text>
             <Text className="text-xs text-gray-400">PNG, JPG or WEBP</Text>
           </div>
         </button>
@@ -189,7 +206,13 @@ function ImagePicker({
 // ─── AiFieldButton ───────────────────────────────────────────────────────────
 // Small per-field "Generate" trigger, like the blog editor's regenerate buttons.
 
-function AiFieldButton({ loading, onClick }: { loading: boolean; onClick: () => void }) {
+function AiFieldButton({
+  loading,
+  onClick,
+}: {
+  loading: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
@@ -224,7 +247,9 @@ function VisibilityToggle({
     <div className="flex items-center justify-between py-2.5">
       <div className="min-w-0 flex-1 pr-4">
         <Text className="text-sm font-medium text-gray-700">{label}</Text>
-        {description && <Text className="text-xs text-gray-400">{description}</Text>}
+        {description && (
+          <Text className="text-xs text-gray-400">{description}</Text>
+        )}
       </div>
       <Switch
         checked={!!checked}
@@ -256,16 +281,21 @@ export default function CreateCategory({
   const router = useRouter();
 
   const [isLoading, setLoading] = useState(false);
-  const [thumbnailImageFile, setThumbnailImageFile] = useState<File | null>(null);
+  const [thumbnailImageFile, setThumbnailImageFile] = useState<File | null>(
+    null
+  );
   const [featuredImageFile, setFeaturedImageFile] = useState<File | null>(null);
   const [bannerImageFile, setBannerImageFile] = useState<File | null>(null);
-  const [parentOptions, setParentOptions] = useState<{ value: string; label: string }[]>([
-    { value: '', label: 'None (top-level)' },
-  ]);
+  const [parentOptions, setParentOptions] = useState<
+    { value: string; label: string }[]
+  >([{ value: '', label: 'None (top-level)' }]);
   const slugManuallyEdited = useRef(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiField, setAiField] = useState<string | null>(null);
-  const [aiSuggestions, setAiSuggestions] = useState<Record<string, string> | null>(null);
+  const [aiSuggestions, setAiSuggestions] = useState<Record<
+    string,
+    string
+  > | null>(null);
 
   // Generate a single field via the same ai-fill endpoint and apply only it.
   async function generateSingleField(
@@ -281,11 +311,17 @@ export default function CreateCategory({
     }
     setAiField(field);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/categories/admin/ai-fill`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name, type, alcoholCategory }),
-      });
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/categories/admin/ai-fill`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ name, type, alcoholCategory }),
+        }
+      );
       const json = await res.json();
       if (!json.success) throw new Error(json.message);
       const v = json.data?.[field];
@@ -299,15 +335,28 @@ export default function CreateCategory({
     }
   }
 
-  async function triggerAiFill(name: string, type: string, alcoholCategory: string) {
-    if (!name.trim()) { toast.error('Enter a category name first'); return; }
+  async function triggerAiFill(
+    name: string,
+    type: string,
+    alcoholCategory: string
+  ) {
+    if (!name.trim()) {
+      toast.error('Enter a category name first');
+      return;
+    }
     setAiLoading(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/categories/admin/ai-fill`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name, type, alcoholCategory }),
-      });
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/categories/admin/ai-fill`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ name, type, alcoholCategory }),
+        }
+      );
       const json = await res.json();
       if (!json.success) throw new Error(json.message);
       setAiSuggestions(json.data);
@@ -349,7 +398,10 @@ export default function CreateCategory({
         description: data.description || '',
         shortDescription: data.shortDescription || '',
         status: data.status || 'draft',
-        displayOrder: (rawOrder !== undefined && !isNaN(Number(rawOrder))) ? Number(rawOrder) : 999,
+        displayOrder:
+          rawOrder !== undefined && !isNaN(Number(rawOrder))
+            ? Number(rawOrder)
+            : 999,
         parent: data.parentCategory || undefined,
         defaultSort: data.defaultSort || 'relevance',
         isFeatured: data.isFeatured ?? false,
@@ -412,13 +464,25 @@ export default function CreateCategory({
       }}
       className="isomorphic-form flex flex-grow flex-col @container"
     >
-      {({ register, control, watch, setValue, formState: { errors, submitCount } }) => {
+      {({
+        register,
+        control,
+        watch,
+        setValue,
+        formState: { errors, submitCount },
+      }) => {
         const nameValue = watch('name');
         const colorValue = watch('color') || '#6B7280';
         const shortDescValue = watch('shortDescription') || '';
         const descValue = watch('description') || '';
         const gen = (field: string) =>
-          generateSingleField(field, watch('name'), watch('type'), watch('alcoholCategory') || 'alcoholic', setValue);
+          generateSingleField(
+            field,
+            watch('name'),
+            watch('type'),
+            watch('alcoholCategory') || 'alcoholic',
+            setValue
+          );
 
         // Surface WHY a submit was refused — fields without a visible error
         // slot (e.g. the Quill description) previously failed silently.
@@ -457,25 +521,43 @@ export default function CreateCategory({
           const VALID_STATUS = STATUS_OPTIONS.map((o) => o.value);
           const coerce = (f: string, v: any) => {
             if (f === 'type') return VALID_TYPES.includes(v) ? v : '';
-            if (f === 'alcoholCategory') return VALID_ALCOHOL.includes(v) ? v : 'alcoholic';
+            if (f === 'alcoholCategory')
+              return VALID_ALCOHOL.includes(v) ? v : 'alcoholic';
             if (f === 'status') return VALID_STATUS.includes(v) ? v : 'draft';
             return v;
           };
           const fields = [
-            'name', 'slug', 'displayName', 'tagline', 'shortDescription',
-            'type', 'subType', 'alcoholCategory', 'description',
-            'metaTitle', 'metaDescription', 'metaKeywords', 'canonicalUrl',
-            'color', 'icon', 'status',
+            'name',
+            'slug',
+            'displayName',
+            'tagline',
+            'shortDescription',
+            'type',
+            'subType',
+            'alcoholCategory',
+            'description',
+            'metaTitle',
+            'metaDescription',
+            'metaKeywords',
+            'canonicalUrl',
+            'color',
+            'icon',
+            'status',
           ];
           fields.forEach((f) => {
             const v = aiDraft[f];
             if (v === undefined || v === null) return;
             const coerced = coerce(f, v);
             if (coerced === '') return;
-            setValue(f as any, coerced, { shouldValidate: true, shouldDirty: true });
+            setValue(f as any, coerced, {
+              shouldValidate: true,
+              shouldDirty: true,
+            });
           });
           if (!aiDraft.type || !VALID_TYPES.includes(aiDraft.type)) {
-            toast.error('AI did not return a valid Type — please select one before saving');
+            toast.error(
+              'AI did not return a valid Type — please select one before saving'
+            );
           }
           toast.success('AI draft applied — review and publish');
         }, [aiDraft]);
@@ -496,7 +578,9 @@ export default function CreateCategory({
                   placeholder="e.g. single-malt-whisky"
                   {...register('slug')}
                   error={errors.slug?.message}
-                  onFocus={() => { slugManuallyEdited.current = true; }}
+                  onFocus={() => {
+                    slugManuallyEdited.current = true;
+                  }}
                 />
                 <Controller
                   name="type"
@@ -504,8 +588,15 @@ export default function CreateCategory({
                   render={({ field: { onChange, value } }) => (
                     <Select
                       options={TYPE_OPTIONS}
-                      value={(() => { const found = TYPE_OPTIONS.find((o) => o.value === value); return found ?? ''; })()}
-                      onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                      value={(() => {
+                        const found = TYPE_OPTIONS.find(
+                          (o) => o.value === value
+                        );
+                        return found ?? '';
+                      })()}
+                      onChange={(opt: SelectOption) =>
+                        onChange((opt as any).value)
+                      }
                       label="Type *"
                       placeholder="Select type"
                       error={errors?.type?.message}
@@ -518,8 +609,15 @@ export default function CreateCategory({
                   render={({ field: { onChange, value } }) => (
                     <Select
                       options={ALCOHOL_CATEGORY_OPTIONS}
-                      value={(() => { const found = ALCOHOL_CATEGORY_OPTIONS.find((o) => o.value === value); return found ?? ''; })()}
-                      onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                      value={(() => {
+                        const found = ALCOHOL_CATEGORY_OPTIONS.find(
+                          (o) => o.value === value
+                        );
+                        return found ?? '';
+                      })()}
+                      onChange={(opt: SelectOption) =>
+                        onChange((opt as any).value)
+                      }
                       label="Alcohol Category"
                       placeholder="Select alcohol category"
                     />
@@ -531,8 +629,15 @@ export default function CreateCategory({
                   render={({ field: { onChange, value } }) => (
                     <Select
                       options={STATUS_OPTIONS}
-                      value={(() => { const found = STATUS_OPTIONS.find((o) => o.value === value); return found ?? ''; })()}
-                      onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                      value={(() => {
+                        const found = STATUS_OPTIONS.find(
+                          (o) => o.value === value
+                        );
+                        return found ?? '';
+                      })()}
+                      onChange={(opt: SelectOption) =>
+                        onChange((opt as any).value)
+                      }
                       label="Status"
                       placeholder="Select status"
                     />
@@ -541,7 +646,9 @@ export default function CreateCategory({
                 <div className="col-span-2">
                   <Text className="mb-1 block text-sm font-medium text-gray-700">
                     Short Description{' '}
-                    <span className="text-gray-400 font-normal">({shortDescValue.length}/280)</span>
+                    <span className="font-normal text-gray-400">
+                      ({shortDescValue.length}/280)
+                    </span>
                   </Text>
                   <textarea
                     {...register('shortDescription')}
@@ -552,7 +659,9 @@ export default function CreateCategory({
                   />
                 </div>
                 <div className="col-span-2">
-                  <Text className="mb-2 block text-sm font-medium text-gray-700">Thumbnail Image</Text>
+                  <Text className="mb-2 block text-sm font-medium text-gray-700">
+                    Thumbnail Image
+                  </Text>
                   <ImagePicker
                     currentUrl={currentImages?.thumbnail}
                     onFile={(f) => setThumbnailImageFile(f)}
@@ -575,18 +684,25 @@ export default function CreateCategory({
           <div className="flex gap-6 @5xl:gap-7">
             {/* ── Left column (main content) ── */}
             <div className="min-w-0 flex-1 space-y-6">
-
               {/* Basic Information */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
                 <div className="mb-5 flex items-center justify-between">
-                  <Title as="h5" className="font-semibold text-gray-800">Basic Information</Title>
+                  <Title as="h5" className="font-semibold text-gray-800">
+                    Basic Information
+                  </Title>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     isLoading={aiLoading}
                     disabled={aiLoading}
-                    onClick={() => triggerAiFill(watch('name'), watch('type'), watch('alcoholCategory') || 'alcoholic')}
+                    onClick={() =>
+                      triggerAiFill(
+                        watch('name'),
+                        watch('type'),
+                        watch('alcoholCategory') || 'alcoholic'
+                      )
+                    }
                     className="gap-1.5 border-violet-200 text-violet-600 hover:bg-violet-50"
                   >
                     {!aiLoading && <span>✨</span>}
@@ -614,18 +730,24 @@ export default function CreateCategory({
                       placeholder="e.g. single-malt-whisky"
                       {...register('slug')}
                       error={errors.slug?.message}
-                      prefix={<span className="text-gray-400 text-sm">/</span>}
-                      onFocus={() => { slugManuallyEdited.current = true; }}
+                      prefix={<span className="text-sm text-gray-400">/</span>}
+                      onFocus={() => {
+                        slugManuallyEdited.current = true;
+                      }}
                     />
                     <Text className="mt-1.5 text-xs text-gray-400">
-                      Auto-generated from name. Edit to customise. Lowercase letters, numbers and hyphens only.
+                      Auto-generated from name. Edit to customise. Lowercase
+                      letters, numbers and hyphens only.
                     </Text>
                   </div>
                   <Input
                     label={
                       <span className="flex w-full items-center justify-between">
                         Tagline
-                        <AiFieldButton loading={aiField === 'tagline'} onClick={() => gen('tagline')} />
+                        <AiFieldButton
+                          loading={aiField === 'tagline'}
+                          onClick={() => gen('tagline')}
+                        />
                       </span>
                     }
                     placeholder="e.g. The finest single malts from Scotland"
@@ -637,7 +759,9 @@ export default function CreateCategory({
 
               {/* Classification */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-5 font-semibold text-gray-800">Classification</Title>
+                <Title as="h5" className="mb-5 font-semibold text-gray-800">
+                  Classification
+                </Title>
                 <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
                   <Controller
                     name="type"
@@ -645,8 +769,15 @@ export default function CreateCategory({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={TYPE_OPTIONS}
-                        value={(() => { const found = TYPE_OPTIONS.find((o) => o.value === value); return found ?? ''; })()}
-                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                        value={(() => {
+                          const found = TYPE_OPTIONS.find(
+                            (o) => o.value === value
+                          );
+                          return found ?? '';
+                        })()}
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value)
+                        }
                         label="Beverage Type *"
                         placeholder="Select type"
                         error={errors?.type?.message}
@@ -659,8 +790,15 @@ export default function CreateCategory({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={ALCOHOL_CATEGORY_OPTIONS}
-                        value={(() => { const found = ALCOHOL_CATEGORY_OPTIONS.find((o) => o.value === value); return found ?? ''; })()}
-                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                        value={(() => {
+                          const found = ALCOHOL_CATEGORY_OPTIONS.find(
+                            (o) => o.value === value
+                          );
+                          return found ?? '';
+                        })()}
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value)
+                        }
                         label="Alcohol Category"
                         placeholder="Select alcohol category"
                       />
@@ -678,8 +816,15 @@ export default function CreateCategory({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={parentOptions}
-                        value={(() => { const found = parentOptions.find((o) => o.value === value); return found ?? ''; })()}
-                        onChange={(opt: SelectOption) => onChange((opt as any).value ?? '')}
+                        value={(() => {
+                          const found = parentOptions.find(
+                            (o) => o.value === value
+                          );
+                          return found ?? '';
+                        })()}
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value ?? '')
+                        }
                         label="Parent Category"
                         placeholder="None (top-level)"
                       />
@@ -690,7 +835,10 @@ export default function CreateCategory({
                     type="number"
                     placeholder="999"
                     {...register('displayOrder', {
-                      setValueAs: (v) => (v === '' || v === null || isNaN(Number(v)) ? 999 : Number(v)),
+                      setValueAs: (v) =>
+                        v === '' || v === null || isNaN(Number(v))
+                          ? 999
+                          : Number(v),
                     })}
                     error={errors.displayOrder?.message}
                   />
@@ -700,8 +848,15 @@ export default function CreateCategory({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={DEFAULT_SORT_OPTIONS}
-                        value={(() => { const found = DEFAULT_SORT_OPTIONS.find((o) => o.value === value); return found ?? ''; })()}
-                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                        value={(() => {
+                          const found = DEFAULT_SORT_OPTIONS.find(
+                            (o) => o.value === value
+                          );
+                          return found ?? '';
+                        })()}
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value)
+                        }
                         label="Default Sort"
                         placeholder="Select sort order"
                       />
@@ -712,13 +867,17 @@ export default function CreateCategory({
 
               {/* Description */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-5 font-semibold text-gray-800">Description</Title>
+                <Title as="h5" className="mb-5 font-semibold text-gray-800">
+                  Description
+                </Title>
                 <div className="space-y-4">
                   <div>
                     <div className="mb-1.5 flex items-center justify-between">
                       <Text className="block text-sm font-medium text-gray-700">
                         Short Description{' '}
-                        <span className="font-normal text-gray-400">({shortDescValue.length}/280)</span>
+                        <span className="font-normal text-gray-400">
+                          ({shortDescValue.length}/280)
+                        </span>
                       </Text>
                       <AiFieldButton
                         loading={aiField === 'shortDescription'}
@@ -733,7 +892,9 @@ export default function CreateCategory({
                       className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                     {errors.shortDescription?.message && (
-                      <Text className="mt-1 text-xs text-red-500">{errors.shortDescription.message}</Text>
+                      <Text className="mt-1 text-xs text-red-500">
+                        {errors.shortDescription.message}
+                      </Text>
                     )}
                   </div>
                   <div>
@@ -743,10 +904,12 @@ export default function CreateCategory({
                         <span
                           className={cn(
                             'font-normal',
-                            descValue.length > 2000 ? 'text-red-500' : 'text-gray-400'
+                            descValue.length > 20000
+                              ? 'text-red-500'
+                              : 'text-gray-400'
                           )}
                         >
-                          ({descValue.length}/2000)
+                          ({descValue.length}/20000)
                         </span>
                       </Text>
                       <AiFieldButton
@@ -768,7 +931,8 @@ export default function CreateCategory({
                     />
                     {errors.description?.message && (
                       <Text className="mt-1 text-xs text-red-500">
-                        {errors.description.message} — the editor adds HTML markup, trim the text to fit.
+                        {errors.description.message} — the editor adds HTML
+                        markup, trim the text to fit.
                       </Text>
                     )}
                   </div>
@@ -777,7 +941,9 @@ export default function CreateCategory({
 
               {/* SEO */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-1 font-semibold text-gray-800">SEO</Title>
+                <Title as="h5" className="mb-1 font-semibold text-gray-800">
+                  SEO
+                </Title>
                 <Text className="mb-5 text-sm text-gray-400">
                   Optimise how this category appears in search engines.
                 </Text>
@@ -786,7 +952,10 @@ export default function CreateCategory({
                     label={
                       <span className="flex w-full items-center justify-between">
                         Meta Title
-                        <AiFieldButton loading={aiField === 'metaTitle'} onClick={() => gen('metaTitle')} />
+                        <AiFieldButton
+                          loading={aiField === 'metaTitle'}
+                          onClick={() => gen('metaTitle')}
+                        />
                       </span>
                     }
                     placeholder="e.g. Buy Single Malt Whisky Online | DrinksHarbour"
@@ -795,7 +964,9 @@ export default function CreateCategory({
                   />
                   <div>
                     <div className="mb-1.5 flex items-center justify-between">
-                      <Text className="block text-sm font-medium text-gray-700">Meta Description</Text>
+                      <Text className="block text-sm font-medium text-gray-700">
+                        Meta Description
+                      </Text>
                       <AiFieldButton
                         loading={aiField === 'metaDescription'}
                         onClick={() => gen('metaDescription')}
@@ -824,7 +995,9 @@ export default function CreateCategory({
                       {...register('metaKeywords')}
                       error={errors.metaKeywords?.message}
                     />
-                    <Text className="mt-1 text-xs text-gray-400">Separate keywords with commas.</Text>
+                    <Text className="mt-1 text-xs text-gray-400">
+                      Separate keywords with commas.
+                    </Text>
                   </div>
                   <Input
                     label="Canonical URL"
@@ -837,8 +1010,12 @@ export default function CreateCategory({
 
               {/* Admin Notes */}
               <div className="rounded-xl border border-gray-200 bg-white p-6">
-                <Title as="h5" className="mb-1 font-semibold text-gray-800">Admin Notes</Title>
-                <Text className="mb-4 text-sm text-gray-400">Internal notes — not shown to customers.</Text>
+                <Title as="h5" className="mb-1 font-semibold text-gray-800">
+                  Admin Notes
+                </Title>
+                <Text className="mb-4 text-sm text-gray-400">
+                  Internal notes — not shown to customers.
+                </Text>
                 <textarea
                   {...register('notes')}
                   placeholder="Any internal notes about this category…"
@@ -851,10 +1028,11 @@ export default function CreateCategory({
 
             {/* ── Right sidebar ── */}
             <div className="w-72 flex-shrink-0 space-y-6 @5xl:w-80">
-
               {/* Publish panel */}
               <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <Title as="h6" className="mb-4 font-semibold text-gray-800">Publish</Title>
+                <Title as="h6" className="mb-4 font-semibold text-gray-800">
+                  Publish
+                </Title>
                 <div className="mb-4">
                   <Controller
                     name="status"
@@ -862,8 +1040,15 @@ export default function CreateCategory({
                     render={({ field: { onChange, value } }) => (
                       <Select
                         options={STATUS_OPTIONS}
-                        value={(() => { const found = STATUS_OPTIONS.find((o) => o.value === value); return found ?? ''; })()}
-                        onChange={(opt: SelectOption) => onChange((opt as any).value)}
+                        value={(() => {
+                          const found = STATUS_OPTIONS.find(
+                            (o) => o.value === value
+                          );
+                          return found ?? '';
+                        })()}
+                        onChange={(opt: SelectOption) =>
+                          onChange((opt as any).value)
+                        }
                         label="Status"
                         placeholder="Select status"
                       />
@@ -871,7 +1056,11 @@ export default function CreateCategory({
                   />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Button type="submit" isLoading={isLoading} className="w-full">
+                  <Button
+                    type="submit"
+                    isLoading={isLoading}
+                    className="w-full"
+                  >
                     {id ? 'Update Category' : 'Publish Category'}
                   </Button>
                   {!id && (
@@ -883,7 +1072,11 @@ export default function CreateCategory({
                       onClick={() => {
                         setValue('status', 'draft');
                         setTimeout(() => {
-                          (document.querySelector('.isomorphic-form') as HTMLFormElement)?.requestSubmit();
+                          (
+                            document.querySelector(
+                              '.isomorphic-form'
+                            ) as HTMLFormElement
+                          )?.requestSubmit();
                         }, 50);
                       }}
                     >
@@ -903,7 +1096,9 @@ export default function CreateCategory({
 
               {/* Images panel */}
               <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <Title as="h6" className="mb-4 font-semibold text-gray-800">Images</Title>
+                <Title as="h6" className="mb-4 font-semibold text-gray-800">
+                  Images
+                </Title>
                 <div className="space-y-5">
                   <ImagePicker
                     label="Thumbnail"
@@ -928,7 +1123,9 @@ export default function CreateCategory({
 
               {/* Visibility panel */}
               <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <Title as="h6" className="mb-2 font-semibold text-gray-800">Visibility</Title>
+                <Title as="h6" className="mb-2 font-semibold text-gray-800">
+                  Visibility
+                </Title>
                 <div className="divide-y divide-gray-100">
                   <Controller
                     name="isFeatured"
@@ -1007,10 +1204,14 @@ export default function CreateCategory({
 
               {/* Appearance panel */}
               <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <Title as="h6" className="mb-4 font-semibold text-gray-800">Appearance</Title>
+                <Title as="h6" className="mb-4 font-semibold text-gray-800">
+                  Appearance
+                </Title>
                 <div className="space-y-4">
                   <div>
-                    <Text className="mb-1.5 block text-sm font-medium text-gray-700">Accent Colour</Text>
+                    <Text className="mb-1.5 block text-sm font-medium text-gray-700">
+                      Accent Colour
+                    </Text>
                     <div className="flex items-center gap-3">
                       <input
                         type="color"
@@ -1023,12 +1224,14 @@ export default function CreateCategory({
                         value={colorValue}
                         onChange={(e) => setValue('color', e.target.value)}
                         placeholder="#6B7280"
-                        className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono text-gray-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                        className="flex-1 rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm text-gray-800 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                         maxLength={7}
                       />
                     </div>
                     {errors.color?.message && (
-                      <Text className="mt-1 text-xs text-red-500">{errors.color.message}</Text>
+                      <Text className="mt-1 text-xs text-red-500">
+                        {errors.color.message}
+                      </Text>
                     )}
                   </div>
                   <Input

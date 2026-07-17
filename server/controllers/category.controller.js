@@ -578,7 +578,7 @@ Return a JSON object with exactly these keys:
   "displayName": "display-friendly name, plural if appropriate (max 120 chars)",
   "tagline": "short punchy tagline that sells the category (max 150 chars)",
   "shortDescription": "2 sentences for listings and cards (max 280 chars)",
-  "description": "3-4 compelling, informative paragraphs formatted as HTML using <p> tags (plus inline <a> internal links per the linking rules below, if a catalog is provided) (max 1800 chars including tags)",
+  "description": "6-10 detailed, informative paragraphs (roughly 800-1500 words) formatted as HTML using <p> tags (plus inline <a> internal links per the linking rules below, if a catalog is provided) (max 20000 chars including tags)",
   "type": "single best value from: ${CATEGORY_TYPES.join(', ')}",
   "subType": "a more specific sub-type label, e.g. Single Malt, or '' (max 80 chars)",
   "alcoholCategory": "single best value from: ${ALCOHOL_CATEGORIES.join(', ')}",
@@ -591,7 +591,7 @@ Return a JSON object with exactly these keys:
 
   const response = await anthropic.messages.create({
     model: AI_FILL_MODEL,
-    max_tokens: 2048,
+    max_tokens: 8192,
     system,
     messages: [{ role: 'user', content: prompt }],
   });
@@ -615,7 +615,7 @@ Return a JSON object with exactly these keys:
     displayName: aiStr(json.displayName, 120),
     tagline: aiStr(json.tagline, 150),
     shortDescription: aiStr(json.shortDescription, 280),
-    description: aiStr(stripUnapprovedLinks(json.description, catalog.allowed), 2000),
+    description: aiStr(stripUnapprovedLinks(json.description, catalog.allowed), 20000),
     type: CATEGORY_TYPES.includes(json.type) ? json.type : '',
     subType: aiStr(json.subType, 80),
     alcoholCategory: ALCOHOL_CATEGORIES.includes(json.alcoholCategory) ? json.alcoholCategory : '',
@@ -656,7 +656,7 @@ Return a JSON object with exactly these keys:
   "displayName": "display-friendly name, plural if appropriate (max 120 chars)",
   "tagline": "short punchy tagline that sells the category (max 150 chars)",
   "shortDescription": "2 sentences for listings and cards (max 280 chars)",
-  "description": "3-4 compelling, informative paragraphs formatted as HTML using <p> tags (plus inline <a> internal links per the linking rules below, if a catalog is provided) (max 1800 chars including tags)",
+  "description": "6-10 detailed, informative paragraphs (roughly 800-1500 words) formatted as HTML using <p> tags (plus inline <a> internal links per the linking rules below, if a catalog is provided) (max 20000 chars including tags)",
   "type": "single best value from: ${CATEGORY_TYPES.join(', ')}",
   "subType": "a more specific sub-type label, e.g. Single Malt, or '' (max 80 chars)",
   "alcoholCategory": "single best value from: ${ALCOHOL_CATEGORIES.join(', ')}",
@@ -669,7 +669,7 @@ Return a JSON object with exactly these keys:
 
   const response = await anthropic.messages.create({
     model: SMART_MODEL,
-    max_tokens: 4096,
+    max_tokens: 8192,
     system,
     messages: [{ role: 'user', content: prompt }],
   });
@@ -695,7 +695,7 @@ Return a JSON object with exactly these keys:
     displayName: aiStr(json.displayName, 120),
     tagline: aiStr(json.tagline, 150),
     shortDescription: aiStr(json.shortDescription, 280),
-    description: aiStr(stripUnapprovedLinks(json.description, catalog.allowed), 2000),
+    description: aiStr(stripUnapprovedLinks(json.description, catalog.allowed), 20000),
     type: CATEGORY_TYPES.includes(json.type) ? json.type : '',
     subType: aiStr(json.subType, 80),
     alcoholCategory: ALCOHOL_CATEGORIES.includes(json.alcoholCategory) ? json.alcoholCategory : 'alcoholic',
