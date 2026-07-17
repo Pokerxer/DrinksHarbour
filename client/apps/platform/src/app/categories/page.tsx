@@ -62,13 +62,13 @@ export const metadata: Metadata = {
     siteName: SITE_NAME,
     title: `${PAGE_TITLE} | ${SITE_NAME}`,
     description: PAGE_DESCRIPTION,
-    images: [{ url: `${BASE_URL}/images/logo.png`, alt: SITE_NAME }],
+    images: [{ url: `${BASE_URL}/og-default.jpg`, alt: SITE_NAME }],
   },
   twitter: {
     card: 'summary_large_image',
     title: `${PAGE_TITLE} | ${SITE_NAME}`,
     description: PAGE_DESCRIPTION,
-    images: [`${BASE_URL}/images/logo.png`],
+    images: [`${BASE_URL}/og-default.jpg`],
   },
 };
 

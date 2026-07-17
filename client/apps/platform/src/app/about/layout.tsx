@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     title: "About DrinksHarbour | Nigeria's Premier Beverage Marketplace",
     description:
       "Discover DrinksHarbour — Nigeria's trusted online marketplace for authentic wines, spirits, beers and non-alcoholic drinks. Shop 800+ products, enjoy same-day delivery in Abuja.",
-    images: [{ url: `${BASE_URL}/og-about.jpg`, width: 1200, height: 630, alt: "DrinksHarbour — Premium Beverage Marketplace" }],
+    images: [{ url: `${BASE_URL}/og-default.jpg`, width: 1200, height: 630, alt: "DrinksHarbour — Premium Beverage Marketplace" }],
     locale: "en_NG",
   },
   twitter: {
@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     title: "About DrinksHarbour | Nigeria's Premier Beverage Marketplace",
     description:
       "Nigeria's trusted online marketplace for authentic wines, spirits, beers and non-alcoholic drinks.",
-    images: [`${BASE_URL}/og-about.jpg`],
+    images: [`${BASE_URL}/og-default.jpg`],
   },
 };
 

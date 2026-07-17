@@ -156,7 +156,7 @@ export async function generateMetadata({
     brand.bannerImage?.url ||
     brand.featuredImage?.url ||
     brand.logo?.url ||
-    `${BASE_URL}/images/logo.png`;
+    `${BASE_URL}/og-default.jpg`;
 
   return {
     title: { absolute: `${title} | ${SITE_NAME}` },

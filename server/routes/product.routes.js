@@ -150,12 +150,17 @@ router.get(
   '/slugs',
   asyncHandler(async (req, res) => {
     const ProductModel = require('../models/product.model');
-    const slugs = await ProductModel
-      .find({ status: 'approved' }, 'slug -_id')
+    const docs = await ProductModel
+      .find({ status: 'approved' }, 'slug updatedAt -_id')
       .lean();
+    const items = docs
+      .filter((p) => p.slug)
+      .map((p) => ({ slug: p.slug, updatedAt: p.updatedAt }));
     res.status(200).json({
       success: true,
-      data: { slugs: slugs.map((p) => p.slug).filter(Boolean) },
+      // `slugs` kept for backward compatibility; `items` adds updatedAt so the
+      // platform sitemap can emit truthful <lastmod> values.
+      data: { slugs: items.map((p) => p.slug), items },
     });
   })
 );

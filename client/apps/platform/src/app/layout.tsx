@@ -79,7 +79,7 @@ export const metadata: Metadata = {
       "Nigeria's premier online beverage store. Shop wines, spirits, beers and more with fast delivery.",
     images: [
       {
-        url: "/images/logo.png",
+        url: "/og-default.jpg",
         width: 1200,
         height: 630,
         alt: "DrinksHarbour — Premium Beverages",
@@ -91,7 +91,7 @@ export const metadata: Metadata = {
     title: "DrinksHarbour — Premium Beverages Delivered in Nigeria",
     description:
       "Nigeria's premier online beverage store. Shop wines, spirits, beers and more with fast delivery.",
-    images: ["/images/logo.png"],
+    images: ["/og-default.jpg"],
     site: "@drinksharbour",
     creator: "@drinksharbour",
   },
@@ -196,8 +196,6 @@ export default async function RootLayout({
               type="application/ld+json"
               dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
             />
-            {/* Preload LCP hero image */}
-            <link rel="preload" as="image" href="/images/logo.png" fetchPriority="high" />
             {/* Preconnect to third-party origins */}
             <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
             {/* Speculation Rules — prerender likely navigations on hover */}

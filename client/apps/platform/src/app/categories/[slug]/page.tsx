@@ -222,7 +222,7 @@ export async function generateMetadata({
     category.ogImage ||
     category.bannerImage?.url ||
     category.featuredImage?.url ||
-    `${BASE_URL}/images/logo.png`;
+    `${BASE_URL}/og-default.jpg`;
 
   return {
     title: { absolute: `${title} | ${SITE_NAME}` },

@@ -25,7 +25,7 @@ export const metadata: Metadata = {
     title: 'Shop by Brand — Premium Drinks Brands in Nigeria | DrinksHarbour',
     description:
       'Browse all premium drinks brands on DrinksHarbour. Hennessy, Glenfiddich, Moët & Chandon, Ciroc and hundreds more — authentic, fast delivery nationwide.',
-    images: [{ url: '/images/logo.png', width: 1200, height: 630, alt: 'DrinksHarbour — Shop by Brand' }],
+    images: [{ url: '/og-default.jpg', width: 1200, height: 630, alt: 'DrinksHarbour — Shop by Brand' }],
     locale: 'en_NG',
   },
   twitter: {
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
     title: 'Shop by Brand — Premium Drinks Brands in Nigeria | DrinksHarbour',
     description:
       'Browse all premium drinks brands on DrinksHarbour. Authentic products with fast delivery across Nigeria.',
-    images: ['/images/logo.png'],
+    images: ['/og-default.jpg'],
   },
 };
 

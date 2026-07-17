@@ -53,7 +53,7 @@ const getSubCategories = asyncHandler(async (req, res) => {
   }
 
   const subcategories = await SubCategory.find(query)
-    .select('name slug type parent shortDescription description icon color featuredImage thumbnailImage bannerImage isFeatured isTrending isPopular displayOrder status')
+    .select('name slug type parent shortDescription description icon color featuredImage thumbnailImage bannerImage isFeatured isTrending isPopular displayOrder status updatedAt')
     .sort({ displayOrder: 1, name: 1 })
     .populate('parent', 'name slug')
     .lean();

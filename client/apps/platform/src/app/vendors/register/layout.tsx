@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     title: 'Become a Vendor | Sell on DrinksHarbour',
     description:
       "List your beverages on Nigeria's premier drinks marketplace. Get a digital storefront, reach buyers, and manage your business with ERM tools.",
-    images: [{ url: `${BASE_URL}/og-vendor.jpg`, width: 1200, height: 630, alt: 'Sell on DrinksHarbour' }],
+    images: [{ url: `${BASE_URL}/og-default.jpg`, width: 1200, height: 630, alt: 'Sell on DrinksHarbour' }],
     locale: 'en_NG',
   },
   twitter: {
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     site: '@DrinkHarbour',
     title: 'Become a Vendor | Sell on DrinksHarbour',
     description: "List your beverages on Nigeria's premier drinks marketplace.",
-    images: [`${BASE_URL}/og-vendor.jpg`],
+    images: [`${BASE_URL}/og-default.jpg`],
   },
 };
 

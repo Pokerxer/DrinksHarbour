@@ -57,7 +57,7 @@ export async function generateMetadata({
   const title      = buildTitle(p);
   const description = buildDescription(p);
   const keywords   = buildKeywords(p);
-  const ogImage    = p.primaryImage?.url || p.images?.[0]?.url || `${BASE_URL}/images/logo.png`;
+  const ogImage    = p.primaryImage?.url || p.images?.[0]?.url || `${BASE_URL}/og-default.jpg`;
   const allImages  = [
     ...(p.primaryImage?.url ? [{ url: p.primaryImage.url, width: 800, height: 800, alt: p.name }] : []),
     ...(p.images ?? [])

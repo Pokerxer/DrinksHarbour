@@ -277,7 +277,7 @@ const getAllBrands = async (queryParams = {}) => {
   }
 
   // Field selection - include all image fields
-  let selectFields = 'name slug logo logoVariants featuredImage bannerImage gallery brandColors tagline description shortDescription productCount isFeatured verified countryOfOrigin primaryCategory brandType founded isPremium popularityScore createdAt';
+  let selectFields = 'name slug logo logoVariants featuredImage bannerImage gallery brandColors tagline description shortDescription productCount isFeatured verified countryOfOrigin primaryCategory brandType founded isPremium popularityScore createdAt updatedAt';
   
   if (fields) {
     const allowedFields = fields.split(',').map(f => f.trim()).filter(f => 

@@ -200,7 +200,7 @@ export async function generateMetadata({
   const ogImage =
     sub.bannerImage?.url ||
     sub.featuredImage?.url ||
-    `${BASE_URL}/images/logo.png`;
+    `${BASE_URL}/og-default.jpg`;
 
   return {
     title: { absolute: `${title} | ${SITE_NAME}` },

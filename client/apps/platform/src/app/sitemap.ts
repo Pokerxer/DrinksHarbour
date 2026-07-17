@@ -28,30 +28,50 @@ const CATEGORY_SLUGS = [
   "irish-whiskey", "japanese-whisky", "bourbon", "rye-whiskey", "world-whisky",
 ];
 
-async function fetchProductSlugs(): Promise<string[]> {
+// A truthful <lastmod> (the document's updatedAt) or none at all — advertising
+// "modified just now" for every URL on every crawl teaches Google to ignore
+// the field entirely.
+function realDate(value?: string | Date): Date | undefined {
+  if (!value) return undefined;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+interface SlugEntry {
+  slug: string;
+  updatedAt?: string;
+}
+
+async function fetchProducts(): Promise<SlugEntry[]> {
   try {
     const res = await fetch(`${API_URL}/api/products/slugs`, {
       next: { revalidate: 3600 },
     });
     if (!res.ok) return [];
     const data = await res.json();
-    if (Array.isArray(data?.data?.slugs)) return data.data.slugs;
-    if (Array.isArray(data?.slugs)) return data.slugs;
-    return [];
+    // Newer API shape: items carry updatedAt alongside the slug
+    if (Array.isArray(data?.data?.items)) {
+      return data.data.items.filter((p: SlugEntry) => p?.slug);
+    }
+    const slugs: string[] = data?.data?.slugs ?? data?.slugs ?? [];
+    return Array.isArray(slugs) ? slugs.map((slug) => ({ slug })) : [];
   } catch {
     return [];
   }
 }
 
-async function fetchBrandSlugs(): Promise<string[]> {
+async function fetchBrands(): Promise<SlugEntry[]> {
   try {
     const res = await fetch(`${API_URL}/api/brands?limit=200&page=1`, {
       next: { revalidate: 86400 },
     });
     if (!res.ok) return [];
     const data = await res.json();
-    const brands: { slug?: string }[] = data?.data?.brands ?? data?.data ?? data?.brands ?? [];
-    return brands.map((b) => b.slug).filter(Boolean) as string[];
+    const brands: { slug?: string; updatedAt?: string }[] =
+      data?.data?.brands ?? data?.data ?? data?.brands ?? [];
+    return brands
+      .filter((b) => b.slug)
+      .map((b) => ({ slug: b.slug as string, updatedAt: b.updatedAt }));
   } catch {
     return [];
   }
@@ -60,16 +80,18 @@ async function fetchBrandSlugs(): Promise<string[]> {
 // Published category slugs for the /categories/[slug] detail pages. These are
 // listed IN ADDITION to the /shop?category= filter URLs (same rule as brands:
 // both forms stay in the sitemap, each canonical for its own URL).
-async function fetchCategorySlugs(): Promise<string[]> {
+async function fetchCategories(): Promise<SlugEntry[]> {
   try {
     const res = await fetch(`${API_URL}/api/categories`, {
       next: { revalidate: 86400 },
     });
     if (!res.ok) return [];
     const data = await res.json();
-    const cats: { slug?: string }[] =
+    const cats: { slug?: string; updatedAt?: string }[] =
       data?.data?.categories ?? data?.data ?? data?.categories ?? [];
-    return cats.map((c) => c.slug).filter(Boolean) as string[];
+    return cats
+      .filter((c) => c.slug)
+      .map((c) => ({ slug: c.slug as string, updatedAt: c.updatedAt }));
   } catch {
     return [];
   }
@@ -79,6 +101,7 @@ interface SubcatEntry {
   slug: string;
   parentSlug: string;
   productCount: number;
+  updatedAt?: string;
 }
 
 // Subcategories carry their parent category (populated), so the sitemap can
@@ -95,12 +118,14 @@ async function fetchSubcategories(): Promise<SubcatEntry[]> {
       slug?: string;
       parent?: { slug?: string };
       productCount?: number;
+      updatedAt?: string;
     }[] = data?.data?.subcategories ?? data?.data ?? [];
     return subs
       .map((s) => ({
         slug: s?.slug ?? '',
         parentSlug: s?.parent?.slug ?? '',
         productCount: s?.productCount ?? 0,
+        updatedAt: s?.updatedAt,
       }))
       .filter((s) => s.slug && s.parentSlug);
   } catch {
@@ -109,45 +134,49 @@ async function fetchSubcategories(): Promise<SubcatEntry[]> {
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  // Static pages carry no lastModified — we have no real modification date for
+  // them, and a fabricated one is worse than none.
   const staticPages: MetadataRoute.Sitemap = [
-    { url: BASE_URL,                                  lastModified: new Date(), changeFrequency: "daily",   priority: 1.0 },
-    { url: `${BASE_URL}/shop`,                        lastModified: new Date(), changeFrequency: "hourly",  priority: 0.9 },
-    { url: `${BASE_URL}/about`,                       lastModified: new Date(), changeFrequency: "monthly", priority: 0.6 },
-    { url: `${BASE_URL}/contact`,                     lastModified: new Date(), changeFrequency: "monthly", priority: 0.5 },
-    { url: `${BASE_URL}/blog`,                        lastModified: new Date(), changeFrequency: "weekly",  priority: 0.7 },
-    { url: `${BASE_URL}/faqs`,                        lastModified: new Date(), changeFrequency: "monthly", priority: 0.5 },
-    { url: `${BASE_URL}/careers`,                     lastModified: new Date(), changeFrequency: "weekly",  priority: 0.4 },
-    { url: `${BASE_URL}/returns`,                     lastModified: new Date(), changeFrequency: "monthly", priority: 0.4 },
-    { url: `${BASE_URL}/shipping-info`,               lastModified: new Date(), changeFrequency: "monthly", priority: 0.4 },
-    { url: `${BASE_URL}/sustainability`,              lastModified: new Date(), changeFrequency: "monthly", priority: 0.4 },
-    { url: `${BASE_URL}/brands`,                      lastModified: new Date(), changeFrequency: "weekly",  priority: 0.5 },
-    { url: `${BASE_URL}/categories`,                  lastModified: new Date(), changeFrequency: "weekly",  priority: 0.5 },
-    { url: `${BASE_URL}/privacy-policy`,              lastModified: new Date(), changeFrequency: "monthly", priority: 0.3 },
-    { url: `${BASE_URL}/vip-signup`,                  lastModified: new Date(), changeFrequency: "monthly", priority: 0.3 },
-    { url: `${BASE_URL}/vendors`,                     lastModified: new Date(), changeFrequency: "weekly",  priority: 0.4 },
-    { url: `${BASE_URL}/vendors/register`,            lastModified: new Date(), changeFrequency: "monthly", priority: 0.6 },
-    { url: `${BASE_URL}/vendors/register/apply`,      lastModified: new Date(), changeFrequency: "monthly", priority: 0.5 },
+    { url: BASE_URL,                                  changeFrequency: "daily",   priority: 1.0 },
+    { url: `${BASE_URL}/shop`,                        changeFrequency: "hourly",  priority: 0.9 },
+    { url: `${BASE_URL}/about`,                       changeFrequency: "monthly", priority: 0.6 },
+    { url: `${BASE_URL}/contact`,                     changeFrequency: "monthly", priority: 0.5 },
+    { url: `${BASE_URL}/blog`,                        changeFrequency: "weekly",  priority: 0.7 },
+    { url: `${BASE_URL}/faqs`,                        changeFrequency: "monthly", priority: 0.5 },
+    { url: `${BASE_URL}/careers`,                     changeFrequency: "weekly",  priority: 0.4 },
+    { url: `${BASE_URL}/returns`,                     changeFrequency: "monthly", priority: 0.4 },
+    { url: `${BASE_URL}/shipping-info`,               changeFrequency: "monthly", priority: 0.4 },
+    { url: `${BASE_URL}/sustainability`,              changeFrequency: "monthly", priority: 0.4 },
+    { url: `${BASE_URL}/brands`,                      changeFrequency: "weekly",  priority: 0.5 },
+    { url: `${BASE_URL}/categories`,                  changeFrequency: "weekly",  priority: 0.5 },
+    { url: `${BASE_URL}/privacy-policy`,              changeFrequency: "monthly", priority: 0.3 },
+    { url: `${BASE_URL}/vip-signup`,                  changeFrequency: "monthly", priority: 0.3 },
+    { url: `${BASE_URL}/vendors`,                     changeFrequency: "weekly",  priority: 0.4 },
+    { url: `${BASE_URL}/vendors/register`,            changeFrequency: "monthly", priority: 0.6 },
+    { url: `${BASE_URL}/vendors/register/apply`,      changeFrequency: "monthly", priority: 0.5 },
   ];
 
-  const [slugs, brandSlugs, categorySlugs, subcats, posts] = await Promise.all([
-    fetchProductSlugs(),
-    fetchBrandSlugs(),
-    fetchCategorySlugs(),
+  const [products, brands, categories, subcats, posts] = await Promise.all([
+    fetchProducts(),
+    fetchBrands(),
+    fetchCategories(),
     fetchSubcategories(),
     getPosts(),
   ]);
 
-  const productPages: MetadataRoute.Sitemap = slugs.map((slug) => ({
-    url: `${BASE_URL}/product/${slug}`,
-    lastModified: new Date(),
+  const productPages: MetadataRoute.Sitemap = products.map((p) => ({
+    url: `${BASE_URL}/product/${p.slug}`,
+    lastModified: realDate(p.updatedAt),
     changeFrequency: "daily",
     priority: 0.8,
   }));
 
-  // Category shop pages — each has unique Nigeria-targeted metadata
+  // Category shop pages — each has unique Nigeria-targeted metadata. The list
+  // is static, so pull the matching catalog document's updatedAt when we have it.
+  const categoryDates = new Map(categories.map((c) => [c.slug, realDate(c.updatedAt)]));
   const categoryPages: MetadataRoute.Sitemap = CATEGORY_SLUGS.map((cat) => ({
     url: `${BASE_URL}/shop?category=${cat}`,
-    lastModified: new Date(),
+    lastModified: categoryDates.get(cat),
     changeFrequency: "daily",
     priority: 0.85,
   }));
@@ -158,16 +187,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const seenSubUrls = new Set<string>();
   const subcategoryPages: MetadataRoute.Sitemap = subcats
     .filter((s) => s.productCount > 0)
-    .map((s) => `${BASE_URL}/shop?category=${s.parentSlug}&subcategory=${s.slug}`)
-    .filter((url) => {
+    .filter((s) => {
+      const url = `${BASE_URL}/shop?category=${s.parentSlug}&subcategory=${s.slug}`;
       if (seenSubUrls.has(url)) return false;
       seenSubUrls.add(url);
       return true;
     })
-    .map((url) => ({
-      url,
-      lastModified: new Date(),
-      changeFrequency: "daily",
+    .map((s) => ({
+      url: `${BASE_URL}/shop?category=${s.parentSlug}&subcategory=${s.slug}`,
+      lastModified: realDate(s.updatedAt),
+      changeFrequency: "daily" as const,
       priority: 0.8,
     }));
 
@@ -178,33 +207,31 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     .filter((s) => s.productCount > 0)
     .map((s) => ({
       url: `${BASE_URL}/categories/${s.parentSlug}/${s.slug}`,
-      lastModified: new Date(),
+      lastModified: realDate(s.updatedAt),
       changeFrequency: "weekly" as const,
       priority: 0.7,
     }));
 
   // Category detail pages — alongside (never replacing) the /shop?category=
   // filter URLs above.
-  const categoryDetailPages: MetadataRoute.Sitemap = categorySlugs.map(
-    (slug) => ({
-      url: `${BASE_URL}/categories/${slug}`,
-      lastModified: new Date(),
-      changeFrequency: "weekly",
-      priority: 0.7,
-    })
-  );
+  const categoryDetailPages: MetadataRoute.Sitemap = categories.map((c) => ({
+    url: `${BASE_URL}/categories/${c.slug}`,
+    lastModified: realDate(c.updatedAt),
+    changeFrequency: "weekly" as const,
+    priority: 0.7,
+  }));
 
   // Brand pages — both the detail page and the shop filter listing
-  const brandPages: MetadataRoute.Sitemap = brandSlugs.flatMap((slug) => [
+  const brandPages: MetadataRoute.Sitemap = brands.flatMap((b) => [
     {
-      url: `${BASE_URL}/brands/${slug}`,
-      lastModified: new Date(),
+      url: `${BASE_URL}/brands/${b.slug}`,
+      lastModified: realDate(b.updatedAt),
       changeFrequency: "weekly" as const,
       priority: 0.7,
     },
     {
-      url: `${BASE_URL}/shop?brand=${slug}`,
-      lastModified: new Date(),
+      url: `${BASE_URL}/shop?brand=${b.slug}`,
+      lastModified: realDate(b.updatedAt),
       changeFrequency: "weekly" as const,
       priority: 0.7,
     },
