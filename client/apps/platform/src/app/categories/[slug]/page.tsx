@@ -26,8 +26,9 @@ export const dynamic = 'force-dynamic';
 
 async function fetchCategory(slug: string) {
   try {
+    // Short revalidate so admin edits show up within minutes, not an hour.
     const res = await fetch(`${API_URL}/api/categories/slug/${slug}`, {
-      next: { revalidate: 3600 },
+      next: { revalidate: 300 },
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -144,7 +145,7 @@ function toRichParagraphs(raw?: string): Seg[][] {
     .split(/\n+/)
     .map((line) => {
       const segs: Seg[] = [];
-      const re = /<a\s[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+      const re = /<a\s[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
       let last = 0;
       let m: RegExpExecArray | null;
       while ((m = re.exec(line))) {

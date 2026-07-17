@@ -24,8 +24,9 @@ export const dynamic = 'force-dynamic';
 
 async function fetchCategories(): Promise<any[]> {
   try {
+    // Short revalidate so admin edits show up within minutes, not an hour.
     const res = await fetch(`${API_URL}/api/categories`, {
-      next: { revalidate: 3600 },
+      next: { revalidate: 300 },
     });
     if (!res.ok) return [];
     const data = await res.json();

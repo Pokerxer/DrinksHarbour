@@ -536,9 +536,9 @@ function categoryCatalogToPrompt({ products, subCategories, brands, categorySlug
 
   return `
 
-INTERNAL LINKING: inside the description HTML, weave 3-6 contextual internal links as <a href="/path">natural anchor words</a>. Rules:
+INTERNAL LINKING: inside the description HTML, weave 3-6 contextual internal links as <a href='/path'>natural anchor words</a> (single-quoted attributes). Rules:
 - Use ONLY links from the approved catalog below. NEVER invent a URL or slug.
-- The anchor must be natural words inside a sentence (e.g. "a peaty <a href="/categories/scotch/islay-scotch">Islay single malt</a>"), never the raw slug.
+- The anchor must be natural words inside a sentence (e.g. "a peaty <a href='/categories/scotch/islay-scotch'>Islay single malt</a>"), never the raw slug.
 - Link each target at most once. Prefer subcategory pages, then standout products, then brands.${subLines ? `\n\nApproved subcategory links:\n${subLines}` : ''}${productLines ? `\n\nApproved product links:\n${productLines}` : ''}${brandLines ? `\n\nApproved brand links:\n${brandLines}` : ''}`;
 }
 
@@ -546,9 +546,37 @@ INTERNAL LINKING: inside the description HTML, weave 3-6 contextual internal lin
 // (prevents 404s from hallucinated slugs).
 function stripUnapprovedLinks(html, allowed) {
   return String(html || '').replace(
-    /<a\s[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi,
+    /<a\s[^>]*href=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi,
     (match, href, text) => (allowed.has(href) ? match : text)
   );
+}
+
+// Extract and parse the model's JSON, repairing the common failure mode of
+// long HTML descriptions: literal newlines/tabs inside JSON string values.
+function parseAiJson(raw) {
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start === -1 || end === -1) return null;
+  const slice = raw.slice(start, end + 1);
+  try {
+    return JSON.parse(slice);
+  } catch (_) {
+    /* repair below */
+  }
+  let repaired = '';
+  let inString = false;
+  for (let i = 0; i < slice.length; i++) {
+    const ch = slice[i];
+    if (ch === '"' && slice[i - 1] !== '\\') inString = !inString;
+    if (inString && (ch === '\n' || ch === '\r')) repaired += '\\n';
+    else if (inString && ch === '\t') repaired += '\\t';
+    else repaired += ch;
+  }
+  try {
+    return JSON.parse(repaired);
+  } catch (_) {
+    return null;
+  }
 }
 
 const fillWithAI = asyncHandler(async (req, res) => {
@@ -578,7 +606,7 @@ Return a JSON object with exactly these keys:
   "displayName": "display-friendly name, plural if appropriate (max 120 chars)",
   "tagline": "short punchy tagline that sells the category (max 150 chars)",
   "shortDescription": "2 sentences for listings and cards (max 280 chars)",
-  "description": "6-10 detailed, informative paragraphs (roughly 800-1500 words) formatted as HTML using <p> tags (plus inline <a> internal links per the linking rules below, if a catalog is provided) (max 20000 chars including tags)",
+  "description": "6-10 detailed, informative paragraphs (roughly 800-1500 words) formatted as HTML using <p> tags (plus inline <a> internal links per the linking rules below, if a catalog is provided) (max 20000 chars including tags; write it as a single-line JSON string with no literal newlines, and use single quotes for HTML attribute values)",
   "type": "single best value from: ${CATEGORY_TYPES.join(', ')}",
   "subType": "a more specific sub-type label, e.g. Single Malt, or '' (max 80 chars)",
   "alcoholCategory": "single best value from: ${ALCOHOL_CATEGORIES.join(', ')}",
@@ -597,16 +625,8 @@ Return a JSON object with exactly these keys:
   });
 
   const raw = (response.content || []).map((c) => c.text || '').join('');
-  const start = raw.indexOf('{');
-  const end = raw.lastIndexOf('}');
-  if (start === -1 || end === -1) {
-    return res.status(500).json({ success: false, message: 'AI returned invalid JSON' });
-  }
-
-  let json;
-  try {
-    json = JSON.parse(raw.slice(start, end + 1));
-  } catch {
+  const json = parseAiJson(raw);
+  if (!json) {
     return res.status(500).json({ success: false, message: 'AI returned invalid JSON' });
   }
 
@@ -656,7 +676,7 @@ Return a JSON object with exactly these keys:
   "displayName": "display-friendly name, plural if appropriate (max 120 chars)",
   "tagline": "short punchy tagline that sells the category (max 150 chars)",
   "shortDescription": "2 sentences for listings and cards (max 280 chars)",
-  "description": "6-10 detailed, informative paragraphs (roughly 800-1500 words) formatted as HTML using <p> tags (plus inline <a> internal links per the linking rules below, if a catalog is provided) (max 20000 chars including tags)",
+  "description": "6-10 detailed, informative paragraphs (roughly 800-1500 words) formatted as HTML using <p> tags (plus inline <a> internal links per the linking rules below, if a catalog is provided) (max 20000 chars including tags; write it as a single-line JSON string with no literal newlines, and use single quotes for HTML attribute values)",
   "type": "single best value from: ${CATEGORY_TYPES.join(', ')}",
   "subType": "a more specific sub-type label, e.g. Single Malt, or '' (max 80 chars)",
   "alcoholCategory": "single best value from: ${ALCOHOL_CATEGORIES.join(', ')}",
@@ -675,16 +695,8 @@ Return a JSON object with exactly these keys:
   });
 
   const raw = (response.content || []).map((c) => c.text || '').join('');
-  const start = raw.indexOf('{');
-  const end = raw.lastIndexOf('}');
-  if (start === -1 || end === -1) {
-    return res.status(502).json({ success: false, message: 'AI returned invalid JSON' });
-  }
-
-  let json;
-  try {
-    json = JSON.parse(raw.slice(start, end + 1));
-  } catch {
+  const json = parseAiJson(raw);
+  if (!json) {
     return res.status(502).json({ success: false, message: 'AI returned invalid JSON' });
   }
 
