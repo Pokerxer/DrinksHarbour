@@ -140,6 +140,24 @@ const SIZE_PRESETS = {
     { value: 'case-12', label: 'Case of 12', quickAdd: true },
     { value: 'case-24', label: 'Case of 24', quickAdd: true },
   ],
+  barware: [
+    { value: 'piece-single', label: 'Single Piece', quickAdd: true },
+    { value: 'pair', label: 'Pair', quickAdd: true },
+    { value: 'set-4', label: 'Set of 4', quickAdd: true },
+    { value: 'set-6', label: 'Set of 6', quickAdd: true },
+  ],
+  cigars: [
+    { value: 'cigar-single', label: 'Single', quickAdd: true },
+    { value: 'box-10', label: 'Box of 10', quickAdd: true },
+    { value: 'box-25', label: 'Box of 25', quickAdd: true },
+    { value: 'sampler-5', label: 'Sampler of 5', quickAdd: true },
+  ],
+  vapes: [
+    { value: '30ml', label: '30ml E-liquid', quickAdd: true },
+    { value: '60ml', label: '60ml E-liquid', quickAdd: true },
+    { value: 'puffs-600', label: '600 Puffs', quickAdd: true },
+    { value: 'pod-4', label: '4 Pods', quickAdd: true },
+  ],
 };
 
 const BEVERAGE_CATEGORIES = [
@@ -167,6 +185,24 @@ const BEVERAGE_CATEGORIES = [
     label: 'Multi-Packs',
     icon: '📦',
     color: 'bg-green-100 text-green-700',
+  },
+  {
+    id: 'barware',
+    label: 'Barware',
+    icon: '🍸',
+    color: 'bg-purple-100 text-purple-700',
+  },
+  {
+    id: 'cigars',
+    label: 'Cigars',
+    icon: '🚬',
+    color: 'bg-orange-100 text-orange-700',
+  },
+  {
+    id: 'vapes',
+    label: 'Vapes',
+    icon: '💨',
+    color: 'bg-cyan-100 text-cyan-700',
   },
 ];
 
@@ -268,6 +304,9 @@ export const SIZE_OPTIONS = [
   { value: '5L', label: '5 Liter', category: 'Soft Drinks & Water' },
 
   // Multi-Packs
+  { value: 'pack-2', label: '2-Pack', category: 'Multi-Packs' },
+  { value: 'pack-3', label: '3-Pack', category: 'Multi-Packs' },
+  { value: 'pack-5', label: '5-Pack', category: 'Multi-Packs' },
   { value: 'pack-4', label: '4-Pack', category: 'Multi-Packs' },
   { value: 'pack-6', label: '6-Pack', category: 'Multi-Packs' },
   { value: 'pack-8', label: '8-Pack', category: 'Multi-Packs' },
@@ -314,6 +353,51 @@ export const SIZE_OPTIONS = [
   { value: 'gift-set', label: 'Gift Set', category: 'Gift Sets' },
   { value: 'tasting-set', label: 'Tasting Set', category: 'Gift Sets' },
   { value: 'variety-pack', label: 'Variety Pack', category: 'Gift Sets' },
+
+  // Glassware & Barware
+  { value: 'piece-single', label: 'Single Piece', category: 'Glassware & Barware' },
+  { value: 'pair', label: 'Pair (2)', category: 'Glassware & Barware' },
+  { value: 'set-5', label: 'Set of 5', category: 'Glassware & Barware' },
+  { value: 'set-8', label: 'Set of 8', category: 'Glassware & Barware' },
+  { value: 'set-10', label: 'Set of 10', category: 'Glassware & Barware' },
+  { value: 'set-16', label: 'Set of 16', category: 'Glassware & Barware' },
+  { value: 'set-24', label: 'Set of 24', category: 'Glassware & Barware' },
+  { value: 'set-barware', label: 'Barware Set', category: 'Glassware & Barware' },
+  { value: 'kit-3', label: '3-Piece Kit', category: 'Glassware & Barware' },
+  { value: 'kit-5', label: '5-Piece Kit', category: 'Glassware & Barware' },
+  { value: 'kit-8', label: '8-Piece Kit', category: 'Glassware & Barware' },
+  { value: 'kit-10', label: '10-Piece Kit', category: 'Glassware & Barware' },
+
+  // Cigars & Smoking
+  { value: 'cigar-single', label: 'Single Cigar', category: 'Cigars & Smoking' },
+  { value: 'sampler-5', label: 'Sampler of 5', category: 'Cigars & Smoking' },
+  { value: 'sampler-6', label: 'Sampler of 6', category: 'Cigars & Smoking' },
+  { value: 'box-5', label: 'Box of 5', category: 'Cigars & Smoking' },
+  { value: 'box-10', label: 'Box of 10', category: 'Cigars & Smoking' },
+  { value: 'box-20', label: 'Box of 20', category: 'Cigars & Smoking' },
+  { value: 'box-24', label: 'Box of 24', category: 'Cigars & Smoking' },
+  { value: 'box-25', label: 'Box of 25', category: 'Cigars & Smoking' },
+  { value: 'box-50', label: 'Box of 50', category: 'Cigars & Smoking' },
+
+  // Vapes & E-liquids
+  { value: '10ml', label: '10ml E-liquid', category: 'Vapes & E-liquids' },
+  { value: '15ml', label: '15ml E-liquid', category: 'Vapes & E-liquids' },
+  { value: '30ml', label: '30ml E-liquid', category: 'Vapes & E-liquids' },
+  { value: '60ml', label: '60ml E-liquid', category: 'Vapes & E-liquids' },
+  { value: '100ml', label: '100ml E-liquid', category: 'Vapes & E-liquids' },
+  { value: '120ml', label: '120ml E-liquid', category: 'Vapes & E-liquids' },
+  { value: 'pod-1', label: 'Single Pod', category: 'Vapes & E-liquids' },
+  { value: 'pod-2', label: '2 Pods', category: 'Vapes & E-liquids' },
+  { value: 'pod-4', label: '4 Pods', category: 'Vapes & E-liquids' },
+  { value: 'pouch-20', label: 'Can of 20 Pouches', category: 'Vapes & E-liquids' },
+  { value: 'puffs-600', label: '600 Puffs', category: 'Vapes & E-liquids' },
+  { value: 'puffs-800', label: '800 Puffs', category: 'Vapes & E-liquids' },
+  { value: 'puffs-1500', label: '1500 Puffs', category: 'Vapes & E-liquids' },
+  { value: 'puffs-2500', label: '2500 Puffs', category: 'Vapes & E-liquids' },
+  { value: 'puffs-3500', label: '3500 Puffs', category: 'Vapes & E-liquids' },
+  { value: 'puffs-5000', label: '5000 Puffs', category: 'Vapes & E-liquids' },
+  { value: 'puffs-6000', label: '6000 Puffs', category: 'Vapes & E-liquids' },
+  { value: 'puffs-10000', label: '10000 Puffs', category: 'Vapes & E-liquids' },
 
   // Custom
   { value: 'custom', label: 'Custom Size', category: 'Other' },
@@ -1207,6 +1291,16 @@ function SizeVariantRow({
                 <option value="weight_kg">Weight (kg)</option>
                 <option value="count_unit">Count (unit)</option>
                 <option value="count_pack">Count (pack)</option>
+                <option value="count_case">Count (case)</option>
+                <option value="set">Set</option>
+                <option value="pair">Pair</option>
+                <option value="kit">Kit</option>
+                <option value="piece">Piece</option>
+                <option value="box">Box</option>
+                <option value="bundle">Bundle</option>
+                <option value="pod">Pod</option>
+                <option value="pouch">Pouch</option>
+                <option value="puff">Puff (disposable vape)</option>
               </select>
             )}
           />

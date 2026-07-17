@@ -114,9 +114,26 @@ const sizeSchema = new Schema(
         'set-2', 'set-3', 'set-4', 'set-6', 'set-12',
         'gift-set', 'tasting-set', 'variety-pack',
         
-        // Accessories
+        // Accessories, Glassware & Barware (count / piece / set based)
         'piece-single', 'pair', 'set-barware',
-        
+        'set-5', 'set-8', 'set-10', 'set-16', 'set-24',
+        'pack-2', 'pack-3', 'pack-5',
+        'kit-3', 'kit-5', 'kit-8', 'kit-10',
+
+        // Cigars & Smoking
+        'cigar-single', 'sampler-5', 'sampler-6',
+        'box-5', 'box-10', 'box-20', 'box-24', 'box-25', 'box-50',
+
+        // Vapes & E-liquids (bottle volumes)
+        '10ml', '15ml', '30ml', '60ml', '100ml', '120ml',
+        // Vape pods / cartridges
+        'pod-1', 'pod-2', 'pod-4',
+        // Disposable vapes (measured in puffs)
+        'puffs-600', 'puffs-800', 'puffs-1500', 'puffs-2500',
+        'puffs-3500', 'puffs-5000', 'puffs-6000', 'puffs-10000',
+        // Nicotine pouches (per can)
+        'pouch-20',
+
         // Custom/Other
         'custom', 'variable', 'assorted',
       ],
@@ -135,6 +152,7 @@ const sizeSchema = new Schema(
       enum: [
         'miniature', 'single_serve', 'standard', 'large', 'extra_large',
         'multi_pack', 'bulk', 'gift_set', 'variety_pack', 'keg',
+        'accessory', 'glassware', 'barware',
       ],
       default: 'standard',
       index: true,
@@ -151,6 +169,7 @@ const sizeSchema = new Schema(
         'count_unit', 'count_pack', 'count_case',
         'pod', 'capsule', 'sachet', 'teabag',
         'set', 'piece', 'serving',
+        'pair', 'kit', 'box', 'bundle', 'puff', 'pouch',
       ],
       default: 'volume_ml',
     },
