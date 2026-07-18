@@ -50,10 +50,12 @@ export function buildShopSearchParams(sp: URLSearchParams): URLSearchParams {
   if (sp.get('maxABV'))    p.set('maxABV',    sp.get('maxABV')!);
   if (sp.get('minRating')) p.set('minRating', sp.get('minRating')!);
 
-  // Fetch a wider slice when a sort is active (sorts run server-side before
-  // pagination, so the returned page is already the correct top-N).
-  const hasActiveSort = Boolean(frontendSort);
-  p.set('limit', sale === 'true' ? '200' : hasActiveSort ? '150' : '80');
+  // Fetch every matching approved product in one request so the displayed
+  // grid count matches the total the API reports. Shop paginates client-side
+  // (24/page), and the SSR HTML in page.tsx reuses this same builder — so the
+  // raw HTML contains the full crawlable set too. Revisit with server-side
+  // ?page= pagination if the catalog grows beyond ~1–2k products.
+  p.set('limit', '1000');
 
   return p;
 }
