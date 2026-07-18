@@ -3,6 +3,7 @@
 
 import { routes } from '@/config/routes';
 import { SubProductListItem, SizeVariant } from './table';
+import { resolveSubProductImage } from './image-utils';
 import { createColumnHelper } from '@tanstack/react-table';
 import Link from 'next/link';
 import { ActionIcon, Checkbox, Flex, Text, Badge, Tooltip } from 'rizzui';
@@ -249,12 +250,7 @@ export const subProductListColumns = [
     enableSorting: false,
     cell: ({ row }) => {
       const product = row.original.product;
-      const image = product?.images?.[0]?.url;
-      const hasOverrideImage =
-        row.original.imagesOverride && row.original.imagesOverride.length > 0;
-      const displayImage = hasOverrideImage
-        ? row.original.imagesOverride?.[0]?.url
-        : image;
+      const displayImage = resolveSubProductImage(row.original);
 
       return (
         <motion.div

@@ -17,6 +17,7 @@ import {
   PiPackageBold,
 } from 'react-icons/pi';
 import type { SubProductListItem, SizeVariant } from '../table';
+import { resolveSubProductImage } from '../image-utils';
 
 interface ProductGridCardProps {
   product: SubProductListItem;
@@ -110,8 +111,7 @@ export default function ProductGridCard({
   const symbol = propSymbol || currencySymbols[product.currency] || '₦';
   const stock = stockBadge(product.totalStock);
   const BeverageIcon = getBeverageIcon(product.product?.type);
-  const primaryImage =
-    product.imagesOverride?.[0]?.url || product.product?.images?.[0]?.url;
+  const primaryImage = resolveSubProductImage(product);
   const productId = product._id || product.id;
   const base = product.baseSellingPrice || 0;
   const bg = getBgGradient(product.product?.type);
@@ -273,8 +273,7 @@ export function ProductGridCardCompact({
 }: ProductGridCardProps) {
   const symbol = propSymbol || currencySymbols[product.currency] || '₦';
   const stock = stockBadge(product.totalStock);
-  const primaryImage =
-    product.imagesOverride?.[0]?.url || product.product?.images?.[0]?.url;
+  const primaryImage = resolveSubProductImage(product);
   const BeverageIcon = getBeverageIcon(product.product?.type);
   const productId = product._id || product.id;
   const base = product.baseSellingPrice || 0;
