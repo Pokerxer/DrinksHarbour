@@ -68,6 +68,23 @@ async function getCategoryOptions(deps = {}) {
 }
 
 /**
+ * Existing central-catalog product names, used to nudge the model into reusing
+ * an established product's EXACT spelling (the canonical-name lever that drives
+ * the importer's dedup match). Best-effort — returns [] on any failure.
+ */
+async function getProductNames(deps = {}) {
+  const ProductModel = deps.Product || Product;
+  if (!ProductModel || typeof ProductModel.find !== 'function') return [];
+  try {
+    const q = ProductModel.find({}).select('name');
+    const docs = await (q && typeof q.lean === 'function' ? q.lean() : q);
+    return (docs || []).map((d) => d.name).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Enrich a product from its name via Haiku.
  * @returns {Promise<{type?:string, brand?:string, category?:string, subCategory?:string, shortDescription?:string, description?:string}>}
  *   Best-effort. Returns {} when the name is empty, no API key is configured, or
@@ -81,9 +98,13 @@ async function enrichProductFromName(name, opts = {}, deps = {}) {
   const anthropic = deps.anthropic || client();
   const categories = opts.categories || [];
   const subcategories = opts.subcategories || {};
+  const productNames = Array.isArray(opts.productNames) ? opts.productNames.filter(Boolean) : [];
   const subLines = categories
     .filter((c) => (subcategories[c] || []).length)
     .map((c) => `${c}: ${subcategories[c].join(', ')}`);
+
+  // Cap the existing-name list so a large catalog doesn't blow up the prompt.
+  const nameList = productNames.slice(0, 1200);
 
   const system =
     'You are a drinks-catalog assistant for a Nigerian beverage marketplace. ' +
@@ -98,8 +119,11 @@ async function enrichProductFromName(name, opts = {}, deps = {}) {
           ? `"subCategory": pick the best match from the chosen category's own subcategories below; use "" if the chosen category has none listed:\n${subLines.join('\n')}\n`
           : `"subCategory": use "".\n`)
       : '') +
+    (nameList.length
+      ? `\nEXISTING PRODUCTS already in the catalog (canonical spellings). If this product is the SAME real-world item as one of these — ignoring size, apostrophes, punctuation and casing — set "name" to that entry copied EXACTLY (verbatim), so the import merges into it instead of creating a duplicate:\n${nameList.join('\n')}\n\n`
+      : '') +
     'Return JSON with keys: name, type, brand, category, subCategory, shortDescription, description.\n' +
-    '- name: a clean, properly-capitalized retail product name — expand obvious abbreviations, fix casing/spacing, include brand + variant. Keep it faithful to the input; do not invent a different product. IMPORTANT: do NOT include any size/volume/pack in the name (no 75cl, 700ml, 1L, 6-pack, etc.) — size is tracked separately, so strip it out.\n' +
+    '- name: a clean, properly-capitalized retail product name — expand obvious abbreviations, fix casing/spacing, include brand + variant. Keep it faithful to the input; do not invent a different product. If it matches an EXISTING PRODUCT above, reuse that exact spelling. IMPORTANT: do NOT include any size/volume/pack in the name (no 75cl, 700ml, 1L, 6-pack, etc.) — size is tracked separately, so strip it out.\n' +
     '- brand: the producer/brand name, or "" if unknown.\n' +
     '- shortDescription: <= 180 chars, marketing-style one-liner.\n' +
     '- description: <= 500 chars, factual product description.\n' +
@@ -149,4 +173,4 @@ async function enrichProductFromName(name, opts = {}, deps = {}) {
   }
 }
 
-module.exports = { enrichProductFromName, getCategoryOptions, stripSizeFromName, CLAUDE_MODEL, PRODUCT_TYPES };
+module.exports = { enrichProductFromName, getCategoryOptions, getProductNames, stripSizeFromName, CLAUDE_MODEL, PRODUCT_TYPES };

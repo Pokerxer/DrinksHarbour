@@ -106,8 +106,61 @@ function escapeRe(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-async function findProductByName(name, Product) {
+/**
+ * Canonical key for de-duplicating product names. Drops apostrophes entirely
+ * (so "Daniel's" == "Daniels"), turns every other punctuation run into a single
+ * space, lowercases, and collapses whitespace. This is what makes
+ * "Jack Daniel's Old No. 7", "Jack Daniels Old No 7" and "Jack Daniels Old No. 7"
+ * resolve to the SAME existing product instead of spawning duplicates.
+ */
+function normalizeProductName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/['’‘`´]/g, '')     // apostrophes vanish: daniel's -> daniels
+    .replace(/[^a-z0-9]+/g, ' ') // any other punctuation -> single space
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Build an in-memory Map<normalizedName, {_id, name}> from product docs.
+ * First doc wins on a key collision so an established product isn't shadowed.
+ */
+function buildProductIndex(docs) {
+  const map = new Map();
+  for (const d of docs || []) {
+    const key = normalizeProductName(d.name);
+    if (key && !map.has(key)) map.set(key, { _id: d._id, name: d.name });
+  }
+  return map;
+}
+
+/**
+ * Load the normalized product index once per import. Returns null when the
+ * Product model can't be queried (e.g. lightweight test stubs with only
+ * `findOne`), in which case findProductByName falls back to an exact DB match.
+ */
+async function loadProductIndex(Product) {
+  if (!Product || typeof Product.find !== 'function') return null;
+  try {
+    const q = Product.find({}).select('_id name');
+    const docs = await (q && typeof q.lean === 'function' ? q.lean() : q);
+    return buildProductIndex(docs);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve a product by name. Prefers a prebuilt normalized `index` (dedup-tolerant
+ * of apostrophes/punctuation); falls back to an exact case-insensitive DB match
+ * when no index is supplied.
+ */
+async function findProductByName(name, Product, index) {
   if (!name) return null;
+  if (index instanceof Map) {
+    return index.get(normalizeProductName(name)) || null;
+  }
   const q = Product.findOne({ name: { $regex: new RegExp(`^${escapeRe(name)}$`, 'i') } });
   return (q && typeof q.select === 'function') ? q.select('_id').lean() : q;
 }
@@ -131,7 +184,7 @@ function resolveNewProductFields(base, ai = {}) {
 }
 
 async function validateImport(rawRows, opts, tenantId, deps) {
-  const { Product, SubProduct, Size, Category, enrich, getCategoryOptions } = defaultServiceDeps(deps);
+  const { Product, SubProduct, Size, Category, enrich, getCategoryOptions, getProductNames } = defaultServiceDeps(deps);
   const warehouseId = opts?.warehouseId || null;
   const rows = normalizeRows(rawRows);
   const groups = groupRows(rows);
@@ -142,10 +195,15 @@ async function validateImport(rawRows, opts, tenantId, deps) {
   };
   let anyQty = false;
 
+  // Normalized product index, built once, so near-identical names
+  // ("Jack Daniel's Old No. 7" vs "Jack Daniels Old No 7") link to the same
+  // existing product instead of creating a duplicate.
+  const productIndex = await loadProductIndex(Product);
+
   const groupReports = [];
   const toEnrich = []; // createProduct groups, enriched in parallel after the scan
   for (const g of groups) {
-    const existingProduct = await findProductByName(g.productName, Product);
+    const existingProduct = await findProductByName(g.productName, Product, productIndex);
     let existingSub = null;
     if (existingProduct) {
       const firstSku = g.rows.find((r) => r.subProductSku)?.subProductSku;
@@ -211,9 +269,14 @@ async function validateImport(rawRows, opts, tenantId, deps) {
   if (toEnrich.length) {
     let catalog = { categories: [], subcategories: {} };
     try { catalog = await getCategoryOptions({ Category }); } catch { /* keep empty */ }
+    // Feed existing product names so the model reuses their exact stored spelling
+    // (the canonical-name lever that drives the exact/normalized dedup match).
+    let productNames = [];
+    try { productNames = (await getProductNames({ Product })) || []; } catch { productNames = []; }
+    const enrichOpts = { ...catalog, productNames };
     await Promise.all(toEnrich.map(async ({ report, base }) => {
       let ai = {};
-      try { ai = (await enrich(base.productName, catalog)) || {}; } catch { ai = {}; }
+      try { ai = (await enrich(base.productName, enrichOpts)) || {}; } catch { ai = {}; }
       report.enrichment = resolveNewProductFields(base, ai);
     }));
   }
@@ -239,6 +302,7 @@ function defaultServiceDeps(deps = {}) {
     recordReceiptMovement: deps.recordReceiptMovement || invSvc.recordReceiptMovement,
     enrich: deps.enrich || enrichSvc.enrichProductFromName,
     getCategoryOptions: deps.getCategoryOptions || enrichSvc.getCategoryOptions,
+    getProductNames: deps.getProductNames || enrichSvc.getProductNames,
   };
 }
 
@@ -268,6 +332,15 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
   try {
     catalog = await d.getCategoryOptions({ Category: d.Category });
   } catch { /* keep empty */ }
+  // Existing product names for exact-spelling reuse when a group needs live
+  // enrichment (preview enrichment absent/incomplete). Best-effort.
+  let productNames = [];
+  try { productNames = (await d.getProductNames({ Product: d.Product })) || []; } catch { productNames = []; }
+  const enrichOpts = { ...catalog, productNames };
+
+  // Normalized product index, built once, so dedup at commit matches the same
+  // near-identical names the preview linked (apostrophe/punctuation tolerant).
+  const productIndex = await loadProductIndex(d.Product);
 
   // Best-effort bulk import: each group is isolated by try/catch. A group is
   // processed independently; if opening-stock adjustStock throws mid-group the
@@ -288,7 +361,7 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
       });
       if (goodRows.length === 0) { out.skipped += g.rows.length; continue; }
 
-      const existingProduct = await findProductByName(g.productName, d.Product);
+      const existingProduct = await findProductByName(g.productName, d.Product, productIndex);
       const firstSku = goodRows.find((r) => r.subProductSku)?.subProductSku;
       const existingSub = existingProduct
         ? await d.SubProduct.findOne({
@@ -331,7 +404,7 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
           let ai = enrichments[g.key];
           if (!ai || typeof ai !== 'object' || !ai.type) {
             try {
-              ai = (await d.enrich(base.productName, catalog)) || {};
+              ai = (await d.enrich(base.productName, enrichOpts)) || {};
             } catch { ai = {}; }
           }
           data.createNewProduct = true;
@@ -406,4 +479,8 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
   return out;
 }
 
-module.exports = { normalizeRows, isValidSize, groupRows, SIZE_ENUM, validateImport, findProductByName, commitImport };
+module.exports = {
+  normalizeRows, isValidSize, groupRows, SIZE_ENUM,
+  validateImport, findProductByName, commitImport,
+  normalizeProductName, buildProductIndex, loadProductIndex,
+};

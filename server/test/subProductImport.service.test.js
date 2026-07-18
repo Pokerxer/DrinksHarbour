@@ -120,3 +120,46 @@ test('validateImport does NOT enrich linkProduct/updateSubProduct groups', async
   assert.equal(calls.enrich.length, 0);
   assert.equal(res.groups[0].enrichment, undefined);
 });
+
+test('normalizeProductName drops apostrophes and punctuation, collapses whitespace', () => {
+  assert.equal(svc.normalizeProductName("Jack Daniel's Old No. 7"), 'jack daniels old no 7');
+  assert.equal(svc.normalizeProductName('Jack Daniels Old No 7'), 'jack daniels old no 7');
+  assert.equal(svc.normalizeProductName('Jack Daniels Old No. 7'), 'jack daniels old no 7');
+  assert.equal(svc.normalizeProductName('  Baileys  Irish   Cream '), 'baileys irish cream');
+});
+
+test('buildProductIndex keys products by normalized name (first wins)', () => {
+  const idx = svc.buildProductIndex([
+    { _id: 'p1', name: "Jack Daniel's Old No. 7" },
+    { _id: 'p2', name: 'Jack Daniels Old No 7' }, // same normalized key -> ignored
+  ]);
+  assert.equal(idx.get('jack daniels old no 7')._id, 'p1');
+  assert.equal(idx.size, 1);
+});
+
+test('findProductByName matches via normalized index despite punctuation/apostrophes', async () => {
+  const idx = svc.buildProductIndex([{ _id: 'p1', name: "Jack Daniel's Old No. 7" }]);
+  const hit = await svc.findProductByName('Jack Daniels Old No 7', null, idx);
+  assert.equal(hit._id, 'p1');
+  const miss = await svc.findProductByName('Totally Different', null, idx);
+  assert.equal(miss, null);
+});
+
+test('validateImport links to existing product when names match only after normalization', async () => {
+  const { deps } = previewDeps();
+  deps.Product = {
+    findOne: async () => null, // exact-string match fails
+    find: () => ({ select: () => ({ lean: async () => [{ _id: 'p9', name: "Jack Daniel's Old No. 7" }] }) }),
+  };
+  const rows = [{ productName: 'Jack Daniels Old No 7', size: '75cl', costPrice: '900' }];
+  const res = await svc.validateImport(rows, { warehouseId: null }, 'T1', deps);
+  assert.equal(res.groups[0].action, 'linkProduct');
+});
+
+test('validateImport passes existing product names to enrich for exact-spelling reuse', async () => {
+  const { deps, calls } = previewDeps({ ai: {} });
+  deps.getProductNames = async () => ["Jack Daniel's Old No. 7", 'Hennessy VS'];
+  const rows = [{ productName: 'new whiskey', size: '75cl' }];
+  await svc.validateImport(rows, { warehouseId: null }, 'T1', deps);
+  assert.deepEqual(calls.enrich[0].opts.productNames, ["Jack Daniel's Old No. 7", 'Hennessy VS']);
+});
