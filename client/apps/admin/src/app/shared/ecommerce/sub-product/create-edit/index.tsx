@@ -1003,8 +1003,22 @@ export default function CreateEditSubProduct({
               'This record was modified by another user. Please refresh and try again.'
             );
           } else if (
+            error?.details?.reason === 'subproduct_exists' &&
+            error?.details?.existingSubProductId
+          ) {
+            const existingId = error.details.existingSubProductId;
+            toast.success(
+              `${error.details.productName || 'This product'} is already in your catalog — opening it so you can add this size/variant.`,
+              { duration: 5000 }
+            );
+            // Take the user straight to the existing listing to add the variant.
+            localStorage.removeItem('subproduct-draft');
+            router.replace(routes.eCommerce.editSubProduct(existingId));
+            return false;
+          } else if (
             errorMessage.includes('duplicate') ||
-            errorMessage.includes('already exists')
+            errorMessage.includes('already exists') ||
+            errorMessage.includes('already in your catalog')
           ) {
             toast.error(
               'This product already exists in your catalog. Try editing the existing entry instead.'

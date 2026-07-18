@@ -703,6 +703,32 @@ export default function SubProductsTable({
           if (failed) toast.error(`Deleted ${ok}, failed ${failed}`);
           else toast.success(`Deleted ${ok} item${ok !== 1 ? 's' : ''}`);
         },
+        handleArchiveRow: async (row: SubProductListItem) => {
+          if (!session?.user?.token) return;
+          try {
+            await subproductService.archiveSubProduct(
+              row._id || row.id,
+              session.user.token
+            );
+            refresh();
+            toast.success('Product archived');
+          } catch (err: any) {
+            toast.error(err.message || 'Failed to archive');
+          }
+        },
+        handleRestoreRow: async (row: SubProductListItem) => {
+          if (!session?.user?.token) return;
+          try {
+            await subproductService.restoreSubProduct(
+              row._id || row.id,
+              session.user.token
+            );
+            refresh();
+            toast.success('Product restored');
+          } catch (err: any) {
+            toast.error(err.message || 'Failed to restore');
+          }
+        },
       },
       enableColumnResizing: false,
     },

@@ -321,6 +321,9 @@ app.use((err, req, res, next) => {
   res.status(statusCode).json({
     success: false,
     message: isProd && statusCode === 500 ? 'Internal server error' : err.message,
+    // Operational errors may attach structured `details` (e.g. the id of an
+    // existing record a conflict points to) so the client can act on it.
+    ...(err.details ? { details: err.details } : {}),
     ...(isProd ? {} : { stack: err.stack?.split('\n').slice(0, 10) }),
   });
 });

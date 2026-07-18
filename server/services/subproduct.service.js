@@ -162,7 +162,7 @@ const getMySubProducts = async (tenantId, options) => {
 
   // Validate pagination
   const pageNum = Math.max(1, page);
-  const limitNum = Math.min(Math.max(1, limit), 1000);
+  const limitNum = Math.min(Math.max(1, limit), 5000);
   const skip = (pageNum - 1) * limitNum;
 
   // Build query - only filter by tenant if tenantId is provided
@@ -608,6 +608,52 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
       ? newProductData.barcode.trim() 
       : undefined;
     
+    // ────────────────────────────────────────────────────────────────────────
+    // Link-by-name guard: before creating a new central Product, check whether
+    // an approved/pending Product with the same name already exists. The
+    // central catalog is the single source of truth — duplicates are not
+    // allowed. If found, link the SubProduct to the existing Product instead
+    // of creating a new (timestamp-suffixed-slug) duplicate. This is the root
+    // behavior the AGENTS.md workflow mandates ("Match found in central
+    // catalog → Tenant links to that Product").
+    // ────────────────────────────────────────────────────────────────────────
+    const escapeRegexLocal = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const existingProductByName = await Product.findOne({
+      name: new RegExp(`^${escapeRegexLocal(newProductData.name.trim())}$`, 'i'),
+      status: { $in: ['pending', 'approved'] },
+    }).select('_id name status').lean();
+    if (existingProductByName) {
+      console.log(
+        '🔗 Link-by-name: existing Product found for "' + existingProductByName.name +
+        '" (' + existingProductByName._id + ', ' + existingProductByName.status +
+        ') — linking SubProduct instead of creating a duplicate central Product.'
+      );
+      productObjectId = existingProductByName._id;
+      product = existingProductByName;
+      // Skip the Product.create block below by jumping to the else branch path
+      // (we set productObjectId so the surrounding logic treats this as a link)
+      // We emulate the "link to existing product" path here:
+      const existingSubForTenant = await SubProduct.findOne({
+        product: productObjectId,
+        tenant: tenantId,
+      }).select('_id sku').lean();
+      if (existingSubForTenant) {
+        const conflict = new ConflictError(
+          `"${existingProductByName.name}" is already in your catalog ` +
+          `(SKU ${existingSubForTenant.sku}). Open the existing listing to add this size or variant.`
+        );
+        conflict.details = {
+          reason: 'subproduct_exists',
+          existingSubProductId: String(existingSubForTenant._id),
+          existingSku: existingSubForTenant.sku,
+          productName: existingProductByName.name,
+        };
+        throw conflict;
+      }
+      // Continue SubProduct creation against the existing Product
+      // (fall through to the SubProduct.create step later in the function)
+    } else {
+    // (original Product.create path follows — only runs if no existing-by-name)
     const productPayload = {
       name: newProductData.name,
       slug: `${slug}-${Date.now()}`,
@@ -653,6 +699,7 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
     product = createdProduct.toObject();
     
     console.log('✅ New Product created with ID:', productObjectId.toString());
+    } // end of "no existing Product by name" branch (link-by-name guard)
   } else {
     throw new ValidationError('Product ID is required');
   }
@@ -700,9 +747,17 @@ const createSubProductCore = async (data, tenantId, user, session = null) => {
       sku: existingSubProduct.sku,
       createdAt: existingSubProduct.createdAt
     });
-    throw new ConflictError(
-      'This product is already in your catalog. Please update the existing listing instead.'
+    const conflict = new ConflictError(
+      `"${product.name || 'This product'}" is already in your catalog ` +
+      `(SKU ${existingSubProduct.sku}). Open the existing listing to add this size or variant.`
     );
+    conflict.details = {
+      reason: 'subproduct_exists',
+      existingSubProductId: String(existingSubProduct._id),
+      existingSku: existingSubProduct.sku,
+      productName: product.name,
+    };
+    throw conflict;
   }
 
   // Always generate SKU server-side (ignore client-provided value for consistency)

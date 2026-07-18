@@ -12,6 +12,8 @@ import {
   PiPencilLineBold,
   PiPackageBold,
   PiPlusBold,
+  PiArchiveBold,
+  PiArrowCounterClockwiseBold,
 } from 'react-icons/pi';
 import { motion } from 'framer-motion';
 import React from 'react';
@@ -642,18 +644,20 @@ export const subProductListColumns = [
     },
   }),
 
-  // Actions Column (only edit button, no delete)
+  // Actions Column — edit + archive/restore
   columnHelper.display({
     id: 'action',
-    size: 60,
-    cell: ({ row }) => {
+    size: 90,
+    cell: ({ row, table }) => {
       const subProductId = row.original._id || row.original.id;
+      const isArchived = row.original.status === 'archived';
+      const meta = table.options.meta as any;
 
       return (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="flex items-center justify-center"
+          className="flex items-center justify-center gap-1"
         >
           <Link href={routes.eCommerce.editSubProduct(subProductId)}>
             <ActionButton
@@ -662,6 +666,22 @@ export const subProductListColumns = [
               className="h-7 w-7 hover:text-[#b20202]"
             />
           </Link>
+          {isArchived ? (
+            <ActionButton
+              icon={PiArrowCounterClockwiseBold}
+              tooltip="Restore"
+              color="success"
+              onClick={() => meta?.handleRestoreRow?.(row.original)}
+              className="h-7 w-7 hover:text-emerald-600"
+            />
+          ) : (
+            <ActionButton
+              icon={PiArchiveBold}
+              tooltip="Archive"
+              onClick={() => meta?.handleArchiveRow?.(row.original)}
+              className="h-7 w-7 hover:text-amber-600"
+            />
+          )}
         </motion.div>
       );
     },

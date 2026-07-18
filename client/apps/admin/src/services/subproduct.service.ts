@@ -284,7 +284,11 @@ export const subproductService = {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.message || 'Failed to create subproduct');
+      const err = new Error(error.message || 'Failed to create subproduct');
+      // Preserve structured details (e.g. existingSubProductId on conflicts)
+      // so callers can offer an actionable next step.
+      (err as any).details = error.details;
+      throw err;
     }
 
     return response.json();
@@ -512,17 +516,23 @@ export const subproductService = {
     return response.json();
   },
 
-  async bulkPromote(payload: {
-    ids?: string[];
-    applyToAll?: boolean;
-    saleType: 'percentage' | 'fixed';
-    saleDiscountValue: number;
-    saleStartDate?: string;
-    saleEndDate?: string;
-  }, token: string) {
+  async bulkPromote(
+    payload: {
+      ids?: string[];
+      applyToAll?: boolean;
+      saleType: 'percentage' | 'fixed';
+      saleDiscountValue: number;
+      saleStartDate?: string;
+      saleEndDate?: string;
+    },
+    token: string
+  ) {
     const response = await fetch(`${API_URL}/api/subproducts/bulk-promote`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(payload),
     });
     if (!response.ok) {
@@ -532,10 +542,16 @@ export const subproductService = {
     return response.json();
   },
 
-  async bulkUnpromote(payload: { ids?: string[]; applyToAll?: boolean }, token: string) {
+  async bulkUnpromote(
+    payload: { ids?: string[]; applyToAll?: boolean },
+    token: string
+  ) {
     const response = await fetch(`${API_URL}/api/subproducts/bulk-unpromote`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(payload),
     });
     if (!response.ok) {
@@ -563,18 +579,23 @@ export const subproductService = {
     token: string,
     inlineContext?: Record<string, any> | null
   ) {
-    const response = await fetch(`${API_URL}/api/gemini/generate-subproduct-content`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ productId, subProductId, inlineContext }),
-    });
+    const response = await fetch(
+      `${API_URL}/api/gemini/generate-subproduct-content`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ productId, subProductId, inlineContext }),
+      }
+    );
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.message || 'Failed to generate sub-product content');
+      throw new Error(
+        error.message || 'Failed to generate sub-product content'
+      );
     }
 
     return response.json();
@@ -586,18 +607,25 @@ export const subproductService = {
     token: string,
     priceOverrides?: {
       baseWebsitePrice?: number;
-      sizes?: Array<{ id: string; websitePrice: number; packUnitPrice?: number }>;
+      sizes?: Array<{
+        id: string;
+        websitePrice: number;
+        packUnitPrice?: number;
+      }>;
     },
     declineReason?: string
   ) {
-    const response = await fetch(`${API_URL}/api/subproducts/${id}/admin-status`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ status, priceOverrides, declineReason }),
-    });
+    const response = await fetch(
+      `${API_URL}/api/subproducts/${id}/admin-status`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status, priceOverrides, declineReason }),
+      }
+    );
 
     if (!response.ok) {
       const error = await response.json();
