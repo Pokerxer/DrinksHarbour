@@ -70,6 +70,13 @@ export const metadata: Metadata = {
     follow: true,
     googleBot: { index: true, follow: true, "max-image-preview": "large" },
   },
+  verification: {
+    // Meta (Facebook) Business domain verification — renders a static
+    // <meta name="facebook-domain-verification"> in <head> server-side.
+    other: {
+      "facebook-domain-verification": "d9wv1j9v28vuurdw8fllvs4mg00gx2",
+    },
+  },
   // Route-relative self-references (resolve per-page, so child routes that don't
   // set their own alternates don't inherit a homepage URL). Reinforces Nigeria
   // targeting on our generic .com, where Google can't infer country from the TLD.
