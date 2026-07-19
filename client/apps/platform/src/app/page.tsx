@@ -74,7 +74,8 @@ async function fetchFeaturedProducts(limit = 8): Promise<any[]> {
   try {
     const res = await fetch(
       `${API_URL}/api/products?isFeatured=true&limit=${limit}`,
-      { next: { revalidate: 300 } }
+      // Short revalidate so newly-flagged featured products appear quickly.
+      { next: { revalidate: 30 } }
     );
     return res.ok ? parse(await res.json()) : [];
   } catch {
