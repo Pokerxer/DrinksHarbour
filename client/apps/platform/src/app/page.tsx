@@ -60,8 +60,8 @@ async function fetchFeaturedDeals(limit = 12): Promise<any[]> {
 }
 
 // Server-side fetch of admin-curated featured products so the cards + /product
-// links ship in the raw HTML. Prefers ?isFeatured=true; falls back to the
-// /featured endpoint (bestsellers) so the section is never empty.
+// links ship in the raw HTML. Only products explicitly flagged isFeatured are
+// shown; if none are flagged the section renders nothing.
 async function fetchFeaturedProducts(limit = 8): Promise<any[]> {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
   if (!API_URL) return [];
@@ -76,12 +76,7 @@ async function fetchFeaturedProducts(limit = 8): Promise<any[]> {
       `${API_URL}/api/products?isFeatured=true&limit=${limit}`,
       { next: { revalidate: 300 } }
     );
-    const flagged = res.ok ? parse(await res.json()) : [];
-    if (flagged.length > 0) return flagged;
-    const fb = await fetch(`${API_URL}/api/products/featured?limit=${limit}`, {
-      next: { revalidate: 300 },
-    });
-    return fb.ok ? parse(await fb.json()) : [];
+    return res.ok ? parse(await res.json()) : [];
   } catch {
     return [];
   }

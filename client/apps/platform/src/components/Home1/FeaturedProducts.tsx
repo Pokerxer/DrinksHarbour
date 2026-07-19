@@ -117,13 +117,26 @@ const mapApiProductToProduct = (apiProduct: ApiProduct): Product => {
   }
 
   const availableAt = apiProduct.availableAt?.[0];
-  const pricing = availableAt?.pricing;
   const sizes = availableAt?.sizes;
-  const defaultSize = sizes?.[0]?.size || apiProduct.volumeMl ? `${apiProduct.volumeMl}ml` : undefined;
-  
-  const websitePrice = pricing?.websitePrice || apiProduct.priceRange?.min || 0;
-  const compareAtPrice = pricing?.compareAtPrice || pricing?.originalWebsitePrice || apiProduct.priceRange?.max || websitePrice;
-  
+  const firstSize = sizes?.[0];
+  // Pricing lives on the first size (matches FeaturedDeals); fall back to the
+  // entry-level pricing, then the product priceRange.
+  const sizePricing = firstSize?.pricing;
+  const entryPricing = availableAt?.pricing;
+  const defaultSize = firstSize?.size || (apiProduct.volumeMl ? `${apiProduct.volumeMl}ml` : undefined);
+
+  const websitePrice =
+    sizePricing?.websitePrice ||
+    entryPricing?.websitePrice ||
+    apiProduct.priceRange?.min ||
+    0;
+  const compareAtPrice =
+    sizePricing?.originalWebsitePrice ||
+    entryPricing?.compareAtPrice ||
+    entryPricing?.originalWebsitePrice ||
+    apiProduct.priceRange?.max ||
+    websitePrice;
+
   const isOnSale = availableAt?.isOnSale || (apiProduct.discount?.value && apiProduct.discount.value > 0);
   const saleDiscountValue = availableAt?.saleDiscountValue || apiProduct.discount?.value || 0;
   const sale = !!(isOnSale && saleDiscountValue > 0);
