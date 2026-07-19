@@ -12,6 +12,9 @@ const FlashSale = dynamic(() => import("@/components/Home1/FlashSale"), {
   loading: () => <FlashSaleSkeleton />,
 });
 const FeaturedDeals = dynamic(() => import("@/components/Home1/FeaturedDeals"));
+const FeaturedProducts = dynamic(
+  () => import("@/components/Home1/FeaturedProducts")
+);
 const Benefit = dynamic(() => import("@/components/Home1/Benefit"));
 const PlacementBanner = dynamic(
   () => import("@/components/Banner/PlacementBanner")
@@ -56,11 +59,40 @@ async function fetchFeaturedDeals(limit = 12): Promise<any[]> {
   }
 }
 
+// Server-side fetch of admin-curated featured products so the cards + /product
+// links ship in the raw HTML. Prefers ?isFeatured=true; falls back to the
+// /featured endpoint (bestsellers) so the section is never empty.
+async function fetchFeaturedProducts(limit = 8): Promise<any[]> {
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+  if (!API_URL) return [];
+  const parse = (data: any): any[] => {
+    if (data?.success && data?.data?.products) return data.data.products;
+    if (Array.isArray(data?.products)) return data.products;
+    if (Array.isArray(data)) return data;
+    return [];
+  };
+  try {
+    const res = await fetch(
+      `${API_URL}/api/products?isFeatured=true&limit=${limit}`,
+      { next: { revalidate: 300 } }
+    );
+    const flagged = res.ok ? parse(await res.json()) : [];
+    if (flagged.length > 0) return flagged;
+    const fb = await fetch(`${API_URL}/api/products/featured?limit=${limit}`, {
+      next: { revalidate: 300 },
+    });
+    return fb.ok ? parse(await fb.json()) : [];
+  } catch {
+    return [];
+  }
+}
+
 export default async function Home() {
   // Fetch the SEO-critical product sections on the server, in parallel.
-  const [featuredDeals, recommended] = await Promise.all([
+  const [featuredDeals, recommended, featured] = await Promise.all([
     fetchFeaturedDeals(12),
     fetchInitialRecommendations(12),
+    fetchFeaturedProducts(8),
   ]);
 
   return (
@@ -96,6 +128,13 @@ export default async function Home() {
               limit={12}
               initialProducts={featuredDeals}
             />
+          </div>
+        </section>
+
+        {/* Featured Products — admin-curated, server-seeded (bestseller fallback) */}
+        <section className="py-4 bg-white">
+          <div className="container mx-auto px-3">
+            <FeaturedProducts limit={8} initialProducts={featured} />
           </div>
         </section>
 
