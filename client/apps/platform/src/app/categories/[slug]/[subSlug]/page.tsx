@@ -338,6 +338,12 @@ export default async function SubCategoryPage({
       '@id': `${url}#collection`,
       name,
       url,
+      inLanguage: 'en-NG',
+      isPartOf: { '@id': `${BASE_URL}/#website` },
+      breadcrumb: { '@id': `${url}#breadcrumb` },
+      ...(sub.bannerImage?.url || sub.featuredImage?.url
+        ? { primaryImageOfPage: sub.bannerImage?.url || sub.featuredImage?.url }
+        : {}),
       ...(plainText(sub.description) || plainText(sub.shortDescription)
         ? {
             description:
@@ -362,6 +368,7 @@ export default async function SubCategoryPage({
     {
       '@context': 'https://schema.org',
       '@type': 'BreadcrumbList',
+      '@id': `${url}#breadcrumb`,
       itemListElement: [
         { '@type': 'ListItem', position: 1, name: 'Home', item: BASE_URL },
         {
