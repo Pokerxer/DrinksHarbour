@@ -24,6 +24,7 @@ const { createSlug, generateUniqueSlug } = require('../utils/slugify');
 const { parseCSV, generateCSV } = require('../utils/csvParser');
 const { generateEmbedding } = require('../utils/embeddings');
 const { buildExpandedTextQuery, detectIntents, buildRelevanceScore } = require('./semanticSearch.service');
+const { mergeFeaturedWithFallback } = require('./featured.helpers');
 const {
   resolveCategoryToObjectIds,
   resolveSubCategoryToObjectIds,
@@ -370,6 +371,27 @@ const createProduct = async (inputData, user, tenant = null) => {
   // ============================================================
   // STEP 6: Check for Duplicates
   // ============================================================
+
+  // STEP 6a: Check for an existing Product by NAME (case-insensitive, trimmed).
+  // The central catalog is the single source of truth — no duplicate names.
+  // Without this, a second submission of the same beverage name (with no
+  // barcode/gtin) sails through the slug/barcode/gtin checks below and
+  // creates a brand-new pending Product doc with a timestamp-suffixed slug.
+  if (name) {
+    const escapeRegexLocal = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const nameRegex = new RegExp(`^${escapeRegexLocal(name.trim())}$`, 'i');
+    const existingByName = await Product.findOne({
+      name: nameRegex,
+      status: { $in: ['pending', 'approved'] },
+    }).select('_id name status').lean();
+    if (existingByName) {
+      throw new ConflictError(
+        `Product "${existingByName.name}" already exists (${existingByName._id}, status: ${existingByName.status}). ` +
+        `Use the link-existing-product flow instead of creating a new one.`
+      );
+    }
+  }
+
   const duplicateConditions = [];
 
   if (slug) {
@@ -8376,14 +8398,13 @@ function assignProductBadge(product, stockInfo, highestDiscount) {
 const getFeaturedProducts = async (page = 1, limit = 12) => {
   const pageNum = Math.max(1, page);
   const limitNum = Math.min(Math.max(1, limit), 50);
-  const skip = (pageNum - 1) * limitNum;
 
-  // Query for featured products (you can define "featured" logic)
-  // For now, using recent bestsellers
   const totalPromise = Product.countDocuments({ status: 'approved', isPublished: true });
 
-  const products = await Product.aggregate([
-    { $match: { status: 'approved', isPublished: true } },
+  // Build the availability pipeline for a given top-level match filter.
+  // `take` bounds how many products this pass returns.
+  const buildPipeline = (matchFilter, take) => [
+    { $match: matchFilter },
 
     // Lookup active SubProducts
     {
@@ -8458,9 +8479,30 @@ const getFeaturedProducts = async (page = 1, limit = 12) => {
     // Sort by tenantCount (most available) and recent
     { $sort: { tenantCount: -1, createdAt: -1 } },
 
-    { $skip: skip },
-    { $limit: limitNum },
-  ]);
+    { $limit: take },
+  ];
+
+  // Pass 1: admin-flagged featured products.
+  const featuredRaw = await Product.aggregate(
+    buildPipeline(
+      { status: 'approved', isPublished: true, isFeatured: true },
+      limitNum
+    )
+  );
+
+  // Pass 2: bestseller fallback for any remaining slots, excluding pass-1 ids.
+  let fallbackRaw = [];
+  if (featuredRaw.length < limitNum) {
+    const excludeIds = featuredRaw.map((p) => p._id);
+    fallbackRaw = await Product.aggregate(
+      buildPipeline(
+        { status: 'approved', isPublished: true, _id: { $nin: excludeIds } },
+        limitNum - featuredRaw.length
+      )
+    );
+  }
+
+  const products = mergeFeaturedWithFallback(featuredRaw, fallbackRaw, limitNum);
 
   const total = await totalPromise;
 
