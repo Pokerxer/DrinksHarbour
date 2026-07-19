@@ -144,25 +144,17 @@ const localBusinessJsonLd = {
     latitude: 9.0782726,
     longitude: 7.5005914,
   },
-  // NOTE: placeholder store hours — verify against the actual Maitama store's
-  // trading hours before these surface in a Google local rich result.
+  // Open 24 hours, every day. Per schema.org convention, a 00:00–23:59 span
+  // across all seven days signals round-the-clock availability.
   openingHoursSpecification: [
     {
       "@type": "OpeningHoursSpecification",
-      dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
-      opens: "09:00",
-      closes: "21:00",
-    },
-    {
-      "@type": "OpeningHoursSpecification",
-      dayOfWeek: "Sunday",
-      opens: "12:00",
-      closes: "20:00",
+      dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+      opens: "00:00",
+      closes: "23:59",
     },
   ],
-  // NOTE: placeholder number carried over from contactPoint — replace with the
-  // real store line.
-  telephone: "+234-1-234-5678",
+  telephone: "+2347048004020",
   email: "hello@drinksharbour.com",
   currenciesAccepted: "NGN",
   paymentAccepted: "Cash, Credit Card, Bank Transfer",
@@ -193,8 +185,8 @@ const orgJsonLd = {
     "https://www.facebook.com/drinksharbour",
   ],
   contactPoint: [
-    { "@type": "ContactPoint", contactType: "customer support", telephone: "+234-1-234-5678", email: "hello@drinksharbour.com", availableLanguage: "English" },
-    { "@type": "ContactPoint", contactType: "sales", telephone: "+234-1-234-5679", email: "sales@drinksharbour.com", availableLanguage: "English" },
+    { "@type": "ContactPoint", contactType: "customer support", telephone: "+2347048004020", email: "hello@drinksharbour.com", availableLanguage: "English" },
+    { "@type": "ContactPoint", contactType: "sales", telephone: "+2347048004020", email: "sales@drinksharbour.com", availableLanguage: "English" },
   ],
 };
 
