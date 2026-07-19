@@ -70,6 +70,16 @@ export const metadata: Metadata = {
     follow: true,
     googleBot: { index: true, follow: true, "max-image-preview": "large" },
   },
+  // Route-relative self-references (resolve per-page, so child routes that don't
+  // set their own alternates don't inherit a homepage URL). Reinforces Nigeria
+  // targeting on our generic .com, where Google can't infer country from the TLD.
+  alternates: {
+    canonical: "./",
+    languages: {
+      "en-NG": "./",
+      "x-default": "./",
+    },
+  },
   openGraph: {
     type: "website",
     locale: "en_NG",
@@ -104,6 +114,12 @@ export const metadata: Metadata = {
   manifest: "/site.webmanifest",
   other: {
     "p:domain_verify": "3d1678895d2b97b7042bdd2fc97753a6",
+    // Legacy geo meta — ignored by Google but still read by Bing and some
+    // crawlers. FCT = ISO 3166-2:NG code NG-FC; coords are the Maitama store.
+    "geo.region": "NG-FC",
+    "geo.placename": "Abuja",
+    "geo.position": "9.0782726;7.5005914",
+    ICBM: "9.0782726, 7.5005914",
   },
 };
 
@@ -115,11 +131,38 @@ const localBusinessJsonLd = {
   logo: `${BASE_URL}/images/logo.png`,
   image: `${BASE_URL}/images/logo.png`,
   description: "Nigeria's premier online premium beverages store — whisky, wine, spirits, beer and non-alcoholic drinks delivered to Lagos, Abuja, Port Harcourt and nationwide.",
+  address: {
+    "@type": "PostalAddress",
+    streetAddress: "Wyn City, 39 Gana Street, Maitama",
+    addressLocality: "Abuja",
+    addressRegion: "FCT",
+    postalCode: "900271",
+    addressCountry: "NG",
+  },
   geo: {
     "@type": "GeoCoordinates",
     latitude: 9.0782726,
     longitude: 7.5005914,
   },
+  // NOTE: placeholder store hours — verify against the actual Maitama store's
+  // trading hours before these surface in a Google local rich result.
+  openingHoursSpecification: [
+    {
+      "@type": "OpeningHoursSpecification",
+      dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+      opens: "09:00",
+      closes: "21:00",
+    },
+    {
+      "@type": "OpeningHoursSpecification",
+      dayOfWeek: "Sunday",
+      opens: "12:00",
+      closes: "20:00",
+    },
+  ],
+  // NOTE: placeholder number carried over from contactPoint — replace with the
+  // real store line.
+  telephone: "+234-1-234-5678",
   email: "hello@drinksharbour.com",
   currenciesAccepted: "NGN",
   paymentAccepted: "Cash, Credit Card, Bank Transfer",

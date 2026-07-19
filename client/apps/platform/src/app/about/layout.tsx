@@ -43,8 +43,10 @@ const ORGANIZATION_SCHEMA = {
   foundingDate: "2026",
   address: {
     "@type": "PostalAddress",
+    streetAddress: "Wyn City, 39 Gana Street, Maitama",
     addressLocality: "Abuja",
     addressRegion: "FCT",
+    postalCode: "900271",
     addressCountry: "NG",
   },
   contactPoint: {
@@ -53,9 +55,9 @@ const ORGANIZATION_SCHEMA = {
     availableLanguage: ["English"],
   },
   sameAs: [
-    "https://twitter.com/DrinkHarbour",
-    "https://instagram.com/drinksharbour",
-    "https://facebook.com/drinksharbour",
+    "https://twitter.com/drinksharbour",
+    "https://www.instagram.com/drinksharbour",
+    "https://www.facebook.com/drinksharbour",
   ],
 };
 
