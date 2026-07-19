@@ -133,6 +133,39 @@ async function fetchSubcategories(): Promise<SubcatEntry[]> {
   }
 }
 
+interface VendorEntry {
+  slug: string;
+  productCount: number;
+  updatedAt?: string;
+}
+
+// Vendor storefronts (/vendors/[slug]) are indexable pages served from the
+// same /api/stores endpoint the public vendors directory uses. Only advertise
+// stores that actually carry products — an empty storefront is a thin page.
+async function fetchVendors(): Promise<VendorEntry[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/stores?limit=200&page=1`, {
+      next: { revalidate: 86400 },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const stores: {
+      slug?: string;
+      productCount?: number;
+      updatedAt?: string;
+    }[] = data?.data?.stores ?? data?.data ?? data?.stores ?? [];
+    return stores
+      .filter((s) => s.slug)
+      .map((s) => ({
+        slug: s.slug as string,
+        productCount: s.productCount ?? 0,
+        updatedAt: s.updatedAt,
+      }));
+  } catch {
+    return [];
+  }
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Static pages carry no lastModified — we have no real modification date for
   // them, and a fabricated one is worse than none.
@@ -150,17 +183,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/brands`,                      changeFrequency: "weekly",  priority: 0.5 },
     { url: `${BASE_URL}/categories`,                  changeFrequency: "weekly",  priority: 0.5 },
     { url: `${BASE_URL}/privacy-policy`,              changeFrequency: "monthly", priority: 0.3 },
+    { url: `${BASE_URL}/terms`,                       changeFrequency: "monthly", priority: 0.3 },
+    { url: `${BASE_URL}/cookie-policy`,               changeFrequency: "monthly", priority: 0.3 },
     { url: `${BASE_URL}/vip-signup`,                  changeFrequency: "monthly", priority: 0.3 },
     { url: `${BASE_URL}/vendors`,                     changeFrequency: "weekly",  priority: 0.4 },
     { url: `${BASE_URL}/vendors/register`,            changeFrequency: "monthly", priority: 0.6 },
     { url: `${BASE_URL}/vendors/register/apply`,      changeFrequency: "monthly", priority: 0.5 },
   ];
 
-  const [products, brands, categories, subcats, posts] = await Promise.all([
+  const [products, brands, categories, subcats, vendors, posts] = await Promise.all([
     fetchProducts(),
     fetchBrands(),
     fetchCategories(),
     fetchSubcategories(),
+    fetchVendors(),
     getPosts(),
   ]);
 
@@ -237,6 +273,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ]);
 
+  // Vendor storefront pages — /vendors/[slug]. Gated on productCount>0 so we
+  // don't advertise empty stores.
+  const vendorPages: MetadataRoute.Sitemap = vendors
+    .filter((v) => v.productCount > 0)
+    .map((v) => ({
+      url: `${BASE_URL}/vendors/${v.slug}`,
+      lastModified: realDate(v.updatedAt),
+      changeFrequency: "weekly" as const,
+      priority: 0.6,
+    }));
+
   const blogPages: MetadataRoute.Sitemap = posts.map((post) => ({
     url: `${BASE_URL}/blog/${post.slug}`,
     lastModified: new Date(post.date),
@@ -251,6 +298,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...subcategoryPages,
     ...subcategoryDetailPages,
     ...brandPages,
+    ...vendorPages,
     ...productPages,
     ...blogPages,
   ].map((entry) => ({ ...entry, url: xmlEscapeUrl(entry.url) }));
