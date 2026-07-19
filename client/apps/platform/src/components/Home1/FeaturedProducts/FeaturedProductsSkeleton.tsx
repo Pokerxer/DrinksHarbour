@@ -17,12 +17,16 @@ const FeaturedProductsSkeleton: React.FC<FeaturedProductsSkeletonProps> = ({ lim
         </div>
         <div className="mx-auto h-12 w-56 animate-pulse rounded-xl bg-gray-200" />
       </div>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         {Array.from({ length: limit }).map((_, i) => (
-          <div
-            key={i}
-            className="aspect-[3/5] animate-pulse rounded-2xl bg-gray-200"
-          />
+          <div key={i} className="animate-pulse overflow-hidden rounded-xl border border-gray-100">
+            <div className="aspect-square bg-gray-200" />
+            <div className="space-y-2 p-2.5">
+              <div className="h-3 w-3/4 rounded bg-gray-200" />
+              <div className="h-2 w-1/2 rounded bg-gray-200" />
+              <div className="h-3 w-1/4 rounded bg-gray-200" />
+            </div>
+          </div>
         ))}
       </div>
     </div>
