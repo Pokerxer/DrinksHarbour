@@ -503,6 +503,15 @@ function Hero({ totalVendors }: { totalVendors?: number }) {
           From premium spirits to craft beers — shop direct from the source.
         </p>
 
+        <Link
+          href="/vendors/register"
+          className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white font-semibold text-sm px-6 py-3 rounded-xl shadow-lg shadow-red-900/30 transition-colors mb-10"
+        >
+          <Icon.PiStorefront size={16} />
+          Become a Vendor
+          <Icon.PiArrowRight size={15} />
+        </Link>
+
         <div className="flex items-center justify-center gap-8 sm:gap-12 text-center">
           <div className="flex flex-col items-center gap-1.5">
             <div className="w-11 h-11 bg-white/10 rounded-xl flex items-center justify-center">

@@ -16,6 +16,7 @@ const SHOP_LINKS = [
   { label: "Spirits",        href: "/shop?category=spirits" },
   { label: "Beers & Ciders", href: "/shop?category=beers" },
   { label: "Non-Alcoholic",  href: "/shop?category=non-alcoholic" },
+  { label: "All Categories", href: "/categories" },
   { label: "All Brands",     href: "/brands" },
 ];
 

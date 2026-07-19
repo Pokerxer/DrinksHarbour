@@ -635,7 +635,7 @@ export default async function CategoryPage({
 
       <div className="container mx-auto space-y-12 px-4 py-10 sm:py-14">
         {/* ── The cellar — about ────────────────────────────────────────── */}
-        {(aboutParas.length > 0 || subcategories.length > 0) && (
+        {aboutParas.length > 0 && (
           <section
             aria-labelledby="category-about-heading"
             className="grid gap-8 lg:grid-cols-12"
@@ -653,25 +653,6 @@ export default async function CategoryPage({
               <div className="mt-4 max-w-[9rem]">
                 <LabelRule tone={`${primary}55`} />
               </div>
-
-              {subcategories.length > 0 && (
-                <div className="mt-6">
-                  <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">
-                    Browse by style
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {subcategories.map((s: any) => (
-                      <Link
-                        key={s.slug}
-                        href={`/categories/${category.slug}/${s.slug}`}
-                        className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium capitalize text-gray-600 transition hover:border-gray-400 hover:text-gray-900"
-                      >
-                        {s.name}
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
 
             {aboutParas.length > 0 && (
@@ -691,6 +672,80 @@ export default async function CategoryPage({
                 </div>
               </div>
             )}
+          </section>
+        )}
+
+        {/* ── Browse by style — subcategories ───────────────────────────── */}
+        {subcategories.length > 0 && (
+          <section aria-labelledby="category-subcategories-heading">
+            <div className="mb-6 flex items-end justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-gray-400">
+                  Browse by style
+                </p>
+                <h2
+                  id="category-subcategories-heading"
+                  className={`${fraunces.className} mt-1 text-3xl text-gray-900`}
+                >
+                  {name} styles
+                </h2>
+              </div>
+              <Link
+                href={shopHref}
+                className="inline-flex flex-shrink-0 items-center gap-1 text-sm font-semibold hover:underline"
+                style={{ color: primary }}
+              >
+                Shop all {name}
+                <Icon.PiArrowRightBold className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-6">
+              {subcategories.map((s: any) => {
+                const sColor = s.color || primary;
+                const sName = s.displayName || s.name;
+                return (
+                  <Link
+                    key={s.slug}
+                    href={`/categories/${category.slug}/${s.slug}`}
+                    className="group flex flex-col items-center rounded-2xl border border-gray-200 bg-white p-5 text-center shadow-sm transition hover:-translate-y-1 hover:shadow-lg motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+                  >
+                    <span className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-gray-100 bg-gray-50 p-2">
+                      {s.thumbnailImage?.url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={s.thumbnailImage.url}
+                          alt=""
+                          loading="lazy"
+                          className="h-full w-full object-contain"
+                        />
+                      ) : s.icon ? (
+                        <span aria-hidden="true" className="text-2xl">
+                          {s.icon}
+                        </span>
+                      ) : (
+                        <span
+                          className={`${fraunces.className} text-2xl font-semibold`}
+                          style={{ color: sColor }}
+                        >
+                          {(sName || '?').charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                    </span>
+                    <span
+                      className={`${fraunces.className} mt-3 line-clamp-1 text-base capitalize text-gray-900`}
+                    >
+                      {sName}
+                    </span>
+                    {(s.productCount ?? 0) > 0 && (
+                      <span className="mt-1 line-clamp-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400">
+                        {s.productCount} products
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
           </section>
         )}
 
