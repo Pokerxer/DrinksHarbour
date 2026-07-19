@@ -126,8 +126,10 @@ export const metadata: Metadata = {
 const localBusinessJsonLd = {
   "@context": "https://schema.org",
   "@type": "OnlineStore",
+  "@id": `${BASE_URL}/#store`,
   name: "DrinksHarbour",
   url: BASE_URL,
+  parentOrganization: { "@id": `${BASE_URL}/#organization` },
   logo: `${BASE_URL}/images/logo.png`,
   image: `${BASE_URL}/images/logo.png`,
   description: "Nigeria's premier online premium beverages store — whisky, wine, spirits, beer and non-alcoholic drinks delivered to Lagos, Abuja, Port Harcourt and nationwide.",
@@ -176,6 +178,7 @@ const localBusinessJsonLd = {
 const orgJsonLd = {
   "@context": "https://schema.org",
   "@type": "Organization",
+  "@id": `${BASE_URL}/#organization`,
   name: "DrinksHarbour",
   url: BASE_URL,
   logo: { "@type": "ImageObject", url: `${BASE_URL}/logo.png` },
@@ -193,8 +196,10 @@ const orgJsonLd = {
 const websiteJsonLd = {
   "@context": "https://schema.org",
   "@type": "WebSite",
+  "@id": `${BASE_URL}/#website`,
   name: "DrinksHarbour",
   url: BASE_URL,
+  publisher: { "@id": `${BASE_URL}/#organization` },
   description: "Nigeria's premier online beverage store — wines, spirits, beers and non-alcoholic drinks delivered nationwide.",
   inLanguage: "en-NG",
   potentialAction: {

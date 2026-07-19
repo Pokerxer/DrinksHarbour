@@ -24,7 +24,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    site: "@DrinkHarbour",
+    site: "@drinksharbour",
     title: "About DrinksHarbour | Nigeria's Premier Beverage Marketplace",
     description:
       "Nigeria's trusted online marketplace for authentic wines, spirits, beers and non-alcoholic drinks.",
@@ -32,35 +32,8 @@ export const metadata: Metadata = {
   },
 };
 
-const ORGANIZATION_SCHEMA = {
-  "@context": "https://schema.org",
-  "@type": "Organization",
-  name: SITE_NAME,
-  url: BASE_URL,
-  logo: `${BASE_URL}/logo.png`,
-  description:
-    "Nigeria's premier online beverage marketplace. Authentic wines, spirits, beers, and non-alcoholic drinks delivered across Abuja and beyond.",
-  foundingDate: "2026",
-  address: {
-    "@type": "PostalAddress",
-    streetAddress: "Wyn City, 39 Gana Street, Maitama",
-    addressLocality: "Abuja",
-    addressRegion: "FCT",
-    postalCode: "900271",
-    addressCountry: "NG",
-  },
-  contactPoint: {
-    "@type": "ContactPoint",
-    contactType: "customer service",
-    availableLanguage: ["English"],
-  },
-  sameAs: [
-    "https://twitter.com/drinksharbour",
-    "https://www.instagram.com/drinksharbour",
-    "https://www.facebook.com/drinksharbour",
-  ],
-};
-
+// Organization and WebSite schema are rendered site-wide by the root layout
+// (with @id-linked entities), so this page only adds its own breadcrumb trail.
 const BREADCRUMB_SCHEMA = {
   "@context": "https://schema.org",
   "@type": "BreadcrumbList",
@@ -70,29 +43,10 @@ const BREADCRUMB_SCHEMA = {
   ],
 };
 
-const WEBSITE_SCHEMA = {
-  "@context": "https://schema.org",
-  "@type": "WebSite",
-  name: SITE_NAME,
-  url: BASE_URL,
-  potentialAction: [
-    {
-      "@type": "SearchAction",
-      target: {
-        "@type": "EntryPoint",
-        urlTemplate: `${BASE_URL}/shop?q={search_term_string}`,
-      },
-      "query-input": "required name=search_term_string",
-    },
-  ],
-};
-
 export default function AboutLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_SCHEMA) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(BREADCRUMB_SCHEMA) }} />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(WEBSITE_SCHEMA) }} />
       {children}
     </>
   );
