@@ -672,6 +672,11 @@ const productSchema = new Schema(
       default: false,
       index: true,
     },
+    isFeatured: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     publishedAt: { type: Date },
     discontinuedAt: { type: Date },
     rejectedReason: String,
