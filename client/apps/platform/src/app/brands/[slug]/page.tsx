@@ -169,7 +169,7 @@ export async function generateMetadata({
       brand.countryOfOrigin,
       ...(brand.specializations || []),
     ].filter(Boolean),
-    alternates: { canonical: url },
+    alternates: { canonical: url, languages: { "en-NG": url, "x-default": url } },
     openGraph: {
       title,
       description,

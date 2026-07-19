@@ -55,7 +55,7 @@ export const metadata: Metadata = {
     'spirits price in Nigeria',
     'DrinksHarbour categories',
   ],
-  alternates: { canonical: PAGE_URL },
+  alternates: { canonical: PAGE_URL, languages: { "en-NG": PAGE_URL, "x-default": PAGE_URL } },
   openGraph: {
     type: 'website',
     url: PAGE_URL,

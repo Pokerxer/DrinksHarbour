@@ -14,6 +14,14 @@ import {
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.drinksharbour.com';
 const SITE_NAME = 'DrinksHarbour';
 
+// Self-referencing canonical + en-NG/x-default hreflang. Reinforces Nigeria
+// targeting on our generic .com (no country signal from the TLD). Each shop
+// variant passes its own canonical URL so the hreflang points at itself.
+const seoAlternates = (canonical: string) => ({
+  canonical,
+  languages: { 'en-NG': canonical, 'x-default': canonical },
+});
+
 // Duplicate/legacy category slugs mapped onto the one real catalog slug, so
 // their pages canonicalize to a single URL instead of cannibalizing each other.
 const CATEGORY_CANONICAL_ALIASES: Record<string, string> = {
@@ -1351,7 +1359,7 @@ export async function generateMetadata({
         'cheap alcohol Nigeria', 'discounted drinks Nigeria', 'best deals drinks Nigeria',
         'DrinksHarbour sale', 'online drinks sale Nigeria',
       ],
-      alternates: { canonical: `${BASE_URL}/shop?sale=true` },
+      alternates: seoAlternates(`${BASE_URL}/shop?sale=true`),
       openGraph: { type: 'website', url: `${BASE_URL}/shop?sale=true`, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630 }] },
       twitter:   { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
     };
@@ -1390,7 +1398,7 @@ export async function generateMetadata({
       title: { absolute: `${title} | ${SITE_NAME}` },
       description,
       keywords: [...new Set([...brandKeywords(brand, subLabel), ...subKw])],
-      alternates: { canonical: url },
+      alternates: seoAlternates(url),
       openGraph: { type: 'website', url, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630 }] },
       twitter:   { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
     };
@@ -1418,7 +1426,7 @@ export async function generateMetadata({
       title: { absolute: `${title} | ${SITE_NAME}` },
       description,
       keywords: [...(sub?.keywords?.length ? sub.keywords : [`buy ${subLabel.toLowerCase()} Nigeria`, `${subLabel.toLowerCase()} online Nigeria`, `${subLabel.toLowerCase()} delivery Nigeria`]), SITE_NAME],
-      alternates: { canonical: url },
+      alternates: seoAlternates(url),
       openGraph: { type: 'website', url, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630, alt: `${subLabel} — ${SITE_NAME}` }] },
       twitter:   { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
     };
@@ -1435,7 +1443,7 @@ export async function generateMetadata({
       title: { absolute: `${title} | ${SITE_NAME}` },
       description,
       keywords: brandKeywords(brand, catLabel),
-      alternates: { canonical: url },
+      alternates: seoAlternates(url),
       openGraph: { type: 'website', url, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630 }] },
       twitter:   { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
     };
@@ -1454,7 +1462,7 @@ export async function generateMetadata({
       title: { absolute: `${title} | ${SITE_NAME}` },
       description,
       keywords: brandKeywords(brand),
-      alternates: { canonical: brandUrl },
+      alternates: seoAlternates(brandUrl),
       openGraph: { type: 'website', url: brandUrl, siteName: SITE_NAME, title: `${title} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630 }] },
       twitter:   { card: 'summary_large_image', title: `${title} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
     };
@@ -1479,7 +1487,7 @@ export async function generateMetadata({
         ...(catLabel ? [`buy ${originAdj.toLowerCase()} ${catLabel.toLowerCase()} Nigeria`, `${originAdj.toLowerCase()} ${catLabel.toLowerCase()} delivery Nigeria`] : []),
         SITE_NAME,
       ],
-      alternates: { canonical: originUrl },
+      alternates: seoAlternates(originUrl),
       openGraph: { type: 'website', url: originUrl, siteName: SITE_NAME, title: `${pageTitle} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630, alt: `${originAdj} Drinks — ${SITE_NAME}` }] },
       twitter:   { card: 'summary_large_image', title: `${pageTitle} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
     };
@@ -1504,7 +1512,7 @@ export async function generateMetadata({
         ...(catLabel ? [`${flavorLabel.toLowerCase()} ${catLabel.toLowerCase()} Nigeria`, `${flavorLabel.toLowerCase()} ${catLabel.toLowerCase()} delivery Nigeria`] : []),
         SITE_NAME,
       ],
-      alternates: { canonical: flavorUrl },
+      alternates: seoAlternates(flavorUrl),
       openGraph: { type: 'website', url: flavorUrl, siteName: SITE_NAME, title: `${pageTitle} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630 }] },
       twitter:   { card: 'summary_large_image', title: `${pageTitle} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
     };
@@ -1541,7 +1549,7 @@ export async function generateMetadata({
         ...(subLabel && cat?.keywords ? cat.keywords.slice(0, 4) : []),
         SITE_NAME,
       ],
-      alternates: { canonical: catUrl },
+      alternates: seoAlternates(catUrl),
       openGraph: { type: 'website', url: catUrl, siteName: SITE_NAME, title: `${pageTitle} | ${SITE_NAME}`, description, images: [{ url: '/og-default.jpg', width: 1200, height: 630, alt: `${subLabel || catLabel} — ${SITE_NAME}` }] },
       twitter:   { card: 'summary_large_image', title: `${pageTitle} | ${SITE_NAME}`, description, images: ['/og-default.jpg'] },
     };
@@ -1564,7 +1572,7 @@ export async function generateMetadata({
       'buy drinks online Port Harcourt', 'premium beverages Nigeria',
       'alcohol online Nigeria', 'order drinks Nigeria', SITE_NAME,
     ],
-    alternates: { canonical: canonicalUrl },
+    alternates: seoAlternates(canonicalUrl),
     openGraph: {
       type: 'website', url: canonicalUrl, siteName: SITE_NAME,
       title: `${title} | ${SITE_NAME}`, description,

@@ -235,7 +235,7 @@ export async function generateMetadata({
       label(category.subType),
       ...(category.metaKeywords || []),
     ].filter(Boolean),
-    alternates: { canonical: url },
+    alternates: { canonical: url, languages: { "en-NG": url, "x-default": url } },
     openGraph: {
       title,
       description,

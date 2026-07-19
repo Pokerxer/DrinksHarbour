@@ -75,7 +75,7 @@ export async function generateMetadata({
     description,
     keywords,
     robots: { index: true, follow: true, "max-image-preview": "large" },
-    alternates: { canonical: productUrl },
+    alternates: { canonical: productUrl, languages: { "en-NG": productUrl, "x-default": productUrl } },
 
     openGraph: {
       type:        "website",
