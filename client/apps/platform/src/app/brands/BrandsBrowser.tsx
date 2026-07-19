@@ -333,7 +333,7 @@ function BrandCard({ brand }: { brand: Brand }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function BrandPage() {
+export default function BrandsBrowser() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);

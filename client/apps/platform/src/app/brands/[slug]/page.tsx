@@ -341,7 +341,30 @@ export default async function BrandPage({
     })),
   };
 
-  const jsonLd = [...buildJsonLd(brand, slug), faqLd];
+  // Product ItemList — mirrors the category detail pages so the brand's range
+  // is crawlable as structured data, not just rendered markup.
+  const productItems = products
+    .filter((p: any) => p?.slug)
+    .map((p: any, i: number) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      name: p.name,
+      url: `${BASE_URL}/product/${p.slug}`,
+    }));
+  const productsLd = productItems.length
+    ? [
+        {
+          '@context': 'https://schema.org',
+          '@type': 'ItemList',
+          '@id': `${BASE_URL}/brands/${slug}#products`,
+          name: `${brand.name} products`,
+          numberOfItems: productItems.length,
+          itemListElement: productItems,
+        },
+      ]
+    : [];
+
+  const jsonLd = [...buildJsonLd(brand, slug), ...productsLd, faqLd];
 
   const primary = brand.brandColors?.primary || '#7C1D1D';
   const secondary = brand.brandColors?.secondary || '#1A1A2E';
