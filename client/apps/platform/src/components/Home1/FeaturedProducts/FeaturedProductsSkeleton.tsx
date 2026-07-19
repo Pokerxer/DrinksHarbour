@@ -21,7 +21,7 @@ const FeaturedProductsSkeleton: React.FC<FeaturedProductsSkeletonProps> = ({ lim
         {Array.from({ length: limit }).map((_, i) => (
           <div
             key={i}
-            className="aspect-[3/4] animate-pulse rounded-2xl bg-gray-200"
+            className="aspect-[3/5] animate-pulse rounded-2xl bg-gray-200"
           />
         ))}
       </div>
