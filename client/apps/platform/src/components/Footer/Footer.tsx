@@ -1,23 +1,37 @@
 "use client";
 
-import React, { useState, FormEvent } from "react";
+import React, { useState, useEffect, FormEvent } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useTenant } from "@/context/TenantContext";
+import { API_URL } from "@/lib/api";
 import * as Icon from "react-icons/pi";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
-const SHOP_LINKS = [
+type FooterLink = { label: string; href: string };
+
+// Static shop links rendered above the dynamic category shortcuts.
+const SHOP_TOP_LINKS: FooterLink[] = [
   { label: "All Products",   href: "/shop" },
   { label: "New Arrivals",   href: "/shop?tag=new-arrival" },
   { label: "On Sale",        href: "/shop?sale=true" },
-  { label: "Wines",          href: "/shop?category=wine" },
-  { label: "Spirits",        href: "/shop?category=spirits" },
-  { label: "Beers & Ciders", href: "/shop?category=beers" },
-  { label: "Non-Alcoholic",  href: "/shop?category=non-alcoholic" },
+];
+
+// Static shop links rendered below the dynamic category shortcuts.
+const SHOP_BOTTOM_LINKS: FooterLink[] = [
   { label: "All Categories", href: "/categories" },
   { label: "All Brands",     href: "/brands" },
+];
+
+// Fallback category shortcuts — real category slugs pointing at the SEO
+// category pages. Shown until the live top-categories fetch resolves, and
+// kept if that request fails.
+const FALLBACK_CATEGORY_LINKS: FooterLink[] = [
+  { label: "Whiskey",   href: "/categories/whiskey" },
+  { label: "Wine",      href: "/categories/wine" },
+  { label: "Champagne", href: "/categories/champagne" },
+  { label: "Beer",      href: "/categories/beer" },
 ];
 
 const HELP_LINKS = [
@@ -113,6 +127,44 @@ export const Footer: React.FC = () => {
   const { tenant, isMainSite } = useTenant();
   const displayName = isMainSite ? "DrinksHarbour" : tenant?.name || "DrinksHarbour";
 
+  // Category shortcuts are pulled live so the footer always links to real
+  // category pages (falling back to a curated set until the fetch resolves).
+  const [categoryLinks, setCategoryLinks] = useState<FooterLink[]>(FALLBACK_CATEGORY_LINKS);
+
+  useEffect(() => {
+    if (!isMainSite) return; // vendor storefronts use the stripped-down footer
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/categories`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = data?.data?.categories ?? data?.categories ?? data?.data ?? [];
+        if (!Array.isArray(list)) return;
+        const top = list
+          .filter((c: any) => c?.slug && (c?.productCount ?? 0) > 0)
+          .sort((a: any, b: any) => (b.productCount ?? 0) - (a.productCount ?? 0))
+          .slice(0, 4)
+          .map((c: any) => ({
+            label: c.displayName || c.name,
+            href: `/categories/${c.slug}`,
+          }));
+        if (active && top.length) setCategoryLinks(top);
+      } catch {
+        /* keep the fallback links */
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [isMainSite]);
+
+  const shopLinks: FooterLink[] = [
+    ...SHOP_TOP_LINKS,
+    ...categoryLinks,
+    ...SHOP_BOTTOM_LINKS,
+  ];
+
   // Vendor stores get a stripped-down footer
   if (!isMainSite) {
     return (
@@ -181,7 +233,7 @@ export const Footer: React.FC = () => {
           <div>
             <p className="text-xs font-black uppercase tracking-widest text-white/40 mb-4">Shop</p>
             <ul className="space-y-2.5">
-              {SHOP_LINKS.map(({ label, href }) => (
+              {shopLinks.map(({ label, href }) => (
                 <li key={href}>
                   <Link
                     href={href}
