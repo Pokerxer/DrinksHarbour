@@ -173,7 +173,14 @@ const FeaturedProducts: React.FC<FeaturedProductsContainerProps> = ({
 
   if (products.length === 0) return null;
 
-  const totalTenants = products.reduce((sum, p) => sum + p.tenantCount, 0);
+  const tenantKeys = new Set<string>();
+  products.forEach((p) =>
+    (p.availableAt ?? []).forEach((e) => {
+      const key = e?.tenant?._id || e?.tenant?.name;
+      if (key) tenantKeys.add(String(key));
+    })
+  );
+  const totalTenants = tenantKeys.size;
   const avgRating = products.reduce((sum, p) => sum + p.averageRating, 0) / products.length;
 
   return (
