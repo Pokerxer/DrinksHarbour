@@ -5342,24 +5342,10 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
   // If no trending products from sales, fallback to featured or random products
   let products;
   if (productIds.length === 0) {
-    // Try featured products first
-    products = await Product.find({
-      status: 'approved',
-      isPublished: true,
-      isFeatured: true,
-      ...catCond,
-    })
-      .populate('brand', 'name slug logo description')
-      .populate('category', 'name slug icon description')
-      .select(
-        'name slug type description images primaryImage abv volumeMl tenantCount averageRating reviewCount priceRange sale originPrice isAlcoholic flavorNotes country tags isFeatured status isPublished platformMarkup platformDiscount'
-      )
-      .limit(limit)
-      .lean();
-
-    // If no featured products, get random approved products
-    if (products.length === 0) {
-      products = await Product.aggregate([
+    // No sales-based trending yet — show a random sample of approved products.
+    // Do NOT restrict to isFeatured here: that would make trending / recommended
+    // sections display only featured products.
+    products = await Product.aggregate([
         { $match: { status: 'approved', isPublished: true, ...catCond } },
         { $sample: { size: limit } },
         {
@@ -5412,7 +5398,6 @@ const getTrendingProducts = async (limit = 10, dateRange = 7, categoryIds = null
           },
         },
       ]);
-    }
   } else {
     // Get full product details for trending products
     products = await Product.find({
