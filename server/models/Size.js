@@ -115,7 +115,7 @@ const sizeSchema = new Schema(
         'gift-set', 'tasting-set', 'variety-pack',
         
         // Accessories, Glassware & Barware (count / piece / set based)
-        'piece-single', 'pair', 'set-barware',
+        'piece-single', 'pair', 'set-barware', 
         'set-5', 'set-8', 'set-10', 'set-16', 'set-24',
         'pack-2', 'pack-3', 'pack-5',
         'kit-3', 'kit-5', 'kit-8', 'kit-10',

@@ -355,21 +355,33 @@ export const SIZE_OPTIONS = [
   { value: 'variety-pack', label: 'Variety Pack', category: 'Gift Sets' },
 
   // Glassware & Barware
-  { value: 'piece-single', label: 'Single Piece', category: 'Glassware & Barware' },
+  {
+    value: 'piece-single',
+    label: 'Single Piece',
+    category: 'Glassware & Barware',
+  },
   { value: 'pair', label: 'Pair (2)', category: 'Glassware & Barware' },
   { value: 'set-5', label: 'Set of 5', category: 'Glassware & Barware' },
   { value: 'set-8', label: 'Set of 8', category: 'Glassware & Barware' },
   { value: 'set-10', label: 'Set of 10', category: 'Glassware & Barware' },
   { value: 'set-16', label: 'Set of 16', category: 'Glassware & Barware' },
   { value: 'set-24', label: 'Set of 24', category: 'Glassware & Barware' },
-  { value: 'set-barware', label: 'Barware Set', category: 'Glassware & Barware' },
+  {
+    value: 'set-barware',
+    label: 'Barware Set',
+    category: 'Glassware & Barware',
+  },
   { value: 'kit-3', label: '3-Piece Kit', category: 'Glassware & Barware' },
   { value: 'kit-5', label: '5-Piece Kit', category: 'Glassware & Barware' },
   { value: 'kit-8', label: '8-Piece Kit', category: 'Glassware & Barware' },
   { value: 'kit-10', label: '10-Piece Kit', category: 'Glassware & Barware' },
 
   // Cigars & Smoking
-  { value: 'cigar-single', label: 'Single Cigar', category: 'Cigars & Smoking' },
+  {
+    value: 'cigar-single',
+    label: 'Single Cigar',
+    category: 'Cigars & Smoking',
+  },
   { value: 'sampler-5', label: 'Sampler of 5', category: 'Cigars & Smoking' },
   { value: 'sampler-6', label: 'Sampler of 6', category: 'Cigars & Smoking' },
   { value: 'box-5', label: 'Box of 5', category: 'Cigars & Smoking' },
@@ -389,7 +401,11 @@ export const SIZE_OPTIONS = [
   { value: 'pod-1', label: 'Single Pod', category: 'Vapes & E-liquids' },
   { value: 'pod-2', label: '2 Pods', category: 'Vapes & E-liquids' },
   { value: 'pod-4', label: '4 Pods', category: 'Vapes & E-liquids' },
-  { value: 'pouch-20', label: 'Can of 20 Pouches', category: 'Vapes & E-liquids' },
+  {
+    value: 'pouch-20',
+    label: 'Can of 20 Pouches',
+    category: 'Vapes & E-liquids',
+  },
   { value: 'puffs-600', label: '600 Puffs', category: 'Vapes & E-liquids' },
   { value: 'puffs-800', label: '800 Puffs', category: 'Vapes & E-liquids' },
   { value: 'puffs-1500', label: '1500 Puffs', category: 'Vapes & E-liquids' },
@@ -1681,16 +1697,19 @@ function SizeVariantRow({
                     clearErrors?.(`subProductData.sizes.${index}.barcode`);
                     // Check for local barcode duplicates
                     if (e.target.value) {
-                      const allSizes = getValues?.('subProductData.sizes') || [];
+                      const allSizes =
+                        getValues?.('subProductData.sizes') || [];
                       const duplicate = allSizes.findIndex(
                         (s: any, i: number) =>
                           i !== index &&
-                          s?.barcode?.trim().toLowerCase() === e.target.value.trim().toLowerCase()
+                          s?.barcode?.trim().toLowerCase() ===
+                            e.target.value.trim().toLowerCase()
                       );
                       if (duplicate >= 0) {
                         setError?.(`subProductData.sizes.${index}.barcode`, {
                           type: 'manual',
-                          message: 'Barcode already used in row ' + (duplicate + 1),
+                          message:
+                            'Barcode already used in row ' + (duplicate + 1),
                         });
                       }
                     }
