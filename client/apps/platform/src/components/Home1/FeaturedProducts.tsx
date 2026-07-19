@@ -92,6 +92,9 @@ interface FeaturedProductsProps {
   limit?: number;
   title?: string;
   subtitle?: string;
+  // Products fetched on the server so the cards + /product links are present in
+  // the raw HTML (crawlable). Seeds state and skips the initial client fetch.
+  initialProducts?: ApiProduct[];
 }
 
 const mapApiProductToProduct = (apiProduct: ApiProduct): Product => {
@@ -457,8 +460,10 @@ const ProductCard = ({
 const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
   limit = 8,
   title = "Featured Products",
-  subtitle = "Handpicked selections from our premium collection"
+  subtitle = "Handpicked selections from our premium collection",
+  initialProducts
 }) => {
+  const seeded = (initialProducts?.length ?? 0) > 0;
   const sectionRef = useRef<HTMLDivElement>(null);
   
   const { addToCart, removeFromCart, cartState } = useCart();
@@ -466,15 +471,19 @@ const FeaturedProducts: React.FC<FeaturedProductsProps> = ({
   const { wishlistState, addToWishlist, removeFromWishlist } = useWishlist();
   const { openModalWishlist } = useModalWishlistContext();
   
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState<Product[]>(
+    seeded ? initialProducts!.map(mapApiProductToProduct) : []
+  );
+  const [loading, setLoading] = useState(!seeded);
   const [error, setError] = useState<string | null>(null);
   const [addingToCart, setAddingToCart] = useState<string | null>(null);
   const [wishlistAdding, setWishlistAdding] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
+    if (seeded) return;
     fetchFeaturedProducts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [limit]);
 
   const fetchFeaturedProducts = async () => {
