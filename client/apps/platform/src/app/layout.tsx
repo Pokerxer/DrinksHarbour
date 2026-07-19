@@ -8,6 +8,7 @@ import GlobalProvider from "./GlobalProvider";
 import { Header } from "@/components/Header";
 import Footer from "@/components/Footer/Footer";
 import AnalyticsTracker from "@/components/Analytics/AnalyticsTracker";
+import GoogleAnalytics from "@/components/Analytics/GoogleAnalytics";
 import { TenantProvider } from "@/context/TenantContext";
 import { resolveTenant } from "@/lib/tenant";
 
@@ -204,6 +205,7 @@ export default async function RootLayout({
                 prerender: [{ where: { href_matches: "/*" }, eagerness: "moderate" }],
               })}
             </script>
+            <GoogleAnalytics />
             <AnalyticsTracker />
             <ClientOverlays />
             <Header variant="default" showAnnouncement={false} />
