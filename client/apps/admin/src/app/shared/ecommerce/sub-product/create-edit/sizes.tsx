@@ -982,29 +982,70 @@ function SizeVariantRow({
     setLocalDiscount(variantDiscount);
   }, [variantDiscount]);
 
-  // Initialize once on mount
+  // Initialize once on mount.
+  // If a selling price is already stored (edit mode), derive the Markup % from the
+  // loaded cost/selling pair so the field reflects reality — do NOT overwrite the
+  // stored selling price. Only auto-calculate a selling price when none exists yet.
   useEffect(() => {
-    if (!initialized && variantCostPrice && variantCostPrice > 0) {
+    if (initialized) return;
+    const cost = Number(variantCostPrice) || 0;
+    const selling = Number(variantBasePrice) || 0;
+    if (cost > 0 && selling > 0) {
+      const eff = Number(((selling / cost - 1) * 100).toFixed(2));
+      setLocalMarkup(eff);
+      setValue(`subProductData.sizes.${index}.markupPercentage`, eff);
+      setInitialized(true);
+    } else if (cost > 0) {
       const calculatedPrice = calculateBasePrice(
-        variantCostPrice,
+        cost,
         localMarkup,
         variantRoundUp
       );
       setValue(`subProductData.sizes.${index}.basePrice`, calculatedPrice);
       setInitialized(true);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Handle cost price change
+  // Handle cost price change — preserve the *last effective markup* implied by the
+  // previous cost/selling pair, and recompute the selling price from it. Falls back to
+  // the markup field when there is no prior selling price to learn from.
   const handleCostPriceChange = (value: number | null) => {
     if (value && value > 0) {
+      // variantCostPrice / variantBasePrice hold the pre-change (old) values here
+      const oldCost = Number(variantCostPrice) || 0;
+      const oldSelling = Number(variantBasePrice) || 0;
+      const effMarkup =
+        oldCost > 0 && oldSelling > 0
+          ? (oldSelling / oldCost - 1) * 100
+          : localMarkup;
+
       const calculatedPrice = calculateBasePrice(
         value,
-        localMarkup,
+        effMarkup,
         variantRoundUp
       );
       setValue(`subProductData.sizes.${index}.costPrice`, value);
       setValue(`subProductData.sizes.${index}.basePrice`, calculatedPrice);
+
+      // Sync the Markup % field to the resulting (rounded) markup so the UI is truthful
+      const finalMarkup = Number(
+        ((calculatedPrice / value - 1) * 100).toFixed(2)
+      );
+      setLocalMarkup(finalMarkup);
+      setValue(`subProductData.sizes.${index}.markupPercentage`, finalMarkup);
+
+      // Keep any active sale price in step with the new selling price
+      if (localDiscount > 0) {
+        const calculatedSalePrice = calculateSalePrice(
+          calculatedPrice,
+          localDiscount
+        );
+        setValue(
+          `subProductData.sizes.${index}.salePrice`,
+          calculatedSalePrice
+        );
+      }
     } else {
       setValue(`subProductData.sizes.${index}.costPrice`, value);
     }
@@ -1048,6 +1089,13 @@ function SizeVariantRow({
 
   const handleBasePriceChange = (value: number | null) => {
     setValue(`subProductData.sizes.${index}.basePrice`, value);
+    // Keep the Markup % field in sync with a manually entered selling price
+    const cost = Number(variantCostPrice) || 0;
+    if (value && value > 0 && cost > 0) {
+      const m = Number(((value / cost - 1) * 100).toFixed(2));
+      setLocalMarkup(m);
+      setValue(`subProductData.sizes.${index}.markupPercentage`, m);
+    }
     if (value && value > 0 && localDiscount > 0) {
       const calculatedSalePrice = calculateSalePrice(value, localDiscount);
       setValue(`subProductData.sizes.${index}.salePrice`, calculatedSalePrice);

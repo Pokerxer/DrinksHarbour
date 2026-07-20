@@ -88,26 +88,41 @@ export default function SubProductPricing() {
   const [isAutoCalculating, setIsAutoCalculating] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showCompetitorPricing, setShowCompetitorPricing] = useState(false);
+  // Guards the one-time sync of the markup field to the loaded cost/selling pair
+  const [markupInitialized, setMarkupInitialized] = useState(false);
+
+  // Round a price up to the configured increment (mirrors the size-variant logic)
+  const applyRoundUp = (price: number, mode: string) => {
+    if (mode === '100') return Math.ceil(price / 100) * 100;
+    if (mode === '500') return Math.ceil(price / 500) * 500;
+    if (mode === '1000') return Math.ceil(price / 1000) * 1000;
+    return price;
+  };
+  const round2 = (n: number) => Number((n || 0).toFixed(2));
+  // Effective markup (%) implied by a cost/selling pair, or null when it can't be derived
+  const effectiveMarkupPct = (cost: number, selling: number) =>
+    cost > 0 && selling > 0 ? (selling / cost - 1) * 100 : null;
 
   useEffect(() => {
     setLocalMarkup(markupPercentage);
   }, [markupPercentage]);
 
+  // On load (edit mode), derive the Markup % from the stored cost/selling pair so the
+  // field reflects the product's *actual* markup rather than a stale preset. This does
+  // NOT overwrite the selling price — the loaded price is preserved as-is.
   useEffect(() => {
-    if (isAutoCalculating && costPrice && costPrice > 0) {
-      let calculatedPrice = costPrice * (1 + (localMarkup / 100));
-      
-      if (roundUpValue === '100') {
-        calculatedPrice = Math.ceil(calculatedPrice / 100) * 100;
-      } else if (roundUpValue === '500') {
-        calculatedPrice = Math.ceil(calculatedPrice / 500) * 500;
-      } else if (roundUpValue === '1000') {
-        calculatedPrice = Math.ceil(calculatedPrice / 1000) * 1000;
-      }
-      
-      setValue('subProductData.baseSellingPrice', Number(calculatedPrice.toFixed(2)), { shouldValidate: true });
+    if (markupInitialized) return;
+    const eff = effectiveMarkupPct(
+      Number(costPrice) || 0,
+      Number(baseSellingPrice) || 0
+    );
+    if (eff !== null) {
+      const rounded = round2(eff);
+      setLocalMarkup(rounded);
+      setValue('subProductData.markupPercentage', rounded);
+      setMarkupInitialized(true);
     }
-  }, [costPrice, localMarkup, roundUpValue, isAutoCalculating, setValue]);
+  }, [costPrice, baseSellingPrice, markupInitialized, setValue]);
 
   const profitAmount = baseSellingPrice - costPrice;
   
@@ -133,18 +148,42 @@ export default function SubProductPricing() {
 
   const marginStatus = getMarginStatus();
 
+  // When the cost price changes, preserve the *last effective markup* (derived from the
+  // previous cost/selling pair) and recompute the selling price from it. Falls back to
+  // the markup field when there is no prior selling price to learn from (e.g. new entry).
   const handleCostPriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseFloat(e.target.value);
-    if (value > 0) {
-      setIsAutoCalculating(true);
-    }
+    const newCost = parseFloat(e.target.value) || 0;
+    if (!isAutoCalculating || newCost <= 0) return;
+
+    // costPrice / baseSellingPrice from the closure hold the pre-change (old) values
+    const eff = effectiveMarkupPct(
+      Number(costPrice) || 0,
+      Number(baseSellingPrice) || 0
+    );
+    const markup = eff ?? localMarkup;
+
+    const newSelling = applyRoundUp(newCost * (1 + markup / 100), roundUpValue);
+    setValue('subProductData.baseSellingPrice', round2(newSelling), {
+      shouldValidate: true,
+    });
+
+    const finalMarkup = round2((newSelling / newCost - 1) * 100);
+    setLocalMarkup(finalMarkup);
+    setValue('subProductData.markupPercentage', finalMarkup, {
+      shouldValidate: true,
+    });
+    setMarkupInitialized(true);
   };
 
   const handleMarkupChange = (value: number) => {
     setLocalMarkup(value);
     setValue('subProductData.markupPercentage', value, { shouldValidate: true });
-    if (costPrice && costPrice > 0) {
-      setIsAutoCalculating(true);
+    setMarkupInitialized(true);
+    if (isAutoCalculating && costPrice && costPrice > 0) {
+      const newSelling = applyRoundUp(costPrice * (1 + value / 100), roundUpValue);
+      setValue('subProductData.baseSellingPrice', round2(newSelling), {
+        shouldValidate: true,
+      });
     }
   };
 
@@ -502,11 +541,21 @@ export default function SubProductPricing() {
                 step="0.01"
                 min="0"
                 placeholder="0.00"
-                {...register('subProductData.baseSellingPrice', { 
+                {...register('subProductData.baseSellingPrice', {
                   valueAsNumber: true,
                   required: 'Selling price is required',
                   min: { value: 0.01, message: 'Price must be greater than 0' },
-                  onChange: () => setIsAutoCalculating(false)
+                  onChange: (e) => {
+                    // Manual override — stop auto-calculating and keep Markup % truthful
+                    setIsAutoCalculating(false);
+                    const selling = parseFloat(e.target.value) || 0;
+                    if (costPrice > 0 && selling > 0) {
+                      const m = round2((selling / costPrice - 1) * 100);
+                      setLocalMarkup(m);
+                      setValue('subProductData.markupPercentage', m);
+                      setMarkupInitialized(true);
+                    }
+                  },
                 })}
                 error={errors.subProductData?.baseSellingPrice?.message}
                 className="w-full pl-9"
@@ -533,10 +582,19 @@ export default function SubProductPricing() {
                     {...field}
                     value={field.value ?? 'none'}
                     onChange={(e) => {
-                      field.onChange(e.target.value);
-                      setValue('subProductData.roundUp', e.target.value, { shouldValidate: true });
-                      if (costPrice && costPrice > 0) {
-                        setIsAutoCalculating(true);
+                      const mode = e.target.value;
+                      field.onChange(mode);
+                      setValue('subProductData.roundUp', mode, { shouldValidate: true });
+                      if (isAutoCalculating && costPrice && costPrice > 0) {
+                        const newSelling = applyRoundUp(
+                          costPrice * (1 + localMarkup / 100),
+                          mode
+                        );
+                        setValue(
+                          'subProductData.baseSellingPrice',
+                          round2(newSelling),
+                          { shouldValidate: true }
+                        );
                       }
                     }}
                     className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm transition-all focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 appearance-none"
