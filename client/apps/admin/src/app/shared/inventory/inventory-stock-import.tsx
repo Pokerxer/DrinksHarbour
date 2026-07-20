@@ -288,7 +288,9 @@ export default function InventoryStockImport({
       const d: CommitResult = res.data;
       finishProgress();
       toast.success(
-        `Imported ${d.createdSubProducts} products · ${d.createdSizes} sizes · ${d.stockApplied} stock lines`
+        `Imported ${d.createdSubProducts} products · ${d.createdSizes} sizes${
+          d.updatedSizes ? ` · ${d.updatedSizes} prices updated` : ''
+        } · ${d.stockApplied} stock lines`
       );
       if (d.errors.length)
         toast.error(`${d.errors.length} group(s) had errors`);

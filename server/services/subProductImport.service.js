@@ -306,12 +306,30 @@ function defaultServiceDeps(deps = {}) {
   };
 }
 
-function sizePayload(r) {
+// Round a price up to the nearest ₦100 (matches the admin pricing UI).
+function roundUp100(n) {
+  return Math.ceil(Number(n) / 100) * 100;
+}
+
+// Selling price for an imported size row. An explicit sizePrice always wins.
+// Otherwise derive it from the row's cost and a markup % (the sub-product's
+// stored markup, falling back to 25%) so an imported cost never lands with a
+// blank selling price.
+function deriveSizeSelling(r, fallbackMarkupPct) {
+  if (r.sizePrice != null && r.sizePrice > 0) return r.sizePrice;
+  const cost = r.sizeCostPrice ?? r.costPrice;
+  if (cost == null || cost <= 0) return undefined;
+  const markup =
+    fallbackMarkupPct != null && fallbackMarkupPct > 0 ? fallbackMarkupPct : 25;
+  return roundUp100(cost * (1 + markup / 100));
+}
+
+function sizePayload(r, fallbackMarkupPct) {
   return {
     size: r.size,
     sku: r.sizeSku || undefined,
     barcode: r.barcode || undefined,
-    basePrice: r.sizePrice ?? undefined,
+    basePrice: deriveSizeSelling(r, fallbackMarkupPct),
     costPrice: r.sizeCostPrice ?? undefined,
     stock: 0,
   };
@@ -324,7 +342,7 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
   const enrichments = (opts?.enrichments && typeof opts.enrichments === 'object') ? opts.enrichments : {};
   const rows = normalizeRows(rawRows);
   const groups = groupRows(rows);
-  const out = { createdProducts: 0, createdSubProducts: 0, createdSizes: 0, stockApplied: 0, skipped: 0, errors: [] };
+  const out = { createdProducts: 0, createdSubProducts: 0, createdSizes: 0, updatedSizes: 0, stockApplied: 0, skipped: 0, errors: [] };
 
   // Existing category hierarchy, fetched once, so Haiku enrichment picks real
   // categories that createSubProductCore can resolve by name. Best-effort.
@@ -374,23 +392,68 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
       let createdSizeDocs = []; // { _id, size, _row }
 
       if (existingSub) {
-        // Add only sizes that don't already exist.
         subProductId = existingSub._id;
-        const existing = new Set(
-          (await d.Size.find({ subproduct: existingSub._id }).select('size').lean()).map((s) => s.size)
-        );
+        // Sub-product markup — the fallback when a brand-new size arrives with a
+        // cost but no explicit selling price.
+        const subDoc = await d.SubProduct.findById(existingSub._id)
+          .select('markupPercentage').lean();
+        const subMarkup = subDoc?.markupPercentage ?? 25;
+
+        // Full docs (not just size names) so we can update cost/selling in place.
+        const existingSizes = await d.Size.find({ subproduct: existingSub._id })
+          .select('_id size costPrice basePrice markupPercentage').lean();
+        const existingBySize = new Map(existingSizes.map((s) => [s.size, s]));
+
         for (const r of goodRows) {
-          if (existing.has(r.size)) { out.skipped += 1; continue; }
-          const sizeDoc = await d.addSize(subProductId, sizePayload(r), tenantId, user); // returns the Size doc
+          const ex = existingBySize.get(r.size);
+          if (ex) {
+            // Existing size: update the cost when the import supplies a different
+            // one, and move the selling price to preserve this size's last
+            // effective markup (oldSelling / oldCost). Falls back to the stored
+            // markup % (or 25%) when there is no prior selling price to learn from.
+            const newCost = r.sizeCostPrice ?? r.costPrice;
+            if (newCost != null && newCost > 0 && newCost !== ex.costPrice) {
+              const oldCost = Number(ex.costPrice) || 0;
+              const oldSelling = Number(ex.basePrice) || 0;
+              const newSelling =
+                oldCost > 0 && oldSelling > 0
+                  ? roundUp100(newCost * (oldSelling / oldCost))
+                  : roundUp100(
+                      newCost * (1 + (ex.markupPercentage ?? subMarkup) / 100)
+                    );
+              const markupPct = Number(
+                ((newSelling / newCost - 1) * 100).toFixed(2)
+              );
+              await d.Size.findByIdAndUpdate(ex._id, {
+                $set: {
+                  costPrice: newCost,
+                  basePrice: newSelling,
+                  markupPercentage: markupPct,
+                },
+              });
+              out.updatedSizes += 1;
+            } else {
+              out.skipped += 1;
+            }
+            continue;
+          }
+          // New size on an existing sub-product — add it (additive behavior).
+          const sizeDoc = await d.addSize(subProductId, sizePayload(r, subMarkup), tenantId, user); // returns the Size doc
           createdSizeDocs.push({ _id: sizeDoc._id, size: r.size, _row: r });
         }
       } else {
         const base = goodRows[0];
+        const baseCost = base.costPrice ?? base.sizeCostPrice ?? null;
         const data = {
           costPrice: base.costPrice ?? undefined,
-          baseSellingPrice: base.sellingPrice ?? undefined,
+          baseSellingPrice:
+            base.sellingPrice ??
+            (baseCost != null && baseCost > 0
+              ? roundUp100(baseCost * 1.25)
+              : undefined),
+          markupPercentage: 25,
           status: 'active',
-          sizes: goodRows.map(sizePayload),
+          sizes: goodRows.map((r) => sizePayload(r, 25)),
         };
         if (existingProduct) {
           data.product = existingProduct._id;

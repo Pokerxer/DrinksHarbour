@@ -57,6 +57,7 @@ export interface CommitResult {
   createdProducts: number;
   createdSubProducts: number;
   createdSizes: number;
+  updatedSizes: number;
   stockApplied: number;
   skipped: number;
   errors: { group: string; message: string }[];
