@@ -17,6 +17,7 @@ import {
   buildTemplateCsv,
   IMPORT_COLUMNS,
   type ImportRow,
+  type ImportMode,
   type PreviewResult,
   type CommitResult,
 } from '@/services/subProductImport.service';
@@ -159,6 +160,7 @@ export default function InventoryStockImport({
 }) {
   const [rows, setRows] = useState<ImportRow[]>([]);
   const [fileName, setFileName] = useState('');
+  const [mode, setMode] = useState<ImportMode>('create');
   const [warehouseId, setWarehouseId] = useState('');
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -258,7 +260,8 @@ export default function InventoryStockImport({
       const res = await subProductImportService.preview(
         rows,
         warehouseId || null,
-        token
+        token,
+        mode
       );
       finishProgress();
       setPreview(res.data);
@@ -268,7 +271,7 @@ export default function InventoryStockImport({
     } finally {
       setBusy(false);
     }
-  }, [rows, warehouseId, token, startProgress, finishProgress]);
+  }, [rows, warehouseId, token, mode, startProgress, finishProgress]);
 
   const runCommit = useCallback(async () => {
     setBusy(true);
@@ -283,15 +286,24 @@ export default function InventoryStockImport({
         rows,
         warehouseId || null,
         token,
-        enrichments
+        enrichments,
+        mode
       );
       const d: CommitResult = res.data;
       finishProgress();
-      toast.success(
-        `Imported ${d.createdSubProducts} products · ${d.createdSizes} sizes${
-          d.updatedSizes ? ` · ${d.updatedSizes} prices updated` : ''
-        } · ${d.stockApplied} stock lines`
-      );
+      if (mode === 'update') {
+        toast.success(
+          `Updated ${d.updatedSizes} price${d.updatedSizes === 1 ? '' : 's'} · ${d.stockUpdated} stock line${d.stockUpdated === 1 ? '' : 's'}${
+            d.skippedNoMatch ? ` · ${d.skippedNoMatch} unmatched skipped` : ''
+          }`
+        );
+      } else {
+        toast.success(
+          `Imported ${d.createdSubProducts} products · ${d.createdSizes} sizes${
+            d.updatedSizes ? ` · ${d.updatedSizes} prices updated` : ''
+          } · ${d.stockApplied} stock lines`
+        );
+      }
       if (d.errors.length)
         toast.error(`${d.errors.length} group(s) had errors`);
       reset();
@@ -306,6 +318,7 @@ export default function InventoryStockImport({
     rows,
     warehouseId,
     token,
+    mode,
     preview,
     reset,
     onDone,
@@ -353,6 +366,41 @@ export default function InventoryStockImport({
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-5">
+          {/* Mode toggle: create new vs update existing */}
+          <div className="grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1">
+            {(
+              [
+                {
+                  key: 'create',
+                  label: 'Create',
+                  hint: 'Add new products & sizes',
+                },
+                {
+                  key: 'update',
+                  label: 'Update existing',
+                  hint: 'Cost, price & stock',
+                },
+              ] as { key: ImportMode; label: string; hint: string }[]
+            ).map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                onClick={() => {
+                  setMode(m.key);
+                  setPreview(null);
+                }}
+                className={`flex flex-col items-center rounded-lg px-3 py-2 text-center transition-colors ${
+                  mode === m.key
+                    ? 'bg-white text-[#b20202] shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <span className="text-xs font-bold">{m.label}</span>
+                <span className="text-[10px] text-gray-400">{m.hint}</span>
+              </button>
+            ))}
+          </div>
+
           <div className="flex items-center justify-between">
             <button
               type="button"
@@ -421,21 +469,34 @@ export default function InventoryStockImport({
           {preview && (
             <div className="space-y-3">
               <div className="grid grid-cols-4 gap-2 text-center">
-                {[
-                  {
-                    label: 'New products',
-                    value: preview.totals.willCreateProduct,
-                  },
-                  {
-                    label: 'Link existing',
-                    value: preview.totals.willLinkProduct,
-                  },
-                  {
-                    label: 'Update existing',
-                    value: preview.totals.willUpdateSubProduct,
-                  },
-                  { label: 'Sizes', value: preview.totals.sizes },
-                ].map((s) => (
+                {(mode === 'update'
+                  ? [
+                      {
+                        label: 'Will update',
+                        value: preview.totals.willUpdateSubProduct,
+                      },
+                      {
+                        label: 'No match',
+                        value: preview.totals.willSkipNoMatch,
+                      },
+                      { label: 'Sizes', value: preview.totals.sizes },
+                    ]
+                  : [
+                      {
+                        label: 'New products',
+                        value: preview.totals.willCreateProduct,
+                      },
+                      {
+                        label: 'Link existing',
+                        value: preview.totals.willLinkProduct,
+                      },
+                      {
+                        label: 'Update existing',
+                        value: preview.totals.willUpdateSubProduct,
+                      },
+                      { label: 'Sizes', value: preview.totals.sizes },
+                    ]
+                ).map((s) => (
                   <div
                     key={s.label}
                     className="rounded-xl border border-gray-100 bg-gray-50 px-2 py-3"

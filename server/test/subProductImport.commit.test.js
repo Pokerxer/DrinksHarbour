@@ -109,36 +109,65 @@ test('commitImport strips size tokens from the raw-name fallback', async () => {
   assert.equal(calls.createSubProduct[0].newProductData.name, 'New Gin');
 });
 
-test('commitImport updates an existing size cost and preserves its last markup', async () => {
+test('commitImport (create mode) is additive — skips existing sizes, adds new ones', async () => {
   const { deps, calls } = makeDeps({
     product: { _id: 'p1' }, sub: { _id: 'sp-existing' },
-    // 75cl exists at 50% markup (cost 800 -> selling 1200); 50cl is new
     sizes: [{ _id: 's75', size: '75cl', costPrice: 800, basePrice: 1200 }],
   });
   const rows = [
-    { productName: 'Old Rum', subProductSku: 'OR1', sizeCostPrice: '900', size: '75cl' }, // exists -> update
-    { productName: 'Old Rum', subProductSku: 'OR1', sizeCostPrice: '900', size: '50cl' }, // new
-  ];
-  const res = await svc.commitImport(rows, { warehouseId: null }, 'T1', { _id: 'U1' }, deps);
-  assert.equal(res.updatedSizes, 1);
-  assert.equal(res.createdSizes, 1);
-  assert.equal(calls.createSubProduct.length, 0);          // used addSize path, not createSubProduct
-  // Selling recomputed from preserved markup: 900 * (1200/800) = 1350 -> round up 1400
-  assert.equal(calls.sizeUpdates.length, 1);
-  assert.equal(calls.sizeUpdates[0].upd.$set.costPrice, 900);
-  assert.equal(calls.sizeUpdates[0].upd.$set.basePrice, 1400);
-});
-
-test('commitImport skips an existing size when the cost is unchanged', async () => {
-  const { deps, calls } = makeDeps({
-    product: { _id: 'p1' }, sub: { _id: 'sp-existing' },
-    sizes: [{ _id: 's75', size: '75cl', costPrice: 900, basePrice: 1200 }],
-  });
-  const rows = [
-    { productName: 'Old Rum', subProductSku: 'OR1', sizeCostPrice: '900', size: '75cl' }, // same cost -> skip
+    { productName: 'Old Rum', subProductSku: 'OR1', sizeCostPrice: '900', size: '75cl' }, // exists -> skip
+    { productName: 'Old Rum', subProductSku: 'OR1', sizeCostPrice: '900', size: '50cl' }, // new -> add
   ];
   const res = await svc.commitImport(rows, { warehouseId: null }, 'T1', { _id: 'U1' }, deps);
   assert.equal(res.skipped, 1);
+  assert.equal(res.createdSizes, 1);
   assert.equal(res.updatedSizes, 0);
-  assert.equal(calls.sizeUpdates.length, 0);
+  assert.equal(calls.sizeUpdates.length, 0); // create mode never mutates existing sizes
+});
+
+test('commitImport (update mode) updates existing size cost, preserves markup, sets stock', async () => {
+  const { deps, calls } = makeDeps({
+    product: { _id: 'p1' }, sub: { _id: 'sp-existing' },
+    // 75cl exists at 50% markup (cost 800 -> selling 1200), stock 5
+    sizes: [{ _id: 's75', size: '75cl', costPrice: 800, basePrice: 1200, stock: 5 }],
+  });
+  const rows = [
+    { productName: 'Old Rum', subProductSku: 'OR1', sizeCostPrice: '900', size: '75cl', openingQty: '40' },
+  ];
+  const res = await svc.commitImport(rows, { warehouseId: 'wh1', mode: 'update' }, 'T1', { _id: 'U1' }, deps);
+  assert.equal(res.updatedSizes, 1);
+  assert.equal(res.stockUpdated, 1);
+  assert.equal(res.createdSizes, 0);
+  // Selling recomputed from preserved markup: 900 * (1200/800) = 1350 -> round up 1400
+  const priceUpd = calls.sizeUpdates.find((u) => u.upd.$set.costPrice != null);
+  assert.equal(priceUpd.upd.$set.costPrice, 900);
+  assert.equal(priceUpd.upd.$set.basePrice, 1400);
+  // Absolute stock set as an 'adjusted' movement
+  assert.equal(calls.adjustStock.length, 1);
+  assert.equal(calls.adjustStock[0].type, 'adjusted');
+  assert.equal(calls.adjustStock[0].quantity, 40);
+});
+
+test('commitImport (update mode) honors an explicit size price over preserved markup', async () => {
+  const { deps, calls } = makeDeps({
+    product: { _id: 'p1' }, sub: { _id: 'sp-existing' },
+    sizes: [{ _id: 's75', size: '75cl', costPrice: 800, basePrice: 1200 }],
+  });
+  const rows = [
+    { productName: 'Old Rum', subProductSku: 'OR1', sizeCostPrice: '900', sizePrice: '2000', size: '75cl' },
+  ];
+  const res = await svc.commitImport(rows, { warehouseId: null, mode: 'update' }, 'T1', { _id: 'U1' }, deps);
+  assert.equal(res.updatedSizes, 1);
+  assert.equal(calls.sizeUpdates[0].upd.$set.basePrice, 2000);
+});
+
+test('commitImport (update mode) skips products/sizes that do not exist', async () => {
+  const { deps, calls } = makeDeps({}); // no product match
+  const rows = [
+    { productName: 'Ghost Gin', subProductSku: 'GG1', sizeCostPrice: '900', size: '75cl' },
+  ];
+  const res = await svc.commitImport(rows, { warehouseId: null, mode: 'update' }, 'T1', { _id: 'U1' }, deps);
+  assert.equal(res.skippedNoMatch, 1);
+  assert.equal(res.updatedSizes, 0);
+  assert.equal(calls.createSubProduct.length, 0); // never creates in update mode
 });

@@ -186,12 +186,14 @@ function resolveNewProductFields(base, ai = {}) {
 async function validateImport(rawRows, opts, tenantId, deps) {
   const { Product, SubProduct, Size, Category, enrich, getCategoryOptions, getProductNames } = defaultServiceDeps(deps);
   const warehouseId = opts?.warehouseId || null;
+  const mode = opts?.mode === 'update' ? 'update' : 'create';
   const rows = normalizeRows(rawRows);
   const groups = groupRows(rows);
   const blocking = [];
   const totals = {
     groups: groups.length, sizes: 0,
-    willCreateProduct: 0, willLinkProduct: 0, willUpdateSubProduct: 0, errorRows: 0,
+    willCreateProduct: 0, willLinkProduct: 0, willUpdateSubProduct: 0,
+    willSkipNoMatch: 0, errorRows: 0,
   };
   let anyQty = false;
 
@@ -213,8 +215,11 @@ async function validateImport(rawRows, opts, tenantId, deps) {
       });
       existingSub = await ((subQ && typeof subQ.select === 'function') ? subQ.select('_id').lean() : subQ);
     }
-    const action = existingSub ? 'updateSubProduct'
-      : existingProduct ? 'linkProduct' : 'createProduct';
+    // UPDATE mode only ever updates an existing sub-product; anything else is a
+    // no-match that will be skipped (never created).
+    const action = mode === 'update'
+      ? (existingSub ? 'updateSubProduct' : 'noMatch')
+      : (existingSub ? 'updateSubProduct' : existingProduct ? 'linkProduct' : 'createProduct');
 
     let existingSizes = new Set();
     if (existingSub) {
@@ -257,6 +262,7 @@ async function validateImport(rawRows, opts, tenantId, deps) {
     totals.errorRows += new Set(rowErrors.map((e) => e.rowNum)).size;
     if (action === 'createProduct') totals.willCreateProduct += 1;
     else if (action === 'linkProduct') totals.willLinkProduct += 1;
+    else if (action === 'noMatch') totals.willSkipNoMatch += 1;
     else totals.willUpdateSubProduct += 1;
 
     const report = { key: g.key, productName: g.productName, action, sizeCount, rowErrors, sizeNotes };
@@ -335,14 +341,46 @@ function sizePayload(r, fallbackMarkupPct) {
   };
 }
 
+// Set a size's on-hand stock to an ABSOLUTE quantity (a stock-take correction),
+// used by Update-mode imports. Mirrors the reliability pattern of the create path:
+// the warehouse ledger is best-effort, but Size.stock (the shop's inStock source
+// of truth) is always set directly.
+async function applyAbsoluteStock(d, { subProductId, sizeId, qty, before, warehouseId, tenantId, user, unitCost }) {
+  if (warehouseId) {
+    try {
+      await d.adjustStock(
+        { warehouseId, subProduct: subProductId, size: sizeId, quantity: qty, type: 'adjusted', notes: 'Bulk import stock update' },
+        user?._id, tenantId
+      );
+    } catch (_) { /* Size.stock is set below regardless */ }
+  }
+  await Promise.resolve(
+    d.Size.findByIdAndUpdate(sizeId, {
+      $set: { stock: qty, availableStock: qty, availability: qty > 0 ? 'in_stock' : 'out_of_stock' },
+    })
+  ).catch(() => {});
+  try {
+    await d.recordReceiptMovement({
+      subProduct: subProductId, tenant: tenantId, size: sizeId,
+      warehouse: warehouseId || undefined, quantity: qty - before,
+      balanceBefore: before, balanceAfter: qty,
+      unitCost, notes: 'Bulk import stock update (absolute)', reference: 'bulk-import-update',
+      performedBy: user?._id,
+    });
+  } catch (_) { /* audit trail is non-fatal — Size.stock already set */ }
+}
+
 async function commitImport(rawRows, opts, tenantId, user, deps) {
   const d = defaultServiceDeps(deps);
   const warehouseId = opts?.warehouseId || null;
+  // 'update' = touch existing products only (cost/selling/stock); 'create' (default)
+  // = the original additive behavior (create new, skip existing sizes).
+  const mode = opts?.mode === 'update' ? 'update' : 'create';
   // Preview-confirmed enrichments, keyed by group key (see validateImport).
   const enrichments = (opts?.enrichments && typeof opts.enrichments === 'object') ? opts.enrichments : {};
   const rows = normalizeRows(rawRows);
   const groups = groupRows(rows);
-  const out = { createdProducts: 0, createdSubProducts: 0, createdSizes: 0, updatedSizes: 0, stockApplied: 0, skipped: 0, errors: [] };
+  const out = { createdProducts: 0, createdSubProducts: 0, createdSizes: 0, updatedSizes: 0, stockApplied: 0, stockUpdated: 0, skipped: 0, skippedNoMatch: 0, errors: [] };
 
   // Existing category hierarchy, fetched once, so Haiku enrichment picks real
   // categories that createSubProductCore can resolve by name. Best-effort.
@@ -391,53 +429,75 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
       let subProductId;
       let createdSizeDocs = []; // { _id, size, _row }
 
+      // UPDATE mode never creates: an unmatched product is skipped & reported.
+      if (mode === 'update' && !existingSub) {
+        out.skippedNoMatch += goodRows.length;
+        continue;
+      }
+
       if (existingSub) {
         subProductId = existingSub._id;
-        // Sub-product markup — the fallback when a brand-new size arrives with a
-        // cost but no explicit selling price.
+        // Sub-product markup — the fallback when a size has no prior selling price
+        // to learn a markup from.
         const subDoc = await d.SubProduct.findById(existingSub._id)
           .select('markupPercentage').lean();
         const subMarkup = subDoc?.markupPercentage ?? 25;
 
         // Full docs (not just size names) so we can update cost/selling in place.
         const existingSizes = await d.Size.find({ subproduct: existingSub._id })
-          .select('_id size costPrice basePrice markupPercentage').lean();
+          .select('_id size costPrice basePrice markupPercentage stock').lean();
         const existingBySize = new Map(existingSizes.map((s) => [s.size, s]));
 
         for (const r of goodRows) {
           const ex = existingBySize.get(r.size);
-          if (ex) {
-            // Existing size: update the cost when the import supplies a different
-            // one, and move the selling price to preserve this size's last
-            // effective markup (oldSelling / oldCost). Falls back to the stored
-            // markup % (or 25%) when there is no prior selling price to learn from.
+
+          if (mode === 'update') {
+            // UPDATE mode: only touch sizes that already exist.
+            if (!ex) { out.skippedNoMatch += 1; continue; }
+
             const newCost = r.sizeCostPrice ?? r.costPrice;
-            if (newCost != null && newCost > 0 && newCost !== ex.costPrice) {
-              const oldCost = Number(ex.costPrice) || 0;
-              const oldSelling = Number(ex.basePrice) || 0;
-              const newSelling =
-                oldCost > 0 && oldSelling > 0
-                  ? roundUp100(newCost * (oldSelling / oldCost))
-                  : roundUp100(
-                      newCost * (1 + (ex.markupPercentage ?? subMarkup) / 100)
-                    );
-              const markupPct = Number(
-                ((newSelling / newCost - 1) * 100).toFixed(2)
-              );
-              await d.Size.findByIdAndUpdate(ex._id, {
-                $set: {
-                  costPrice: newCost,
-                  basePrice: newSelling,
-                  markupPercentage: markupPct,
-                },
-              });
+            const oldCost = Number(ex.costPrice) || 0;
+            const oldSelling = Number(ex.basePrice) || 0;
+            const set = {};
+
+            if (newCost != null && newCost > 0) {
+              set.costPrice = newCost;
+              // Explicit selling price wins; otherwise preserve last markup.
+              const selling =
+                r.sizePrice != null && r.sizePrice > 0
+                  ? r.sizePrice
+                  : oldCost > 0 && oldSelling > 0
+                    ? roundUp100(newCost * (oldSelling / oldCost))
+                    : roundUp100(newCost * (1 + (ex.markupPercentage ?? subMarkup) / 100));
+              set.basePrice = selling;
+              set.markupPercentage = Number(((selling / newCost - 1) * 100).toFixed(2));
+            } else if (r.sizePrice != null && r.sizePrice > 0) {
+              // Selling-only update (no new cost supplied).
+              set.basePrice = r.sizePrice;
+              if (oldCost > 0) {
+                set.markupPercentage = Number(((r.sizePrice / oldCost - 1) * 100).toFixed(2));
+              }
+            }
+
+            if (Object.keys(set).length > 0) {
+              await d.Size.findByIdAndUpdate(ex._id, { $set: set });
               out.updatedSizes += 1;
-            } else {
-              out.skipped += 1;
+            }
+
+            // Absolute stock set (stock-take) when the row supplies an opening qty.
+            if (r.openingQty != null && r.openingQty >= 0) {
+              await applyAbsoluteStock(d, {
+                subProductId, sizeId: ex._id, qty: r.openingQty,
+                before: Number(ex.stock) || 0, warehouseId, tenantId, user,
+                unitCost: (r.sizeCostPrice ?? r.costPrice ?? ex.costPrice) ?? undefined,
+              });
+              out.stockUpdated += 1;
             }
             continue;
           }
-          // New size on an existing sub-product — add it (additive behavior).
+
+          // CREATE mode (default): additive — skip existing sizes, add new ones.
+          if (ex) { out.skipped += 1; continue; }
           const sizeDoc = await d.addSize(subProductId, sizePayload(r, subMarkup), tenantId, user); // returns the Size doc
           createdSizeDocs.push({ _id: sizeDoc._id, size: r.size, _row: r });
         }

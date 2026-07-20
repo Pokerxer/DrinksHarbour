@@ -31,12 +31,14 @@ export interface GroupEnrichment {
   description?: string;
 }
 
+export type ImportMode = 'create' | 'update';
+
 export interface PreviewResult {
   ok: boolean;
   groups: {
     key: string;
     productName: string;
-    action: 'createProduct' | 'linkProduct' | 'updateSubProduct';
+    action: 'createProduct' | 'linkProduct' | 'updateSubProduct' | 'noMatch';
     sizeCount: number;
     rowErrors: { rowNum: number; field: string; message: string }[];
     sizeNotes: { rowNum: number; size: string; note: string }[];
@@ -48,6 +50,7 @@ export interface PreviewResult {
     willCreateProduct: number;
     willLinkProduct: number;
     willUpdateSubProduct: number;
+    willSkipNoMatch: number;
     errorRows: number;
   };
   blocking: string[];
@@ -59,7 +62,9 @@ export interface CommitResult {
   createdSizes: number;
   updatedSizes: number;
   stockApplied: number;
+  stockUpdated: number;
   skipped: number;
+  skippedNoMatch: number;
   errors: { group: string; message: string }[];
 }
 
@@ -100,13 +105,14 @@ export const subProductImportService = {
   async preview(
     rows: ImportRow[],
     warehouseId: string | null,
-    token: string
+    token: string,
+    mode: ImportMode = 'create'
   ): Promise<{ success: boolean; data: PreviewResult }> {
     return handle(
       await fetch(`${API_URL}/api/subproducts/import/preview`, {
         method: 'POST',
         headers: jsonAuth(token),
-        body: JSON.stringify({ rows, warehouseId }),
+        body: JSON.stringify({ rows, warehouseId, mode }),
       }),
       'Failed to preview import'
     );
@@ -115,13 +121,14 @@ export const subProductImportService = {
     rows: ImportRow[],
     warehouseId: string | null,
     token: string,
-    enrichments?: Record<string, GroupEnrichment>
+    enrichments?: Record<string, GroupEnrichment>,
+    mode: ImportMode = 'create'
   ): Promise<{ success: boolean; data: CommitResult }> {
     return handle(
       await fetch(`${API_URL}/api/subproducts/import/commit`, {
         method: 'POST',
         headers: jsonAuth(token),
-        body: JSON.stringify({ rows, warehouseId, enrichments }),
+        body: JSON.stringify({ rows, warehouseId, enrichments, mode }),
       }),
       'Failed to commit import'
     );
