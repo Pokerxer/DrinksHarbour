@@ -70,7 +70,8 @@ export interface CommitResult {
 
 export function buildTemplateCsv(): string {
   const header = IMPORT_COLUMNS.join(',');
-  const example = [
+  // Create-mode row: full details to create a new product + size.
+  const createExample = [
     'Jack Daniels Old No.7',
     'whiskey',
     'Jack Daniels',
@@ -86,7 +87,26 @@ export function buildTemplateCsv(): string {
     '9500',
     '24',
   ].join(',');
-  return `${header}\n${example}\n`;
+  // Update-mode row: match an existing product/size by subProductSku + size, then
+  // update its cost & stock. sizePrice left blank so the selling price follows the
+  // size's last markup; openingQty (30) is the new absolute on-hand count.
+  const updateExample = [
+    'Jack Daniels Old No.7',
+    '',
+    '',
+    '',
+    '',
+    'JD-OLD7',
+    '',
+    '',
+    '75cl',
+    '',
+    '',
+    '',
+    '10000',
+    '30',
+  ].join(',');
+  return `${header}\n${createExample}\n${updateExample}\n`;
 }
 
 async function handle(res: Response, fallback: string) {
