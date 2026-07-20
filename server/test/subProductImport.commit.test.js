@@ -6,7 +6,13 @@ const svc = require('../services/subProductImport.service');
 function makeDeps(overrides = {}) {
   const calls = { createSubProduct: [], adjustStock: [], recordReceiptMovement: [], enrich: [], sizeUpdates: [] };
   const deps = {
-    Product: { findOne: () => ({ select: () => ({ lean: async () => overrides.product ?? null }) }) },
+    Product: {
+      findOne: () => ({ select: () => ({ lean: async () => overrides.product ?? null }) }),
+      findById: () => ({ select: () => ({ lean: async () => overrides.productDoc ?? {} }) }),
+    },
+    Tenant: {
+      findById: () => ({ select: () => ({ lean: async () => overrides.tenant ?? null }) }),
+    },
     SubProduct: {
       findOne: () => ({ select: () => ({ lean: async () => overrides.sub ?? null }) }),
       findById: () => ({ select: () => ({ lean: async () => overrides.subDoc ?? {} }) }),
@@ -148,6 +154,28 @@ test('commitImport (update mode) updates existing size cost, preserves markup, s
   assert.equal(calls.adjustStock.length, 1);
   assert.equal(calls.adjustStock[0].type, 'adjusted');
   assert.equal(calls.adjustStock[0].quantity, 40);
+});
+
+test('commitImport (update mode) captures platform markup override when cost changes', async () => {
+  const { deps, calls } = makeDeps({
+    product: { _id: 'p1' }, sub: { _id: 'sp-existing' },
+    tenant: { revenueModel: 'markup', markupPercentage: 25, packRateMinUnits: 2 },
+    productDoc: { platformMarkup: 15, platformDiscount: null },
+    // 75cl, cost 800 -> selling 1200, no prior override
+    sizes: [{ _id: 's75', size: '75cl', costPrice: 800, basePrice: 1200, sellingPrice: 1200, unitsPerPack: 1, platformMarkupOverridePct: null, packPlatformMarkupOverridePct: null }],
+  });
+  const rows = [
+    { productName: 'Old Rum', subProductSku: 'OR1', sizeCostPrice: '900', size: '75cl' },
+  ];
+  const res = await svc.commitImport(rows, { warehouseId: null, mode: 'update' }, 'T1', { _id: 'U1' }, deps);
+  assert.equal(res.updatedSizes, 1);
+  const upd = calls.sizeUpdates.find((u) => u.upd.$set.costPrice != null);
+  // The last effective platform markup is snapshotted so the platform selling
+  // price stays proportional at the new cost.
+  assert.ok(
+    upd.upd.$set.platformMarkupOverridePct != null,
+    'platform markup override captured on cost change'
+  );
 });
 
 test('commitImport (update mode) honors an explicit size price over preserved markup', async () => {

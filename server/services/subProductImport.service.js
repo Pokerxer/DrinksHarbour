@@ -2,6 +2,7 @@ const RealSize = require('../models/Size');
 const RealProduct = require('../models/Product');
 const RealSubProduct = require('../models/SubProduct');
 const RealCategory = require('../models/Category');
+const RealTenant = require('../models/Tenant');
 
 const SIZE_ENUM = new Set(RealSize.schema.path('size').enumValues);
 const PRODUCT_TYPES = new Set(RealProduct.schema.path('type').enumValues);
@@ -99,6 +100,7 @@ function defaultDeps(deps = {}) {
     SubProduct: deps.SubProduct || RealSubProduct,
     Size: deps.Size || RealSize,
     Category: deps.Category || RealCategory,
+    Tenant: deps.Tenant || RealTenant,
   };
 }
 
@@ -309,6 +311,7 @@ function defaultServiceDeps(deps = {}) {
     enrich: deps.enrich || enrichSvc.enrichProductFromName,
     getCategoryOptions: deps.getCategoryOptions || enrichSvc.getCategoryOptions,
     getProductNames: deps.getProductNames || enrichSvc.getProductNames,
+    preserveMarkup: deps.preserveMarkup || sp.preserveEffectivePlatformMarkupOnCostChange,
   };
 }
 
@@ -445,9 +448,33 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
         const subMarkup = subDoc?.markupPercentage ?? 25;
 
         // Full docs (not just size names) so we can update cost/selling in place.
+        // sellingPrice/unitsPerPack/override-pcts are needed to preserve the last
+        // effective platform & pack markup when the supplier cost changes.
         const existingSizes = await d.Size.find({ subproduct: existingSub._id })
-          .select('_id size costPrice basePrice markupPercentage stock').lean();
+          .select('_id size costPrice basePrice sellingPrice markupPercentage stock unitsPerPack platformMarkupOverridePct packPlatformMarkupOverridePct')
+          .lean();
         const existingBySize = new Map(existingSizes.map((s) => [s.size, s]));
+
+        // Tenant + product (fetched once per group, best-effort) so update-mode
+        // cost changes can snapshot the last platform/pack markup like the edit
+        // page. Fully defensive — markup preservation must never break the core
+        // cost/stock update if the models or query API are unavailable.
+        let pricingTenant = null;
+        let pricingProduct = null;
+        if (mode === 'update') {
+          try {
+            pricingTenant = (await d.Tenant?.findById?.(tenantId)
+              ?.select?.('revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
+              ?.lean?.()) ?? null;
+          } catch { pricingTenant = null; }
+          if (existingProduct) {
+            try {
+              pricingProduct = (await d.Product?.findById?.(existingProduct._id)
+                ?.select?.('platformMarkup platformDiscount')
+                ?.lean?.()) ?? null;
+            } catch { pricingProduct = null; }
+          }
+        }
 
         for (const r of goodRows) {
           const ex = existingBySize.get(r.size);
@@ -462,6 +489,24 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
             const set = {};
 
             if (newCost != null && newCost > 0) {
+              // Snapshot the last effective platform & pack markup (from the
+              // pre-change cost) so the Final Platform Unit Selling Price and Pack
+              // Unit Price stay proportional at the new cost — mirrors the
+              // /sub-products/[id]/edit behaviour. Only when the cost actually
+              // changes and no explicit override exists.
+              if (Number(newCost) !== oldCost && oldCost > 0 && pricingTenant) {
+                try {
+                  // ex still holds the OLD cost/selling → derives the pre-change markup.
+                  d.preserveMarkup(ex, pricingProduct, pricingTenant, oldCost, oldSelling);
+                  if (ex.platformMarkupOverridePct != null) {
+                    set.platformMarkupOverridePct = ex.platformMarkupOverridePct;
+                  }
+                  if (ex.packPlatformMarkupOverridePct != null) {
+                    set.packPlatformMarkupOverridePct = ex.packPlatformMarkupOverridePct;
+                  }
+                } catch { /* preservation is best-effort */ }
+              }
+
               set.costPrice = newCost;
               // Explicit selling price wins; otherwise preserve last markup.
               const selling =
