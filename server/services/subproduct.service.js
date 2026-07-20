@@ -1322,6 +1322,52 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
 };
 
 /**
+ * Preserve the LAST effective platform markup across a cost-price change.
+ *
+ * Platform (and pack) selling prices are computed live from a stored effective
+ * markup % — `platformMarkupOverridePct` / `packPlatformMarkupOverridePct` — or,
+ * when those are null, from the product/tenant default. When the supplier cost
+ * changes (e.g. an import or an admin edit on /sub-products/[id]/edit) a null
+ * override means the platform price would snap to the default markup, dropping
+ * any rounding/undercut adjustment the admin last saw. To keep the "Final
+ * Platform Unit Selling Price" and "Pack Unit Price" proportional to their prior
+ * markup, we snapshot the CURRENT effective markup (derived from the pre-change
+ * cost) into the override fields — but only when no explicit override exists yet,
+ * so we never fold rounding drift into an admin-set override.
+ *
+ * Mutates `sizeLean` in place (a plain/lean Size object) and returns it.
+ */
+const preserveEffectivePlatformMarkupOnCostChange = (sizeLean, product, tenant, fallbackCost, fallbackSelling) => {
+  if (!sizeLean || !tenant) return sizeLean;
+  const pricing = calculateSizePricing(sizeLean, product, tenant, fallbackCost, fallbackSelling);
+  if (!pricing) return sizeLean;
+
+  // Unit platform markup: (platformSelling / platformCost − 1) × 100
+  if (
+    (sizeLean.platformMarkupOverridePct == null) &&
+    pricing.platformCostPrice > 0 &&
+    pricing.platformSellingPrice > 0
+  ) {
+    sizeLean.platformMarkupOverridePct = parseFloat(
+      ((pricing.platformSellingPrice / pricing.platformCostPrice - 1) * 100).toFixed(4)
+    );
+  }
+
+  // Pack platform markup: (packUnitPrice / packPlatformCost − 1) × 100
+  if (
+    (sizeLean.packPlatformMarkupOverridePct == null) &&
+    pricing.packPlatformCostPrice > 0 &&
+    pricing.packUnitPrice > 0
+  ) {
+    sizeLean.packPlatformMarkupOverridePct = parseFloat(
+      ((pricing.packUnitPrice / pricing.packPlatformCostPrice - 1) * 100).toFixed(4)
+    );
+  }
+
+  return sizeLean;
+};
+
+/**
  * Update SubProduct
  * Handles all updatable fields including pricing, inventory, shipping, warehouse, sizes, etc.
  */
@@ -1385,8 +1431,37 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
     if (data.costPrice <= 0) {
       throw new ValidationError('Cost price must be greater than 0');
     }
+
+    // Preserve the last base platform markup across the cost change (no-variant
+    // path) so the base Final Platform Unit Selling Price stays proportional.
+    const oldSubCost = Number(subProduct.costPrice) || 0;
+    if (
+      Number(data.costPrice) !== oldSubCost &&
+      oldSubCost > 0 &&
+      subProduct.platformMarkupOverridePct == null
+    ) {
+      const t = await require('../models/Tenant')
+        .findById(subProduct.tenant)
+        .select('revenueModel markupPercentage commissionPercentage')
+        .lean()
+        .catch(() => null);
+      const p = await require('../models/Product')
+        .findById(subProduct.product)
+        .select('platformMarkup platformDiscount')
+        .lean()
+        .catch(() => null);
+      if (t) {
+        const basePricing = calculateSubProductPricing(subProduct, p, t);
+        if (basePricing?.platformCostPrice > 0 && basePricing?.platformSellingPrice > 0) {
+          subProduct.platformMarkupOverridePct = parseFloat(
+            ((basePricing.platformSellingPrice / basePricing.platformCostPrice - 1) * 100).toFixed(4)
+          );
+        }
+      }
+    }
+
     subProduct.costPrice = data.costPrice;
-    
+
     // Recalculate margin when cost price changes
     if (subProduct.baseSellingPrice > 0) {
       subProduct.marginPercentage = ((subProduct.baseSellingPrice - data.costPrice) / subProduct.baseSellingPrice * 100).toFixed(2);
@@ -1888,7 +1963,20 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
     } else {
       // Get existing sizes to preserve IDs for updates
       const existingSizes = await Size.find({ subproduct: subProductId }).lean();
-      
+
+      // Tenant + product needed to derive the pre-change effective platform/pack
+      // markup so a cost change preserves the last selling-price relationship.
+      const pricingTenant = await require('../models/Tenant')
+        .findById(subProduct.tenant)
+        .select('revenueModel markupPercentage commissionPercentage packMarkupPercentage packCommissionPercentage packRateMinUnits')
+        .lean()
+        .catch(() => null);
+      const pricingProduct = await require('../models/Product')
+        .findById(subProduct.product)
+        .select('platformMarkup platformDiscount')
+        .lean()
+        .catch(() => null);
+
       console.log('📦 Existing sizes in DB:', existingSizes.map(s => ({ _id: s._id, size: s.size })));
       console.log('📦 Sizes from client:', data.sizes.map(s => ({ _id: s._id, size: s.size, stock: s.stock })));
       
@@ -1920,6 +2008,25 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
         console.log(`📦 Matching size "${sizeData.size}":`, existingSize ? `Found (${existingSize._id})` : 'Not found - will create new');
         
         if (existingSize) {
+          // When the supplier cost changes, snapshot the last effective platform
+          // and pack markup (from the pre-change cost) so the Final Platform Unit
+          // Selling Price and Pack Unit Price stay proportional at the new cost.
+          const incomingCost = sizeData.costPrice ?? existingSize.costPrice;
+          const oldCost = Number(existingSize.costPrice) || 0;
+          if (
+            incomingCost != null &&
+            Number(incomingCost) !== oldCost &&
+            oldCost > 0
+          ) {
+            preserveEffectivePlatformMarkupOnCostChange(
+              existingSize,
+              pricingProduct,
+              pricingTenant,
+              subProduct.costPrice,
+              subProduct.baseSellingPrice
+            );
+          }
+
           // Update existing size — include `size` so editing the value
           // (e.g. 75cl → 1L) updates the same document instead of recreating it.
           Object.assign(existingSize, {
@@ -5086,4 +5193,5 @@ module.exports = {
   deleteSize,
   updateStock,
   getStockStatus,
+  preserveEffectivePlatformMarkupOnCostChange,
 };
