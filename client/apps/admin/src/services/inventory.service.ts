@@ -14,7 +14,7 @@ export interface PONumberResponse {
 
 export interface InventoryMovement {
   _id: string;
-  subProduct: string;
+  subProduct: string | { _id?: string; name?: string; sku?: string };
   tenant: string;
   product?: any;
   size?: { _id: string; displayName?: string; size?: string } | null;

@@ -345,7 +345,7 @@ function sizePayload(r, fallbackMarkupPct) {
 // used by Update-mode imports. Mirrors the reliability pattern of the create path:
 // the warehouse ledger is best-effort, but Size.stock (the shop's inStock source
 // of truth) is always set directly.
-async function applyAbsoluteStock(d, { subProductId, sizeId, qty, before, warehouseId, tenantId, user, unitCost }) {
+async function applyAbsoluteStock(d, { subProductId, productId, sizeId, qty, before, warehouseId, tenantId, user, unitCost }) {
   if (warehouseId) {
     try {
       await d.adjustStock(
@@ -361,7 +361,7 @@ async function applyAbsoluteStock(d, { subProductId, sizeId, qty, before, wareho
   ).catch(() => {});
   try {
     await d.recordReceiptMovement({
-      subProduct: subProductId, tenant: tenantId, size: sizeId,
+      subProduct: subProductId, product: productId, tenant: tenantId, size: sizeId,
       warehouse: warehouseId || undefined, quantity: qty - before,
       balanceBefore: before, balanceAfter: qty,
       unitCost, notes: 'Bulk import stock update (absolute)', reference: 'bulk-import-update',
@@ -427,6 +427,7 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
         : null;
 
       let subProductId;
+      let productId = existingProduct?._id; // links movements to the Product for a readable name
       let createdSizeDocs = []; // { _id, size, _row }
 
       // UPDATE mode never creates: an unmatched product is skipped & reported.
@@ -487,7 +488,7 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
             // Absolute stock set (stock-take) when the row supplies an opening qty.
             if (r.openingQty != null && r.openingQty >= 0) {
               await applyAbsoluteStock(d, {
-                subProductId, sizeId: ex._id, qty: r.openingQty,
+                subProductId, productId, sizeId: ex._id, qty: r.openingQty,
                 before: Number(ex.stock) || 0, warehouseId, tenantId, user,
                 unitCost: (r.sizeCostPrice ?? r.costPrice ?? ex.costPrice) ?? undefined,
               });
@@ -540,6 +541,7 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
         }
         const sub = await d.createSubProduct(data, tenantId, user);
         subProductId = sub._id;
+        productId = sub.product || productId;
         if (!existingProduct) out.createdProducts += 1;
         out.createdSubProducts += 1;
         // Map returned size docs back to their source rows by size value.
@@ -575,6 +577,7 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
         try {
           await d.recordReceiptMovement({
             subProduct: subProductId,
+            product: productId,
             tenant: tenantId,
             size: s._id,
             warehouse: warehouseId || undefined,

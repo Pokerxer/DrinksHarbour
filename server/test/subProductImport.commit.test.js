@@ -18,7 +18,7 @@ function makeDeps(overrides = {}) {
     createSubProduct: async (data) => {
       calls.createSubProduct.push(data);
       const sizes = (data.sizes || []).map((s, i) => ({ _id: `size${i}`, size: s.size }));
-      return { _id: 'sp1', sizes };
+      return { _id: 'sp1', product: data.product ?? 'np1', sizes };
     },
     addSize: async () => ({ _id: 'newsize' }),
     adjustStock: async (args) => { calls.adjustStock.push(args); return { ok: true }; },
@@ -46,6 +46,8 @@ test('commitImport creates a new product + sizes and applies opening stock', asy
   assert.equal(calls.createSubProduct[0].newProductData.type, 'gin');
   assert.equal(calls.adjustStock[0].type, 'received');
   assert.equal(calls.adjustStock[0].warehouseId, 'W1');
+  // Movement links to the Product so "Recent moves" shows the name, not "bulk-import".
+  assert.equal(calls.recordReceiptMovement[0].product, 'np1');
 });
 
 test('commitImport enriches a new product from its name (AI fills gaps, CSV wins)', async () => {

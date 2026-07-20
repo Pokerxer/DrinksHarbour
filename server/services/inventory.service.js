@@ -784,6 +784,8 @@ async function getMovements(tenantId, options = {}) {
       .skip(skip)
       .limit(limit)
       .populate('performedBy', 'firstName lastName email posName')
+      .populate('product', 'name')
+      .populate('subProduct', 'name sku')
       .populate('size', 'displayName size')
       .populate('relatedOrder', 'orderNumber receiptNumber placedAt')
       .populate('warehouse', 'name code')

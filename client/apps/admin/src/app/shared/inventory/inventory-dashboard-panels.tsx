@@ -14,7 +14,8 @@ function fmtDate(s?: string) {
 
 function productName(m: InventoryMovement): string {
   const p = m.product as { name?: string } | undefined;
-  return p?.name ?? m.reference ?? '\u2014';
+  const sp = m.subProduct as { name?: string; sku?: string } | undefined;
+  return p?.name ?? sp?.name ?? sp?.sku ?? m.reference ?? '\u2014';
 }
 
 function PanelSkeleton() {
