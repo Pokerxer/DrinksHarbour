@@ -1,6 +1,7 @@
 // @ts-nocheck
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import cn from '@core/utils/class-names';
@@ -112,6 +113,7 @@ export default function ProductGridCard({
   const stock = stockBadge(product.totalStock);
   const BeverageIcon = getBeverageIcon(product.product?.type);
   const primaryImage = resolveSubProductImage(product);
+  const [imgFailed, setImgFailed] = useState(false);
   const productId = product._id || product.id;
   const base = product.baseSellingPrice || 0;
   const bg = getBgGradient(product.product?.type);
@@ -139,11 +141,12 @@ export default function ProductGridCard({
           'aspect-[3/4]'
         )}
       >
-        {primaryImage ? (
+        {primaryImage && !imgFailed ? (
           <img
             src={primaryImage}
             alt={product.product?.name || 'Product'}
             className="h-full w-full object-contain p-4 drop-shadow-sm"
+            onError={() => setImgFailed(true)}
           />
         ) : (
           <BeverageIcon className="h-14 w-14 text-gray-300" />
@@ -274,6 +277,7 @@ export function ProductGridCardCompact({
   const symbol = propSymbol || currencySymbols[product.currency] || '₦';
   const stock = stockBadge(product.totalStock);
   const primaryImage = resolveSubProductImage(product);
+  const [imgFailed, setImgFailed] = useState(false);
   const BeverageIcon = getBeverageIcon(product.product?.type);
   const productId = product._id || product.id;
   const base = product.baseSellingPrice || 0;
@@ -304,11 +308,12 @@ export function ProductGridCardCompact({
           bg
         )}
       >
-        {primaryImage ? (
+        {primaryImage && !imgFailed ? (
           <img
             src={primaryImage}
             alt={product.product?.name || ''}
             className="h-full w-full rounded-lg object-contain p-1"
+            onError={() => setImgFailed(true)}
           />
         ) : (
           <BeverageIcon className="h-6 w-6 text-gray-300" />

@@ -21,6 +21,27 @@ import cn from '@core/utils/class-names';
 
 const columnHelper = createColumnHelper<SubProductListItem>();
 
+// Thumbnail that falls back to the package placeholder when the image URL is
+// missing or fails to load (404/invalid), instead of the browser broken glyph.
+function ProductThumb({ src, alt }: { src?: string; alt?: string }) {
+  const [failed, setFailed] = React.useState(false);
+  if (!src || failed) {
+    return (
+      <div className="flex h-12 w-9 items-center justify-center rounded-lg bg-gray-100">
+        <PiPackageBold className="h-5 w-5 text-gray-400" />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt || 'Product'}
+      className="h-12 w-9 rounded-lg border border-gray-200 bg-gray-50 object-contain p-0.5"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 const currencySymbols: Record<string, string> = {
   NGN: '₦',
   USD: '$',
@@ -260,17 +281,7 @@ export const subProductListColumns = [
           className="group flex cursor-pointer items-center gap-2 rounded-xl p-2 transition-colors hover:bg-gray-50"
         >
           <div className="relative flex-shrink-0">
-            {displayImage ? (
-              <img
-                src={displayImage}
-                alt={product?.name || 'Product'}
-                className="h-12 w-9 rounded-lg border border-gray-200 bg-gray-50 object-contain p-0.5"
-              />
-            ) : (
-              <div className="flex h-12 w-9 items-center justify-center rounded-lg bg-gray-100">
-                <PiPackageBold className="h-5 w-5 text-gray-400" />
-              </div>
-            )}
+            <ProductThumb src={displayImage} alt={product?.name} />
             {/* Stock indicator */}
             <div
               className={cn(

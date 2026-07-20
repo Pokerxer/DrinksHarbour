@@ -10,7 +10,9 @@ type MediaLike = string | { url?: string; isPrimary?: boolean; order?: number };
 
 function urlOf(item?: MediaLike): string | undefined {
   if (!item) return undefined;
-  return typeof item === 'string' ? item : item.url;
+  const raw = typeof item === 'string' ? item : item.url;
+  const trimmed = typeof raw === 'string' ? raw.trim() : undefined;
+  return trimmed ? trimmed : undefined;
 }
 
 function pickImage(images?: MediaLike[]): string | undefined {
