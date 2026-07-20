@@ -218,7 +218,8 @@ export function moveDate(m: InventoryMovement) {
 
 export function productLabel(m: InventoryMovement): string {
   const p = m.product as { name?: string } | undefined;
-  return p?.name ?? m.reference ?? '—';
+  const sp = m.subProduct as { name?: string; sku?: string } | undefined;
+  return p?.name ?? sp?.name ?? sp?.sku ?? m.reference ?? '—';
 }
 export function sizeLabel(m: InventoryMovement): string | null {
   return (
