@@ -3,7 +3,7 @@
 
 import { routes } from '@/config/routes';
 import { SubProductListItem, SizeVariant } from './table';
-import { resolveSubProductImage } from './image-utils';
+import { resolveSubProductImages } from './image-utils';
 import { createColumnHelper } from '@tanstack/react-table';
 import Link from 'next/link';
 import { ActionIcon, Checkbox, Flex, Text, Badge, Tooltip } from 'rizzui';
@@ -21,11 +21,14 @@ import cn from '@core/utils/class-names';
 
 const columnHelper = createColumnHelper<SubProductListItem>();
 
-// Thumbnail that falls back to the package placeholder when the image URL is
-// missing or fails to load (404/invalid), instead of the browser broken glyph.
-function ProductThumb({ src, alt }: { src?: string; alt?: string }) {
-  const [failed, setFailed] = React.useState(false);
-  if (!src || failed) {
+// Thumbnail that tries each image candidate in order (sub-product override →
+// product image) and advances on load error, falling back to the package
+// placeholder when none load — instead of the browser broken-image glyph.
+function ProductThumb({ sp, alt }: { sp: any; alt?: string }) {
+  const candidates = React.useMemo(() => resolveSubProductImages(sp), [sp]);
+  const [idx, setIdx] = React.useState(0);
+  const src = candidates[idx];
+  if (!src) {
     return (
       <div className="flex h-12 w-9 items-center justify-center rounded-lg bg-gray-100">
         <PiPackageBold className="h-5 w-5 text-gray-400" />
@@ -37,7 +40,7 @@ function ProductThumb({ src, alt }: { src?: string; alt?: string }) {
       src={src}
       alt={alt || 'Product'}
       className="h-12 w-9 rounded-lg border border-gray-200 bg-gray-50 object-contain p-0.5"
-      onError={() => setFailed(true)}
+      onError={() => setIdx((i) => i + 1)}
     />
   );
 }
@@ -273,7 +276,6 @@ export const subProductListColumns = [
     enableSorting: false,
     cell: ({ row }) => {
       const product = row.original.product;
-      const displayImage = resolveSubProductImage(row.original);
 
       return (
         <motion.div
@@ -281,7 +283,7 @@ export const subProductListColumns = [
           className="group flex cursor-pointer items-center gap-2 rounded-xl p-2 transition-colors hover:bg-gray-50"
         >
           <div className="relative flex-shrink-0">
-            <ProductThumb src={displayImage} alt={product?.name} />
+            <ProductThumb sp={row.original} alt={product?.name} />
             {/* Stock indicator */}
             <div
               className={cn(

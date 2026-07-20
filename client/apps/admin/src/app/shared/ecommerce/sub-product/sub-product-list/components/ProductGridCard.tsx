@@ -1,7 +1,6 @@
 // @ts-nocheck
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import cn from '@core/utils/class-names';
@@ -18,7 +17,7 @@ import {
   PiPackageBold,
 } from 'react-icons/pi';
 import type { SubProductListItem, SizeVariant } from '../table';
-import { resolveSubProductImage } from '../image-utils';
+import SubProductImage from './SubProductImage';
 
 interface ProductGridCardProps {
   product: SubProductListItem;
@@ -112,8 +111,6 @@ export default function ProductGridCard({
   const symbol = propSymbol || currencySymbols[product.currency] || '₦';
   const stock = stockBadge(product.totalStock);
   const BeverageIcon = getBeverageIcon(product.product?.type);
-  const primaryImage = resolveSubProductImage(product);
-  const [imgFailed, setImgFailed] = useState(false);
   const productId = product._id || product.id;
   const base = product.baseSellingPrice || 0;
   const bg = getBgGradient(product.product?.type);
@@ -141,16 +138,12 @@ export default function ProductGridCard({
           'aspect-[3/4]'
         )}
       >
-        {primaryImage && !imgFailed ? (
-          <img
-            src={primaryImage}
-            alt={product.product?.name || 'Product'}
-            className="h-full w-full object-contain p-4 drop-shadow-sm"
-            onError={() => setImgFailed(true)}
-          />
-        ) : (
-          <BeverageIcon className="h-14 w-14 text-gray-300" />
-        )}
+        <SubProductImage
+          sp={product}
+          alt={product.product?.name || 'Product'}
+          className="h-full w-full object-contain p-4 drop-shadow-sm"
+          fallback={<BeverageIcon className="h-14 w-14 text-gray-300" />}
+        />
 
         {/* Top badges */}
         <div className="absolute left-2 top-2 flex flex-col gap-1">
@@ -276,8 +269,6 @@ export function ProductGridCardCompact({
 }: ProductGridCardProps) {
   const symbol = propSymbol || currencySymbols[product.currency] || '₦';
   const stock = stockBadge(product.totalStock);
-  const primaryImage = resolveSubProductImage(product);
-  const [imgFailed, setImgFailed] = useState(false);
   const BeverageIcon = getBeverageIcon(product.product?.type);
   const productId = product._id || product.id;
   const base = product.baseSellingPrice || 0;
@@ -308,16 +299,12 @@ export function ProductGridCardCompact({
           bg
         )}
       >
-        {primaryImage && !imgFailed ? (
-          <img
-            src={primaryImage}
-            alt={product.product?.name || ''}
-            className="h-full w-full rounded-lg object-contain p-1"
-            onError={() => setImgFailed(true)}
-          />
-        ) : (
-          <BeverageIcon className="h-6 w-6 text-gray-300" />
-        )}
+        <SubProductImage
+          sp={product}
+          alt={product.product?.name || ''}
+          className="h-full w-full rounded-lg object-contain p-1"
+          fallback={<BeverageIcon className="h-6 w-6 text-gray-300" />}
+        />
         <span
           className={cn(
             'absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white',

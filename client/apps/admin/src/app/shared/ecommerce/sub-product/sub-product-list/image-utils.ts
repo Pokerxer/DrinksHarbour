@@ -42,3 +42,18 @@ function pickImage(images?: MediaLike[]): string | undefined {
 export function resolveSubProductImage(sp: any): string | undefined {
   return pickImage(sp?.imagesOverride) || pickImage(sp?.product?.images);
 }
+
+/**
+ * Ordered list of display-image candidates for a sub-product, most-specific
+ * first: the sub-product's own override image, then the connected product's
+ * image. Callers render the first candidate and advance to the next on load
+ * error (a broken override URL falls back to the product image before the
+ * placeholder). Duplicates and empty URLs are removed.
+ */
+export function resolveSubProductImages(sp: any): string[] {
+  const out: string[] = [];
+  for (const url of [pickImage(sp?.imagesOverride), pickImage(sp?.product?.images)]) {
+    if (url && !out.includes(url)) out.push(url);
+  }
+  return out;
+}
