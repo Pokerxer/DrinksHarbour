@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, memo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, memo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useModalQuickviewContext } from "@/context/ModalQuickviewContext";
@@ -13,6 +13,17 @@ import {
   PiImageBroken,
 } from "react-icons/pi";
 
+interface SizeDiscount {
+  type?: string;
+  value?: number;
+  percentage?: number;
+  hasDiscount?: boolean;
+  originalPrice?: number;
+  savings?: number;
+  source?: string;
+  label?: string;
+}
+
 interface ProductSize {
   _id?: string;
   size: string;
@@ -23,6 +34,7 @@ interface ProductSize {
   inStock?: boolean;
   availableAtIndex?: number;
   salePrice?: number;
+  discount?: SizeDiscount | null;
 }
 
 interface DealProduct {
@@ -47,6 +59,7 @@ interface DealProduct {
     saleType?: string;
     isOnSale?: boolean;
     saleEndDate?: string;
+    discount?: SizeDiscount | null;
     pricing?: { websitePrice?: number; originalWebsitePrice?: number };
   }>;
 }
@@ -62,23 +75,72 @@ interface FeaturedDealsProps {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Scan every tenant offer + size and pick the one carrying an active promotion.
+// The backend attaches the discount object to the specific size on sale, which
+// isn't necessarily availableAt[0].sizes[0]. Falling back to the first size (for
+// the base price) means non-promoted products still render a plain price.
+function resolveBestOffer(product: DealProduct) {
+  const offers = product.availableAt || [];
+  let bestSize: ProductSize | undefined;
+  let bestOffer: (typeof offers)[number] | undefined;
+  let bestSavings = -1;
+
+  for (const offer of offers) {
+    for (const size of offer.sizes || []) {
+      const savings = size.discount?.hasDiscount ? size.discount?.savings ?? 0 : 0;
+      if (savings > bestSavings) {
+        bestSavings = savings;
+        bestSize = size;
+        bestOffer = offer;
+      }
+    }
+  }
+
+  // No discounted size found — default to the first available size for pricing.
+  if (!bestSize) {
+    bestOffer = offers[0];
+    bestSize = bestOffer?.sizes?.[0];
+  }
+
+  return { offer: bestOffer, size: bestSize };
+}
+
 function calcPricing(product: DealProduct) {
-  const allAvailableAt = product.availableAt || [];
-  const firstAvailableAt = allAvailableAt[0];
-  const firstSize = firstAvailableAt?.sizes?.[0];
-  const sizeDiscount = firstSize?.discount || firstAvailableAt?.discount || {};
-  const sizePricing = firstSize?.pricing || {};
+  const { offer, size } = resolveBestOffer(product);
+  const sizeDiscount: SizeDiscount = size?.discount || offer?.discount || {};
+  const sizePricing = size?.pricing || {};
 
   const currentPrice = sizePricing.websitePrice || product.priceRange?.min || 0;
   const originalPrice = sizePricing.originalWebsitePrice || currentPrice;
-  const hasDiscount = sizeDiscount.hasDiscount || (originalPrice > currentPrice && currentPrice > 0);
-  const saleType = firstAvailableAt?.saleType || sizeDiscount.type || 'percentage';
+  const hasDiscount =
+    !!sizeDiscount.hasDiscount || (originalPrice > currentPrice && currentPrice > 0);
+  const saleType = offer?.saleType || sizeDiscount.type || 'percentage';
   const isFlashSale = saleType === 'flash_sale';
   const isFixed = saleType === 'fixed';
-  const fixedAmountOff = sizeDiscount.savings || (hasDiscount ? Math.round(originalPrice - currentPrice) : 0);
-  const discountPercent = sizeDiscount.percentage || (hasDiscount ? Math.round((1 - currentPrice / originalPrice) * 100) : 0);
+  const fixedAmountOff =
+    sizeDiscount.savings || (hasDiscount ? Math.round(originalPrice - currentPrice) : 0);
+  const discountPercent =
+    sizeDiscount.percentage ||
+    (hasDiscount && originalPrice > 0
+      ? Math.round((1 - currentPrice / originalPrice) * 100)
+      : 0);
 
   return { currentPrice, originalPrice, hasDiscount, isFlashSale, isFixed, fixedAmountOff, discountPercent };
+}
+
+// True when a product carries an active, date-validated promotion.
+function hasActivePromo(product: DealProduct) {
+  return calcPricing(product).hasDiscount;
+}
+
+// Promoted products lead the grid regardless of the order the API returns them,
+// so a "Hot Deals" section always shows its real deals first. Stable sort keeps
+// the API's within-group ordering intact.
+function promotedFirst(products: DealProduct[]): DealProduct[] {
+  return products
+    .map((product, index) => ({ product, index, promo: hasActivePromo(product) }))
+    .sort((a, b) => (a.promo === b.promo ? a.index - b.index : a.promo ? -1 : 1))
+    .map((entry) => entry.product);
 }
 
 // ─── Memoized card ────────────────────────────────────────────────────────────
@@ -96,6 +158,7 @@ const DealProductCard = memo(function DealProductCard({
 
   const imageUrl = product.primaryImage?.url || product.images?.[0]?.url || "";
   const pricing = calcPricing(product);
+  const { size: bestSize } = resolveBestOffer(product);
 
   return (
     <div className="relative bg-white rounded-xl overflow-hidden border border-gray-100 shadow-sm transition-shadow hover:shadow-md">
@@ -164,7 +227,7 @@ const DealProductCard = memo(function DealProductCard({
 
           {/* Stock Status */}
           <div className="mt-1.5">
-            <StockStatus stock={product.availableAt?.[0]?.sizes?.[0]?.stock} showProgress />
+            <StockStatus stock={bestSize?.stock ?? product.availableAt?.[0]?.sizes?.[0]?.stock} showProgress />
           </div>
 
           {/* Price and Add to Cart */}
@@ -237,7 +300,9 @@ const FeaturedDeals: React.FC<FeaturedDealsProps> = ({
       try {
         const API_URL =
           process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
-        const res = await fetch(`${API_URL}/api/products?limit=${limit}`);
+        const res = await fetch(
+          `${API_URL}/api/products?sortBy=discount&limit=${limit}`,
+        );
         const data = await res.json();
         let prods: DealProduct[] = [];
         if (data.success && data.data?.products) {
@@ -269,6 +334,12 @@ const FeaturedDeals: React.FC<FeaturedDealsProps> = ({
       }
     },
     [openQuickview],
+  );
+
+  // Promoted deals lead the grid, then backfill; cap at `limit`.
+  const orderedProducts = useMemo(
+    () => promotedFirst(products).slice(0, limit),
+    [products, limit],
   );
 
   if (loading) {
@@ -314,7 +385,7 @@ const FeaturedDeals: React.FC<FeaturedDealsProps> = ({
 
       {/* Products Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 px-3">
-        {products.slice(0, limit).map((product) => (
+        {orderedProducts.map((product) => (
           <DealProductCard
             key={product._id}
             product={product}

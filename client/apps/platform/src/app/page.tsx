@@ -40,12 +40,14 @@ function FlashSaleSkeleton() {
 
 // Server-side fetch of the "Hot Deals" products so the cards + /product links
 // are present in the raw HTML for crawlers. Mirrors FeaturedDeals' own client
-// fetch (`/api/products?limit=`) and response parsing.
+// fetch and response parsing. `sortBy=discount` surfaces products with an active
+// promotion first (the deal cards render their discount badge + strike price),
+// then backfills with the rest of the catalog so the grid never looks empty.
 async function fetchFeaturedDeals(limit = 12): Promise<any[]> {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
   if (!API_URL) return [];
   try {
-    const res = await fetch(`${API_URL}/api/products?limit=${limit}`, {
+    const res = await fetch(`${API_URL}/api/products?sortBy=discount&limit=${limit}`, {
       next: { revalidate: 300 },
     });
     if (!res.ok) return [];
