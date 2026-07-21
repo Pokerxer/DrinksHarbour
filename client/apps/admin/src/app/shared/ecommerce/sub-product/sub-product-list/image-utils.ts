@@ -52,7 +52,10 @@ export function resolveSubProductImage(sp: any): string | undefined {
  */
 export function resolveSubProductImages(sp: any): string[] {
   const out: string[] = [];
-  for (const url of [pickImage(sp?.imagesOverride), pickImage(sp?.product?.images)]) {
+  for (const url of [
+    pickImage(sp?.imagesOverride),
+    pickImage(sp?.product?.images),
+  ]) {
     if (url && !out.includes(url)) out.push(url);
   }
   return out;
