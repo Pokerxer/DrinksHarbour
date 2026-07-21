@@ -87,7 +87,11 @@ function RecentMovesPanel({
                       : 'text-gray-600'
                 }`}
               >
-                {m.category === 'in' ? '+' : m.category === 'out' ? '\u2212' : ''}
+                {m.category === 'in'
+                  ? '+'
+                  : m.category === 'out'
+                    ? '\u2212'
+                    : ''}
                 {Math.abs(m.quantity)}
               </span>
             </li>
