@@ -215,7 +215,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
 
   if (loading) {
     return (
-      <div className="relative w-full h-[49vh] min-h-[350px] max-h-[560px] bg-[#1A1A2E] overflow-hidden">
+      <div className="relative w-full h-[46vh] min-h-[333px] max-h-[560px] sm:h-[49vh] sm:min-h-[350px] bg-[#1A1A2E] overflow-hidden">
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="w-10 h-10 border-3 border-red-700/30 border-t-red-600 rounded-full animate-spin" />
         </div>
@@ -230,7 +230,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
 
   return (
     <div
-      className="relative w-full h-[49vh] min-h-[350px] max-h-[560px] overflow-hidden"
+      className="relative w-full h-[46vh] min-h-[333px] max-h-[560px] sm:h-[49vh] sm:min-h-[350px] overflow-hidden"
       role="region"
       aria-roledescription="carousel"
       aria-label="Promotional banners"
@@ -391,7 +391,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
               {/* Trust pills */}
               <motion.div
                 variants={textVariants}
-                className="flex flex-wrap gap-3 mt-6"
+                className="hidden sm:flex flex-wrap gap-3 mt-6"
               >
                 {[
                   { icon: <Icon.PiTruck size={14} />, label: 'Free Delivery' },
