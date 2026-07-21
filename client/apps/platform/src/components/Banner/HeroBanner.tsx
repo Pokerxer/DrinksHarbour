@@ -215,7 +215,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
 
   if (loading) {
     return (
-      <div className="relative w-full h-[70vh] min-h-[500px] max-h-[800px] bg-[#1A1A2E] overflow-hidden">
+      <div className="relative w-full h-[49vh] min-h-[350px] max-h-[560px] bg-[#1A1A2E] overflow-hidden">
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="w-10 h-10 border-3 border-red-700/30 border-t-red-600 rounded-full animate-spin" />
         </div>
@@ -230,7 +230,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
 
   return (
     <div
-      className="relative w-full h-[70vh] min-h-[500px] max-h-[800px] overflow-hidden"
+      className="relative w-full h-[49vh] min-h-[350px] max-h-[560px] overflow-hidden"
       role="region"
       aria-roledescription="carousel"
       aria-label="Promotional banners"
@@ -347,7 +347,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
               {/* Title — Kavoon display for cinematic hero presence */}
               <motion.h2
                 variants={textVariants}
-                className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-black text-white mb-4 leading-[1.05] tracking-tight drop-shadow-[0_2px_24px_rgba(0,0,0,0.55)]"
+                className="text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-black text-white mb-3 leading-[1.05] tracking-tight drop-shadow-[0_2px_24px_rgba(0,0,0,0.55)]"
                 style={{ fontFamily: "var(--font-kavoon), 'Kavoon', serif" }}
               >
                 {slide.title}
@@ -357,7 +357,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
               {slide.description && (
                 <motion.p
                   variants={textVariants}
-                  className="text-base md:text-lg text-white/80 mb-8 max-w-lg leading-relaxed"
+                  className="text-base md:text-lg text-white/80 mb-6 max-w-lg leading-relaxed"
                 >
                   {slide.description}
                 </motion.p>
@@ -391,7 +391,7 @@ const HeroBanner: React.FC<HeroBannerProps> = ({
               {/* Trust pills */}
               <motion.div
                 variants={textVariants}
-                className="flex flex-wrap gap-3 mt-10"
+                className="flex flex-wrap gap-3 mt-6"
               >
                 {[
                   { icon: <Icon.PiTruck size={14} />, label: 'Free Delivery' },
