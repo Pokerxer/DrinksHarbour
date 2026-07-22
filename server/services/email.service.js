@@ -1363,6 +1363,10 @@ const sendTenantApplicationNotificationToAdmin = async ({
 
 module.exports = {
   sendEmail,
+  // Revenue-math helpers — exported so scripts/tests can assert the money split
+  // identities (itemSubtotal == vendorShare + commission, splitCheck/totalCheck).
+  calculateVendorTotals,
+  calculateOrderBreakdown,
   sendOrderConfirmationToCustomer,
   sendNewOrderNotificationToTenant,
   sendNewOrderNotificationToAdmin,
