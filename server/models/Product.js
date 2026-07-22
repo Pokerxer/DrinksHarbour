@@ -717,6 +717,8 @@ const productSchema = new Schema(
     // SEO & DISCOVERABILITY
     // ════════════════════════════════════════════════════════════════════
     metaTitle: String,
+    // Keyword-rich H1 heading (SEO "3 Kings" — falls back to name when unset)
+    seoH1: String,
     metaDescription: String,
     metaKeywords: [String],
     slug: String,
