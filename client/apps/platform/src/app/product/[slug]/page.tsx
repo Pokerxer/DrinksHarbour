@@ -20,6 +20,7 @@ async function fetchProduct(slug: string) {
     // Server nests SEO fields under p.seo — hoist them so builders can use them directly
     if (p.seo) {
       p.metaTitle       = p.seo.metaTitle       || p.metaTitle;
+      p.seoH1           = p.seo.seoH1           || p.seoH1;
       p.metaDescription = p.seo.metaDescription || p.metaDescription;
       p.metaKeywords    = p.seo.metaKeywords?.length ? p.seo.metaKeywords : p.metaKeywords;
       p.canonicalUrl    = p.seo.canonicalUrl    || p.canonicalUrl;

@@ -177,6 +177,7 @@ export function defaultValues(
 
     // SEO
     metaTitle: product?.metaTitle ?? '',
+    seoH1: product?.seoH1 ?? product?.seo?.seoH1 ?? '',
     metaDescription: product?.metaDescription ?? '',
     metaKeywords: product?.metaKeywords ?? [],
     canonicalUrl: product?.canonicalUrl ?? '',

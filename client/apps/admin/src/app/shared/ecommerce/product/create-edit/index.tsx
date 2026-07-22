@@ -330,6 +330,7 @@ const transformFormData = (data: CreateProductInput) => {
       [],
     videos: data.videos,
     metaTitle: data.metaTitle || data.name,
+    seoH1: data.seoH1 || '',
     metaDescription: data.metaDescription || data.shortDescription,
     metaKeywords: data.metaKeywords,
     canonicalUrl: data.canonicalUrl,
@@ -510,6 +511,7 @@ export default function CreateEditProduct({
 
       // ── SEO ──────────────────────────────────────────────────────────────
       set('metaTitle', data.metaTitle);
+      set('seoH1', data.seoH1);
       set('metaDescription', data.metaDescription);
       setArr('metaKeywords', data.keywords || data.metaKeywords);
 

@@ -61,6 +61,7 @@ export default function ProductSeo({ className }: ProductSeoProps) {
   const shortDesc = watch('shortDescription') || '';
   const fullDesc = watch('description') || '';
   const metaTitle = watch('metaTitle') || '';
+  const seoH1 = watch('seoH1') || '';
   const metaDescription = watch('metaDescription') || '';
   const metaKeywords = watch('metaKeywords') || [];
   const isAlcoholic = watch('isAlcoholic');
@@ -187,6 +188,37 @@ export default function ProductSeo({ className }: ProductSeoProps) {
       }
     } catch (error: any) {
       toast.error(error.message || 'Failed to generate meta title');
+    } finally {
+      setGeneratingField(null);
+    }
+  };
+
+  // Generate SEO H1 heading (uses the combined SEO generator, which returns seoH1)
+  const handleGenerateSeoH1 = async () => {
+    if (!productName || productName.length < 3) {
+      toast.error('Please enter a product name first');
+      return;
+    }
+    if (!session?.user?.token) {
+      toast.error('Please sign in to use AI features');
+      return;
+    }
+
+    setGeneratingField('seoH1');
+    try {
+      const response = await geminiService.generateSeo(
+        productName,
+        session.user.token,
+        shortDesc,
+        type,
+        typeof brand === 'string' ? brand : ''
+      );
+      if (response.data.seoH1) {
+        setValue('seoH1', response.data.seoH1);
+        toast.success('SEO heading generated!');
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to generate SEO heading');
     } finally {
       setGeneratingField(null);
     }
@@ -500,6 +532,57 @@ export default function ProductSeo({ className }: ProductSeoProps) {
                 </div>
               </motion.div>
             )}
+          </div>
+        </motion.div>
+
+        {/* SEO H1 Heading */}
+        <motion.div variants={itemVariants} className="@2xl:col-span-2">
+          <div className="rounded-xl border border-gray-200 bg-white p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <label className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                <Hash className="h-4 w-4 text-rose-500" />
+                SEO H1 Heading
+                <Tooltip content="The visible on-page headline. Include the product name and its beverage type — falls back to the product name when left empty.">
+                  <Info className="h-4 w-4 cursor-help text-gray-400" />
+                </Tooltip>
+              </label>
+              <Button
+                type="button"
+                size="xs"
+                variant="text"
+                color="primary"
+                disabled={!productName || generatingField === 'seoH1'}
+                onClick={handleGenerateSeoH1}
+                className="gap-1"
+              >
+                {generatingField === 'seoH1' ? (
+                  <PiSpinner className="h-3 w-3 animate-spin" />
+                ) : (
+                  <PiSparkle className="h-3 w-3" />
+                )}
+                Generate
+              </Button>
+            </div>
+
+            <Input
+              placeholder={productName ? `${productName}${type ? ` ${String(type).replace(/_/g, ' ')}` : ''}` : 'On-page H1 headline'}
+              maxLength={80}
+              {...register('seoH1')}
+              className="w-full"
+            />
+
+            <div className="mt-2 flex items-center justify-between">
+              <span className={cn(
+                'text-xs font-medium',
+                seoH1.length > 70 ? 'text-red-500' : seoH1.length >= 20 ? 'text-green-600' : 'text-gray-500'
+              )}>
+                {seoH1.length}/70
+                {seoH1.length >= 20 && seoH1.length <= 70 && <span className="ml-1 text-green-500">✓</span>}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-gray-400">
+              The keyword-rich H1 shown on the product page. Include the product name + beverage type; no “Buy”/price/“Nigeria” filler.
+            </p>
           </div>
         </motion.div>
 

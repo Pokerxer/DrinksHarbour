@@ -97,6 +97,7 @@ interface SeoResponse {
   success: boolean;
   data: {
     metaTitle: string;
+    seoH1?: string;
     metaDescription: string;
     keywords: string[];
   };

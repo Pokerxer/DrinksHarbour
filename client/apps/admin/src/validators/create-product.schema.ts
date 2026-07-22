@@ -326,6 +326,7 @@ export const productFormSchema = z.object({
   // SEO
   // ═══════════════════════════════════════════════════════════════════
   metaTitle: z.string().optional(),
+  seoH1: z.string().max(80).optional(),
   metaDescription: z.string().optional(),
   metaKeywords: z.array(z.string()).default([]),
   canonicalUrl: z.string().optional(),

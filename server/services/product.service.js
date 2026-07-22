@@ -215,6 +215,7 @@ const createProduct = async (inputData, user, tenant = null) => {
 
     // SEO
     metaTitle,
+    seoH1,
     metaDescription,
     keywords = [],
 
@@ -717,6 +718,7 @@ const createProduct = async (inputData, user, tenant = null) => {
 
     // SEO
     metaTitle: metaTitle || name,
+    seoH1: seoH1 || undefined,
     metaDescription: metaDescription || shortDescription || finalDescription?.substring(0, 160),
     keywords,
 
@@ -1298,6 +1300,7 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
     images,
     videos,
     metaTitle,
+    seoH1,
     metaDescription,
     metaKeywords,
     canonicalUrl,
@@ -1746,6 +1749,7 @@ const updateProduct = async (productId, updateData, user, tenant = null) => {
   // STEP 16: Update SEO
   // ============================================================
   if (metaTitle !== undefined) product.metaTitle = metaTitle;
+  if (seoH1 !== undefined) product.seoH1 = seoH1;
   if (metaDescription !== undefined) product.metaDescription = metaDescription;
   if (metaKeywords !== undefined) product.metaKeywords = metaKeywords;
   if (canonicalUrl !== undefined) product.canonicalUrl = canonicalUrl;
@@ -10025,6 +10029,7 @@ const getProductBySlug = async (slug) => {
       // has richer generators (purchase-intent titles, 160-char descriptions)
       // that must be able to tell "admin/AI wrote this" apart from "absent".
       metaTitle: product.metaTitle || null,
+      seoH1: product.seoH1 || null,
       metaDescription: product.metaDescription || null,
       metaKeywords: product.metaKeywords || [],
       canonicalUrl: product.canonicalUrl || null,
