@@ -400,6 +400,8 @@ const brandSchema = new Schema(
     metaTitle: String,
     metaDescription: String,
     metaKeywords: [String],
+    // Keyword-rich H1 heading (SEO "3 Kings" — falls back to name when unset)
+    seoH1: String,
     canonicalUrl: String,
     
     structuredData: {

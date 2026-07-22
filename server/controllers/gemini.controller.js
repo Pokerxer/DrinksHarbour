@@ -937,7 +937,8 @@ Generate SEO content for "${name}"${brand ? ` by ${brand}` : ''}${type ? `, a ${
 ${shortDescription ? `Product description: ${shortDescription}` : ''}
 
 Requirements:
-- metaTitle: max 60 characters — include product name and type; do NOT add "Nigeria" (wastes chars)
+- metaTitle: max 45 characters — include product name and type; do NOT add "Nigeria" (wastes chars). We append " | DrinksHarbour" ourselves, so keep it under 45.
+- seoH1: max 70 characters — the on-page headline. Include the product name AND its beverage type (e.g. "Glenfiddich 40 Year Old Single Malt Scotch"). This is the visible H1, so keep it natural, no "Buy"/price/"Nigeria" filler.
 - metaDescription: max 160 characters — must end with a local hook, e.g. "Available for delivery across Nigeria on DrinksHarbour." or "Order online — delivered to Lagos, Abuja & across Nigeria."
 - metaKeywords: 10-12 relevant keywords (lowercase, no duplicates) — MUST include at least 3 Nigeria/city-specific purchase-intent terms such as:
   • "{type} Nigeria", "buy {type} Nigeria", "buy {type} Lagos", "buy {type} Abuja"
@@ -949,7 +950,8 @@ Requirements:
 ${COPY_GUARDRAILS}
 Return as JSON:
 {
-  "metaTitle": "SEO title (max 60 chars)",
+  "metaTitle": "SEO title (max 45 chars)",
+  "seoH1": "on-page headline with product name + type (max 70 chars)",
   "metaDescription": "SEO description (max 160 chars, ends with Nigeria delivery hook)",
   "metaKeywords": ["keyword1", "keyword2", ..., "buy {type} nigeria", "buy {type} lagos"]
 }`;
@@ -965,7 +967,8 @@ Return as JSON:
     // Accept either "keywords" or "metaKeywords" from the model, normalize to metaKeywords.
     data.metaKeywords = normalizeKeywords(data.metaKeywords || data.keywords, 12);
     delete data.keywords;
-    if (data.metaTitle) data.metaTitle = normalizeCopy(data.metaTitle).slice(0, 60);
+    if (data.metaTitle) data.metaTitle = normalizeCopy(data.metaTitle).slice(0, 45);
+    if (data.seoH1) data.seoH1 = normalizeCopy(data.seoH1).slice(0, 70);
     if (data.metaDescription) data.metaDescription = normalizeCopy(data.metaDescription).slice(0, 160);
 
     res.json({
@@ -979,8 +982,9 @@ Return as JSON:
       return res.json({
         success: true,
         data: {
-          metaTitle: `${name} - Premium Quality ${type || 'Beverage'}`,
-          metaDescription: `Discover ${name}${brand ? ` by ${brand}` : ''}, a premium ${type || 'beverage'} with exceptional quality. Order online — delivered to Lagos, Abuja & across Nigeria.`,
+          metaTitle: `${name}`.slice(0, 45),
+          seoH1: `${name}${type ? ` ${type}` : ''}`.slice(0, 70),
+          metaDescription: `Discover ${name}${brand ? ` by ${brand}` : ''}, a premium ${type || 'beverage'} with exceptional quality. Order online — delivered to Lagos, Abuja & across Nigeria.`.slice(0, 160),
           metaKeywords: [name.toLowerCase(), type?.toLowerCase() || 'beverage', brand?.toLowerCase() || 'premium', `buy ${(type || 'beverage').toLowerCase()} nigeria`, `${(type || 'beverage').toLowerCase()} nigeria`, 'online liquor store nigeria', 'alcohol delivery nigeria', 'drinks delivery nigeria']
         },
         note: 'Using demo data - API quota exceeded'

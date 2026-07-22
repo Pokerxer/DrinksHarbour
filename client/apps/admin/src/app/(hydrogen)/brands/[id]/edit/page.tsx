@@ -82,6 +82,7 @@ export default async function EditBrandPage({ params }: Props) {
         verified: c.verified ?? false,
         displayOrder: c.displayOrder ?? 999,
         metaTitle: c.metaTitle || '',
+        seoH1: c.seoH1 || '',
         metaDescription: c.metaDescription || '',
         metaKeywords: Array.isArray(c.metaKeywords)
           ? c.metaKeywords.join(', ')

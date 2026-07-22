@@ -89,6 +89,7 @@ export const brandFormSchema = z.object({
 
   // SEO
   metaTitle: z.string().max(100).optional(),
+  seoH1: z.string().max(80).optional(),
   metaDescription: z.string().max(320).optional(),
   metaKeywords: z.string().optional(),
   canonicalUrl: z.union([z.string().url('Must be a valid URL'), z.literal('')]).optional(),

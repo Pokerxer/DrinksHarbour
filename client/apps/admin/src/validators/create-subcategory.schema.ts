@@ -77,6 +77,7 @@ export const subCategoryFormSchema = z.object({
   notes: z.string().max(1000).optional(),
   // SEO
   metaTitle: z.string().max(100).optional(),
+  seoH1: z.string().max(80).optional(),
   metaDescription: z.string().max(320).optional(),
   metaKeywords: z.string().optional(),
   canonicalUrl: z

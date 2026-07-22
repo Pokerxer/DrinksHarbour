@@ -317,6 +317,7 @@ exports.createAdminBrand = asyncHandler(async (req, res) => {
 
   if (b.metaTitle) brandData.metaTitle = b.metaTitle;
   if (b.metaDescription) brandData.metaDescription = b.metaDescription;
+  if (b.seoH1) brandData.seoH1 = b.seoH1;
   if (b.metaKeywords) brandData.metaKeywords = String(b.metaKeywords).split(',').map((k) => k.trim()).filter(Boolean);
   if (b.canonicalUrl) brandData.canonicalUrl = b.canonicalUrl;
   if (b.notes) brandData.notes = b.notes;
@@ -403,6 +404,7 @@ exports.updateAdminBrand = asyncHandler(async (req, res) => {
 
   if (b.metaTitle !== undefined) updateData.metaTitle = b.metaTitle;
   if (b.metaDescription !== undefined) updateData.metaDescription = b.metaDescription;
+  if (b.seoH1 !== undefined) updateData.seoH1 = b.seoH1;
   if (b.metaKeywords !== undefined) updateData.metaKeywords = String(b.metaKeywords).split(',').map((k) => k.trim()).filter(Boolean);
   if (b.canonicalUrl !== undefined) updateData.canonicalUrl = b.canonicalUrl;
   if (b.notes !== undefined) updateData.notes = b.notes;
@@ -547,8 +549,9 @@ Return a JSON object with exactly these keys:
   "socialYoutube": "official YouTube channel URL or ''",
   "socialLinkedin": "official LinkedIn URL or ''",
   "socialTiktok": "official TikTok URL or ''",
-  "metaTitle": "SEO page title with brand context for the Nigeria market (max 100 chars)",
-  "metaDescription": "SEO meta description for the brand page (max 320 chars)",
+  "metaTitle": "SEO page title (max 45 chars — we append ' | DrinksHarbour', so keep it short and keyword-led)",
+  "seoH1": "on-page H1 headline for the brand page (max 60 chars, e.g. 'Buy {brand} Online in Nigeria')",
+  "metaDescription": "SEO meta description ending with a Nigeria delivery hook (max 160 chars)",
   "metaKeywords": "8-12 comma-separated search keywords relevant to this brand in Nigeria",
   "brandColorPrimary": "6-digit hex color representing the brand identity, e.g. #C0812A",
   "brandColorSecondary": "6-digit hex complementary secondary color",
@@ -605,8 +608,9 @@ Return a JSON object with exactly these keys:
     socialYoutube: aiStr(json.socialYoutube, 300),
     socialLinkedin: aiStr(json.socialLinkedin, 300),
     socialTiktok: aiStr(json.socialTiktok, 300),
-    metaTitle: aiStr(json.metaTitle, 100),
-    metaDescription: aiStr(json.metaDescription, 320),
+    metaTitle: aiStr(json.metaTitle, 45),
+    seoH1: aiStr(json.seoH1, 60),
+    metaDescription: aiStr(json.metaDescription, 160),
     metaKeywords: aiStr(json.metaKeywords, 500),
     canonicalUrl: `https://drinksharbour.com/brands/${slugifyBrand(name)}`,
     brandColorPrimary: HEX_RE.test(aiStr(json.brandColorPrimary, 7)) ? aiStr(json.brandColorPrimary, 7) : '',

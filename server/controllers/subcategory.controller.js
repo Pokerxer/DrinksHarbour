@@ -289,6 +289,7 @@ const createSubCategory = asyncHandler(async (req, res) => {
     metaTitle,
     metaDescription,
     metaKeywords,
+    seoH1,
     canonicalUrl,
     notes,
     typicalFlavors,
@@ -334,6 +335,7 @@ const createSubCategory = asyncHandler(async (req, res) => {
   if (notes) subcategoryData.notes = notes;
   if (metaTitle) subcategoryData.metaTitle = metaTitle;
   if (metaDescription) subcategoryData.metaDescription = metaDescription;
+  if (seoH1) subcategoryData.seoH1 = seoH1;
   if (metaKeywords) subcategoryData.metaKeywords = String(metaKeywords).split(',').map((k) => k.trim()).filter(Boolean);
   if (canonicalUrl) subcategoryData.canonicalUrl = canonicalUrl;
   if (typicalFlavors) subcategoryData.typicalFlavors = String(typicalFlavors).split(',').map((f) => f.trim()).filter(Boolean);
@@ -391,6 +393,7 @@ const updateSubCategory = asyncHandler(async (req, res) => {
     metaTitle,
     metaDescription,
     metaKeywords,
+    seoH1,
     canonicalUrl,
     notes,
     typicalFlavors,
@@ -417,6 +420,7 @@ const updateSubCategory = asyncHandler(async (req, res) => {
   if (notes !== undefined) updateData.notes = notes;
   if (metaTitle !== undefined) updateData.metaTitle = metaTitle;
   if (metaDescription !== undefined) updateData.metaDescription = metaDescription;
+  if (seoH1 !== undefined) updateData.seoH1 = seoH1;
   if (metaKeywords !== undefined) updateData.metaKeywords = String(metaKeywords).split(',').map((k) => k.trim()).filter(Boolean);
   if (canonicalUrl !== undefined) updateData.canonicalUrl = canonicalUrl;
   if (typicalFlavors !== undefined) updateData.typicalFlavors = String(typicalFlavors).split(',').map((f) => f.trim()).filter(Boolean);
@@ -702,8 +706,9 @@ Return a JSON object with exactly these keys:
   "seasonalSummer": false,
   "seasonalFall": false,
   "seasonalWinter": false,
-  "metaTitle": "SEO page title with brand context for the Nigeria market (max 100 chars)",
-  "metaDescription": "SEO meta description (max 320 chars)",
+  "metaTitle": "SEO page title (max 45 chars — we append ' | DrinksHarbour', so keep it short and keyword-led)",
+  "seoH1": "on-page H1 headline (max 60 chars, e.g. 'Buy {subcategory} Online in Nigeria')",
+  "metaDescription": "SEO meta description ending with a Nigeria delivery hook (max 160 chars)",
   "metaKeywords": "8-12 comma-separated search keywords relevant in Nigeria",
   "color": "6-digit hex color that fits the subcategory mood, e.g. #C0812A for whiskey, #722F37 for wine",
   "icon": "single most relevant emoji"
@@ -739,8 +744,9 @@ For the four seasonal booleans, set true only for seasons this subcategory is es
     seasonalSummer: aiBool(json.seasonalSummer),
     seasonalFall: aiBool(json.seasonalFall),
     seasonalWinter: aiBool(json.seasonalWinter),
-    metaTitle: aiStr(json.metaTitle, 100),
-    metaDescription: aiStr(json.metaDescription, 320),
+    metaTitle: aiStr(json.metaTitle, 45),
+    seoH1: aiStr(json.seoH1, 60),
+    metaDescription: aiStr(json.metaDescription, 160),
     metaKeywords: aiStr(json.metaKeywords, 500),
     canonicalUrl: (catalog.parentSlug || parentName)
       ? `https://www.drinksharbour.com/categories/${catalog.parentSlug || slugifyName(parentName)}/${slugifyName(name)}`
@@ -797,8 +803,9 @@ Return a JSON object with exactly these keys:
   "seasonalSummer": false,
   "seasonalFall": false,
   "seasonalWinter": false,
-  "metaTitle": "SEO page title with brand context for the Nigeria market (max 100 chars)",
-  "metaDescription": "SEO meta description (max 320 chars)",
+  "metaTitle": "SEO page title (max 45 chars — we append ' | DrinksHarbour', so keep it short and keyword-led)",
+  "seoH1": "on-page H1 headline (max 60 chars, e.g. 'Buy {subcategory} Online in Nigeria')",
+  "metaDescription": "SEO meta description ending with a Nigeria delivery hook (max 160 chars)",
   "metaKeywords": "8-12 comma-separated search keywords relevant in Nigeria",
   "color": "6-digit hex color that fits the subcategory mood, e.g. #C0812A for whiskey, #722F37 for wine",
   "icon": "single most relevant emoji"
@@ -838,8 +845,9 @@ For the four seasonal booleans, set true only for seasons this subcategory is es
     seasonalSummer: aiBool(json.seasonalSummer),
     seasonalFall: aiBool(json.seasonalFall),
     seasonalWinter: aiBool(json.seasonalWinter),
-    metaTitle: aiStr(json.metaTitle, 100),
-    metaDescription: aiStr(json.metaDescription, 320),
+    metaTitle: aiStr(json.metaTitle, 45),
+    seoH1: aiStr(json.seoH1, 60),
+    metaDescription: aiStr(json.metaDescription, 160),
     metaKeywords: aiStr(json.metaKeywords, 500),
     canonicalUrl: `https://www.drinksharbour.com/categories/${parentSlug}/${slugifyName(name)}`,
     color: HEX_RE.test(aiStr(json.color, 7)) ? aiStr(json.color, 7) : '#6B7280',

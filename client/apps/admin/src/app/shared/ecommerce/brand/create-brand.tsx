@@ -364,6 +364,7 @@ export default function CreateBrand({
         verified: data.verified ?? false,
         displayOrder: data.displayOrder ?? 999,
         metaTitle: data.metaTitle || '',
+        seoH1: data.seoH1 || '',
         metaDescription: data.metaDescription || '',
         metaKeywords: data.metaKeywords || '',
         canonicalUrl: data.canonicalUrl || '',
@@ -884,6 +885,12 @@ export default function CreateBrand({
                     placeholder="e.g. Glenfiddich Single Malt Whisky | DrinksHarbour"
                     {...register('metaTitle')}
                     error={errors.metaTitle?.message}
+                  />
+                  <Input
+                    label="SEO H1 Heading"
+                    placeholder="e.g. Buy Glenfiddich Online in Nigeria"
+                    {...register('seoH1')}
+                    error={errors.seoH1?.message}
                   />
                   <div>
                     <Text className="mb-1.5 block text-sm font-medium text-gray-700">

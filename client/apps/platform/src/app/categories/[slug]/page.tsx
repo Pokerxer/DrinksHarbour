@@ -130,6 +130,24 @@ function plainText(raw?: string): string {
   return toParagraphs(raw).join(' ');
 }
 
+/**
+ * Cap a page title so `${title} | DrinksHarbour` stays within Google's
+ * ~60-char SERP display, trimming to a word boundary. (SEO "3 Kings" — King 1)
+ */
+function capTitle(raw: string): string {
+  const budget = 60 - ` | ${SITE_NAME}`.length; // 60 − 15 = 45
+  if (raw.length <= budget) return raw;
+  return raw.slice(0, budget).replace(/\s+\S*$/, '').trim();
+}
+
+/** First keyword-bearing sentence for the hero lede (SEO "3 Kings" — King 3). */
+function firstSentence(raw?: string, max = 180): string {
+  const text = plainText(raw);
+  if (!text) return '';
+  const sentence = text.split(/(?<=[.!?])\s/)[0] || text;
+  return sentence.length > max ? `${sentence.slice(0, max).trim()}…` : sentence;
+}
+
 type Seg = { text: string; href?: string };
 
 // Like toParagraphs, but preserves internal <a href> links — AI-written
@@ -210,8 +228,9 @@ export async function generateMetadata({
 
   const name = category.displayName || category.name;
   const url = `${BASE_URL}/categories/${slug}`;
-  const title =
-    category.metaTitle || `${name} — Buy ${name} Drinks Online in Nigeria`;
+  const title = capTitle(
+    category.metaTitle || `${name} — Buy ${name} Drinks Online in Nigeria`,
+  );
   const description = (
     plainText(category.metaDescription) ||
     plainText(category.shortDescription) ||
@@ -419,6 +438,14 @@ export default async function CategoryPage({
   const shopHref = `/shop?category=${encodeURIComponent(category.slug)}`;
   const heroImage = category.bannerImage?.url || category.featuredImage?.url;
 
+  // King 2 (H1) — keyword-rich heading, falls back to the category name.
+  const heading = category.seoH1 || name;
+  // King 3 (first paragraph) — a keyword-bearing lede high on the page.
+  const seoLede =
+    firstSentence(category.shortDescription) ||
+    firstSentence(category.description) ||
+    `Buy ${name} online in Nigeria — fast delivery across Lagos, Abuja & nationwide on DrinksHarbour.`;
+
   // Provenance line for the label eyebrow: "SPIRITS · 124 PRODUCTS"
   const eyebrow = [
     label(category.alcoholCategory),
@@ -570,7 +597,7 @@ export default async function CategoryPage({
             <h1
               className={`${fraunces.className} cp-rise cp-rise-2 text-5xl font-semibold text-white drop-shadow-sm sm:text-6xl`}
             >
-              {name}
+              {heading}
             </h1>
 
             <div className="cp-rise cp-rise-3 mx-auto mt-5 max-w-xs">
@@ -582,6 +609,12 @@ export default async function CategoryPage({
                 className={`${fraunces.className} cp-rise cp-rise-3 mt-4 text-lg italic text-white/85 sm:text-xl`}
               >
                 {category.tagline}
+              </p>
+            )}
+
+            {seoLede && (
+              <p className="cp-rise cp-rise-3 mx-auto mt-5 max-w-2xl text-[15px] leading-7 text-white/80">
+                {seoLede}
               </p>
             )}
 

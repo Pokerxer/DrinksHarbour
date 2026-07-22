@@ -220,7 +220,13 @@ const subCategorySchema = new Schema(
     },
     
     metaKeywords: [String],
-    
+
+    // Keyword-rich H1 heading (SEO "3 Kings" — falls back to name when unset)
+    seoH1: {
+      type: String,
+      maxlength: 80,
+    },
+
     canonicalUrl: String,
 
     // ════════════════════════════════════════════════════════════

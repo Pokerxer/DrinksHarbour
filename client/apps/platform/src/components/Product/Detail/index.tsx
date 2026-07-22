@@ -46,6 +46,40 @@ function getInitials(name: string): string {
   return words.slice(0, 2).map((w) => w.charAt(0).toUpperCase()).join('');
 }
 
+/** snake_case type → readable label, e.g. "single_malt_scotch" → "Single Malt Scotch". */
+function formatType(type?: string): string {
+  if (!type) return '';
+  return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * Keyword-rich product H1 (SEO "3 Kings" — King 2). Appends the beverage type
+ * to the name when it isn't already present, so "Glenfiddich 40 Year Old"
+ * becomes "Glenfiddich 40 Year Old Single Malt Scotch".
+ */
+function buildProductHeading(p: any): string {
+  if (p?.seoH1) return p.seoH1;
+  const name = p?.name || '';
+  const typeLabel = formatType(p?.type);
+  if (!typeLabel) return name;
+  return new RegExp(`\\b${typeLabel}\\b`, 'i').test(name)
+    ? name
+    : `${name} ${typeLabel}`;
+}
+
+/**
+ * Keyword-bearing opening sentence (SEO "3 Kings" — King 3). Falls back to a
+ * purchase-intent sentence when the product has no shortDescription.
+ */
+function buildProductIntro(p: any): string {
+  if (p?.shortDescription) return p.shortDescription;
+  const name = p?.name || 'this drink';
+  const brand = p?.brand?.name ? ` by ${p.brand.name}` : '';
+  const typeLabel = formatType(p?.type);
+  const type = typeLabel ? ` ${typeLabel}` : '';
+  return `Buy ${name}${brand}${type} online in Nigeria — fast delivery across Lagos, Abuja & nationwide on DrinksHarbour.`;
+}
+
 interface ProductDetailProps {
   productData: any;
   relatedProducts?: ProductType[];
@@ -468,7 +502,7 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                     </p>
                   ))}
                 <h1 className="text-3xl md:text-4xl font-bold text-gray-900 leading-tight">
-                  {productData.name}
+                  {buildProductHeading(productData)}
                 </h1>
               </div>
 
@@ -525,12 +559,10 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
                 )}
               </div>
 
-              {/* Short Description */}
-              {productData.shortDescription && (
-                <p className="text-gray-600 leading-relaxed">
-                  {productData.shortDescription}
-                </p>
-              )}
+              {/* Short Description — keyword-bearing lede (SEO "3 Kings" — King 3) */}
+              <p className="text-gray-600 leading-relaxed">
+                {buildProductIntro(productData)}
+              </p>
 
               {/* Vendor Selection - Always show when vendors exist */}
               {vendors.length > 0 && (

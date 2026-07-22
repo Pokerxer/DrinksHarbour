@@ -70,6 +70,7 @@ export default async function EditSubCategoryPage({ params }: Props) {
         icon: c.icon || '',
         notes: c.notes || '',
         metaTitle: c.metaTitle || '',
+        seoH1: c.seoH1 || '',
         metaDescription: c.metaDescription || '',
         metaKeywords: Array.isArray(c.metaKeywords)
           ? c.metaKeywords.join(', ')

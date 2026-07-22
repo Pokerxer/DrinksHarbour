@@ -124,6 +124,24 @@ function plainText(raw?: string): string {
   return toParagraphs(raw).join(' ');
 }
 
+/**
+ * Cap a page title so `${title} | DrinksHarbour` stays within Google's
+ * ~60-char SERP display, trimming to a word boundary. (SEO "3 Kings" — King 1)
+ */
+function capTitle(raw: string): string {
+  const budget = 60 - ` | ${SITE_NAME}`.length; // 60 − 15 = 45
+  if (raw.length <= budget) return raw;
+  return raw.slice(0, budget).replace(/\s+\S*$/, '').trim();
+}
+
+/** First keyword-bearing sentence for the hero lede (SEO "3 Kings" — King 3). */
+function firstSentence(raw?: string, max = 180): string {
+  const text = plainText(raw);
+  if (!text) return '';
+  const sentence = text.split(/(?<=[.!?])\s/)[0] || text;
+  return sentence.length > max ? `${sentence.slice(0, max).trim()}…` : sentence;
+}
+
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 
 export async function generateMetadata({
@@ -143,9 +161,10 @@ export async function generateMetadata({
   }
 
   const url = `${BASE_URL}/brands/${slug}`;
-  const title =
+  const title = capTitle(
     brand.metaTitle ||
-    `${brand.name} — Buy ${brand.name} Drinks Online in Nigeria`;
+      `${brand.name} — Buy ${brand.name} Drinks Online in Nigeria`,
+  );
   const description = (
     plainText(brand.metaDescription) ||
     plainText(brand.shortDescription) ||
@@ -419,6 +438,14 @@ export default async function BrandPage({
     : toParagraphs(brand.shortDescription);
   const storyParas = toParagraphs(brand.story);
 
+  // King 2 (H1) — keyword-rich heading, falls back to the brand name.
+  const heading = brand.seoH1 || brand.name;
+  // King 3 (first paragraph) — a keyword-bearing lede high on the page.
+  const seoLede =
+    firstSentence(brand.shortDescription) ||
+    firstSentence(brand.description) ||
+    `Buy authentic ${brand.name} online in Nigeria — fast delivery across Lagos, Abuja & nationwide on DrinksHarbour.`;
+
   return (
     <div className="min-h-screen bg-gray-100">
       {jsonLd.map((ld, i) => (
@@ -531,7 +558,7 @@ export default async function BrandPage({
             <h1
               className={`${fraunces.className} bp-rise bp-rise-2 text-5xl font-semibold text-white drop-shadow-sm sm:text-6xl`}
             >
-              {brand.name}
+              {heading}
             </h1>
 
             <div className="bp-rise bp-rise-3 mx-auto mt-5 max-w-xs">
@@ -543,6 +570,12 @@ export default async function BrandPage({
                 className={`${fraunces.className} bp-rise bp-rise-3 mt-4 text-lg italic text-white/85 sm:text-xl`}
               >
                 {brand.tagline}
+              </p>
+            )}
+
+            {seoLede && (
+              <p className="bp-rise bp-rise-3 mx-auto mt-5 max-w-2xl text-[15px] leading-7 text-white/80">
+                {seoLede}
               </p>
             )}
 

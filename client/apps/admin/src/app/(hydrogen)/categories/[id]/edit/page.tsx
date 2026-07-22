@@ -66,6 +66,7 @@ export default async function EditCategoryPage({ params }: Props) {
         defaultSort: c.defaultSort || 'relevance',
         notes: c.notes || '',
         metaTitle: c.metaTitle || '',
+        seoH1: c.seoH1 || '',
         metaDescription: c.metaDescription || '',
         metaKeywords: Array.isArray(c.metaKeywords)
           ? c.metaKeywords.join(', ')

@@ -414,6 +414,7 @@ export default function CreateCategory({
         icon: data.icon || '',
         notes: data.notes || '',
         metaTitle: data.metaTitle || '',
+        seoH1: data.seoH1 || '',
         metaDescription: data.metaDescription || '',
         metaKeywords: data.metaKeywords || '',
         canonicalUrl: data.canonicalUrl || '',
@@ -537,6 +538,7 @@ export default function CreateCategory({
             'alcoholCategory',
             'description',
             'metaTitle',
+            'seoH1',
             'metaDescription',
             'metaKeywords',
             'canonicalUrl',
@@ -961,6 +963,20 @@ export default function CreateCategory({
                     placeholder="e.g. Buy Single Malt Whisky Online | DrinksHarbour"
                     {...register('metaTitle')}
                     error={errors.metaTitle?.message}
+                  />
+                  <Input
+                    label={
+                      <span className="flex w-full items-center justify-between">
+                        SEO H1 Heading
+                        <AiFieldButton
+                          loading={aiField === 'seoH1'}
+                          onClick={() => gen('seoH1')}
+                        />
+                      </span>
+                    }
+                    placeholder="e.g. Buy Whisky Online in Nigeria"
+                    {...register('seoH1')}
+                    error={errors.seoH1?.message}
                   />
                   <div>
                     <div className="mb-1.5 flex items-center justify-between">

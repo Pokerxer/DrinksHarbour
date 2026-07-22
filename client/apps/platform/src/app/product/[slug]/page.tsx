@@ -114,20 +114,29 @@ export async function generateMetadata({
 // ─── Title builder ────────────────────────────────────────────────────────────
 
 function buildTitle(p: any): string {
+  // Budget so `${title} | DrinksHarbour` stays within Google's ~60-char SERP display.
+  const budget = 60 - ` | ${SITE_NAME}`.length; // 60 − 15 = 45
+
   if (p.metaTitle) {
     // Strip any trailing "| DrinksHarbour" the admin may have saved — we append it ourselves
-    return p.metaTitle.replace(/\s*\|\s*DrinksHarbour\s*$/i, "").trim();
+    const stored = p.metaTitle.replace(/\s*\|\s*DrinksHarbour\s*$/i, "").trim();
+    return capToBudget(stored, budget);
   }
 
-  const parts: string[] = [p.name];
-
-  // e.g. "Glenfiddich 40 Year Old – Buy Scotch Whisky Online"
+  // Always keep the full product name; only add the "– Buy {Type} Online"
+  // purchase-intent suffix when it fits inside the budget.
+  const name = p.name as string;
   if (p.type) {
-    const typeLabel = formatType(p.type);
-    parts.push(`– Buy ${typeLabel} Online`);
+    const suffix = `– Buy ${formatType(p.type)} Online`;
+    if (`${name} ${suffix}`.length <= budget) return `${name} ${suffix}`;
   }
+  return capToBudget(name, budget);
+}
 
-  return parts.join(" ").slice(0, 70);
+/** Trim to a word boundary within `budget` chars. */
+function capToBudget(raw: string, budget: number): string {
+  if (raw.length <= budget) return raw;
+  return raw.slice(0, budget).replace(/\s+\S*$/, "").trim();
 }
 
 // ─── Description builder ──────────────────────────────────────────────────────
