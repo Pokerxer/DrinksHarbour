@@ -278,8 +278,10 @@ const sendEmail = async (options) => {
 //   3. White body
 //   4. Dark footer
 
+const GOLD = '#c8a24a'; // DrinksHarbour warm gold — shared accent across emails
+
 const emailShell = ({ accentColor, accentLabel, accentSubtitle, body, footerNote }) => {
-  const accent = accentColor || '#c0392b'; // default brand red
+  const accent = accentColor || '#8f1d1d'; // default brand burgundy
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -288,57 +290,63 @@ const emailShell = ({ accentColor, accentLabel, accentSubtitle, body, footerNote
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${accentLabel} - DrinksHarbour</title>
 </head>
-<body style="margin:0;padding:0;background-color:#f3f4f6;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f3f4f6;">
+<body style="margin:0;padding:0;background-color:#f1ede6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1ede6;">
     <tr>
-      <td align="center" style="padding:24px 16px;">
+      <td align="center" style="padding:32px 16px;">
 
-        <!-- Email wrapper — max 640px, rounded card -->
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.10);">
+        <!-- Preheader hint / spacing -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;border-radius:16px;overflow:hidden;box-shadow:0 10px 40px rgba(60,20,20,0.14);border:1px solid #e7e0d5;">
 
           <!-- ① White logo band -->
           <tr>
-            <td style="background-color:#ffffff;padding:24px 40px;text-align:center;border-bottom:1px solid #f0f0f0;">
+            <td style="background-color:#ffffff;padding:26px 40px 22px;text-align:center;">
               <a href="${process.env.FRONTEND_URL || 'https://drinksharbour.com'}" style="display:inline-block;text-decoration:none;">
                 <img src="${LOGO_SRC}"
                      alt="DrinksHarbour"
-                     width="220"
-                     style="display:block;width:220px;max-width:220px;height:auto;border:0;outline:none;" />
+                     width="210"
+                     style="display:block;margin:0 auto;width:210px;max-width:210px;height:auto;border:0;outline:none;" />
               </a>
             </td>
           </tr>
 
-          <!-- ② Coloured accent bar -->
+          <!-- Gold hairline -->
+          <tr><td style="height:3px;background:linear-gradient(90deg, ${GOLD} 0%, #e6cf8f 50%, ${GOLD} 100%);font-size:0;line-height:0;">&nbsp;</td></tr>
+
+          <!-- ② Coloured accent bar (gradient) -->
           <tr>
-            <td style="background:${accent};padding:20px 40px;text-align:center;">
-              <p style="font-size:20px;font-weight:800;color:#ffffff;margin:0;letter-spacing:-0.3px;">${accentLabel}</p>
-              ${accentSubtitle ? `<p style="font-size:13px;color:rgba(255,255,255,0.85);margin:6px 0 0 0;">${accentSubtitle}</p>` : ''}
+            <td style="background:linear-gradient(135deg, ${accent} 0%, ${accent}e6 60%, ${accent}c4 100%);padding:26px 40px;text-align:center;">
+              <p style="font-size:22px;font-weight:800;color:#ffffff;margin:0;letter-spacing:-0.2px;">${accentLabel}</p>
+              ${accentSubtitle ? `<p style="font-size:13px;color:rgba(255,255,255,0.9);margin:8px 0 0 0;letter-spacing:0.3px;">${accentSubtitle}</p>` : ''}
             </td>
           </tr>
 
           <!-- ③ Body -->
           <tr>
-            <td style="background-color:#ffffff;padding:36px 40px;">
+            <td style="background-color:#ffffff;padding:38px 40px;">
               ${body}
             </td>
           </tr>
 
           <!-- ④ Footer -->
           <tr>
-            <td style="background-color:#1a1a1a;padding:28px 40px;text-align:center;">
+            <td style="background-color:#171310;padding:30px 40px;text-align:center;">
               <img src="${LOGO_SRC}"
                    alt="DrinksHarbour"
-                   width="140"
-                   style="display:block;margin:0 auto 14px;width:140px;max-width:140px;height:auto;opacity:0.6;filter:grayscale(1) brightness(2);" />
-              <p style="font-size:13px;color:#9ca3af;margin:0 0 8px 0;">${footerNote || 'Thank you for shopping with DrinksHarbour!'}</p>
-              <p style="font-size:13px;color:#9ca3af;margin:0 0 16px 0;">
-                <a href="${process.env.FRONTEND_URL || 'https://drinksharbour.com'}" style="color:#9ca3af;text-decoration:underline;">www.drinksharbour.com</a>
+                   width="132"
+                   style="display:block;margin:0 auto 16px;width:132px;max-width:132px;height:auto;opacity:0.55;filter:grayscale(1) brightness(2);" />
+              <p style="font-size:13px;color:#b7ada0;margin:0 0 10px 0;line-height:1.6;">${footerNote || 'Thank you for choosing DrinksHarbour — premium drinks, delivered.'}</p>
+              <!-- Contact row -->
+              <p style="font-size:12px;color:#8a8073;margin:0 0 16px 0;">
+                <a href="${process.env.FRONTEND_URL || 'https://drinksharbour.com'}" style="color:${GOLD};text-decoration:none;font-weight:600;">drinksharbour.com</a>
+                <span style="color:#4b463f;">&nbsp;&bull;&nbsp;</span>
+                <a href="mailto:support@drinksharbour.com" style="color:#b7ada0;text-decoration:none;">support@drinksharbour.com</a>
               </p>
               <!-- Divider -->
               <table width="100%" cellpadding="0" cellspacing="0">
-                <tr><td style="border-top:1px solid #2d2d2d;padding-top:14px;">
-                  <p style="font-size:11px;color:#4b5563;margin:0;">&#169; ${new Date().getFullYear()} DrinksHarbour Ltd. All rights reserved.</p>
-                  <p style="font-size:11px;color:#4b5563;margin:4px 0 0 0;">One Harbour. Endless Possibilities.</p>
+                <tr><td style="border-top:1px solid #2b241e;padding-top:16px;">
+                  <p style="font-size:11px;color:#6b6357;margin:0;">&#169; ${new Date().getFullYear()} DrinksHarbour Ltd. All rights reserved.</p>
+                  <p style="font-size:11px;color:${GOLD};margin:6px 0 0 0;letter-spacing:1px;text-transform:uppercase;">One Harbour &bull; Endless Possibilities</p>
                 </td></tr>
               </table>
             </td>
@@ -415,18 +423,18 @@ const sendOrderConfirmationToCustomer = async (order, customer) => {
 
   const body = `
     <!-- Greeting -->
-    <div style="text-align:center;margin-bottom:28px;">
-      <p style="font-size:28px;margin:0 0 8px 0;">&#127881;</p>
-      <h2 style="font-size:22px;font-weight:800;color:#111827;margin:0 0 6px 0;">Order Confirmed!</h2>
-      <p style="font-size:15px;color:#6b7280;margin:0;">Thank you, <strong>${customer.firstName}</strong>! We're getting your order ready.</p>
+    <div style="text-align:center;margin-bottom:30px;">
+      <p style="font-size:12px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:${GOLD};margin:0 0 10px 0;">Order Confirmed</p>
+      <h2 style="font-size:26px;font-weight:800;color:#1a1310;margin:0 0 10px 0;letter-spacing:-0.4px;">Thank you, ${customer.firstName}! &#127867;</h2>
+      <p style="font-size:15px;color:#6b7280;margin:0;line-height:1.65;">We've received your order and our team is preparing it with care.<br/>We'll send another note the moment it's on its way.</p>
     </div>
 
-    <!-- Order number pill -->
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+    <!-- Order number card -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:30px;">
       <tr>
-        <td style="background:linear-gradient(135deg,#4f46e5,#7c3aed);border-radius:10px;padding:16px 24px;text-align:center;">
-          <p style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,0.8);margin:0 0 4px 0;">Order Number</p>
-          <p style="font-size:22px;font-weight:800;color:#ffffff;margin:0;letter-spacing:1px;">#${order.orderNumber}</p>
+        <td style="background:linear-gradient(135deg,#8f1d1d 0%,#b52a2a 100%);border-radius:14px;padding:22px 24px;text-align:center;border:1px solid #6f1414;">
+          <p style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:${GOLD};margin:0 0 6px 0;font-weight:700;">Order Number</p>
+          <p style="font-size:26px;font-weight:800;color:#ffffff;margin:0;letter-spacing:2px;">#${order.orderNumber}</p>
         </td>
       </tr>
     </table>
@@ -468,9 +476,9 @@ const sendOrderConfirmationToCustomer = async (order, customer) => {
               ${order.shippingFee === 0 ? 'FREE' : formatCurrency(order.shippingFee)}
             </td>
           </tr>
-          <tr style="background-color:#f9fafb;">
-            <td colspan="2" style="padding:14px 12px;text-align:right;font-size:16px;font-weight:700;color:#374151;">Grand Total</td>
-            <td style="padding:14px 12px;text-align:right;font-size:20px;font-weight:800;color:#111827;">${formatCurrency(order.totalAmount)}</td>
+          <tr style="background-color:#faf6ef;">
+            <td colspan="2" style="padding:16px 12px;text-align:right;font-size:16px;font-weight:700;color:#3a2a20;border-top:2px solid #ecdcbf;">Grand Total</td>
+            <td style="padding:16px 12px;text-align:right;font-size:21px;font-weight:800;color:#8f1d1d;border-top:2px solid #ecdcbf;">${formatCurrency(order.totalAmount)}</td>
           </tr>
         </tfoot>
       </table>
@@ -479,20 +487,20 @@ const sendOrderConfirmationToCustomer = async (order, customer) => {
     <!-- Delivery estimate -->
     <div style="margin-bottom:28px;">
       ${sectionHeading('Delivery Information')}
-      <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#ecfdf5;border-radius:10px;border-left:4px solid #059669;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#faf5ea;border-radius:12px;border:1px solid #ecdcbf;border-left:4px solid ${GOLD};">
         <tr>
-          <td style="padding:16px 20px;">
+          <td style="padding:18px 20px;">
             <table cellpadding="0" cellspacing="0" width="100%">
               <tr>
                 <td style="padding-bottom:10px;">
-                  <p style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 4px 0;">Estimated Delivery</p>
-                  <p style="font-size:18px;font-weight:800;color:#065f46;margin:0;">${deliveryText}</p>
+                  <p style="font-size:12px;color:#9c7c2a;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 4px 0;font-weight:700;">&#128666; Estimated Delivery</p>
+                  <p style="font-size:18px;font-weight:800;color:#4a3a10;margin:0;">${deliveryText}</p>
                 </td>
               </tr>
               ${si?.zoneLabel || shippingDetailText ? `
               <tr>
                 <td>
-                  <p style="font-size:12px;color:#047857;margin:0;">
+                  <p style="font-size:12px;color:#8a6d2a;margin:0;">
                     ${si?.zoneLabel || ''}${shippingDetailText ? (si?.zoneLabel ? ' &bull; ' : '') + shippingDetailText : ''}
                   </p>
                 </td>
@@ -506,8 +514,8 @@ const sendOrderConfirmationToCustomer = async (order, customer) => {
     <!-- Shipping address -->
     <div style="margin-bottom:28px;">
       ${sectionHeading('Shipping Address')}
-      <div style="background-color:#f9fafb;padding:16px 20px;border-radius:10px;border-left:4px solid #4f46e5;">
-        <p style="font-size:15px;font-weight:700;color:#111827;margin:0 0 6px 0;">${addr?.fullName || `${customer.firstName} ${customer.lastName}`}</p>
+      <div style="background-color:#faf6ef;padding:16px 20px;border-radius:12px;border:1px solid #ece3d3;border-left:4px solid #8f1d1d;">
+        <p style="font-size:15px;font-weight:700;color:#1a1310;margin:0 0 6px 0;">${addr?.fullName || `${customer.firstName} ${customer.lastName}`}</p>
         ${addr?.addressLine1 ? `<p style="font-size:14px;color:#4b5563;margin:0 0 3px 0;">${addr.addressLine1}</p>` : ''}
         ${(addr?.city || addr?.state) ? `<p style="font-size:14px;color:#4b5563;margin:0 0 3px 0;">${[addr?.city, addr?.state, addr?.postalCode].filter(Boolean).join(', ')}</p>` : ''}
         ${addr?.country ? `<p style="font-size:14px;color:#4b5563;margin:0 0 6px 0;">${addr.country}</p>` : ''}
@@ -520,7 +528,7 @@ const sendOrderConfirmationToCustomer = async (order, customer) => {
       <tr>
         <td align="center">
           <a href="${process.env.FRONTEND_URL || 'https://drinksharbour.com'}/order-confirmation?orderId=${order._id}"
-             style="display:inline-block;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#ffffff;padding:14px 32px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;">
+             style="display:inline-block;background:linear-gradient(135deg,${GOLD} 0%,#b8862f 100%);color:#1a1310;padding:15px 36px;border-radius:12px;text-decoration:none;font-weight:800;font-size:14px;letter-spacing:0.3px;box-shadow:0 4px 16px rgba(200,162,74,0.38);">
             View Order Details &rarr;
           </a>
         </td>
@@ -528,16 +536,16 @@ const sendOrderConfirmationToCustomer = async (order, customer) => {
     </table>
 
     <!-- Help -->
-    <p style="font-size:13px;color:#9ca3af;text-align:center;margin:0;">
-      Questions? Email us at
-      <a href="mailto:support@drinksharbour.com" style="color:#4f46e5;">support@drinksharbour.com</a>
+    <p style="font-size:13px;color:#9ca3af;text-align:center;margin:0;line-height:1.6;">
+      Questions about your order? We're here to help &mdash;<br/>
+      <a href="mailto:support@drinksharbour.com" style="color:#8f1d1d;font-weight:600;text-decoration:none;">support@drinksharbour.com</a>
     </p>
   `;
 
   const html = emailShell({
-    accentColor:    '#c0392b',
-    accentLabel:    `&#127881; Order Confirmed!`,
-    accentSubtitle: `Order #${order.orderNumber}`,
+    accentColor:    '#8f1d1d',
+    accentLabel:    `&#127867; Order Confirmed`,
+    accentSubtitle: `Order #${order.orderNumber} &bull; ${formatCurrency(order.totalAmount)}`,
     body,
   });
 
