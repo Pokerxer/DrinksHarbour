@@ -421,6 +421,18 @@ function stripHtml(html?: string): string {
   return String(html || '').replace(/<[^>]*>/g, ' ').replace(/\s{2,}/g, ' ').trim();
 }
 
+// Hero descriptions must stay a single tight paragraph. DB category/subcategory
+// copy is often several hundred words of rich text (e.g. Irish Whiskey), which
+// floods the hero — clamp to a sentence or two at a word boundary. A CSS
+// line-clamp on the element is the final safety net for very narrow viewports.
+function clampText(text: string, max = 240): string {
+  const clean = String(text || '').trim();
+  if (clean.length <= max) return clean;
+  const slice = clean.slice(0, max);
+  const cut = slice.lastIndexOf(' ');
+  return `${(cut > max * 0.6 ? slice.slice(0, cut) : slice).replace(/[.,;:!?\s]+$/, '')}…`;
+}
+
 // ─── Brand details (fetched when a single brand filter is active) ────────────
 
 interface BrandDetails {
@@ -591,8 +603,10 @@ export default function ShopHeroBanner({
   // ── Display copy: brand first, then DB category/subcategory, curated fallback, generic last ──
   const displayLabel       = brandLabel ?? dbSub?.name ?? curatedSub?.label ?? dbCat?.name ?? curated?.label ?? seed?.label ?? DEFAULT_CONFIG.label;
   const displaySubtitle    = countSubtitle ?? brandSubtitle ?? dbSub?.tagline ?? curatedSub?.subtitle ?? dbCat?.tagline ?? curated?.subtitle ?? DEFAULT_CONFIG.subtitle;
-  const displayDescription = stripHtml(
-    brandDescription ?? dbSub?.description ?? curatedSub?.description ?? dbCat?.description ?? curated?.description ?? seed?.description ?? DEFAULT_CONFIG.description
+  const displayDescription = clampText(
+    stripHtml(
+      brandDescription ?? dbSub?.description ?? curatedSub?.description ?? dbCat?.description ?? curated?.description ?? seed?.description ?? DEFAULT_CONFIG.description
+    )
   );
 
   const ctaText = brandLabel
@@ -731,7 +745,7 @@ export default function ShopHeroBanner({
             {/* Description */}
             <motion.p
               variants={tVar}
-              className="text-white/70 mb-8 leading-relaxed max-w-xl"
+              className="text-white/70 mb-8 leading-relaxed max-w-xl line-clamp-3 sm:line-clamp-4"
               style={{ fontSize: 'clamp(14px, 1.5vw, 18px)' }}
             >
               {displayDescription}
