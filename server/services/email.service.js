@@ -24,14 +24,25 @@ const hasGoogleOAuth = process.env.MAILING_SERVICE_CLIENT_ID &&
 const hasSimpleSMTP = process.env.MAIL_PASSWORD &&
                      !process.env.MAIL_PASSWORD?.includes('your-');
 
+// SMTP transport config — host/port/secure are env-driven so the same code
+// works with the DrinksHarbour cPanel mail server (premium356.web-hosting.com,
+// port 465 SSL) or any other provider without a code change. Defaults target
+// the cPanel account documented for orders@drinksharbour.com.
+const MAIL_HOST = process.env.MAIL_HOST || 'premium356.web-hosting.com';
+const MAIL_PORT = parseInt(process.env.MAIL_PORT, 10) || 465;
+// Port 465 uses implicit TLS (secure); 587/25 use STARTTLS (secure=false).
+const MAIL_SECURE = process.env.MAIL_SECURE != null
+  ? process.env.MAIL_SECURE === 'true'
+  : MAIL_PORT === 465;
+
 // Initialize email service
 const initializeEmailService = async () => {
   if (hasSimpleSMTP) {
     try {
       transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 587,
-        secure: false,
+        host: MAIL_HOST,
+        port: MAIL_PORT,
+        secure: MAIL_SECURE,
         auth: {
           user: process.env.SENDER_EMAIL_ADDRESS,
           pass: process.env.MAIL_PASSWORD,
@@ -39,10 +50,10 @@ const initializeEmailService = async () => {
       });
       await transporter.verify();
       emailServiceReady = true;
-      console.log('✅ Email service initialized (Simple SMTP)');
+      console.log(`✅ Email service initialized (SMTP ${MAIL_HOST}:${MAIL_PORT})`);
       return;
     } catch (error) {
-      console.log('⚠️  Simple SMTP failed:', error.message);
+      console.log('⚠️  SMTP connection failed:', error.message);
     }
   }
 
