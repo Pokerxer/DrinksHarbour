@@ -210,7 +210,15 @@ const calculateVendorTotals = (order, tenantId) => {
   const itemDiscounts     = vendorItems.reduce((s, i) => s + (i.discountAmount || 0), 0);
   const itemCount         = vendorItems.reduce((s, i) => s + i.quantity, 0);
 
-  return { items: vendorItems, customerSubtotal, vendorEarnings, platformCommission, itemDiscounts, itemCount };
+  // Effective platform take rate — derived from the actual money split, so it
+  // is correct for both markup and commission models and any per-line pack
+  // overrides (order items don't persist platformMarkupPercentage).
+  const effectiveTakeRate = customerSubtotal > 0
+    ? Math.round((platformCommission / customerSubtotal) * 1000) / 10
+    : 0;
+  const revenueModel = vendorItems[0]?.tenantRevenueModel || 'markup';
+
+  return { items: vendorItems, customerSubtotal, vendorEarnings, platformCommission, itemDiscounts, itemCount, effectiveTakeRate, revenueModel };
 };
 
 const calculateOrderBreakdown = (order) => {
@@ -231,14 +239,38 @@ const calculateOrderBreakdown = (order) => {
     itemsByTenant[tid].vendorEarnings += item.tenantRevenueShare || 0;
     itemsByTenant[tid].platformCommission += item.platformCommission || 0;
   });
+  // Effective per-vendor take rate from the real split (see calculateVendorTotals).
+  Object.values(itemsByTenant).forEach(d => {
+    d.effectiveRate = d.customerTotal > 0
+      ? Math.round((d.platformCommission / d.customerTotal) * 1000) / 10
+      : 0;
+  });
 
-  const verification = totalCustomerPaid - totalVendorEarnings - platformCommission - totalDiscounts;
+  // ── Order-level money reconciliation ─────────────────────────────────────
+  // merchandiseSubtotal (pre-coupon) − couponDiscount + shippingFee = orderTotal.
+  const merchandiseSubtotal = totalCustomerPaid;                 // sum of item subtotals
+  const couponDiscount = order.discountTotal || 0;               // basket coupon (not item-level)
+  const shippingFee = order.shippingFee || 0;
+  const orderTotal = order.totalAmount != null
+    ? order.totalAmount
+    : merchandiseSubtotal - couponDiscount + shippingFee;
+
+  // Platform's true margin on this order: markup profit, plus shipping it
+  // retains, minus the coupon it absorbs. (Vendors are paid pre-coupon.)
+  const platformNet = platformCommission + shippingFee - couponDiscount;
+
+  // Item identity check: subtotal must equal vendor payout + platform markup.
+  const splitCheck = Math.round((merchandiseSubtotal - totalVendorEarnings - platformCommission) * 100) / 100;
+  // Total reconciliation: computed order total must match the stored total.
+  const totalCheck = Math.round(((merchandiseSubtotal - couponDiscount + shippingFee) - orderTotal) * 100) / 100;
 
   return {
     totalCustomerPaid, totalVendorEarnings, totalDiscounts,
     platformCommission, itemsByTenant,
+    merchandiseSubtotal, couponDiscount, shippingFee, orderTotal, platformNet,
     itemCount: order.items?.reduce((s, i) => s + i.quantity, 0) || 0,
-    verification,
+    splitCheck, totalCheck,
+    verification: splitCheck, // back-compat
   };
 };
 
@@ -560,8 +592,8 @@ const sendOrderConfirmationToCustomer = async (order, customer) => {
 
 const sendNewOrderNotificationToTenant = async (order, tenant, customer) => {
   const totals = calculateVendorTotals(order, tenant._id);
-  const sampleItem = totals.items[0];
-  const platformMarkupPct = sampleItem?.platformMarkupPercentage || tenant.platformMarkupPercentage || 15;
+  const feeLabel = totals.revenueModel === 'commission' ? 'Commission' : 'Platform markup';
+  const feeRate = totals.effectiveTakeRate; // derived from the actual money split
 
   const itemRows = totals.items.map(item => `
     <tr>
@@ -580,41 +612,42 @@ const sendNewOrderNotificationToTenant = async (order, tenant, customer) => {
 
   const body = `
     <!-- Alert banner -->
-    <div style="background-color:#d1fae5;border-radius:10px;padding:20px;text-align:center;margin-bottom:24px;">
-      <p style="font-size:20px;font-weight:800;color:#065f46;margin:0 0 4px 0;">&#128722; New Order Received!</p>
-      <p style="font-size:14px;color:#047857;margin:0;">You have a new order to fulfill.</p>
+    <div style="background:linear-gradient(135deg,#faf5ea,#f3e8cf);border:1px solid #ecdcbf;border-radius:12px;padding:22px;text-align:center;margin-bottom:26px;">
+      <p style="font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:${GOLD};margin:0 0 8px 0;">New Order</p>
+      <p style="font-size:21px;font-weight:800;color:#8f1d1d;margin:0 0 4px 0;">&#128722; You've made a sale!</p>
+      <p style="font-size:14px;color:#8a6d2a;margin:0;">A customer just ordered from your store — time to fulfil.</p>
     </div>
 
-    <!-- Order number -->
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+    <!-- Order number card -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:26px;">
       <tr>
-        <td style="background:linear-gradient(135deg,#4f46e5,#7c3aed);border-radius:10px;padding:14px 24px;text-align:center;">
-          <p style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,0.8);margin:0 0 4px 0;">Order Number</p>
-          <p style="font-size:20px;font-weight:800;color:#ffffff;margin:0;">#${order.orderNumber}</p>
+        <td style="background:linear-gradient(135deg,#8f1d1d 0%,#b52a2a 100%);border-radius:14px;padding:18px 24px;text-align:center;border:1px solid #6f1414;">
+          <p style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:${GOLD};margin:0 0 5px 0;font-weight:700;">Order Number</p>
+          <p style="font-size:22px;font-weight:800;color:#ffffff;margin:0;letter-spacing:1.5px;">#${order.orderNumber}</p>
         </td>
       </tr>
     </table>
 
     <!-- Order info -->
-    <div style="margin-bottom:24px;">
+    <div style="margin-bottom:26px;">
       ${sectionHeading('Order Information')}
       ${infoTable([
-        { label: 'Order Date',    value: formatDate(order.placedAt) },
-        { label: 'Items to Fulfill', value: `${totals.itemCount} item(s)` },
+        { label: 'Order Date',     value: formatDate(order.placedAt) },
+        { label: 'Items to Fulfil', value: `${totals.itemCount} item(s)` },
         { label: 'Payment Method', value: capitalize(order.paymentMethod) },
-        { label: 'Revenue Model',  value: `${platformMarkupPct}% Platform Markup` },
+        { label: 'Revenue Model',  value: `${feeRate}% ${feeLabel}` },
       ])}
     </div>
 
     <!-- Items sold -->
-    <div style="margin-bottom:24px;">
+    <div style="margin-bottom:26px;">
       ${sectionHeading('Items Sold')}
       <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
         <thead>
-          <tr style="background-color:#f9fafb;">
-            <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;border-bottom:2px solid #e5e7eb;">Product</th>
-            <th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;border-bottom:2px solid #e5e7eb;">Qty</th>
-            <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;border-bottom:2px solid #e5e7eb;">Price Paid</th>
+          <tr style="background-color:#faf6ef;">
+            <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:#8a6d2a;text-transform:uppercase;border-bottom:2px solid #ecdcbf;">Product</th>
+            <th style="padding:10px 12px;text-align:center;font-size:11px;font-weight:700;color:#8a6d2a;text-transform:uppercase;border-bottom:2px solid #ecdcbf;">Qty</th>
+            <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:700;color:#8a6d2a;text-transform:uppercase;border-bottom:2px solid #ecdcbf;">Price Paid</th>
           </tr>
         </thead>
         <tbody>${itemRows}</tbody>
@@ -622,40 +655,41 @@ const sendNewOrderNotificationToTenant = async (order, tenant, customer) => {
     </div>
 
     <!-- Earnings breakdown -->
-    <div style="margin-bottom:24px;">
-      ${sectionHeading('Your Earnings Breakdown', '#065f46')}
-      <table width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#ecfdf5,#d1fae5);border-radius:10px;border-left:4px solid #059669;">
+    <div style="margin-bottom:20px;">
+      ${sectionHeading('Your Payout Breakdown')}
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#faf5ea,#f3e8cf);border-radius:12px;border:1px solid #ecdcbf;border-left:4px solid ${GOLD};">
         <tr>
-          <td style="padding:18px 20px;">
+          <td style="padding:20px;">
             <table width="100%" cellpadding="0" cellspacing="0">
               <tr>
-                <td style="padding:5px 0;font-size:14px;color:#374151;">Total Sales (Customer Paid)</td>
-                <td style="padding:5px 0;font-size:14px;color:#374151;text-align:right;">${formatCurrency(totals.customerSubtotal)}</td>
+                <td style="padding:5px 0;font-size:14px;color:#3a2a20;">Total Sales (Customer Paid)</td>
+                <td style="padding:5px 0;font-size:14px;color:#3a2a20;text-align:right;">${formatCurrency(totals.customerSubtotal)}</td>
               </tr>
               <tr>
-                <td style="padding:5px 0;font-size:13px;color:#6b7280;">Platform Markup (${platformMarkupPct}%)</td>
-                <td style="padding:5px 0;font-size:13px;color:#6b7280;text-align:right;">-${formatCurrency(totals.platformCommission)}</td>
+                <td style="padding:5px 0;font-size:13px;color:#8a6d2a;">${feeLabel} (${feeRate}%)</td>
+                <td style="padding:5px 0;font-size:13px;color:#8a6d2a;text-align:right;">-${formatCurrency(totals.platformCommission)}</td>
               </tr>
               ${totals.itemDiscounts > 0 ? `
               <tr>
-                <td style="padding:5px 0;font-size:13px;color:#6b7280;">Item Discounts</td>
-                <td style="padding:5px 0;font-size:13px;color:#6b7280;text-align:right;">-${formatCurrency(totals.itemDiscounts)}</td>
+                <td style="padding:5px 0;font-size:13px;color:#8a6d2a;">Item Discounts</td>
+                <td style="padding:5px 0;font-size:13px;color:#8a6d2a;text-align:right;">-${formatCurrency(totals.itemDiscounts)}</td>
               </tr>` : ''}
               <tr>
-                <td colspan="2" style="padding-top:10px;"><hr style="border:none;border-top:2px solid #059669;margin:0;" /></td>
+                <td colspan="2" style="padding-top:12px;"><hr style="border:none;border-top:2px solid #e6cf8f;margin:0;" /></td>
               </tr>
               <tr>
-                <td style="padding:10px 0 0 0;font-size:16px;font-weight:800;color:#065f46;">Your Earnings</td>
-                <td style="padding:10px 0 0 0;font-size:16px;font-weight:800;color:#065f46;text-align:right;">${formatCurrency(totals.vendorEarnings)}</td>
+                <td style="padding:12px 0 0 0;font-size:17px;font-weight:800;color:#8f1d1d;">Your Payout</td>
+                <td style="padding:12px 0 0 0;font-size:19px;font-weight:800;color:#8f1d1d;text-align:right;">${formatCurrency(totals.vendorEarnings)}</td>
               </tr>
             </table>
           </td>
         </tr>
       </table>
+      <p style="font-size:11px;color:#9ca3af;margin:8px 4px 0;line-height:1.5;">Your payout is calculated on the pre-discount item price. Platform-funded coupons and shipping do not reduce your earnings.</p>
     </div>
 
     <!-- Customer details -->
-    <div style="margin-bottom:24px;">
+    <div style="margin-bottom:26px;">
       ${sectionHeading('Customer & Delivery Details')}
       ${infoTable([
         { label: 'Customer Name', value: `${customer.firstName} ${customer.lastName}` },
@@ -664,11 +698,11 @@ const sendNewOrderNotificationToTenant = async (order, tenant, customer) => {
         { label: 'Payment',       value: paymentBadge(order.paymentStatus) },
       ])}
       ${addr ? `
-      <div style="margin-top:12px;background-color:#f9fafb;padding:14px 18px;border-radius:10px;border-left:4px solid #4f46e5;">
-        <p style="font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 6px 0;">Shipping Address</p>
-        <p style="font-size:14px;color:#374151;margin:0 0 2px 0;">${addr.fullName || ''}</p>
-        ${addr.addressLine1 ? `<p style="font-size:14px;color:#374151;margin:0 0 2px 0;">${addr.addressLine1}</p>` : ''}
-        ${[addr.city, addr.state, addr.postalCode].filter(Boolean).join(', ') ? `<p style="font-size:14px;color:#374151;margin:0;">${[addr.city, addr.state, addr.postalCode].filter(Boolean).join(', ')}</p>` : ''}
+      <div style="margin-top:12px;background-color:#faf6ef;padding:14px 18px;border-radius:12px;border:1px solid #ece3d3;border-left:4px solid #8f1d1d;">
+        <p style="font-size:12px;font-weight:700;color:#8a6d2a;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 6px 0;">Shipping Address</p>
+        <p style="font-size:14px;color:#1a1310;margin:0 0 2px 0;font-weight:600;">${addr.fullName || ''}</p>
+        ${addr.addressLine1 ? `<p style="font-size:14px;color:#4b5563;margin:0 0 2px 0;">${addr.addressLine1}</p>` : ''}
+        ${[addr.city, addr.state, addr.postalCode].filter(Boolean).join(', ') ? `<p style="font-size:14px;color:#4b5563;margin:0;">${[addr.city, addr.state, addr.postalCode].filter(Boolean).join(', ')}</p>` : ''}
       </div>` : ''}
     </div>
 
@@ -677,7 +711,7 @@ const sendNewOrderNotificationToTenant = async (order, tenant, customer) => {
       <tr>
         <td align="center">
           <a href="${process.env.BACKEND_URL || process.env.FRONTEND_URL || 'https://drinksharbour.com'}/dashboard/orders"
-             style="display:inline-block;background:linear-gradient(135deg,#059669,#10b981);color:#ffffff;padding:14px 32px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;">
+             style="display:inline-block;background:linear-gradient(135deg,#8f1d1d,#b52a2a);color:#ffffff;padding:15px 36px;border-radius:12px;text-decoration:none;font-weight:800;font-size:14px;letter-spacing:0.3px;box-shadow:0 4px 16px rgba(143,29,29,0.28);">
             Process Order &rarr;
           </a>
         </td>
@@ -685,21 +719,22 @@ const sendNewOrderNotificationToTenant = async (order, tenant, customer) => {
     </table>
 
     <!-- Urgency notice -->
-    <div style="background-color:#fef3c7;border-radius:8px;padding:14px 18px;border-left:4px solid #f59e0b;text-align:center;">
-      <p style="font-size:13px;font-weight:700;color:#92400e;margin:0;">&#9889; Please process this order promptly to ensure timely delivery!</p>
+    <div style="background:#faf5ea;border:1px solid #ecdcbf;border-left:4px solid ${GOLD};border-radius:10px;padding:14px 18px;text-align:center;">
+      <p style="font-size:13px;font-weight:700;color:#8a6d2a;margin:0;">&#9889; Please process this order promptly to ensure timely delivery.</p>
     </div>
   `;
 
   const html = emailShell({
-    accentColor:    '#059669',
-    accentLabel:    '&#128722; New Order Received',
-    accentSubtitle: `Order #${order.orderNumber} · Partner Dashboard`,
+    accentColor:    '#8f1d1d',
+    accentLabel:    '&#128722; New Order to Fulfil',
+    accentSubtitle: `Order #${order.orderNumber} &bull; Payout ${formatCurrency(totals.vendorEarnings)}`,
     body,
+    footerNote: 'Partner Notification — DrinksHarbour Vendor Dashboard',
   });
 
   return sendEmail({
     to: tenant.email || tenant.contactEmail,
-    subject: `New Order #${order.orderNumber} — Your Earnings: ${formatCurrency(totals.vendorEarnings)}`,
+    subject: `New Order #${order.orderNumber} — Your Payout: ${formatCurrency(totals.vendorEarnings)}`,
     html,
   });
 };
@@ -710,28 +745,28 @@ const sendNewOrderNotificationToAdmin = async (order, customer) => {
   const breakdown = calculateOrderBreakdown(order);
 
   const tenantBreakdowns = Object.entries(breakdown.itemsByTenant).map(([tenantId, data]) => {
-    const sampleItem = data.items[0];
-    const platformMarkupPct = sampleItem?.platformMarkupPercentage || 15;
+    // Effective take rate from the real split (order items don't store a markup %).
+    const takeRate = data.effectiveRate ?? 0;
     const tenantName = tenantId === 'no-tenant'
       ? 'Unassigned Items'
       : (data.items[0]?.tenant?.name || 'Unknown Vendor');
 
-    return { tenantName, platformMarkupPct, data };
+    return { tenantName, takeRate, data };
   });
 
-  const vendorRows = tenantBreakdowns.map(({ tenantName, platformMarkupPct, data }) => `
+  const vendorRows = tenantBreakdowns.map(({ tenantName, takeRate, data }) => `
     <tr>
-      <td style="padding:14px 16px;border-bottom:1px solid #e5e7eb;">
+      <td style="padding:14px 16px;border-bottom:1px solid #ece3d3;">
         <table width="100%" cellpadding="0" cellspacing="0">
           <tr>
             <td>
-              <p style="font-size:14px;font-weight:700;color:#374151;margin:0 0 2px 0;">${tenantName}</p>
-              <p style="font-size:11px;color:#9ca3af;margin:0;">${platformMarkupPct}% Platform Markup</p>
+              <p style="font-size:14px;font-weight:700;color:#1a1310;margin:0 0 2px 0;">${tenantName}</p>
+              <p style="font-size:11px;color:#9c7c2a;margin:0;">${takeRate}% platform take</p>
             </td>
             <td style="text-align:right;white-space:nowrap;">
-              <p style="font-size:12px;color:#6b7280;margin:0 0 2px 0;">Cust. Paid: <strong style="color:#111827;">${formatCurrency(data.customerTotal)}</strong></p>
-              <p style="font-size:12px;color:#6b7280;margin:0 0 2px 0;">Vendor Gets: <strong style="color:#059669;">${formatCurrency(data.vendorEarnings)}</strong></p>
-              <p style="font-size:12px;color:#6b7280;margin:0;">Platform: <strong style="color:#dc2626;">${formatCurrency(data.platformCommission)}</strong></p>
+              <p style="font-size:12px;color:#6b7280;margin:0 0 2px 0;">Cust. Paid: <strong style="color:#1a1310;">${formatCurrency(data.customerTotal)}</strong></p>
+              <p style="font-size:12px;color:#6b7280;margin:0 0 2px 0;">Vendor Gets: <strong style="color:#3a2a20;">${formatCurrency(data.vendorEarnings)}</strong></p>
+              <p style="font-size:12px;color:#6b7280;margin:0;">Platform: <strong style="color:#8f1d1d;">${formatCurrency(data.platformCommission)}</strong></p>
             </td>
           </tr>
         </table>
@@ -743,64 +778,74 @@ const sendNewOrderNotificationToAdmin = async (order, customer) => {
 
   const body = `
     <!-- Alert banner -->
-    <div style="background-color:#dbeafe;border-radius:10px;padding:20px;text-align:center;margin-bottom:24px;">
-      <p style="font-size:20px;font-weight:800;color:#1e40af;margin:0 0 4px 0;">&#128717; New Platform Order</p>
-      <p style="font-size:14px;color:#1d4ed8;margin:0;">A new order has been placed on the platform.</p>
+    <div style="background:linear-gradient(135deg,#faf5ea,#f3e8cf);border:1px solid #ecdcbf;border-radius:12px;padding:22px;text-align:center;margin-bottom:26px;">
+      <p style="font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:${GOLD};margin:0 0 8px 0;">Admin Alert</p>
+      <p style="font-size:21px;font-weight:800;color:#8f1d1d;margin:0 0 4px 0;">&#128717; New Platform Order</p>
+      <p style="font-size:14px;color:#8a6d2a;margin:0;">A new order has been placed on DrinksHarbour.</p>
     </div>
 
-    <!-- Order number -->
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+    <!-- Order number card -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:26px;">
       <tr>
-        <td style="background:linear-gradient(135deg,#4f46e5,#7c3aed);border-radius:10px;padding:14px 24px;text-align:center;">
-          <p style="font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,0.8);margin:0 0 4px 0;">Order Number</p>
-          <p style="font-size:20px;font-weight:800;color:#ffffff;margin:0;">#${order.orderNumber}</p>
+        <td style="background:linear-gradient(135deg,#8f1d1d 0%,#b52a2a 100%);border-radius:14px;padding:18px 24px;text-align:center;border:1px solid #6f1414;">
+          <p style="font-size:11px;text-transform:uppercase;letter-spacing:2px;color:${GOLD};margin:0 0 5px 0;font-weight:700;">Order Number</p>
+          <p style="font-size:22px;font-weight:800;color:#ffffff;margin:0;letter-spacing:1.5px;">#${order.orderNumber}</p>
         </td>
       </tr>
     </table>
 
     <!-- Revenue summary -->
-    <div style="margin-bottom:24px;">
+    <div style="margin-bottom:26px;">
       ${sectionHeading('Revenue Summary')}
-      <table width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#fef9c3,#fde68a);border-radius:10px;border-left:4px solid #f59e0b;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#faf5ea,#f3e8cf);border-radius:12px;border:1px solid #ecdcbf;border-left:4px solid ${GOLD};">
         <tr>
-          <td style="padding:18px 20px;">
+          <td style="padding:20px;">
             <table width="100%" cellpadding="0" cellspacing="0">
               <tr>
-                <td style="padding:6px 0;font-size:15px;font-weight:700;color:#92400e;">Total Customer Paid</td>
-                <td style="padding:6px 0;font-size:15px;font-weight:700;color:#92400e;text-align:right;">${formatCurrency(breakdown.totalCustomerPaid)}</td>
+                <td style="padding:5px 0;font-size:13px;color:#8a6d2a;">Merchandise Subtotal</td>
+                <td style="padding:5px 0;font-size:13px;color:#8a6d2a;text-align:right;">${formatCurrency(breakdown.merchandiseSubtotal)}</td>
               </tr>
+              ${breakdown.couponDiscount > 0 ? `
               <tr>
-                <td style="padding:6px 0;font-size:13px;color:#78350f;">Shipping Fee</td>
-                <td style="padding:6px 0;font-size:13px;color:#78350f;text-align:right;">${formatCurrency(order.shippingFee)}</td>
-              </tr>
-              <tr>
-                <td style="padding:6px 0;font-size:13px;color:#78350f;">Total to Vendors</td>
-                <td style="padding:6px 0;font-size:13px;color:#78350f;text-align:right;">${formatCurrency(breakdown.totalVendorEarnings)}</td>
-              </tr>
-              ${breakdown.totalDiscounts > 0 ? `
-              <tr>
-                <td style="padding:6px 0;font-size:13px;color:#78350f;">Discounts Applied</td>
-                <td style="padding:6px 0;font-size:13px;color:#78350f;text-align:right;">-${formatCurrency(breakdown.totalDiscounts)}</td>
+                <td style="padding:5px 0;font-size:13px;color:#8a6d2a;">Coupon Discount</td>
+                <td style="padding:5px 0;font-size:13px;color:#8a6d2a;text-align:right;">-${formatCurrency(breakdown.couponDiscount)}</td>
               </tr>` : ''}
               <tr>
-                <td colspan="2" style="padding:8px 0;">
-                  <hr style="border:none;border-top:2px solid #f59e0b;margin:0;" />
-                </td>
+                <td style="padding:5px 0;font-size:13px;color:#8a6d2a;">Shipping Fee</td>
+                <td style="padding:5px 0;font-size:13px;color:#8a6d2a;text-align:right;">${breakdown.shippingFee === 0 ? 'FREE' : '+' + formatCurrency(breakdown.shippingFee)}</td>
               </tr>
               <tr>
-                <td style="padding:8px 0 0 0;font-size:17px;font-weight:800;color:#059669;">Platform Revenue</td>
-                <td style="padding:8px 0 0 0;font-size:17px;font-weight:800;color:#059669;text-align:right;">${formatCurrency(breakdown.platformCommission)}</td>
+                <td style="padding:8px 0 5px;font-size:15px;font-weight:800;color:#1a1310;border-top:1px solid #e6cf8f;">Order Total (Customer Paid)</td>
+                <td style="padding:8px 0 5px;font-size:15px;font-weight:800;color:#1a1310;text-align:right;border-top:1px solid #e6cf8f;">${formatCurrency(breakdown.orderTotal)}</td>
+              </tr>
+              <tr>
+                <td style="padding:5px 0;font-size:13px;color:#8a6d2a;">Paid to Vendors</td>
+                <td style="padding:5px 0;font-size:13px;color:#8a6d2a;text-align:right;">-${formatCurrency(breakdown.totalVendorEarnings)}</td>
+              </tr>
+              <tr>
+                <td style="padding:5px 0;font-size:13px;color:#8a6d2a;">Platform Markup Profit</td>
+                <td style="padding:5px 0;font-size:13px;color:#8a6d2a;text-align:right;">${formatCurrency(breakdown.platformCommission)}</td>
+              </tr>
+              <tr>
+                <td colspan="2" style="padding:10px 0 0;"><hr style="border:none;border-top:2px solid #e6cf8f;margin:0;" /></td>
+              </tr>
+              <tr>
+                <td style="padding:10px 0 0 0;font-size:17px;font-weight:800;color:#8f1d1d;">Platform Net Margin</td>
+                <td style="padding:10px 0 0 0;font-size:19px;font-weight:800;color:#8f1d1d;text-align:right;">${formatCurrency(breakdown.platformNet)}</td>
+              </tr>
+              <tr>
+                <td colspan="2" style="padding:4px 0 0;font-size:10px;color:#b09a6a;">Markup profit + shipping retained − coupon absorbed</td>
               </tr>
             </table>
           </td>
         </tr>
       </table>
-      ${breakdown.verification !== 0 ? `
-      <div style="margin-top:10px;padding:10px 14px;background-color:#fee2e2;border-radius:6px;border-left:4px solid #dc2626;">
-        <p style="font-size:12px;font-weight:700;color:#991b1b;margin:0;">&#9888; Calculation mismatch: ${breakdown.verification.toFixed(2)} (should be 0)</p>
+      ${breakdown.splitCheck !== 0 || breakdown.totalCheck !== 0 ? `
+      <div style="margin-top:10px;padding:10px 14px;background-color:#fbeaea;border-radius:8px;border-left:4px solid #8f1d1d;">
+        <p style="font-size:12px;font-weight:700;color:#8f1d1d;margin:0;">&#9888; Reconciliation flag — split: ${breakdown.splitCheck.toFixed(2)}, total: ${breakdown.totalCheck.toFixed(2)} (both should be 0)</p>
       </div>` : `
-      <div style="margin-top:10px;padding:10px 14px;background-color:#d1fae5;border-radius:6px;border-left:4px solid #059669;">
-        <p style="font-size:12px;font-weight:700;color:#065f46;margin:0;">&#10003; Revenue calculations verified</p>
+      <div style="margin-top:10px;padding:10px 14px;background-color:#faf5ea;border-radius:8px;border-left:4px solid ${GOLD};">
+        <p style="font-size:12px;font-weight:700;color:#8a6d2a;margin:0;">&#10003; Item split &amp; order total reconciled</p>
       </div>`}
     </div>
 
@@ -851,7 +896,7 @@ const sendNewOrderNotificationToAdmin = async (order, customer) => {
       <tr>
         <td align="center">
           <a href="${process.env.BACKEND_URL || process.env.FRONTEND_URL || 'https://drinksharbour.com'}/admin/orders/${order._id}"
-             style="display:inline-block;background:linear-gradient(135deg,#1e3a8a,#3b82f6);color:#ffffff;padding:14px 32px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;">
+             style="display:inline-block;background:linear-gradient(135deg,#8f1d1d,#b52a2a);color:#ffffff;padding:15px 36px;border-radius:12px;text-decoration:none;font-weight:800;font-size:14px;letter-spacing:0.3px;box-shadow:0 4px 16px rgba(143,29,29,0.28);">
             View Full Order Details &rarr;
           </a>
         </td>
@@ -860,9 +905,9 @@ const sendNewOrderNotificationToAdmin = async (order, customer) => {
   `;
 
   const html = emailShell({
-    accentColor:    '#1e3a8a',
+    accentColor:    '#8f1d1d',
     accentLabel:    '&#128276; New Platform Order',
-    accentSubtitle: `Order #${order.orderNumber} · Admin Dashboard`,
+    accentSubtitle: `Order #${order.orderNumber} &bull; ${formatCurrency(breakdown.orderTotal)} &bull; Admin`,
     body,
     footerNote: 'Admin Notification — DrinksHarbour Platform',
   });
