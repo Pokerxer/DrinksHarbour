@@ -9,6 +9,7 @@ import { Header } from "@/components/Header";
 import Footer from "@/components/Footer/Footer";
 import AnalyticsTracker from "@/components/Analytics/AnalyticsTracker";
 import GoogleAnalytics from "@/components/Analytics/GoogleAnalytics";
+import GoogleAdSense from "@/components/Analytics/GoogleAdSense";
 import { TenantProvider } from "@/context/TenantContext";
 import { resolveTenant } from "@/lib/tenant";
 
@@ -39,6 +40,10 @@ const elmsSans = Elms_Sans({
 const kavoon = Kavoon({ subsets: ["latin"], weight: ["400"], variable: "--font-kavoon", display: "swap" });
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
+
+// AdSense publisher id (ca-pub-XXXX). When set, we emit the
+// <meta name="google-adsense-account"> verification tag Google recommends.
+const ADSENSE_CLIENT_ID = process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID || "";
 
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),
@@ -121,6 +126,7 @@ export const metadata: Metadata = {
   manifest: "/site.webmanifest",
   other: {
     "p:domain_verify": "3d1678895d2b97b7042bdd2fc97753a6",
+    ...(ADSENSE_CLIENT_ID ? { "google-adsense-account": ADSENSE_CLIENT_ID } : {}),
     // Legacy geo meta — ignored by Google but still read by Bing and some
     // crawlers. FCT = ISO 3166-2:NG code NG-FC; coords are the Maitama store.
     "geo.region": "NG-FC",
@@ -253,6 +259,7 @@ export default async function RootLayout({
               })}
             </script>
             <GoogleAnalytics />
+            <GoogleAdSense />
             <AnalyticsTracker />
             <ClientOverlays />
             <Header variant="default" showAnnouncement={false} />
