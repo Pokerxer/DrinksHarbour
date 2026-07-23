@@ -1,11 +1,20 @@
 import Script from 'next/script';
 
 /**
- * Google AdSense publisher ID, e.g. `ca-pub-1234567890123456`.
+ * Google AdSense client ID, e.g. `ca-pub-1234567890123456`.
  * Set NEXT_PUBLIC_ADSENSE_CLIENT_ID to activate; the component is inert
  * (renders nothing) until it is present, so nothing ships to prod by accident.
+ *
+ * Tolerant of either form of the env value: the bare publisher id
+ * (`pub-1234…`) or the full client id (`ca-pub-1234…`). Both normalize to the
+ * `ca-pub-` form the loader script, <ins> tag and verification meta require.
  */
-export const ADSENSE_CLIENT_ID = process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID || '';
+const RAW_ADSENSE_ID = process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID || '';
+export const ADSENSE_CLIENT_ID = RAW_ADSENSE_ID
+  ? RAW_ADSENSE_ID.startsWith('ca-')
+    ? RAW_ADSENSE_ID
+    : `ca-${RAW_ADSENSE_ID}`
+  : '';
 
 /**
  * Loads the AdSense loader script (adsbygoogle.js) once for the whole app.

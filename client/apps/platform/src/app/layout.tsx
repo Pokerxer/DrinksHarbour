@@ -9,7 +9,7 @@ import { Header } from "@/components/Header";
 import Footer from "@/components/Footer/Footer";
 import AnalyticsTracker from "@/components/Analytics/AnalyticsTracker";
 import GoogleAnalytics from "@/components/Analytics/GoogleAnalytics";
-import GoogleAdSense from "@/components/Analytics/GoogleAdSense";
+import GoogleAdSense, { ADSENSE_CLIENT_ID } from "@/components/Analytics/GoogleAdSense";
 import { TenantProvider } from "@/context/TenantContext";
 import { resolveTenant } from "@/lib/tenant";
 
@@ -40,10 +40,6 @@ const elmsSans = Elms_Sans({
 const kavoon = Kavoon({ subsets: ["latin"], weight: ["400"], variable: "--font-kavoon", display: "swap" });
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
-
-// AdSense publisher id (ca-pub-XXXX). When set, we emit the
-// <meta name="google-adsense-account"> verification tag Google recommends.
-const ADSENSE_CLIENT_ID = process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID || "";
 
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),
