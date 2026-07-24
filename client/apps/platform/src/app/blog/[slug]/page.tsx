@@ -15,8 +15,14 @@ import BlogImage from '../BlogImage';
 import ShareButtons, { ShareRail } from './ShareButtons';
 import TableOfContents from './TableOfContents';
 import PlacementBanner from '@/components/Banner/PlacementBanner';
+import AdSlot from '@/components/Ads/AdSlot';
 
 export const revalidate = 300;
+
+// In-article AdSense unit id (data-ad-slot). Set NEXT_PUBLIC_ADSENSE_SLOT_ARTICLE
+// to the in-article unit created in the AdSense dashboard; the slot stays inert
+// until it (and the publisher id) are configured.
+const ARTICLE_AD_SLOT = process.env.NEXT_PUBLIC_ADSENSE_SLOT_ARTICLE || '';
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -187,7 +193,25 @@ export default async function BlogPostPage({
 
             {/* Article */}
             <article className="min-w-0 flex-1 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm space-y-5 sm:p-8">
-              {post.content.map((block, i) => renderBlock(block, i))}
+              {post.content.map((block, i) => {
+                const rendered = renderBlock(block, i);
+                // Inject one in-article ad after the 3rd block in longer posts,
+                // so it sits within the content rather than before/after it.
+                if (i === 2 && post.content.length > 6) {
+                  return (
+                    <React.Fragment key={`block-ad-${i}`}>
+                      {rendered}
+                      <AdSlot
+                        slot={ARTICLE_AD_SLOT}
+                        format="fluid"
+                        className="block"
+                        style={{ display: 'block', textAlign: 'center' }}
+                      />
+                    </React.Fragment>
+                  );
+                }
+                return rendered;
+              })}
             </article>
 
             {/* Desktop TOC */}

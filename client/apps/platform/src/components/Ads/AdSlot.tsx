@@ -41,16 +41,17 @@ export default function AdSlot({
   const pushed = useRef(false);
 
   useEffect(() => {
-    if (!CLIENT_ID || pushed.current) return;
+    if (!CLIENT_ID || !slot || pushed.current) return;
     try {
       (window.adsbygoogle = window.adsbygoogle || []).push({});
       pushed.current = true;
     } catch {
       // AdSense not ready / blocked — fail silently, nothing to recover.
     }
-  }, []);
+  }, [slot]);
 
-  if (!CLIENT_ID) return null;
+  // Inert until both the publisher id and a real ad-unit slot are configured.
+  if (!CLIENT_ID || !slot) return null;
 
   return (
     <ins
