@@ -171,6 +171,26 @@ test('calculateSizePricing: pack-eligible size publishes packUnitPrice/packThres
   assert.ok(pricing.packSavingsPct >= 1);
 });
 
+test('calculateSizePricing: pack fields are null while the product is on sale (no stacking)', () => {
+  const now = new Date();
+  const product = {
+    platformMarkup: 15,
+    // Active platform discount (a "sale") on an otherwise pack-eligible product
+    platformDiscount: {
+      value: 20,
+      type: 'percentage',
+      start: new Date(now.getTime() - 60_000),
+      end: new Date(now.getTime() + 60_000),
+    },
+  };
+  const size = { costPrice: 10000, sellingPrice: 0, unitsPerPack: 6 };
+  const pricing = calculateSizePricing(size, product, packTenant, 0, 0);
+  // Sale takes precedence — no pack rate is published, so it can't stack with the sale
+  assert.strictEqual(pricing.packUnitPrice, null);
+  assert.strictEqual(pricing.packThreshold, null);
+  assert.strictEqual(pricing.packSavingsPct, null);
+});
+
 test('calculateSizePricing: pack fields are null when the size is not eligible', () => {
   const product = { platformMarkup: 15 };
   const pricing = calculateSizePricing({ costPrice: 10000, sellingPrice: 0, unitsPerPack: 1 }, product, packTenant, 0, 0);

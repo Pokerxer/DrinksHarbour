@@ -208,9 +208,15 @@ const ProductDetail: React.FC<ProductDetailProps> = ({ productData, relatedProdu
   const displayCurrencySymbol = selectedSizeData?.currencySymbol || productData?.priceRange?.currencySymbol || '₦';
 
   // ── Pack pricing (quantity-triggered) ──────────────────────────────────────
+  // When the selected size is already on sale, do NOT also offer pack pricing.
+  // Stacking a sale discount and a pack discount over-discounts the item and is
+  // confusing to shoppers — the sale takes precedence. (Mirrors the size-card
+  // badge, which is hidden when the size has a discount.)
+  const sizeOnSale = showDetailDiscount;
   const hasPackPricing = !!(
     selectedSizeData?.packUnitPrice &&
-    selectedSizeData?.packThreshold
+    selectedSizeData?.packThreshold &&
+    !sizeOnSale
   );
   const packRateActive = hasPackPricing && localQuantity >= (selectedSizeData!.packThreshold as number);
   const effectiveUnitPrice = packRateActive

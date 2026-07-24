@@ -328,7 +328,12 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
   let packUnitPrice = null;
   let packThreshold = null;
   let packSavingsPct = null;
-  if (unitsPerPack >= minUnits && thresholdReachable && platformSellingPrice > 0) {
+  // Do NOT publish a pack rate while the product is on sale. Stacking a sale
+  // discount and a pack discount over-discounts the item; the sale takes
+  // precedence. packUnitPrice stays null so both the product page and the
+  // server-authoritative checkout suppress pack pricing together.
+  const saleActive = isDiscountActive(productDiscount);
+  if (unitsPerPack >= minUnits && thresholdReachable && platformSellingPrice > 0 && !saleActive) {
     packRatesUsed = resolveRevenueRates(tenant, unitsPerPack);
     packPlatformCostPrice = calcPlatformCostPrice(costPrice, tenantSellingPrice, revenueModel, packRatesUsed.markupPct, packRatesUsed.commissionPct);
     const packSelling = calcPlatformSellingPrice(packPlatformCostPrice, platformMarkupPct, productDiscount, {
