@@ -81,7 +81,7 @@ export default function AiBar({
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && generate()}
-            className="min-w-64 flex-1"
+            className="w-full sm:min-w-64 sm:flex-1"
           />
           <Select
             label="Category (optional)"
@@ -90,12 +90,12 @@ export default function AiBar({
             onChange={(v: any) => setCategory(v?.value ?? v ?? '')}
             getOptionValue={(o) => o.value}
             displayValue={(v: any) => (v ? v : 'Let AI choose')}
-            className="w-52"
+            className="w-full sm:w-52"
           />
           <Button
             onClick={generate}
             isLoading={busy}
-            className="bg-violet-600 hover:bg-violet-700"
+            className="w-full bg-violet-600 hover:bg-violet-700 sm:w-auto"
           >
             <PiSparkleBold className="me-1.5 h-4 w-4" /> Generate full post
           </Button>

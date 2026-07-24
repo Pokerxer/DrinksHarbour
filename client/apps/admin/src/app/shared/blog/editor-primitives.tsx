@@ -78,7 +78,7 @@ export function SectionCard({
         className,
       )}
     >
-      <header className="flex items-start gap-3 border-b border-gray-100 px-5 py-3.5">
+      <header className="flex items-start gap-3 border-b border-gray-100 px-4 py-3 sm:px-5 sm:py-3.5">
         {Icon ? (
           <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-gray-50 text-gray-500 ring-1 ring-gray-100">
             <Icon className="h-4 w-4" />
@@ -94,7 +94,7 @@ export function SectionCard({
         </div>
         {right ? <div className="ms-auto flex-shrink-0">{right}</div> : null}
       </header>
-      <div className={cn('p-5', bodyClassName)}>{children}</div>
+      <div className={cn('p-4 sm:p-5', bodyClassName)}>{children}</div>
     </section>
   );
 }

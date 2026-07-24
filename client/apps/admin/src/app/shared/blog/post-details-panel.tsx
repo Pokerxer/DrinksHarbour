@@ -268,7 +268,7 @@ export default function PostDetailsPanel({
         </div>
 
         {/* ─── Featured ───────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50/60 px-4 py-3">
+        <div className="flex flex-col gap-2 rounded-xl border border-gray-100 bg-gray-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <div className="flex items-center gap-2">
             <Switch
               label="Featured post"
@@ -281,7 +281,7 @@ export default function PostDetailsPanel({
               <PiStarBold className="h-4 w-4 text-gray-300" />
             )}
           </div>
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-gray-400 sm:text-right">
             Featured posts appear prominently on the blog homepage.
           </p>
         </div>

@@ -266,7 +266,7 @@ function SortableBlock({
             displayValue={(v: any) =>
               BLOCK_OPTIONS.find((o) => o.value === v)?.label ?? v
             }
-            className="w-36"
+            className="w-28 sm:w-36"
             size="sm"
           />
           <span className="ms-1 hidden text-[11px] font-medium text-gray-300 sm:inline">

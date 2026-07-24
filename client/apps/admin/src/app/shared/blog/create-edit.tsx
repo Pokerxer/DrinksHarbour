@@ -383,8 +383,8 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
       </div>
 
       {/* Sticky action bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-gray-200 bg-white/95 px-6 py-3 shadow-[0_-4px_16px_rgba(16,24,40,0.06)] backdrop-blur-md">
-        <div className="mx-auto flex max-w-5xl items-center gap-3">
+      <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-gray-200 bg-white/95 px-4 py-3 shadow-[0_-4px_16px_rgba(16,24,40,0.06)] backdrop-blur-md sm:px-6">
+        <div className="mx-auto flex max-w-5xl items-center gap-2 sm:gap-3">
           <StatusPill status={currentStatus} />
           <div className="hidden h-5 w-px bg-gray-200 sm:block" />
           <p className="hidden min-w-0 truncate text-sm text-gray-500 sm:block">
@@ -402,19 +402,21 @@ export default function CreateEditBlogPost({ postId }: { postId?: string }) {
               saved
             </span>
           )}
-          <div className="ms-auto flex items-center gap-2.5">
+          <div className="ms-auto flex items-center gap-2 sm:gap-2.5">
             <Button
               variant="outline"
               isLoading={saving}
               onClick={() => save('draft')}
-              className="border-gray-200"
+              className="border-gray-200 px-3 sm:px-4"
             >
-              <PiFloppyDiskBold className="me-1.5 h-4 w-4" /> Save Draft
+              <PiFloppyDiskBold className="h-4 w-4 sm:me-1.5" />
+              <span className="hidden sm:inline">Save Draft</span>
+              <span className="ms-1.5 sm:hidden">Save</span>
             </Button>
             <Button
               isLoading={saving}
               onClick={() => save('published')}
-              className="bg-gray-900 hover:bg-gray-800"
+              className="bg-gray-900 px-3 hover:bg-gray-800 sm:px-4"
             >
               <PiRocketLaunchBold className="me-1.5 h-4 w-4" /> Publish
             </Button>

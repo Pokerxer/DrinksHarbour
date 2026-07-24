@@ -182,7 +182,7 @@ export default function BlogPostsTable() {
             CATEGORY_OPTIONS.find((o) => o.value === v)?.label ?? 'Category'
           }
           placeholder="Category"
-          className="w-48"
+          className="w-full sm:w-48"
         />
         <Select
           options={STATUS_OPTIONS}
@@ -193,7 +193,7 @@ export default function BlogPostsTable() {
             STATUS_OPTIONS.find((o) => o.value === v)?.label ?? 'Status'
           }
           placeholder="Status"
-          className="w-40"
+          className="w-full sm:w-40"
         />
         <Text className="ms-auto whitespace-nowrap text-sm text-gray-400">
           {visible.length} / {posts.length} posts
@@ -224,8 +224,9 @@ export default function BlogPostsTable() {
           {visible.map((post: any) => (
             <div
               key={post._id}
-              className="flex gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+              className="flex flex-col gap-3 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm transition-shadow hover:shadow-md sm:flex-row sm:gap-4 sm:p-4"
             >
+              <div className="flex min-w-0 gap-3 sm:contents sm:gap-4">
               {/* Thumbnail */}
               <div className="relative h-20 w-28 flex-shrink-0 overflow-hidden rounded-xl bg-gray-100">
                 {post.image ? (
@@ -311,9 +312,10 @@ export default function BlogPostsTable() {
                   )}
                 </div>
               </div>
+              </div>
 
               {/* Actions */}
-              <div className="flex flex-shrink-0 flex-col items-center justify-center gap-1.5">
+              <div className="flex flex-shrink-0 flex-row items-center justify-end gap-1.5 border-t border-gray-50 pt-2.5 sm:flex-col sm:justify-center sm:border-t-0 sm:pt-0">
                 <ActionIcon
                   size="sm"
                   variant="outline"
