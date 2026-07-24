@@ -1852,12 +1852,36 @@ export default function ProductsTable({
       else setIsLoading(true);
       setError(null);
       try {
-        const res = await productService.getProducts(session.user.token, {
-          limit: 500,
+        // Fetch every product by paging through the admin list. The backend caps
+        // `limit` at 1000 per request, so we page until we've collected `total`
+        // to avoid silently truncating large catalogs.
+        const PER_PAGE = 1000;
+        const first = await productService.getProducts(session.user.token, {
+          page: 1,
+          limit: PER_PAGE,
         });
         // API returns { success: true, data: { products: [...], pagination: {...} } }
-        const raw = res?.data?.products ?? res?.products ?? [];
-        const list = Array.isArray(raw) ? raw : [];
+        const firstRaw = first?.data?.products ?? first?.products ?? [];
+        const list: ProductListItem[] = Array.isArray(firstRaw)
+          ? [...firstRaw]
+          : [];
+        const pagination = first?.data?.pagination ?? first?.pagination;
+        const totalPages = Number(pagination?.totalPages) || 1;
+
+        if (totalPages > 1) {
+          const pageResults = await Promise.all(
+            Array.from({ length: totalPages - 1 }, (_, i) =>
+              productService.getProducts(session.user.token, {
+                page: i + 2,
+                limit: PER_PAGE,
+              })
+            )
+          );
+          for (const res of pageResults) {
+            const raw = res?.data?.products ?? res?.products ?? [];
+            if (Array.isArray(raw)) list.push(...raw);
+          }
+        }
         setAllProducts(list);
         if (isRefresh) {
           toast.success(`Loaded ${list.length} products`, {
