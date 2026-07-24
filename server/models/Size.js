@@ -215,6 +215,33 @@ const sizeSchema = new Schema(
       default: 0,
       // Can be derived from supplierPrice if not set
     },
+    // ── Tenant cost→selling inputs ────────────────────────────────
+    // The admin enters these on the size form; `sellingPrice` above is the
+    // result of applying them to `costPrice`. They are stored (not just
+    // derived back from cost/selling) because `roundUp` makes the round-trip
+    // lossy — 25.07% on a rounded price reads back as a different number.
+    markupPercentage: {
+      type: Number,
+      min: 0,
+      max: 500,
+      default: 25,
+    },
+    roundUp: {
+      type: String,
+      enum: ['none', '100', '500', '1000'],
+      default: '100',
+    },
+    saleDiscountPercentage: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0,
+    },
+    salePrice: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
     // Admin price-override as the effective platform markup % for this size —
     // survives tenant cost/price changes (see SubProduct.platformMarkupOverridePct)
     platformMarkupOverridePct: {
@@ -289,10 +316,14 @@ const sizeSchema = new Schema(
       min: 0,
     },
     
+    // `reorderPoint` is the name the admin size form and the sub-product
+    // services use; `reorderLevel` is the historical schema path. Aliased so
+    // either name reads and writes the same value instead of being dropped.
     reorderLevel: {
       type: Number,
       default: 0,
       min: 0,
+      alias: 'reorderPoint',
     },
     
     reorderQuantity: {

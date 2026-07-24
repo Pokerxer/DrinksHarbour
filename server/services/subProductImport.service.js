@@ -485,7 +485,9 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
 
             const newCost = r.sizeCostPrice ?? r.costPrice;
             const oldCost = Number(ex.costPrice) || 0;
-            const oldSelling = Number(ex.basePrice) || 0;
+            // `sellingPrice` is the persisted path; `basePrice` is the form-side
+            // name Size has never stored, so it only ever reads back undefined.
+            const oldSelling = Number(ex.sellingPrice ?? ex.basePrice) || 0;
             const set = {};
 
             if (newCost != null && newCost > 0) {
@@ -515,11 +517,16 @@ async function commitImport(rawRows, opts, tenantId, user, deps) {
                   : oldCost > 0 && oldSelling > 0
                     ? roundUp100(newCost * (oldSelling / oldCost))
                     : roundUp100(newCost * (1 + (ex.markupPercentage ?? subMarkup) / 100));
+              // basePrice is dropped by Size's strict schema — sellingPrice is the
+              // path that actually persists. Write both so the stored markup below
+              // can never describe a price that was never saved.
               set.basePrice = selling;
+              set.sellingPrice = selling;
               set.markupPercentage = Number(((selling / newCost - 1) * 100).toFixed(2));
             } else if (r.sizePrice != null && r.sizePrice > 0) {
               // Selling-only update (no new cost supplied).
               set.basePrice = r.sizePrice;
+              set.sellingPrice = r.sizePrice;
               if (oldCost > 0) {
                 set.markupPercentage = Number(((r.sizePrice / oldCost - 1) * 100).toFixed(2));
               }

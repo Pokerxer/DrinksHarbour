@@ -1245,7 +1245,7 @@ const getSubProduct = async (subProductId, tenantId, options = {}) => {
     },
     {
       path: 'sizes',
-      select: 'size displayName unitType sellingPrice costPrice unitsPerPack platformMarkupOverridePct packPlatformMarkupOverridePct compareAtPrice stock lowStockThreshold availability sku barcode weightGrams volumeMl discountValue discountType discountStart discountEnd totalSold',
+      select: 'size displayName sizeCategory unitType sellingPrice costPrice unitsPerPack platformMarkupOverridePct packPlatformMarkupOverridePct markupPercentage roundUp saleDiscountPercentage salePrice compareAtPrice wholesalePrice currency stock reservedStock availableStock lowStockThreshold reorderLevel reorderQuantity availability sku barcode packaging weightGrams volumeMl servingsPerUnit discountValue discountType discountStart discountEnd isDefault isOnSale rank totalSold',
     },
     {
       path: 'vendor',
@@ -2040,7 +2040,8 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
             servingsPerUnit: sizeData.servingsPerUnit ?? existingSize.servingsPerUnit,
             unitsPerPack: sizeData.unitsPerPack ?? existingSize.unitsPerPack ?? 6,
             packaging: normalizePackaging(sizeData.packaging ?? existingSize.packaging ?? 'pack-6'),
-            basePrice: sizeData.basePrice ?? existingSize.basePrice,
+            // NOTE: no `basePrice` path exists on Size — the form's basePrice is
+            // persisted as `sellingPrice` below.
             compareAtPrice: sizeData.compareAtPrice ?? existingSize.compareAtPrice,
             costPrice: sizeData.costPrice ?? existingSize.costPrice,
             wholesalePrice: sizeData.wholesalePrice ?? existingSize.wholesalePrice,
@@ -2049,7 +2050,10 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
             reservedStock: sizeData.reservedStock ?? existingSize.reservedStock,
             availableStock: sizeData.availableStock ?? existingSize.availableStock,
             lowStockThreshold: sizeData.lowStockThreshold ?? existingSize.lowStockThreshold,
-            reorderPoint: sizeData.reorderPoint ?? existingSize.reorderPoint,
+            // `reorderPoint` is the form's name for the schema's `reorderLevel`.
+            // Mongoose translates that alias when building a document but NOT when
+            // casting a findByIdAndUpdate payload, so write the real path here.
+            reorderLevel: sizeData.reorderPoint ?? existingSize.reorderLevel,
             reorderQuantity: sizeData.reorderQuantity ?? existingSize.reorderQuantity,
             // Generate unique SKU if empty to avoid duplicate key errors
             sku: sizeData.sku || existingSize.sku || `${subProduct.sku}-${sizeData.size}`.toUpperCase().replace(/\s+/g, ''),
@@ -2084,7 +2088,6 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
             servingsPerUnit: sizeData.servingsPerUnit ?? 0,
             unitsPerPack: sizeData.unitsPerPack ?? 6,
             packaging: normalizePackaging(sizeData.packaging ?? 'pack-6'),
-            basePrice: sizeData.basePrice ?? subProduct.baseSellingPrice,
             compareAtPrice: sizeData.compareAtPrice ?? null,
             costPrice: sizeData.costPrice ?? subProduct.costPrice ?? 0,
             wholesalePrice: sizeData.wholesalePrice ?? null,
@@ -2102,8 +2105,9 @@ const updateSubProduct = async (subProductId, updateData, tenantId, user = null)
             roundUp: sizeData.roundUp || '100',
             saleDiscountPercentage: sizeData.saleDiscountPercentage ?? 0,
             salePrice: sizeData.salePrice ?? null,
-            // Map salePrice to sellingPrice for compatibility
-            sellingPrice: sizeData.sellingPrice ?? sizeData.salePrice ?? subProduct.baseSellingPrice ?? 0,
+            // The form posts the selling price as `basePrice`; honour it before
+            // falling back to the sale price or the parent's base selling price.
+            sellingPrice: sizeData.sellingPrice ?? sizeData.basePrice ?? sizeData.salePrice ?? subProduct.baseSellingPrice ?? 0,
             isDefault: sizeData.isDefault ?? false,
             isOnSale: sizeData.isOnSale ?? false,
             rank: sizeData.rank ?? (data.sizes.indexOf(sizeData) + 1),

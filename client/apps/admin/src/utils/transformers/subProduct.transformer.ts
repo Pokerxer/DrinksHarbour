@@ -27,7 +27,9 @@ export interface SizeFormData {
   costPrice?: number | null;
   wholesalePrice?: number | null;
   currency?: string;
-  markupPercentage?: number;
+  // null = no stored markup (legacy size) — the size row derives one from
+  // cost/selling rather than showing a default the admin never entered.
+  markupPercentage?: number | null;
   roundUp?: string;
   saleDiscountPercentage?: number;
   salePrice?: number | null;
@@ -498,12 +500,17 @@ export const transformBackendToForm = (
         ? size.packaging.type || 'pack-6'
         : size.packaging
       : 'pack-6',
-    basePrice: size.basePrice ?? 0,
+    // The backend stores the size's selling price as `sellingPrice`; the form
+    // edits it as `basePrice`.
+    basePrice: size.basePrice ?? size.sellingPrice ?? 0,
     compareAtPrice: size.compareAtPrice ?? 0,
     costPrice: size.costPrice ?? 0,
     wholesalePrice: size.wholesalePrice ?? 0,
     currency: size.currency || sp.currency || 'NGN',
-    markupPercentage: size.markupPercentage ?? 25,
+    // null (not 25) when the size predates stored markups — that's the signal
+    // for the size row to derive the markup from cost/selling instead of
+    // showing a default that was never entered.
+    markupPercentage: size.markupPercentage ?? null,
     roundUp: size.roundUp || '100',
     saleDiscountPercentage: size.saleDiscountPercentage ?? 0,
     salePrice: size.salePrice ?? 0,
@@ -511,7 +518,8 @@ export const transformBackendToForm = (
     reservedStock: size.reservedStock ?? 0,
     availableStock: size.availableStock ?? 0,
     lowStockThreshold: size.lowStockThreshold ?? 10,
-    reorderPoint: size.reorderPoint ?? 5,
+    // `reorderLevel` is the schema path behind the form's `reorderPoint`.
+    reorderPoint: size.reorderPoint ?? size.reorderLevel ?? 5,
     reorderQuantity: size.reorderQuantity ?? 50,
     sku: size.sku || '',
     barcode: size.barcode || '',

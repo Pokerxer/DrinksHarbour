@@ -983,14 +983,21 @@ function SizeVariantRow({
   }, [variantDiscount]);
 
   // Initialize once on mount.
-  // If a selling price is already stored (edit mode), derive the Markup % from the
-  // loaded cost/selling pair so the field reflects reality — do NOT overwrite the
-  // stored selling price. Only auto-calculate a selling price when none exists yet.
+  // A stored Markup % is the admin's own input — keep it verbatim (a rounded
+  // selling price can't be reversed into it: 25.07% on a price rounded to the
+  // nearest 100 reads back as a different number).
+  // Only when none is stored (legacy sizes) do we derive it from the loaded
+  // cost/selling pair — and never overwrite the stored selling price.
+  // Auto-calculate a selling price only when none exists yet.
   useEffect(() => {
     if (initialized) return;
     const cost = Number(variantCostPrice) || 0;
     const selling = Number(variantBasePrice) || 0;
-    if (cost > 0 && selling > 0) {
+    const stored = watch(`subProductData.sizes.${index}.markupPercentage`);
+    if (stored !== null && stored !== undefined && stored !== '') {
+      setLocalMarkup(Number(stored));
+      setInitialized(true);
+    } else if (cost > 0 && selling > 0) {
       const eff = Number(((selling / cost - 1) * 100).toFixed(2));
       setLocalMarkup(eff);
       setValue(`subProductData.sizes.${index}.markupPercentage`, eff);
@@ -1007,33 +1014,19 @@ function SizeVariantRow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Handle cost price change — preserve the *last effective markup* implied by the
-  // previous cost/selling pair, and recompute the selling price from it. Falls back to
-  // the markup field when there is no prior selling price to learn from.
+  // Handle cost price change — the Markup % is the admin's input, so it is held
+  // constant and the selling price is recomputed from it. (For a legacy size with
+  // no stored markup, localMarkup already holds the effective markup derived from
+  // the loaded cost/selling pair on mount, so the price stays proportional.)
   const handleCostPriceChange = (value: number | null) => {
     if (value && value > 0) {
-      // variantCostPrice / variantBasePrice hold the pre-change (old) values here
-      const oldCost = Number(variantCostPrice) || 0;
-      const oldSelling = Number(variantBasePrice) || 0;
-      const effMarkup =
-        oldCost > 0 && oldSelling > 0
-          ? (oldSelling / oldCost - 1) * 100
-          : localMarkup;
-
       const calculatedPrice = calculateBasePrice(
         value,
-        effMarkup,
+        localMarkup,
         variantRoundUp
       );
       setValue(`subProductData.sizes.${index}.costPrice`, value);
       setValue(`subProductData.sizes.${index}.basePrice`, calculatedPrice);
-
-      // Sync the Markup % field to the resulting (rounded) markup so the UI is truthful
-      const finalMarkup = Number(
-        ((calculatedPrice / value - 1) * 100).toFixed(2)
-      );
-      setLocalMarkup(finalMarkup);
-      setValue(`subProductData.sizes.${index}.markupPercentage`, finalMarkup);
 
       // Keep any active sale price in step with the new selling price
       if (localDiscount > 0) {
