@@ -340,7 +340,11 @@ const calculateSizePricing = (size, product, tenant, fallbackCostPrice = 0, fall
       tenantStorePrice: tenantSellingPrice,
       platformMarkupOverridePct: packOverridePct ?? overridePct,
     });
-    if (packSelling > 0) {
+    // Only advertise a pack rate that actually beats the normal price. A tenant
+    // with no pack rates configured produces packSelling == platformSellingPrice
+    // (no real saving) — leave packUnitPrice null so we don't publish a 0%-off
+    // "pack offer". packPlatformCostPrice stays exposed above for admin insight.
+    if (packSelling > 0 && packSelling < platformSellingPrice) {
       packUnitPrice = packSelling;
       packThreshold = unitsPerPack;
       packSavingsPct = Math.round(((platformSellingPrice - packSelling) / platformSellingPrice) * 100);
