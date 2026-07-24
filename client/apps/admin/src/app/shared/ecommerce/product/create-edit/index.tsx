@@ -1174,7 +1174,7 @@ export default function CreateEditProduct({
           {/* Main Header Content */}
           <div className="px-4 py-3 sm:px-6 lg:px-8">
             {/* Row 1: Back, Title, Actions */}
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               {/* Left: Back + Title + Save + Settings */}
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <Button
@@ -1379,7 +1379,7 @@ export default function CreateEditProduct({
               {/* Row 2: Smart Buttons Bar - Responsive */}
               <div
                 className={cn(
-                  'scrollbar-hide mt-3 flex items-center gap-1.5 overflow-x-auto pb-1.5',
+                  'scrollbar-hide mt-3 flex w-full items-center gap-1.5 overflow-x-auto pb-1.5 lg:mt-0 lg:w-auto',
                   showSmartButtons ? 'flex' : 'hidden lg:flex'
                 )}
               >
@@ -1880,18 +1880,19 @@ export default function CreateEditProduct({
             animate={{ opacity: 1, y: 0 }}
             className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white px-4 py-4 shadow-lg sm:px-6 lg:px-8"
           >
-            <div className="mx-auto flex max-w-5xl items-center justify-between">
+            <div className="mx-auto flex max-w-5xl items-center justify-between gap-2">
               <Button
                 type="button"
                 variant="outline"
                 onClick={handlePrev}
                 disabled={currentStep === 0}
+                className="shrink-0"
               >
                 <PiArrowLeft className="h-4 w-4" />
-                Previous
+                <span className="hidden xs:inline">Previous</span>
               </Button>
 
-              <div className="flex items-center gap-2 text-sm text-gray-500">
+              <div className="hidden min-w-0 items-center gap-2 truncate text-sm text-gray-500 sm:flex">
                 {!isValid && Object.keys(errors).length > 0 && (
                   <>
                     <PiWarning className="h-4 w-4 text-amber-500" />
@@ -1919,6 +1920,7 @@ export default function CreateEditProduct({
                     : handleNext
                 }
                 disabled={isLoading}
+                className="shrink-0"
               >
                 {currentStep === STEPS.length - 1 ? (
                   <>

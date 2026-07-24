@@ -1445,7 +1445,7 @@ function StatsHeader({
             whileTap={{ scale: 0.98 }}
             onClick={() => onFilterChange(card.id)}
             className={cn(
-              'relative overflow-hidden rounded-2xl bg-gradient-to-br p-5 text-left transition-all',
+              'relative overflow-hidden rounded-2xl bg-gradient-to-br p-4 text-left transition-all sm:p-5',
               colors.bg,
               isActive && `ring-4 ${colors.ring}`
             )}
@@ -1466,17 +1466,19 @@ function StatsHeader({
                   animate={{ scale: 1, opacity: 1 }}
                   className="mt-1"
                 >
-                  <Text className="text-3xl font-black">{card.value}</Text>
+                  <Text className="text-2xl font-black sm:text-3xl">
+                    {card.value}
+                  </Text>
                 </motion.div>
               </div>
               <motion.div
                 whileHover={{ scale: 1.1, rotate: 5 }}
                 className={cn(
-                  'flex h-12 w-12 items-center justify-center rounded-xl text-white shadow-lg',
+                  'flex h-10 w-10 items-center justify-center rounded-xl text-white shadow-lg sm:h-12 sm:w-12',
                   colors.iconBg
                 )}
               >
-                <Icon className="h-6 w-6" />
+                <Icon className="h-5 w-5 sm:h-6 sm:w-6" />
               </motion.div>
             </Flex>
           </motion.button>
