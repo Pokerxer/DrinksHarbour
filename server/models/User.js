@@ -146,6 +146,14 @@ const userSchema = new Schema(
     facebookId: { type: String, sparse: true, unique: true },
     appleId: { type: String, sparse: true, unique: true },
 
+    // Set when an administrator created this account on someone's behalf via
+    // POST /api/users. Absent on self-registered (public) accounts, which makes
+    // "who made this admin?" answerable during a security review.
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+
     // ────────────────────────────────────────────────
     // Account status & security
     // ────────────────────────────────────────────────

@@ -94,10 +94,12 @@ exports.verifyCodeAndRegister = asyncHandler(async (req, res) => {
     throw new ValidationError('Registration data not found. Please register again.');
   }
 
-  // Create the user with super_admin role
+  // Create the user. This endpoint is public — completing an emailed 6-digit
+  // code proves control of an inbox and nothing more, so it grants the customer
+  // role. It used to hard-code 'super_admin', which made anyone with any email
+  // address a platform super admin.
   const result = await userService.registerUser({
     ...userData,
-    role: 'super_admin',
     isEmailVerified: true, // Mark as verified since they used the code
   });
 

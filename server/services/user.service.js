@@ -12,8 +12,20 @@ const emailService = require('./email.service');
 const verificationService = require('./verification.service');
 
 /**
- * Register a new user
+ * Register a new user (public self-registration).
+ *
+ * Public self-registration always produces a customer.
+ *
+ * This is deliberately NOT caller-controlled: `POST /api/users/register` is an
+ * unauthenticated endpoint, so honouring a `role` from the request body let
+ * anyone mint a platform super admin with a single curl. Elevated roles are
+ * created only through createUserAsAdmin(), behind authentication.
+ *
+ * A caller-supplied `role` is ignored rather than rejected, so existing
+ * storefront clients that pass `role: 'customer'` explicitly keep working.
  */
+const PUBLIC_REGISTRATION_ROLE = 'customer';
+
 const registerUser = async (userData) => {
   const {
     email,
@@ -21,10 +33,11 @@ const registerUser = async (userData) => {
     firstName,
     lastName,
     phoneNumber,
-    role = 'customer',
     tenant,
     dateOfBirth,
   } = userData;
+
+  const role = PUBLIC_REGISTRATION_ROLE;
 
   // Validate email format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -36,12 +49,6 @@ const registerUser = async (userData) => {
   const existingUser = await User.findOne({ email: email.toLowerCase() });
   if (existingUser) {
     throw new ValidationError('User with this email already exists');
-  }
-
-  // Validate role
-  const validRoles = ['customer', 'tenant_admin', 'admin', 'super_admin'];
-  if (!validRoles.includes(role)) {
-    throw new ValidationError('Invalid role');
   }
 
   // Validate password strength
@@ -56,21 +63,9 @@ const registerUser = async (userData) => {
     );
   }
 
-  // Validate tenant for tenant_admin role
-  if (role === 'tenant_admin') {
-    if (!tenant) {
-      throw new ValidationError('Tenant is required for tenant_admin role');
-    }
-
-    const tenantExists = await Tenant.findById(tenant);
-    if (!tenantExists) {
-      throw new NotFoundError('Tenant not found');
-    }
-
-    if (tenantExists.status !== 'approved') {
-      throw new ValidationError('Tenant is not approved yet');
-    }
-  }
+  // No tenant_admin branch here: public registration is customer-only, so the
+  // tenant validation that used to guard it is unreachable. Tenant-scoped roles
+  // are created through createUserAsAdmin(), which carries that check.
 
   // Hash password
   const passwordHash = await bcrypt.hash(password, 12);
@@ -128,6 +123,115 @@ const registerUser = async (userData) => {
     token,
     requiresEmailVerification: true,
     message: 'User registered successfully. A 6-digit verification code has been sent to your email.',
+  };
+};
+
+/**
+ * Create a user with a caller-chosen role, on behalf of an authenticated actor.
+ *
+ * This is the only path that produces an elevated account — public
+ * registration is customer-only. The privilege rules live here rather than in
+ * the route guard alone so they still hold if the route is ever relaxed.
+ *
+ * Returns the created user and no token: this is administration, not a login,
+ * and the actor must never receive a session for the account they just made.
+ */
+const ASSIGNABLE_ROLES = ['customer', 'tenant_staff', 'tenant_owner', 'tenant_admin', 'admin', 'super_admin'];
+const ROLES_THAT_MAY_CREATE_USERS = ['admin', 'super_admin'];
+
+const createUserAsAdmin = async (userData, actor) => {
+  const {
+    email,
+    password,
+    firstName,
+    lastName,
+    phoneNumber,
+    role,
+    tenant,
+    dateOfBirth,
+  } = userData;
+
+  if (!actor || !ROLES_THAT_MAY_CREATE_USERS.includes(actor.role)) {
+    throw new AuthorizationError('You are not permitted to create users');
+  }
+
+  if (!ASSIGNABLE_ROLES.includes(role)) {
+    throw new ValidationError('Invalid role');
+  }
+
+  // Only a super admin may mint another super admin. Without this an `admin`
+  // could escalate itself sideways by creating a super admin account.
+  if (role === 'super_admin' && actor.role !== 'super_admin') {
+    throw new AuthorizationError('Only a super admin can create another super admin');
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    throw new ValidationError('Please provide a valid email address');
+  }
+
+  const existingUser = await User.findOne({ email: email.toLowerCase() });
+  if (existingUser) {
+    throw new ValidationError('User with this email already exists');
+  }
+
+  if (!password || password.length < 8) {
+    throw new ValidationError('Password must be at least 8 characters long');
+  }
+
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/;
+  if (!passwordRegex.test(password)) {
+    throw new ValidationError(
+      'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character'
+    );
+  }
+
+  // Tenant-scoped roles are meaningless without a tenant to scope them to.
+  if (role === 'tenant_admin' || role === 'tenant_owner' || role === 'tenant_staff') {
+    if (!tenant) {
+      throw new ValidationError(`Tenant is required for the ${role} role`);
+    }
+
+    const tenantExists = await Tenant.findById(tenant);
+    if (!tenantExists) {
+      throw new NotFoundError('Tenant not found');
+    }
+
+    if (tenantExists.status !== 'approved') {
+      throw new ValidationError('Tenant is not approved yet');
+    }
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+
+  const newUserData = {
+    email: email.toLowerCase(),
+    passwordHash,
+    firstName: firstName.trim(),
+    lastName: lastName.trim(),
+    displayName: `${firstName.trim()} ${lastName.trim()}`,
+    phoneNumber,
+    role,
+    status: 'active',
+    // Created by a trusted administrator, so the email need not be re-proved.
+    isEmailVerified: true,
+    isAgeVerified: false,
+    createdBy: actor._id,
+  };
+
+  if (tenant) {
+    newUserData.tenant = tenant;
+  }
+
+  if (dateOfBirth) {
+    newUserData.dateOfBirth = new Date(dateOfBirth);
+  }
+
+  const user = await User.create(newUserData);
+
+  return {
+    user: sanitizeUser(user.toObject()),
+    message: 'User created successfully',
   };
 };
 
@@ -1591,6 +1695,7 @@ const clearRecentlyViewed = async (userId) => {
 
 module.exports = {
   registerUser,
+  createUserAsAdmin,
   loginUser,
   completeMfaLogin,
   refreshAuthToken,

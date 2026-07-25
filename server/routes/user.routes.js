@@ -91,10 +91,48 @@ const registerValidation = [
     .optional()
     .matches(/^(\+?234|0)[7-9][01]\d{8}$/)
     .withMessage('Please provide a valid Nigerian phone number (e.g. 07035609301 or +2347035609301)'),
+  // No `role` validator: this endpoint is public and always creates a customer.
+  // Accepting a role here previously let an anonymous caller request
+  // 'super_admin' and be granted it. Elevated roles go through the
+  // authenticated create-user route instead.
+];
+
+// Admin-initiated user creation (POST /api/users). Unlike registerValidation
+// this DOES take a role — the route sits behind protect + authorize + requireMfa,
+// and the service enforces which roles the acting user may actually grant.
+const createUserValidation = [
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email'),
+  body('password')
+    .isLength({ min: 8 })
+    .withMessage('Password must be at least 8 characters')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
+    .withMessage('Password must contain uppercase, lowercase, number and special character'),
+  body('firstName')
+    .trim()
+    .notEmpty()
+    .withMessage('First name is required')
+    .isLength({ max: 50 })
+    .withMessage('First name cannot exceed 50 characters'),
+  body('lastName')
+    .trim()
+    .notEmpty()
+    .withMessage('Last name is required')
+    .isLength({ max: 50 })
+    .withMessage('Last name cannot exceed 50 characters'),
   body('role')
-    .optional()
-    .isIn(['customer', 'tenant_admin', 'admin', 'super_admin'])
+    .isIn(['customer', 'tenant_staff', 'tenant_owner', 'tenant_admin', 'admin', 'super_admin'])
     .withMessage('Invalid role'),
+  body('tenant')
+    .optional()
+    .isMongoId()
+    .withMessage('Invalid tenant id'),
+  body('phoneNumber')
+    .optional()
+    .matches(/^(\+?234|0)[7-9][01]\d{8}$/)
+    .withMessage('Please provide a valid Nigerian phone number (e.g. 07035609301 or +2347035609301)'),
 ];
 
 const loginValidation = [
@@ -392,6 +430,19 @@ router.delete('/recently-viewed', userController.clearRecentlyViewed);
 
 router.use(authorize('admin', 'super_admin'));
 router.use(requireMfa);
+
+/**
+ * Create a user with an assigned role (the only path to an elevated account —
+ * public registration is customer-only). The service additionally enforces that
+ * only a super_admin may create another super_admin.
+ * @route POST /api/users
+ */
+router.post(
+  '/',
+  createUserValidation,
+  validate,
+  userController.createUser
+);
 
 /**
  * Search users

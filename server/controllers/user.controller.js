@@ -5,12 +5,33 @@ const asyncHandler = require('../utils/asyncHandler');
 const { successResponse } = require('../utils/response');
 const { ForbiddenError } = require('../utils/errors');
 const { getTenantId, normalizeTenantId } = require('../utils/tenantContext');
-const { logPrivilegedAction } = require('../utils/auditLog');
+const auditLog = require('../utils/auditLog');
 const RefreshToken = require('../models/RefreshToken');
 const jwt = require('jsonwebtoken');
 const { setAuthCookies, setCsrfCookie, generateCsrfToken, clearAuthCookies } = require('../utils/cookies');
 
 const ADMIN_ROLES = ['super_admin', 'admin'];
+
+/**
+ * @desc    Create a user with an assigned role, as an administrator
+ * @route   POST /api/users
+ * @access  Private (admin, super_admin — only super_admin may create super_admin)
+ *
+ * This is the only way to create an elevated account; public registration
+ * always yields a customer. No session is issued for the created user.
+ */
+exports.createUser = asyncHandler(async (req, res) => {
+  const result = await userService.createUserAsAdmin(req.body, req.user);
+
+  auditLog.logPrivilegedAction(req, 'USER_CREATE', 'create', {
+    targetType: 'User',
+    targetId: result.user._id,
+    targetTenantId: normalizeTenantId(req.body.tenant),
+    changes: { after: { email: req.body.email, role: req.body.role } },
+  });
+
+  successResponse(res, result, 'User created successfully', 201);
+});
 
 /**
  * @desc    Register new user
@@ -326,7 +347,7 @@ exports.suspendUser = asyncHandler(async (req, res) => {
   const result = await userService.suspendUser(req.params.id, reason, req.user._id);
 
   // Audit: user suspension
-  logPrivilegedAction(req, 'USER_SUSPEND', 'suspend', {
+  auditLog.logPrivilegedAction(req, 'USER_SUSPEND', 'suspend', {
     targetType: 'User',
     targetId: req.params.id,
     targetTenantId: normalizeTenantId(targetUser?.tenant),
@@ -355,7 +376,7 @@ exports.activateUser = asyncHandler(async (req, res) => {
   const result = await userService.activateUser(req.params.id, req.user._id);
 
   // Audit: user activation
-  logPrivilegedAction(req, 'USER_ACTIVATE', 'activate', {
+  auditLog.logPrivilegedAction(req, 'USER_ACTIVATE', 'activate', {
     targetType: 'User',
     targetId: req.params.id,
     targetTenantId: normalizeTenantId(targetUser?.tenant),
@@ -611,7 +632,7 @@ exports.bulkUpdateUsers = asyncHandler(async (req, res) => {
  */
 exports.permanentlyDeleteUser = asyncHandler(async (req, res) => {
   // Audit BEFORE deletion (target won't exist after)
-  logPrivilegedAction(req, 'USER_PERMANENT_DELETE', 'delete', {
+  auditLog.logPrivilegedAction(req, 'USER_PERMANENT_DELETE', 'delete', {
     targetType: 'User',
     targetId: req.params.id,
   });
