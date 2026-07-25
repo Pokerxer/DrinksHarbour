@@ -1,27 +1,30 @@
 # Admin Auth Overhaul — Completion Notes
 
 **Status: the whole spec is IMPLEMENTED.** Part 0 `82f139fc`, §1.1–§1.2 `bf08e631`,
-§1.3–§1.6 `c1a828c0`, Part 2 `4978b213`. What remains is operator work and manual
+§1.3–§1.6 `c1a828c0`, Part 2 `4978b213`, plus the requireMfa fix `41a6b8f6`. What remains is operator work and manual
 verification, listed at the bottom — no coding tasks are outstanding.
 
-## Open defect found while wiring §2.4 (NOT fixed — needs its own change)
+## The requireMfa defect — FIXED (`41a6b8f6`)
 
-**`requireMfa` can never be satisfied: nothing in the server ever issues the token
-it demands.** `mfa.middleware.js` accepts an `x-mfa-token` header or a `dh_mfa`
-cookie, and `mfaService.generateMfaVerifiedToken()` exists to mint one — but it is
-exported and **never called anywhere**, and no code sets the `dh_mfa` cookie
-(`grep -rn "generateMfaVerifiedToken\|dh_mfa" server/`). So any user who is
-`super_admin`/`admin`/`tenant_owner` **and** has `mfaEnabled: true` gets 403 on
-every route behind `router.use(requireMfa)` (`user.routes.js:432`), including
-`POST /api/users` — the create-user modal §2.4 just wired.
+`requireMfa` demanded an `x-mfa-token`/`dh_mfa` that nothing in the server ever
+issued (`generateMfaVerifiedToken` was exported and never called), so every route
+behind `router.use(requireMfa)` — including `POST /api/users` — was a 403 for any
+MFA-enabled privileged user. Fixed in two halves:
 
-Users without MFA enabled are unaffected (the middleware short-circuits), and the
-admin app has no MFA enrolment UI, so this is latent rather than live today. The
-fix is server-side: have `mfa.controller.verifyLoginMfa` call
-`generateMfaVerifiedToken`, return it, and set the `dh_mfa` cookie; then carry it
-through the NextAuth JWT (the `mfa` provider in `auth-options.ts`) and attach it as
-`x-mfa-token` on privileged calls. Needs server tests, so it was left alone rather
-than bolted onto a client-side cleanup.
+1. `mfa.controller.verifyLoginMfa` mints the token on a successful login
+   challenge, sets the `dh_mfa` cookie, and returns it in the body (the admin app
+   authenticates server-side in NextAuth, so it never sees this API's cookies).
+2. New `POST /api/users/mfa/step-up` — `protect`, code required, deliberately
+   placed **above** `router.use(requireMfa)` so it cannot demand what it issues.
+   The token lasts 10 minutes by design; step-up is how a signed-in admin
+   re-proves without signing out. It verifies against `req.user` (never a body
+   id) and refuses accounts with MFA disabled.
+
+Admin side: the `mfa` provider carries the token into the JWT, `jwt()` accepts a
+renewed one via `update()` (the only path back into the cookie), `session()`
+exposes it, `createAdminUser` sends it as `x-mfa-token` and distinguishes a
+403-for-MFA from an ordinary rejection, and the create-user modal prompts for a
+code then retries with the form intact.
 
 ## What Part 2 changed
 
@@ -41,7 +44,7 @@ than bolted onto a client-side cleanup.
 
 ## Reference — what Part 1 left in place
 
-- **Vitest**: `npm test`. **53 tests** across `auth-options`, `authorize`,
+- **Vitest**: `npm test`. **65 tests** across `auth-options`, `authorize`,
   `mfa-challenge`, `refresh`, `session-guard` (in `src/app/api/auth/[...nextauth]/`),
   `revoke/revoke-session`, `src/utils/sign-out` and `src/services/adminUser.service`.
 - `ADMIN_ACCESS_ROLES` in `src/types/authorization.ts` is the single source for both
@@ -80,7 +83,8 @@ than bolted onto a client-side cleanup.
 MFA login with TOTP and with a backup code; the expired-pending-token path (wait 5
 minutes — expect "Your verification window timed out"); sign-out revocation (check
 the `RefreshToken` doc flips to revoked); a role-less session bounced by the
-middleware; creating a user from Roles & Permissions; the forgot → reset round trip
+middleware; creating a user from Roles & Permissions (and, with MFA enabled, the step-up
+prompt that appears once the 10-minute window lapses); the forgot → reset round trip
 against `/forgot-password`; and that `/signup` and `/api/auth/signin/google` both 404.
 
 **Operator action:** the Google OAuth client secret is still live in
