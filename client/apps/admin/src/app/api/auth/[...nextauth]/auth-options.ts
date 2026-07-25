@@ -39,6 +39,8 @@ interface LoginResponse {
     // is only half-complete until the code is verified.
     mfaRequired?: boolean;
     pendingMfaToken?: string;
+    // Proof of a recent MFA challenge, for `requireMfa` on privileged routes.
+    mfaToken?: string;
   };
   message?: string;
 }
@@ -222,11 +224,12 @@ export const authOptions: NextAuthOptions = {
           tenantId: token.tenantId as string | null,
           tenantSlug: token.tenantSlug as string | null,
           token: token.accessToken as string,
+          mfaToken: token.mfaToken as string | undefined,
         },
         error: token.error,
       };
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.id = user.id;
         token.role = user.role;
@@ -238,7 +241,17 @@ export const authOptions: NextAuthOptions = {
         // Carry the per-login "remember me" choice so `jwt.encode` can pick the
         // right session lifetime. Defaults to a short session when absent.
         token.remember = (user as { remember?: boolean }).remember === true;
+        token.mfaToken = (user as { mfaToken?: string }).mfaToken;
         return token;
+      }
+
+      // Step-up mints a fresh mfa-verified token mid-session. `update()` is the
+      // only way to get it into the cookie: the JWT is re-encoded from the
+      // return value of this callback and nowhere else.
+      if (trigger === 'update') {
+        const updated = (session as { mfaToken?: string } | undefined)
+          ?.mfaToken;
+        if (updated) token.mfaToken = updated;
       }
 
       // Refresh here, where the return value is re-encoded into the session
@@ -405,12 +418,16 @@ export const authOptions: NextAuthOptions = {
 
           assertRoleMayAccessAdmin(data.data.user.role);
 
-          return toSessionUser(
+          const sessionUser = await toSessionUser(
             data.data.user,
             data.data.token,
             data.data.refreshToken,
             credentials.rememberMe === 'true'
           );
+
+          // Carried into the JWT so privileged calls can present it as
+          // x-mfa-token; the admin never receives this API's own cookies.
+          return { ...sessionUser, mfaToken: data.data.mfaToken };
         } catch (error: unknown) {
           const message =
             error instanceof Error

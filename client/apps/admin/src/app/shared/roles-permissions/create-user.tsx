@@ -27,6 +27,7 @@ import {
   createAdminUser,
 } from '@/services/adminUser.service';
 import { getAdminTenants, type AdminTenant } from '@/services/tenant.service';
+import { stepUpMfa } from '@/services/mfa.service';
 import type { UserRole } from '@/types/authorization';
 
 const ROLE_LABELS: Record<string, string> = {
@@ -49,12 +50,20 @@ const roleOptions = ASSIGNABLE_ROLES.map((role) => ({
  */
 export default function CreateUser() {
   const { closeModal } = useModal();
-  const { data: session } = useSession();
+  const { data: session, update: updateSession } = useSession();
   const [reset, setReset] = useState({});
   const [isLoading, setLoading] = useState(false);
   const [tenants, setTenants] = useState<AdminTenant[]>([]);
+  // Set when the API refuses for want of a recent MFA challenge; holds the
+  // submitted values so the create can be retried once the code is accepted.
+  const [pendingMfa, setPendingMfa] = useState<CreateUserInput | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaError, setMfaError] = useState<string | null>(null);
 
-  const accessToken = (session?.user as { token?: string } | undefined)?.token;
+  const sessionUser = session?.user as
+    | { token?: string; mfaToken?: string }
+    | undefined;
+  const accessToken = sessionUser?.token;
 
   // Tenant-scoped roles need a tenant to attach to; load the list once so the
   // picker is ready when one of those roles is chosen.
@@ -73,7 +82,7 @@ export default function CreateUser() {
     };
   }, [accessToken]);
 
-  const onSubmit: SubmitHandler<CreateUserInput> = async (data) => {
+  const submit = async (data: CreateUserInput, mfaToken?: string) => {
     setLoading(true);
 
     const result = await createAdminUser(
@@ -85,10 +94,20 @@ export default function CreateUser() {
         role: data.role as UserRole,
         tenant: data.tenant,
       },
-      accessToken
+      accessToken,
+      mfaToken ?? sessionUser?.mfaToken
     );
 
     setLoading(false);
+
+    if (result.mfaRequired) {
+      // Proof of MFA lasts 10 minutes; this session's has lapsed (or the admin
+      // enabled MFA after signing in). Re-prove rather than lose the form.
+      setPendingMfa(data);
+      setMfaCode('');
+      setMfaError(null);
+      return;
+    }
 
     if (!result.success) {
       toast.error(result.message ?? 'Could not create the user.');
@@ -96,6 +115,7 @@ export default function CreateUser() {
     }
 
     toast.success(`${data.firstName} ${data.lastName} can now sign in.`);
+    setPendingMfa(null);
     setReset({
       firstName: '',
       lastName: '',
@@ -106,6 +126,77 @@ export default function CreateUser() {
     });
     closeModal();
   };
+
+  const onSubmit: SubmitHandler<CreateUserInput> = (data) => submit(data);
+
+  const onVerifyMfa = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!pendingMfa || !mfaCode.trim()) return;
+
+    setLoading(true);
+    const result = await stepUpMfa(mfaCode.trim(), accessToken);
+    setLoading(false);
+
+    if (!result.success || !result.mfaToken) {
+      setMfaCode('');
+      setMfaError(result.message ?? 'That code was not accepted.');
+      return;
+    }
+
+    // Push the fresh token into the JWT so later privileged calls carry it too;
+    // pass it straight to the retry rather than waiting for the session to
+    // round-trip.
+    await updateSession({ mfaToken: result.mfaToken });
+    const data = pendingMfa;
+    setPendingMfa(null);
+    await submit(data, result.mfaToken);
+  };
+
+  if (pendingMfa) {
+    return (
+      <form onSubmit={onVerifyMfa} className="p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <Title as="h4" className="font-semibold">
+            Confirm it&apos;s you
+          </Title>
+          <ActionIcon size="sm" variant="text" onClick={closeModal}>
+            <PiXBold className="h-auto w-5" />
+          </ActionIcon>
+        </div>
+        <Text className="mb-4 text-sm text-gray-500">
+          Creating a user needs a recent two-factor check. Enter the current
+          code from your authenticator app — or a backup code — and we&apos;ll
+          finish creating {pendingMfa.firstName} {pendingMfa.lastName}.
+        </Text>
+        <Input
+          label="Verification code"
+          placeholder="000000"
+          autoFocus
+          autoComplete="one-time-code"
+          value={mfaCode}
+          onChange={(e) => setMfaCode(e.target.value)}
+          error={mfaError ?? undefined}
+        />
+        <div className="mt-6 flex items-center justify-end gap-4">
+          <Button
+            variant="outline"
+            onClick={() => setPendingMfa(null)}
+            className="w-full @xl:w-auto"
+          >
+            Back
+          </Button>
+          <Button
+            type="submit"
+            isLoading={isLoading}
+            disabled={isLoading || !mfaCode.trim()}
+            className="w-full @xl:w-auto"
+          >
+            Verify and create
+          </Button>
+        </div>
+      </form>
+    );
+  }
 
   return (
     <Form<CreateUserInput>

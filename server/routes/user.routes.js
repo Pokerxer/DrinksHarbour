@@ -407,6 +407,22 @@ router.post(
 );
 
 /**
+ * MFA: Step-up — re-prove MFA mid-session for a fresh mfa-verified token
+ * @route POST /api/users/mfa/step-up
+ *
+ * Sits above `router.use(requireMfa)` on purpose: this is how a user satisfies
+ * that middleware once the 10-minute window has lapsed, so it cannot itself
+ * require what it exists to issue.
+ */
+router.post(
+  '/mfa/step-up',
+  mfaVerifyLimiter,
+  [body('code').notEmpty().withMessage('Verification code is required')],
+  validate,
+  mfaController.stepUpMfa
+);
+
+/**
  * Get recently viewed products
  * @route GET /api/users/recently-viewed
  */

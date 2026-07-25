@@ -120,3 +120,60 @@ describe('createAdminUser', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe('createAdminUser MFA step-up', () => {
+  test('sends the mfa-verified token when the session holds one', async () => {
+    // POST /api/users sits behind requireMfa, which wants proof of a recent
+    // MFA challenge as an x-mfa-token header.
+    const fetchMock = stubFetch({
+      ok: true,
+      body: { success: true, data: { user: { _id: 'u5' } } },
+    });
+
+    await createAdminUser(INPUT, 'access-token', 'mfa-token');
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      { headers: Record<string, string> },
+    ];
+    expect(init.headers['x-mfa-token']).toBe('mfa-token');
+  });
+
+  test('omits the header entirely when there is no mfa token', async () => {
+    const fetchMock = stubFetch({
+      ok: true,
+      body: { success: true, data: { user: { _id: 'u6' } } },
+    });
+
+    await createAdminUser(INPUT, 'access-token');
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      { headers: Record<string, string> },
+    ];
+    expect(init.headers).not.toHaveProperty('x-mfa-token');
+  });
+
+  test.each([
+    'MFA verification required. Please complete MFA verification to access this resource.',
+    'Invalid or expired MFA verification. Please re-verify.',
+  ])('flags a %s response as re-provable', async (message) => {
+    stubFetch({ ok: false, body: { success: false, message } });
+
+    const result = await createAdminUser(INPUT, 'access-token');
+
+    expect(result.success).toBe(false);
+    expect(result.mfaRequired).toBe(true);
+  });
+
+  test('does not mistake an ordinary rejection for an MFA challenge', async () => {
+    stubFetch({
+      ok: false,
+      body: { success: false, message: 'User with this email already exists' },
+    });
+
+    const result = await createAdminUser(INPUT, 'access-token');
+
+    expect(result.mfaRequired).toBeFalsy();
+  });
+});

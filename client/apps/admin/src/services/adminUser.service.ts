@@ -46,6 +46,18 @@ export interface CreateAdminUserResult {
   success: boolean;
   user?: CreatedUser;
   message?: string;
+  /** The call was refused for want of a recent MFA challenge — re-provable. */
+  mfaRequired?: boolean;
+}
+
+/**
+ * `requireMfa` refuses with one of two messages depending on whether the client
+ * sent no proof or stale proof. Both mean the same thing to the caller: prompt
+ * for a code and retry.
+ */
+function isMfaChallenge(message: string | undefined): boolean {
+  if (!message) return false;
+  return /mfa verification (required|\.)|re-verify|complete mfa/i.test(message);
 }
 
 interface CreateUserResponse {
@@ -62,7 +74,8 @@ interface CreateUserResponse {
  */
 export async function createAdminUser(
   input: CreateAdminUserInput,
-  accessToken: string | undefined
+  accessToken: string | undefined,
+  mfaToken?: string
 ): Promise<CreateAdminUserResult> {
   if (!accessToken) {
     return {
@@ -84,6 +97,9 @@ export async function createAdminUser(
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${accessToken}`,
+        // Proof of a recent MFA challenge; only sent when the session has one,
+        // since an empty header would fail verification rather than be ignored.
+        ...(mfaToken ? { 'x-mfa-token': mfaToken } : {}),
       },
       body: JSON.stringify(payload),
     });
@@ -94,6 +110,7 @@ export async function createAdminUser(
       return {
         success: false,
         message: data.message || 'Could not create the user. Please try again.',
+        mfaRequired: isMfaChallenge(data.message),
       };
     }
 

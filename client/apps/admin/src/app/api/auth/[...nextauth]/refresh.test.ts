@@ -140,6 +140,52 @@ describe('jwt() token refresh', () => {
   });
 });
 
+describe('mfa-verified token plumbing', () => {
+  test('carries the mfa token from sign-in onto the JWT', async () => {
+    const token = await jwtCallback({
+      token: {} as unknown as JWT,
+      user: {
+        id: 'u1',
+        role: 'super_admin',
+        token: 'access-token',
+        mfaToken: 'mfa-token',
+      } as never,
+      account: null,
+      trigger: 'signIn',
+    } as Parameters<JwtCallback>[0]);
+
+    expect(token.mfaToken).toBe('mfa-token');
+  });
+
+  test('accepts a refreshed mfa token from a session update', async () => {
+    // Step-up mints a new token mid-session; `update()` is the only way to get
+    // it into the cookie, since the JWT is re-encoded from jwt() alone.
+    const token = await jwtCallback({
+      token: {
+        accessToken: 'access',
+        mfaToken: 'stale-token',
+      } as unknown as JWT,
+      user: undefined as never,
+      account: null,
+      trigger: 'update',
+      session: { mfaToken: 'fresh-token' },
+    } as Parameters<JwtCallback>[0]);
+
+    expect(token.mfaToken).toBe('fresh-token');
+  });
+
+  test('exposes the mfa token on the session for privileged calls', async () => {
+    const session = (await runSession({
+      accessToken: 'access-token',
+      mfaToken: 'mfa-token',
+      id: 'u1',
+      role: 'super_admin',
+    })) as Session & { user: { mfaToken?: string } };
+
+    expect(session.user.mfaToken).toBe('mfa-token');
+  });
+});
+
 describe('session() is pure', () => {
   test('never refreshes — an expired token is the jwt callback’s business', async () => {
     const fetchMock = stubRefresh({

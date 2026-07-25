@@ -7,6 +7,10 @@ const { successResponse } = require('../utils/response');
 const mfaService = require('../services/mfa.service');
 const { setAuthCookies, setCsrfCookie, setMfaCookie, generateCsrfToken } = require('../utils/cookies');
 
+// Mirrors the 10-minute expiry in mfaService.generateMfaVerifiedToken, so the
+// client can re-prove before a privileged call is refused rather than after.
+const MFA_TOKEN_TTL_SECONDS = 10 * 60;
+
 /**
  * @desc    Start MFA setup — generate TOTP secret + QR otpauth URL
  * @route   POST /api/users/mfa/enable
@@ -89,5 +93,57 @@ exports.verifyLoginMfa = asyncHandler(async (req, res) => {
     setCsrfCookie(res, csrfToken);
   }
 
-  successResponse(res, authResult, 'MFA verification successful');
+  // Proof of a recent MFA challenge, for `requireMfa` on privileged routes.
+  // Returned in the body as well as the cookie: the admin dashboard logs in
+  // server-side through NextAuth, so it never receives this API's cookies.
+  const mfaToken = mfaService.generateMfaVerifiedToken(userId);
+  setMfaCookie(res, mfaToken);
+
+  successResponse(
+    res,
+    { ...authResult, mfaToken, mfaTokenExpiresIn: MFA_TOKEN_TTL_SECONDS },
+    'MFA verification successful'
+  );
+});
+
+/**
+ * @desc    Re-prove MFA mid-session — issues a fresh mfa-verified token
+ * @route   POST /api/users/mfa/step-up
+ * @access  Private (protect, but deliberately NOT behind requireMfa)
+ *
+ * The mfa-verified token deliberately lives only 10 minutes: it attests to a
+ * recent challenge rather than flagging the session. Without this endpoint a
+ * privileged action attempted after that window is refused with no way to
+ * satisfy it short of signing out and back in.
+ */
+exports.stepUpMfa = asyncHandler(async (req, res) => {
+  const { code } = req.body;
+  if (!code) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide the verification code',
+    });
+  }
+
+  // Issuing a token to an account with no MFA would manufacture exactly the
+  // proof requireMfa exists to demand.
+  if (!req.user.mfaEnabled) {
+    return res.status(400).json({
+      success: false,
+      message: 'MFA is not enabled for this account',
+    });
+  }
+
+  // Always the authenticated user — never an id from the request body.
+  const userId = String(req.user._id);
+  const result = await mfaService.verifyLoginMfa(userId, code);
+
+  const mfaToken = mfaService.generateMfaVerifiedToken(userId);
+  setMfaCookie(res, mfaToken);
+
+  successResponse(
+    res,
+    { mfaToken, mfaTokenExpiresIn: MFA_TOKEN_TTL_SECONDS, method: result.method },
+    'MFA verification successful'
+  );
 });
