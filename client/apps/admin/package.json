@@ -8,6 +8,8 @@
     "lint": "next lint",
     "build": "NODE_OPTIONS='--max-old-space-size=6144' next build",
     "type:check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "start": "next start",
     "clean": "rm -rf node_modules .next .cache .turbo",
     "cache:clean": "rm -rf .next .cache .turbo",
@@ -99,13 +101,13 @@
     "resend": "4.1.2",
     "rizzui": "^1.0.1",
     "sharp": "^0.33.5",
+    "socket.io-client": "^4.7.5",
     "swiper": "^11.2.6",
     "tailwind-merge": "^3.0.2",
     "typescript": "5.8.2",
     "uploadthing": "^7.6.0",
     "xlsx": "^0.18.5",
-    "zod": "^3.24.2",
-    "socket.io-client": "^4.7.5"
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "@hookform/devtools": "^4.3.3",
@@ -129,7 +131,8 @@
     "rimraf": "^6.0.1",
     "tailwind-config": "file:../../packages/config-tailwind",
     "tailwindcss": "^3.4.17",
-    "typescript-config": "file:../../packages/config-typescript"
+    "typescript-config": "file:../../packages/config-typescript",
+    "vitest": "^3.2.7"
   },
   "engines": {
     "node": ">=18"

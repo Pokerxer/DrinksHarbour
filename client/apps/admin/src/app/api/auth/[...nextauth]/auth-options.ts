@@ -1,11 +1,9 @@
 import { type NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import GoogleProvider from 'next-auth/providers/google';
 import {
   encode as defaultJwtEncode,
   decode as defaultJwtDecode,
 } from 'next-auth/jwt';
-import { env } from '@/env.mjs';
 import { pagesOptions } from './pages-options';
 import type { UserRole } from '@/types/authorization';
 
@@ -51,6 +49,29 @@ interface RefreshTokenResponse {
     expiresIn: string;
   };
   message?: string;
+}
+
+/**
+ * Roles permitted to hold an admin-dashboard session.
+ *
+ * `customer` is deliberately absent. /api/users/login is shared with the
+ * storefront, so a customer authenticating successfully is a normal response
+ * here — it just isn't grounds for an admin session.
+ */
+const ADMIN_ACCESS_ROLES: UserRole[] = [
+  'super_admin',
+  'admin',
+  'tenant_admin',
+  'tenant_owner',
+  'tenant_staff',
+];
+
+function assertRoleMayAccessAdmin(role: UserRole): void {
+  if (!ADMIN_ACCESS_ROLES.includes(role)) {
+    throw new Error(
+      `Access denied. Role '${role}' is not authorized to access this system.`
+    );
+  }
 }
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
@@ -256,19 +277,7 @@ export const authOptions: NextAuthOptions = {
           }
 
           const userRole = data.data.user.role;
-          const validRoles: UserRole[] = [
-            'admin',
-            'super_admin',
-            'tenant_admin',
-            'tenant_owner',
-            'tenant_staff',
-            'customer',
-          ];
-          if (!validRoles.includes(userRole)) {
-            throw new Error(
-              `Access denied. Role '${userRole}' is not authorized to access this system.`
-            );
-          }
+          assertRoleMayAccessAdmin(userRole);
 
           const tenantValue = data.data.user.tenant;
           const tenantId =
@@ -360,6 +369,9 @@ export const authOptions: NextAuthOptions = {
             throw new Error(data.message || 'Invalid PIN');
           }
           const user = data.data.user;
+          // The PIN endpoint performed no role check at all, so a customer
+          // account with a PIN could open an admin session through the POS.
+          assertRoleMayAccessAdmin(user.role);
           const tenantValue = user.tenant;
           const tenantId =
             typeof tenantValue === 'object' && tenantValue !== null
@@ -390,11 +402,6 @@ export const authOptions: NextAuthOptions = {
           throw new Error(message);
         }
       },
-    }),
-    GoogleProvider({
-      clientId: env.GOOGLE_CLIENT_ID || '',
-      clientSecret: env.GOOGLE_CLIENT_SECRET || '',
-      allowDangerousEmailAccountLinking: true,
     }),
   ],
 };
