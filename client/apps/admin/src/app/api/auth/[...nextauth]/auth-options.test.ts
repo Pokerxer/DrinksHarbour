@@ -23,8 +23,12 @@ describe('registered providers', () => {
     expect(effectiveProviderIds()).not.toContain('google');
   });
 
-  test('registers only the credentials and pos-pin providers', () => {
-    expect(effectiveProviderIds()).toEqual(['credentials', 'pos-pin']);
+  test('registers only the credentials, mfa and pos-pin providers', () => {
+    expect(effectiveProviderIds().sort()).toEqual([
+      'credentials',
+      'mfa',
+      'pos-pin',
+    ]);
   });
 
   test('registers no OAuth provider of any kind', () => {

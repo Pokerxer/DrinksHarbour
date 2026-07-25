@@ -176,6 +176,18 @@ export const TENANT_ROLES: UserRole[] = [
 ];
 export const CUSTOMER_ROLES: UserRole[] = ['customer'];
 
+/**
+ * Roles permitted to hold an admin-dashboard session at all.
+ *
+ * `customer` is deliberately absent: /api/users/login is shared with the
+ * storefront, so authenticating a customer is a normal response here — it just
+ * isn't grounds for an admin session.
+ */
+export const ADMIN_ACCESS_ROLES: UserRole[] = [
+  ...PLATFORM_ROLES,
+  ...TENANT_ROLES,
+];
+
 export const isPlatformRole = (role: UserRole): boolean => {
   return PLATFORM_ROLES.includes(role);
 };

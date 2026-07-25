@@ -14,6 +14,7 @@ import {
 import { Button, Text } from 'rizzui';
 import { Form } from '@core/ui/form';
 import { routes } from '@/config/routes';
+import { parseMfaChallenge } from '@/app/api/auth/[...nextauth]/mfa-challenge';
 import { loginSchema, LoginSchema } from '@/validators/login.schema';
 import toast from 'react-hot-toast';
 import { SubmitHandler } from 'react-hook-form';
@@ -59,8 +60,72 @@ export default function SignInForm({ tenant }: { tenant?: TenantInfo | null }) {
   const [authError, setAuthError] = useState<string | null>(null);
   const [shake, setShake] = useState(false);
   const [reset, setReset] = useState({});
+  // The pending-MFA token lives in React state only: never a URL, never storage.
+  // It expires in 5 minutes server-side and dies with this page either way,
+  // which is why the challenge is inline rather than on its own route.
+  const [pendingMfaToken, setPendingMfaToken] = useState<string | null>(null);
+  const [mfaRemember, setMfaRemember] = useState(false);
+  const [mfaCode, setMfaCode] = useState('');
+  const [useBackupCode, setUseBackupCode] = useState(false);
   const accent = tenant?.primaryColor || BRAND_RED;
   const isDev = process.env.NODE_ENV === 'development';
+
+  const leaveMfaChallenge = (message: string | null) => {
+    setPendingMfaToken(null);
+    setMfaCode('');
+    setUseBackupCode(false);
+    setAuthError(message);
+  };
+
+  const onMfaSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!pendingMfaToken || !mfaCode.trim()) return;
+
+    setIsLoading(true);
+    setAuthError(null);
+
+    try {
+      const result = await signIn('mfa', {
+        pendingMfaToken,
+        code: mfaCode.trim(),
+        rememberMe: mfaRemember ? 'true' : 'false',
+        redirect: false,
+        callbackUrl:
+          typeof window !== 'undefined'
+            ? `${window.location.origin}${routes.dashboard}`
+            : routes.dashboard,
+      });
+
+      if (result?.error) {
+        setIsLoading(false);
+        setShake(true);
+        setTimeout(() => setShake(false), 400);
+        setMfaCode('');
+
+        // The pending token is single-use and short-lived — once it has expired
+        // there is nothing to retry, so send the user back to the password step
+        // rather than letting them burn codes against a dead session.
+        if (/expired/i.test(result.error)) {
+          leaveMfaChallenge(
+            'Your verification window timed out. Please sign in again.'
+          );
+        } else if (result.error === 'CredentialsSignin') {
+          setAuthError('That code was not accepted. Please try again.');
+        } else {
+          setAuthError(result.error);
+        }
+      } else if (result?.ok) {
+        toast.success('Welcome back!');
+        window.location.href = routes.dashboard;
+      }
+    } catch (error) {
+      setIsLoading(false);
+      setShake(true);
+      setTimeout(() => setShake(false), 400);
+      setAuthError('An unexpected error occurred. Please try again.');
+      console.error('MFA verification error:', error);
+    }
+  };
 
   const onSubmit: SubmitHandler<LoginSchema> = async (data) => {
     setIsLoading(true);
@@ -79,6 +144,18 @@ export default function SignInForm({ tenant }: { tenant?: TenantInfo | null }) {
             ? `${window.location.origin}${routes.dashboard}`
             : routes.dashboard,
       });
+
+      // A correct password on an MFA-enabled account is not a failure: no
+      // session exists yet, only a challenge to answer.
+      const challengeToken = parseMfaChallenge(result?.error);
+      if (challengeToken) {
+        setIsLoading(false);
+        setPendingMfaToken(challengeToken);
+        setMfaRemember(Boolean(data.rememberMe));
+        setMfaCode('');
+        setUseBackupCode(false);
+        return;
+      }
 
       if (result?.error) {
         setIsLoading(false);
@@ -134,12 +211,20 @@ export default function SignInForm({ tenant }: { tenant?: TenantInfo | null }) {
       {/* Heading */}
       <motion.div variants={item} className="mb-8">
         <h2 className="text-2xl font-bold tracking-tight text-gray-900">
-          {tenant ? `Welcome to ${tenant.name}` : 'Welcome back'}
+          {pendingMfaToken
+            ? 'Two-factor verification'
+            : tenant
+              ? `Welcome to ${tenant.name}`
+              : 'Welcome back'}
         </h2>
         <p className="mt-1.5 text-sm text-gray-500">
-          {tenant
-            ? `Sign in to manage ${tenant.name}.`
-            : 'Sign in to access your admin dashboard.'}
+          {pendingMfaToken
+            ? useBackupCode
+              ? 'Enter one of the backup codes you saved when you set up two-factor authentication.'
+              : 'Enter the 6-digit code from your authenticator app to finish signing in.'
+            : tenant
+              ? `Sign in to manage ${tenant.name}.`
+              : 'Sign in to access your admin dashboard.'}
         </p>
       </motion.div>
 
@@ -190,120 +275,56 @@ export default function SignInForm({ tenant }: { tenant?: TenantInfo | null }) {
         )}
       </AnimatePresence>
 
-      <Form<LoginSchema>
-        validationSchema={loginSchema}
-        resetValues={reset}
-        onSubmit={onSubmit}
-        useFormProps={{ defaultValues: initialValues }}
-      >
-        {({ register, formState: { errors } }) => (
+      {pendingMfaToken ? (
+        <motion.form variants={container} onSubmit={onMfaSubmit}>
           <motion.div className="space-y-5" variants={container}>
-            {/* Email */}
             <motion.div variants={item} className="space-y-1.5">
-              <label className="text-sm font-medium text-gray-700">
-                Email address
+              <label
+                className="text-sm font-medium text-gray-700"
+                htmlFor="mfa-code"
+              >
+                {useBackupCode ? 'Backup code' : 'Authentication code'}
               </label>
               <input
-                type="email"
-                placeholder="you@company.com"
-                autoComplete="email"
-                className={`${inputBase} ${
-                  errors.email
-                    ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20'
-                    : 'border-gray-200 hover:border-gray-300'
+                id="mfa-code"
+                key={useBackupCode ? 'backup' : 'totp'}
+                type="text"
+                autoFocus
+                autoComplete="one-time-code"
+                inputMode={useBackupCode ? 'text' : 'numeric'}
+                placeholder={useBackupCode ? 'Backup code' : '000000'}
+                maxLength={useBackupCode ? 32 : 6}
+                value={mfaCode}
+                onChange={(e) =>
+                  setMfaCode(
+                    useBackupCode
+                      ? e.target.value.trim()
+                      : e.target.value.replace(/\D/g, '')
+                  )
+                }
+                className={`${inputBase} border-gray-200 hover:border-gray-300 ${
+                  useBackupCode
+                    ? ''
+                    : 'text-center text-2xl font-semibold tracking-[0.4em]'
                 }`}
-                {...register('email')}
                 disabled={isLoading}
               />
-              {errors.email && (
-                <p className="flex items-center gap-1.5 text-sm text-red-600">
-                  <PiWarningCircle className="h-4 w-4" />
-                  {errors.email.message}
-                </p>
-              )}
-            </motion.div>
-
-            {/* Password */}
-            <motion.div variants={item} className="space-y-1.5">
-              <label className="text-sm font-medium text-gray-700">
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter your password"
-                  autoComplete="current-password"
-                  className={`${inputBase} pr-11 ${
-                    errors.password
-                      ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                  {...register('password')}
-                  disabled={isLoading}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-                  tabIndex={-1}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? (
-                    <PiEyeSlash className="h-5 w-5" />
-                  ) : (
-                    <PiEye className="h-5 w-5" />
-                  )}
-                </button>
-              </div>
-              {errors.password && (
-                <p className="flex items-center gap-1.5 text-sm text-red-600">
-                  <PiWarningCircle className="h-4 w-4" />
-                  {errors.password.message}
-                </p>
-              )}
-            </motion.div>
-
-            {/* Remember + forgot */}
-            <motion.div
-              variants={item}
-              className="flex items-center justify-between"
-            >
-              <label className="flex cursor-pointer items-center gap-2">
-                <input
-                  type="checkbox"
-                  className="peer sr-only"
-                  {...register('rememberMe')}
-                  disabled={isLoading}
-                />
-                <span className="flex h-5 w-5 items-center justify-center rounded-md border-2 border-gray-300 transition-colors peer-checked:border-[var(--accent)] peer-checked:bg-[var(--accent)] peer-checked:[&>svg]:opacity-100">
-                  <svg
-                    className="h-3 w-3 text-white opacity-0 transition-opacity"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={3}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                </span>
-                <span className="text-sm font-medium text-gray-600">
-                  Remember me
-                </span>
-              </label>
-              <Link
-                href={routes.auth.forgotPassword1}
-                className="text-sm font-semibold transition-opacity hover:opacity-80"
-                style={{ color: accent }}
+              <button
+                type="button"
+                onClick={() => {
+                  setUseBackupCode((v) => !v);
+                  setMfaCode('');
+                  setAuthError(null);
+                }}
+                className="text-sm font-medium text-gray-500 transition-colors hover:text-gray-700"
+                disabled={isLoading}
               >
-                Forgot password?
-              </Link>
+                {useBackupCode
+                  ? 'Use your authenticator app instead'
+                  : 'Use a backup code instead'}
+              </button>
             </motion.div>
 
-            {/* Submit */}
             <motion.div variants={item}>
               <Button
                 className="h-12 w-full rounded-xl text-base font-semibold text-white transition-transform active:scale-[0.99]"
@@ -311,15 +332,166 @@ export default function SignInForm({ tenant }: { tenant?: TenantInfo | null }) {
                 type="submit"
                 size="lg"
                 isLoading={isLoading}
-                disabled={isLoading}
+                disabled={
+                  isLoading ||
+                  (useBackupCode
+                    ? mfaCode.trim().length === 0
+                    : mfaCode.length < 6)
+                }
               >
-                <span>{tenant ? `Sign in to ${tenant.name}` : 'Sign in'}</span>
+                <span>Verify and sign in</span>
                 {!isLoading && <PiArrowRightBold className="ms-2 h-5 w-5" />}
               </Button>
             </motion.div>
+
+            <motion.div variants={item} className="text-center">
+              <button
+                type="button"
+                onClick={() => leaveMfaChallenge(null)}
+                className="text-sm font-medium text-gray-500 transition-colors hover:text-gray-700"
+                disabled={isLoading}
+              >
+                Back to sign in
+              </button>
+            </motion.div>
           </motion.div>
-        )}
-      </Form>
+        </motion.form>
+      ) : (
+        <Form<LoginSchema>
+          validationSchema={loginSchema}
+          resetValues={reset}
+          onSubmit={onSubmit}
+          useFormProps={{ defaultValues: initialValues }}
+        >
+          {({ register, formState: { errors } }) => (
+            <motion.div className="space-y-5" variants={container}>
+              {/* Email */}
+              <motion.div variants={item} className="space-y-1.5">
+                <label className="text-sm font-medium text-gray-700">
+                  Email address
+                </label>
+                <input
+                  type="email"
+                  placeholder="you@company.com"
+                  autoComplete="email"
+                  className={`${inputBase} ${
+                    errors.email
+                      ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                  {...register('email')}
+                  disabled={isLoading}
+                />
+                {errors.email && (
+                  <p className="flex items-center gap-1.5 text-sm text-red-600">
+                    <PiWarningCircle className="h-4 w-4" />
+                    {errors.email.message}
+                  </p>
+                )}
+              </motion.div>
+
+              {/* Password */}
+              <motion.div variants={item} className="space-y-1.5">
+                <label className="text-sm font-medium text-gray-700">
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Enter your password"
+                    autoComplete="current-password"
+                    className={`${inputBase} pr-11 ${
+                      errors.password
+                        ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    {...register('password')}
+                    disabled={isLoading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                    tabIndex={-1}
+                    aria-label={
+                      showPassword ? 'Hide password' : 'Show password'
+                    }
+                  >
+                    {showPassword ? (
+                      <PiEyeSlash className="h-5 w-5" />
+                    ) : (
+                      <PiEye className="h-5 w-5" />
+                    )}
+                  </button>
+                </div>
+                {errors.password && (
+                  <p className="flex items-center gap-1.5 text-sm text-red-600">
+                    <PiWarningCircle className="h-4 w-4" />
+                    {errors.password.message}
+                  </p>
+                )}
+              </motion.div>
+
+              {/* Remember + forgot */}
+              <motion.div
+                variants={item}
+                className="flex items-center justify-between"
+              >
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    className="peer sr-only"
+                    {...register('rememberMe')}
+                    disabled={isLoading}
+                  />
+                  <span className="flex h-5 w-5 items-center justify-center rounded-md border-2 border-gray-300 transition-colors peer-checked:border-[var(--accent)] peer-checked:bg-[var(--accent)] peer-checked:[&>svg]:opacity-100">
+                    <svg
+                      className="h-3 w-3 text-white opacity-0 transition-opacity"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={3}
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                  </span>
+                  <span className="text-sm font-medium text-gray-600">
+                    Remember me
+                  </span>
+                </label>
+                <Link
+                  href={routes.auth.forgotPassword1}
+                  className="text-sm font-semibold transition-opacity hover:opacity-80"
+                  style={{ color: accent }}
+                >
+                  Forgot password?
+                </Link>
+              </motion.div>
+
+              {/* Submit */}
+              <motion.div variants={item}>
+                <Button
+                  className="h-12 w-full rounded-xl text-base font-semibold text-white transition-transform active:scale-[0.99]"
+                  style={{ backgroundColor: accent }}
+                  type="submit"
+                  size="lg"
+                  isLoading={isLoading}
+                  disabled={isLoading}
+                >
+                  <span>
+                    {tenant ? `Sign in to ${tenant.name}` : 'Sign in'}
+                  </span>
+                  {!isLoading && <PiArrowRightBold className="ms-2 h-5 w-5" />}
+                </Button>
+              </motion.div>
+            </motion.div>
+          )}
+        </Form>
+      )}
 
       {/* Security notice */}
       <motion.div
@@ -356,7 +528,7 @@ export default function SignInForm({ tenant }: { tenant?: TenantInfo | null }) {
       </motion.div>
 
       {/* Demo credentials — development only, platform login only */}
-      {isDev && !tenant && (
+      {isDev && !tenant && !pendingMfaToken && (
         <motion.div
           variants={item}
           className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3"

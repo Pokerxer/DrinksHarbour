@@ -4,7 +4,8 @@
 import { Title, Text, Avatar, Button, Popover } from 'rizzui';
 import cn from '@core/utils/class-names';
 import { routes } from '@/config/routes';
-import { signOut, useSession } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
+import { signOutAndRevoke } from '@/utils/sign-out';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -30,7 +31,9 @@ export default function ProfileMenu({
 
   const displayName =
     session?.user?.name ||
-    [session?.user?.firstName, session?.user?.lastName].filter(Boolean).join(' ') ||
+    [session?.user?.firstName, session?.user?.lastName]
+      .filter(Boolean)
+      .join(' ') ||
     session?.user?.email?.split('@')[0] ||
     'User';
 
@@ -81,7 +84,12 @@ function ProfileMenuPopover({ children }: React.PropsWithChildren<{}>) {
   }, [pathname]);
 
   return (
-    <Popover isOpen={isOpen} setIsOpen={setIsOpen} shadow="sm" placement="bottom-end">
+    <Popover
+      isOpen={isOpen}
+      setIsOpen={setIsOpen}
+      shadow="sm"
+      placement="bottom-end"
+    >
       {children}
     </Popover>
   );
@@ -101,17 +109,32 @@ function DropdownMenu({
   accentColor: string;
 }) {
   const menuItems = [
-    { name: 'My Profile', href: routes.profile, icon: <PiUserDuotone className="h-4 w-4" /> },
-    { name: 'Account Settings', href: routes.forms.profileSettings, icon: <PiGearDuotone className="h-4 w-4" /> },
+    {
+      name: 'My Profile',
+      href: routes.profile,
+      icon: <PiUserDuotone className="h-4 w-4" />,
+    },
+    {
+      name: 'Account Settings',
+      href: routes.forms.profileSettings,
+      icon: <PiGearDuotone className="h-4 w-4" />,
+    },
   ];
 
   return (
     <div className="w-64 text-left rtl:text-right">
       {/* User info header */}
       <div className="flex items-center border-b border-gray-200 px-5 pb-4 pt-5">
-        <Avatar src={avatarSrc} name={displayName} className="h-10 w-10 flex-shrink-0" />
+        <Avatar
+          src={avatarSrc}
+          name={displayName}
+          className="h-10 w-10 flex-shrink-0"
+        />
         <div className="ms-3 min-w-0">
-          <Title as="h6" className="truncate text-sm font-semibold text-gray-900">
+          <Title
+            as="h6"
+            className="truncate text-sm font-semibold text-gray-900"
+          >
             {displayName}
           </Title>
           {email && (
@@ -124,14 +147,25 @@ function DropdownMenu({
       {tenant && (
         <div
           className="mx-3 mt-3 flex items-center gap-2 rounded-lg px-3 py-2"
-          style={{ background: `${accentColor}10`, border: `1px solid ${accentColor}25` }}
+          style={{
+            background: `${accentColor}10`,
+            border: `1px solid ${accentColor}25`,
+          }}
         >
-          <PiStorefrontDuotone className="h-4 w-4 flex-shrink-0" style={{ color: accentColor }} />
+          <PiStorefrontDuotone
+            className="h-4 w-4 flex-shrink-0"
+            style={{ color: accentColor }}
+          />
           <div className="min-w-0">
-            <p className="truncate text-xs font-semibold" style={{ color: accentColor }}>
+            <p
+              className="truncate text-xs font-semibold"
+              style={{ color: accentColor }}
+            >
               {tenant.name}
             </p>
-            <p className="truncate text-[10px] text-gray-400">{tenant.slug}.drinksharbour.com</p>
+            <p className="truncate text-[10px] text-gray-400">
+              {tenant.slug}.drinksharbour.com
+            </p>
           </div>
         </div>
       )}
@@ -144,7 +178,9 @@ function DropdownMenu({
             href={item.href}
             className="group my-0.5 flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm hover:bg-gray-100 focus:outline-none hover:dark:bg-gray-50/50"
           >
-            <span className="text-gray-400 group-hover:text-gray-600">{item.icon}</span>
+            <span className="text-gray-400 group-hover:text-gray-600">
+              {item.icon}
+            </span>
             {item.name}
           </Link>
         ))}
@@ -153,9 +189,9 @@ function DropdownMenu({
       {/* Sign out */}
       <div className="border-t border-gray-200 px-5 pb-5 pt-4">
         <Button
-          className="flex h-auto w-full items-center gap-2.5 justify-start p-0 text-sm font-medium text-gray-700 outline-none hover:text-gray-900 focus-visible:ring-0"
+          className="flex h-auto w-full items-center justify-start gap-2.5 p-0 text-sm font-medium text-gray-700 outline-none hover:text-gray-900 focus-visible:ring-0"
           variant="text"
-          onClick={() => signOut()}
+          onClick={() => signOutAndRevoke()}
         >
           <PiSignOutDuotone className="h-4 w-4 text-gray-400" />
           Sign Out

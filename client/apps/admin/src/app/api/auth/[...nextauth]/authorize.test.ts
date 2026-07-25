@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { authOptions } from './auth-options';
+import { MFA_REQUIRED_PREFIX } from './mfa-challenge';
 
 /**
  * Exercises the `authorize` callbacks of both credentials providers against a
@@ -25,18 +26,24 @@ function authorizeFor(id: string): AuthorizeFn {
   return provider.options.authorize;
 }
 
+function stubJsonResponse(
+  payload: Record<string, unknown>,
+  { ok = true }: { ok?: boolean } = {}
+) {
+  const fetchMock = vi.fn(async () => ({
+    ok,
+    headers: { get: () => 'application/json' },
+    json: async () => payload,
+  }));
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+
 function stubLoginResponse(user: Record<string, unknown>) {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => ({
-      ok: true,
-      headers: { get: () => 'application/json' },
-      json: async () => ({
-        success: true,
-        data: { user, token: 'access-token', refreshToken: 'refresh-token' },
-      }),
-    }))
-  );
+  return stubJsonResponse({
+    success: true,
+    data: { user, token: 'access-token', refreshToken: 'refresh-token' },
+  });
 }
 
 const BASE_USER = {
@@ -71,20 +78,125 @@ describe('credentials provider role whitelist', () => {
     ).rejects.toThrow(/not authorized/i);
   });
 
-  test.each(['super_admin', 'admin', 'tenant_admin', 'tenant_owner', 'tenant_staff'])(
-    'admits %s',
-    async (role) => {
-      stubLoginResponse({ ...BASE_USER, role });
+  test.each([
+    'super_admin',
+    'admin',
+    'tenant_admin',
+    'tenant_owner',
+    'tenant_staff',
+  ])('admits %s', async (role) => {
+    stubLoginResponse({ ...BASE_USER, role });
 
-      const user = (await authorizeFor('credentials')({
-        email: 'staff@example.com',
+    const user = (await authorizeFor('credentials')({
+      email: 'staff@example.com',
+      password: 'pw',
+    })) as { role: string; token: string };
+
+    expect(user.role).toBe(role);
+    expect(user.token).toBe('access-token');
+  });
+});
+
+describe('credentials provider MFA challenge', () => {
+  test('refuses to build a session when the backend demands MFA', async () => {
+    // The backend answers a correct password from an MFA-enabled account with
+    // `mfaRequired` and NO access token. Treating that as success produced a
+    // session carrying `token: undefined`, so every later API call 401'd.
+    stubJsonResponse({
+      success: true,
+      data: {
+        user: { ...BASE_USER, role: 'admin' },
+        mfaRequired: true,
+        pendingMfaToken: 'pending-token-123',
+      },
+    });
+
+    await expect(
+      authorizeFor('credentials')({ email: 'a@b.com', password: 'pw' })
+    ).rejects.toThrow(`${MFA_REQUIRED_PREFIX}pending-token-123`);
+  });
+
+  test('rejects an MFA-enabled customer before disclosing a pending token', async () => {
+    stubJsonResponse({
+      success: true,
+      data: {
+        user: { ...BASE_USER, role: 'customer' },
+        mfaRequired: true,
+        pendingMfaToken: 'pending-token-123',
+      },
+    });
+
+    await expect(
+      authorizeFor('credentials')({
+        email: 'shopper@example.com',
         password: 'pw',
-      })) as { role: string; token: string };
+      })
+    ).rejects.toThrow(/not authorized/i);
+  });
+});
 
-      expect(user.role).toBe(role);
-      expect(user.token).toBe('access-token');
-    }
-  );
+describe('mfa provider', () => {
+  test('exchanges a pending token and code for a full session', async () => {
+    const fetchMock = stubJsonResponse({
+      success: true,
+      data: {
+        user: { ...BASE_USER, role: 'admin' },
+        token: 'access-token',
+        refreshToken: 'refresh-token',
+      },
+    });
+
+    const user = (await authorizeFor('mfa')({
+      pendingMfaToken: 'pending-token-123',
+      code: '123456',
+    })) as { role: string; token: string; refreshToken: string };
+
+    expect(user.role).toBe('admin');
+    expect(user.token).toBe('access-token');
+    expect(user.refreshToken).toBe('refresh-token');
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      { body: string },
+    ];
+    expect(url).toContain('/api/users/mfa/verify');
+    expect(JSON.parse(init.body)).toEqual({
+      pendingMfaToken: 'pending-token-123',
+      code: '123456',
+    });
+  });
+
+  test('surfaces the backend message when the code is wrong', async () => {
+    stubJsonResponse(
+      { success: false, message: 'Invalid verification code' },
+      { ok: false }
+    );
+
+    await expect(
+      authorizeFor('mfa')({ pendingMfaToken: 'pending', code: '000000' })
+    ).rejects.toThrow('Invalid verification code');
+  });
+
+  test('applies the admin role whitelist to the second factor too', async () => {
+    stubJsonResponse({
+      success: true,
+      data: {
+        user: { ...BASE_USER, role: 'customer' },
+        token: 'access-token',
+        refreshToken: 'refresh-token',
+      },
+    });
+
+    await expect(
+      authorizeFor('mfa')({ pendingMfaToken: 'pending', code: '123456' })
+    ).rejects.toThrow(/not authorized/i);
+  });
+
+  test('requires both a pending token and a code', async () => {
+    await expect(
+      authorizeFor('mfa')({ pendingMfaToken: 'pending', code: '' })
+    ).rejects.toThrow(/verification code/i);
+  });
 });
 
 describe('pos-pin provider role whitelist', () => {

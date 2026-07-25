@@ -5,6 +5,7 @@ import withAuth from 'next-auth/middleware';
 import { getToken } from 'next-auth/jwt';
 import type { UserRole } from '@/types/authorization';
 import { PLATFORM_ROLES, TENANT_ROLES } from '@/types/authorization';
+import { hasAdminSession } from '@/app/api/auth/[...nextauth]/session-guard';
 
 interface NextAuthRequest extends NextRequest {
   nextauth?: {
@@ -77,7 +78,10 @@ const authMiddleware = withAuth(
     const authReq = req as NextAuthRequest;
     const token = authReq.nextauth?.token;
     const path = req.nextUrl.pathname;
-    const role = (token?.role as UserRole) ?? 'viewer';
+    // No fallback role: `authorized` below has already refused anything without
+    // a recognised one, and inventing 'viewer' here meant an unknown role
+    // quietly passed every check written in terms of PLATFORM/TENANT roles.
+    const role = (token?.role ?? null) as UserRole | null;
     const tenantId = token?.tenantId as string | undefined;
 
     // ── Subdomain detection ──────────────────────────────────────────────────
@@ -94,7 +98,7 @@ const authMiddleware = withAuth(
     // If a tenant-role user visits a subdomain that isn't theirs, redirect them
     // (We compare by slug; the token stores tenantId so we rely on the slug
     //  being set in the token as well, or fall back to blocking unknown subdomains.)
-    if (tenantSlug && TENANT_ROLES.includes(role)) {
+    if (tenantSlug && role && TENANT_ROLES.includes(role)) {
       const tokenSlug = (token as any)?.tenantSlug as string | undefined;
       // If we have a slug in the token and it doesn't match, send to access-denied
       if (tokenSlug && tokenSlug !== tenantSlug) {
@@ -106,7 +110,7 @@ const authMiddleware = withAuth(
 
     // Platform-only sections — tenant roles cannot access these at all
     if (path.startsWith('/executive') || path.startsWith('/financial')) {
-      if (!PLATFORM_ROLES.includes(role)) {
+      if (!role || !PLATFORM_ROLES.includes(role)) {
         return NextResponse.redirect(new URL('/access-denied', req.url));
       }
     }
@@ -118,6 +122,7 @@ const authMiddleware = withAuth(
       '/products', // main product catalog is platform-only; tenants use /sub-products
     ];
     if (
+      role &&
       TENANT_ROLES.includes(role) &&
       PLATFORM_ONLY_PATHS.some((p) => path.startsWith(p))
     ) {
@@ -139,7 +144,7 @@ const authMiddleware = withAuth(
       ECOMMERCE_PREFIXES.some((p) => path.startsWith(p)) ||
       path.startsWith('/logistics')
     ) {
-      if (TENANT_ROLES.includes(role) && !tenantId) {
+      if (role && TENANT_ROLES.includes(role) && !tenantId) {
         return NextResponse.redirect(new URL('/access-denied', req.url));
       }
     }
@@ -147,9 +152,10 @@ const authMiddleware = withAuth(
     // User/role management — platform admins + tenant owners/admins only
     if (path.startsWith('/roles-permissions') || path.startsWith('/users')) {
       if (
-        !PLATFORM_ROLES.includes(role) &&
-        role !== 'tenant_admin' &&
-        role !== 'tenant_owner'
+        !role ||
+        (!PLATFORM_ROLES.includes(role) &&
+          role !== 'tenant_admin' &&
+          role !== 'tenant_owner')
       ) {
         return NextResponse.redirect(new URL('/access-denied', req.url));
       }
@@ -164,9 +170,9 @@ const authMiddleware = withAuth(
       ...pagesOptions,
     },
     callbacks: {
-      authorized: ({ token }) => {
-        return !!token;
-      },
+      // A token alone is not authorization: it must carry a whitelisted admin
+      // role and a backend access token.
+      authorized: ({ token }) => hasAdminSession(token),
     },
   }
 );

@@ -5,7 +5,8 @@ import {
   decode as defaultJwtDecode,
 } from 'next-auth/jwt';
 import { pagesOptions } from './pages-options';
-import type { UserRole } from '@/types/authorization';
+import { MFA_REQUIRED_PREFIX } from './mfa-challenge';
+import { ADMIN_ACCESS_ROLES, type UserRole } from '@/types/authorization';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
@@ -16,22 +17,28 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 const DEFAULT_SESSION_MAX_AGE = 24 * 60 * 60; // 1 day
 const REMEMBER_SESSION_MAX_AGE = 30 * 24 * 60 * 60; // 30 days
 
+interface AuthenticatedUser {
+  _id: string;
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: UserRole;
+  tenant?: string | { _id: string; slug?: string };
+  tenantId?: string;
+  avatar?: { url: string };
+}
+
 interface LoginResponse {
   success: boolean;
   data: {
-    user: {
-      _id: string;
-      id: string;
-      email: string;
-      firstName: string;
-      lastName: string;
-      role: UserRole;
-      tenant?: string | { _id: string; slug?: string };
-      tenantId?: string;
-      avatar?: { url: string };
-    };
+    user: AuthenticatedUser;
     token: string;
     refreshToken?: string;
+    // Present instead of `token` when the account has MFA enabled — the login
+    // is only half-complete until the code is verified.
+    mfaRequired?: boolean;
+    pendingMfaToken?: string;
   };
   message?: string;
 }
@@ -51,27 +58,67 @@ interface RefreshTokenResponse {
   message?: string;
 }
 
-/**
- * Roles permitted to hold an admin-dashboard session.
- *
- * `customer` is deliberately absent. /api/users/login is shared with the
- * storefront, so a customer authenticating successfully is a normal response
- * here — it just isn't grounds for an admin session.
- */
-const ADMIN_ACCESS_ROLES: UserRole[] = [
-  'super_admin',
-  'admin',
-  'tenant_admin',
-  'tenant_owner',
-  'tenant_staff',
-];
-
 function assertRoleMayAccessAdmin(role: UserRole): void {
   if (!ADMIN_ACCESS_ROLES.includes(role)) {
     throw new Error(
       `Access denied. Role '${role}' is not authorized to access this system.`
     );
   }
+}
+
+/**
+ * Map a successful backend auth response onto the NextAuth `user` object.
+ * Shared by the password and MFA providers — `/api/users/mfa/verify` returns
+ * the same `{ user, token, refreshToken }` shape as `/api/users/login`.
+ */
+async function toSessionUser(
+  user: AuthenticatedUser,
+  token: string,
+  refreshToken: string | undefined,
+  remember: boolean
+) {
+  const tenantValue = user.tenant;
+  const tenantId =
+    typeof tenantValue === 'object' && tenantValue !== null
+      ? tenantValue._id
+      : tenantValue || user.tenantId || null;
+
+  // Resolve tenant slug from populated tenant object or via API
+  let tenantSlug: string | null = null;
+  if (
+    typeof tenantValue === 'object' &&
+    tenantValue !== null &&
+    tenantValue.slug
+  ) {
+    tenantSlug = tenantValue.slug;
+  } else if (tenantId) {
+    try {
+      const tenantRes = await fetch(`${API_URL}/api/tenants/${tenantId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (tenantRes.ok) {
+        const tenantJson = (await tenantRes.json()) as TenantSlugResponse;
+        tenantSlug = tenantJson?.data?.tenant?.slug ?? null;
+      }
+    } catch {
+      /* non-blocking — slug stays null */
+    }
+  }
+
+  return {
+    id: user._id || user.id,
+    email: user.email,
+    name: `${user.firstName} ${user.lastName}`,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    role: user.role,
+    tenantId,
+    tenantSlug,
+    image: user.avatar?.url || null,
+    token,
+    refreshToken,
+    remember,
+  };
 }
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
@@ -86,10 +133,21 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   }
 }
 
-function isTokenExpired(token: string): boolean {
+/**
+ * Refresh a little before the access token actually expires.
+ *
+ * Parallel requests can enter `jwt()` together and race to spend the same
+ * refresh token, which the backend rotates and revokes on first use. Refreshing
+ * early means the common case is one refresh while the old token is still
+ * usable. It narrows the race rather than closing it; the residual cost of an
+ * exact tie is a single spurious sign-out.
+ */
+const REFRESH_SKEW_SECONDS = 60;
+
+function isTokenExpiring(token: string): boolean {
   const decoded = decodeJwtPayload(token);
   if (!decoded || typeof decoded.exp !== 'number') return false;
-  return decoded.exp * 1000 < Date.now();
+  return (decoded.exp - REFRESH_SKEW_SECONDS) * 1000 < Date.now();
 }
 
 async function refreshAccessToken(refreshToken: string) {
@@ -151,26 +209,10 @@ export const authOptions: NextAuthOptions = {
     decode: defaultJwtDecode,
   },
   callbacks: {
+    // Pure: whatever `jwt()` settled on is what the client sees. Refreshing
+    // here would be silently discarded — NextAuth re-encodes the cookie from
+    // the `jwt()` return value only.
     async session({ session, token }) {
-      if (token.refreshToken && token.accessToken) {
-        try {
-          if (isTokenExpired(token.accessToken as string)) {
-            const refreshedTokens = await refreshAccessToken(
-              token.refreshToken as string
-            );
-            if (refreshedTokens) {
-              token.accessToken = refreshedTokens.token;
-              token.refreshToken = refreshedTokens.refreshToken;
-            } else {
-              return { ...session, error: 'RefreshAccessTokenError' };
-            }
-          }
-        } catch (error) {
-          console.error('Error refreshing token in session callback:', error);
-          return { ...session, error: 'RefreshAccessTokenError' };
-        }
-      }
-
       return {
         ...session,
         user: {
@@ -184,7 +226,7 @@ export const authOptions: NextAuthOptions = {
         error: token.error,
       };
     },
-    async jwt({ token, user, trigger }) {
+    async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
         token.role = user.role;
@@ -196,24 +238,30 @@ export const authOptions: NextAuthOptions = {
         // Carry the per-login "remember me" choice so `jwt.encode` can pick the
         // right session lifetime. Defaults to a short session when absent.
         token.remember = (user as { remember?: boolean }).remember === true;
+        return token;
       }
 
-      if (trigger === 'update' && token.accessToken) {
-        const decoded = decodeJwtPayload(token.accessToken as string);
-        if (
-          decoded &&
-          typeof decoded.exp === 'number' &&
-          decoded.exp * 1000 < Date.now()
-        ) {
-          if (token.refreshToken) {
-            const refreshedTokens = await refreshAccessToken(
-              token.refreshToken as string
-            );
-            if (refreshedTokens) {
-              token.accessToken = refreshedTokens.token;
-              token.refreshToken = refreshedTokens.refreshToken;
-            }
+      // Refresh here, where the return value is re-encoded into the session
+      // cookie, so the rotated refresh token survives to be used next time.
+      if (
+        token.accessToken &&
+        token.refreshToken &&
+        isTokenExpiring(token.accessToken as string)
+      ) {
+        try {
+          const refreshedTokens = await refreshAccessToken(
+            token.refreshToken as string
+          );
+          if (refreshedTokens) {
+            token.accessToken = refreshedTokens.token;
+            token.refreshToken = refreshedTokens.refreshToken;
+            delete token.error;
+          } else {
+            token.error = 'RefreshAccessTokenError';
           }
+        } catch (error) {
+          console.error('Error refreshing token in jwt callback:', error);
+          token.error = 'RefreshAccessTokenError';
         }
       }
 
@@ -276,57 +324,36 @@ export const authOptions: NextAuthOptions = {
             throw new Error(errorMessage);
           }
 
-          const userRole = data.data.user.role;
-          assertRoleMayAccessAdmin(userRole);
+          assertRoleMayAccessAdmin(data.data.user.role);
 
-          const tenantValue = data.data.user.tenant;
-          const tenantId =
-            typeof tenantValue === 'object' && tenantValue !== null
-              ? tenantValue._id
-              : tenantValue || data.data.user.tenantId || null;
-
-          // Resolve tenant slug from populated tenant object or via API
-          let tenantSlug: string | null = null;
-          if (
-            typeof tenantValue === 'object' &&
-            tenantValue !== null &&
-            tenantValue.slug
-          ) {
-            tenantSlug = tenantValue.slug;
-          } else if (tenantId) {
-            try {
-              const tenantRes = await fetch(
-                `${API_URL}/api/tenants/${tenantId}`,
-                {
-                  headers: { Authorization: `Bearer ${data.data.token}` },
-                }
+          // MFA-enabled accounts get no tokens here — only a 5-minute pending
+          // token to spend on the `mfa` provider below. Returning a user now
+          // would mint a session whose `token` is undefined.
+          if (data.data.mfaRequired) {
+            if (!data.data.pendingMfaToken) {
+              throw new Error(
+                'Two-factor authentication is required but the server did not issue a challenge. Please try again.'
               );
-              if (tenantRes.ok) {
-                const tenantJson =
-                  (await tenantRes.json()) as TenantSlugResponse;
-                tenantSlug = tenantJson?.data?.tenant?.slug ?? null;
-              }
-            } catch {
-              /* non-blocking — slug stays null */
             }
+            throw new Error(
+              `${MFA_REQUIRED_PREFIX}${data.data.pendingMfaToken}`
+            );
           }
 
-          return {
-            id: data.data.user._id || data.data.user.id,
-            email: data.data.user.email,
-            name: `${data.data.user.firstName} ${data.data.user.lastName}`,
-            firstName: data.data.user.firstName,
-            lastName: data.data.user.lastName,
-            role: userRole,
-            tenantId,
-            tenantSlug,
-            image: data.data.user.avatar?.url || null,
-            token: data.data.token,
-            refreshToken: data.data.refreshToken,
-            remember: credentials.rememberMe === 'true',
-          };
+          return toSessionUser(
+            data.data.user,
+            data.data.token,
+            data.data.refreshToken,
+            credentials.rememberMe === 'true'
+          );
         } catch (error: unknown) {
-          console.error('Auth error:', error);
+          // An MFA challenge is a normal outcome, not a failure to log.
+          if (
+            !(error instanceof Error) ||
+            !error.message.startsWith(MFA_REQUIRED_PREFIX)
+          ) {
+            console.error('Auth error:', error);
+          }
 
           // Handle network errors specifically
           if (
@@ -340,6 +367,55 @@ export const authOptions: NextAuthOptions = {
 
           const message =
             error instanceof Error ? error.message : 'Authentication failed';
+          throw new Error(message);
+        }
+      },
+    }),
+    // Second half of the MFA login. The pending token is held in React state on
+    // /signin between the two calls — never in a URL or storage — and dies with
+    // the page or after 5 minutes server-side, whichever comes first.
+    CredentialsProvider({
+      id: 'mfa',
+      name: 'Two-Factor Code',
+      credentials: {
+        pendingMfaToken: { label: 'Pending MFA Token', type: 'text' },
+        code: { label: 'Code', type: 'text' },
+        rememberMe: { label: 'Remember Me', type: 'text' },
+      },
+      async authorize(credentials) {
+        if (!credentials?.pendingMfaToken || !credentials?.code) {
+          throw new Error('Please provide your verification code');
+        }
+
+        try {
+          const response = await fetch(`${API_URL}/api/users/mfa/verify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              pendingMfaToken: credentials.pendingMfaToken,
+              code: credentials.code,
+            }),
+          });
+
+          const data = (await response.json()) as LoginResponse;
+
+          if (!response.ok || !data.success) {
+            throw new Error(data.message || 'Invalid verification code');
+          }
+
+          assertRoleMayAccessAdmin(data.data.user.role);
+
+          return toSessionUser(
+            data.data.user,
+            data.data.token,
+            data.data.refreshToken,
+            credentials.rememberMe === 'true'
+          );
+        } catch (error: unknown) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : 'Two-factor verification failed';
           throw new Error(message);
         }
       },
