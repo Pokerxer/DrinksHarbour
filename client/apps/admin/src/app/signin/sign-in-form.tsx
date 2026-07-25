@@ -464,7 +464,7 @@ export default function SignInForm({ tenant }: { tenant?: TenantInfo | null }) {
                   </span>
                 </label>
                 <Link
-                  href={routes.auth.forgotPassword1}
+                  href={routes.auth.forgotPassword}
                   className="text-sm font-semibold transition-opacity hover:opacity-80"
                   style={{ color: accent }}
                 >

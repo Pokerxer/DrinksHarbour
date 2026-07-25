@@ -148,7 +148,7 @@ export default function ResetPasswordForm({
         </motion.p>
         <motion.div variants={item} className="mt-8">
           <Link
-            href={routes.auth.forgotPassword1}
+            href={routes.auth.forgotPassword}
             className="flex h-12 w-full items-center justify-center gap-2 rounded-xl text-base font-semibold text-white transition-transform active:scale-[0.99]"
             style={{ backgroundColor: accent }}
           >
