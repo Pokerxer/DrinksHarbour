@@ -14,6 +14,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
+const mongoose = require('mongoose');
 const Order = require('../models/Order');
 const orderController = require('../controllers/order.controller');
 
@@ -92,10 +93,41 @@ test('getAllOrders does not blow up for tenant admins and scopes to their tenant
   try {
     const res = await run(orderController.getAllOrders, tenantAdminReq());
     assert.strictEqual(res.body.success, true);
-    assert.strictEqual(stub.captured.findFilter['items.tenant'], TENANT_A);
+    assert.strictEqual(String(stub.captured.findFilter['items.tenant']), TENANT_A);
     // The aggregate must receive a real pipeline array with the tenant $match.
     assert.ok(Array.isArray(stub.captured.pipeline));
-    assert.deepStrictEqual(stub.captured.pipeline[0].$match['items.tenant'], TENANT_A);
+    assert.strictEqual(String(stub.captured.pipeline[0].$match['items.tenant']), TENANT_A);
+  } finally {
+    stub.restore();
+  }
+});
+
+test('tenant scoping casts the tenant id to an ObjectId for the aggregation', async () => {
+  // Order.find() casts a string id for you; $match does not. Leaving it as a
+  // string made every status card read 0 while the table showed real rows.
+  const stub = stubList({ total: 4, statusCounts: [] });
+  try {
+    await run(orderController.getAllOrders, tenantAdminReq());
+    const matched = stub.captured.pipeline[0].$match['items.tenant'];
+    assert.ok(matched instanceof mongoose.Types.ObjectId, 'aggregate $match needs a real ObjectId');
+    assert.strictEqual(matched.toString(), TENANT_A);
+    // find() must be given the same value so both queries agree
+    assert.strictEqual(stub.captured.findFilter['items.tenant'].toString(), TENANT_A);
+  } finally {
+    stub.restore();
+  }
+});
+
+test('an uncastable tenant id matches nothing rather than everything', async () => {
+  const stub = stubList({ total: 0, statusCounts: [] });
+  try {
+    await run(orderController.getAllOrders, {
+      query: {},
+      user: { _id: { toString: () => USER_ID }, role: 'tenant_admin', tenant: 'not-an-object-id' },
+    });
+    const matched = stub.captured.findFilter['items.tenant'];
+    assert.ok(matched instanceof mongoose.Types.ObjectId);
+    assert.notStrictEqual(matched.toString(), 'not-an-object-id');
   } finally {
     stub.restore();
   }

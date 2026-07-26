@@ -1,7 +1,10 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
 function authHeaders(token: string): HeadersInit {
-  return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`,
+  };
 }
 
 /** Envelope every /api/orders endpoint returns. */
@@ -19,7 +22,12 @@ async function unwrap<T>(res: Response, fallbackMessage: string): Promise<T> {
 }
 
 export interface OrderItem {
-  product: { _id: string; name: string; slug?: string; images?: { url: string }[] } | null;
+  product: {
+    _id: string;
+    name: string;
+    slug?: string;
+    images?: { url: string }[];
+  } | null;
   subproduct?: { _id: string; name: string; sku?: string } | null;
   /** Size documents have `size` ("75cl") and `displayName` — there is no `name` field. */
   size?: { _id: string; size?: string; displayName?: string } | null;
@@ -84,9 +92,19 @@ export interface OrderRefund {
 export interface Order {
   _id: string;
   orderNumber: string;
-  user?: { _id: string; firstName: string; lastName: string; email: string } | null;
+  user?: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+  } | null;
   /** Snapshot captured at checkout for guest orders */
-  customer?: { firstName?: string; lastName?: string; email?: string; phone?: string } | null;
+  customer?: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    phone?: string;
+  } | null;
   items: OrderItem[];
   subtotal: number;
   discountTotal: number;
@@ -106,7 +124,12 @@ export interface Order {
     change?: number;
     splitPayments?: { method: string; amount: number }[];
     /** POS walk-in / named customer snapshot — POS orders have no shippingAddress */
-    customer?: { firstName?: string; lastName?: string; phone?: string; customerId?: string | null };
+    customer?: {
+      firstName?: string;
+      lastName?: string;
+      phone?: string;
+      customerId?: string | null;
+    };
   };
   paymentReference?: string;
   paidAt?: string;
@@ -129,13 +152,24 @@ export interface Order {
   // Origin / POS
   source?: 'web' | 'pos' | 'app' | 'manual';
   receiptNumber?: string;
-  posStaff?: { _id: string; firstName?: string; lastName?: string; posName?: string; email?: string } | null;
+  posStaff?: {
+    _id: string;
+    firstName?: string;
+    lastName?: string;
+    posName?: string;
+    email?: string;
+  } | null;
   isVoided?: boolean;
   voidedAt?: string;
   voidReason?: string;
   refunds?: OrderRefund[];
 
-  coupon?: { _id: string; code: string; discountType?: string; discountValue?: number } | null;
+  coupon?: {
+    _id: string;
+    code: string;
+    discountType?: string;
+    discountValue?: number;
+  } | null;
   billingAddress?: ShippingAddress | null;
   ageVerifiedAtOrderTime?: boolean;
   appliedPricelist?: { pricelistName?: string; thresholdDiscount?: number };
@@ -167,8 +201,13 @@ export const orderService = {
     signal?: AbortSignal
   ): Promise<OrdersResponse> {
     const qs = new URLSearchParams();
-    Object.entries(params).forEach(([k, v]) => { if (v != null && v !== '') qs.set(k, String(v)); });
-    const res = await fetch(`${API_URL}/api/orders?${qs}`, { headers: authHeaders(token), signal });
+    Object.entries(params).forEach(([k, v]) => {
+      if (v != null && v !== '') qs.set(k, String(v));
+    });
+    const res = await fetch(`${API_URL}/api/orders?${qs}`, {
+      headers: authHeaders(token),
+      signal,
+    });
     return unwrap<OrdersResponse>(res, 'Failed to fetch orders');
   },
 
@@ -188,7 +227,11 @@ export const orderService = {
     let totalPages = 1;
 
     do {
-      const res = await this.getOrders(token, { ...params, page, limit: pageSize });
+      const res = await this.getOrders(token, {
+        ...params,
+        page,
+        limit: pageSize,
+      });
       all.push(...res.orders);
       totalPages = res.pagination.pages || 1;
       page += 1;
@@ -198,18 +241,28 @@ export const orderService = {
   },
 
   async getOrder(token: string, id: string): Promise<Order> {
-    const res = await fetch(`${API_URL}/api/orders/${id}`, { headers: authHeaders(token) });
+    const res = await fetch(`${API_URL}/api/orders/${id}`, {
+      headers: authHeaders(token),
+    });
     const { order } = await unwrap<{ order: Order }>(res, 'Order not found');
     return order;
   },
 
-  async updateStatus(token: string, id: string, status: string, reason?: string): Promise<Order> {
+  async updateStatus(
+    token: string,
+    id: string,
+    status: string,
+    reason?: string
+  ): Promise<Order> {
     const res = await fetch(`${API_URL}/api/orders/${id}/status`, {
       method: 'PUT',
       headers: authHeaders(token),
       body: JSON.stringify({ status, reason }),
     });
-    const { order } = await unwrap<{ order: Order }>(res, 'Failed to update status');
+    const { order } = await unwrap<{ order: Order }>(
+      res,
+      'Failed to update status'
+    );
     return order;
   },
 
@@ -224,17 +277,27 @@ export const orderService = {
       headers: authHeaders(token),
       body: JSON.stringify({ action, ...opts }),
     });
-    const { order } = await unwrap<{ order: Order }>(res, 'Failed to update payment');
+    const { order } = await unwrap<{ order: Order }>(
+      res,
+      'Failed to update payment'
+    );
     return order;
   },
 
-  async cancelOrder(token: string, id: string, reason?: string): Promise<Order> {
+  async cancelOrder(
+    token: string,
+    id: string,
+    reason?: string
+  ): Promise<Order> {
     const res = await fetch(`${API_URL}/api/orders/${id}/cancel`, {
       method: 'POST',
       headers: authHeaders(token),
       body: JSON.stringify({ reason }),
     });
-    const { order } = await unwrap<{ order: Order }>(res, 'Failed to cancel order');
+    const { order } = await unwrap<{ order: Order }>(
+      res,
+      'Failed to cancel order'
+    );
     return order;
   },
 };

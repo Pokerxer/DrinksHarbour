@@ -1,5 +1,6 @@
 // controllers/order.controller.js
 
+const mongoose = require('mongoose');
 const Order = require('../models/Order');
 const Coupon = require('../models/Coupon');
 const User = require('../models/User');
@@ -456,15 +457,24 @@ exports.getAllOrders = asyncHandler(async (req, res) => {
   // "Delivered" would zero out every other card).
   const baseFilter = {};
 
+  // ObjectId fields must be cast explicitly: this filter is reused by the
+  // aggregation below, and unlike Order.find(), $match does NOT cast strings
+  // to ObjectIds — a string tenant id there silently matches zero documents.
+  const toObjectId = (v) => {
+    if (!v) return null;
+    return mongoose.Types.ObjectId.isValid(v) ? new mongoose.Types.ObjectId(String(v)) : null;
+  };
+
   // Tenant admins can only see orders containing items from their own tenant
   if (!['super_admin', 'admin'].includes(req.user.role)) {
-    const tenantId = getTenantId(req);
-    baseFilter['items.tenant'] = tenantId;
+    const tenantId = toObjectId(getTenantId(req));
+    // A tenant id that won't cast must match nothing, never everything.
+    baseFilter['items.tenant'] = tenantId ?? new mongoose.Types.ObjectId();
   }
 
   if (payment)       baseFilter.paymentStatus       = payment;
   if (source)        baseFilter.source              = source;
-  if (subProductId)  baseFilter['items.subproduct'] = subProductId;
+  if (subProductId)  baseFilter['items.subproduct'] = toObjectId(subProductId) ?? new mongoose.Types.ObjectId();
 
   if (from || to) {
     baseFilter.placedAt = {};
