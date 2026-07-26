@@ -101,3 +101,24 @@ test('isRewritableBlock accepts prose and list blocks, rejects image/unknown/emp
   assert.strictEqual(isRewritableBlock(null), false);
   assert.strictEqual(isRewritableBlock(undefined), false);
 });
+
+// ── Tool-use response reading ─────────────────────────────────────────────
+
+const { textFromMessage } = require('../services/blog.helpers');
+
+test('textFromMessage joins text blocks and ignores tool blocks', () => {
+  const message = {
+    content: [
+      { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: {} },
+      { type: 'web_search_tool_result', tool_use_id: 'srvtoolu_1', content: [] },
+      { type: 'text', text: '{"title":"a"' },
+      { type: 'text', text: ',"excerpt":"b"}' },
+    ],
+  };
+  assert.strictEqual(textFromMessage(message), '{"title":"a","excerpt":"b"}');
+});
+
+test('textFromMessage returns empty string when there is no text block', () => {
+  assert.strictEqual(textFromMessage({ content: [{ type: 'server_tool_use' }] }), '');
+  assert.strictEqual(textFromMessage(undefined), '');
+});

@@ -17,6 +17,7 @@ const {
   generateField,
   generateSeo,
   generateBlock,
+  addCitations,
 } = require('../controllers/blog.controller');
 
 // Public
@@ -28,6 +29,7 @@ router.post('/admin/ai/generate-post', authenticate, generatePost);
 router.post('/admin/ai/generate-field', authenticate, generateField);
 router.post('/admin/ai/generate-seo', authenticate, generateSeo);
 router.post('/admin/ai/generate-block', authenticate, generateBlock);
+router.post('/admin/ai/add-citations', authenticate, addCitations);
 router.get('/admin', authenticate, adminListPosts);
 router.post('/admin', authenticate, createPost);
 router.get('/admin/:id', authenticate, adminGetPost);

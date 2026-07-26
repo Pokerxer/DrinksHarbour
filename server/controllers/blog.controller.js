@@ -17,7 +17,16 @@ const {
   parseAiJson,
   extractInternalLinks,
   sanitizeInlineLinks,
+  sanitizeLinks,
+  textFromMessage,
 } = require('../services/blog.helpers');
+const {
+  partitionExternalLinks,
+  verifyLiveUrls,
+  makeExternalLinkValidator,
+  buildExternalLinkRecords,
+  keepOnlyKnownLinks,
+} = require('../services/blog.links');
 
 // Same AI setup as gemini.controller.js: Haiku for structured generation.
 const HAIKU_MODEL = process.env.ANTHROPIC_FAST_MODEL || 'claude-haiku-4-5';
@@ -108,6 +117,7 @@ const createPost = asyncHandler(async (req, res) => {
   const existing = await BlogPost.find({ slug: new RegExp(`^${base}(-\\d+)?$`) }).select('slug').lean();
   data.slug = dedupeSlug(base, existing.map((p) => p.slug));
   data.readTime = computeReadTime(data.content);
+  data.externalLinks = buildExternalLinkRecords(data.content);
   if (data.status === 'published') data.publishedAt = new Date();
 
   try {
@@ -146,6 +156,7 @@ const updatePost = asyncHandler(async (req, res) => {
     content: data.content,
     featured: data.featured,
     readTime: computeReadTime(data.content),
+    externalLinks: buildExternalLinkRecords(data.content),
   });
   if (data.status === 'published' && post.status !== 'published') {
     post.status = 'published';
@@ -290,16 +301,50 @@ function makeLinkValidator(allowed) {
   };
 }
 
-async function callHaikuJson(prompt, maxTokens, model = HAIKU_MODEL) {
+// Anthropic's server-side search tool. Claude runs the searches on Anthropic's
+// infrastructure and cites URLs taken from real results, so there is no
+// recall-from-memory step for it to hallucinate a URL in.
+const WEB_SEARCH_TOOL = [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }];
+
+const EXTERNAL_CITATION_PROMPT = `
+
+EXTERNAL CITATIONS: use the web_search tool to find 2-4 authoritative sources that genuinely support claims in the post, and cite them inline with the same markdown syntax: [anchor words](https://full-url).
+- Every cited URL MUST come from a search result you actually received. Never write a URL from memory.
+- Cite only authoritative, non-commercial sources: official producer/distillery/winery sites, regulators and standards bodies (NAFDAC, WHO, EU/US labelling authorities), established reference works and trade publications.
+- NEVER link to a competing retailer, marketplace, or online shop.
+- The anchor must be natural words inside a sentence (e.g. "the [NAFDAC labelling rules](https://...) require"), never a bare URL and never "click here".
+- Cite each source at most once, and place citations in paragraph, list or tip text — never in a heading.`;
+
+// The external half of the link pipeline: drop blocked hosts without touching
+// the network, live-check the rest, and strip everything that did not come back
+// 2xx. Fail-closed — a link we could not prove is a link we do not ship.
+async function applyExternalCitations(content, opts = {}) {
+  const { external, blocked } = partitionExternalLinks(content);
+  if (!external.length && !blocked.length) {
+    return { content, kept: 0, stripped: 0, blocked: 0 };
+  }
+  const verdicts = external.length ? await verifyLiveUrls(external, opts) : new Map();
+  const isAllowed = makeExternalLinkValidator(verdicts);
+  const kept = external.filter((href) => isAllowed(href)).length;
+  return {
+    content: sanitizeLinks(content, isAllowed),
+    kept,
+    stripped: external.length - kept,
+    blocked: blocked.length,
+  };
+}
+
+async function callHaikuJson(prompt, maxTokens, model = HAIKU_MODEL, tools) {
   const message = await anthropic.messages.create({
     model,
     max_tokens: maxTokens,
     system:
       'You are an expert drinks & lifestyle content writer for DrinksHarbour, a Nigerian online drinks marketplace. Respond with ONLY valid JSON — no markdown code fences, no explanation, no preamble.',
     messages: [{ role: 'user', content: prompt }],
+    ...(tools ? { tools } : {}),
   });
   if (message.stop_reason === 'refusal') throw new Error('Claude declined the request');
-  return message.content?.[0]?.text || '';
+  return textFromMessage(message);
 }
 
 const generatePost = asyncHandler(async (req, res) => {
@@ -335,20 +380,27 @@ Return ONLY this JSON shape:
 
 Content rules: 600-900 words total; start with an intro paragraph; organize with "h2" section headings; include exactly one "tip" block with a practical pro tip; use "ul" or "ol" blocks with "items" for lists (all other block types use "text"); allowed block types are only: p, h2, h3, ul, ol, quote, tip, image. Insert 1-2 "image" blocks at natural break points (after a relevant section) as placeholders — ALWAYS leave "src" as an empty string (the author uploads the real photo), but write a specific "alt" and a short editorial "caption" describing the ideal photo. Use Nigerian context (naira prices, local brands, Lagos/Abuja references) where natural.
 SEO rules: metaTitle should be click-worthy and under 60 chars; metaDescription should be an active-voice summary under 155 chars; both may differ from the title/excerpt to target search intent.
-${catalogToPrompt(catalog)}`;
+${catalogToPrompt(catalog)}${EXTERNAL_CITATION_PROMPT}`;
 
   let data;
   try {
-    data = parseAiJson(await callHaikuJson(prompt, 4096, SMART_MODEL));
+    data = parseAiJson(await callHaikuJson(prompt, 4096, SMART_MODEL, WEB_SEARCH_TOOL));
   } catch (err) {
     console.error('generatePost AI error:', err.message);
     return res.status(502).json({ message: 'AI returned an unusable response — try again' });
   }
 
   // Strip any hallucinated product links, keeping only real catalog URLs.
-  const content = sanitizeInlineLinks(sanitizeContentBlocks(data.content), makeLinkValidator(catalog.allowed));
-  const linkCount = extractInternalLinks(content).length;
-  if (linkCount) console.log(`generatePost: kept ${linkCount} internal link(s) for "${topic}"`);
+  const internalSafe = sanitizeInlineLinks(
+    sanitizeContentBlocks(data.content),
+    makeLinkValidator(catalog.allowed)
+  );
+  const cited = await applyExternalCitations(internalSafe);
+  const content = cited.content;
+  console.log(
+    `generatePost "${topic}": ${extractInternalLinks(content).length} internal link(s), ` +
+      `${cited.kept} external citation(s) kept, ${cited.stripped} dead stripped, ${cited.blocked} blocked`
+  );
 
   const seo = {
     metaTitle: String(data.seo?.metaTitle || '').slice(0, 60),
@@ -452,6 +504,44 @@ The metaTitle and metaDescription must read as a coherent pair in a Google resul
   }
 });
 
+// Weave verified outbound citations into a post that already exists — AI-written
+// or hand-written. Same search + live-check pipeline as generatePost; the model
+// is told to insert links only, so the diff is markup rather than prose.
+const addCitations = asyncHandler(async (req, res) => {
+  if (!anthropic) return res.status(503).json({ message: 'AI is not configured (ANTHROPIC_API_KEY missing)' });
+  const content = sanitizeContentBlocks(req.body?.post?.content);
+  if (!content.length) return res.status(400).json({ message: 'Post has no content to cite' });
+
+  const prompt = `You are adding source citations to an existing DrinksHarbour blog post (Nigerian drinks & lifestyle magazine).
+Post title: "${req.body.post?.title || ''}"
+Category: ${req.body.post?.category || 'unknown'}
+
+Here is the post content as a JSON array of blocks:
+${JSON.stringify(content)}
+
+Return ONLY {"content": [...]} — the SAME array of blocks, in the same order, with the same block types, with citations inserted.
+
+Rules:
+- Do NOT rewrite, reorder, add or delete any block, sentence or word. The ONLY change allowed is turning existing words into markdown links.
+- Preserve every existing link exactly as it is, internal ("/path") and external alike.
+${EXTERNAL_CITATION_PROMPT}`;
+
+  let data;
+  try {
+    data = parseAiJson(await callHaikuJson(prompt, 4096, SMART_MODEL, WEB_SEARCH_TOOL));
+  } catch (err) {
+    console.error('addCitations AI error:', err.message);
+    return res.status(502).json({ message: 'AI returned an unusable response — try again' });
+  }
+
+  const cited = await applyExternalCitations(sanitizeContentBlocks(data.content));
+  if (cited.content.length !== content.length) {
+    return res.status(502).json({ message: 'AI changed the post structure — no citations applied' });
+  }
+  console.log(`addCitations: ${cited.kept} kept, ${cited.stripped} dead stripped, ${cited.blocked} blocked`);
+  res.json({ content: cited.content, kept: cited.kept, stripped: cited.stripped });
+});
+
 // Per-block rewrite/expand/shorten: the editor's sparkle menu sends one content
 // block plus light post context; we return the revised text (or list items) so
 // the client can swap just that block in place. Haiku keeps this cheap + fast.
@@ -501,11 +591,15 @@ ${shape} No code fences, no preamble.`;
     if (isList) {
       const items = Array.isArray(data.items) ? data.items.map((s) => String(s).trim()).filter(Boolean) : [];
       if (!items.length) throw new Error('AI returned no list items');
-      return res.json({ items });
+      const [safe] = keepOnlyKnownLinks([{ type: block.type, items }], block);
+      const cited = await applyExternalCitations([safe]);
+      return res.json({ items: cited.content[0].items });
     }
     const text = String(data.text || '').trim();
     if (!text) throw new Error('AI returned empty text');
-    return res.json({ text });
+    const [safe] = keepOnlyKnownLinks([{ type: block.type, text }], block);
+    const cited = await applyExternalCitations([safe]);
+    return res.json({ text: cited.content[0].text });
   } catch (err) {
     console.error('generateBlock AI error:', err.message);
     return res.status(502).json({ message: 'AI returned an unusable response — try again' });
@@ -525,4 +619,6 @@ module.exports = {
   generateField,
   generateSeo,
   generateBlock,
+  addCitations,
+  applyExternalCitations,
 };

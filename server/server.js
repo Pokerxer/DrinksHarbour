@@ -352,6 +352,8 @@ async function startServer() {
       startQuarantineCron();
       const { startBannerScheduleCron } = require('./jobs/bannerSchedule.job');
       startBannerScheduleCron();
+      const { startBlogLinkCheckCron } = require('./jobs/blogLinkCheck.job');
+      startBlogLinkCheckCron();
     }
 
     console.log('\n┌──────────────────────────────────────────────────────┐');

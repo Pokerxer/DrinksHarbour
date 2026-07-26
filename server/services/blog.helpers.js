@@ -150,8 +150,20 @@ function parseAiJson(text) {
   }
 }
 
+// With server-side tools declared, a response's content array leads with
+// server_tool_use / web_search_tool_result blocks and may split the answer over
+// several text blocks — content[0].text is not the answer.
+function textFromMessage(message) {
+  const blocks = Array.isArray(message?.content) ? message.content : [];
+  return blocks
+    .filter((b) => b && b.type === 'text' && typeof b.text === 'string')
+    .map((b) => b.text)
+    .join('');
+}
+
 module.exports = {
   BLOG_CATEGORIES,
+  textFromMessage,
   BLOCK_TYPES,
   AI_BLOCK_ACTIONS,
   REWRITABLE_BLOCK_TYPES,
