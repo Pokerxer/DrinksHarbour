@@ -2,6 +2,7 @@ import React from "react";
 import dynamic from "next/dynamic";
 import LazySection from "@/components/UI/LazySection";
 import { fetchInitialRecommendations } from "@/components/Shop/recommendations";
+import { buildProductItemList } from "@/lib/product-jsonld";
 
 // HeroBanner is above the fold — load it eagerly
 import HeroBanner from "@/components/Banner/HeroBanner";
@@ -85,6 +86,27 @@ async function fetchFeaturedProducts(limit = 8): Promise<any[]> {
   }
 }
 
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://www.drinksharbour.com";
+
+// Ties the homepage to the site-wide Organization/WebSite nodes declared in the
+// root layout, and points at the product list below as the page's main entity.
+function buildHomeWebPageJsonLd(hasItemList: boolean) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "@id": `${BASE_URL}/#webpage`,
+    url: `${BASE_URL}/`,
+    name: "Premium Spirits & Beverages Delivered in Nigeria",
+    description:
+      "Shop Nigeria's widest selection of premium spirits, wines, beers, and non-alcoholic drinks. Authentic products, fast delivery, and the best prices.",
+    isPartOf: { "@id": `${BASE_URL}/#website` },
+    about: { "@id": `${BASE_URL}/#organization` },
+    primaryImageOfPage: { "@type": "ImageObject", url: `${BASE_URL}/og-default.jpg` },
+    inLanguage: "en-NG",
+    ...(hasItemList ? { mainEntity: { "@id": `${BASE_URL}/#product-list` } } : {}),
+  };
+}
+
 export default async function Home() {
   // Fetch the SEO-critical product sections on the server, in parallel.
   const [featuredDeals, recommended, featured] = await Promise.all([
@@ -93,8 +115,31 @@ export default async function Home() {
     fetchFeaturedProducts(8),
   ]);
 
+  // Product markup for the two grids that are guaranteed to render exactly what
+  // the server seeded (both skip their initial client fetch when given
+  // initialProducts). "Recommended For You" is deliberately left out: it swaps
+  // in personalised products for signed-in users, so marking up the anonymous
+  // seed would describe something a visitor may not see — the mismatch Google's
+  // structured-data policy is about.
+  const productListJsonLd = buildProductItemList({
+    id: `${BASE_URL}/#product-list`,
+    name: "Featured drinks at DrinksHarbour",
+    products: [...featuredDeals, ...featured],
+  });
+  const webPageJsonLd = buildHomeWebPageJsonLd(Boolean(productListJsonLd));
+
   return (
     <div className="bg-gray-100 min-h-screen">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(webPageJsonLd) }}
+      />
+      {productListJsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(productListJsonLd) }}
+        />
+      )}
       {/* Mobile Category Sidebar Overlay (interactive — client component) */}
       <HomeCategoryDrawer />
 

@@ -234,7 +234,13 @@ export default async function RootLayout({
     <GlobalProvider>
       <TenantProvider initialTenant={tenant}>
         <html lang="en-NG">
-          <body className={`${elmsSans.className} ${kavoon.variable}`}>
+          {/* Site-wide entity graph. Google reads JSON-LD from <body> too, but
+              plenty of third-party SEO crawlers and AI summarisers only parse
+              <head> — and reported "no structured data" on this site for exactly
+              that reason. Nothing here is page-specific, so head is where it
+              belongs. Page-level markup (Product, BreadcrumbList, ItemList)
+              stays with its route. */}
+          <head>
             <script
               type="application/ld+json"
               dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessJsonLd) }}
@@ -249,6 +255,8 @@ export default async function RootLayout({
             />
             {/* Preconnect to third-party origins */}
             <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
+          </head>
+          <body className={`${elmsSans.className} ${kavoon.variable}`}>
             {/* Speculation Rules — prerender likely navigations on hover */}
             <script type="speculationrules">
               {JSON.stringify({
