@@ -3,6 +3,7 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 const { ObjectId } = Schema;
+const { computeRatingAggregate } = require('../services/review.helpers');
 
 // Reusable MediaItem Schema
 const MediaItemSchema = new Schema({
@@ -839,18 +840,19 @@ productSchema.methods.incrementViewCount = async function() {
   await this.save();
 };
 
-productSchema.methods.updateRating = async function(newRating) {
+// Recomputes the denormalised rating from approved reviews. Always writes —
+// zero approved reviews must reset the aggregate, not leave a stale rating behind.
+productSchema.methods.updateRating = async function updateRating() {
   const Review = mongoose.model('Review');
   const stats = await Review.aggregate([
     { $match: { product: this._id, status: 'approved' } },
     { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } }
   ]);
-  
-  if (stats.length > 0) {
-    this.averageRating = Math.round(stats[0].avg * 10) / 10;
-    this.reviewCount = stats[0].count;
-    await this.save();
-  }
+
+  const { averageRating, reviewCount } = computeRatingAggregate(stats);
+  this.averageRating = averageRating;
+  this.reviewCount = reviewCount;
+  return this.save();
 };
 
 const { defaultTracksBatch } = require('../services/batch.helpers');
