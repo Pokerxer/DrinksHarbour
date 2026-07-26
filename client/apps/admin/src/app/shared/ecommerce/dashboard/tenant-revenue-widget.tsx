@@ -5,7 +5,12 @@ import { Text } from 'rizzui';
 import cn from '@core/utils/class-names';
 import WidgetCard from '@core/components/cards/widget-card';
 import {
-  AreaChart, Area, Tooltip, ResponsiveContainer, CartesianGrid, XAxis,
+  AreaChart,
+  Area,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+  XAxis,
 } from 'recharts';
 import { CustomTooltip } from '@core/components/charts/custom-tooltip';
 import {
@@ -36,25 +41,60 @@ interface MetricBoxProps {
   accentColor?: string;
 }
 
-function MetricBox({ label, value, sub, color, highlight, accentColor }: MetricBoxProps) {
+function MetricBox({
+  label,
+  value,
+  sub,
+  color,
+  highlight,
+  accentColor,
+}: MetricBoxProps) {
   return (
     <div
-      className={cn('rounded-xl border px-3 py-2.5', !highlight && 'border-muted bg-gray-50 dark:bg-gray-100/10')}
-      style={highlight && accentColor ? { borderColor: `${accentColor}40`, background: `${accentColor}0e` } : undefined}
+      className={cn(
+        'rounded-xl border px-3 py-2.5',
+        !highlight && 'border-muted bg-gray-50 dark:bg-gray-100/10'
+      )}
+      style={
+        highlight && accentColor
+          ? { borderColor: `${accentColor}40`, background: `${accentColor}0e` }
+          : undefined
+      }
     >
-      <p className="text-[11px] uppercase tracking-wide text-gray-400">{label}</p>
-      <p className={cn('mt-0.5 text-base font-bold', color ?? 'text-gray-900')}>{value}</p>
+      <p className="text-[11px] uppercase tracking-wide text-gray-400">
+        {label}
+      </p>
+      <p className={cn('mt-0.5 text-base font-bold', color ?? 'text-gray-900')}>
+        {value}
+      </p>
       {sub && <p className="mt-0.5 text-xs text-gray-400">{sub}</p>}
     </div>
   );
 }
 
 const FALLBACK = Array.from({ length: 12 }, (_, i) => ({
-  month: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][i],
+  month: [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ][i],
   totalSales: 0,
 }));
 
-export default function TenantRevenueWidget({ className }: { className?: string }) {
+export default function TenantRevenueWidget({
+  className,
+}: {
+  className?: string;
+}) {
   const data = useDashboard();
   const meta = useDashboardMeta();
   const periodLabel = meta?.label ?? 'This month';
@@ -74,7 +114,8 @@ export default function TenantRevenueWidget({ className }: { className?: string 
   const todayUp = todayRevenue >= yestRevenue;
 
   // Simple revenue margin-like display: how much of orders this period is today
-  const todayShare = periodRevenue > 0 ? Math.round((todayRevenue / periodRevenue) * 100) : 0;
+  const todayShare =
+    periodRevenue > 0 ? Math.round((todayRevenue / periodRevenue) * 100) : 0;
 
   return (
     <WidgetCard
@@ -91,26 +132,37 @@ export default function TenantRevenueWidget({ className }: { className?: string 
       headerClassName="mb-4"
       className={cn('flex flex-col', className)}
     >
-      <div className="flex flex-col flex-grow gap-3">
-
+      <div className="flex flex-grow flex-col gap-3">
         {/* comparison vs the previous window */}
         {data && (
           <div className="flex items-center gap-1.5 text-xs">
-            <span className={cn('flex items-center gap-0.5 font-medium', revPct >= 0 ? 'text-green-600' : 'text-red-500')}>
-              {revPct >= 0
-                ? <PiCaretDoubleUpDuotone className="h-3.5 w-3.5" />
-                : <PiCaretDoubleDownDuotone className="h-3.5 w-3.5" />}
+            <span
+              className={cn(
+                'flex items-center gap-0.5 font-medium',
+                revPct >= 0 ? 'text-green-600' : 'text-red-500'
+              )}
+            >
+              {revPct >= 0 ? (
+                <PiCaretDoubleUpDuotone className="h-3.5 w-3.5" />
+              ) : (
+                <PiCaretDoubleDownDuotone className="h-3.5 w-3.5" />
+              )}
               {Math.abs(revPct)}%
             </span>
-            <span className="text-gray-400">{comparisonLabel} ({fmt(prevRevenue)})</span>
+            <span className="text-gray-400">
+              {comparisonLabel} ({fmt(prevRevenue)})
+            </span>
           </div>
         )}
 
         {/* Metric boxes */}
         {!data ? (
           <div className="grid grid-cols-2 gap-2">
-            {[1, 2, 3, 4].map(i => (
-              <div key={i} className="h-16 animate-pulse rounded-xl bg-gray-100" />
+            {[1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                className="h-16 animate-pulse rounded-xl bg-gray-100"
+              />
             ))}
           </div>
         ) : (
@@ -149,16 +201,44 @@ export default function TenantRevenueWidget({ className }: { className?: string 
           {!data ? (
             <div className="h-full animate-pulse rounded-xl bg-gray-100" />
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={trend} margin={{ top: 4, bottom: 0, left: 0, right: 0 }}>
+            <>
+              <p className="text-xs text-gray-500 mb-2">12-month trend</p>
+              <ResponsiveContainer width="100%" height="100%">
+              <AreaChart
+                data={trend}
+                margin={{ top: 4, bottom: 0, left: 0, right: 0 }}
+              >
                 <defs>
-                  <linearGradient id="gradTenantRev" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={accentColor} stopOpacity={0.2} />
-                    <stop offset="95%" stopColor={accentColor} stopOpacity={0} />
+                  <linearGradient
+                    id="gradTenantRev"
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop
+                      offset="5%"
+                      stopColor={accentColor}
+                      stopOpacity={0.2}
+                    />
+                    <stop
+                      offset="95%"
+                      stopColor={accentColor}
+                      stopOpacity={0}
+                    />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="6 8" strokeOpacity={0.4} vertical={false} />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                <CartesianGrid
+                  strokeDasharray="6 8"
+                  strokeOpacity={0.4}
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="month"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 10, fill: '#9ca3af' }}
+                />
                 <Tooltip content={<CustomTooltip />} />
                 <Area
                   type="bump"
@@ -170,11 +250,12 @@ export default function TenantRevenueWidget({ className }: { className?: string 
                   fill="url(#gradTenantRev)"
                 />
               </AreaChart>
-            </ResponsiveContainer>
+              </ResponsiveContainer>
+            </>
           )}
         </div>
 
-        <Text className="text-[11px] text-gray-400 leading-tight">
+        <Text className="text-[11px] leading-tight text-gray-400">
           <PiInfoFill className="inline-flex h-3.5 w-3.5 text-gray-400" />{' '}
           {`Revenue from all active orders placed in the selected period (${periodLabel}). Compared ${comparisonLabel}.`}
         </Text>

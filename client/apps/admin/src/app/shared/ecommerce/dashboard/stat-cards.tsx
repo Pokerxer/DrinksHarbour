@@ -104,7 +104,7 @@ export default function StatCards({ className }: { className?: string }) {
     {
       id: '3',
       icon: <PiBankDuotone className="h-6 w-6" />,
-      title: 'Avg Order Value',
+      title: `Avg Order Value · ${periodLabel}`,
       metric: fmt(avgOrderValue),
       sub: 'across active orders',
       increased: avgPct >= 0,
