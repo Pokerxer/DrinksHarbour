@@ -13,6 +13,7 @@ const notificationSchema = new Schema(
         'new_product_pending',
         'product_approved',
         'product_rejected',
+        'new_review_pending',
         'new_tenant_registration',
         'tenant_subscription_expiring',
         'low_stock_alert',

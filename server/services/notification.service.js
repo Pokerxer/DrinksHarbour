@@ -355,9 +355,53 @@ const getUnreadCount = async (userId) => {
   return Notification.getUnreadCount(userId);
 };
 
+/**
+ * Notify super-admins that a customer review is waiting for moderation.
+ * Reviews land as 'pending' and are invisible until approved, so without this
+ * they can sit unseen indefinitely.
+ */
+const sendNewReviewPendingNotification = async (reviewId) => {
+  const Review = mongoose.model('Review');
+  const review = await Review.findById(reviewId)
+    .populate('product', 'name')
+    .populate('user', 'firstName lastName name email')
+    .lean();
+
+  if (!review) return null;
+
+  const superAdmins = await getSuperAdmins();
+  if (!superAdmins.length) return null;
+
+  const reviewerName =
+    review.user?.name ||
+    [review.user?.firstName, review.user?.lastName].filter(Boolean).join(' ') ||
+    'A customer';
+  const productName = review.product?.name || 'a product';
+
+  return createNotification({
+    type: 'new_review_pending',
+    title: 'New Review Pending Moderation',
+    message: `${reviewerName} left a ${review.rating}-star review on "${productName}" that is awaiting moderation.`,
+    shortMessage: `New ${review.rating}★ review on "${productName}"`,
+    product: review.product?._id,
+    user: review.user?._id,
+    priority: 'normal',
+    actionUrl: '/ecommerce/reviews',
+    actionLabel: 'Moderate Review',
+    metadata: {
+      reviewId: String(review._id),
+      productName,
+      rating: review.rating,
+      reviewerName,
+    },
+    recipients: superAdmins.map((a) => a._id),
+  });
+};
+
 module.exports = {
   createNotification,
   sendNewProductPendingNotification,
+  sendNewReviewPendingNotification,
   sendProductApprovedNotification,
   sendProductRejectedNotification,
   getNotifications,

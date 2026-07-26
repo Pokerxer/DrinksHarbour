@@ -8,6 +8,7 @@ const wishlistService = require('../services/wishlist.service');
 const Review = require('../models/Review');
 const Order  = require('../models/Order');
 const cloudinaryService = require('../services/cloudinary.service');
+const notificationService = require('../services/notification.service');
 const { logPrivilegedAction } = require('../utils/auditLog');
 
 /**
@@ -1122,6 +1123,11 @@ const submitProductReview = asyncHandler(async (req, res) => {
     isVerifiedPurchase: true,
     status:             'pending',
   });
+
+  // Fire-and-forget: a notification failure must never fail the customer's review.
+  notificationService
+    .sendNewReviewPendingNotification(review._id)
+    .catch(err => console.error('[reviews] pending notification failed:', err.message));
 
   res.status(201).json({
     success: true,
