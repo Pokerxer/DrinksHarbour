@@ -21,15 +21,26 @@ const LOGO_SRC  = fs.existsSync(LOGO_PATH)
 let emailServiceReady = false;
 let transporter = null;
 
-// Check if Google OAuth credentials are properly configured
-const hasGoogleOAuth = process.env.MAILING_SERVICE_CLIENT_ID &&
-                      process.env.MAILING_SERVICE_CLIENT_SECRET &&
-                      process.env.MAILING_REFRESH_TOKEN &&
-                      !process.env.MAILING_SERVICE_CLIENT_ID?.includes('your-');
+// Credential checks are functions, not constants: the transport is now built
+// lazily (and retried), so config must be read at connect time, not at import.
+const hasGoogleOAuth = () => Boolean(
+  process.env.MAILING_SERVICE_CLIENT_ID &&
+  process.env.MAILING_SERVICE_CLIENT_SECRET &&
+  process.env.MAILING_REFRESH_TOKEN &&
+  !process.env.MAILING_SERVICE_CLIENT_ID?.includes('your-')
+);
 
-// Check if simple SMTP credentials are configured
-const hasSimpleSMTP = process.env.MAIL_PASSWORD &&
-                     !process.env.MAIL_PASSWORD?.includes('your-');
+const hasSimpleSMTP = () => Boolean(
+  process.env.MAIL_PASSWORD &&
+  !process.env.MAIL_PASSWORD?.includes('your-')
+);
+
+// Silently logging mail instead of sending it is a local-dev convenience. In
+// production it hides outages: on 2026-07-27 every order confirmation took the
+// dev-mode branch for days because prod SMTP creds were rejected, and the
+// caller still logged "✅ email → customer".
+const isProduction = () =>
+  process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
 
 // SMTP transport config — host/port/secure are env-driven so the same code
 // works with the DrinksHarbour cPanel mail server (premium356.web-hosting.com,
@@ -44,7 +55,7 @@ const MAIL_SECURE = process.env.MAIL_SECURE != null
 
 // Initialize email service
 const initializeEmailService = async () => {
-  if (hasSimpleSMTP) {
+  if (hasSimpleSMTP()) {
     try {
       transporter = nodemailer.createTransport({
         host: MAIL_HOST,
@@ -64,7 +75,7 @@ const initializeEmailService = async () => {
     }
   }
 
-  if (hasGoogleOAuth) {
+  if (hasGoogleOAuth()) {
     try {
       const oauth2Client = new google.auth.OAuth2(
         process.env.MAILING_SERVICE_CLIENT_ID,
@@ -96,7 +107,29 @@ const initializeEmailService = async () => {
   emailServiceReady = false;
 };
 
-initializeEmailService();
+// Connect on first send rather than at import. Importing used to open an SMTP
+// handshake on every serverless cold start (of every route, mail or not), and a
+// single failed handshake disabled email for the whole life of that instance.
+let initPromise = null;
+let lastInitAttempt = 0;
+const INIT_RETRY_MS = 60_000;
+
+const ensureEmailService = async () => {
+  if (emailServiceReady) return true;
+
+  const now = Date.now();
+  if (!initPromise || now - lastInitAttempt >= INIT_RETRY_MS) {
+    lastInitAttempt = now;
+    initPromise = initializeEmailService().catch((err) => {
+      console.error('❌ Email transport init threw:', err.message);
+    });
+  }
+
+  await initPromise;
+  return emailServiceReady;
+};
+
+const isEmailServiceReady = () => emailServiceReady;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -285,7 +318,13 @@ const calculateOrderBreakdown = (order) => {
 
 const sendEmail = async (options) => {
   try {
-    if (!emailServiceReady) {
+    if (!(await ensureEmailService())) {
+      if (isProduction()) {
+        console.error(
+          `❌ EMAIL NOT SENT — no working mail transport (check MAIL_* env). to=${options.to} subject="${options.subject}"`
+        );
+        return { success: false, error: 'Mail transport unavailable' };
+      }
       console.log('\n📧 ========== EMAIL (Development Mode) ==========');
       console.log('To:', options.to);
       console.log('Subject:', options.subject);
@@ -1370,6 +1409,8 @@ const sendTenantApplicationNotificationToAdmin = async ({
 
 module.exports = {
   sendEmail,
+  initializeEmailService,
+  isEmailServiceReady,
   // Revenue-math helpers — exported so scripts/tests can assert the money split
   // identities (itemSubtotal == vendorShare + commission, splitCheck/totalCheck).
   calculateVendorTotals,

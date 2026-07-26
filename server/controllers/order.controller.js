@@ -337,8 +337,12 @@ exports.createOrder = asyncHandler(async (req, res) => {
     try {
       // 1. Customer — email + SMS + WhatsApp (in parallel)
       await Promise.allSettled([
+        // Check the result, don't just check that the promise resolved:
+        // sendEmail resolves with { success:false } when the transport is down.
         sendOrderConfirmationToCustomer(order, customer)
-          .then(() => console.log('✅ Order confirmation email → customer'))
+          .then(r  => r?.success
+            ? console.log('✅ Order confirmation email → customer')
+            : console.error('❌ Order confirmation email NOT sent → customer:', r?.error || 'unknown error'))
           .catch(e  => console.error('❌ Email to customer failed:', e.message)),
 
         sendOrderConfirmationSMS(order, customer)
@@ -359,7 +363,9 @@ exports.createOrder = asyncHandler(async (req, res) => {
           await Promise.allSettled([
             tenant.email
               ? sendNewOrderNotificationToTenant(order, tenant, customer)
-                  .then(() => console.log(`✅ Order email → tenant: ${tenant.name}`))
+                  .then(r => r?.success
+                    ? console.log(`✅ Order email → tenant: ${tenant.name}`)
+                    : console.error(`❌ Order email NOT sent → tenant ${tenant.name}:`, r?.error || 'unknown error'))
                   .catch(e  => console.error(`❌ Email to tenant ${tenant.name} failed:`, e.message))
               : Promise.resolve(),
 
@@ -376,7 +382,9 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
       // 3. Admin — email only
       await sendNewOrderNotificationToAdmin(order, customer)
-        .then(() => console.log('✅ Order notification email → admin'))
+        .then(r => r?.success
+          ? console.log('✅ Order notification email → admin')
+          : console.error('❌ Order notification email NOT sent → admin:', r?.error || 'unknown error'))
         .catch(e  => console.error('❌ Email to admin failed:', e.message));
 
       // 4. Loyalty points — 1 pt per ₦100 spent (paid orders only, logged-in users)
