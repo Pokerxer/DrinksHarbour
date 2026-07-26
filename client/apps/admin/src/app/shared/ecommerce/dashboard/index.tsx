@@ -82,7 +82,7 @@ export default async function EcommerceDashboard({
           <EcommerceHero />
         </div>
 
-        <div className="sticky top-0 z-20 -mx-4 mb-6 border-b border-muted bg-gray-0/95 px-4 py-3 backdrop-blur md:-mx-5 md:px-5 lg:-mx-6 lg:px-6 3xl:-mx-8 3xl:px-8">
+        <div className="sticky top-0 z-20 -mx-4 mb-6 border-b border-muted bg-gray-0/95 px-4 py-3 backdrop-blur md:-mx-5 md:px-5 lg:-mx-6 lg:px-6 3xl:-mx-8 3xl:px-8 4xl:-mx-10 4xl:px-10">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm font-medium text-gray-500">
               Showing <span className="font-semibold text-gray-900">{dashboardData?.meta?.label ?? 'This month'}</span>
