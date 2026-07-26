@@ -158,13 +158,28 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       { $sort: { count: -1 } },
     ]),
 
-    // 10. Top 8 products by totalSold
-    SubProduct.find({ ...spTenantFilter, totalSold: { $gt: 0 } })
-      .sort({ totalSold: -1 }).limit(8)
-      .select('sku totalSold totalRevenue stockStatus availableStock costPrice baseSellingPrice')
-      .populate('product', 'name images')
-      .populate('tenant', 'name slug logo primaryColor')
-      .lean(),
+    // 10. Top 8 products sold *within the selected window*.
+    //     Previously this read SubProduct.totalSold, a lifetime counter, so the
+    //     widget never reflected any time period at all.
+    Order.aggregate([
+      { $match: { ...tenantFilter, ...sourceFilter, placedAt: { $gte: rangeStart, $lte: rangeEnd }, status: { $in: ACTIVE_STATUSES } } },
+      { $unwind: '$items' },
+      ...(isSuperAdmin ? [] : [{ $match: { 'items.tenant': req.user.tenant } }]),
+      { $match: { 'items.subproduct': { $exists: true, $ne: null } } },
+      { $group: {
+        _id:     '$items.subproduct',
+        sold:    { $sum: '$items.quantity' },
+        revenue: { $sum: '$items.itemSubtotal' },
+      }},
+      { $sort: { sold: -1 } },
+      { $limit: 8 },
+      { $lookup: { from: 'subproducts', localField: '_id', foreignField: '_id', as: 'sp' } },
+      { $unwind: { path: '$sp', preserveNullAndEmptyArrays: true } },
+      { $lookup: { from: 'products', localField: 'sp.product', foreignField: '_id', as: 'prod' } },
+      { $unwind: { path: '$prod', preserveNullAndEmptyArrays: true } },
+      { $lookup: { from: 'tenants', localField: 'sp.tenant', foreignField: '_id', as: 'ten' } },
+      { $unwind: { path: '$ten', preserveNullAndEmptyArrays: true } },
+    ]),
 
     // 11. Recent 10 orders
     Order.find({ ...tenantFilter, ...sourceFilter })
@@ -336,27 +351,30 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   const customerChart = MONTH_NAMES.map(m => customerMap[m] ?? { month: m, newCustomer: 0, returningCustomer: 0 });
 
   // ── Top products ─────────────────────────────────────────────────────────
-  const topProductsList = topProductsAgg.map(sp => {
+  const topProductsList = topProductsAgg.map(row => {
+    const sp = row.sp ?? {};
     // Margin = (baseSellingPrice - costPrice) / baseSellingPrice × 100
     const margin = (sp.baseSellingPrice && sp.costPrice && sp.baseSellingPrice > 0)
       ? Math.round(((sp.baseSellingPrice - sp.costPrice) / sp.baseSellingPrice) * 100)
       : null;
     return {
-      id:          sp._id,
-      name:        sp.product?.name ?? sp.sku,
-      image:       sp.product?.images?.[0]?.url ?? null,
-      sku:         sp.sku,
-      sold:        sp.totalSold,
-      revenue:     sp.totalRevenue ?? 0,
+      id:          row._id,
+      name:        row.prod?.name ?? sp.sku ?? 'Unknown product',
+      image:       row.prod?.images?.[0]?.url ?? null,
+      sku:         sp.sku ?? '',
+      sold:        row.sold ?? 0,
+      revenue:     row.revenue ?? 0,
+      // Stock is point-in-time by nature — it has no meaningful historical value,
+      // so it still comes from the SubProduct document rather than the window.
       stock:       sp.availableStock ?? 0,
       stockStatus: sp.stockStatus ?? 'in_stock',
       margin,
-      vendor: sp.tenant ? {
-        id:    sp.tenant._id,
-        name:  sp.tenant.name,
-        slug:  sp.tenant.slug,
-        logo:  sp.tenant.logo?.url ?? null,
-        color: sp.tenant.primaryColor ?? '#1a202c',
+      vendor: row.ten ? {
+        id:    row.ten._id,
+        name:  row.ten.name,
+        slug:  row.ten.slug,
+        logo:  row.ten.logo?.url ?? null,
+        color: row.ten.primaryColor ?? '#1a202c',
       } : null,
     };
   });
