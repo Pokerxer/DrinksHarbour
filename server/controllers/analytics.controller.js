@@ -297,9 +297,11 @@ exports.getDashboard = asyncHandler(async (req, res) => {
   const grossPeriod         = profitThisMonthAgg[0]?.grossRevenue   ?? 0;
   const vendorCostPeriod    = profitThisMonthAgg[0]?.vendorCost     ?? 0;
   const platformProfit      = profitThisMonthAgg[0]?.platformProfit ?? 0;
-  const orderCountThisMonth = profitThisMonthAgg[0]?.orderCount?.length ?? 0;
-  // avgOrderValue from active-order count (consistent with revenue)
-  const avgOrderValue       = orderCountThisMonth > 0 ? Math.round(grossPeriod / orderCountThisMonth) : 0;
+  // AOV must use the same basis as the revenue card — totalAmount over order
+  // count. It previously divided the profit aggregation's grossRevenue (a sum of
+  // items.itemSubtotal, which excludes shipping and tax) by a distinct order
+  // count, so the two figures on screen could not be reconciled by the reader.
+  const avgOrderValue = periodOrders > 0 ? Math.round(periodRevenue / periodOrders) : 0;
   const lastGross           = profitLastMonthAgg[0]?.grossRevenue   ?? 0;
   const lastProfit          = profitLastMonthAgg[0]?.platformProfit ?? 0;
 
