@@ -87,6 +87,14 @@ const WebAnalyticsSchema = new Schema(
       type: Boolean,
       default: false,
     },
+    orderId: {
+      type: String,
+      default: '',
+    },
+    orderValue: {
+      type: Number,
+      default: 0,
+    },
     pageViewsInSession: {
       type: Number,
       default: 1,

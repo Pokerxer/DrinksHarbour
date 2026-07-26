@@ -2,12 +2,13 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useState, useEffect, useCallback, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import * as Icon from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
+import { purchaseEvent, type GTagItem } from '@/lib/gtag';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -203,6 +204,45 @@ function OrderConfirmationContent() {
   }, [orderId]);
 
   useEffect(() => { fetchOrder(); }, [fetchOrder]);
+
+  const purchaseFired = useRef(false);
+  useEffect(() => {
+    if (!order || purchaseFired.current) return;
+    if (order.status === 'cancelled' || order.status === 'refunded') return;
+    purchaseFired.current = true;
+
+    const items: GTagItem[] = (order.items || []).map((item: OrderItem) => ({
+      item_id: item.subproduct?.sku ?? item.product?.slug ?? '',
+      item_name: item.product?.name ?? 'Product',
+      item_variant: item.size?.name ?? undefined,
+      price: item.priceAtPurchase,
+      quantity: item.quantity,
+    }));
+
+    purchaseEvent({
+      transaction_id: order.orderNumber,
+      value: order.totalAmount,
+      currency: 'NGN',
+      shipping: order.shippingFee,
+      tax: 0,
+      coupon: order.coupon?.code ?? undefined,
+      items,
+    });
+
+    const sessionId = sessionStorage.getItem('dh_session_id');
+    if (sessionId) {
+      fetch(`${API_URL}/api/analytics/track/conversion`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({
+          sessionId,
+          orderId: order.orderNumber,
+          orderValue: order.totalAmount,
+        }),
+      }).catch(() => {});
+    }
+  }, [order]);
 
   // ── Loading ────────────────────────────────────────────────────────────────
   if (loading) {

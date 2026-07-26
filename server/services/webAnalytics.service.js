@@ -84,7 +84,18 @@ async function updatePageDuration({ sessionId, page, duration }) {
   return { sessionDuration: totalDuration };
 }
 
-// ─── 3. getOverview ──────────────────────────────────────────────────────────
+// ─── 3. recordConversion ──────────────────────────────────────────────────────
+
+async function recordConversion({ sessionId, orderId, orderValue }) {
+  if (!sessionId) return null;
+  const result = await WebAnalytics.updateMany(
+    { sessionId },
+    { $set: { converted: true, orderId, orderValue } }
+  );
+  return result;
+}
+
+// ─── 4. getOverview ──────────────────────────────────────────────────────────
 
 async function getOverview(period = 30) {
   const now       = new Date();
@@ -906,6 +917,7 @@ async function getWebsiteChannels() {
 module.exports = {
   recordPageView,
   updatePageDuration,
+  recordConversion,
   getOverview,
   getAcquisitionData,
   getDeviceSessions,

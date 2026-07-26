@@ -13,6 +13,7 @@ import { ProductType } from "@/types/product.types";
 import { API_URL } from "@/lib/api";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { resolveProductPrice } from "@/utils/product.utils";
+import { addToCartEvent, type GTagItem } from "@/lib/gtag";
 
 interface CartItem extends ProductType {
   cartItemId: string;
@@ -412,6 +413,17 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({
       savedAt: Date.now(),
       expiryDays: CART_EXPIRY_DAYS,
     }));
+
+    const itemPrice = getPriceFromAvailableAt(product, vendor || '', size || '');
+    const gtagItems: GTagItem[] = [{
+      item_id: product.sku ?? product.slug ?? product._id ?? product.id,
+      item_name: product.name,
+      item_category: product.category?.name ?? product.type,
+      item_variant: size || undefined,
+      price: itemPrice,
+      quantity: qty,
+    }];
+    addToCartEvent({ items: gtagItems, value: itemPrice * qty });
     
     return {
       success: true,

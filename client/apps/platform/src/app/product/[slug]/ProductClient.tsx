@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import BreadcrumbProduct from "@/components/Breadcrumb/BreadcrumbProduct";
 import LoadingSpinner from "@/components/loader/LoadingSpinner";
 import type { ProductType } from "@/types/product.types";
 import * as Icon from "react-icons/pi";
 import { AnnouncementBanner, PlacementBanner } from "@/components/Banner";
+import { viewItemEvent } from "@/lib/gtag";
 
 // Defer heavy components — ProductDetail pulls in Swiper + all modules
 const ProductDetail = dynamic(() => import("@/components/Product/Detail"), {
@@ -118,6 +119,25 @@ export default function ProductClient({ slug }: { slug: string }) {
   }, [slug]);
 
   useEffect(() => { loadProduct(); }, [loadProduct]);
+
+  const viewItemFired = useRef(false);
+  useEffect(() => {
+    if (!productData || loading || viewItemFired.current) return;
+    viewItemFired.current = true;
+    const price = productData.priceRange?.min ?? productData.price ?? 0;
+    viewItemEvent({
+      items: [{
+        item_id: productData.sku ?? productData.slug ?? productData._id,
+        item_name: productData.name,
+        item_category: productData.category?.name ?? productData.type,
+        item_category2: productData.subCategory,
+        item_variant: undefined,
+        price,
+        quantity: 1,
+      }],
+      value: price,
+    });
+  }, [productData, loading]);
 
   if (loading) {
     return (

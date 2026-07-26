@@ -11,6 +11,7 @@ import CouponComponent from '@/components/Coupon/Coupon';
 import PaymentHandler from '@/components/Payment/PaymentHandler';
 import { API_URL } from '@/lib/api';
 import { fetchWithAuth } from '@/lib/fetchWithAuth';
+import { beginCheckoutEvent, type GTagItem } from '@/lib/gtag';
 import AddressAutocomplete, { type AddressDetails } from '@/components/AddressAutocomplete/AddressAutocomplete';
 import LocationPickerMap from '@/components/LocationPickerMap/LocationPickerMap';
 import PlacementBanner from '@/components/Banner/PlacementBanner';
@@ -213,6 +214,22 @@ export default function CheckoutPage() {
       }));
     } catch {}
   }, [mounted]);
+
+  // ── Fire begin_checkout GA4 event ──────────────────────────────────────────
+  const beginCheckoutFired = useRef(false);
+  useEffect(() => {
+    if (!mounted || cartState.cartArray.length === 0 || beginCheckoutFired.current) return;
+    beginCheckoutFired.current = true;
+    const items: GTagItem[] = cartState.cartArray.map((item) => ({
+      item_id: item.sku ?? item.slug ?? item._id ?? item.id,
+      item_name: item.name,
+      item_category: item.category?.name ?? item.type,
+      item_variant: item.selectedSize || undefined,
+      price: item.price,
+      quantity: item.quantity,
+    }));
+    beginCheckoutEvent({ items });
+  }, [mounted, cartState.cartArray]);
 
   // ── Fetch LGA list when state changes ────────────────────────────────────
   useEffect(() => {

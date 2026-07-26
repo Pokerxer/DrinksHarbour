@@ -511,3 +511,20 @@ exports.trackDuration = async (req, res) => {
     return errorResponse(res, 'Failed to record duration', 500, err);
   }
 };
+
+/**
+ * POST /api/analytics/track/conversion
+ * Public — marks the current session as converted (purchase completed).
+ */
+exports.trackConversion = async (req, res) => {
+  try {
+    const { sessionId, orderId, orderValue } = req.body;
+    if (!sessionId) {
+      return errorResponse(res, 'sessionId is required', 400);
+    }
+    await webAnalyticsService.recordConversion({ sessionId, orderId, orderValue });
+    return successResponse(res, null, 'Conversion recorded');
+  } catch (err) {
+    return errorResponse(res, 'Failed to record conversion', 500, err);
+  }
+};

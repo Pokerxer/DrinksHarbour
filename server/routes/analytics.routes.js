@@ -1,6 +1,6 @@
 const express = require('express');
 const router  = express.Router();
-const { getDashboard, trackPageView, trackDuration } = require('../controllers/analytics.controller');
+const { getDashboard, trackPageView, trackDuration, trackConversion } = require('../controllers/analytics.controller');
 const { protect, attachTenant, tenantAdminOrSuperAdmin } = require('../middleware/auth.middleware');
 
 router.get('/dashboard', protect, attachTenant, tenantAdminOrSuperAdmin, getDashboard);
@@ -9,5 +9,6 @@ router.get('/dashboard', protect, attachTenant, tenantAdminOrSuperAdmin, getDash
 router.post('/track', trackPageView);
 router.post('/track/duration', trackDuration);  // sendBeacon always POSTs
 router.patch('/track/duration', trackDuration); // fetch fallback uses PATCH
+router.post('/track/conversion', trackConversion);
 
 module.exports = router;
